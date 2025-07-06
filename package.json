@@ -28,7 +28,8 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "get-models": "npx tsx scripts/getModels.ts",
     "prompt-scenarios": "npx tsx ./scripts/prompt.scenarios.ts",
-    "test-providers": "npx tsx ./scripts/testProviders.ts"
+    "test-providers": "npx tsx ./scripts/testProviders.ts",
+    "smoketest": "npx tsx ./scripts/smoketest.ts"
   },
   "author": "",
   "license": "ISC",
@@ -45,8 +46,8 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.12",
-    "dotenv": "^16.5.0",
+    "@types/jest": "^30.0.0",
+    "dotenv": "^17.0.1",
     "husky": "^9.1.4",
     "jest": "^29.7.0",
     "pkgroll": "^2.4.2",
