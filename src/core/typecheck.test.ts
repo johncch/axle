@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import * as z from "zod/v4";
+import * as z from "zod";
 import { declarativeToOutputSchema, zodToExample } from "./typecheck.js";
 import { DeclarativeSchema, ResultType } from "./types.js";
 

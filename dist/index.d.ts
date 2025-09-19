@@ -1,5 +1,5 @@
-import * as z from 'zod/v4';
-import z__default from 'zod/v4';
+import * as z from 'zod';
+import z__default from 'zod';
 
 type PlainObject = Record<string, unknown>;
 type ProgramOptions = {
@@ -530,4 +530,5 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-export { type AIProvider, Axle, ChainOfThought, ConsoleWriter, type DAGDefinition, type DAGWorkflowOptions, type FileInfo, Instruct, LogLevel, type SerializedExecutionResponse, WriteOutputTask, concurrentWorkflow, dagWorkflow, serialWorkflow };
+export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, serialWorkflow };
+export type { AIProvider, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };

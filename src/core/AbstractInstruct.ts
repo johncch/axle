@@ -1,4 +1,4 @@
-import * as z from "zod/v4";
+import * as z from "zod";
 import { Recorder } from "../recorder/recorder.js";
 import { ToolExecutable } from "../tools/types.js";
 import { Task } from "../types.js";
