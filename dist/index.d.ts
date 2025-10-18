@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import z__default from 'zod';
+import z__default, { ZodObject } from 'zod';
 
 type PlainObject = Record<string, unknown>;
 type ProgramOptions = {
@@ -44,6 +44,31 @@ interface RecorderWriter {
     handleEvent(event: RecorderEntry): void | Promise<void>;
     flush?(): Promise<void>;
 }
+
+interface ToolSchema {
+    name: string;
+    description: string;
+    parameters: {
+        type: "object";
+        properties: Record<string, object>;
+        required: string[];
+    };
+}
+interface ToolExecutable {
+    name: string;
+    schema: ToolSchema;
+    setConfig?: (config: {
+        [key: string]: any;
+    }) => void;
+    execute: (params: {
+        [key: string]: any;
+    }) => Promise<string>;
+}
+type ToolDef<Z extends ZodObject = ZodObject> = {
+    name: string;
+    description?: string;
+    schema: Z;
+};
 
 declare class Recorder {
     instanceId: `${string}-${string}-${string}-${string}-${string}`;
@@ -95,29 +120,58 @@ type Base64FileInfo = FileInfo & {
     type: "image" | "document";
 };
 
-interface ToolSchema {
-    name: string;
-    description: string;
-    parameters: {
-        type: "object";
-        properties: Record<string, object>;
-        required: string[];
-    };
+type AxleMessage = AxleUserMessage | AxleAssistantMessage | AxleToolCallMessage;
+interface AxleUserMessage {
+    role: "user";
+    name?: string;
+    content: string | Array<ContentPart>;
 }
-interface ToolExecutable {
+interface AxleAssistantMessage {
+    role: "assistant";
+    id: string;
+    model?: string;
+    content: Array<ContentPartText | ContentPartThinking>;
+    toolCalls?: Array<ContentPartToolCall>;
+    finishReason?: AxleStopReason;
+}
+interface AxleToolCallMessage {
+    role: "tool";
+    content: Array<AxleToolCallResult>;
+}
+interface AxleToolCallResult {
+    id: string;
     name: string;
-    schema: ToolSchema;
-    setConfig?: (config: {
-        [key: string]: any;
-    }) => void;
-    execute: (params: {
-        [key: string]: any;
-    }) => Promise<string>;
+    content: string;
+}
+type ContentPart = ContentPartText | ContentPartFile | ContentPartInstructions | ContentPartThinking;
+interface ContentPartText {
+    type: "text";
+    text: string;
+}
+interface ContentPartInstructions {
+    type: "instructions";
+    instructions: string;
+}
+interface ContentPartFile {
+    type: "file";
+    file: FileInfo;
+}
+interface ContentPartThinking {
+    type: "thinking";
+    text: string;
+    redacted?: boolean;
+    signature?: string;
+}
+interface ContentPartToolCall {
+    type: "tool-call";
+    id: string;
+    name: string;
+    arguments: string | Record<string, unknown>;
 }
 
 declare class Chat {
     system: string;
-    messages: ChatItem[];
+    messages: AxleMessage[];
     tools: ToolSchema[];
     setToolSchemas(schemas: ToolSchema[]): void;
     addSystem(message: string): void;
@@ -125,10 +179,14 @@ declare class Chat {
     addUser(message: string, instruction: string): void;
     addUser(message: string, instruction: string, files: FileInfo[]): void;
     addUser(message: string, files: FileInfo[]): any;
-    addAssistant(message: string, toolCalls?: ToolCall[]): void;
-    addTools(input: Array<ChatItemToolCallResult>): void;
+    addAssistant(message: string, toolCalls?: ContentPartToolCall[], metadata?: {
+        id?: string;
+        model: string;
+        finishReason: AxleStopReason;
+    }): void;
+    addTools(input: Array<AxleToolCallResult>): void;
     hasFiles(): boolean;
-    latest(): ChatItem | undefined;
+    latest(): AxleMessage | undefined;
     toString(): string;
 }
 
@@ -160,25 +218,27 @@ interface AIProvider {
     createChatRequest(chat: Chat, context: {
         recorder?: Recorder;
     }): AIRequest;
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        tools?: Array<ToolDef>;
+        context: {
+            recorder?: Recorder;
+        };
+    }): Promise<AIResponse>;
 }
 interface AIRequest {
     execute(runtime: {
         recorder?: Recorder;
     }): Promise<AIResponse>;
 }
-interface ToolCall {
-    id: string;
-    name: string;
-    arguments: string | Record<string, unknown>;
-}
 type AIResponse = AISuccessResponse | AIErrorResponse;
 interface AISuccessResponse {
     type: "success";
     id: string;
-    reason: StopReason;
-    message: ChatItemAssistant;
+    reason: AxleStopReason;
+    message: AxleAssistantMessage;
     model: string;
-    toolCalls?: ToolCall[];
+    toolCalls?: ContentPartToolCall[];
     usage: Stats;
     raw: any;
 }
@@ -191,44 +251,11 @@ interface AIErrorResponse {
     usage: Stats;
     raw: any;
 }
-declare enum StopReason {
+declare enum AxleStopReason {
     Stop = 0,
     Length = 1,
     FunctionCall = 2,
     Error = 3
-}
-type ChatItem = ChatItemUser | ChatItemAssistant | ChatItemToolCall;
-interface ChatItemUser {
-    role: "user";
-    name?: string;
-    content: string | ChatContent[];
-}
-interface ChatItemAssistant {
-    role: "assistant";
-    content?: string;
-    toolCalls?: ToolCall[];
-}
-interface ChatItemToolCallResult {
-    id: string;
-    name: string;
-    content: string;
-}
-interface ChatItemToolCall {
-    role: "tool";
-    content: Array<ChatItemToolCallResult>;
-}
-type ChatContent = ChatContentText | ChatContentFile | ChatContentInstructions;
-interface ChatContentText {
-    type: "text";
-    text: string;
-}
-interface ChatContentInstructions {
-    type: "instructions";
-    instructions: string;
-}
-interface ChatContentFile {
-    type: "file";
-    file: FileInfo;
 }
 
 declare class AxleError extends Error {
@@ -320,6 +347,14 @@ declare class Axle {
     static loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
     static loadFileContent(filePath: string, encoding: "base64"): Promise<Base64FileInfo>;
 }
+
+interface GenerateProps {
+    provider: AIProvider;
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDef>;
+    recorder?: Recorder;
+}
+declare function generate(props: GenerateProps): Promise<AIResponse>;
 
 declare enum ResultType {
     String = "string",
@@ -530,5 +565,5 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, serialWorkflow };
+export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow };
 export type { AIProvider, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };

@@ -1,3 +1,5 @@
+import { ZodObject } from "zod";
+
 export interface ToolSchema {
   name: string;
   description: string;
@@ -18,3 +20,9 @@ export interface ToolExecutable {
 export interface ToolConstructor<T extends ToolExecutable = ToolExecutable> {
   new (...args: any[]): T;
 }
+
+export type ToolDef<Z extends ZodObject = ZodObject> = {
+  name: string;
+  description?: string;
+  schema: Z;
+};

@@ -1,26 +1,18 @@
 import {
   Content,
-  FinishReason,
   GenerateContentConfig,
   GenerateContentResponse,
   GoogleGenAI,
   Type,
 } from "@google/genai";
+import z from "zod";
+import { Chat } from "../../messages/chat.js";
+import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
-import {
-  Chat,
-  getDocuments,
-  getImages,
-  getTextAndInstructions,
-} from "../chat.js";
-import {
-  AIProvider,
-  AIRequest,
-  AIResponse,
-  StopReason,
-  ToolCall,
-} from "../types.js";
+import { ToolDef } from "../../tools/types.js";
+import { AIProvider, AIRequest, AIResponse, AxleStopReason } from "../types.js";
 import { Models, MULTIMODAL_MODELS } from "./models.js";
+import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
 
 const DEFAULT_MODEL = Models.GEMINI_2_5_FLASH_PREVIEW_05_20;
 
@@ -34,10 +26,7 @@ export class GoogleAIProvider implements AIProvider {
     this.client = new GoogleGenAI({ apiKey: apiKey });
   }
 
-  createChatRequest(
-    chat: Chat,
-    context: { recorder?: Recorder } = {},
-  ): AIRequest {
+  createChatRequest(chat: Chat, context: { recorder?: Recorder } = {}): AIRequest {
     const { recorder } = context;
     if (chat.hasFiles() && !MULTIMODAL_MODELS.includes(this.model as any)) {
       recorder?.warn.log(
@@ -46,6 +35,76 @@ export class GoogleAIProvider implements AIProvider {
     }
     return new GoogleAIChatRequest(this, chat);
   }
+
+  async createGenerationRequest(params: {
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDef>;
+    context: { recorder?: Recorder };
+  }): Promise<AIResponse> {
+    return await createGenerationRequest({
+      client: this.client,
+      model: this.model,
+      ...params,
+    });
+  }
+}
+
+async function createGenerationRequest(params: {
+  client: GoogleGenAI;
+  model: string;
+  messages: Array<AxleMessage>;
+  tools?: Array<ToolDef>;
+  context: { recorder?: Recorder };
+}): Promise<AIResponse> {
+  const { client, model, messages, tools, context } = params;
+  const { recorder } = context;
+
+  const contents = convertAxleMessagesToGoogleAI(messages);
+  const config: GenerateContentConfig = {};
+
+  if (tools && tools.length > 0) {
+    config.tools = tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema) as any;
+      return {
+        functionDeclarations: [
+          {
+            name: tool.name,
+            description: tool.description,
+            parameters: {
+              ...jsonSchema,
+              type: Type.OBJECT,
+            },
+          },
+        ],
+      };
+    });
+  }
+
+  const request = { contents, config };
+  recorder?.debug?.log(request);
+
+  let result: AIResponse;
+  try {
+    const response = await client.models.generateContent({
+      model,
+      ...request,
+    });
+    result = translateResponse(response, { recorder });
+  } catch (e) {
+    recorder?.error?.log(e);
+    result = {
+      type: "error",
+      error: {
+        type: e.name ?? "Undetermined",
+        message: e.message ?? "Unexpected error from Google AI",
+      },
+      usage: { in: 0, out: 0 },
+      raw: e,
+    };
+  }
+
+  recorder?.debug?.log(result);
+  return result;
 }
 
 class GoogleAIChatRequest implements AIRequest {
@@ -87,105 +146,32 @@ class GoogleAIChatRequest implements AIRequest {
 }
 
 export function prepareRequest(chat: Chat) {
-  let contents: string | Content[];
+  const contents = prepareContents(chat);
+  const config = prepareConfig(chat);
 
+  return { contents, config };
+}
+
+function prepareContents(chat: Chat): string | Content[] {
   if (
     chat.messages.length === 1 &&
     chat.messages[0].role == "user" &&
     typeof chat.messages[0].content === "string"
   ) {
     // If there's only one user message with string content, we can send it as a string
-    contents = chat.messages[0].content;
-  } else {
-    contents = chat.messages.map((message) => {
-      if (message.role === "user") {
-        if (typeof message.content === "string") {
-          return { role: "user", parts: [{ text: message.content }] };
-        } else {
-          const parts: any[] = [];
-          const text = getTextAndInstructions(message.content);
-          if (text) {
-            parts.push({ text });
-          }
-
-          const images = getImages(message.content);
-          if (images.length > 0) {
-            parts.push(
-              ...images.map((img) => ({
-                inlineData: {
-                  mimeType: img.mimeType,
-                  data: img.base64,
-                },
-              })),
-            );
-          }
-
-          const documents = getDocuments(message.content);
-          if (documents.length > 0) {
-            parts.push(
-              ...documents.map((doc) => ({
-                inlineData: {
-                  mimeType: doc.mimeType,
-                  data: doc.base64,
-                },
-              })),
-            );
-          }
-
-          return { role: "user", parts };
-        }
-      } else if (message.role === "assistant") {
-        const results: Content = {
-          role: "assistant",
-          parts: [],
-        };
-        if (message.content !== undefined) {
-          results.parts.push({ text: message.content });
-        }
-        if (message.toolCalls) {
-          results.parts = results.parts.concat(
-            message.toolCalls.map((item) => {
-              let parsedArgs: Record<string, unknown>;
-              if (typeof item.arguments === "string") {
-                parsedArgs = JSON.parse(item.arguments) as Record<
-                  string,
-                  unknown
-                >;
-              } else {
-                parsedArgs = item.arguments as Record<string, unknown>;
-              }
-              return {
-                functionCall: {
-                  id: item.id ?? undefined,
-                  name: item.name,
-                  args: parsedArgs,
-                },
-              };
-            }),
-          );
-        }
-        return results;
-      } else if (message.role === "tool") {
-        return {
-          role: "user",
-          parts: message.content.map((item) => ({
-            functionResponse: {
-              id: item.id ?? undefined,
-              name: item.name,
-              response: {
-                output: item.content,
-              },
-            },
-          })),
-        };
-      }
-    });
+    return chat.messages[0].content;
   }
 
+  return convertAxleMessagesToGoogleAI(chat.messages);
+}
+
+function prepareConfig(chat: Chat): GenerateContentConfig {
   const config: GenerateContentConfig = {};
+
   if (chat.system) {
     config.systemInstruction = chat.system;
   }
+
   if (chat.tools.length > 0) {
     config.tools = chat.tools.map((tool) => ({
       functionDeclarations: [
@@ -201,7 +187,7 @@ export function prepareRequest(chat: Chat) {
     }));
   }
 
-  return { contents, config };
+  return config;
 }
 
 function translateResponse(
@@ -251,9 +237,7 @@ function translateResponse(
   }
 
   if (response.candidates.length > 1) {
-    recorder?.warn?.log(
-      `We received ${response.candidates.length} response candidates`,
-    );
+    recorder?.warn?.log(`We received ${response.candidates.length} response candidates`);
   }
 
   const candidate = response.candidates[0];
@@ -263,11 +247,12 @@ function translateResponse(
     .filter((text) => text !== undefined)
     .join("");
 
-  const [success, reason] = getStopReason(candidate.finishReason);
+  const [success, reason] = convertStopReason(candidate.finishReason);
   if (success) {
-    let toolCalls: ToolCall[] | undefined;
+    let toolCalls: ContentPartToolCall[] | undefined;
     if (response.functionCalls) {
       toolCalls = response.functionCalls.map((call) => ({
+        type: "tool-call" as const,
         id: call.id,
         name: call.name,
         arguments: JSON.stringify(call.args),
@@ -277,10 +262,11 @@ function translateResponse(
       type: "success",
       id: response.responseId,
       model: response.modelVersion,
-      reason: response.functionCalls ? StopReason.FunctionCall : reason,
+      reason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
       message: {
+        id: response.responseId,
         role: "assistant",
-        ...(content ? { content } : {}),
+        content: [{ type: "text", text: content }],
         ...(toolCalls ? { toolCalls } : {}),
       },
       usage,
@@ -296,25 +282,5 @@ function translateResponse(
       usage,
       raw: response,
     };
-  }
-}
-
-function getStopReason(reason: FinishReason): [boolean, StopReason] {
-  switch (reason) {
-    case FinishReason.STOP:
-      return [true, StopReason.Stop];
-    case FinishReason.MAX_TOKENS:
-      return [true, StopReason.Length];
-    case FinishReason.FINISH_REASON_UNSPECIFIED:
-    case FinishReason.SAFETY:
-    case FinishReason.RECITATION:
-    case FinishReason.LANGUAGE:
-    case FinishReason.OTHER:
-    case FinishReason.BLOCKLIST:
-    case FinishReason.PROHIBITED_CONTENT:
-    case FinishReason.SPII:
-    case FinishReason.MALFORMED_FUNCTION_CALL:
-    case FinishReason.IMAGE_SAFETY:
-      return [false, StopReason.Error];
   }
 }

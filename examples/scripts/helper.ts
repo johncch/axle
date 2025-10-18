@@ -2,10 +2,11 @@ import { Command, Option } from "commander";
 import { Axle } from "../../src/index.js";
 
 const PROVIDERS = ["openai", "anthropic", "ollama", "googleai"] as const;
+type ProviderNames = (typeof PROVIDERS)[number];
 const INSTRUCT_TYPES = ["instruct", "cot"] as const;
 
 interface CommandOptions {
-  provider: (typeof PROVIDERS)[number];
+  provider: ProviderNames | Array<ProviderNames>;
   model?: string;
   type: (typeof INSTRUCT_TYPES)[number];
 }
@@ -13,7 +14,7 @@ interface CommandOptions {
 const program = new Command();
 program
   .addOption(
-    new Option("-p, --provider <provider>", "LLM provider to use")
+    new Option("-p, --provider <provider...>", "LLM provider to use")
       .choices(PROVIDERS)
       .default("ollama"),
   )
@@ -27,8 +28,37 @@ program
 const options = program.opts() as CommandOptions;
 
 export function getAxle(): Axle {
+  const providers = getProviderOption();
+  const provider = providers[0];
+  const axle = getProvider(provider);
+  console.log(`Using ${axle.provider.name} with model ${axle.provider.model}`);
+  return axle;
+}
+
+export function getAxles(): Array<Axle> {
+  const axles = [];
+  const providers = getProviderOption();
+  for (const provider of providers) {
+    axles.push(getProvider(provider));
+  }
+  return axles;
+}
+
+/**
+ *
+ * @returns Every provider the library supports with the "default" model
+ */
+export function getAllAxles(): Array<Axle> {
+  const axles = [];
+  for (const provider of PROVIDERS) {
+    axles.push(getProvider(provider));
+  }
+  return axles;
+}
+
+function getProvider(provider: ProviderNames): Axle {
   let axle: Axle;
-  switch (options.provider) {
+  switch (provider) {
     case "openai": {
       if (!process.env.OPENAI_API_KEY) {
         console.error("OPENAI_API_KEY not found. Check your .env file");
@@ -78,8 +108,15 @@ export function getAxle(): Axle {
       });
     }
   }
-  console.log(`Using ${axle.provider.name} with model ${axle.provider.model}`);
   return axle;
+}
+
+function getProviderOption(): ProviderNames[] {
+  if (Array.isArray(options.provider)) {
+    return options.provider;
+  } else {
+    return [options.provider];
+  }
 }
 
 export function getOptions(): CommandOptions {

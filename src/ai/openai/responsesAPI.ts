@@ -1,18 +1,13 @@
 import {
   Response,
   ResponseCreateParamsNonStreaming,
-  ResponseInput,
+  ResponseFunctionToolCall,
 } from "openai/resources/responses/responses.js";
+import { Chat, getInstructions } from "../../messages/chat.js";
 import { Recorder } from "../../recorder/recorder.js";
-import {
-  Chat,
-  getDocuments,
-  getImages,
-  getInstructions,
-  getTextContent,
-} from "../chat.js";
-import { AIRequest, AIResponse, StopReason } from "../types.js";
+import { AIRequest, AIResponse, AxleStopReason } from "../types.js";
 import { OpenAIProvider } from "./provider.js";
+import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
 
 export class OpenAIResponsesAPI implements AIRequest {
   constructor(
@@ -51,89 +46,10 @@ export class OpenAIResponsesAPI implements AIRequest {
   }
 }
 
-export function prepareRequest(
-  chat: Chat,
-  model: string,
-): ResponseCreateParamsNonStreaming {
-  const input: ResponseInput = chat.messages
-    .map((msg) => {
-      if (msg.role === "tool") {
-        return msg.content.map((r) => ({
-          type: "function_call_output" as const,
-          call_id: r.id,
-          output: r.content,
-        }));
-      }
-
-      if (msg.role === "assistant") {
-        const toolCalls = msg.toolCalls?.map((call) => {
-          const id = call.id;
-          return {
-            type: "function",
-            function: {
-              name: call.name,
-              arguments:
-                typeof call.arguments === "string"
-                  ? call.arguments
-                  : JSON.stringify(call.arguments),
-            },
-            ...(id && { id }),
-          };
-        });
-        return {
-          role: msg.role,
-          content: msg.content,
-          ...(toolCalls && { toolCalls }),
-        };
-      }
-
-      if (typeof msg.content === "string") {
-        return {
-          role: msg.role,
-          content: msg.content,
-        };
-      } else {
-        const content: any[] = [];
-        const textContent = getTextContent(msg.content);
-        if (textContent) {
-          content.push({
-            type: "input_text",
-            text: textContent,
-          });
-        }
-
-        const images = getImages(msg.content);
-        if (images.length > 0) {
-          content.push(
-            ...images.map((img) => ({
-              type: "input_image",
-              image_url: `data:${img.mimeType};base64,${img.base64}`,
-            })),
-          );
-        }
-
-        const documents = getDocuments(msg.content);
-        if (documents.length > 0) {
-          content.push(
-            ...documents.map((doc) => ({
-              type: "input_file",
-              filename: doc.path,
-              file_data: `data:${doc.mimeType};base64,${doc.base64}`,
-            })),
-          );
-        }
-
-        return {
-          role: msg.role,
-          content,
-        };
-      }
-    })
-    .flat(1);
-
+export function prepareRequest(chat: Chat, model: string): ResponseCreateParamsNonStreaming {
   const request: ResponseCreateParamsNonStreaming = {
     model,
-    input,
+    input: convertAxleMessageToResponseInput(chat.messages),
   };
 
   const mostRecentMessage = chat.latest();
@@ -162,7 +78,7 @@ export function prepareRequest(
   return request;
 }
 
-function translateResponseToAIResponse(response: Response): AIResponse {
+export function translateResponseToAIResponse(response: Response): AIResponse {
   if (response.error) {
     return {
       type: "error",
@@ -178,21 +94,24 @@ function translateResponseToAIResponse(response: Response): AIResponse {
     };
   }
 
+  // TODO: Refactor Messages to hold function calls
   const toolCalls = response.output
     ?.filter((item) => item.type === "function_call")
-    ?.map((item: any) => ({
+    ?.map((item: ResponseFunctionToolCall) => ({
+      type: "tool-call" as const,
       id: item.id || "",
-      name: item.function?.name || "",
-      arguments: item.function?.arguments || "",
+      name: item.name || "",
+      arguments: item.arguments || "",
     }));
 
   return {
     type: "success",
     id: response.id,
     model: response.model || "",
-    reason: response.incomplete_details ? StopReason.Error : StopReason.Stop,
+    reason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
     message: {
-      content: response.output_text || "",
+      id: response.id,
+      content: [{ type: "text", text: response.output_text || "" }],
       role: "assistant" as const,
       ...(toolCalls?.length && { toolCalls }),
     },

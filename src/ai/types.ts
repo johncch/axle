@@ -1,7 +1,9 @@
+import { Chat } from "../messages/chat.js";
+import { AxleAssistantMessage, AxleMessage, ContentPartToolCall } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
+import { ToolDef } from "../tools/types.js";
+// import { ToolDef } from "../tools/types.js";
 import { Stats } from "../types.js";
-import { FileInfo } from "../utils/file.js";
-import { Chat } from "./chat.js";
 
 /*
  Vendor specific configuration
@@ -26,16 +28,21 @@ export interface AIProvider {
   get name(): string;
   get model(): string;
   createChatRequest(chat: Chat, context: { recorder?: Recorder }): AIRequest;
+  createGenerationRequest(params: {
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDef>;
+    context: { recorder?: Recorder };
+  }): Promise<AIResponse>;
+
+  // createStreamingRequest(params: {
+  //   messages: Array<AxleMessage>;
+  //   tools?: Array<ToolDef>;
+  //   context: { recorder?: Recorder };
+  // }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 
 export interface AIRequest {
   execute(runtime: { recorder?: Recorder }): Promise<AIResponse>;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: string | Record<string, unknown>;
 }
 
 export type AIResponse = AISuccessResponse | AIErrorResponse;
@@ -43,10 +50,10 @@ export type AIResponse = AISuccessResponse | AIErrorResponse;
 export interface AISuccessResponse {
   type: "success";
   id: string;
-  reason: StopReason;
-  message: ChatItemAssistant;
+  reason: AxleStopReason;
+  message: AxleAssistantMessage;
   model: string;
-  toolCalls?: ToolCall[];
+  toolCalls?: ContentPartToolCall[];
   usage: Stats;
   raw: any;
 }
@@ -61,54 +68,9 @@ export interface AIErrorResponse {
   raw: any;
 }
 
-export enum StopReason {
+export enum AxleStopReason {
   Stop,
   Length,
   FunctionCall,
   Error,
-}
-
-export type ChatItem = ChatItemUser | ChatItemAssistant | ChatItemToolCall;
-
-export interface ChatItemUser {
-  role: "user";
-  name?: string;
-  content: string | ChatContent[];
-}
-
-export interface ChatItemAssistant {
-  role: "assistant";
-  content?: string;
-  toolCalls?: ToolCall[];
-}
-
-export interface ChatItemToolCallResult {
-  id: string;
-  name: string;
-  content: string;
-}
-
-export interface ChatItemToolCall {
-  role: "tool";
-  content: Array<ChatItemToolCallResult>;
-}
-
-export type ChatContent =
-  | ChatContentText
-  | ChatContentFile
-  | ChatContentInstructions;
-
-export interface ChatContentText {
-  type: "text";
-  text: string;
-}
-
-export interface ChatContentInstructions {
-  type: "instructions";
-  instructions: string;
-}
-
-export interface ChatContentFile {
-  type: "file";
-  file: FileInfo;
 }

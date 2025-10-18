@@ -1,14 +1,11 @@
 import { ChatCompletionTool } from "openai/resources";
+import { Chat } from "../../messages/chat.js";
+import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
-import { Chat, getImages, getTextAndInstructions } from "../chat.js";
-import {
-  AIProvider,
-  AIRequest,
-  AIResponse,
-  StopReason,
-  ToolCall,
-} from "../types.js";
-import { OllamaMessage, OllamaRequest, OllamaSystemMessage } from "./types.js";
+import { ToolDef } from "../../tools/types.js";
+import { AIProvider, AIRequest, AIResponse, AxleStopReason } from "../types.js";
+import { OllamaRequest, OllamaSystemMessage } from "./types.js";
+import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
@@ -23,10 +20,7 @@ export class OllamaProvider implements AIProvider {
     this.model = model;
   }
 
-  createChatRequest(
-    chat: Chat,
-    context: { recorder?: Recorder } = {},
-  ): AIRequest {
+  createChatRequest(chat: Chat, context: { recorder?: Recorder } = {}): AIRequest {
     const { recorder } = context;
     if (chat.hasFiles()) {
       recorder?.warn?.log(
@@ -35,6 +29,78 @@ export class OllamaProvider implements AIProvider {
     }
     return new OllamaChatCompletionRequest(this.url, this.model, chat);
   }
+
+  async createGenerationRequest(params: {
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDef>;
+    context: { recorder?: Recorder };
+  }): Promise<AIResponse> {
+    return await createGenerationRequest({
+      url: this.url,
+      model: this.model,
+      ...params,
+    });
+  }
+}
+
+async function createGenerationRequest(params: {
+  url: string;
+  model: string;
+  messages: Array<AxleMessage>;
+  tools?: Array<ToolDef>;
+  context: { recorder?: Recorder };
+}): Promise<AIResponse> {
+  const { url, model, messages, tools, context } = params;
+  const { recorder } = context;
+
+  const chatTools = convertToolDefToOllama(tools);
+
+  const requestBody = {
+    model,
+    messages: convertAxleMessagesToOllama(messages),
+    stream: false,
+    options: {
+      temperature: 0.7,
+    },
+    ...(chatTools && { tools: chatTools }),
+  };
+
+  recorder?.debug?.log(requestBody);
+
+  let result: AIResponse;
+  try {
+    const response = await fetch(`${url}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    result = translateResponse(data);
+  } catch (e) {
+    recorder?.error?.log("Error fetching Ollama response:", e);
+    result = {
+      type: "error",
+      error: {
+        type: "OllamaError",
+        message: e.message || "Unexpected error from Ollama",
+      },
+      usage: {
+        in: 0,
+        out: 0,
+      },
+      raw: JSON.stringify(e),
+    };
+  }
+
+  recorder?.debug?.log(result);
+  return result;
 }
 
 class OllamaChatCompletionRequest implements AIRequest {
@@ -105,72 +171,9 @@ class OllamaChatCompletionRequest implements AIRequest {
  * @returns
  */
 export function prepareRequest(chat: Chat, model: string): OllamaRequest {
-  const systemMsg: OllamaSystemMessage[] = [];
-  if (chat.system) {
-    systemMsg.push({
-      role: "system",
-      content: chat.system,
-    });
-  }
-
-  let tools: ChatCompletionTool[] | undefined = undefined;
-  if (chat.tools.length > 0) {
-    tools = chat.tools.map((schema) => {
-      return {
-        type: "function",
-        function: schema,
-      };
-    });
-  }
-
-  const messages: OllamaMessage[] = chat.messages
-    .map((msg) => {
-      if (msg.role === "tool") {
-        return msg.content.map((r) => ({
-          role: "tool" as const,
-          tool_call_id: r.id,
-          content: r.content,
-        }));
-      }
-
-      if (msg.role === "assistant") {
-        const toolCalls = msg.toolCalls?.map((call) => {
-          const id = call.id;
-          return {
-            type: "function",
-            function: {
-              name: call.name,
-              arguments: call.arguments,
-            },
-            ...(id && { id }),
-          };
-        });
-        return {
-          role: msg.role,
-          content: msg.content,
-          ...(toolCalls && { toolCalls }),
-        };
-      }
-
-      if (typeof msg.content === "string") {
-        return {
-          role: msg.role,
-          content: msg.content,
-        };
-      } else {
-        const content = getTextAndInstructions(msg.content);
-        const images = getImages(msg.content).map((img) => img.base64);
-
-        return {
-          role: msg.role,
-          content,
-          ...(images.length > 0 && {
-            images: images,
-          }),
-        };
-      }
-    })
-    .flat(1);
+  const systemMsg = prepareSystemMessage(chat);
+  const tools = prepareTools(chat);
+  const messages = convertAxleMessagesToOllama(chat.messages);
 
   return {
     model,
@@ -179,13 +182,38 @@ export function prepareRequest(chat: Chat, model: string): OllamaRequest {
   };
 }
 
+function prepareSystemMessage(chat: Chat): OllamaSystemMessage[] {
+  if (!chat.system) {
+    return [];
+  }
+
+  return [
+    {
+      role: "system",
+      content: chat.system,
+    },
+  ];
+}
+
+function prepareTools(chat: Chat): ChatCompletionTool[] | undefined {
+  if (chat.tools.length === 0) {
+    return undefined;
+  }
+
+  return chat.tools.map((schema) => ({
+    type: "function",
+    function: schema,
+  }));
+}
+
 function translateResponse(data: any): AIResponse {
   if (data.done_reason === "stop" && data.message) {
     const content = data.message.content;
-    const toolCalls: ToolCall[] = [];
+    const toolCalls: ContentPartToolCall[] = [];
     if (data.message.tool_calls) {
       for (const call of data.message.tool_calls) {
         toolCalls.push({
+          type: "tool-call",
           id: call.id,
           name: call.function.name,
           arguments: call.function.arguments,
@@ -198,10 +226,11 @@ function translateResponse(data: any): AIResponse {
       type: "success",
       id: `ollama-${Date.now()}`,
       model: data.model,
-      reason: hasToolCalls ? StopReason.FunctionCall : StopReason.Stop,
+      reason: hasToolCalls ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
       message: {
+        id: `ollama-${Date.now()}`,
         role: "assistant",
-        content,
+        content: [{ type: "text", text: content }],
         ...(hasToolCalls && { toolCalls }),
       },
       usage: {

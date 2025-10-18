@@ -1,15 +1,11 @@
-import { ToolCall } from "../types.js";
+import { ContentPartToolCall } from "../../messages/types.js";
 
 export interface OllamaRequest {
   model: string;
   messages: OllamaMessage[];
 }
 
-export type OllamaMessage =
-  | OllamaUserMessage
-  | OllamaAsistantMessage
-  | OllamaSystemMessage
-  | OllamaToolMessage;
+export type OllamaMessage = OllamaUserMessage | OllamaAsistantMessage | OllamaSystemMessage | OllamaToolMessage;
 
 export interface OllamaUserMessage {
   role: "user";
@@ -20,7 +16,7 @@ export interface OllamaUserMessage {
 export interface OllamaAsistantMessage {
   role: "assistant";
   content: string;
-  tool_calls?: ToolCall[];
+  tool_calls?: ContentPartToolCall[];
 }
 
 export interface OllamaSystemMessage {
