@@ -5,10 +5,16 @@ import { Chat } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
-import { AIProvider, AIRequest, AIResponse } from "../types.js";
-import { OpenAIChatCompletionRequest, translateResponse as translateChatCompletionResponse } from "./chatCompletion.js";
+import { AIProvider, AIRequest, GenerationResult } from "../types.js";
+import {
+  fromModelResponse as fromChatCompletionResponse,
+  OpenAIChatCompletionRequest,
+} from "./chatCompletion.js";
 import { Models, RESPONSES_API_MODELS } from "./models.js";
-import { OpenAIResponsesAPI, translateResponseToAIResponse as translateResponsesAPIResponse } from "./responsesAPI.js";
+import {
+  fromModelResponse as fromResponsesAPIResponse,
+  OpenAIResponsesAPI,
+} from "./responsesAPI.js";
 import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
 import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
 
@@ -37,7 +43,7 @@ export class OpenAIProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDef>;
     context: { recorder?: Recorder };
-  }): Promise<AIResponse> {
+  }): Promise<GenerationResult> {
     const useResponsesAPI = (RESPONSES_API_MODELS as readonly string[]).includes(this.model);
 
     if (useResponsesAPI) {
@@ -70,7 +76,7 @@ async function createGenerationRequestWithResponsesAPI(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDef>;
   context: { recorder?: Recorder };
-}): Promise<AIResponse> {
+}): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -94,10 +100,10 @@ async function createGenerationRequestWithResponsesAPI(params: {
 
   recorder?.debug?.log(request);
 
-  let result: AIResponse;
+  let result: GenerationResult;
   try {
     const response = await client.responses.create(request);
-    result = translateResponsesAPIResponse(response);
+    result = fromResponsesAPIResponse(response);
   } catch (e) {
     recorder?.error?.log(e);
     result = {
@@ -121,7 +127,7 @@ async function createGenerationRequestWithChatCompletion(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDef>;
   context: { recorder?: Recorder };
-}): Promise<AIResponse> {
+}): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -148,10 +154,10 @@ async function createGenerationRequestWithChatCompletion(params: {
 
   recorder?.debug?.log(request);
 
-  let result: AIResponse;
+  let result: GenerationResult;
   try {
     const completion = await client.chat.completions.create(request);
-    result = translateChatCompletionResponse(completion);
+    result = fromChatCompletionResponse(completion);
   } catch (e) {
     recorder?.error?.log(e);
     result = {

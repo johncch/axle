@@ -1,5 +1,10 @@
 import { Chat } from "../messages/chat.js";
-import { AxleAssistantMessage, AxleMessage, ContentPartToolCall } from "../messages/types.js";
+import {
+  AxleMessage,
+  ContentPartText,
+  ContentPartThinking,
+  ContentPartToolCall,
+} from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
 import { ToolDef } from "../tools/types.js";
 // import { ToolDef } from "../tools/types.js";
@@ -32,7 +37,7 @@ export interface AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDef>;
     context: { recorder?: Recorder };
-  }): Promise<AIResponse>;
+  }): Promise<GenerationResult>;
 
   // createStreamingRequest(params: {
   //   messages: Array<AxleMessage>;
@@ -42,23 +47,25 @@ export interface AIProvider {
 }
 
 export interface AIRequest {
-  execute(runtime: { recorder?: Recorder }): Promise<AIResponse>;
+  execute(runtime: { recorder?: Recorder }): Promise<GenerationResult>;
 }
 
-export type AIResponse = AISuccessResponse | AIErrorResponse;
+export type GenerationResult = GenerationSuccessResult | GenerationErrorResult;
 
-export interface AISuccessResponse {
+export interface GenerationSuccessResult {
   type: "success";
+  role: "assistant";
   id: string;
-  reason: AxleStopReason;
-  message: AxleAssistantMessage;
   model: string;
+  text: string;
+  content: Array<ContentPartText | ContentPartThinking>;
+  reason: AxleStopReason;
   toolCalls?: ContentPartToolCall[];
   usage: Stats;
   raw: any;
 }
 
-export interface AIErrorResponse {
+export interface GenerationErrorResult {
   type: "error";
   error: {
     type: string;
@@ -73,4 +80,5 @@ export enum AxleStopReason {
   Length,
   FunctionCall,
   Error,
+  Custom,
 }

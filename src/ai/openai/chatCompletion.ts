@@ -4,10 +4,10 @@ import {
   ChatCompletionSystemMessageParam,
   ChatCompletionTool,
 } from "openai/resources";
-import { Chat } from "../../messages/chat.js";
+import { Chat, getTextContent } from "../../messages/chat.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { convertStopReason } from "../anthropic/utils.js";
-import { AIRequest, AIResponse } from "../types.js";
+import { AIRequest, GenerationResult } from "../types.js";
 import { OpenAIProvider } from "./provider.js";
 import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
 
@@ -17,17 +17,17 @@ export class OpenAIChatCompletionRequest implements AIRequest {
     private chat: Chat,
   ) {}
 
-  async execute(runtime: { recorder?: Recorder }): Promise<AIResponse> {
+  async execute(runtime: { recorder?: Recorder }): Promise<GenerationResult> {
     const { recorder } = runtime;
     const { client, model } = this.provider;
     const request = prepareRequest(this.chat, model);
     recorder?.debug?.heading.log("[Open AI Provider] Using the ChatCompletion API");
     recorder?.debug?.log(request);
 
-    let result: AIResponse;
+    let result: GenerationResult;
     try {
       const completion = await client.chat.completions.create(request);
-      result = translateResponse(completion);
+      result = fromModelResponse(completion);
     } catch (e) {
       recorder?.error?.log(e);
       result = {
@@ -74,7 +74,9 @@ export function prepareRequest(chat: Chat, model: string): ChatCompletionCreateP
   };
 }
 
-export function translateResponse(completion: OpenAI.Chat.Completions.ChatCompletion): AIResponse {
+export function fromModelResponse(
+  completion: OpenAI.Chat.Completions.ChatCompletion,
+): GenerationResult {
   if (completion.choices.length > 0) {
     const choice = completion.choices[0];
     const toolCalls = choice.message.tool_calls
@@ -86,17 +88,16 @@ export function translateResponse(completion: OpenAI.Chat.Completions.ChatComple
         arguments: call.function.arguments,
       }));
 
+    const contentParts = [{ type: "text" as const, text: choice.message.content ?? "" }];
     return {
       type: "success",
       id: completion.id,
       model: completion.model,
+      role: choice.message.role,
       reason: convertStopReason(choice.finish_reason),
-      message: {
-        id: completion.id,
-        content: [{ type: "text", text: choice.message.content ?? "" }],
-        role: choice.message.role,
-        toolCalls: toolCalls,
-      },
+      content: contentParts,
+      text: getTextContent(contentParts) ?? "",
+      toolCalls: toolCalls,
       usage: {
         in: completion.usage?.prompt_tokens ?? 0,
         out: completion.usage?.completion_tokens ?? 0,

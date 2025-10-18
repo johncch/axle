@@ -3,9 +3,9 @@ import {
   ResponseCreateParamsNonStreaming,
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses.js";
-import { Chat, getInstructions } from "../../messages/chat.js";
+import { Chat, getInstructions, getTextContent } from "../../messages/chat.js";
 import { Recorder } from "../../recorder/recorder.js";
-import { AIRequest, AIResponse, AxleStopReason } from "../types.js";
+import { AIRequest, AxleStopReason, GenerationResult } from "../types.js";
 import { OpenAIProvider } from "./provider.js";
 import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
 
@@ -15,17 +15,17 @@ export class OpenAIResponsesAPI implements AIRequest {
     private chat: Chat,
   ) {}
 
-  async execute(runtime: { recorder?: Recorder }): Promise<AIResponse> {
+  async execute(runtime: { recorder?: Recorder }): Promise<GenerationResult> {
     const { recorder } = runtime;
     const { client, model } = this.provider;
     const request = prepareRequest(this.chat, model);
     recorder?.debug?.heading.log("[Open AI Provider] Using the Responses API");
     recorder?.debug?.log(request);
 
-    let result: AIResponse;
+    let result: GenerationResult;
     try {
       const response = await client.responses.create(request);
-      result = translateResponseToAIResponse(response);
+      result = fromModelResponse(response);
     } catch (e) {
       recorder?.error?.log(e);
       result = {
@@ -78,7 +78,7 @@ export function prepareRequest(chat: Chat, model: string): ResponseCreateParamsN
   return request;
 }
 
-export function translateResponseToAIResponse(response: Response): AIResponse {
+export function fromModelResponse(response: Response): GenerationResult {
   if (response.error) {
     return {
       type: "error",
@@ -104,17 +104,16 @@ export function translateResponseToAIResponse(response: Response): AIResponse {
       arguments: item.arguments || "",
     }));
 
+  const contentParts = [{ type: "text" as const, text: response.output_text || "" }];
   return {
     type: "success",
     id: response.id,
     model: response.model || "",
+    role: "assistant" as const,
     reason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
-    message: {
-      id: response.id,
-      content: [{ type: "text", text: response.output_text || "" }],
-      role: "assistant" as const,
-      ...(toolCalls?.length && { toolCalls }),
-    },
+    content: contentParts,
+    text: getTextContent(contentParts) ?? "",
+    ...(toolCalls?.length && { toolCalls }),
     usage: {
       in: response.usage?.input_tokens ?? 0,
       out: response.usage?.output_tokens ?? 0,

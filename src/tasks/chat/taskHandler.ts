@@ -1,13 +1,8 @@
 import * as z from "zod";
-import { Chat } from "../../ai/chat.js";
-import {
-  AIProvider,
-  ChatItemAssistant,
-  ChatItemToolCallResult,
-  StopReason,
-  ToolCall,
-} from "../../ai/types.js";
+import { AIProvider, AxleStopReason } from "../../ai/types.js";
 import { Instruct } from "../../core/Instruct.js";
+import { Chat, getTextContent } from "../../messages/chat.js";
+import { AxleToolCallResult, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { TaskHandler } from "../../registry/taskHandler.js";
 import { ToolExecutable, ToolSchema } from "../../tools/types.js";
@@ -16,18 +11,11 @@ import { Keys, setResultsIntoVariables } from "../../utils/variables.js";
 
 type SchemaRecord = Record<string, z.ZodTypeAny>;
 
-export class ChatTaskHandler<T extends SchemaRecord>
-  implements TaskHandler<Instruct<T>>
-{
+export class ChatTaskHandler<T extends SchemaRecord> implements TaskHandler<Instruct<T>> {
   readonly taskType = "instruct";
 
   canHandle(task: any): task is Instruct<T> {
-    return (
-      task &&
-      typeof task === "object" &&
-      "type" in task &&
-      task.type === "instruct"
-    );
+    return task && typeof task === "object" && "type" in task && task.type === "instruct";
   }
 
   async execute(params: {
@@ -56,8 +44,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
   options?: ProgramOptions;
   recorder?: Recorder;
 }) {
-  const { instruct, chat, provider, stats, variables, options, recorder } =
-    params;
+  const { instruct, chat, provider, stats, variables, options, recorder } = params;
 
   if (instruct.system) {
     chat.addSystem(instruct.system);
@@ -95,38 +82,43 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
 
     if (response.type === "success") {
       switch (response.reason) {
-        case StopReason.Stop: {
-          if (response.message.content) {
-            const content = response.message.content;
-            chat.addAssistant(content);
-            const result = instruct.finalize(content, { recorder });
-            setResultsIntoVariables(
-              result as Record<string, unknown>,
-              variables,
-              { options, recorder },
-            );
+        case AxleStopReason.Stop: {
+          if (response.content) {
+            const content = response.content;
+            chat.addAssistant({
+              id: response.id,
+              model: response.model,
+              content: response.content,
+              finishReason: response.reason,
+            });
+            const textContent = getTextContent(content);
+            chat.addAssistant(textContent);
+            const result = instruct.finalize(textContent, { recorder });
+            setResultsIntoVariables(result as Record<string, unknown>, variables, {
+              options,
+              recorder,
+            });
             variables[Keys.LastResult] = result;
           }
           continueProcessing = false;
           return { action: "continue" };
         }
-        case StopReason.Length: {
-          throw new Error(
-            "Incomplete model output due to `max_tokens` parameter or token limit",
-          );
+        case AxleStopReason.Length: {
+          throw new Error("Incomplete model output due to `max_tokens` parameter or token limit");
         }
-        case StopReason.FunctionCall: {
-          let message = response.message as ChatItemAssistant;
-          if (response.message) {
-            chat.addAssistant(message.content, message.toolCalls);
+        case AxleStopReason.FunctionCall: {
+          if (response.content) {
+            chat.addAssistant({
+              id: response.id,
+              model: response.model,
+              content: response.content,
+              finishReason: response.reason,
+              toolCalls: response.toolCalls,
+            });
           }
 
-          if (message.toolCalls && message.toolCalls.length > 0) {
-            const results = await executeToolCalls(
-              message.toolCalls,
-              instruct,
-              { recorder },
-            );
+          if (response.toolCalls && response.toolCalls.length > 0) {
+            const results = await executeToolCalls(response.toolCalls, instruct, { recorder });
             recorder?.debug?.log(results);
             chat.addTools(results);
 
@@ -149,10 +141,10 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
 }
 
 async function executeToolCalls<T extends SchemaRecord>(
-  toolCalls: ToolCall[],
+  toolCalls: ContentPartToolCall[],
   instruct: Instruct<T>,
   runtime: { recorder?: Recorder } = {},
-): Promise<ChatItemToolCallResult[]> {
+): Promise<AxleToolCallResult[]> {
   const { recorder } = runtime;
   const promises = [];
   for (const call of toolCalls) {
@@ -167,14 +159,9 @@ async function executeToolCalls<T extends SchemaRecord>(
 
         let args: Record<string, any> = {};
         try {
-          args =
-            typeof call.arguments === "string"
-              ? JSON.parse(call.arguments)
-              : call.arguments;
+          args = typeof call.arguments === "string" ? JSON.parse(call.arguments) : call.arguments;
         } catch {
-          reject(
-            `argument for tool ${call.name} is not valid: ${JSON.stringify(call.arguments)}`,
-          );
+          reject(`argument for tool ${call.name} is not valid: ${JSON.stringify(call.arguments)}`);
         }
 
         tool

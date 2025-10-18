@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import { z } from "zod";
-import { Axle, stream } from "../../src/index.js";
+import { Axle } from "../../src/index.js";
 config();
 
 const axle = new Axle({
@@ -18,16 +18,16 @@ const callNameTool = {
   }),
 };
 
-const result = stream({
-  provider: axle.provider,
-  messages: [
-    {
-      role: "user",
-      content: "Please say hello and then call the setName function with your name",
-    },
-  ],
-  tools: [callNameTool],
-});
+// const result = stream({
+//   provider: axle.provider,
+//   messages: [
+//     {
+//       role: "user",
+//       content: "Please say hello and then call the setName function with your name",
+//     },
+//   ],
+//   tools: [callNameTool],
+// });
 
 // result.stream.on("text", (text) => {
 //   console.log(`text: ${text}`);
@@ -71,7 +71,7 @@ const tools = [callNameTool];
 // }
 
 // Example 3: Message building consumption
-const result3 = stream({ provider, messages, tools });
+// const result3 = stream({ provider, messages, tools });
 
 // Get partial message as it builds
 // setInterval(() => {
@@ -80,8 +80,8 @@ const result3 = stream({ provider, messages, tools });
 // }, 100);
 
 // Get final complete message
-const finalMessage = await result3.message;
-console.log("Final:", finalMessage);
+// const finalMessage = await result3.message;
+// console.log("Final:", finalMessage);
 
 // // Example 4: Mixed consumption patterns
 // const result4 = stream({ provider, messages, tools });

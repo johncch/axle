@@ -26,5 +26,12 @@ for (const axle of axles) {
     tools: [callNameTool],
   });
 
-  console.log(JSON.stringify(result, null, 2));
+  console.log(`[RUN] ${axle.provider.name}, ${axle.provider.model}`);
+  console.log(`Result: ${result.type}`);
+  if (result.type === "success") {
+    console.log(`Text: ${result.text}`);
+  } else {
+    console.log(result.error.message);
+  }
+  console.log("");
 }

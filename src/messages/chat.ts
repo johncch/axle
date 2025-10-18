@@ -8,8 +8,17 @@ import {
   ContentPartFile,
   ContentPartInstructions,
   ContentPartText,
+  ContentPartThinking,
   ContentPartToolCall,
 } from "./types.js";
+
+interface ChatAssistantParams {
+  id: string;
+  model: string;
+  content: Array<ContentPartText | ContentPartThinking>;
+  finishReason: AxleStopReason;
+  toolCalls?: ContentPartToolCall[];
+}
 
 export class Chat {
   system: string;
@@ -58,23 +67,24 @@ export class Chat {
     this.messages.push({ role: "user", content });
   }
 
-  addAssistant(
-    message: string,
-    toolCalls?: ContentPartToolCall[],
-    metadata?: {
-      id?: string;
-      model: string;
-      finishReason: AxleStopReason;
-    },
-  ) {
-    this.messages.push({
-      id: metadata.id ?? crypto.randomUUID(),
-      role: "assistant",
-      content: [{ type: "text", text: message }],
-      model: metadata.model,
-      finishReason: metadata.finishReason,
-      ...(toolCalls && { toolCalls }),
-    });
+  addAssistant(message: string);
+  addAssistant(params: ChatAssistantParams);
+  addAssistant(obj: string | ChatAssistantParams): void {
+    if (typeof obj === "string") {
+      const text = obj as string;
+      this.messages.push({
+        role: "assistant",
+        id: crypto.randomUUID(),
+        content: [{ type: "text", text }],
+        model: "user",
+        finishReason: AxleStopReason.Custom,
+      });
+    } else {
+      this.messages.push({
+        role: "assistant",
+        ...obj,
+      });
+    }
   }
 
   addTools(input: Array<AxleToolCallResult>) {
@@ -85,7 +95,9 @@ export class Chat {
   }
 
   hasFiles(): boolean {
-    return this.messages.some((msg) => Array.isArray(msg.content) && msg.content.some((item) => item.type === "file"));
+    return this.messages.some(
+      (msg) => Array.isArray(msg.content) && msg.content.some((item) => item.type === "file"),
+    );
   }
 
   latest(): AxleMessage | undefined {
@@ -103,12 +115,17 @@ export class Chat {
 
 /* Helper methods for getting data out of content */
 
-export function getTextAndInstructions(content: string | ContentPart[], delimiter: string = "\n\n"): string | null {
+export function getTextAndInstructions(
+  content: string | ContentPart[],
+  delimiter: string = "\n\n",
+): string | null {
   if (typeof content === "string") {
     return content;
   }
 
-  const textParts = content.filter((item) => item.type === "text").map((item) => (item as ContentPartText).text);
+  const textParts = content
+    .filter((item) => item.type === "text")
+    .map((item) => (item as ContentPartText).text);
 
   const instructionsParts = content
     .filter((item) => item.type === "instructions")
@@ -171,5 +188,7 @@ export function getFiles(content: string | ContentPart[]): FileInfo[] {
     return [];
   }
 
-  return content.filter((item) => item.type === "file").map((item) => (item as ContentPartFile).file);
+  return content
+    .filter((item) => item.type === "file")
+    .map((item) => (item as ContentPartFile).file);
 }

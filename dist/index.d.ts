@@ -169,6 +169,13 @@ interface ContentPartToolCall {
     arguments: string | Record<string, unknown>;
 }
 
+interface ChatAssistantParams {
+    id: string;
+    model: string;
+    content: Array<ContentPartText | ContentPartThinking>;
+    finishReason: AxleStopReason;
+    toolCalls?: ContentPartToolCall[];
+}
 declare class Chat {
     system: string;
     messages: AxleMessage[];
@@ -179,11 +186,8 @@ declare class Chat {
     addUser(message: string, instruction: string): void;
     addUser(message: string, instruction: string, files: FileInfo[]): void;
     addUser(message: string, files: FileInfo[]): any;
-    addAssistant(message: string, toolCalls?: ContentPartToolCall[], metadata?: {
-        id?: string;
-        model: string;
-        finishReason: AxleStopReason;
-    }): void;
+    addAssistant(message: string): any;
+    addAssistant(params: ChatAssistantParams): any;
     addTools(input: Array<AxleToolCallResult>): void;
     hasFiles(): boolean;
     latest(): AxleMessage | undefined;
@@ -224,25 +228,27 @@ interface AIProvider {
         context: {
             recorder?: Recorder;
         };
-    }): Promise<AIResponse>;
+    }): Promise<GenerationResult>;
 }
 interface AIRequest {
     execute(runtime: {
         recorder?: Recorder;
-    }): Promise<AIResponse>;
+    }): Promise<GenerationResult>;
 }
-type AIResponse = AISuccessResponse | AIErrorResponse;
-interface AISuccessResponse {
+type GenerationResult = GenerationSuccessResult | GenerationErrorResult;
+interface GenerationSuccessResult {
     type: "success";
+    role: "assistant";
     id: string;
-    reason: AxleStopReason;
-    message: AxleAssistantMessage;
     model: string;
+    text: string;
+    content: Array<ContentPartText | ContentPartThinking>;
+    reason: AxleStopReason;
     toolCalls?: ContentPartToolCall[];
     usage: Stats;
     raw: any;
 }
-interface AIErrorResponse {
+interface GenerationErrorResult {
     type: "error";
     error: {
         type: string;
@@ -255,7 +261,8 @@ declare enum AxleStopReason {
     Stop = 0,
     Length = 1,
     FunctionCall = 2,
-    Error = 3
+    Error = 3,
+    Custom = 4
 }
 
 declare class AxleError extends Error {
@@ -354,7 +361,7 @@ interface GenerateProps {
     tools?: Array<ToolDef>;
     recorder?: Recorder;
 }
-declare function generate(props: GenerateProps): Promise<AIResponse>;
+declare function generate(props: GenerateProps): Promise<GenerationResult>;
 
 declare enum ResultType {
     String = "string",

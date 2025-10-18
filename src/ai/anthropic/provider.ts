@@ -1,10 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Recorder } from "../../recorder/recorder.js";
 
-import { Chat } from "../../messages/chat.js";
+import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDef } from "../../tools/types.js";
-import { AIProvider, AIRequest, AIResponse, AxleStopReason } from "../types.js";
+import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
 import { Models, MULTIMODAL_MODELS } from "./models.js";
 import {
   convertStopReason,
@@ -43,7 +43,7 @@ export class AnthropicProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDef>;
     context: { recorder?: Recorder };
-  }): Promise<AIResponse> {
+  }): Promise<GenerationResult> {
     return await createGenerationRequest({ client: this.client, model: this.model, ...params });
   }
 
@@ -69,7 +69,7 @@ async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDef>;
   context?: { recorder?: Recorder };
-}): Promise<AIResponse> {
+}): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
   const request = {
@@ -80,7 +80,7 @@ async function createGenerationRequest(params: {
   };
   recorder?.debug?.log(request);
 
-  let result: AIResponse;
+  let result: GenerationResult;
   try {
     const completion = await client.messages.create(request);
     result = convertToAIResponse(completion);
@@ -116,7 +116,7 @@ class AnthropicChatRequest implements AIRequest {
     };
     recorder?.debug?.log(request);
 
-    let result: AIResponse;
+    let result: GenerationResult;
     try {
       const completion = await client.messages.create(request);
       result = convertToAIResponse(completion);
@@ -137,7 +137,7 @@ class AnthropicChatRequest implements AIRequest {
   }
 }
 
-function convertToAIResponse(completion: Anthropic.Messages.Message): AIResponse {
+function convertToAIResponse(completion: Anthropic.Messages.Message): GenerationResult {
   const stopReason = convertStopReason(completion.stop_reason);
   if (stopReason === AxleStopReason.Error) {
     return {
@@ -155,17 +155,16 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): AIResponse
   }
 
   if (stopReason === AxleStopReason.FunctionCall) {
+    const content = convertToAxleContentParts(completion.content);
     return {
       type: "success",
       id: completion.id,
       model: completion.model,
+      role: completion.role,
       reason: AxleStopReason.FunctionCall,
-      message: {
-        id: completion.id,
-        role: completion.role,
-        content: convertToAxleContentParts(completion.content),
-        toolCalls: convertToAxleToolCalls(completion.content),
-      },
+      content,
+      text: getTextContent(content) ?? "",
+      toolCalls: convertToAxleToolCalls(completion.content),
       usage: {
         in: completion.usage.input_tokens,
         out: completion.usage.output_tokens,
@@ -175,17 +174,15 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): AIResponse
   }
 
   if (completion.type == "message") {
+    const content = convertToAxleContentParts(completion.content);
     return {
       type: "success",
       id: completion.id,
       model: completion.model,
+      role: "assistant" as const,
       reason: stopReason,
-      message: {
-        role: "assistant" as const,
-        id: completion.id,
-        model: completion.model,
-        content: convertToAxleContentParts(completion.content),
-      },
+      content,
+      text: getTextContent(content) ?? "",
       usage: {
         in: completion.usage.input_tokens,
         out: completion.usage.output_tokens,

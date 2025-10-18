@@ -1,9 +1,9 @@
 import { ChatCompletionTool } from "openai/resources";
-import { Chat } from "../../messages/chat.js";
+import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
-import { AIProvider, AIRequest, AIResponse, AxleStopReason } from "../types.js";
+import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
 import { OllamaRequest, OllamaSystemMessage } from "./types.js";
 import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
 
@@ -34,7 +34,7 @@ export class OllamaProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDef>;
     context: { recorder?: Recorder };
-  }): Promise<AIResponse> {
+  }): Promise<GenerationResult> {
     return await createGenerationRequest({
       url: this.url,
       model: this.model,
@@ -49,7 +49,7 @@ async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDef>;
   context: { recorder?: Recorder };
-}): Promise<AIResponse> {
+}): Promise<GenerationResult> {
   const { url, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -67,7 +67,7 @@ async function createGenerationRequest(params: {
 
   recorder?.debug?.log(requestBody);
 
-  let result: AIResponse;
+  let result: GenerationResult;
   try {
     const response = await fetch(`${url}/api/chat`, {
       method: "POST",
@@ -82,7 +82,7 @@ async function createGenerationRequest(params: {
     }
 
     const data = await response.json();
-    result = translateResponse(data);
+    result = fromModelResponse(data);
   } catch (e) {
     recorder?.error?.log("Error fetching Ollama response:", e);
     result = {
@@ -114,7 +114,7 @@ class OllamaChatCompletionRequest implements AIRequest {
     this.chat = chat;
   }
 
-  async execute(runtime: { recorder?: Recorder }): Promise<AIResponse> {
+  async execute(runtime: { recorder?: Recorder }): Promise<GenerationResult> {
     const { recorder } = runtime;
     const requestBody = {
       stream: false,
@@ -126,7 +126,7 @@ class OllamaChatCompletionRequest implements AIRequest {
 
     recorder?.debug?.log(requestBody);
 
-    let result: AIResponse;
+    let result: GenerationResult;
     try {
       const response = await fetch(`${this.url}/api/chat`, {
         method: "POST",
@@ -142,7 +142,7 @@ class OllamaChatCompletionRequest implements AIRequest {
       }
 
       const data = await response.json();
-      result = translateResponse(data);
+      result = fromModelResponse(data);
     } catch (e) {
       recorder?.error?.log("Error fetching Ollama response:", e);
       result = {
@@ -206,7 +206,7 @@ function prepareTools(chat: Chat): ChatCompletionTool[] | undefined {
   }));
 }
 
-function translateResponse(data: any): AIResponse {
+function fromModelResponse(data: any): GenerationResult {
   if (data.done_reason === "stop" && data.message) {
     const content = data.message.content;
     const toolCalls: ContentPartToolCall[] = [];
@@ -221,18 +221,17 @@ function translateResponse(data: any): AIResponse {
       }
     }
     const hasToolCalls = toolCalls.length > 0;
+    const contentParts = [{ type: "text" as const, text: content }];
 
     return {
       type: "success",
       id: `ollama-${Date.now()}`,
       model: data.model,
+      role: "assistant",
       reason: hasToolCalls ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
-      message: {
-        id: `ollama-${Date.now()}`,
-        role: "assistant",
-        content: [{ type: "text", text: content }],
-        ...(hasToolCalls && { toolCalls }),
-      },
+      content: contentParts,
+      text: getTextContent(contentParts) ?? "",
+      ...(hasToolCalls && { toolCalls }),
       usage: {
         in: data.prompt_eval_count || 0,
         out: data.eval_count || 0,

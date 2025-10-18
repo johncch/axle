@@ -6,11 +6,11 @@ import {
   Type,
 } from "@google/genai";
 import z from "zod";
-import { Chat } from "../../messages/chat.js";
+import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
-import { AIProvider, AIRequest, AIResponse, AxleStopReason } from "../types.js";
+import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
 import { Models, MULTIMODAL_MODELS } from "./models.js";
 import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
 
@@ -40,7 +40,7 @@ export class GoogleAIProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDef>;
     context: { recorder?: Recorder };
-  }): Promise<AIResponse> {
+  }): Promise<GenerationResult> {
     return await createGenerationRequest({
       client: this.client,
       model: this.model,
@@ -55,7 +55,7 @@ async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDef>;
   context: { recorder?: Recorder };
-}): Promise<AIResponse> {
+}): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -83,13 +83,13 @@ async function createGenerationRequest(params: {
   const request = { contents, config };
   recorder?.debug?.log(request);
 
-  let result: AIResponse;
+  let result: GenerationResult;
   try {
     const response = await client.models.generateContent({
       model,
       ...request,
     });
-    result = translateResponse(response, { recorder });
+    result = fromModelResponse(response, { recorder });
   } catch (e) {
     recorder?.error?.log(e);
     result = {
@@ -113,20 +113,20 @@ class GoogleAIChatRequest implements AIRequest {
     private chat: Chat,
   ) {}
 
-  async execute(runtime: { recorder?: Recorder }): Promise<AIResponse> {
+  async execute(runtime: { recorder?: Recorder }): Promise<GenerationResult> {
     const { recorder } = runtime;
     const { client, model } = this.provider;
 
     const request = prepareRequest(this.chat);
     recorder?.debug?.log(request);
 
-    let result: AIResponse;
+    let result: GenerationResult;
     try {
       const response = await client.models.generateContent({
         model,
         ...request,
       });
-      result = translateResponse(response, runtime);
+      result = fromModelResponse(response, runtime);
     } catch (e) {
       recorder?.error?.log(e);
       result = {
@@ -190,10 +190,10 @@ function prepareConfig(chat: Chat): GenerateContentConfig {
   return config;
 }
 
-function translateResponse(
+function fromModelResponse(
   response: GenerateContentResponse,
   runtime: { recorder?: Recorder },
-): AIResponse {
+): GenerationResult {
   const { recorder } = runtime;
 
   const inTokens = response.usageMetadata.promptTokenCount;
@@ -258,17 +258,16 @@ function translateResponse(
         arguments: JSON.stringify(call.args),
       }));
     }
+    const contentParts = [{ type: "text" as const, text: content }];
     return {
       type: "success",
       id: response.responseId,
       model: response.modelVersion,
+      role: "assistant",
       reason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
-      message: {
-        id: response.responseId,
-        role: "assistant",
-        content: [{ type: "text", text: content }],
-        ...(toolCalls ? { toolCalls } : {}),
-      },
+      content: contentParts,
+      text: getTextContent(contentParts) ?? "",
+      ...(toolCalls ? { toolCalls } : {}),
       usage,
       raw: response,
     };
