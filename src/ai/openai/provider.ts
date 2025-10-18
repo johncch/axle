@@ -10,15 +10,13 @@ import {
   fromModelResponse as fromChatCompletionResponse,
   OpenAIChatCompletionRequest,
 } from "./chatCompletion.js";
-import { Models, RESPONSES_API_MODELS } from "./models.js";
+import { DEFAULT_MODEL, RESPONSES_API_MODELS } from "./models.js";
 import {
   fromModelResponse as fromResponsesAPIResponse,
   OpenAIResponsesAPI,
 } from "./responsesAPI.js";
 import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
 import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
-
-const DEFAULT_MODEL = Models.GPT_4_1;
 
 export class OpenAIProvider implements AIProvider {
   name = "OpenAI";

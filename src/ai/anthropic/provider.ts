@@ -5,7 +5,7 @@ import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
-import { Models, MULTIMODAL_MODELS } from "./models.js";
+import { DEFAULT_MODEL, MULTIMODAL_MODELS } from "./models.js";
 import {
   convertStopReason,
   convertToAxleContentParts,
@@ -14,8 +14,6 @@ import {
   convertToProviderTools,
   prepareRequest,
 } from "./utils.js";
-
-const DEFAULT_MODEL = Models.CLAUDE_SONNET_4_LATEST;
 
 export class AnthropicProvider implements AIProvider {
   name = "Anthropic";

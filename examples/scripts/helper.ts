@@ -104,7 +104,7 @@ function getProvider(provider: ProviderNames): Axle {
     case "ollama":
     default: {
       axle = new Axle({
-        ollama: { model: options.model ?? "gemma3" },
+        ollama: { model: options.model ?? "gpt-oss:20b" },
       });
     }
   }

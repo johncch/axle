@@ -11,10 +11,8 @@ import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
-import { Models, MULTIMODAL_MODELS } from "./models.js";
+import { DEFAULT_MODEL, MULTIMODAL_MODELS } from "./models.js";
 import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
-
-const DEFAULT_MODEL = Models.GEMINI_2_5_FLASH_PREVIEW_05_20;
 
 export class GoogleAIProvider implements AIProvider {
   name = "GoogleAI";
