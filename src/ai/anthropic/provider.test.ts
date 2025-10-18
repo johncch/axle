@@ -1,15 +1,16 @@
 import { describe, expect, test } from "@jest/globals";
+import { Chat } from "../../messages/chat.js";
+import {
+  ContentPart,
+  ContentPartFile,
+  ContentPartInstructions,
+  ContentPartText,
+  ContentPartToolCall,
+} from "../../messages/types.js";
 import { ToolSchema } from "../../tools/types.js";
 import { FileInfo } from "../../utils/file.js";
-import { Chat } from "../chat.js";
-import {
-  ChatContent,
-  ChatContentFile,
-  ChatContentInstructions,
-  ChatContentText,
-  ToolCall,
-} from "../types.js";
-import { prepareRequest } from "./provider.js";
+import { AxleStopReason } from "../types.js";
+import { prepareRequest } from "./utils.js";
 
 describe("Anthropic prepareRequest", () => {
   describe("basic chat configurations", () => {
@@ -95,20 +96,28 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle assistant message with tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "get_weather",
           arguments: { location: "Boston", units: "celsius" },
         },
         {
+          type: "tool-call",
           id: "call_456",
           name: "calculate",
           arguments: { expression: "2 + 2" },
         },
       ];
 
-      chat.addAssistant("I'll help you with both requests.", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll help you with both requests." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat);
 
       expect(result.messages).toHaveLength(1);
@@ -138,15 +147,22 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle assistant message with empty content and tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: {},
         },
       ];
 
-      chat.addAssistant("", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat);
 
       expect(result.messages).toHaveLength(1);
@@ -192,9 +208,7 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle single tool call result", () => {
       const chat = new Chat();
-      chat.addTools([
-        { id: "call_789", name: "search", content: "Found 3 results" },
-      ]);
+      chat.addTools([{ id: "call_789", name: "search", content: "Found 3 results" }]);
       const result = prepareRequest(chat);
 
       expect(result.messages).toHaveLength(1);
@@ -324,13 +338,13 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle mixed content with text and instructions", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Please analyze this data" } as ChatContentText,
+      const content: ContentPart[] = [
+        { type: "text", text: "Please analyze this data" } as ContentPartText,
         {
           type: "instructions",
           instructions: "Focus on the trends",
-        } as ChatContentInstructions,
-        { type: "file", file: mockImageFile } as ChatContentFile,
+        } as ContentPartInstructions,
+        { type: "file", file: mockImageFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -360,11 +374,11 @@ describe("Anthropic prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Check these files" } as ChatContentText,
-        { type: "file", file: mockImageFile } as ChatContentFile,
-        { type: "file", file: mockUnsupportedFile } as ChatContentFile,
-        { type: "file", file: mockPdfFile } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Check these files" } as ContentPartText,
+        { type: "file", file: mockImageFile } as ContentPartFile,
+        { type: "file", file: mockUnsupportedFile } as ContentPartFile,
+        { type: "file", file: mockPdfFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -383,18 +397,17 @@ describe("Anthropic prepareRequest", () => {
       const mockWordDoc: FileInfo = {
         path: "/test/document.docx",
         base64: "worddata==",
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         size: 3000,
         name: "document.docx",
         type: "document",
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Review documents" } as ChatContentText,
-        { type: "file", file: mockPdfFile } as ChatContentFile,
-        { type: "file", file: mockWordDoc } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Review documents" } as ContentPartText,
+        { type: "file", file: mockPdfFile } as ContentPartFile,
+        { type: "file", file: mockWordDoc } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -411,9 +424,7 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle content with only files (no text)", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "file", file: mockImageFile } as ChatContentFile,
-      ];
+      const content: ContentPart[] = [{ type: "file", file: mockImageFile } as ContentPartFile];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat);
@@ -484,15 +495,11 @@ describe("Anthropic prepareRequest", () => {
 
       expect(result.tools).toHaveLength(2);
       expect(result.tools[0].name).toBe("get_weather");
-      expect(result.tools[0].description).toBe(
-        "Get current weather information",
-      );
+      expect(result.tools[0].description).toBe("Get current weather information");
       expect(result.tools[0].input_schema).toEqual(mockToolSchema.parameters);
 
       expect(result.tools[1].name).toBe("calculate");
-      expect(result.tools[1].description).toBe(
-        "Perform mathematical calculations",
-      );
+      expect(result.tools[1].description).toBe("Perform mathematical calculations");
       expect(result.tools[1].input_schema).toEqual(mockToolSchema2.parameters);
     });
 
@@ -529,18 +536,23 @@ describe("Anthropic prepareRequest", () => {
       };
 
       // Set up complete scenario
-      chat.addSystem(
-        "You are an AI assistant with image analysis capabilities",
-      );
+      chat.addSystem("You are an AI assistant with image analysis capabilities");
       chat.setToolSchemas([mockTool]);
       chat.addUser("Please analyze this chart", [mockImageFile]);
-      chat.addAssistant("I'll analyze this chart for you.", [
-        {
-          id: "call_789",
-          name: "analyze_image",
-          arguments: { description: "chart analysis" },
-        },
-      ]);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll analyze this chart for you." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: [
+          {
+            type: "tool-call",
+            id: "call_789",
+            name: "analyze_chart",
+            arguments: { image_path: "/test/chart.png" },
+          },
+        ],
+      });
       chat.addTools([
         {
           id: "call_789",
@@ -554,9 +566,7 @@ describe("Anthropic prepareRequest", () => {
 
       const result = prepareRequest(chat);
 
-      expect(result.system).toBe(
-        "You are an AI assistant with image analysis capabilities",
-      );
+      expect(result.system).toBe("You are an AI assistant with image analysis capabilities");
       expect(result.messages).toHaveLength(4); // user + assistant + tool + assistant
       expect(result.tools).toHaveLength(1);
 
@@ -653,15 +663,22 @@ describe("Anthropic prepareRequest", () => {
   describe("malformed data handling", () => {
     test("should handle tool calls with string arguments that are JSON", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: '{"param": "value"}',
         },
       ];
 
-      chat.addAssistant("Using tool", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Using tool" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat);
 
       expect(result.messages).toHaveLength(1);
@@ -687,7 +704,7 @@ describe("Anthropic prepareRequest", () => {
   describe("edge cases", () => {
     test("should handle empty content arrays", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [];
+      const content: ContentPart[] = [];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat);
@@ -700,10 +717,10 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle multiple text content blocks", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "First text block" } as ChatContentText,
-        { type: "text", text: "Second text block" } as ChatContentText,
-        { type: "text", text: "Third text block" } as ChatContentText,
+      const content: ContentPart[] = [
+        { type: "text", text: "First text block" } as ContentPartText,
+        { type: "text", text: "Second text block" } as ContentPartText,
+        { type: "text", text: "Third text block" } as ContentPartText,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -720,15 +737,22 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle tool calls with string arguments", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: '{"param": "value"}',
         },
       ];
 
-      chat.addAssistant("Using tool", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Using tool" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat);
 
       expect(result.messages).toHaveLength(1);
@@ -743,15 +767,22 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle tool calls with object arguments", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_456",
           name: "test_tool",
           arguments: { param: "value", number: 42 },
         },
       ];
 
-      chat.addAssistant("Using tool", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Using tool" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat);
 
       expect(result.messages).toHaveLength(1);

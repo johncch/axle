@@ -1,15 +1,16 @@
 import { describe, expect, test } from "@jest/globals";
+import { Chat } from "../../messages/chat.js";
+import {
+  ContentPart,
+  ContentPartFile,
+  ContentPartInstructions,
+  ContentPartText,
+  ContentPartToolCall,
+} from "../../messages/types.js";
 import { ToolSchema } from "../../tools/types.js";
 import { FileInfo } from "../../utils/file.js";
-import { Chat } from "../chat.js";
-import {
-  ChatContent,
-  ChatContentFile,
-  ChatContentInstructions,
-  ChatContentText,
-  ToolCall,
-} from "../types.js";
-import { prepareRequest } from "./chatcompetion.js";
+import { AxleStopReason } from "../types.js";
+import { prepareRequest } from "./chatCompletion.js";
 
 describe("OpenAI ChatCompletion prepareRequest", () => {
   const testModel = "gpt-4";
@@ -171,13 +172,13 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle mixed content with instructions", () => {
       const chat = new Chat();
-      const mixedContent: ChatContent[] = [
-        { type: "text", text: "Please analyze this data" } as ChatContentText,
+      const mixedContent: ContentPart[] = [
+        { type: "text", text: "Please analyze this data" } as ContentPartText,
         {
           type: "instructions",
           instructions: "Focus on the trends",
-        } as ChatContentInstructions,
-        { type: "file", file: mockImageFile } as ChatContentFile,
+        } as ContentPartInstructions,
+        { type: "file", file: mockImageFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content: mixedContent });
@@ -185,14 +186,19 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toHaveLength(2); // combined text+instructions + image
+      expect(message.content).toHaveLength(3); // text + instructions + image
 
       expect(message.content[0]).toEqual({
         type: "text",
-        text: "Please analyze this data\n\nFocus on the trends",
+        text: "Please analyze this data",
       });
 
-      expect(message.content[1].type).toBe("image_url");
+      expect(message.content[1]).toEqual({
+        type: "text",
+        text: "Focus on the trends",
+      });
+
+      expect(message.content[2].type).toBe("image_url");
     });
   });
 
@@ -257,20 +263,28 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle assistant message with tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "get_weather",
-          arguments: JSON.stringify({ location: "Boston", units: "celsius" }),
+          arguments: { location: "Boston", units: "celsius" },
         },
         {
+          type: "tool-call",
           id: "call_456",
           name: "calculate",
           arguments: { expression: "2 + 2" },
         },
       ];
 
-      chat.addAssistant("I'll help you with both requests.", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll help you with both requests." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -349,18 +363,23 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
       };
 
       // Set up complete scenario
-      chat.addSystem(
-        "You are an AI assistant with image analysis capabilities",
-      );
+      chat.addSystem("You are an AI assistant with image analysis capabilities");
       chat.setToolSchemas([mockTool]);
       chat.addUser("Please analyze this chart", [mockImageFile]);
-      chat.addAssistant("I'll analyze this chart for you.", [
-        {
-          id: "call_789",
-          name: "analyze_image",
-          arguments: JSON.stringify({ description: "chart analysis" }),
-        },
-      ]);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll analyze this chart for you." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: [
+          {
+            type: "tool-call",
+            id: "call_789",
+            name: "analyze_image",
+            arguments: { description: "chart analysis" },
+          },
+        ],
+      });
       chat.addTools([
         {
           id: "call_789",
@@ -424,11 +443,17 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle edge case with assistant having only tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
-        { id: "call_123", name: "test_tool", arguments: "{}" },
+      const toolCalls: ContentPartToolCall[] = [
+        { type: "tool-call", id: "call_123", name: "test_tool", arguments: "{}" },
       ];
 
-      chat.addAssistant("", toolCalls); // Empty content but with tool calls
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -473,15 +498,22 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle assistant message with empty content and tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: {},
         },
       ];
 
-      chat.addAssistant("", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -513,10 +545,10 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Check these files" } as ChatContentText,
-        { type: "file", file: mockImageFile } as ChatContentFile,
-        { type: "file", file: mockUnsupportedFile } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Analyze these files" } as ContentPartText,
+        { type: "file", file: mockImageFile } as ContentPartFile,
+        { type: "file", file: mockUnsupportedFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -553,9 +585,7 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
         const result = prepareRequest(chat, testModel);
 
         const message = result.messages[0] as any;
-        expect(message.content[1].image_url.url).toContain(
-          `data:${expected};base64,`,
-        );
+        expect(message.content[1].image_url.url).toContain(`data:${expected};base64,`);
       });
     });
 
@@ -572,18 +602,17 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
       const mockWordDoc: FileInfo = {
         path: "/test/document.docx",
         base64: "worddata==",
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         size: 3000,
         name: "document.docx",
         type: "document",
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Review documents" } as ChatContentText,
-        { type: "file", file: mockPdfFile } as ChatContentFile,
-        { type: "file", file: mockWordDoc } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Review this document" } as ContentPartText,
+        { type: "file", file: mockPdfFile } as ContentPartFile,
+        { type: "file", file: mockWordDoc } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -611,9 +640,7 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "file", file: mockImageFile } as ChatContentFile,
-      ];
+      const content: ContentPart[] = [{ type: "file", file: mockImageFile } as ContentPartFile];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
@@ -627,11 +654,11 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle user message with only instructions (no text)", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
+      const content: ContentPart[] = [
         {
           type: "instructions",
           instructions: "Be concise",
-        } as ChatContentInstructions,
+        } as ContentPartInstructions,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -649,50 +676,67 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle tool call arguments as object vs string", () => {
       const chat = new Chat();
-      const toolCallsWithObject: ToolCall[] = [
+      const toolCallsWithObject: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: { param1: "value1", param2: 42 },
         },
       ];
-      const toolCallsWithString: ToolCall[] = [
+      const toolCallsWithString: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_456",
           name: "test_tool",
           arguments: '{"param1": "value1", "param2": 42}',
         },
       ];
 
-      chat.addAssistant("Testing object args", toolCallsWithObject);
-      chat.addAssistant("Testing string args", toolCallsWithString);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Testing object args" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: toolCallsWithObject,
+      });
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Testing string args" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: toolCallsWithString,
+      });
 
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(2);
 
       const message1 = result.messages[0] as any;
-      expect(message1.toolCalls[0].function.arguments).toBe(
-        '{"param1":"value1","param2":42}',
-      );
+      expect(message1.toolCalls[0].function.arguments).toBe('{"param1":"value1","param2":42}');
 
       const message2 = result.messages[1] as any;
-      expect(message2.toolCalls[0].function.arguments).toBe(
-        '{"param1": "value1", "param2": 42}',
-      );
+      expect(message2.toolCalls[0].function.arguments).toBe('{"param1": "value1", "param2": 42}');
     });
 
     test("should handle tool call without id", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "",
           name: "test_tool",
-          arguments: "{}",
+          arguments: {},
         },
       ];
 
-      chat.addAssistant("Testing no id", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Testing no id" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -736,11 +780,11 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Analyze these files" } as ChatContentText,
-        { type: "file", file: mockImageFile } as ChatContentFile,
-        { type: "file", file: mockDocFile } as ChatContentFile,
-        { type: "file", file: mockUnknownFile } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Analyze this image" } as ContentPartText,
+        { type: "file", file: mockImageFile } as ContentPartFile,
+        { type: "file", file: mockDocFile } as ContentPartFile,
+        { type: "file", file: mockUnknownFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -748,7 +792,7 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toHaveLength(3); // text + image + document (unknown file filtered out)
+      expect(message.content).toHaveLength(3); // text + image + document (unknown filtered)
 
       expect(message.content[0].type).toBe("text");
       expect(message.content[1].type).toBe("image_url");
@@ -757,7 +801,7 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle empty content arrays", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [];
+      const content: ContentPart[] = [];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
@@ -770,10 +814,10 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
     test("should handle multiple text content blocks", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "First text block" } as ChatContentText,
-        { type: "text", text: "Second text block" } as ChatContentText,
-        { type: "text", text: "Third text block" } as ChatContentText,
+      const content: ContentPart[] = [
+        { type: "text", text: "First text block" } as ContentPartText,
+        { type: "text", text: "Second text block" } as ContentPartText,
+        { type: "text", text: "Third text block" } as ContentPartText,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -781,25 +825,33 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toHaveLength(1);
+      expect(message.content).toHaveLength(3);
       expect(message.content[0]).toEqual({
         type: "text",
-        text: "First text block\n\nSecond text block\n\nThird text block",
+        text: "First text block",
+      });
+      expect(message.content[1]).toEqual({
+        type: "text",
+        text: "Second text block",
+      });
+      expect(message.content[2]).toEqual({
+        type: "text",
+        text: "Third text block",
       });
     });
 
     test("should handle multiple instruction blocks", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Main content" } as ChatContentText,
+      const content: ContentPart[] = [
+        { type: "text", text: "Main content" } as ContentPartText,
         {
           type: "instructions",
           instructions: "First instruction",
-        } as ChatContentInstructions,
+        } as ContentPartInstructions,
         {
           type: "instructions",
           instructions: "Second instruction",
-        } as ChatContentInstructions,
+        } as ContentPartInstructions,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -807,10 +859,18 @@ describe("OpenAI ChatCompletion prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toHaveLength(1);
+      expect(message.content).toHaveLength(3);
       expect(message.content[0]).toEqual({
         type: "text",
-        text: "Main content\n\nFirst instruction\n\nSecond instruction",
+        text: "Main content",
+      });
+      expect(message.content[1]).toEqual({
+        type: "text",
+        text: "First instruction",
+      });
+      expect(message.content[2]).toEqual({
+        type: "text",
+        text: "Second instruction",
       });
     });
   });

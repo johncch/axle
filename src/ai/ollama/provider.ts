@@ -1,10 +1,9 @@
-import { ChatCompletionTool } from "openai/resources";
 import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
-import { OllamaRequest, OllamaSystemMessage } from "./types.js";
+import { OllamaRequest, OllamaSystemMessage, OllamaTool } from "./types.js";
 import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
@@ -195,7 +194,7 @@ function prepareSystemMessage(chat: Chat): OllamaSystemMessage[] {
   ];
 }
 
-function prepareTools(chat: Chat): ChatCompletionTool[] | undefined {
+function prepareTools(chat: Chat): OllamaTool[] | undefined {
   if (chat.tools.length === 0) {
     return undefined;
   }

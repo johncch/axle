@@ -1,11 +1,30 @@
 import { ContentPartToolCall } from "../../messages/types.js";
 
+/* Requests */
+
 export interface OllamaRequest {
   model: string;
   messages: OllamaMessage[];
+  tools?: Array<OllamaTool>;
 }
 
-export type OllamaMessage = OllamaUserMessage | OllamaAsistantMessage | OllamaSystemMessage | OllamaToolMessage;
+export interface OllamaTool {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: { [key: string]: unknown };
+    strict?: boolean | null;
+  };
+}
+
+/* Responses */
+
+export type OllamaMessage =
+  | OllamaUserMessage
+  | OllamaAsistantMessage
+  | OllamaSystemMessage
+  | OllamaToolMessage;
 
 export interface OllamaUserMessage {
   role: "user";

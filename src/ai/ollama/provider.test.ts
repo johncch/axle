@@ -1,14 +1,15 @@
 import { describe, expect, test } from "@jest/globals";
+import { Chat } from "../../messages/chat.js";
+import {
+  ContentPart,
+  ContentPartFile,
+  ContentPartInstructions,
+  ContentPartText,
+  ContentPartToolCall,
+} from "../../messages/types.js";
 import { ToolSchema } from "../../tools/types.js";
 import { FileInfo } from "../../utils/file.js";
-import { Chat } from "../chat.js";
-import {
-  ChatContent,
-  ChatContentFile,
-  ChatContentInstructions,
-  ChatContentText,
-  ToolCall,
-} from "../types.js";
+import { AxleStopReason } from "../types.js";
 import { prepareRequest } from "./provider.js";
 
 describe("Ollama prepareRequest", () => {
@@ -144,13 +145,13 @@ describe("Ollama prepareRequest", () => {
 
     test("should handle mixed content with instructions", () => {
       const chat = new Chat();
-      const mixedContent: ChatContent[] = [
-        { type: "text", text: "Please analyze this data" } as ChatContentText,
+      const mixedContent: ContentPart[] = [
+        { type: "text", text: "Please analyze this data" } as ContentPartText,
         {
           type: "instructions",
           instructions: "Focus on the trends",
-        } as ChatContentInstructions,
-        { type: "file", file: mockImageFile } as ChatContentFile,
+        } as ContentPartInstructions,
+        { type: "file", file: mockImageFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content: mixedContent });
@@ -158,7 +159,7 @@ describe("Ollama prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toBe("Please analyze this data\n\nFocus on the trends");
+      expect(message.content).toBe("Please analyze this dataFocus on the trends");
       expect(message.images).toEqual([mockImageFile.base64]);
     });
   });
@@ -224,20 +225,28 @@ describe("Ollama prepareRequest", () => {
 
     test("should handle assistant message with tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "get_weather",
-          arguments: { location: "Boston", units: "celsius" },
+          arguments: { location: "New York" },
         },
         {
+          type: "tool-call",
           id: "call_456",
           name: "calculate",
-          arguments: { expression: "2 + 2" },
+          arguments: { expression: "2+2" },
         },
       ];
 
-      chat.addAssistant("I'll help you with both requests.", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll help you with both requests." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -250,7 +259,7 @@ describe("Ollama prepareRequest", () => {
         type: "function",
         function: {
           name: "get_weather",
-          arguments: { location: "Boston", units: "celsius" },
+          arguments: { location: "New York" },
         },
         id: "call_123",
       });
@@ -259,7 +268,7 @@ describe("Ollama prepareRequest", () => {
         type: "function",
         function: {
           name: "calculate",
-          arguments: { expression: "2 + 2" },
+          arguments: { expression: "2+2" },
         },
         id: "call_456",
       });
@@ -316,18 +325,23 @@ describe("Ollama prepareRequest", () => {
       };
 
       // Set up complete scenario
-      chat.addSystem(
-        "You are an AI assistant with image analysis capabilities",
-      );
+      chat.addSystem("You are an AI assistant with image analysis capabilities");
       chat.setToolSchemas([mockTool]);
       chat.addUser("Please analyze this chart", [mockImageFile]);
-      chat.addAssistant("I'll analyze this chart for you.", [
-        {
-          id: "call_789",
-          name: "analyze_image",
-          arguments: { description: "chart analysis" },
-        },
-      ]);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll analyze this chart for you." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: [
+          {
+            type: "tool-call",
+            id: "call_789",
+            name: "analyze_image",
+            arguments: { description: "chart analysis" },
+          },
+        ],
+      });
       chat.addTools([
         {
           id: "call_789",
@@ -391,11 +405,17 @@ describe("Ollama prepareRequest", () => {
 
     test("should handle edge case with assistant having only tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
-        { id: "call_123", name: "test_tool", arguments: {} },
+      const toolCalls: ContentPartToolCall[] = [
+        { type: "tool-call", id: "call_123", name: "test_tool", arguments: {} },
       ];
 
-      chat.addAssistant("", toolCalls); // Empty content but with tool calls
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -440,15 +460,22 @@ describe("Ollama prepareRequest", () => {
 
     test("should handle assistant message with empty content and tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: {},
         },
       ];
 
-      chat.addAssistant("", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -480,10 +507,10 @@ describe("Ollama prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Check these files" } as ChatContentText,
-        { type: "file", file: mockImageFile } as ChatContentFile,
-        { type: "file", file: mockUnsupportedFile } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Check these files" } as ContentPartText,
+        { type: "file", file: mockImageFile } as ContentPartFile,
+        { type: "file", file: mockUnsupportedFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -536,9 +563,7 @@ describe("Ollama prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "file", file: mockImageFile } as ChatContentFile,
-      ];
+      const content: ContentPart[] = [{ type: "file", file: mockImageFile } as ContentPartFile];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
@@ -546,17 +571,17 @@ describe("Ollama prepareRequest", () => {
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
       expect(message.role).toBe("user");
-      expect(message.content).toBeNull(); // No text content, getTextAndInstructions returns null
+      expect(message.content).toBe(""); // Empty text content
       expect(message.images).toEqual(["base64data=="]); // Only image data
     });
 
     test("should handle user message with only instructions (no text)", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
+      const content: ContentPart[] = [
         {
           type: "instructions",
           instructions: "Be concise",
-        } as ChatContentInstructions,
+        } as ContentPartInstructions,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -570,15 +595,22 @@ describe("Ollama prepareRequest", () => {
 
     test("should handle tool call arguments as object (Ollama specific)", () => {
       const chat = new Chat();
-      const toolCallsWithObject: ToolCall[] = [
+      const toolCallsWithObject: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: { param1: "value1", param2: 42 },
         },
       ];
 
-      chat.addAssistant("Testing object args", toolCallsWithObject);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Testing object args" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: toolCallsWithObject,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -592,15 +624,22 @@ describe("Ollama prepareRequest", () => {
 
     test("should handle tool call without id", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "",
           name: "test_tool",
           arguments: {},
         },
       ];
 
-      chat.addAssistant("Testing no id", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Testing no id" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat, testModel);
 
       expect(result.messages).toHaveLength(1);
@@ -644,11 +683,10 @@ describe("Ollama prepareRequest", () => {
       };
 
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Analyze these files" } as ChatContentText,
-        { type: "file", file: mockImageFile } as ChatContentFile,
-        { type: "file", file: mockDocFile } as ChatContentFile,
-        { type: "file", file: mockUnknownFile } as ChatContentFile,
+      const content: ContentPart[] = [
+        { type: "text", text: "Analyze these files" } as ContentPartText,
+        { type: "file", file: mockImageFile } as ContentPartFile,
+        { type: "file", file: mockUnknownFile } as ContentPartFile,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -657,12 +695,12 @@ describe("Ollama prepareRequest", () => {
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
       expect(message.content).toBe("Analyze these files");
-      expect(message.images).toEqual(["imagedata=="]); // Only images go to images array, documents and unknown files filtered out
+      expect(message.images).toEqual(["imagedata=="]); // Only images go to images array
     });
 
     test("should handle empty content arrays", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [];
+      const content: ContentPart[] = [];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
@@ -670,15 +708,15 @@ describe("Ollama prepareRequest", () => {
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
       expect(message.role).toBe("user");
-      expect(message.content).toBeNull(); // getTextAndInstructions returns null for empty arrays
+      expect(message.content).toBe(""); // Empty content for empty arrays
     });
 
     test("should handle multiple text content blocks", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "First text block" } as ChatContentText,
-        { type: "text", text: "Second text block" } as ChatContentText,
-        { type: "text", text: "Third text block" } as ChatContentText,
+      const content: ContentPart[] = [
+        { type: "text", text: "First text block" } as ContentPartText,
+        { type: "text", text: "Second text block" } as ContentPartText,
+        { type: "text", text: "Third text block" } as ContentPartText,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -686,21 +724,21 @@ describe("Ollama prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toBe("First text block\n\nSecond text block\n\nThird text block");
+      expect(message.content).toBe("First text blockSecond text blockThird text block");
     });
 
     test("should handle multiple instruction blocks", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Main content" } as ChatContentText,
+      const content: ContentPart[] = [
+        { type: "text", text: "Main content" } as ContentPartText,
         {
           type: "instructions",
           instructions: "First instruction",
-        } as ChatContentInstructions,
+        } as ContentPartInstructions,
         {
           type: "instructions",
           instructions: "Second instruction",
-        } as ChatContentInstructions,
+        } as ContentPartInstructions,
       ];
 
       chat.messages.push({ role: "user", content });
@@ -708,7 +746,7 @@ describe("Ollama prepareRequest", () => {
 
       expect(result.messages).toHaveLength(1);
       const message = result.messages[0] as any;
-      expect(message.content).toBe("Main content\n\nFirst instruction\n\nSecond instruction");
+      expect(message.content).toBe("Main contentFirst instructionSecond instruction");
     });
   });
 });

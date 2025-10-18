@@ -1,8 +1,9 @@
 import { Type } from "@google/genai";
+import { Chat } from "../../messages/chat.js";
+import { ContentPart, ContentPartToolCall } from "../../messages/types.js";
 import { ToolSchema } from "../../tools/types.js";
 import { FileInfo } from "../../utils/file.js";
-import { Chat } from "../chat.js";
-import { ChatContent, ToolCall } from "../types.js";
+import { AxleStopReason } from "../types.js";
 import { prepareRequest } from "./provider.js";
 
 describe("prepareRequest", () => {
@@ -83,7 +84,7 @@ describe("prepareRequest", () => {
       const contents = result.contents as any[];
       expect(contents[1]).toEqual({
         role: "assistant",
-        parts: [{ text: "" }],
+        parts: [],
       });
     });
   });
@@ -93,14 +94,21 @@ describe("prepareRequest", () => {
       const chat = new Chat();
       chat.addUser("What's the weather?");
 
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_1",
           name: "get_weather",
           arguments: '{"location": "New York"}',
         },
       ];
-      chat.addAssistant("Let me check the weather for you.", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Let me check the weather for you." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
 
       const result = prepareRequest(chat);
 
@@ -125,14 +133,21 @@ describe("prepareRequest", () => {
       const chat = new Chat();
       chat.addUser("Calculate something");
 
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_2",
           name: "calculator",
           arguments: { operation: "add", numbers: [1, 2, 3] },
         },
       ];
-      chat.addAssistant("I'll calculate that for you.", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "I'll calculate that for you." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
 
       const result = prepareRequest(chat);
 
@@ -157,14 +172,21 @@ describe("prepareRequest", () => {
       const chat = new Chat();
       chat.addUser("What's the weather?");
 
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_1",
           name: "get_weather",
           arguments: '{"location": "New York"}',
         },
       ];
-      chat.addAssistant(undefined, toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
 
       const result = prepareRequest(chat);
 
@@ -294,8 +316,7 @@ describe("prepareRequest", () => {
       const chat = new Chat();
       const documentFile: FileInfo = {
         path: "/path/to/doc.pdf",
-        base64:
-          "JVBERi0xLjQKJcOkw7zDtsO4CjIgMCBvYmoKPDwKL0xlbmd0aCAzIDAgUko+PgpzdHJlYW0K",
+        base64: "JVBERi0xLjQKJcOkw7zDtsO4CjIgMCBvYmoKPDwKL0xlbmd0aCAzIDAgUko+PgpzdHJlYW0K",
         mimeType: "application/pdf",
         size: 2048,
         name: "doc.pdf",
@@ -324,7 +345,7 @@ describe("prepareRequest", () => {
 
     it("should handle user message with mixed content types", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
+      const content: ContentPart[] = [
         { type: "text", text: "Here's some text" },
         { type: "instructions", instructions: "Follow these instructions" },
         {
@@ -360,7 +381,8 @@ describe("prepareRequest", () => {
       expect(contents[0]).toEqual({
         role: "user",
         parts: [
-          { text: "Here's some text\n\nFollow these instructions" },
+          { text: "Here's some text" },
+          { text: "Follow these instructions" },
           {
             inlineData: {
               mimeType: "image/png",
@@ -379,7 +401,7 @@ describe("prepareRequest", () => {
 
     it("should handle user message with only files (no text)", () => {
       const chat = new Chat();
-      const content: ChatContent[] = [
+      const content: ContentPart[] = [
         {
           type: "file",
           file: {
@@ -557,13 +579,20 @@ describe("prepareRequest", () => {
       chat.addUser("What's the capital of France?");
 
       // Assistant responds with tool call
-      chat.addAssistant("Let me search for that information.", [
-        {
-          id: "search_1",
-          name: "search",
-          arguments: '{"query": "capital of France"}',
-        },
-      ]);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Let me search for that information." }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls: [
+          {
+            type: "tool-call",
+            id: "search_1",
+            name: "search",
+            arguments: { query: "information" },
+          },
+        ],
+      });
 
       // Tool responds
       chat.addTools([
@@ -579,9 +608,7 @@ describe("prepareRequest", () => {
 
       const result = prepareRequest(chat);
 
-      expect(result.config.systemInstruction).toBe(
-        "You are a helpful assistant",
-      );
+      expect(result.config.systemInstruction).toBe("You are a helpful assistant");
       expect(result.config.tools).toHaveLength(1);
       expect(Array.isArray(result.contents)).toBe(true);
       expect(result.contents).toHaveLength(4);
@@ -591,14 +618,21 @@ describe("prepareRequest", () => {
       const chat = new Chat();
       chat.addUser("Hello");
 
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: undefined as any, // Simulating no ID
           name: "test_tool",
           arguments: '{"param": "value"}',
         },
       ];
-      chat.addAssistant("Using tool", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "Using tool" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
 
       const result = prepareRequest(chat);
 
@@ -648,7 +682,7 @@ describe("prepareRequest", () => {
         type: "video" as any,
       };
 
-      const content: ChatContent[] = [
+      const content: ContentPart[] = [
         { type: "text", text: "Check these files" },
         { type: "file", file: imageFile },
         { type: "file", file: unsupportedFile },
@@ -711,23 +745,29 @@ describe("prepareRequest", () => {
 
     it("should handle assistant message with empty content and tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_123",
           name: "test_tool",
           arguments: {},
         },
       ];
 
-      chat.addAssistant("", toolCalls);
+      chat.addAssistant({
+        id: crypto.randomUUID(),
+        model: "test",
+        content: [{ type: "text", text: "" }],
+        finishReason: AxleStopReason.FunctionCall,
+        toolCalls,
+      });
       const result = prepareRequest(chat);
 
       expect(Array.isArray(result.contents)).toBe(true);
       const contents = result.contents as any[];
       expect(contents[0].role).toBe("assistant");
-      expect(contents[0].parts).toHaveLength(2); // Empty text + tool call
-      expect(contents[0].parts[0].text).toBe("");
-      expect(contents[0].parts[1].functionCall).toBeDefined();
+      expect(contents[0].parts).toHaveLength(1); // Only tool call, no text
+      expect(contents[0].parts[0].functionCall).toBeDefined();
     });
   });
 
@@ -745,8 +785,9 @@ describe("prepareRequest", () => {
       const chat = new Chat();
       chat.addUser("Hello");
 
-      const toolCalls: ToolCall[] = [
+      const toolCalls: ContentPartToolCall[] = [
         {
+          type: "tool-call",
           id: "call_1",
           name: "test_tool",
           arguments: '{"invalid": json}',
@@ -755,7 +796,13 @@ describe("prepareRequest", () => {
 
       // This should throw when JSON.parse is called
       expect(() => {
-        chat.addAssistant("Using tool", toolCalls);
+        chat.addAssistant({
+          id: crypto.randomUUID(),
+          model: "test",
+          content: [{ type: "text", text: "Using tool" }],
+          finishReason: AxleStopReason.FunctionCall,
+          toolCalls,
+        });
         prepareRequest(chat);
       }).toThrow();
     });
