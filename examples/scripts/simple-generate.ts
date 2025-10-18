@@ -38,8 +38,8 @@ function printResults(provider: AIProvider, result: GenerationResult) {
     console.log(`${spacer("Text")}: ${result.text}`);
 
     if (result.toolCalls) {
-      for (const toolCall of result.toolCalls) {
-        console.log(`${spacer("ToolCall")}: ${toolCall.id}`);
+      for (const [index, toolCall] of result.toolCalls.entries()) {
+        console.log(`${spacer(`Tool Call ${index + 1}`)}: ${toolCall.id}`);
         console.log(`${spacer("Name", { indent: 2 })}: ${toolCall.name}`);
         console.log(`${spacer("Arguments", { indent: 2 })}: ${stringify(toolCall.arguments)}`);
       }

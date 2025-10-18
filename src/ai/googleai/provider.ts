@@ -11,6 +11,7 @@ import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { getUndefinedError } from "../utils.js";
 import { DEFAULT_MODEL, MULTIMODAL_MODELS } from "./models.js";
 import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
 
@@ -90,15 +91,7 @@ async function createGenerationRequest(params: {
     result = fromModelResponse(response, { recorder });
   } catch (e) {
     recorder?.error?.log(e);
-    result = {
-      type: "error",
-      error: {
-        type: e.name ?? "Undetermined",
-        message: e.message ?? "Unexpected error from Google AI",
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
-    };
+    result = getUndefinedError(e);
   }
 
   recorder?.debug?.log(result);
@@ -127,15 +120,7 @@ class GoogleAIChatRequest implements AIRequest {
       result = fromModelResponse(response, runtime);
     } catch (e) {
       recorder?.error?.log(e);
-      result = {
-        type: "error",
-        error: {
-          type: e.name ?? "Undetermined",
-          message: e.message ?? "Unexpected error from Google AI",
-        },
-        usage: { in: 0, out: 0 },
-        raw: e,
-      };
+      result = getUndefinedError(e);
     }
 
     recorder?.debug?.log(result);

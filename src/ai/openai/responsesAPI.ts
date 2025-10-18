@@ -1,11 +1,16 @@
+import OpenAI from "openai";
 import {
   Response,
   ResponseCreateParamsNonStreaming,
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses.js";
+import z from "zod";
 import { Chat, getInstructions, getTextContent } from "../../messages/chat.js";
+import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
+import { ToolDef } from "../../tools/types.js";
 import { AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { getUndefinedError } from "../utils.js";
 import { OpenAIProvider } from "./provider.js";
 import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
 
@@ -28,22 +33,54 @@ export class OpenAIResponsesAPI implements AIRequest {
       result = fromModelResponse(response);
     } catch (e) {
       recorder?.error?.log(e);
-      result = {
-        type: "error",
-        error: {
-          type: e.type ?? "Undetermined",
-          message: e.message ?? "Unexpected error from OpenAI",
-        },
-        usage: {
-          in: 0,
-          out: 0,
-        },
-        raw: e,
-      };
+      result = getUndefinedError(e);
     }
     recorder?.debug?.log(result);
     return result;
   }
+}
+
+export async function createGenerationRequestWithResponsesAPI(params: {
+  client: OpenAI;
+  model: string;
+  messages: Array<AxleMessage>;
+  tools?: Array<ToolDef>;
+  context: { recorder?: Recorder };
+}): Promise<GenerationResult> {
+  const { client, model, messages, tools, context } = params;
+  const { recorder } = context;
+
+  const request: ResponseCreateParamsNonStreaming = {
+    model,
+    input: convertAxleMessageToResponseInput(messages),
+  };
+
+  if (tools && tools.length > 0) {
+    request.tools = tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema);
+      return {
+        type: "function" as const,
+        strict: true,
+        name: tool.name,
+        description: tool.description,
+        parameters: jsonSchema,
+      };
+    });
+  }
+
+  recorder?.debug?.log(request);
+
+  let result: GenerationResult;
+  try {
+    const response = await client.responses.create(request);
+    result = fromModelResponse(response);
+  } catch (e) {
+    recorder?.error?.log(e);
+    result = getUndefinedError(e);
+  }
+
+  recorder?.debug?.log(result);
+  return result;
 }
 
 export function prepareRequest(chat: Chat, model: string): ResponseCreateParamsNonStreaming {

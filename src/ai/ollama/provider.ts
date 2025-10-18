@@ -3,6 +3,7 @@ import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { getUndefinedError } from "../utils.js";
 import { OllamaRequest, OllamaSystemMessage, OllamaTool } from "./types.js";
 import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
 
@@ -84,18 +85,7 @@ async function createGenerationRequest(params: {
     result = fromModelResponse(data);
   } catch (e) {
     recorder?.error?.log("Error fetching Ollama response:", e);
-    result = {
-      type: "error",
-      error: {
-        type: "OllamaError",
-        message: e.message || "Unexpected error from Ollama",
-      },
-      usage: {
-        in: 0,
-        out: 0,
-      },
-      raw: JSON.stringify(e),
-    };
+    result = getUndefinedError(e);
   }
 
   recorder?.debug?.log(result);
@@ -144,18 +134,7 @@ class OllamaChatCompletionRequest implements AIRequest {
       result = fromModelResponse(data);
     } catch (e) {
       recorder?.error?.log("Error fetching Ollama response:", e);
-      result = {
-        type: "error",
-        error: {
-          type: "OllamaError",
-          message: e.message || "Unexpected error from Ollama",
-        },
-        usage: {
-          in: 0,
-          out: 0,
-        },
-        raw: JSON.stringify(e),
-      };
+      result = getUndefinedError(e);
     }
 
     recorder?.debug?.log(result);

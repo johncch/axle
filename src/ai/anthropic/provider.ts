@@ -5,6 +5,7 @@ import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { getUndefinedError } from "../utils.js";
 import { DEFAULT_MODEL, MULTIMODAL_MODELS } from "./models.js";
 import {
   convertStopReason,
@@ -83,15 +84,7 @@ async function createGenerationRequest(params: {
     const completion = await client.messages.create(request);
     result = convertToAIResponse(completion);
   } catch (e) {
-    result = {
-      type: "error",
-      error: {
-        type: e.error.error.type ?? "Undetermined",
-        message: e.error.error.message ?? "Unexpected error from Anthropic",
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
-    };
+    result = getUndefinedError(e);
   }
 
   recorder?.debug?.log(result);
@@ -119,15 +112,7 @@ class AnthropicChatRequest implements AIRequest {
       const completion = await client.messages.create(request);
       result = convertToAIResponse(completion);
     } catch (e) {
-      result = {
-        type: "error",
-        error: {
-          type: e.error.error.type ?? "Undetermined",
-          message: e.error.error.message ?? "Unexpected error from Anthropic",
-        },
-        usage: { in: 0, out: 0 },
-        raw: e,
-      };
+      result = getUndefinedError(e);
     }
 
     recorder?.debug?.log(result);

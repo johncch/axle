@@ -1,22 +1,15 @@
 import OpenAI from "openai";
-import { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses.js";
-import z from "zod";
 import { Chat } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDef } from "../../tools/types.js";
 import { AIProvider, AIRequest, GenerationResult } from "../types.js";
 import {
-  fromModelResponse as fromChatCompletionResponse,
+  createGenerationRequestWithChatCompletion,
   OpenAIChatCompletionRequest,
 } from "./chatCompletion.js";
 import { DEFAULT_MODEL, RESPONSES_API_MODELS } from "./models.js";
-import {
-  fromModelResponse as fromResponsesAPIResponse,
-  OpenAIResponsesAPI,
-} from "./responsesAPI.js";
-import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
-import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
+import { createGenerationRequestWithResponsesAPI, OpenAIResponsesAPI } from "./responsesAPI.js";
 
 export class OpenAIProvider implements AIProvider {
   name = "OpenAI";
@@ -66,109 +59,4 @@ export class OpenAIProvider implements AIProvider {
   // }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   //   // TODO
   // }
-}
-
-async function createGenerationRequestWithResponsesAPI(params: {
-  client: OpenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  tools?: Array<ToolDef>;
-  context: { recorder?: Recorder };
-}): Promise<GenerationResult> {
-  const { client, model, messages, tools, context } = params;
-  const { recorder } = context;
-
-  const request: ResponseCreateParamsNonStreaming = {
-    model,
-    input: convertAxleMessageToResponseInput(messages),
-  };
-
-  if (tools && tools.length > 0) {
-    request.tools = tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema);
-      return {
-        type: "function" as const,
-        strict: true,
-        name: tool.name,
-        description: tool.description,
-        parameters: jsonSchema,
-      };
-    });
-  }
-
-  recorder?.debug?.log(request);
-
-  let result: GenerationResult;
-  try {
-    const response = await client.responses.create(request);
-    result = fromResponsesAPIResponse(response);
-  } catch (e) {
-    recorder?.error?.log(e);
-    result = {
-      type: "error",
-      error: {
-        type: e.type ?? "Undetermined",
-        message: e.message ?? "Unexpected error from OpenAI",
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
-    };
-  }
-
-  recorder?.debug?.log(result);
-  return result;
-}
-
-async function createGenerationRequestWithChatCompletion(params: {
-  client: OpenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  tools?: Array<ToolDef>;
-  context: { recorder?: Recorder };
-}): Promise<GenerationResult> {
-  const { client, model, messages, tools, context } = params;
-  const { recorder } = context;
-
-  let chatTools = undefined;
-  if (tools && tools.length > 0) {
-    chatTools = tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema);
-      return {
-        type: "function" as const,
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: jsonSchema,
-        },
-      };
-    });
-  }
-
-  const request = {
-    model,
-    messages: convertAxleMessagesToChatCompletion(messages),
-    ...(chatTools && { tools: chatTools }),
-  };
-
-  recorder?.debug?.log(request);
-
-  let result: GenerationResult;
-  try {
-    const completion = await client.chat.completions.create(request);
-    result = fromChatCompletionResponse(completion);
-  } catch (e) {
-    recorder?.error?.log(e);
-    result = {
-      type: "error",
-      error: {
-        type: e.type ?? "Undetermined",
-        message: e.message ?? "Unexpected error from OpenAI",
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
-    };
-  }
-
-  recorder?.debug?.log(result);
-  return result;
 }

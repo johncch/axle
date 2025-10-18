@@ -4,10 +4,14 @@ import {
   ChatCompletionSystemMessageParam,
   ChatCompletionTool,
 } from "openai/resources";
+import z from "zod";
 import { Chat, getTextContent } from "../../messages/chat.js";
+import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
+import { ToolDef } from "../../tools/types.js";
 import { convertStopReason } from "../anthropic/utils.js";
 import { AIRequest, GenerationResult } from "../types.js";
+import { getUndefinedError } from "../utils.js";
 import { OpenAIProvider } from "./provider.js";
 import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
 
@@ -30,22 +34,57 @@ export class OpenAIChatCompletionRequest implements AIRequest {
       result = fromModelResponse(completion);
     } catch (e) {
       recorder?.error?.log(e);
-      result = {
-        type: "error",
-        error: {
-          type: e.type ?? "Undetermined",
-          message: e.message ?? "Unexpected error from OpenAI",
-        },
-        usage: {
-          in: 0,
-          out: 0,
-        },
-        raw: e,
-      };
+      result = getUndefinedError(e);
     }
     recorder?.debug?.log(result);
     return result;
   }
+}
+
+export async function createGenerationRequestWithChatCompletion(params: {
+  client: OpenAI;
+  model: string;
+  messages: Array<AxleMessage>;
+  tools?: Array<ToolDef>;
+  context: { recorder?: Recorder };
+}): Promise<GenerationResult> {
+  const { client, model, messages, tools, context } = params;
+  const { recorder } = context;
+
+  let chatTools = undefined;
+  if (tools && tools.length > 0) {
+    chatTools = tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema);
+      return {
+        type: "function" as const,
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: jsonSchema,
+        },
+      };
+    });
+  }
+
+  const request = {
+    model,
+    messages: convertAxleMessagesToChatCompletion(messages),
+    ...(chatTools && { tools: chatTools }),
+  };
+
+  recorder?.debug?.log(request);
+
+  let result: GenerationResult;
+  try {
+    const completion = await client.chat.completions.create(request);
+    result = fromModelResponse(completion);
+  } catch (e) {
+    recorder?.error?.log(e);
+    result = getUndefinedError(e);
+  }
+
+  recorder?.debug?.log(result);
+  return result;
 }
 
 export function prepareRequest(chat: Chat, model: string): ChatCompletionCreateParamsNonStreaming {
