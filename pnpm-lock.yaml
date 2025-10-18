@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.63.1
-        version: 0.63.1(zod@4.1.11)
+        specifier: ^0.67.0
+        version: 0.67.0(zod@4.1.11)
       '@commander-js/extra-typings':
         specifier: ^14.0.0
         version: 14.0.0(commander@14.0.1)
       '@google/genai':
-        specifier: ^1.20.0
-        version: 1.20.0
+        specifier: ^1.25.0
+        version: 1.25.0
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -27,8 +27,8 @@ importers:
         specifier: ^11.0.3
         version: 11.0.3
       openai:
-        specifier: ^5.23.0
-        version: 5.23.0(ws@8.18.3)(zod@4.1.11)
+        specifier: ^6.5.0
+        version: 6.5.0(ws@8.18.3)(zod@4.1.11)
       serialize-error:
         specifier: ^12.0.0
         version: 12.0.0
@@ -75,8 +75,8 @@ importers:
 
 packages:
 
-  '@anthropic-ai/sdk@0.63.1':
-    resolution: {integrity: sha512-wMA/Xx5GLO+npV992YKUfsmlI6699XG/jFjCPTf/nsMBfUh3e3KmNiOKuhqSMZibOjoLOlhYc7L4pfLPI8A+RA==}
+  '@anthropic-ai/sdk@0.67.0':
+    resolution: {integrity: sha512-Buxbf6jYJ+pPtfCgXe1pcFtZmdXPrbdqhBjiscFt9irS1G0hCsmR/fPA+DwKTk4GPjqeNnnCYNecXH6uVZ4G/A==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -414,8 +414,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@google/genai@1.20.0':
-    resolution: {integrity: sha512-QdShxO9LX35jFogy3iKprQNqgKKveux4H2QjOnyIvyHRuGi6PHiz3fjNf8Y0VPY8o5V2fHqR2XqiSVoz7yZs0w==}
+  '@google/genai@1.25.0':
+    resolution: {integrity: sha512-IBNyel/umavam98SQUfvQSvh/Rp6Ql2fysQLqPyWZr5K8d768X9AO+JZU4o+3qvFDUBA0dVYUSkxyYonVcICvA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@modelcontextprotocol/sdk': ^1.11.4
@@ -939,8 +939,8 @@ packages:
     resolution: {integrity: sha512-NIxF55hv4nSqQswkAeiOi1r83xy8JldOFDTWiug55KBu9Jnblncd2U6ViHmYgHf01TPZS77NJBhBMKdWj9HQMQ==}
     engines: {node: '>=8'}
 
-  ci-info@4.3.0:
-    resolution: {integrity: sha512-l+2bNRMiQgcfILUi33labAZYIWlH1kWDp+ecNo5iisRKrbm0xcRyCww71/YU0Fkw0mAFpz9bJayXPjey6vkmaQ==}
+  ci-info@4.3.1:
+    resolution: {integrity: sha512-Wdy2Igu8OcBpI2pZePZ5oWjPC38tmDVx5WKUXKwlLYkA0ozo85sLsLvkBbBn/sZaSCMFOGZJ14fvW9t5/d7kdA==}
     engines: {node: '>=8'}
 
   cjs-module-lexer@1.4.3:
@@ -1580,12 +1580,12 @@ packages:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
 
-  openai@5.23.0:
-    resolution: {integrity: sha512-Cfq155NHzI7VWR67LUNJMIgPZy2oSh7Fld/OKhxq648BiUjELAvcge7g30xJ6vAfwwXf6TVK0KKuN+3nmIJG/A==}
+  openai@6.5.0:
+    resolution: {integrity: sha512-bNqJ15Ijbs41KuJ2iYz/mGAruFHzQQt7zXo4EvjNLoB64aJdgn1jlMeDTsXjEg+idVYafg57QB/5Rd16oqvZ6A==}
     hasBin: true
     peerDependencies:
       ws: ^8.18.0
-      zod: ^3.23.8
+      zod: ^3.25 || ^4.0
     peerDependenciesMeta:
       ws:
         optional: true
@@ -1995,7 +1995,7 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.63.1(zod@4.1.11)':
+  '@anthropic-ai/sdk@0.67.0(zod@4.1.11)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
@@ -2274,7 +2274,7 @@ snapshots:
   '@esbuild/win32-x64@0.25.10':
     optional: true
 
-  '@google/genai@1.20.0':
+  '@google/genai@1.25.0':
     dependencies:
       google-auth-library: 9.15.1
       ws: 8.18.3
@@ -2920,7 +2920,7 @@ snapshots:
 
   ci-info@3.9.0: {}
 
-  ci-info@4.3.0:
+  ci-info@4.3.1:
     optional: true
 
   cjs-module-lexer@1.4.3: {}
@@ -3596,7 +3596,7 @@ snapshots:
       '@jest/types': 30.0.5
       '@types/node': 24.5.2
       chalk: 4.1.2
-      ci-info: 4.3.0
+      ci-info: 4.3.1
       graceful-fs: 4.2.11
       picomatch: 4.0.3
     optional: true
@@ -3765,7 +3765,7 @@ snapshots:
     dependencies:
       mimic-fn: 2.1.0
 
-  openai@5.23.0(ws@8.18.3)(zod@4.1.11):
+  openai@6.5.0(ws@8.18.3)(zod@4.1.11):
     optionalDependencies:
       ws: 8.18.3
       zod: 4.1.11
