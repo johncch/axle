@@ -1,5 +1,5 @@
 import { AxleStopReason } from "../ai/types.js";
-import { ToolSchema } from "../tools/types.js";
+import { ToolDefinition } from "../tools/types.js";
 import { FileInfo } from "../utils/file.js";
 import {
   AxleMessage,
@@ -23,10 +23,10 @@ interface ChatAssistantParams {
 export class Chat {
   system: string;
   messages: AxleMessage[] = [];
-  tools: ToolSchema[] = [];
+  tools: ToolDefinition[] = [];
 
-  setToolSchemas(schemas: ToolSchema[]) {
-    this.tools = schemas;
+  setTools(tools: ToolDefinition[]) {
+    this.tools = tools;
   }
 
   addSystem(message: string) {
@@ -36,7 +36,7 @@ export class Chat {
   addUser(message: string): void;
   addUser(message: string, instruction: string): void;
   addUser(message: string, instruction: string, files: FileInfo[]): void;
-  addUser(message: string, files: FileInfo[]);
+  addUser(message: string, files: FileInfo[]): void;
   addUser(message: string, second?: string | FileInfo[], third?: FileInfo[]) {
     let instructions: string | undefined;
     let files: FileInfo[] = [];
@@ -67,8 +67,8 @@ export class Chat {
     this.messages.push({ role: "user", content });
   }
 
-  addAssistant(message: string);
-  addAssistant(params: ChatAssistantParams);
+  addAssistant(message: string): void;
+  addAssistant(params: ChatAssistantParams): void;
   addAssistant(obj: string | ChatAssistantParams): void {
     if (typeof obj === "string") {
       const text = obj as string;

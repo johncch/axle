@@ -1,4 +1,3 @@
-import { Chat } from "../messages/chat.js";
 import {
   AxleMessage,
   ContentPartText,
@@ -6,7 +5,7 @@ import {
   ContentPartToolCall,
 } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
-import { ToolDef } from "../tools/types.js";
+import { ToolDefinition } from "../tools/types.js";
 // import { ToolDef } from "../tools/types.js";
 import { Stats } from "../types.js";
 
@@ -32,10 +31,10 @@ export interface AIProviderConfig {
 export interface AIProvider {
   get name(): string;
   get model(): string;
-  createChatRequest(chat: Chat, context: { recorder?: Recorder }): AIRequest;
+
   createGenerationRequest(params: {
     messages: Array<AxleMessage>;
-    tools?: Array<ToolDef>;
+    tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
   }): Promise<GenerationResult>;
 
@@ -44,10 +43,6 @@ export interface AIProvider {
   //   tools?: Array<ToolDef>;
   //   context: { recorder?: Recorder };
   // }): AsyncGenerator<AnyStreamChunk, void, unknown>;
-}
-
-export interface AIRequest {
-  execute(runtime: { recorder?: Recorder }): Promise<GenerationResult>;
 }
 
 export type GenerationResult = GenerationSuccessResult | GenerationErrorResult;

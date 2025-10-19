@@ -1,4 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
+import * as z from "zod";
 import { Chat } from "../../messages/chat.js";
 import {
   ContentPart,
@@ -7,7 +8,7 @@ import {
   ContentPartText,
   ContentPartToolCall,
 } from "../../messages/types.js";
-import { ToolSchema } from "../../tools/types.js";
+import { ToolDefinition } from "../../tools/types.js";
 import { FileInfo } from "../../utils/file.js";
 import { AxleStopReason } from "../types.js";
 import { prepareRequest } from "./responsesAPI.js";
@@ -287,37 +288,26 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
   });
 
   describe("tool configurations", () => {
-    const mockToolSchema: ToolSchema = {
+    const mockToolDef: ToolDefinition = {
       name: "get_weather",
       description: "Get current weather information",
-      parameters: {
-        type: "object",
-        properties: {
-          location: { type: "string", description: "City name" },
-          units: { type: "string", enum: ["celsius", "fahrenheit"] },
-        },
-        required: ["location"],
-      },
+      schema: z.object({
+        location: z.string().describe("City name"),
+        units: z.enum(["celsius", "fahrenheit"]).optional(),
+      }),
     };
 
-    const mockToolSchema2: ToolSchema = {
+    const mockToolDef2: ToolDefinition = {
       name: "calculate",
       description: "Perform mathematical calculations",
-      parameters: {
-        type: "object",
-        properties: {
-          expression: {
-            type: "string",
-            description: "Mathematical expression",
-          },
-        },
-        required: ["expression"],
-      },
+      schema: z.object({
+        expression: z.string().describe("Mathematical expression"),
+      }),
     };
 
     test("should handle chat with single tool", () => {
       const chat = new Chat();
-      chat.setToolSchemas([mockToolSchema]);
+      chat.setTools([mockToolDef]);
       chat.addUser("What's the weather in Boston?");
       const result = prepareRequest(chat, testModel);
 
@@ -325,15 +315,24 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
       expect(result.tools![0]).toEqual({
         type: "function",
         strict: true,
-        name: mockToolSchema.name,
-        description: mockToolSchema.description,
-        parameters: mockToolSchema.parameters,
+        name: mockToolDef.name,
+        description: mockToolDef.description,
+        parameters: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          additionalProperties: false,
+          type: "object",
+          properties: {
+            location: { type: "string", description: "City name" },
+            units: { type: "string", enum: ["celsius", "fahrenheit"] },
+          },
+          required: ["location"],
+        },
       });
     });
 
     test("should handle chat with multiple tools", () => {
       const chat = new Chat();
-      chat.setToolSchemas([mockToolSchema, mockToolSchema2]);
+      chat.setTools([mockToolDef, mockToolDef2]);
       chat.addUser("What's the weather in Boston and calculate 2 + 2?");
       const result = prepareRequest(chat, testModel);
 
@@ -341,16 +340,36 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
       expect(result.tools![0]).toEqual({
         type: "function",
         strict: true,
-        name: mockToolSchema.name,
-        description: mockToolSchema.description,
-        parameters: mockToolSchema.parameters,
+        name: mockToolDef.name,
+        description: mockToolDef.description,
+        parameters: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          additionalProperties: false,
+          type: "object",
+          properties: {
+            location: { type: "string", description: "City name" },
+            units: { type: "string", enum: ["celsius", "fahrenheit"] },
+          },
+          required: ["location"],
+        },
       });
       expect(result.tools![1]).toEqual({
         type: "function",
         strict: true,
-        name: mockToolSchema2.name,
-        description: mockToolSchema2.description,
-        parameters: mockToolSchema2.parameters,
+        name: mockToolDef2.name,
+        description: mockToolDef2.description,
+        parameters: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          additionalProperties: false,
+          type: "object",
+          properties: {
+            expression: {
+              type: "string",
+              description: "Mathematical expression",
+            },
+          },
+          required: ["expression"],
+        },
       });
     });
 
@@ -438,14 +457,12 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
   describe("complex scenarios", () => {
     test("should handle complete conversation with tools and multimodal content", () => {
       const chat = new Chat();
-      const mockTool: ToolSchema = {
+      const mockTool: ToolDefinition = {
         name: "analyze_image",
         description: "Analyze image content",
-        parameters: {
-          type: "object",
-          properties: { description: { type: "string" } },
-          required: ["description"],
-        },
+        schema: z.object({
+          description: z.string(),
+        }),
       };
 
       const mockImageFile: FileInfo = {
@@ -459,7 +476,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
 
       // Set up complete scenario
       chat.addSystem("You are an AI assistant with image analysis capabilities");
-      chat.setToolSchemas([mockTool]);
+      chat.setTools([mockTool]);
       chat.addUser("Please analyze this chart", [mockImageFile]);
       chat.addAssistant({
         id: crypto.randomUUID(),

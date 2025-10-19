@@ -1,19 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Recorder } from "../../recorder/recorder.js";
 
-import { Chat, getTextContent } from "../../messages/chat.js";
+import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
-import { ToolDef } from "../../tools/types.js";
-import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { ToolDefinition } from "../../tools/types.js";
+import { AIProvider, AxleStopReason, GenerationResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { DEFAULT_MODEL, MULTIMODAL_MODELS } from "./models.js";
+import { DEFAULT_MODEL } from "./models.js";
 import {
   convertStopReason,
   convertToAxleContentParts,
   convertToAxleToolCalls,
   convertToProviderMessages,
   convertToProviderTools,
-  prepareRequest,
 } from "./utils.js";
 
 export class AnthropicProvider implements AIProvider {
@@ -28,19 +27,9 @@ export class AnthropicProvider implements AIProvider {
     });
   }
 
-  createChatRequest(chat: Chat, context: { recorder?: Recorder } = {}): AIRequest {
-    const { recorder } = context;
-    if (chat.hasFiles() && !MULTIMODAL_MODELS.includes(this.model as any)) {
-      recorder?.warn?.log(
-        `Model ${this.model} may not support multimodal content. Use one of: ${MULTIMODAL_MODELS.join(", ")}`,
-      );
-    }
-    return new AnthropicChatRequest(this, chat);
-  }
-
   async createGenerationRequest(params: {
     messages: Array<AxleMessage>;
-    tools?: Array<ToolDef>;
+    tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
   }): Promise<GenerationResult> {
     return await createGenerationRequest({ client: this.client, model: this.model, ...params });
@@ -66,7 +55,7 @@ async function createGenerationRequest(params: {
   client: Anthropic;
   model: string;
   messages: Array<AxleMessage>;
-  tools?: Array<ToolDef>;
+  tools?: Array<ToolDefinition>;
   context?: { recorder?: Recorder };
 }): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
@@ -89,35 +78,6 @@ async function createGenerationRequest(params: {
 
   recorder?.debug?.log(result);
   return result;
-}
-
-class AnthropicChatRequest implements AIRequest {
-  constructor(
-    private provider: AnthropicProvider,
-    private chat: Chat,
-  ) {}
-
-  async execute(runtime: { recorder?: Recorder }): Promise<any> {
-    const { recorder } = runtime;
-    const { client, model } = this.provider;
-    const request = {
-      model: model,
-      max_tokens: 4096,
-      ...prepareRequest(this.chat),
-    };
-    recorder?.debug?.log(request);
-
-    let result: GenerationResult;
-    try {
-      const completion = await client.messages.create(request);
-      result = convertToAIResponse(completion);
-    } catch (e) {
-      result = getUndefinedError(e);
-    }
-
-    recorder?.debug?.log(result);
-    return result;
-  }
 }
 
 function convertToAIResponse(completion: Anthropic.Messages.Message): GenerationResult {

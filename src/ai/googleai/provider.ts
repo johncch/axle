@@ -1,18 +1,12 @@
-import {
-  Content,
-  GenerateContentConfig,
-  GenerateContentResponse,
-  GoogleGenAI,
-  Type,
-} from "@google/genai";
+import { GenerateContentConfig, GenerateContentResponse, GoogleGenAI, Type } from "@google/genai";
 import z from "zod";
-import { Chat, getTextContent } from "../../messages/chat.js";
+import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
-import { ToolDef } from "../../tools/types.js";
-import { AIProvider, AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { ToolDefinition } from "../../tools/types.js";
+import { AIProvider, AxleStopReason, GenerationResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { DEFAULT_MODEL, MULTIMODAL_MODELS } from "./models.js";
+import { DEFAULT_MODEL } from "./models.js";
 import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
 
 export class GoogleAIProvider implements AIProvider {
@@ -25,19 +19,9 @@ export class GoogleAIProvider implements AIProvider {
     this.client = new GoogleGenAI({ apiKey: apiKey });
   }
 
-  createChatRequest(chat: Chat, context: { recorder?: Recorder } = {}): AIRequest {
-    const { recorder } = context;
-    if (chat.hasFiles() && !MULTIMODAL_MODELS.includes(this.model as any)) {
-      recorder?.warn.log(
-        `Model ${this.model} does not support multimodal content. Use one of: ${MULTIMODAL_MODELS.join(", ")}`,
-      );
-    }
-    return new GoogleAIChatRequest(this, chat);
-  }
-
   async createGenerationRequest(params: {
     messages: Array<AxleMessage>;
-    tools?: Array<ToolDef>;
+    tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
   }): Promise<GenerationResult> {
     return await createGenerationRequest({
@@ -52,34 +36,16 @@ async function createGenerationRequest(params: {
   client: GoogleGenAI;
   model: string;
   messages: Array<AxleMessage>;
-  tools?: Array<ToolDef>;
+  tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
 }): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
-  const contents = convertAxleMessagesToGoogleAI(messages);
-  const config: GenerateContentConfig = {};
-
-  if (tools && tools.length > 0) {
-    config.tools = tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema) as any;
-      return {
-        functionDeclarations: [
-          {
-            name: tool.name,
-            description: tool.description,
-            parameters: {
-              ...jsonSchema,
-              type: Type.OBJECT,
-            },
-          },
-        ],
-      };
-    });
-  }
-
-  const request = { contents, config };
+  const request = {
+    contents: convertAxleMessagesToGoogleAI(messages),
+    config: prepareConfig(tools),
+  };
   recorder?.debug?.log(request);
 
   let result: GenerationResult;
@@ -98,76 +64,29 @@ async function createGenerationRequest(params: {
   return result;
 }
 
-class GoogleAIChatRequest implements AIRequest {
-  constructor(
-    private provider: GoogleAIProvider,
-    private chat: Chat,
-  ) {}
-
-  async execute(runtime: { recorder?: Recorder }): Promise<GenerationResult> {
-    const { recorder } = runtime;
-    const { client, model } = this.provider;
-
-    const request = prepareRequest(this.chat);
-    recorder?.debug?.log(request);
-
-    let result: GenerationResult;
-    try {
-      const response = await client.models.generateContent({
-        model,
-        ...request,
-      });
-      result = fromModelResponse(response, runtime);
-    } catch (e) {
-      recorder?.error?.log(e);
-      result = getUndefinedError(e);
-    }
-
-    recorder?.debug?.log(result);
-    return result;
-  }
-}
-
-export function prepareRequest(chat: Chat) {
-  const contents = prepareContents(chat);
-  const config = prepareConfig(chat);
-
-  return { contents, config };
-}
-
-function prepareContents(chat: Chat): string | Content[] {
-  if (
-    chat.messages.length === 1 &&
-    chat.messages[0].role == "user" &&
-    typeof chat.messages[0].content === "string"
-  ) {
-    // If there's only one user message with string content, we can send it as a string
-    return chat.messages[0].content;
-  }
-
-  return convertAxleMessagesToGoogleAI(chat.messages);
-}
-
-function prepareConfig(chat: Chat): GenerateContentConfig {
+function prepareConfig(tools: Array<ToolDefinition>, system?: string): GenerateContentConfig {
   const config: GenerateContentConfig = {};
 
-  if (chat.system) {
-    config.systemInstruction = chat.system;
+  if (system) {
+    config.systemInstruction = system;
   }
 
-  if (chat.tools.length > 0) {
-    config.tools = chat.tools.map((tool) => ({
-      functionDeclarations: [
-        {
-          name: tool.name,
-          description: tool.description,
-          parameters: {
-            ...tool.parameters,
-            type: Type.OBJECT,
+  if (tools.length > 0) {
+    config.tools = tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema) as any;
+      return {
+        functionDeclarations: [
+          {
+            name: tool.name,
+            description: tool.description,
+            parameters: {
+              ...jsonSchema,
+              type: Type.OBJECT,
+            },
           },
-        },
-      ],
-    }));
+        ],
+      };
+    });
   }
 
   return config;

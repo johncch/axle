@@ -1,4 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
+import * as z from "zod";
 import { Chat } from "../../messages/chat.js";
 import {
   ContentPart,
@@ -7,7 +8,7 @@ import {
   ContentPartText,
   ContentPartToolCall,
 } from "../../messages/types.js";
-import { ToolSchema } from "../../tools/types.js";
+import { ToolDefinition } from "../../tools/types.js";
 import { FileInfo } from "../../utils/file.js";
 import { AxleStopReason } from "../types.js";
 import { prepareRequest } from "./utils.js";
@@ -438,37 +439,26 @@ describe("Anthropic prepareRequest", () => {
   });
 
   describe("tool configurations", () => {
-    const mockToolSchema: ToolSchema = {
+    const mockToolDef: ToolDefinition = {
       name: "get_weather",
       description: "Get current weather information",
-      parameters: {
-        type: "object",
-        properties: {
-          location: { type: "string", description: "City name" },
-          units: { type: "string", enum: ["celsius", "fahrenheit"] },
-        },
-        required: ["location"],
-      },
+      schema: z.object({
+        location: z.string().describe("City name"),
+        units: z.enum(["celsius", "fahrenheit"]).optional(),
+      }),
     };
 
-    const mockToolSchema2: ToolSchema = {
+    const mockToolDef2: ToolDefinition = {
       name: "calculate",
       description: "Perform mathematical calculations",
-      parameters: {
-        type: "object",
-        properties: {
-          expression: {
-            type: "string",
-            description: "Mathematical expression",
-          },
-        },
-        required: ["expression"],
-      },
+      schema: z.object({
+        expression: z.string().describe("Mathematical expression"),
+      }),
     };
 
     test("should handle chat with single tool", () => {
       const chat = new Chat();
-      chat.setToolSchemas([mockToolSchema]);
+      chat.setTools([mockToolDef]);
       chat.addUser("What's the weather in Boston?");
       const result = prepareRequest(chat);
 
@@ -477,6 +467,8 @@ describe("Anthropic prepareRequest", () => {
         name: "get_weather",
         description: "Get current weather information",
         input_schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          additionalProperties: false,
           type: "object",
           properties: {
             location: { type: "string", description: "City name" },
@@ -489,23 +481,43 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle chat with multiple tools", () => {
       const chat = new Chat();
-      chat.setToolSchemas([mockToolSchema, mockToolSchema2]);
+      chat.setTools([mockToolDef, mockToolDef2]);
       chat.addUser("What's the weather in Boston and calculate 2 + 2?");
       const result = prepareRequest(chat);
 
       expect(result.tools).toHaveLength(2);
       expect(result.tools[0].name).toBe("get_weather");
       expect(result.tools[0].description).toBe("Get current weather information");
-      expect(result.tools[0].input_schema).toEqual(mockToolSchema.parameters);
+      expect(result.tools[0].input_schema).toEqual({
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        additionalProperties: false,
+        type: "object",
+        properties: {
+          location: { type: "string", description: "City name" },
+          units: { type: "string", enum: ["celsius", "fahrenheit"] },
+        },
+        required: ["location"],
+      });
 
       expect(result.tools[1].name).toBe("calculate");
       expect(result.tools[1].description).toBe("Perform mathematical calculations");
-      expect(result.tools[1].input_schema).toEqual(mockToolSchema2.parameters);
+      expect(result.tools[1].input_schema).toEqual({
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        additionalProperties: false,
+        type: "object",
+        properties: {
+          expression: {
+            type: "string",
+            description: "Mathematical expression",
+          },
+        },
+        required: ["expression"],
+      });
     });
 
     test("should handle empty tools array", () => {
       const chat = new Chat();
-      chat.setToolSchemas([]);
+      chat.setTools([]);
       chat.addUser("Hello");
       const result = prepareRequest(chat);
 
@@ -516,14 +528,12 @@ describe("Anthropic prepareRequest", () => {
   describe("complex scenarios", () => {
     test("should handle complete conversation with tools and multimodal content", () => {
       const chat = new Chat();
-      const mockTool: ToolSchema = {
+      const mockTool: ToolDefinition = {
         name: "analyze_image",
         description: "Analyze image content",
-        parameters: {
-          type: "object",
-          properties: { description: { type: "string" } },
-          required: ["description"],
-        },
+        schema: z.object({
+          description: z.string(),
+        }),
       };
 
       const mockImageFile: FileInfo = {
@@ -537,7 +547,7 @@ describe("Anthropic prepareRequest", () => {
 
       // Set up complete scenario
       chat.addSystem("You are an AI assistant with image analysis capabilities");
-      chat.setToolSchemas([mockTool]);
+      chat.setTools([mockTool]);
       chat.addUser("Please analyze this chart", [mockImageFile]);
       chat.addAssistant({
         id: crypto.randomUUID(),
@@ -693,7 +703,7 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle empty tool schemas array", () => {
       const chat = new Chat();
-      chat.setToolSchemas([]);
+      chat.setTools([]);
       chat.addUser("Hello");
       const result = prepareRequest(chat);
 

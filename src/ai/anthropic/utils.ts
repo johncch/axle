@@ -11,18 +11,29 @@ import {
 } from "@anthropic-ai/sdk/resources";
 import z from "zod";
 import { Chat, getDocuments, getImages, getTextAndInstructions } from "../../messages/chat.js";
-import { AxleMessage, ContentPartText, ContentPartThinking, ContentPartToolCall } from "../../messages/types.js";
-import { ToolDef } from "../../tools/types.js";
+import {
+  AxleMessage,
+  ContentPartText,
+  ContentPartThinking,
+  ContentPartToolCall,
+} from "../../messages/types.js";
+import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason } from "../types.js";
 
 export function prepareRequest(chat: Chat) {
   const messages = convertToProviderMessages(chat.messages);
 
-  const tools = chat.tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.parameters,
-  }));
+  const tools = chat.tools.map((t) => {
+    const schema = z.toJSONSchema(t.schema);
+    if (!isObjectSchema(schema)) {
+      throw new Error(`Schema for tool ${t.name} must be an object type`);
+    }
+    return {
+      name: t.name,
+      description: t.description,
+      input_schema: schema,
+    };
+  });
 
   return {
     system: chat.system,
@@ -91,7 +102,11 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
                 type: "image" as const,
                 source: {
                   type: "base64",
-                  media_type: img.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                  media_type: img.mimeType as
+                    | "image/jpeg"
+                    | "image/png"
+                    | "image/gif"
+                    | "image/webp",
                   data: img.base64,
                 },
               }) satisfies ImageBlockParam,
@@ -126,7 +141,9 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
   });
 }
 
-export function convertToProviderTools(tools: Array<ToolDef>): Array<Anthropic.Messages.Tool> {
+export function convertToProviderTools(
+  tools: Array<ToolDefinition>,
+): Array<Anthropic.Messages.Tool> {
   return tools.map((tool) => {
     const schema = z.toJSONSchema(tool.schema);
     if (!isObjectSchema(schema)) {
@@ -201,7 +218,9 @@ export function converToProviderContentParts(
   return result;
 }
 
-export function convertToAxleToolCalls(parts: Array<Messages.ContentBlock>): Array<ContentPartToolCall> {
+export function convertToAxleToolCalls(
+  parts: Array<Messages.ContentBlock>,
+): Array<ContentPartToolCall> {
   return parts
     .slice(1)
     .map((toolUse) => {

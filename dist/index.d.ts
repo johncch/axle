@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import z__default, { ZodObject } from 'zod';
+import z__default, { ZodObject, z as z$1 } from 'zod';
 
 type PlainObject = Record<string, unknown>;
 type ProgramOptions = {
@@ -44,31 +44,6 @@ interface RecorderWriter {
     handleEvent(event: RecorderEntry): void | Promise<void>;
     flush?(): Promise<void>;
 }
-
-interface ToolSchema {
-    name: string;
-    description: string;
-    parameters: {
-        type: "object";
-        properties: Record<string, object>;
-        required: string[];
-    };
-}
-interface ToolExecutable {
-    name: string;
-    schema: ToolSchema;
-    setConfig?: (config: {
-        [key: string]: any;
-    }) => void;
-    execute: (params: {
-        [key: string]: any;
-    }) => Promise<string>;
-}
-type ToolDef<Z extends ZodObject = ZodObject> = {
-    name: string;
-    description?: string;
-    schema: Z;
-};
 
 declare class Recorder {
     instanceId: `${string}-${string}-${string}-${string}-${string}`;
@@ -169,29 +144,16 @@ interface ContentPartToolCall {
     arguments: string | Record<string, unknown>;
 }
 
-interface ChatAssistantParams {
-    id: string;
-    model: string;
-    content: Array<ContentPartText | ContentPartThinking>;
-    finishReason: AxleStopReason;
-    toolCalls?: ContentPartToolCall[];
-}
-declare class Chat {
-    system: string;
-    messages: AxleMessage[];
-    tools: ToolSchema[];
-    setToolSchemas(schemas: ToolSchema[]): void;
-    addSystem(message: string): void;
-    addUser(message: string): void;
-    addUser(message: string, instruction: string): void;
-    addUser(message: string, instruction: string, files: FileInfo[]): void;
-    addUser(message: string, files: FileInfo[]): any;
-    addAssistant(message: string): any;
-    addAssistant(params: ChatAssistantParams): any;
-    addTools(input: Array<AxleToolCallResult>): void;
-    hasFiles(): boolean;
-    latest(): AxleMessage | undefined;
-    toString(): string;
+type ToolDefinition<Z extends ZodObject = ZodObject> = {
+    name: string;
+    description?: string;
+    schema: Z;
+};
+interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
+    setConfig?: (config: {
+        [key: string]: any;
+    }) => void;
+    execute: (params: z$1.infer<Z>) => Promise<string>;
 }
 
 type OllamaProviderConfig = {
@@ -219,20 +181,12 @@ interface AIProviderConfig {
 interface AIProvider {
     get name(): string;
     get model(): string;
-    createChatRequest(chat: Chat, context: {
-        recorder?: Recorder;
-    }): AIRequest;
     createGenerationRequest(params: {
         messages: Array<AxleMessage>;
-        tools?: Array<ToolDef>;
+        tools?: Array<ToolDefinition>;
         context: {
             recorder?: Recorder;
         };
-    }): Promise<GenerationResult>;
-}
-interface AIRequest {
-    execute(runtime: {
-        recorder?: Recorder;
     }): Promise<GenerationResult>;
 }
 type GenerationResult = GenerationSuccessResult | GenerationErrorResult;
@@ -358,7 +312,7 @@ declare class Axle {
 interface GenerateProps {
     provider: AIProvider;
     messages: Array<AxleMessage>;
-    tools?: Array<ToolDef>;
+    tools?: Array<ToolDefinition>;
     recorder?: Recorder;
 }
 declare function generate(props: GenerateProps): Promise<GenerationResult>;

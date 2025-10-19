@@ -1,11 +1,11 @@
 import * as z from "zod";
+import { generate } from "../../ai/generate.js";
 import { AIProvider, AxleStopReason } from "../../ai/types.js";
 import { Instruct } from "../../core/Instruct.js";
 import { Chat, getTextContent } from "../../messages/chat.js";
 import { AxleToolCallResult, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { TaskHandler } from "../../registry/taskHandler.js";
-import { ToolExecutable, ToolSchema } from "../../tools/types.js";
 import { ProgramOptions, Stats } from "../../types.js";
 import { Keys, setResultsIntoVariables } from "../../utils/variables.js";
 
@@ -59,8 +59,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
     chat.addUser(message, instructions);
   }
   if (instruct.hasTools()) {
-    const toolSchemas = getToolSchemas(instruct.tools);
-    chat.setToolSchemas(toolSchemas);
+    chat.setTools(Object.values(instruct.tools));
   }
 
   if (options?.dryRun) {
@@ -70,8 +69,12 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
 
   let continueProcessing = true;
   while (continueProcessing) {
-    const request = provider.createChatRequest(chat, { recorder });
-    const response = await request.execute({ recorder });
+    const response = await generate({
+      provider,
+      messages: chat.messages,
+      tools: chat.tools,
+      recorder: recorder,
+    });
 
     stats.in += response.usage.in;
     stats.out += response.usage.out;
@@ -180,12 +183,4 @@ async function executeToolCalls<T extends SchemaRecord>(
   }
 
   return Promise.all(promises);
-}
-
-function getToolSchemas(tools: Record<string, ToolExecutable>) {
-  const toolSchemas: ToolSchema[] = [];
-  for (const [name, tool] of Object.entries(tools)) {
-    toolSchemas.push(tool.schema);
-  }
-  return toolSchemas;
 }

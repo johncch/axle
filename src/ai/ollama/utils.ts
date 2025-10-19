@@ -1,13 +1,13 @@
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/types.js";
-import { ToolDef } from "../../tools/types.js";
+import { ToolDefinition } from "../../tools/types.js";
 import { OllamaMessage } from "./types.js";
 
 export function convertAxleMessagesToOllama(messages: AxleMessage[]): OllamaMessage[] {
   return messages.map(convertMessage).flat(1);
 }
 
-export function convertToolDefToOllama(tools: Array<ToolDef>) {
+export function convertToolDefToOllama(tools: Array<ToolDefinition>) {
   return tools && tools.length > 0
     ? tools.map((tool) => ({
         type: "function" as const,

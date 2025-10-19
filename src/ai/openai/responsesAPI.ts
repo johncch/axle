@@ -8,43 +8,16 @@ import z from "zod";
 import { Chat, getInstructions, getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
-import { ToolDef } from "../../tools/types.js";
-import { AIRequest, AxleStopReason, GenerationResult } from "../types.js";
+import { ToolDefinition } from "../../tools/types.js";
+import { AxleStopReason, GenerationResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { OpenAIProvider } from "./provider.js";
 import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
-
-export class OpenAIResponsesAPI implements AIRequest {
-  constructor(
-    private provider: OpenAIProvider,
-    private chat: Chat,
-  ) {}
-
-  async execute(runtime: { recorder?: Recorder }): Promise<GenerationResult> {
-    const { recorder } = runtime;
-    const { client, model } = this.provider;
-    const request = prepareRequest(this.chat, model);
-    recorder?.debug?.heading.log("[Open AI Provider] Using the Responses API");
-    recorder?.debug?.log(request);
-
-    let result: GenerationResult;
-    try {
-      const response = await client.responses.create(request);
-      result = fromModelResponse(response);
-    } catch (e) {
-      recorder?.error?.log(e);
-      result = getUndefinedError(e);
-    }
-    recorder?.debug?.log(result);
-    return result;
-  }
-}
 
 export async function createGenerationRequestWithResponsesAPI(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;
-  tools?: Array<ToolDef>;
+  tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
 }): Promise<GenerationResult> {
   const { client, model, messages, tools, context } = params;
@@ -105,11 +78,16 @@ export function prepareRequest(chat: Chat, model: string): ResponseCreateParamsN
   }
 
   if (chat.tools.length > 0) {
-    request.tools = chat.tools.map((schema) => ({
-      type: "function",
-      strict: true,
-      ...schema,
-    }));
+    request.tools = chat.tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema);
+      return {
+        type: "function",
+        strict: true,
+        name: tool.name,
+        description: tool.description,
+        parameters: jsonSchema,
+      };
+    });
   }
 
   return request;

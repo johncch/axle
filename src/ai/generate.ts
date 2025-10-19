@@ -1,12 +1,12 @@
 import { AxleMessage } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
-import { ToolDef } from "../tools/types.js";
+import { ToolDefinition } from "../tools/types.js";
 import { AIProvider, GenerationResult } from "./types.js";
 
 interface GenerateProps {
   provider: AIProvider;
   messages: Array<AxleMessage>;
-  tools?: Array<ToolDef>;
+  tools?: Array<ToolDefinition>;
   recorder?: Recorder;
 }
 
