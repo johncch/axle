@@ -17,16 +17,38 @@ export async function createGenerationRequest(params: {
   client: Anthropic;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   context?: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): Promise<ModelResult> {
-  const { client, model, messages, tools, context } = params;
+  const { client, model, messages, system, tools, context, options } = params;
   const { recorder } = context;
+
+  // Convert stop to stop_sequences for Anthropic
+  const anthropicOptions = options ? { ...options } : {};
+  if (anthropicOptions.stop) {
+    anthropicOptions.stop_sequences = Array.isArray(anthropicOptions.stop)
+      ? anthropicOptions.stop
+      : [anthropicOptions.stop];
+    delete anthropicOptions.stop;
+  }
+
   const request = {
     model: model,
     max_tokens: 4096,
     messages: convertToProviderMessages(messages),
+    ...(system && { system }),
     ...(tools && { tools: convertToProviderTools(tools) }),
+    ...anthropicOptions,
   };
   recorder?.debug?.log(request);
 

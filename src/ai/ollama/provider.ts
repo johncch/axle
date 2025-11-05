@@ -21,8 +21,18 @@ export class OllamaProvider implements AIProvider {
 
   async createGenerationRequest(params: {
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
   }): Promise<ModelResult> {
     return await createGenerationRequest({
       url: this.url,
@@ -33,16 +43,28 @@ export class OllamaProvider implements AIProvider {
 
   createStreamingRequest(params: {
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
   }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-    const { messages, tools, context } = params;
+    const { messages, system, tools, context, options } = params;
     return createStreamingRequest({
       url: this.url,
       model: this.model,
       messages,
+      system,
       tools,
       runtime: context,
+      options,
     });
   }
 }
