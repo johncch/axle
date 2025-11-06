@@ -1,3 +1,4 @@
+import z from "zod";
 import {
   AIProviderConfig,
   AnthropicProviderConfig,
@@ -6,6 +7,7 @@ import {
   OpenAIProviderConfig,
 } from "../../ai/types.js";
 import { ResultTypeUnion } from "../../core/types.js";
+import { serviceConfigSchema } from "./schemas.js";
 
 export interface ValidationError {
   value: string;
@@ -22,7 +24,8 @@ export type ToolProviderConfig = {
   brave?: BraveProviderConfig;
 };
 
-export type ServiceConfig = Partial<AIProviderConfig> & ToolProviderConfig;
+// Use Zod-inferred type for ServiceConfig
+export type ServiceConfig = z.infer<typeof serviceConfigSchema>;
 
 /* Job Types */
 

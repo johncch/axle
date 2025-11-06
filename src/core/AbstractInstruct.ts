@@ -230,7 +230,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
       const tagContent = this._taggedSections.tags[key];
       if (tagContent !== undefined) {
         parseInput[key] = this.preprocessValue(fieldSchema, tagContent);
-      } else if (fieldSchema.def.type !== "optional") {
+      } else if (fieldSchema._def.typeName !== "ZodOptional") {
         throw new Error(
           `Expected results with tag ${key} but it does not exist`,
         );
@@ -260,8 +260,8 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
 
   private preprocessValue(schema: z.ZodTypeAny, rawValue: string): any {
     rawValue = rawValue.trim();
-    switch (schema.def.type) {
-      case "string":
+    switch (schema._def.typeName) {
+      case "ZodString":
         try {
           const parsed = JSON.parse(rawValue);
           return parsed;
@@ -273,14 +273,14 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
             `Cannot parse '${rawValue}' as string. Ensure it is a valid JSON string or a plain string.`,
           );
         }
-      case "number": {
+      case "ZodNumber": {
         const parsed = parseFloat(rawValue);
         if (isNaN(parsed)) {
           throw new Error(`Cannot parse '${rawValue}' as number`);
         }
         return parsed;
       }
-      case "boolean": {
+      case "ZodBoolean": {
         const lowerValue = rawValue.toLowerCase();
         if (lowerValue === "true") return true;
         if (lowerValue === "false") return false;
@@ -288,7 +288,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
           `Cannot parse '${rawValue}' as boolean. Expected 'true' or 'false'`,
         );
       }
-      case "array": {
+      case "ZodArray": {
         if (rawValue === "") return [];
         try {
           const parsed = JSON.parse(rawValue);
@@ -313,7 +313,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
             .filter((item) => item !== "");
         }
       }
-      case "object": {
+      case "ZodObject": {
         if (rawValue.includes("```json")) {
           rawValue = rawValue.replace(/```json/g, "").replace(/```/g, "");
         }
@@ -324,8 +324,8 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
           throw new Error(`Cannot parse object as JSON: ${error.message}`);
         }
       }
-      case "optional": {
-        const innerSchema = (schema as any).def.innerType as z.ZodTypeAny;
+      case "ZodOptional": {
+        const innerSchema = (schema as any)._def.innerType as z.ZodTypeAny;
         return this.preprocessValue(innerSchema, rawValue);
       }
       default:

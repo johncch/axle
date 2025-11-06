@@ -1,5 +1,5 @@
 import { AIProvider } from "../ai/types.js";
-import { isDAGJob } from "../cli/configs/job.js";
+import { dagJobSchema } from "../cli/configs/schemas.js";
 import { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
@@ -278,11 +278,17 @@ export const dagWorkflow: DAGWorkflow = (
     context: { recorder?: Recorder },
   ): Promise<DAGDefinition> => {
     const { recorder } = context;
-    const errVal = { value: "" };
-    if (isDAGJob(definition, errVal)) {
-      return await DAGJobToDefinition.convert(definition, context);
+    const result = dagJobSchema.safeParse(definition);
+    if (result.success) {
+      // Cast to DAGJob since schema validation passed
+      return await DAGJobToDefinition.convert(result.data as DAGJob, context);
     }
-    recorder?.warn?.log(errVal);
+    if (result.error) {
+      const errorMessages = result.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; ");
+      recorder?.warn?.log(`DAG validation warning: ${errorMessages}`);
+    }
     return definition as DAGDefinition;
   };
 

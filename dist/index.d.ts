@@ -214,12 +214,12 @@ interface ContentPartToolCall {
     parameters: Record<string, unknown>;
 }
 
-type ToolDefinition<Z extends ZodObject = ZodObject> = {
+type ToolDefinition<Z extends ZodObject<any> = ZodObject<any>> = {
     name: string;
     description?: string;
     schema: Z;
 };
-interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
+interface ToolExecutable<Z extends ZodObject<any> = ZodObject<any>> extends ToolDefinition<Z> {
     setConfig?: (config: {
         [key: string]: any;
     }) => void;
@@ -649,5 +649,4 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
-export type { AIProvider, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };
+export { type AIProvider, Axle, ChainOfThought, ConsoleWriter, type DAGDefinition, type DAGWorkflowOptions, type FileInfo, Instruct, LogLevel, type SerializedExecutionResponse, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
