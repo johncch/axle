@@ -13,18 +13,28 @@ export async function* createStreamingRequest(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   runtime: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, tools, runtime } = params;
+  const { client, model, messages, system, tools, runtime, options } = params;
   const { recorder } = runtime;
 
   const useResponsesAPI = (RESPONSES_API_MODELS as readonly string[]).includes(model);
 
   if (useResponsesAPI) {
-    yield* createResponsesAPIStream({ client, model, messages, tools, runtime });
+    yield* createResponsesAPIStream({ client, model, messages, system, tools, runtime, options });
   } else {
-    yield* createChatCompletionStream({ client, model, messages, tools, runtime });
+    yield* createChatCompletionStream({ client, model, messages, system, tools, runtime, options });
   }
 }
 
@@ -32,17 +42,28 @@ async function* createChatCompletionStream(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   runtime: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, tools, runtime } = params;
+  const { client, model, messages, system, tools, runtime, options } = params;
   const { recorder } = runtime;
 
   const chatTools = toModelTools(tools);
   const request = {
     model,
-    messages: convertAxleMessagesToChatCompletion(messages),
+    messages: convertAxleMessagesToChatCompletion(messages, system),
     ...(chatTools && { tools: chatTools }),
+    ...options,
     stream: true as const,
   };
 
@@ -76,18 +97,30 @@ async function* createResponsesAPIStream(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   runtime: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, tools, runtime } = params;
+  const { client, model, messages, system, tools, runtime, options } = params;
   const { recorder } = runtime;
 
   const modelTools = prepareTools(tools);
   const request = {
     model,
     input: convertAxleMessageToResponseInput(messages),
+    ...(system && { instructions: system }),
     stream: true as const,
     ...(modelTools ? { tools: modelTools } : {}),
+    ...options,
   };
 
   recorder?.debug?.log(request);

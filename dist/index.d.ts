@@ -427,8 +427,10 @@ declare function generate(props: GenerateProps): Promise<ModelResult>;
 interface StreamProps {
     provider: AIProvider;
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     recorder?: Recorder;
+    options?: GenerateOptions;
 }
 interface StreamResult {
     get final(): Promise<ModelResult>;
