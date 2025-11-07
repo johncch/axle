@@ -1,19 +1,36 @@
-import { z } from "zod";
-import { ToolExecutable } from "./types.js";
+import { ToolExecutable, ToolSchema } from "./types.js";
 
-const calculatorSchema = z.object({
-  operation: z
-    .enum(["add", "subtract", "multiply", "divide"])
-    .describe("The operation to perform (add, subtract, multiply, divide)"),
-  a: z.number().describe("First operand"),
-  b: z.number().describe("Second operand"),
-});
-
-const calculatorTool: ToolExecutable<typeof calculatorSchema> = {
+const calculatorToolSchema: ToolSchema = {
   name: "calculator",
   description: "Performs basic arithmetic operations",
-  schema: calculatorSchema,
-  execute: async ({ operation, a, b }) => {
+  parameters: {
+    type: "object",
+    properties: {
+      operation: {
+        type: "string",
+        description:
+          "The operation to perform (add, subtract, multiply, divide)",
+        enum: ["add", "subtract", "multiply", "divide"],
+      },
+      a: {
+        type: "number",
+        description: "First operand",
+      },
+      b: {
+        type: "number",
+        description: "Second operand",
+      },
+    },
+    required: ["operation", "a", "b"],
+  },
+};
+
+const calculatorTool: ToolExecutable = {
+  name: "calculator",
+  schema: calculatorToolSchema,
+  execute: async (params) => {
+    const { operation, a, b } = params;
+
     switch (operation) {
       case "add":
         return `${a} + ${b} = ${a + b}`;
@@ -27,7 +44,6 @@ const calculatorTool: ToolExecutable<typeof calculatorSchema> = {
         }
         return `${a} / ${b} = ${a / b}`;
       default:
-        // This case should be unreachable due to Zod validation
         throw new Error(`Unknown operation: ${operation}`);
     }
   },

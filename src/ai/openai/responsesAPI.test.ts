@@ -9,10 +9,10 @@ import {
   ChatContentText,
   ToolCall,
 } from "../types.js";
-import { prepareRequest } from "./provider.js";
+import { prepareRequest } from "./responsesAPI.js";
 
-describe("Ollama prepareRequest", () => {
-  const testModel = "llama2";
+describe("OpenAI ResponsesAPI prepareRequest", () => {
+  const testModel = "gpt-4";
 
   describe("basic chat configurations", () => {
     test("should handle empty chat", () => {
@@ -20,7 +20,8 @@ describe("Ollama prepareRequest", () => {
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toEqual([]);
+      expect(result.input).toEqual([]);
+      expect(result.instructions).toBeUndefined();
       expect(result.tools).toBeUndefined();
     });
 
@@ -30,11 +31,8 @@ describe("Ollama prepareRequest", () => {
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toHaveLength(1);
-      expect(result.messages[0]).toEqual({
-        role: "system",
-        content: "You are a helpful assistant",
-      });
+      expect(result.input).toEqual([]);
+      expect(result.instructions).toBeUndefined();
       expect(result.tools).toBeUndefined();
     });
 
@@ -44,11 +42,12 @@ describe("Ollama prepareRequest", () => {
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toHaveLength(1);
-      expect(result.messages[0]).toEqual({
+      expect(result.input).toHaveLength(1);
+      expect(result.input[0]).toEqual({
         role: "user",
         content: "Hello, how are you?",
       });
+      expect(result.instructions).toBeUndefined();
     });
 
     test("should handle chat with system and user messages", () => {
@@ -58,15 +57,12 @@ describe("Ollama prepareRequest", () => {
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toHaveLength(2);
-      expect(result.messages[0]).toEqual({
-        role: "system",
-        content: "You are a helpful assistant",
-      });
-      expect(result.messages[1]).toEqual({
+      expect(result.input).toHaveLength(1);
+      expect(result.input[0]).toEqual({
         role: "user",
         content: "Hello, how are you?",
       });
+      expect(result.instructions).toBe("You are a helpful assistant");
     });
 
     test("should handle conversation with multiple exchanges", () => {
@@ -78,11 +74,21 @@ describe("Ollama prepareRequest", () => {
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toHaveLength(4);
-      expect(result.messages[0].role).toBe("system");
-      expect(result.messages[1].role).toBe("user");
-      expect(result.messages[2].role).toBe("assistant");
-      expect(result.messages[3].role).toBe("user");
+      expect(result.input).toHaveLength(3);
+      expect((result.input[0] as any).role).toBe("user");
+      expect((result.input[1] as any).role).toBe("assistant");
+      expect((result.input[2] as any).role).toBe("user");
+      expect(result.instructions).toBe("You are a helpful assistant");
+    });
+
+    test("should not set instructions if most recent message is not user", () => {
+      const chat = new Chat();
+      chat.addSystem("You are a helpful assistant");
+      chat.addUser("Hello");
+      chat.addAssistant("Hi there!");
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.instructions).toBeUndefined();
     });
   });
 
@@ -111,11 +117,21 @@ describe("Ollama prepareRequest", () => {
       chat.addUser("Analyze this image", [mockImageFile]);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.role).toBe("user");
-      expect(message.content).toBe("Analyze this image");
-      expect(message.images).toEqual([mockImageFile.base64]);
+      expect(Array.isArray(message.content)).toBe(true);
+      expect(message.content).toHaveLength(2);
+
+      expect(message.content[0]).toEqual({
+        type: "input_text",
+        text: "Analyze this image",
+      });
+
+      expect(message.content[1]).toEqual({
+        type: "input_image",
+        image_url: `data:${mockImageFile.mimeType};base64,${mockImageFile.base64}`,
+      });
     });
 
     test("should handle user message with document", () => {
@@ -123,12 +139,22 @@ describe("Ollama prepareRequest", () => {
       chat.addUser("Review this document", [mockDocumentFile]);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.role).toBe("user");
-      expect(message.content).toBe("Review this document");
-      // Documents are not handled as images, so no images field should be present
-      expect(message.images).toBeUndefined();
+      expect(Array.isArray(message.content)).toBe(true);
+      expect(message.content).toHaveLength(2);
+
+      expect(message.content[0]).toEqual({
+        type: "input_text",
+        text: "Review this document",
+      });
+
+      expect(message.content[1]).toEqual({
+        type: "input_file",
+        filename: mockDocumentFile.path,
+        file_data: `data:${mockDocumentFile.mimeType};base64,${mockDocumentFile.base64}`,
+      });
     });
 
     test("should handle user message with multiple files", () => {
@@ -136,30 +162,131 @@ describe("Ollama prepareRequest", () => {
       chat.addUser("Analyze these files", [mockImageFile, mockDocumentFile]);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.content).toBe("Analyze these files");
-      expect(message.images).toEqual([mockImageFile.base64]); // Only image files go to images array
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
+      expect(message.content).toHaveLength(3); // text + image + document
+
+      expect(message.content[0].type).toBe("input_text");
+      expect(message.content[1].type).toBe("input_image");
+      expect(message.content[2].type).toBe("input_file");
     });
 
-    test("should handle mixed content with instructions", () => {
+    test("should handle content with only files (no text)", () => {
       const chat = new Chat();
-      const mixedContent: ChatContent[] = [
-        { type: "text", text: "Please analyze this data" } as ChatContentText,
-        {
-          type: "instructions",
-          instructions: "Focus on the trends",
-        } as ChatContentInstructions,
+      const content: ChatContent[] = [
         { type: "file", file: mockImageFile } as ChatContentFile,
       ];
 
-      chat.messages.push({ role: "user", content: mixedContent });
+      chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.content).toBe("Please analyze this data\n\nFocus on the trends");
-      expect(message.images).toEqual([mockImageFile.base64]);
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
+      expect(message.role).toBe("user");
+      expect(message.content).toHaveLength(1);
+      expect(message.content[0].type).toBe("input_image");
+    });
+
+    test("should handle mixed file types correctly", () => {
+      const mockUnknownFile: FileInfo = {
+        path: "/test/unknown.xyz",
+        base64: "unknowndata==",
+        mimeType: "application/octet-stream",
+        size: 500,
+        name: "unknown.xyz",
+        type: "unknown" as any,
+      };
+
+      const chat = new Chat();
+      const content: ChatContent[] = [
+        { type: "text", text: "Analyze these files" } as ChatContentText,
+        { type: "file", file: mockImageFile } as ChatContentFile,
+        { type: "file", file: mockDocumentFile } as ChatContentFile,
+        { type: "file", file: mockUnknownFile } as ChatContentFile,
+      ];
+
+      chat.messages.push({ role: "user", content });
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
+      expect(message.content).toHaveLength(3); // text + image + document (unknown file filtered out)
+
+      expect(message.content[0].type).toBe("input_text");
+      expect(message.content[1].type).toBe("input_image");
+      expect(message.content[2].type).toBe("input_file");
+    });
+  });
+
+  describe("instructions handling", () => {
+    test("should combine system message and user instructions", () => {
+      const chat = new Chat();
+      chat.addSystem("You are a helpful assistant");
+
+      const content: ChatContent[] = [
+        { type: "text", text: "Hello" } as ChatContentText,
+        {
+          type: "instructions",
+          instructions: "Be brief",
+        } as ChatContentInstructions,
+      ];
+
+      chat.messages.push({ role: "user", content });
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.instructions).toBe(
+        "You are a helpful assistant\n\nBe brief",
+      );
+    });
+
+    test("should use only user instructions when no system message", () => {
+      const chat = new Chat();
+
+      const content: ChatContent[] = [
+        { type: "text", text: "Hello" } as ChatContentText,
+        {
+          type: "instructions",
+          instructions: "Be brief",
+        } as ChatContentInstructions,
+      ];
+
+      chat.messages.push({ role: "user", content });
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.instructions).toBe("Be brief");
+    });
+
+    test("should use only system message when no user instructions", () => {
+      const chat = new Chat();
+      chat.addSystem("You are a helpful assistant");
+      chat.addUser("Hello");
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.instructions).toBe("You are a helpful assistant");
+    });
+
+    test("should handle multiple instruction blocks", () => {
+      const chat = new Chat();
+      chat.addSystem("System prompt");
+
+      const content: ChatContent[] = [
+        { type: "text", text: "Hello" } as ChatContentText,
+        {
+          type: "instructions",
+          instructions: "First instruction",
+        } as ChatContentInstructions,
+        {
+          type: "instructions",
+          instructions: "Second instruction",
+        } as ChatContentInstructions,
+      ];
+
+      chat.messages.push({ role: "user", content });
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.instructions).toBe(
+        "System prompt\n\nFirst instruction\n\nSecond instruction",
+      );
     });
   });
 
@@ -201,7 +328,10 @@ describe("Ollama prepareRequest", () => {
       expect(result.tools).toHaveLength(1);
       expect(result.tools![0]).toEqual({
         type: "function",
-        function: mockToolSchema,
+        strict: true,
+        name: mockToolSchema.name,
+        description: mockToolSchema.description,
+        parameters: mockToolSchema.parameters,
       });
     });
 
@@ -214,11 +344,17 @@ describe("Ollama prepareRequest", () => {
       expect(result.tools).toHaveLength(2);
       expect(result.tools![0]).toEqual({
         type: "function",
-        function: mockToolSchema,
+        strict: true,
+        name: mockToolSchema.name,
+        description: mockToolSchema.description,
+        parameters: mockToolSchema.parameters,
       });
       expect(result.tools![1]).toEqual({
         type: "function",
-        function: mockToolSchema2,
+        strict: true,
+        name: mockToolSchema2.name,
+        description: mockToolSchema2.description,
+        parameters: mockToolSchema2.parameters,
       });
     });
 
@@ -228,7 +364,7 @@ describe("Ollama prepareRequest", () => {
         {
           id: "call_123",
           name: "get_weather",
-          arguments: { location: "Boston", units: "celsius" },
+          arguments: JSON.stringify({ location: "Boston", units: "celsius" }),
         },
         {
           id: "call_456",
@@ -240,8 +376,8 @@ describe("Ollama prepareRequest", () => {
       chat.addAssistant("I'll help you with both requests.", toolCalls);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.role).toBe("assistant");
       expect(message.content).toBe("I'll help you with both requests.");
       expect(message.toolCalls).toHaveLength(2);
@@ -250,7 +386,7 @@ describe("Ollama prepareRequest", () => {
         type: "function",
         function: {
           name: "get_weather",
-          arguments: { location: "Boston", units: "celsius" },
+          arguments: JSON.stringify({ location: "Boston", units: "celsius" }),
         },
         id: "call_123",
       });
@@ -259,7 +395,7 @@ describe("Ollama prepareRequest", () => {
         type: "function",
         function: {
           name: "calculate",
-          arguments: { expression: "2 + 2" },
+          arguments: JSON.stringify({ expression: "2 + 2" }),
         },
         id: "call_456",
       });
@@ -277,18 +413,18 @@ describe("Ollama prepareRequest", () => {
       ]);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(2);
+      expect(result.input).toHaveLength(2);
 
-      expect(result.messages[0]).toEqual({
-        role: "tool",
-        tool_call_id: "call_123",
-        content: "Temperature: 22°C, Sunny",
+      expect(result.input[0]).toEqual({
+        type: "function_call_output",
+        call_id: "call_123",
+        output: "Temperature: 22°C, Sunny",
       });
 
-      expect(result.messages[1]).toEqual({
-        role: "tool",
-        tool_call_id: "call_456",
-        content: "4",
+      expect(result.input[1]).toEqual({
+        type: "function_call_output",
+        call_id: "call_456",
+        output: "4",
       });
     });
   });
@@ -325,7 +461,7 @@ describe("Ollama prepareRequest", () => {
         {
           id: "call_789",
           name: "analyze_image",
-          arguments: { description: "chart analysis" },
+          arguments: JSON.stringify({ description: "chart analysis" }),
         },
       ]);
       chat.addTools([
@@ -335,46 +471,52 @@ describe("Ollama prepareRequest", () => {
           content: "This is a bar chart showing quarterly sales data",
         },
       ]);
-      chat.addAssistant(
-        "Based on the analysis, this chart shows quarterly sales data with an upward trend.",
-      );
+
+      const content: ChatContent[] = [
+        {
+          type: "text",
+          text: "Based on the analysis, what trends do you see?",
+        } as ChatContentText,
+        {
+          type: "instructions",
+          instructions: "Focus on growth patterns",
+        } as ChatContentInstructions,
+      ];
+      chat.messages.push({ role: "user", content });
 
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toHaveLength(5); // system + user + assistant + tool + assistant
+      expect(result.input).toHaveLength(4); // user + assistant + tool + user
       expect(result.tools).toHaveLength(1);
-
-      // Verify system message
-      expect(result.messages[0]).toEqual({
-        role: "system",
-        content: "You are an AI assistant with image analysis capabilities",
-      });
+      expect(result.instructions).toBe(
+        "You are an AI assistant with image analysis capabilities\n\nFocus on growth patterns",
+      );
 
       // Verify user message with image
-      const userMessage = result.messages[1] as any;
+      const userMessage = result.input[0] as any;
       expect(userMessage.role).toBe("user");
-      expect(userMessage.content).toBe("Please analyze this chart");
-      expect(userMessage.images).toEqual(["base64data=="]);
+      expect(Array.isArray(userMessage.content)).toBe(true);
+      expect(userMessage.content).toHaveLength(2);
 
       // Verify assistant message with tool call
-      const assistantMessage = result.messages[2] as any;
+      const assistantMessage = result.input[1] as any;
       expect(assistantMessage.role).toBe("assistant");
       expect(assistantMessage.toolCalls).toHaveLength(1);
 
       // Verify tool result
-      expect(result.messages[3]).toEqual({
-        role: "tool",
-        tool_call_id: "call_789",
-        content: "This is a bar chart showing quarterly sales data",
+      expect(result.input[2]).toEqual({
+        type: "function_call_output",
+        call_id: "call_789",
+        output: "This is a bar chart showing quarterly sales data",
       });
 
-      // Verify final assistant message
-      expect(result.messages[4]).toEqual({
-        role: "assistant",
-        content:
-          "Based on the analysis, this chart shows quarterly sales data with an upward trend.",
-      });
+      // Verify final user message
+      const finalMessage = result.input[3] as any;
+      expect(finalMessage.role).toBe("user");
+      expect(finalMessage.content[0].text).toBe(
+        "Based on the analysis, what trends do you see?",
+      );
     });
 
     test("should handle edge case with empty assistant content", () => {
@@ -382,8 +524,8 @@ describe("Ollama prepareRequest", () => {
       chat.addAssistant(""); // Empty content
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      expect(result.messages[0]).toEqual({
+      expect(result.input).toHaveLength(1);
+      expect(result.input[0]).toEqual({
         role: "assistant",
         content: "",
       });
@@ -392,14 +534,14 @@ describe("Ollama prepareRequest", () => {
     test("should handle edge case with assistant having only tool calls", () => {
       const chat = new Chat();
       const toolCalls: ToolCall[] = [
-        { id: "call_123", name: "test_tool", arguments: {} },
+        { id: "call_123", name: "test_tool", arguments: "{}" },
       ];
 
       chat.addAssistant("", toolCalls); // Empty content but with tool calls
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.role).toBe("assistant");
       expect(message.content).toBe("");
       expect(message.toolCalls).toHaveLength(1);
@@ -415,24 +557,24 @@ describe("Ollama prepareRequest", () => {
 
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(5);
-      expect(result.messages[0].role).toBe("system");
-      expect(result.messages[1].role).toBe("user");
-      expect(result.messages[2].role).toBe("assistant");
-      expect(result.messages[3].role).toBe("user");
-      expect(result.messages[4].role).toBe("assistant");
+      expect(result.input).toHaveLength(4);
+      expect((result.input[0] as any).role).toBe("user");
+      expect((result.input[1] as any).role).toBe("assistant");
+      expect((result.input[2] as any).role).toBe("user");
+      expect((result.input[3] as any).role).toBe("assistant");
+      expect(result.instructions).toBeUndefined(); // Last message is assistant, not user
     });
   });
 
-  describe("assistant messages", () => {
+  describe("assistant message handling", () => {
     test("should handle assistant message without tool calls", () => {
       const chat = new Chat();
       chat.addAssistant("Hello! How can I help you today?");
       const result = prepareRequest(chat, testModel);
 
       expect(result.model).toBe(testModel);
-      expect(result.messages).toHaveLength(1);
-      expect(result.messages[0]).toEqual({
+      expect(result.input).toHaveLength(1);
+      expect(result.input[0]).toEqual({
         role: "assistant",
         content: "Hello! How can I help you today?",
       });
@@ -451,8 +593,8 @@ describe("Ollama prepareRequest", () => {
       chat.addAssistant("", toolCalls);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.role).toBe("assistant");
       expect(message.content).toBe("");
       expect(message.toolCalls).toHaveLength(1);
@@ -489,10 +631,12 @@ describe("Ollama prepareRequest", () => {
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.content).toBe("Check these files");
-      expect(message.images).toEqual(["imagedata=="]); // Only image included, video filtered out
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
+      expect(message.content).toHaveLength(2); // text + image (video filtered out)
+
+      expect(message.content[0].type).toBe("input_text");
+      expect(message.content[1].type).toBe("input_image");
     });
 
     test("should handle various supported image formats", () => {
@@ -517,58 +661,16 @@ describe("Ollama prepareRequest", () => {
         chat.addUser("Test image", [imageFile]);
         const result = prepareRequest(chat, testModel);
 
-        const message = result.messages[0] as any;
-        expect(message.content).toBe("Test image");
-        expect(message.images).toEqual(["imagedata=="]); // Base64 data without MIME type prefix
+        const message = result.input[0] as any;
+        expect(message.content[1].image_url).toContain(
+          `data:${expected};base64,`,
+        );
       });
     });
   });
 
   describe("edge cases and error handling", () => {
-    test("should handle user message with only files (no text)", () => {
-      const mockImageFile: FileInfo = {
-        path: "/test/image.jpg",
-        base64: "base64data==",
-        mimeType: "image/jpeg",
-        size: 1000,
-        name: "image.jpg",
-        type: "image",
-      };
-
-      const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "file", file: mockImageFile } as ChatContentFile,
-      ];
-
-      chat.messages.push({ role: "user", content });
-      const result = prepareRequest(chat, testModel);
-
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.role).toBe("user");
-      expect(message.content).toBeNull(); // No text content, getTextAndInstructions returns null
-      expect(message.images).toEqual(["base64data=="]); // Only image data
-    });
-
-    test("should handle user message with only instructions (no text)", () => {
-      const chat = new Chat();
-      const content: ChatContent[] = [
-        {
-          type: "instructions",
-          instructions: "Be concise",
-        } as ChatContentInstructions,
-      ];
-
-      chat.messages.push({ role: "user", content });
-      const result = prepareRequest(chat, testModel);
-
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.role).toBe("user");
-      expect(message.content).toBe("Be concise"); // getTextAndInstructions combines instructions
-    });
-
-    test("should handle tool call arguments as object (Ollama specific)", () => {
+    test("should handle tool call arguments as object vs string", () => {
       const chat = new Chat();
       const toolCallsWithObject: ToolCall[] = [
         {
@@ -577,17 +679,30 @@ describe("Ollama prepareRequest", () => {
           arguments: { param1: "value1", param2: 42 },
         },
       ];
+      const toolCallsWithString: ToolCall[] = [
+        {
+          id: "call_456",
+          name: "test_tool",
+          arguments: '{"param1": "value1", "param2": 42}',
+        },
+      ];
 
       chat.addAssistant("Testing object args", toolCallsWithObject);
+      chat.addAssistant("Testing string args", toolCallsWithString);
+
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
+      expect(result.input).toHaveLength(2);
 
-      const message = result.messages[0] as any;
-      expect(message.toolCalls[0].function.arguments).toEqual({
-        param1: "value1",
-        param2: 42,
-      });
+      const message1 = result.input[0] as any;
+      expect(message1.toolCalls[0].function.arguments).toBe(
+        '{"param1":"value1","param2":42}',
+      );
+
+      const message2 = result.input[1] as any;
+      expect(message2.toolCalls[0].function.arguments).toBe(
+        '{"param1": "value1", "param2": 42}',
+      );
     });
 
     test("should handle tool call without id", () => {
@@ -596,68 +711,23 @@ describe("Ollama prepareRequest", () => {
         {
           id: "",
           name: "test_tool",
-          arguments: {},
+          arguments: "{}",
         },
       ];
 
       chat.addAssistant("Testing no id", toolCalls);
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.toolCalls[0]).toEqual({
         type: "function",
         function: {
           name: "test_tool",
-          arguments: {},
+          arguments: "{}",
         },
       });
       expect(message.toolCalls[0].id).toBeUndefined();
-    });
-
-    test("should handle mixed file types correctly", () => {
-      const mockImageFile: FileInfo = {
-        path: "/test/image.jpg",
-        base64: "imagedata==",
-        mimeType: "image/jpeg",
-        size: 1000,
-        name: "image.jpg",
-        type: "image",
-      };
-
-      const mockDocFile: FileInfo = {
-        path: "/test/doc.pdf",
-        base64: "docdata==",
-        mimeType: "application/pdf",
-        size: 2000,
-        name: "doc.pdf",
-        type: "document",
-      };
-
-      const mockUnknownFile: FileInfo = {
-        path: "/test/unknown.xyz",
-        base64: "unknowndata==",
-        mimeType: "application/octet-stream",
-        size: 500,
-        name: "unknown.xyz",
-        type: "unknown" as any,
-      };
-
-      const chat = new Chat();
-      const content: ChatContent[] = [
-        { type: "text", text: "Analyze these files" } as ChatContentText,
-        { type: "file", file: mockImageFile } as ChatContentFile,
-        { type: "file", file: mockDocFile } as ChatContentFile,
-        { type: "file", file: mockUnknownFile } as ChatContentFile,
-      ];
-
-      chat.messages.push({ role: "user", content });
-      const result = prepareRequest(chat, testModel);
-
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.content).toBe("Analyze these files");
-      expect(message.images).toEqual(["imagedata=="]); // Only images go to images array, documents and unknown files filtered out
     });
 
     test("should handle empty content arrays", () => {
@@ -667,10 +737,10 @@ describe("Ollama prepareRequest", () => {
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
       expect(message.role).toBe("user");
-      expect(message.content).toBeNull(); // getTextAndInstructions returns null for empty arrays
+      expect(message.content).toEqual([]);
     });
 
     test("should handle multiple text content blocks", () => {
@@ -684,31 +754,43 @@ describe("Ollama prepareRequest", () => {
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.content).toBe("First text block\n\nSecond text block\n\nThird text block");
+      expect(result.input).toHaveLength(1);
+      const message = result.input[0] as any;
+      expect(message.content).toHaveLength(1);
+      expect(message.content[0]).toEqual({
+        type: "input_text",
+        text: "First text block\n\nSecond text block\n\nThird text block",
+      });
     });
 
-    test("should handle multiple instruction blocks", () => {
+    test("should handle conversation ending with assistant message (no instructions)", () => {
       const chat = new Chat();
+      chat.addSystem("You are helpful");
+      chat.addUser("Hello");
+      chat.addAssistant("Hi there!");
+
+      const result = prepareRequest(chat, testModel);
+
+      expect(result.instructions).toBeUndefined();
+      expect(result.input).toHaveLength(2);
+    });
+
+    test("should handle empty system message with user instructions", () => {
+      const chat = new Chat();
+      chat.addSystem(""); // Empty system
+
       const content: ChatContent[] = [
-        { type: "text", text: "Main content" } as ChatContentText,
+        { type: "text", text: "Hello" } as ChatContentText,
         {
           type: "instructions",
-          instructions: "First instruction",
-        } as ChatContentInstructions,
-        {
-          type: "instructions",
-          instructions: "Second instruction",
+          instructions: "Be helpful",
         } as ChatContentInstructions,
       ];
 
       chat.messages.push({ role: "user", content });
       const result = prepareRequest(chat, testModel);
 
-      expect(result.messages).toHaveLength(1);
-      const message = result.messages[0] as any;
-      expect(message.content).toBe("Main content\n\nFirst instruction\n\nSecond instruction");
+      expect(result.instructions).toBe("Be helpful");
     });
   });
 });

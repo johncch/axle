@@ -1,16 +1,26 @@
-import * as z from "zod";
 import { BraveProviderConfig } from "../cli/configs/types.js";
+import { Recorder } from "../recorder/recorder.js";
 import { delay } from "../utils/utils.js";
-import { ToolExecutable } from "./types.js";
+import { ToolExecutable, ToolSchema } from "./types.js";
 
-const braveSearchSchema = z.object({
-  searchTerm: z.string().describe("The search term to query"),
-});
+const braveSearchToolSchema: ToolSchema = {
+  name: "brave",
+  description: "Perform a search using the Brave search engine",
+  parameters: {
+    type: "object",
+    properties: {
+      searchTerm: {
+        type: "string",
+        description: "The search term to query",
+      },
+    },
+    required: ["searchTerm"],
+  },
+};
 
-class BraveSearchTool implements ToolExecutable<typeof braveSearchSchema> {
+class BraveSearchTool implements ToolExecutable {
   name = "brave";
-  description = "Perform a search using the Brave search engine";
-  schema = braveSearchSchema;
+  schema: ToolSchema = braveSearchToolSchema;
 
   apiKey: string;
   throttle: number | undefined;
@@ -28,8 +38,13 @@ class BraveSearchTool implements ToolExecutable<typeof braveSearchSchema> {
     this.throttle = rateLimit ? 1100 / rateLimit : undefined;
   }
 
-  async execute(params: z.infer<typeof braveSearchSchema>): Promise<string> {
+  async execute(
+    params: { searchTerm: string },
+    context: { recorder?: Recorder } = {},
+  ) {
     const { searchTerm } = params;
+    const { recorder } = context;
+    recorder?.debug?.heading.log(`Brave: searching for ${searchTerm}`);
 
     if (this.throttle) {
       while (Date.now() - this.lastExecTime < this.throttle) {
@@ -55,15 +70,15 @@ class BraveSearchTool implements ToolExecutable<typeof braveSearchSchema> {
       });
 
       if (!response.ok) {
-        throw new Error(`[Brave] HTTP error ${response.status}: ${response.statusText}`);
+        throw new Error(
+          `[Brave] HTTP error ${response.status}: ${response.statusText}`,
+        );
       }
 
       const data = await response.json();
-      return JSON.stringify(data);
+      return data;
     } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`[Brave] Error fetching search results: ${error.message}`);
-      }
+      recorder?.error.log("[Brave] Error fetching search results:", error);
       throw error;
     }
   }

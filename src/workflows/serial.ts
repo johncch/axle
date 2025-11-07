@@ -1,9 +1,9 @@
+import { Chat } from "../ai/chat.js";
 import { AIProvider } from "../ai/types.js";
 import { SerialJob } from "../cli/configs/types.js";
 import { configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
-import { Chat } from "../messages/chat.js";
 import { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
 import { createNodeRegistry } from "../registry/nodeRegistryFactory.js";
@@ -18,7 +18,10 @@ interface SerialWorkflow {
   (...instructions: Task[]): WorkflowExecutable;
 }
 
-export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest: Task[]) => {
+export const serialWorkflow: SerialWorkflow = (
+  first: SerialJob | Task,
+  ...rest: Task[]
+) => {
   const prepare = async (context: { recorder?: Recorder }) => {
     const { recorder } = context;
     let tasks: Task[] = [];
@@ -80,7 +83,8 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
                   id: id,
                   taskType: task.type,
                   taskIndex: index,
-                  cause: error instanceof Error ? error : new Error(String(error)),
+                  cause:
+                    error instanceof Error ? error : new Error(String(error)),
                 });
           throw taskError;
         }

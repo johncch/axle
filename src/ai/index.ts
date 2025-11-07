@@ -23,19 +23,28 @@ export function getProvider<K extends keyof AIProviderConfig>(
   }
   switch (provider) {
     case "openai":
-      return new OpenAIProvider(config["api-key"], config.model) as ProviderMap[K];
+      return new OpenAIProvider(
+        config["api-key"],
+        config.model,
+      ) as ProviderMap[K];
     case "anthropic":
-      return new AnthropicProvider(config["api-key"], config.model) as ProviderMap[K];
+      return new AnthropicProvider(
+        config["api-key"],
+        config.model,
+      ) as ProviderMap[K];
     case "googleai":
-      return new GoogleAIProvider(config["api-key"], config.model) as ProviderMap[K];
+      return new GoogleAIProvider(
+        config["api-key"],
+        config.model,
+      ) as ProviderMap[K];
     case "ollama": {
       const ollamaConfig = config as OllamaProviderConfig;
-      return new OllamaProvider(ollamaConfig.model, ollamaConfig.url) as ProviderMap[K];
+      return new OllamaProvider(
+        ollamaConfig.model,
+        ollamaConfig.url,
+      ) as ProviderMap[K];
     }
     default:
       throw new AxleError("The provider is unsupported");
   }
 }
-
-export { generate } from "./generate.js";
-export { stream } from "./stream.js";

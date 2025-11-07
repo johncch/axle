@@ -1,4 +1,3 @@
 {
-  "plugins": ["prettier-plugin-organize-imports"],
-  "printWidth": 100,
+  "plugins": ["prettier-plugin-organize-imports"]
 }

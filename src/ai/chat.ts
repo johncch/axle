@@ -1,32 +1,22 @@
-import { AxleStopReason } from "../ai/types.js";
-import { ToolDefinition } from "../tools/types.js";
+import { ToolSchema } from "../tools/types.js";
 import { FileInfo } from "../utils/file.js";
 import {
-  AxleMessage,
-  AxleToolCallResult,
-  ContentPart,
-  ContentPartFile,
-  ContentPartInstructions,
-  ContentPartText,
-  ContentPartThinking,
-  ContentPartToolCall,
+  ChatContent,
+  ChatContentFile,
+  ChatContentInstructions,
+  ChatContentText,
+  ChatItem,
+  ChatItemToolCallResult,
+  ToolCall,
 } from "./types.js";
-
-interface ChatAssistantParams {
-  id: string;
-  model: string;
-  content: Array<ContentPartText | ContentPartThinking>;
-  finishReason: AxleStopReason;
-  toolCalls?: ContentPartToolCall[];
-}
 
 export class Chat {
   system: string;
-  messages: AxleMessage[] = [];
-  tools: ToolDefinition[] = [];
+  messages: ChatItem[] = [];
+  tools: ToolSchema[] = [];
 
-  setTools(tools: ToolDefinition[]) {
-    this.tools = tools;
+  setToolSchemas(schemas: ToolSchema[]) {
+    this.tools = schemas;
   }
 
   addSystem(message: string) {
@@ -36,7 +26,7 @@ export class Chat {
   addUser(message: string): void;
   addUser(message: string, instruction: string): void;
   addUser(message: string, instruction: string, files: FileInfo[]): void;
-  addUser(message: string, files: FileInfo[]): void;
+  addUser(message: string, files: FileInfo[]);
   addUser(message: string, second?: string | FileInfo[], third?: FileInfo[]) {
     let instructions: string | undefined;
     let files: FileInfo[] = [];
@@ -52,42 +42,32 @@ export class Chat {
       return;
     }
 
-    const content: ContentPart[] = [{ type: "text", text: message } as ContentPartText];
+    const content: ChatContent[] = [
+      { type: "text", text: message } as ChatContentText,
+    ];
     if (instructions) {
       content.push({
         type: "instructions",
         instructions,
-      } as ContentPartInstructions);
+      } as ChatContentInstructions);
     }
 
     for (const file of files) {
-      content.push({ type: "file", file } as ContentPartFile);
+      content.push({ type: "file", file } as ChatContentFile);
     }
 
     this.messages.push({ role: "user", content });
   }
 
-  addAssistant(message: string): void;
-  addAssistant(params: ChatAssistantParams): void;
-  addAssistant(obj: string | ChatAssistantParams): void {
-    if (typeof obj === "string") {
-      const text = obj as string;
-      this.messages.push({
-        role: "assistant",
-        id: crypto.randomUUID(),
-        content: [{ type: "text", text }],
-        model: "user",
-        finishReason: AxleStopReason.Custom,
-      });
-    } else {
-      this.messages.push({
-        role: "assistant",
-        ...obj,
-      });
-    }
+  addAssistant(message: string, toolCalls?: ToolCall[]) {
+    this.messages.push({
+      role: "assistant",
+      content: message,
+      ...(toolCalls && { toolCalls }),
+    });
   }
 
-  addTools(input: Array<AxleToolCallResult>) {
+  addTools(input: Array<ChatItemToolCallResult>) {
     this.messages.push({
       role: "tool",
       content: input,
@@ -96,11 +76,13 @@ export class Chat {
 
   hasFiles(): boolean {
     return this.messages.some(
-      (msg) => Array.isArray(msg.content) && msg.content.some((item) => item.type === "file"),
+      (msg) =>
+        Array.isArray(msg.content) &&
+        msg.content.some((item) => item.type === "file"),
     );
   }
 
-  latest(): AxleMessage | undefined {
+  latest(): ChatItem | undefined {
     return this.messages[this.messages.length - 1];
   }
 
@@ -116,7 +98,7 @@ export class Chat {
 /* Helper methods for getting data out of content */
 
 export function getTextAndInstructions(
-  content: string | ContentPart[],
+  content: string | ChatContent[],
   delimiter: string = "\n\n",
 ): string | null {
   if (typeof content === "string") {
@@ -125,11 +107,11 @@ export function getTextAndInstructions(
 
   const textParts = content
     .filter((item) => item.type === "text")
-    .map((item) => (item as ContentPartText).text);
+    .map((item) => (item as ChatContentText).text);
 
   const instructionsParts = content
     .filter((item) => item.type === "instructions")
-    .map((item) => (item as ContentPartInstructions).instructions);
+    .map((item) => (item as ChatContentInstructions).instructions);
 
   if (textParts.length === 0 && instructionsParts.length === 0) {
     return null;
@@ -138,57 +120,59 @@ export function getTextAndInstructions(
   return [...textParts, ...instructionsParts].join(delimiter);
 }
 
-export function getTextContent(content: string | ContentPart[]): string | null {
+export function getTextContent(content: string | ChatContent[]): string | null {
   if (typeof content === "string") {
     return content;
   }
 
   return content
     .filter((item) => item.type === "text")
-    .map((item) => (item as ContentPartText).text)
+    .map((item) => (item as ChatContentText).text)
     .join("\n\n");
 }
 
-export function getInstructions(content: string | ContentPart[]): string | null {
+export function getInstructions(
+  content: string | ChatContent[],
+): string | null {
   if (typeof content === "string") {
     return null;
   }
 
   const instructions = content
     .filter((item) => item.type === "instructions")
-    .map((item) => (item as ContentPartInstructions).instructions);
+    .map((item) => (item as ChatContentInstructions).instructions);
   if (instructions.length > 0) {
     return instructions.join("\n\n");
   }
   return null;
 }
 
-export function getDocuments(content: string | ContentPart[]): FileInfo[] {
+export function getDocuments(content: string | ChatContent[]): FileInfo[] {
   if (typeof content === "string") {
     return [];
   }
 
   return content
     .filter((item) => item.type === "file" && item.file.type === "document")
-    .map((item) => (item as ContentPartFile).file);
+    .map((item) => (item as ChatContentFile).file);
 }
 
-export function getImages(content: string | ContentPart[]): FileInfo[] {
+export function getImages(content: string | ChatContent[]): FileInfo[] {
   if (typeof content === "string") {
     return [];
   }
 
   return content
     .filter((item) => item.type === "file" && item.file.type === "image")
-    .map((item) => (item as ContentPartFile).file);
+    .map((item) => (item as ChatContentFile).file);
 }
 
-export function getFiles(content: string | ContentPart[]): FileInfo[] {
+export function getFiles(content: string | ChatContent[]): FileInfo[] {
   if (typeof content === "string") {
     return [];
   }
 
   return content
     .filter((item) => item.type === "file")
-    .map((item) => (item as ContentPartFile).file);
+    .map((item) => (item as ChatContentFile).file);
 }

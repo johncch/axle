@@ -1,13 +1,7 @@
-import { AnyStreamChunk } from "../messages/streaming/types.js";
-import {
-  AxleMessage,
-  ContentPartText,
-  ContentPartThinking,
-  ContentPartToolCall,
-} from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
-import { ToolDefinition } from "../tools/types.js";
 import { Stats } from "../types.js";
+import { FileInfo } from "../utils/file.js";
+import { Chat } from "./chat.js";
 
 /*
  Vendor specific configuration
@@ -31,69 +25,90 @@ export interface AIProviderConfig {
 export interface AIProvider {
   get name(): string;
   get model(): string;
-
-  createGenerationRequest(params: {
-    messages: Array<AxleMessage>;
-    system?: string;
-    tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
-    options?: {
-      temperature?: number;
-      top_p?: number;
-      max_tokens?: number;
-      frequency_penalty?: number;
-      presence_penalty?: number;
-      stop?: string | string[];
-      [key: string]: any;
-    };
-  }): Promise<ModelResult>;
-
-  createStreamingRequest?(params: {
-    messages: Array<AxleMessage>;
-    system?: string;
-    tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
-    options?: {
-      temperature?: number;
-      top_p?: number;
-      max_tokens?: number;
-      frequency_penalty?: number;
-      presence_penalty?: number;
-      stop?: string | string[];
-      [key: string]: any;
-    };
-  }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+  createChatRequest(chat: Chat, context: { recorder?: Recorder }): AIRequest;
 }
 
-export interface ModelResponse {
-  type: "success";
-  role: "assistant";
+export interface AIRequest {
+  execute(runtime: { recorder?: Recorder }): Promise<AIResponse>;
+}
+
+export interface ToolCall {
   id: string;
+  name: string;
+  arguments: string | Record<string, unknown>;
+}
+
+export type AIResponse = AISuccessResponse | AIErrorResponse;
+
+export interface AISuccessResponse {
+  type: "success";
+  id: string;
+  reason: StopReason;
+  message: ChatItemAssistant;
   model: string;
-  text: string;
-  content: Array<ContentPartText | ContentPartThinking>;
-  finishReason: AxleStopReason;
-  toolCalls?: ContentPartToolCall[];
+  toolCalls?: ToolCall[];
   usage: Stats;
   raw: any;
 }
 
-export interface ModelError {
+export interface AIErrorResponse {
   type: "error";
   error: {
     type: string;
     message: string;
   };
-  usage?: Stats;
-  raw?: any;
+  usage: Stats;
+  raw: any;
 }
 
-export type ModelResult = ModelResponse | ModelError;
-
-export enum AxleStopReason {
+export enum StopReason {
   Stop,
   Length,
   FunctionCall,
   Error,
-  Custom,
+}
+
+export type ChatItem = ChatItemUser | ChatItemAssistant | ChatItemToolCall;
+
+export interface ChatItemUser {
+  role: "user";
+  name?: string;
+  content: string | ChatContent[];
+}
+
+export interface ChatItemAssistant {
+  role: "assistant";
+  content?: string;
+  toolCalls?: ToolCall[];
+}
+
+export interface ChatItemToolCallResult {
+  id: string;
+  name: string;
+  content: string;
+}
+
+export interface ChatItemToolCall {
+  role: "tool";
+  content: Array<ChatItemToolCallResult>;
+}
+
+export type ChatContent =
+  | ChatContentText
+  | ChatContentFile
+  | ChatContentInstructions;
+
+export interface ChatContentText {
+  type: "text";
+  text: string;
+}
+
+export interface ChatContentInstructions {
+  type: "instructions";
+  instructions: string;
+}
+
+export interface ChatContentFile {
+  type: "file";
+  file: FileInfo;
 }

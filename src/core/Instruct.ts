@@ -1,4 +1,4 @@
-import * as z from "zod";
+import * as z from "zod/v4";
 import { AbstractInstruct } from "./AbstractInstruct.js";
 import { declarativeToOutputSchema, isOutputSchema } from "./typecheck.js";
 import { DeclarativeSchema, OutputSchema } from "./types.js";
