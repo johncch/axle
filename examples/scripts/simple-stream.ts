@@ -1,53 +1,62 @@
 import { config } from "dotenv";
 import { z } from "zod";
-import { Axle } from "../../src/index.js";
+import { Axle, stream } from "../../src/index.js";
 config();
 
-const axle = new Axle({
-  anthropic: {
-    "api-key": process.env.ANTHROPIC_API_KEY,
-    // model: options.model,
-  },
-});
+function setupAndStream() {
+  const axle = new Axle({
+    anthropic: {
+      "api-key": process.env.ANTHROPIC_API_KEY,
+      // model: options.model,
+    },
+  });
 
-const callNameTool = {
-  name: "setName",
-  description: "Set your name in the app",
-  schema: z.object({
-    name: z.string().describe("The name to call yourself"),
-  }),
-};
+  const callNameTool = {
+    name: "setName",
+    description: "Set your name in the app",
+    schema: z.object({
+      name: z.string().describe("The name to call yourself"),
+    }),
+  };
 
-// const result = stream({
-//   provider: axle.provider,
-//   messages: [
-//     {
-//       role: "user",
-//       content: "Please say hello and then call the setName function with your name",
-//     },
-//   ],
-//   tools: [callNameTool],
-// });
+  return stream({
+    provider: axle.provider,
+    messages: [
+      {
+        role: "user",
+        content:
+          "Can you tell me a 300 word story with your name and then call the setName function with your name",
+      },
+    ],
+    tools: [callNameTool],
+  });
+}
 
-// result.stream.on("text", (text) => {
-//   console.log(`text: ${text}`);
-// });
-// .on("tool-call", (toolcall) => {})
-// .on("object", (object) => {});
+async function test1() {
+  const result = setupAndStream();
+  let index = 0;
 
-// for await (const event of result.test) {
-//   console.log(event.type);
-//   console.log(event.data);
-// }
+  const monitor = setInterval(() => {
+    const current = result.current; // Synchronous snapshot
+    index += 1;
+    console.log(`[${index}] Streamed so far: ${JSON.stringify(current.content)}`);
+  }, 500);
 
-const provider = axle.provider;
-const messages = [
-  {
-    role: "user" as const,
-    content: "Please say hello and then call the setName function with your name",
-  },
-];
-const tools = [callNameTool];
+  // Get final result
+  const final = await result.message;
+  clearInterval(monitor);
+  console.log(`Complete: ${JSON.stringify(final.content)}`);
+}
+
+async function test2() {
+  const result = setupAndStream();
+  for await (const chunk of result) {
+    console.log(JSON.stringify(chunk));
+  }
+}
+
+// await test1();
+await test2();
 
 // const result1 = stream({ provider, messages, tools });
 

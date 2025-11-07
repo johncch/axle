@@ -116,7 +116,7 @@ export function fromModelResponse(response: Response): GenerationResult {
       type: "tool-call" as const,
       id: item.id || "",
       name: item.name || "",
-      arguments: item.arguments || "",
+      parameters: item.arguments || "",
     }));
 
   const contentParts = [{ type: "text" as const, text: response.output_text || "" }];

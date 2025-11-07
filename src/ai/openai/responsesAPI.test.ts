@@ -382,13 +382,13 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "get_weather",
-          arguments: { location: "Boston", units: "celsius" },
+          parameters: { location: "Boston", units: "celsius" },
         },
         {
           type: "tool-call",
           id: "call_456",
           name: "calculate",
-          arguments: { expression: "2 + 2" },
+          parameters: { expression: "2 + 2" },
         },
       ];
 
@@ -488,7 +488,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
             type: "tool-call",
             id: "call_789",
             name: "analyze_image",
-            arguments: { description: "chart analysis" },
+            parameters: { description: "chart analysis" },
           },
         ],
       });
@@ -560,7 +560,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
     test("should handle edge case with assistant having only tool calls", () => {
       const chat = new Chat();
       const toolCalls: ContentPartToolCall[] = [
-        { type: "tool-call", id: "call_123", name: "test_tool", arguments: "{}" },
+        { type: "tool-call", id: "call_123", name: "test_tool", parameters: "{}" },
       ];
 
       chat.addAssistant({
@@ -619,7 +619,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "test_tool",
-          arguments: {},
+          parameters: {},
         },
       ];
 
@@ -714,7 +714,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "test_tool",
-          arguments: { param1: "value1", param2: 42 },
+          parameters: { param1: "value1", param2: 42 },
         },
       ];
       const toolCallsWithString: ContentPartToolCall[] = [
@@ -722,7 +722,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
           type: "tool-call",
           id: "call_456",
           name: "test_tool",
-          arguments: '{"param1": "value1", "param2": 42}',
+          parameters: '{"param1": "value1", "param2": 42}',
         },
       ];
 
@@ -759,7 +759,7 @@ describe("OpenAI ResponsesAPI prepareRequest", () => {
           type: "tool-call",
           id: "",
           name: "test_tool",
-          arguments: "{}",
+          parameters: "{}",
         },
       ];
 

@@ -162,9 +162,10 @@ async function executeToolCalls<T extends SchemaRecord>(
 
         let args: Record<string, any> = {};
         try {
-          args = typeof call.arguments === "string" ? JSON.parse(call.arguments) : call.arguments;
+          args =
+            typeof call.parameters === "string" ? JSON.parse(call.parameters) : call.parameters; // TODO we don't have to parse it if we fix the type
         } catch {
-          reject(`argument for tool ${call.name} is not valid: ${JSON.stringify(call.arguments)}`);
+          reject(`argument for tool ${call.name} is not valid: ${JSON.stringify(call.parameters)}`);
         }
 
         tool

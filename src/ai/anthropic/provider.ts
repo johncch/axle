@@ -2,10 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Recorder } from "../../recorder/recorder.js";
 
 import { getTextContent } from "../../messages/chat.js";
+import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, AxleStopReason, GenerationResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
+import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL } from "./models.js";
 import {
   convertStopReason,
@@ -35,20 +37,20 @@ export class AnthropicProvider implements AIProvider {
     return await createGenerationRequest({ client: this.client, model: this.model, ...params });
   }
 
-  // createStreamingRequest(params: {
-  //   messages: Array<AxleMessage>;
-  //   tools?: Array<ToolDef>;
-  //   context: { recorder?: Recorder };
-  // }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  //   const { messages, tools, context } = params;
-  //   return createStreamingRequest({
-  //     client: this.client,
-  //     model: this.model,
-  //     messages,
-  //     tools,
-  //     runtime: context,
-  //   });
-  // }
+  createStreamingRequest(params: {
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDefinition>;
+    context: { recorder?: Recorder };
+  }): AsyncGenerator<AnyStreamChunk, void, unknown> {
+    const { messages, tools, context } = params;
+    return createStreamingRequest({
+      client: this.client,
+      model: this.model,
+      messages,
+      tools,
+      runtime: context,
+    });
+  }
 }
 
 async function createGenerationRequest(params: {

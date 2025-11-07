@@ -45,6 +45,73 @@ interface RecorderWriter {
     flush?(): Promise<void>;
 }
 
+interface StreamChunk {
+    type: "start" | "text" | "tool-call-start" | "tool-call-delta" | "tool-call-complete" | "thinking-start" | "thinking-delta" | "complete" | "error";
+    id?: string;
+    data?: any;
+}
+interface StreamStartChunk extends StreamChunk {
+    type: "start";
+    id: string;
+    data: {
+        model: string;
+        timestamp: number;
+    };
+}
+interface StreamCompleteChunk extends StreamChunk {
+    type: "complete";
+    data: {
+        finishReason: AxleStopReason;
+        usage?: Stats;
+    };
+}
+interface StreamTextChunk extends StreamChunk {
+    type: "text";
+    data: {
+        text: string;
+        index: number;
+    };
+}
+interface StreamThinkingStartChunk extends StreamChunk {
+    type: "thinking-start";
+    data: {
+        index: number;
+        redacted: boolean;
+    };
+}
+interface StreamThinkingDeltaChunk extends StreamChunk {
+    type: "thinking-delta";
+    data: {
+        index: number;
+        text: string;
+    };
+}
+interface StreamToolCallStartChunk extends StreamChunk {
+    type: "tool-call-start";
+    data: {
+        index: number;
+        id: string;
+        name: string;
+    };
+}
+interface StreamToolCallCompleteChunk extends StreamChunk {
+    type: "tool-call-complete";
+    data: {
+        index: number;
+        id: string;
+        name: string;
+        arguments: any;
+    };
+}
+interface StreamErrorChunk extends StreamChunk {
+    type: "error";
+    data: {
+        error: string;
+        code?: string;
+    };
+}
+type AnyStreamChunk = StreamStartChunk | StreamCompleteChunk | StreamTextChunk | StreamToolCallStartChunk | StreamToolCallCompleteChunk | StreamThinkingStartChunk | StreamThinkingDeltaChunk | StreamErrorChunk;
+
 declare class Recorder {
     instanceId: `${string}-${string}-${string}-${string}-${string}`;
     private currentLevel;
@@ -141,7 +208,7 @@ interface ContentPartToolCall {
     type: "tool-call";
     id: string;
     name: string;
-    arguments: string | Record<string, unknown>;
+    parameters: string | Record<string, unknown>;
 }
 
 type ToolDefinition<Z extends ZodObject = ZodObject> = {
@@ -188,6 +255,13 @@ interface AIProvider {
             recorder?: Recorder;
         };
     }): Promise<GenerationResult>;
+    createStreamingRequest?(params: {
+        messages: Array<AxleMessage>;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 type GenerationResult = GenerationSuccessResult | GenerationErrorResult;
 interface GenerationSuccessResult {
@@ -316,6 +390,19 @@ interface GenerateProps {
     recorder?: Recorder;
 }
 declare function generate(props: GenerateProps): Promise<GenerationResult>;
+
+interface StreamProps {
+    provider: AIProvider;
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDefinition>;
+    recorder?: Recorder;
+}
+interface StreamResult {
+    get message(): Promise<AxleAssistantMessage>;
+    get current(): AxleAssistantMessage;
+    [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
+}
+declare function stream(props: StreamProps): StreamResult;
 
 declare enum ResultType {
     String = "string",
@@ -526,5 +613,5 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow };
+export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
 export type { AIProvider, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };

@@ -91,7 +91,7 @@ function fromModelResponse(data: any): GenerationResult {
           type: "tool-call",
           id: call.id,
           name: call.function.name,
-          arguments: call.function.arguments,
+          parameters: call.function.arguments,
         });
       }
     }

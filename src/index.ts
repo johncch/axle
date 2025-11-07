@@ -1,9 +1,8 @@
 // Export the Axle class
 export { Axle } from "./core/Axle.js";
 
-// Export basic methods TODO
-// export { stream } from "./ai/index.js";
-export { generate } from "./ai/index.js";
+// Export basic methods
+export { generate, stream } from "./ai/index.js";
 
 // Export Tasks
 export { ChainOfThought, Instruct } from "./core/index.js";

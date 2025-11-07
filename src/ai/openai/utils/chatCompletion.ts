@@ -1,8 +1,14 @@
-import { ChatCompletion, ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources";
+import {
+  ChatCompletion,
+  ChatCompletionContentPart,
+  ChatCompletionMessageParam,
+} from "openai/resources";
 import { AxleMessage, ContentPart } from "../../../messages/types.js";
 import { AxleStopReason } from "../../types.js";
 
-export function convertAxleMessagesToChatCompletion(messages: AxleMessage[]): ChatCompletionMessageParam[] {
+export function convertAxleMessagesToChatCompletion(
+  messages: AxleMessage[],
+): ChatCompletionMessageParam[] {
   return messages.map(convertMessage).flat(1);
 }
 
@@ -32,7 +38,8 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }) {
       type: "function",
       function: {
         name: call.name,
-        arguments: typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments),
+        arguments:
+          typeof call.parameters === "string" ? call.parameters : JSON.stringify(call.parameters),
       },
       ...(id && { id }),
     };

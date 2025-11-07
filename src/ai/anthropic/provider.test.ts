@@ -102,13 +102,13 @@ describe("Anthropic prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "get_weather",
-          arguments: { location: "Boston", units: "celsius" },
+          parameters: { location: "Boston", units: "celsius" },
         },
         {
           type: "tool-call",
           id: "call_456",
           name: "calculate",
-          arguments: { expression: "2 + 2" },
+          parameters: { expression: "2 + 2" },
         },
       ];
 
@@ -153,7 +153,7 @@ describe("Anthropic prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "test_tool",
-          arguments: {},
+          parameters: {},
         },
       ];
 
@@ -559,7 +559,7 @@ describe("Anthropic prepareRequest", () => {
             type: "tool-call",
             id: "call_789",
             name: "analyze_chart",
-            arguments: { image_path: "/test/chart.png" },
+            parameters: { image_path: "/test/chart.png" },
           },
         ],
       });
@@ -678,7 +678,7 @@ describe("Anthropic prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "test_tool",
-          arguments: '{"param": "value"}',
+          parameters: '{"param": "value"}',
         },
       ];
 
@@ -752,7 +752,7 @@ describe("Anthropic prepareRequest", () => {
           type: "tool-call",
           id: "call_123",
           name: "test_tool",
-          arguments: '{"param": "value"}',
+          parameters: '{"param": "value"}',
         },
       ];
 
@@ -782,7 +782,7 @@ describe("Anthropic prepareRequest", () => {
           type: "tool-call",
           id: "call_456",
           name: "test_tool",
-          arguments: { param: "value", number: 42 },
+          parameters: { param: "value", number: 42 },
         },
       ];
 

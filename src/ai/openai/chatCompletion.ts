@@ -72,7 +72,7 @@ export function fromModelResponse(
         type: "tool-call" as const,
         id: call.id,
         name: call.function.name,
-        arguments: call.function.arguments,
+        parameters: call.function.arguments,
       }));
 
     const contentParts = [{ type: "text" as const, text: choice.message.content ?? "" }];

@@ -29,7 +29,11 @@ export interface AxleToolCallResult {
   content: string;
 }
 
-export type ContentPart = ContentPartText | ContentPartFile | ContentPartInstructions | ContentPartThinking;
+export type ContentPart =
+  | ContentPartText
+  | ContentPartFile
+  | ContentPartInstructions
+  | ContentPartThinking;
 
 export interface ContentPartText {
   type: "text";
@@ -57,5 +61,5 @@ export interface ContentPartToolCall {
   type: "tool-call";
   id: string;
   name: string;
-  arguments: string | Record<string, unknown>;
+  parameters: string | Record<string, unknown>;
 }

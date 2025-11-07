@@ -55,7 +55,7 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
                 type: "tool_use",
                 id: call.id,
                 name: call.name,
-                input: call.arguments,
+                input: call.parameters,
               }) satisfies ToolUseBlockParam,
           ),
         );
@@ -229,7 +229,7 @@ export function convertToAxleToolCalls(
           type: "tool-call" as const,
           id: toolUse.id,
           name: toolUse.name,
-          arguments: toolUse.input as string,
+          parameters: toolUse.input as string,
         };
       }
     })

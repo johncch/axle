@@ -46,10 +46,10 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
     parts.push(
       ...msg.toolCalls.map((item) => {
         let parsedArgs: Record<string, unknown>;
-        if (typeof item.arguments === "string") {
-          parsedArgs = JSON.parse(item.arguments) as Record<string, unknown>;
+        if (typeof item.parameters === "string") {
+          parsedArgs = JSON.parse(item.parameters) as Record<string, unknown>;
         } else {
-          parsedArgs = item.arguments as Record<string, unknown>;
+          parsedArgs = item.parameters as Record<string, unknown>;
         }
         return {
           functionCall: {

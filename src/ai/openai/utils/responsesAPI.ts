@@ -32,7 +32,8 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }) {
       type: "function",
       function: {
         name: call.name,
-        arguments: typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments),
+        arguments:
+          typeof call.parameters === "string" ? call.parameters : JSON.stringify(call.parameters),
       },
       ...(id && { id }),
     };

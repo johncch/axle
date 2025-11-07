@@ -41,7 +41,7 @@ function printResults(provider: AIProvider, result: GenerationResult) {
       for (const [index, toolCall] of result.toolCalls.entries()) {
         console.log(`${spacer(`Tool Call ${index + 1}`)}: ${toolCall.id}`);
         console.log(`${spacer("Name", { indent: 2 })}: ${toolCall.name}`);
-        console.log(`${spacer("Arguments", { indent: 2 })}: ${stringify(toolCall.arguments)}`);
+        console.log(`${spacer("Arguments", { indent: 2 })}: ${stringify(toolCall.parameters)}`);
       }
     }
   } else {

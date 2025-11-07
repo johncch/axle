@@ -46,7 +46,7 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Olla
       type: "function",
       function: {
         name: call.name,
-        arguments: call.arguments,
+        arguments: call.parameters,
       },
       ...(id && { id }),
     };

@@ -1,9 +1,13 @@
+import { AxleStopReason } from "../../ai/types.js";
+import { Stats } from "../../types.js";
+
 export interface StreamChunk {
   type:
     | "start"
     | "text"
     | "tool-call-start"
     | "tool-call-delta"
+    | "tool-call-complete"
     | "thinking-start"
     | "thinking-delta"
     | "complete"
@@ -24,12 +28,8 @@ export interface StreamStartChunk extends StreamChunk {
 export interface StreamCompleteChunk extends StreamChunk {
   type: "complete";
   data: {
-    finishReason: string; // TODO: narrow
-    usage?: {
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    };
+    finishReason: AxleStopReason;
+    usage?: Stats;
   };
 }
 
@@ -66,12 +66,22 @@ export interface StreamToolCallStartChunk extends StreamChunk {
   };
 }
 
-export interface StreamToolCallDeltaChunk extends StreamChunk {
-  type: "tool-call-delta";
+// export interface StreamToolCallDeltaChunk extends StreamChunk {
+//   type: "tool-call-delta";
+//   data: {
+//     index: number;
+//     id: string;
+//     argumentsDelta: string;
+//   };
+// }
+
+export interface StreamToolCallCompleteChunk extends StreamChunk {
+  type: "tool-call-complete";
   data: {
     index: number;
     id: string;
-    argumentsDelta: string;
+    name: string;
+    arguments: any;
   };
 }
 
@@ -88,7 +98,8 @@ export type AnyStreamChunk =
   | StreamCompleteChunk
   | StreamTextChunk
   | StreamToolCallStartChunk
-  | StreamToolCallDeltaChunk
+  // | StreamToolCallDeltaChunk
+  | StreamToolCallCompleteChunk
   | StreamThinkingStartChunk
   | StreamThinkingDeltaChunk
   | StreamErrorChunk;

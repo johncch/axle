@@ -1,3 +1,4 @@
+import { AnyStreamChunk } from "../messages/streaming/types.js";
 import {
   AxleMessage,
   ContentPartText,
@@ -6,7 +7,6 @@ import {
 } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
 import { ToolDefinition } from "../tools/types.js";
-// import { ToolDef } from "../tools/types.js";
 import { Stats } from "../types.js";
 
 /*
@@ -38,11 +38,11 @@ export interface AIProvider {
     context: { recorder?: Recorder };
   }): Promise<GenerationResult>;
 
-  // createStreamingRequest(params: {
-  //   messages: Array<AxleMessage>;
-  //   tools?: Array<ToolDef>;
-  //   context: { recorder?: Recorder };
-  // }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+  createStreamingRequest?(params: {
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDefinition>;
+    context: { recorder?: Recorder };
+  }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 
 export type GenerationResult = GenerationSuccessResult | GenerationErrorResult;

@@ -157,7 +157,7 @@ function fromModelResponse(
         type: "tool-call" as const,
         id: call.id,
         name: call.name,
-        arguments: JSON.stringify(call.args),
+        parameters: JSON.stringify(call.args),
       }));
     }
     const contentParts = [{ type: "text" as const, text: content }];
