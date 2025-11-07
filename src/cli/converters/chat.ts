@@ -1,4 +1,4 @@
-import * as z from "zod/v4";
+import * as z from "zod";
 import { Instruct } from "../../core/Instruct.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { getToolRegistry } from "../../tools/index.js";

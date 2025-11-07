@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
+import { Chat, getFiles, getTextContent } from "../messages/chat.js";
 import { FileInfo } from "../utils/file.js";
-import { Chat, getFiles, getTextContent } from "./chat.js";
 
 describe("Multimodal Support", () => {
   const mockImageFile: FileInfo = {

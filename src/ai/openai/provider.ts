@@ -1,12 +1,13 @@
 import OpenAI from "openai";
+import { AnyStreamChunk } from "../../messages/streaming/types.js";
+import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
-import { Chat } from "../chat.js";
-import { AIProvider, AIRequest } from "../types.js";
-import { OpenAIChatCompletionRequest } from "./chatcompetion.js";
-import { Models, RESPONSES_API_MODELS } from "./models.js";
-import { OpenAIResponsesAPI } from "./responsesAPI.js";
-
-const DEFAULT_MODEL = Models.GPT_4_1;
+import { ToolDefinition } from "../../tools/types.js";
+import { AIProvider, ModelResult } from "../types.js";
+import { createGenerationRequestWithChatCompletion } from "./chatCompletion.js";
+import { createStreamingRequest } from "./createStreamingRequest.js";
+import { DEFAULT_MODEL, RESPONSES_API_MODELS } from "./models.js";
+import { createGenerationRequestWithResponsesAPI } from "./responsesAPI.js";
 
 export class OpenAIProvider implements AIProvider {
   name = "OpenAI";
@@ -18,15 +19,62 @@ export class OpenAIProvider implements AIProvider {
     this.client = new OpenAI({ apiKey: apiKey });
   }
 
-  createChatRequest(
-    chat: Chat,
-    context: { recorder?: Recorder } = {},
-  ): AIRequest {
-    const { recorder } = context;
-    // TODO: We don't have enough information to check for multimodal support yet
-    if ((RESPONSES_API_MODELS as readonly string[]).includes(this.model)) {
-      return new OpenAIResponsesAPI(this, chat);
+  async createGenerationRequest(params: {
+    messages: Array<AxleMessage>;
+    system?: string;
+    tools?: Array<ToolDefinition>;
+    context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
+  }): Promise<ModelResult> {
+    const useResponsesAPI = (RESPONSES_API_MODELS as readonly string[]).includes(this.model);
+
+    if (useResponsesAPI) {
+      return await createGenerationRequestWithResponsesAPI({
+        client: this.client,
+        model: this.model,
+        ...params,
+      });
+    } else {
+      return await createGenerationRequestWithChatCompletion({
+        client: this.client,
+        model: this.model,
+        ...params,
+      });
     }
-    return new OpenAIChatCompletionRequest(this, chat);
+  }
+
+  createStreamingRequest(params: {
+    messages: Array<AxleMessage>;
+    system?: string;
+    tools?: Array<ToolDefinition>;
+    context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
+  }): AsyncGenerator<AnyStreamChunk, void, unknown> {
+    const { messages, system, tools, context, options } = params;
+    return createStreamingRequest({
+      client: this.client,
+      model: this.model,
+      messages,
+      system,
+      tools,
+      runtime: context,
+      options,
+    });
   }
 }
