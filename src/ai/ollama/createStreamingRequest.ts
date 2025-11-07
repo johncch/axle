@@ -9,21 +9,37 @@ export async function* createStreamingRequest(params: {
   url: string;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   runtime: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { url, model, messages, tools, runtime } = params;
+  const { url, model, messages, system, tools, runtime, options } = params;
   const { recorder } = runtime;
 
   const chatTools = convertToolDefToOllama(tools);
+
+  // Convert parameter names for Ollama
+  const ollamaOptions = options ? { ...options } : { temperature: 0.7 };
+  if (ollamaOptions.max_tokens) {
+    ollamaOptions.num_predict = ollamaOptions.max_tokens;
+    delete ollamaOptions.max_tokens;
+  }
 
   const requestBody = {
     model,
     messages: convertAxleMessagesToOllama(messages),
     stream: true,
-    options: {
-      temperature: 0.7,
-    },
+    options: ollamaOptions,
+    ...(system && { system }),
     ...(chatTools && { tools: chatTools }),
   };
 
