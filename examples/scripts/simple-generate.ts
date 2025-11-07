@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import { z } from "zod";
-import { AIProvider, GenerationResult } from "../../src/ai/types.js";
+import { AIProvider, ModelResult } from "../../src/ai/types.js";
 import { generate } from "../../src/index.js";
 import { getAllAxles } from "./helper.js";
 config();
@@ -30,7 +30,7 @@ for (const axle of axles) {
   printResults(axle.provider, result);
 }
 
-function printResults(provider: AIProvider, result: GenerationResult) {
+function printResults(provider: AIProvider, result: ModelResult) {
   console.log(`\n[RUN] ${provider.name} (${provider.model})`);
   console.log("=".repeat(50));
   console.log(`${spacer("Result")}: ${result.type}`);

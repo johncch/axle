@@ -1,6 +1,4 @@
 import OpenAI from "openai";
-import { ChatCompletionTool } from "openai/resources";
-import z from "zod";
 import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
@@ -8,7 +6,7 @@ import { ToolDefinition } from "../../tools/types.js";
 import { convertStopReason } from "../anthropic/utils.js";
 import { ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
+import { convertAxleMessagesToChatCompletion, toModelTools } from "./utils/chatCompletion.js";
 
 export async function createGenerationRequestWithChatCompletion(params: {
   client: OpenAI;
@@ -40,25 +38,6 @@ export async function createGenerationRequestWithChatCompletion(params: {
 
   recorder?.debug?.log(result);
   return result;
-}
-
-function toModelTools(
-  tools: Array<ToolDefinition> | undefined,
-): Array<ChatCompletionTool> | undefined {
-  if (tools && tools.length > 0) {
-    return tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema);
-      return {
-        type: "function",
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: jsonSchema,
-        },
-      };
-    });
-  }
-  return undefined;
 }
 
 export function fromModelResponse(completion: OpenAI.Chat.Completions.ChatCompletion): ModelResult {

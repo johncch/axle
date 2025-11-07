@@ -4,14 +4,13 @@ import {
   ResponseCreateParamsNonStreaming,
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses.js";
-import z from "zod";
-import { Chat, getInstructions, getTextContent } from "../../messages/chat.js";
+import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
+import { convertAxleMessageToResponseInput, prepareTools } from "./utils/responsesAPI.js";
 
 export async function createGenerationRequestWithResponsesAPI(params: {
   client: OpenAI;
@@ -23,23 +22,12 @@ export async function createGenerationRequestWithResponsesAPI(params: {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
+  const modelTools = prepareTools(tools);
   const request: ResponseCreateParamsNonStreaming = {
     model,
     input: convertAxleMessageToResponseInput(messages),
+    ...(modelTools ? { tools: modelTools } : {}),
   };
-
-  if (tools && tools.length > 0) {
-    request.tools = tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema);
-      return {
-        type: "function" as const,
-        strict: true,
-        name: tool.name,
-        description: tool.description,
-        parameters: jsonSchema,
-      };
-    });
-  }
 
   recorder?.debug?.log(request);
 
@@ -54,43 +42,6 @@ export async function createGenerationRequestWithResponsesAPI(params: {
 
   recorder?.debug?.log(result);
   return result;
-}
-
-export function prepareRequest(chat: Chat, model: string): ResponseCreateParamsNonStreaming {
-  const request: ResponseCreateParamsNonStreaming = {
-    model,
-    input: convertAxleMessageToResponseInput(chat.messages),
-  };
-
-  const mostRecentMessage = chat.latest();
-  if (mostRecentMessage && mostRecentMessage.role === "user") {
-    let instructions = "";
-    const msgInstructions = getInstructions(mostRecentMessage.content);
-    if (chat.system) {
-      instructions = chat.system;
-    }
-    if (msgInstructions) {
-      instructions = instructions ? `${instructions}\n\n${msgInstructions}` : msgInstructions;
-    }
-    if (instructions) {
-      request.instructions = instructions;
-    }
-  }
-
-  if (chat.tools.length > 0) {
-    request.tools = chat.tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema);
-      return {
-        type: "function",
-        strict: true,
-        name: tool.name,
-        description: tool.description,
-        parameters: jsonSchema,
-      };
-    });
-  }
-
-  return request;
 }
 
 export function fromModelResponse(response: Response): ModelResult {

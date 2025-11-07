@@ -1,12 +1,11 @@
-import { GenerateContentConfig, GenerateContentResponse, GoogleGenAI, Type } from "@google/genai";
-import z from "zod";
+import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
 import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
+import { convertAxleMessagesToGoogleAI, convertStopReason, prepareConfig } from "./utils.js";
 
 export async function createGenerationRequest(params: {
   client: GoogleGenAI;
@@ -38,34 +37,6 @@ export async function createGenerationRequest(params: {
 
   recorder?.debug?.log(result);
   return result;
-}
-
-function prepareConfig(tools: Array<ToolDefinition>, system?: string): GenerateContentConfig {
-  const config: GenerateContentConfig = {};
-
-  if (system) {
-    config.systemInstruction = system;
-  }
-
-  if (tools.length > 0) {
-    config.tools = tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema) as any;
-      return {
-        functionDeclarations: [
-          {
-            name: tool.name,
-            description: tool.description,
-            parameters: {
-              ...jsonSchema,
-              type: Type.OBJECT,
-            },
-          },
-        ],
-      };
-    });
-  }
-
-  return config;
 }
 
 function fromModelResponse(

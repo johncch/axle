@@ -6,6 +6,24 @@ import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
 
+interface OllamaGenerationResponse {
+  model: string;
+  done_reason?: string;
+  message?: {
+    role: string;
+    content: string;
+    tool_calls?: Array<{
+      id: string;
+      function: {
+        name: string;
+        arguments: unknown;
+      };
+    }>;
+  };
+  prompt_eval_count?: number;
+  eval_count?: number;
+}
+
 export async function createGenerationRequest(params: {
   url: string;
   model: string;
@@ -55,7 +73,7 @@ export async function createGenerationRequest(params: {
   return result;
 }
 
-function fromModelResponse(data: any): ModelResult {
+function fromModelResponse(data: OllamaGenerationResponse): ModelResult {
   if (data.done_reason === "stop" && data.message) {
     const content = data.message.content;
     const toolCalls: ContentPartToolCall[] = [];

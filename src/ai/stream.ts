@@ -141,7 +141,12 @@ class StreamResultImpl implements StreamResult {
             break;
 
           case "error":
-            this.rejectFinal?.(new Error(chunk.data.error));
+            this.streamParts.error(
+              chunk.data.type,
+              chunk.data.message,
+              chunk.data.usage,
+              chunk.data.raw,
+            );
             return;
         }
       }

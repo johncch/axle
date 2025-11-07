@@ -2,9 +2,33 @@ import {
   ChatCompletion,
   ChatCompletionContentPart,
   ChatCompletionMessageParam,
+  ChatCompletionTool,
 } from "openai/resources";
+import z from "zod";
 import { AxleMessage, ContentPart } from "../../../messages/types.js";
+import { ToolDefinition } from "../../../tools/index.js";
 import { AxleStopReason } from "../../types.js";
+
+/* To Request */
+
+export function toModelTools(
+  tools: Array<ToolDefinition> | undefined,
+): Array<ChatCompletionTool> | undefined {
+  if (tools && tools.length > 0) {
+    return tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema);
+      return {
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: jsonSchema,
+        },
+      };
+    });
+  }
+  return undefined;
+}
 
 export function convertAxleMessagesToChatCompletion(
   messages: AxleMessage[],
@@ -99,6 +123,8 @@ function convertContentPart(item: ContentPart): ChatCompletionContentPart | null
   // TODO: thinking, etc.
   return null;
 }
+
+/* To Response */
 
 export function convertStopReason(reason: ChatCompletion.Choice["finish_reason"]) {
   switch (reason) {

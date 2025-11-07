@@ -29,7 +29,7 @@ export interface StreamCompleteChunk extends StreamChunk {
   type: "complete";
   data: {
     finishReason: AxleStopReason;
-    usage?: Stats;
+    usage: Stats;
   };
 }
 
@@ -88,8 +88,10 @@ export interface StreamToolCallCompleteChunk extends StreamChunk {
 export interface StreamErrorChunk extends StreamChunk {
   type: "error";
   data: {
-    error: string;
-    code?: string;
+    type: string;
+    message: string;
+    usage?: Stats;
+    raw?: any;
   };
 }
 

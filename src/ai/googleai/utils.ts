@@ -1,6 +1,37 @@
-import { Content, FinishReason } from "@google/genai";
+import { Content, FinishReason, GenerateContentConfig } from "@google/genai";
+import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/types.js";
+import { ToolDefinition } from "../../tools/index.js";
 import { AxleStopReason } from "../types.js";
+
+/* To Request */
+
+export function prepareConfig(
+  tools?: Array<ToolDefinition>,
+  system?: string,
+): GenerateContentConfig {
+  const config: GenerateContentConfig = {};
+
+  if (system) {
+    config.systemInstruction = system;
+  }
+
+  if (tools && tools.length > 0) {
+    config.tools = tools.map((tool) => {
+      return {
+        functionDeclarations: [
+          {
+            name: tool.name,
+            description: tool.description,
+            parametersJsonSchema: z.toJSONSchema(tool.schema),
+          },
+        ],
+      };
+    });
+  }
+
+  return config;
+}
 
 export function convertAxleMessagesToGoogleAI(messages: AxleMessage[]): Content[] {
   return messages.map(convertMessage).filter((msg): msg is Content => msg !== undefined);
@@ -102,6 +133,8 @@ function convertContentPart(item: ContentPart): any | null {
   // TODO: thinking, etc.
   return null;
 }
+
+/* To Response */
 
 export function convertStopReason(reason: FinishReason): [boolean, AxleStopReason] {
   switch (reason) {

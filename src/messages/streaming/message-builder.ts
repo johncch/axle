@@ -1,4 +1,3 @@
-import { convertStopReason } from "../../ai/anthropic/utils.js";
 import { AxleStopReason } from "../../ai/types.js";
 import { Stats } from "../../types.js";
 import { AxleAssistantMessage, ContentPartText, ContentPartThinking } from "../types.js";
@@ -40,16 +39,16 @@ export class MessageBuilder {
         // TODO
         break;
 
-      case "tool-call-delta":
+      case "tool-call-complete":
         // TODO
         break;
 
       case "complete":
         this.isComplete = true;
-        this.finishReason = convertStopReason(chunk.data.finishReason);
+        this.finishReason = chunk.data.finishReason;
         this.usage = {
-          in: chunk.data.usage.promptTokens,
-          out: chunk.data.usage.completionTokens,
+          in: chunk.data.usage.in,
+          out: chunk.data.usage.out,
         };
         break;
 

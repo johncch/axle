@@ -1,6 +1,6 @@
-import { GenerationErrorResult } from "./types.js";
+import { ModelError } from "./types.js";
 
-export function getUndefinedError(e: unknown): GenerationErrorResult {
+export function getUndefinedError(e: unknown): ModelError {
   if (e == null) {
     return {
       type: "error",

@@ -5,7 +5,7 @@ import {
   ContentPartToolCall,
 } from "../messages/types.js";
 import { Stats } from "../types.js";
-import { AxleStopReason, ModelResponse } from "./types.js";
+import { AxleStopReason, ModelError, ModelResponse, ModelResult } from "./types.js";
 
 export class StreamParts {
   private listeners = {
@@ -16,7 +16,7 @@ export class StreamParts {
     thinking: new Set<(content: string) => void>(),
     "tool-call": new Set<(id: string, name: string) => void>(),
     "tool-call-complete": new Set<(id: string, name: string, args: any) => void>(),
-    complete: new Set<(result: ModelResponse) => void>(),
+    complete: new Set<(result: ModelResult) => void>(),
   };
   // private recorder?: Recorder;
   private isComplete = false;
@@ -30,7 +30,7 @@ export class StreamParts {
   on(event: "thinking", handler: (content: string) => void): this;
   on(event: "tool-call", handler: (id: string, name: string) => void): this;
   on(event: "tool-call-complete", handler: (id: string, name: string, args: any) => void): this;
-  on(event: "complete", handler: (result: ModelResponse) => void): this;
+  on(event: "complete", handler: (result: ModelResult) => void): this;
   on(event: string, handler: (...args: any[]) => void): this {
     (this.listeners[event as keyof typeof this.listeners] as Set<any>).add(handler);
     return this;
@@ -43,7 +43,7 @@ export class StreamParts {
   emit(event: "thinking", content: string): void;
   emit(event: "tool-call", id: string, name: string): void;
   emit(event: "tool-call-complete", id: string, name: string, args: any): void;
-  emit(event: "complete", result: ModelResponse): void;
+  emit(event: "complete", result: ModelResult): void;
   emit(event: string, ...args: any[]): void {
     const set = this.listeners[event as keyof typeof this.listeners];
     if (!set) return;
@@ -107,6 +107,26 @@ export class StreamParts {
       usage: stats,
       text,
       raw: {}, // TODO: Add raw response data
+    };
+
+    this.emit("complete", result);
+  }
+
+  error(errorType: string, message: string, usage?: Stats, raw?: any) {
+    if (this.isComplete) {
+      return;
+    }
+
+    this.isComplete = true;
+
+    const result: ModelError = {
+      type: "error",
+      error: {
+        type: errorType,
+        message: message,
+      },
+      usage,
+      raw,
     };
 
     this.emit("complete", result);

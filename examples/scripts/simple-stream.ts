@@ -1,15 +1,11 @@
 import { config } from "dotenv";
 import { z } from "zod";
-import { Axle, stream } from "../../src/index.js";
+import { stream } from "../../src/index.js";
+import { getAxle } from "./helper.js";
 config();
 
 function setupAndStream() {
-  const axle = new Axle({
-    anthropic: {
-      "api-key": process.env.ANTHROPIC_API_KEY,
-      // model: options.model,
-    },
-  });
+  const axle = getAxle();
 
   const callNameTool = {
     name: "setName",
@@ -43,9 +39,9 @@ async function test1() {
   }, 500);
 
   // Get final result
-  const final = await result.message;
+  const final = await result.final;
   clearInterval(monitor);
-  console.log(`Complete: ${JSON.stringify(final.content)}`);
+  console.log(`Complete: ${JSON.stringify(final)}`);
 }
 
 async function test2() {

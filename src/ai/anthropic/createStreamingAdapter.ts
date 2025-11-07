@@ -143,7 +143,7 @@ export function createAnthropicStreamingAdapter() {
         break;
 
       default:
-        console.warn(`Unknown Anthropic stream error: ${(event as any).type}`);
+        console.warn(`Unknown Anthropic stream event type`);
     }
 
     return chunks;

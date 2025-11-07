@@ -1,13 +1,13 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
-import { convertToProviderMessages, convertToProviderTools } from "./utils.js";
+import { createGoogleAIStreamingAdapter } from "./createStreamingAdapter.js";
+import { convertAxleMessagesToGoogleAI, prepareConfig } from "./utils.js";
 
 export async function* createStreamingRequest(params: {
-  client: Anthropic;
+  client: GoogleGenAI;
   model: string;
   messages: Array<AxleMessage>;
   tools?: Array<ToolDefinition>;
@@ -17,29 +17,27 @@ export async function* createStreamingRequest(params: {
   const { recorder } = runtime;
 
   const request = {
-    model: model,
-    max_tokens: 4096,
-    messages: convertToProviderMessages(messages),
-    ...(tools && { tools: convertToProviderTools(tools) }),
+    contents: convertAxleMessagesToGoogleAI(messages),
+    config: prepareConfig(tools),
   };
   recorder?.debug?.log(request);
 
-  const streamingAdapter = createAnthropicStreamingAdapter();
+  const streamingAdapter = createGoogleAIStreamingAdapter();
 
   try {
-    const stream = await client.messages.create({
+    const stream = await client.models.generateContentStream({
+      model,
       ...request,
-      stream: true as const,
     });
 
-    for await (const messageStreamEvent of stream) {
-      const chunks = streamingAdapter.handleEvent(messageStreamEvent);
-      for (const chunk of chunks) {
-        yield chunk;
+    for await (const chunk of stream) {
+      const chunks = streamingAdapter.handleChunk(chunk);
+      for (const streamChunk of chunks) {
+        yield streamChunk;
       }
     }
-    // testStream.end();
   } catch (error) {
+    recorder?.error?.log(error);
     yield {
       type: "error",
       data: {

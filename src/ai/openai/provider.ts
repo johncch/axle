@@ -1,9 +1,11 @@
 import OpenAI from "openai";
+import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequestWithChatCompletion } from "./chatCompletion.js";
+import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL, RESPONSES_API_MODELS } from "./models.js";
 import { createGenerationRequestWithResponsesAPI } from "./responsesAPI.js";
 
@@ -39,11 +41,18 @@ export class OpenAIProvider implements AIProvider {
     }
   }
 
-  // createStreamingRequest(params: {
-  //   messages: Array<AxleMessage>;
-  //   tools?: Array<ToolDef>;
-  //   context: { recorder?: Recorder };
-  // }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  //   // TODO
-  // }
+  createStreamingRequest(params: {
+    messages: Array<AxleMessage>;
+    tools?: Array<ToolDefinition>;
+    context: { recorder?: Recorder };
+  }): AsyncGenerator<AnyStreamChunk, void, unknown> {
+    const { messages, tools, context } = params;
+    return createStreamingRequest({
+      client: this.client,
+      model: this.model,
+      messages,
+      tools,
+      runtime: context,
+    });
+  }
 }

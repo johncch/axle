@@ -1,6 +1,26 @@
 import { ResponseInput } from "openai/resources/responses/responses.js";
+import z from "zod";
 import { getTextContent } from "../../../messages/chat.js";
 import { AxleMessage, ContentPart } from "../../../messages/types.js";
+import { ToolDefinition } from "../../../tools/types.js";
+
+/* To Request */
+
+export function prepareTools(tools?: Array<ToolDefinition>) {
+  if (tools && tools.length > 0) {
+    return tools.map((tool) => {
+      const jsonSchema = z.toJSONSchema(tool.schema);
+      return {
+        type: "function" as const,
+        strict: true,
+        name: tool.name,
+        description: tool.description,
+        parameters: jsonSchema,
+      };
+    });
+  }
+  return undefined;
+}
 
 export function convertAxleMessageToResponseInput(messages: AxleMessage[]): ResponseInput {
   return messages.map(convertMessage).flat(1);

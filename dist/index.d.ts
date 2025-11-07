@@ -62,7 +62,7 @@ interface StreamCompleteChunk extends StreamChunk {
     type: "complete";
     data: {
         finishReason: AxleStopReason;
-        usage?: Stats;
+        usage: Stats;
     };
 }
 interface StreamTextChunk extends StreamChunk {
@@ -106,8 +106,10 @@ interface StreamToolCallCompleteChunk extends StreamChunk {
 interface StreamErrorChunk extends StreamChunk {
     type: "error";
     data: {
-        error: string;
-        code?: string;
+        type: string;
+        message: string;
+        usage?: Stats;
+        raw?: any;
     };
 }
 type AnyStreamChunk = StreamStartChunk | StreamCompleteChunk | StreamTextChunk | StreamToolCallStartChunk | StreamToolCallCompleteChunk | StreamThinkingStartChunk | StreamThinkingDeltaChunk | StreamErrorChunk;
