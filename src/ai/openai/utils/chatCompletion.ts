@@ -32,8 +32,21 @@ export function toModelTools(
 
 export function convertAxleMessagesToChatCompletion(
   messages: AxleMessage[],
+  system?: string,
 ): ChatCompletionMessageParam[] {
-  return messages.map(convertMessage).flat(1);
+  const convertedMessages = messages.map(convertMessage).flat(1);
+
+  if (system) {
+    return [
+      {
+        role: "system" as const,
+        content: system,
+      },
+      ...convertedMessages,
+    ];
+  }
+
+  return convertedMessages;
 }
 
 function convertMessage(msg: AxleMessage) {

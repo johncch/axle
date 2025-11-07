@@ -252,16 +252,36 @@ interface AIProvider {
     get model(): string;
     createGenerationRequest(params: {
         messages: Array<AxleMessage>;
+        system?: string;
         tools?: Array<ToolDefinition>;
         context: {
             recorder?: Recorder;
         };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
     }): Promise<ModelResult>;
     createStreamingRequest?(params: {
         messages: Array<AxleMessage>;
+        system?: string;
         tools?: Array<ToolDefinition>;
         context: {
             recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
         };
     }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
@@ -385,11 +405,22 @@ declare class Axle {
     static loadFileContent(filePath: string, encoding: "base64"): Promise<Base64FileInfo>;
 }
 
+interface GenerateOptions {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+}
 interface GenerateProps {
     provider: AIProvider;
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     recorder?: Recorder;
+    options?: GenerateOptions;
 }
 declare function generate(props: GenerateProps): Promise<ModelResult>;
 

@@ -9,6 +9,7 @@ import { AxleStopReason } from "../types.js";
 export function prepareConfig(
   tools?: Array<ToolDefinition>,
   system?: string,
+  options?: Record<string, any>,
 ): GenerateContentConfig {
   const config: GenerateContentConfig = {};
 
@@ -28,6 +29,11 @@ export function prepareConfig(
         ],
       };
     });
+  }
+
+  // Merge options into config
+  if (options) {
+    Object.assign(config, options);
   }
 
   return config;

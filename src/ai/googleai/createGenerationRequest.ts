@@ -11,15 +11,44 @@ export async function createGenerationRequest(params: {
   client: GoogleGenAI;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): Promise<ModelResult> {
-  const { client, model, messages, tools, context } = params;
+  const { client, model, messages, system, tools, context, options } = params;
   const { recorder } = context;
+
+  // Convert max_tokens to maxOutputTokens for Google AI
+  const googleOptions = options ? { ...options } : {};
+  if (googleOptions.max_tokens) {
+    googleOptions.maxOutputTokens = googleOptions.max_tokens;
+    delete googleOptions.max_tokens;
+  }
+  // Convert stop to stopSequences for Google AI
+  if (googleOptions.stop) {
+    googleOptions.stopSequences = Array.isArray(googleOptions.stop)
+      ? googleOptions.stop
+      : [googleOptions.stop];
+    delete googleOptions.stop;
+  }
+  // Convert top_p to topP for Google AI
+  if (googleOptions.top_p !== undefined) {
+    googleOptions.topP = googleOptions.top_p;
+    delete googleOptions.top_p;
+  }
 
   const request = {
     contents: convertAxleMessagesToGoogleAI(messages),
-    config: prepareConfig(tools),
+    config: prepareConfig(tools, system, googleOptions),
   };
   recorder?.debug?.log(request);
 

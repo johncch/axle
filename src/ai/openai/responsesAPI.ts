@@ -16,17 +16,29 @@ export async function createGenerationRequestWithResponsesAPI(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): Promise<ModelResult> {
-  const { client, model, messages, tools, context } = params;
+  const { client, model, messages, system, tools, context, options } = params;
   const { recorder } = context;
 
   const modelTools = prepareTools(tools);
   const request: ResponseCreateParamsNonStreaming = {
     model,
     input: convertAxleMessageToResponseInput(messages),
+    ...(system && { instructions: system }),
     ...(modelTools ? { tools: modelTools } : {}),
+    ...options,
   };
 
   recorder?.debug?.log(request);

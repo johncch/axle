@@ -23,24 +23,46 @@ export class AnthropicProvider implements AIProvider {
 
   async createGenerationRequest(params: {
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
   }): Promise<ModelResult> {
     return await createGenerationRequest({ client: this.client, model: this.model, ...params });
   }
 
   createStreamingRequest(params: {
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
   }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-    const { messages, tools, context } = params;
+    const { messages, system, tools, context, options } = params;
     return createStreamingRequest({
       client: this.client,
       model: this.model,
       messages,
+      system,
       tools,
       runtime: context,
+      options,
     });
   }
 }

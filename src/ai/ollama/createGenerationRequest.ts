@@ -28,21 +28,37 @@ export async function createGenerationRequest(params: {
   url: string;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): Promise<ModelResult> {
-  const { url, model, messages, tools, context } = params;
+  const { url, model, messages, system, tools, context, options } = params;
   const { recorder } = context;
 
   const chatTools = convertToolDefToOllama(tools);
+
+  // Convert parameter names for Ollama
+  const ollamaOptions = options ? { ...options } : { temperature: 0.7 };
+  if (ollamaOptions.max_tokens) {
+    ollamaOptions.num_predict = ollamaOptions.max_tokens;
+    delete ollamaOptions.max_tokens;
+  }
 
   const requestBody = {
     model,
     messages: convertAxleMessagesToOllama(messages),
     stream: false,
-    options: {
-      temperature: 0.7,
-    },
+    options: ollamaOptions,
+    ...(system && { system }),
     ...(chatTools && { tools: chatTools }),
   };
 

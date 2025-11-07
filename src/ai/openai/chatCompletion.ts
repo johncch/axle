@@ -12,17 +12,28 @@ export async function createGenerationRequestWithChatCompletion(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+  };
 }): Promise<ModelResult> {
-  const { client, model, messages, tools, context } = params;
+  const { client, model, messages, system, tools, context, options } = params;
   const { recorder } = context;
 
   let chatTools = toModelTools(tools);
   const request = {
     model,
-    messages: convertAxleMessagesToChatCompletion(messages),
+    messages: convertAxleMessagesToChatCompletion(messages, system),
     ...(chatTools && { tools: chatTools }),
+    ...options,
   };
 
   recorder?.debug?.log(request);

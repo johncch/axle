@@ -34,14 +34,34 @@ export interface AIProvider {
 
   createGenerationRequest(params: {
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
   }): Promise<ModelResult>;
 
   createStreamingRequest?(params: {
     messages: Array<AxleMessage>;
+    system?: string;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
+      stop?: string | string[];
+      [key: string]: any;
+    };
   }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 
