@@ -1,21 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Recorder } from "../../recorder/recorder.js";
 
-import { getTextContent } from "../../messages/chat.js";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AIProvider, AxleStopReason, ModelResult } from "../types.js";
-import { getUndefinedError } from "../utils.js";
+import { AIProvider, ModelResult } from "../types.js";
+import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL } from "./models.js";
-import {
-  convertStopReason,
-  convertToAxleContentParts,
-  convertToAxleToolCalls,
-  convertToProviderMessages,
-  convertToProviderTools,
-} from "./utils.js";
 
 export class AnthropicProvider implements AIProvider {
   name = "Anthropic";
@@ -50,89 +42,5 @@ export class AnthropicProvider implements AIProvider {
       tools,
       runtime: context,
     });
-  }
-}
-
-async function createGenerationRequest(params: {
-  client: Anthropic;
-  model: string;
-  messages: Array<AxleMessage>;
-  tools?: Array<ToolDefinition>;
-  context?: { recorder?: Recorder };
-}): Promise<ModelResult> {
-  const { client, model, messages, tools, context } = params;
-  const { recorder } = context;
-  const request = {
-    model: model,
-    max_tokens: 4096,
-    messages: convertToProviderMessages(messages),
-    ...(tools && { tools: convertToProviderTools(tools) }),
-  };
-  recorder?.debug?.log(request);
-
-  let result: ModelResult;
-  try {
-    const completion = await client.messages.create(request);
-    result = convertToAIResponse(completion);
-  } catch (e) {
-    result = getUndefinedError(e);
-  }
-
-  recorder?.debug?.log(result);
-  return result;
-}
-
-function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResult {
-  const stopReason = convertStopReason(completion.stop_reason);
-  if (stopReason === AxleStopReason.Error) {
-    return {
-      type: "error",
-      error: {
-        type: "Uncaught error",
-        message: `Stop reason is not recognized or unhandled: ${completion.stop_reason}`,
-      },
-      usage: {
-        in: completion.usage.input_tokens,
-        out: completion.usage.output_tokens,
-      },
-      raw: completion,
-    };
-  }
-
-  if (stopReason === AxleStopReason.FunctionCall) {
-    const content = convertToAxleContentParts(completion.content);
-    return {
-      type: "success",
-      id: completion.id,
-      model: completion.model,
-      role: completion.role,
-      finishReason: AxleStopReason.FunctionCall,
-      content,
-      text: getTextContent(content) ?? "",
-      toolCalls: convertToAxleToolCalls(completion.content),
-      usage: {
-        in: completion.usage.input_tokens,
-        out: completion.usage.output_tokens,
-      },
-      raw: completion,
-    };
-  }
-
-  if (completion.type == "message") {
-    const content = convertToAxleContentParts(completion.content);
-    return {
-      type: "success",
-      id: completion.id,
-      model: completion.model,
-      role: "assistant" as const,
-      finishReason: stopReason,
-      content,
-      text: getTextContent(content) ?? "",
-      usage: {
-        in: completion.usage.input_tokens,
-        out: completion.usage.output_tokens,
-      },
-      raw: completion,
-    };
   }
 }
