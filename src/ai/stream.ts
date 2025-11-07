@@ -3,7 +3,7 @@ import { AxleAssistantMessage, AxleMessage } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
 import { ToolDefinition } from "../tools/types.js";
 import { StreamParts } from "./streamparts.js";
-import { AIProvider } from "./types.js";
+import { AIProvider, ModelResult } from "./types.js";
 
 interface StreamProps {
   provider: AIProvider;
@@ -13,7 +13,7 @@ interface StreamProps {
 }
 
 export interface StreamResult {
-  get message(): Promise<AxleAssistantMessage>;
+  get final(): Promise<ModelResult>;
   get current(): AxleAssistantMessage;
   [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
 }
@@ -32,22 +32,22 @@ export function stream(props: StreamProps): StreamResult {
 
 class StreamResultImpl implements StreamResult {
   private streamParts: StreamParts;
-  private messagePromise: Promise<AxleAssistantMessage>;
-  private resolveMessage?: (message: AxleAssistantMessage) => void;
-  private rejectMessage?: (error: Error) => void;
+  private finalPromise: Promise<ModelResult>;
+  private resolveFinal?: (result: ModelResult) => void;
+  private rejectFinal?: (error: Error) => void;
   private chunkListeners = new Set<(chunk: AnyStreamChunk) => void>();
   private processingStarted = false;
 
   constructor(private streamSource: AsyncIterable<AnyStreamChunk, void, unknown>) {
     this.streamParts = new StreamParts();
 
-    this.messagePromise = new Promise((resolve, reject) => {
-      this.resolveMessage = resolve;
-      this.rejectMessage = reject;
+    this.finalPromise = new Promise((resolve, reject) => {
+      this.resolveFinal = resolve;
+      this.rejectFinal = reject;
     });
 
-    this.streamParts.on("complete", (message) => {
-      this.resolveMessage?.(message);
+    this.streamParts.on("complete", (result) => {
+      this.resolveFinal?.(result);
     });
 
     this.startProcessing();
@@ -141,19 +141,19 @@ class StreamResultImpl implements StreamResult {
             break;
 
           case "error":
-            this.rejectMessage?.(new Error(chunk.data.error));
+            this.rejectFinal?.(new Error(chunk.data.error));
             return;
         }
       }
     } catch (error) {
-      this.rejectMessage?.(error instanceof Error ? error : new Error(String(error)));
+      this.rejectFinal?.(error instanceof Error ? error : new Error(String(error)));
     } finally {
       this.chunkListeners.forEach((listener) => listener(null as any));
     }
   }
 
-  get message(): Promise<AxleAssistantMessage> {
-    return this.messagePromise;
+  get final(): Promise<ModelResult> {
+    return this.finalPromise;
   }
 
   get current(): AxleAssistantMessage {

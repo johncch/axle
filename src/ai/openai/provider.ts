@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AIProvider, GenerationResult } from "../types.js";
+import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequestWithChatCompletion } from "./chatCompletion.js";
 import { DEFAULT_MODEL, RESPONSES_API_MODELS } from "./models.js";
 import { createGenerationRequestWithResponsesAPI } from "./responsesAPI.js";
@@ -21,7 +21,7 @@ export class OpenAIProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
-  }): Promise<GenerationResult> {
+  }): Promise<ModelResult> {
     const useResponsesAPI = (RESPONSES_API_MODELS as readonly string[]).includes(this.model);
 
     if (useResponsesAPI) {

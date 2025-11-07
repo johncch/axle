@@ -1,7 +1,7 @@
 import { AxleMessage } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
 import { ToolDefinition } from "../tools/types.js";
-import { AIProvider, GenerationResult } from "./types.js";
+import { AIProvider, ModelResult } from "./types.js";
 
 interface GenerateProps {
   provider: AIProvider;
@@ -10,7 +10,7 @@ interface GenerateProps {
   recorder?: Recorder;
 }
 
-export async function generate(props: GenerateProps): Promise<GenerationResult> {
+export async function generate(props: GenerateProps): Promise<ModelResult> {
   const { provider, messages, tools, recorder } = props;
   return provider.createGenerationRequest({
     messages,

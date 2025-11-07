@@ -2,7 +2,7 @@ import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AIProvider, AxleStopReason, GenerationResult } from "../types.js";
+import { AIProvider, AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
 
@@ -23,7 +23,7 @@ export class OllamaProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
-  }): Promise<GenerationResult> {
+  }): Promise<ModelResult> {
     return await createGenerationRequest({
       url: this.url,
       model: this.model,
@@ -38,7 +38,7 @@ async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
-}): Promise<GenerationResult> {
+}): Promise<ModelResult> {
   const { url, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -56,7 +56,7 @@ async function createGenerationRequest(params: {
 
   recorder?.debug?.log(requestBody);
 
-  let result: GenerationResult;
+  let result: ModelResult;
   try {
     const response = await fetch(`${url}/api/chat`, {
       method: "POST",
@@ -81,7 +81,7 @@ async function createGenerationRequest(params: {
   return result;
 }
 
-function fromModelResponse(data: any): GenerationResult {
+function fromModelResponse(data: any): ModelResult {
   if (data.done_reason === "stop" && data.message) {
     const content = data.message.content;
     const toolCalls: ContentPartToolCall[] = [];
@@ -103,7 +103,7 @@ function fromModelResponse(data: any): GenerationResult {
       id: `ollama-${Date.now()}`,
       model: data.model,
       role: "assistant",
-      reason: hasToolCalls ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
+      finishReason: hasToolCalls ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
       content: contentParts,
       text: getTextContent(contentParts) ?? "",
       ...(hasToolCalls && { toolCalls }),

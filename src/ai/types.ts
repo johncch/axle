@@ -36,7 +36,7 @@ export interface AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
-  }): Promise<GenerationResult>;
+  }): Promise<ModelResult>;
 
   createStreamingRequest?(params: {
     messages: Array<AxleMessage>;
@@ -45,30 +45,30 @@ export interface AIProvider {
   }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 
-export type GenerationResult = GenerationSuccessResult | GenerationErrorResult;
-
-export interface GenerationSuccessResult {
+export interface ModelResponse {
   type: "success";
   role: "assistant";
   id: string;
   model: string;
   text: string;
   content: Array<ContentPartText | ContentPartThinking>;
-  reason: AxleStopReason;
+  finishReason: AxleStopReason;
   toolCalls?: ContentPartToolCall[];
   usage: Stats;
   raw: any;
 }
 
-export interface GenerationErrorResult {
+export interface ModelError {
   type: "error";
   error: {
     type: string;
     message: string;
   };
-  usage: Stats;
-  raw: any;
+  usage?: Stats;
+  raw?: any;
 }
+
+export type ModelResult = ModelResponse | ModelError;
 
 export enum AxleStopReason {
   Stop,

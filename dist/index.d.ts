@@ -254,7 +254,7 @@ interface AIProvider {
         context: {
             recorder?: Recorder;
         };
-    }): Promise<GenerationResult>;
+    }): Promise<ModelResult>;
     createStreamingRequest?(params: {
         messages: Array<AxleMessage>;
         tools?: Array<ToolDefinition>;
@@ -263,28 +263,28 @@ interface AIProvider {
         };
     }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
-type GenerationResult = GenerationSuccessResult | GenerationErrorResult;
-interface GenerationSuccessResult {
+interface ModelResponse {
     type: "success";
     role: "assistant";
     id: string;
     model: string;
     text: string;
     content: Array<ContentPartText | ContentPartThinking>;
-    reason: AxleStopReason;
+    finishReason: AxleStopReason;
     toolCalls?: ContentPartToolCall[];
     usage: Stats;
     raw: any;
 }
-interface GenerationErrorResult {
+interface ModelError {
     type: "error";
     error: {
         type: string;
         message: string;
     };
-    usage: Stats;
-    raw: any;
+    usage?: Stats;
+    raw?: any;
 }
+type ModelResult = ModelResponse | ModelError;
 declare enum AxleStopReason {
     Stop = 0,
     Length = 1,
@@ -389,7 +389,7 @@ interface GenerateProps {
     tools?: Array<ToolDefinition>;
     recorder?: Recorder;
 }
-declare function generate(props: GenerateProps): Promise<GenerationResult>;
+declare function generate(props: GenerateProps): Promise<ModelResult>;
 
 interface StreamProps {
     provider: AIProvider;
@@ -398,7 +398,7 @@ interface StreamProps {
     recorder?: Recorder;
 }
 interface StreamResult {
-    get message(): Promise<AxleAssistantMessage>;
+    get final(): Promise<ModelResult>;
     get current(): AxleAssistantMessage;
     [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
 }

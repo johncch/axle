@@ -84,7 +84,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
     }
 
     if (response.type === "success") {
-      switch (response.reason) {
+      switch (response.finishReason) {
         case AxleStopReason.Stop: {
           if (response.content) {
             const content = response.content;
@@ -92,7 +92,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
               id: response.id,
               model: response.model,
               content: response.content,
-              finishReason: response.reason,
+              finishReason: response.finishReason,
             });
             const textContent = getTextContent(content);
             chat.addAssistant(textContent);
@@ -115,7 +115,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
               id: response.id,
               model: response.model,
               content: response.content,
-              finishReason: response.reason,
+              finishReason: response.finishReason,
               toolCalls: response.toolCalls,
             });
           }

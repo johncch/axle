@@ -9,7 +9,7 @@ import { Chat, getInstructions, getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AxleStopReason, GenerationResult } from "../types.js";
+import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessageToResponseInput } from "./utils/responsesAPI.js";
 
@@ -19,7 +19,7 @@ export async function createGenerationRequestWithResponsesAPI(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
-}): Promise<GenerationResult> {
+}): Promise<ModelResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -43,7 +43,7 @@ export async function createGenerationRequestWithResponsesAPI(params: {
 
   recorder?.debug?.log(request);
 
-  let result: GenerationResult;
+  let result: ModelResult;
   try {
     const response = await client.responses.create(request);
     result = fromModelResponse(response);
@@ -93,7 +93,7 @@ export function prepareRequest(chat: Chat, model: string): ResponseCreateParamsN
   return request;
 }
 
-export function fromModelResponse(response: Response): GenerationResult {
+export function fromModelResponse(response: Response): ModelResult {
   if (response.error) {
     return {
       type: "error",
@@ -125,7 +125,7 @@ export function fromModelResponse(response: Response): GenerationResult {
     id: response.id,
     model: response.model || "",
     role: "assistant" as const,
-    reason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
+    finishReason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
     content: contentParts,
     text: getTextContent(contentParts) ?? "",
     ...(toolCalls?.length && { toolCalls }),

@@ -5,7 +5,7 @@ import { getTextContent } from "../../messages/chat.js";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AIProvider, AxleStopReason, GenerationResult } from "../types.js";
+import { AIProvider, AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL } from "./models.js";
@@ -33,7 +33,7 @@ export class AnthropicProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
-  }): Promise<GenerationResult> {
+  }): Promise<ModelResult> {
     return await createGenerationRequest({ client: this.client, model: this.model, ...params });
   }
 
@@ -59,7 +59,7 @@ async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDefinition>;
   context?: { recorder?: Recorder };
-}): Promise<GenerationResult> {
+}): Promise<ModelResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
   const request = {
@@ -70,7 +70,7 @@ async function createGenerationRequest(params: {
   };
   recorder?.debug?.log(request);
 
-  let result: GenerationResult;
+  let result: ModelResult;
   try {
     const completion = await client.messages.create(request);
     result = convertToAIResponse(completion);
@@ -82,7 +82,7 @@ async function createGenerationRequest(params: {
   return result;
 }
 
-function convertToAIResponse(completion: Anthropic.Messages.Message): GenerationResult {
+function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResult {
   const stopReason = convertStopReason(completion.stop_reason);
   if (stopReason === AxleStopReason.Error) {
     return {
@@ -106,7 +106,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): Generation
       id: completion.id,
       model: completion.model,
       role: completion.role,
-      reason: AxleStopReason.FunctionCall,
+      finishReason: AxleStopReason.FunctionCall,
       content,
       text: getTextContent(content) ?? "",
       toolCalls: convertToAxleToolCalls(completion.content),
@@ -125,7 +125,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): Generation
       id: completion.id,
       model: completion.model,
       role: "assistant" as const,
-      reason: stopReason,
+      finishReason: stopReason,
       content,
       text: getTextContent(content) ?? "",
       usage: {

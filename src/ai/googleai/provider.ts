@@ -4,7 +4,7 @@ import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AIProvider, AxleStopReason, GenerationResult } from "../types.js";
+import { AIProvider, AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { DEFAULT_MODEL } from "./models.js";
 import { convertAxleMessagesToGoogleAI, convertStopReason } from "./utils.js";
@@ -23,7 +23,7 @@ export class GoogleAIProvider implements AIProvider {
     messages: Array<AxleMessage>;
     tools?: Array<ToolDefinition>;
     context: { recorder?: Recorder };
-  }): Promise<GenerationResult> {
+  }): Promise<ModelResult> {
     return await createGenerationRequest({
       client: this.client,
       model: this.model,
@@ -38,7 +38,7 @@ async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
-}): Promise<GenerationResult> {
+}): Promise<ModelResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -48,7 +48,7 @@ async function createGenerationRequest(params: {
   };
   recorder?.debug?.log(request);
 
-  let result: GenerationResult;
+  let result: ModelResult;
   try {
     const response = await client.models.generateContent({
       model,
@@ -95,7 +95,7 @@ function prepareConfig(tools: Array<ToolDefinition>, system?: string): GenerateC
 function fromModelResponse(
   response: GenerateContentResponse,
   runtime: { recorder?: Recorder },
-): GenerationResult {
+): ModelResult {
   const { recorder } = runtime;
 
   const inTokens = response.usageMetadata.promptTokenCount;
@@ -166,7 +166,7 @@ function fromModelResponse(
       id: response.responseId,
       model: response.modelVersion,
       role: "assistant",
-      reason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
+      finishReason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
       content: contentParts,
       text: getTextContent(contentParts) ?? "",
       ...(toolCalls ? { toolCalls } : {}),

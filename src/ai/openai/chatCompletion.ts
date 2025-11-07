@@ -6,7 +6,7 @@ import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { convertStopReason } from "../anthropic/utils.js";
-import { GenerationResult } from "../types.js";
+import { ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToChatCompletion } from "./utils/chatCompletion.js";
 
@@ -16,7 +16,7 @@ export async function createGenerationRequestWithChatCompletion(params: {
   messages: Array<AxleMessage>;
   tools?: Array<ToolDefinition>;
   context: { recorder?: Recorder };
-}): Promise<GenerationResult> {
+}): Promise<ModelResult> {
   const { client, model, messages, tools, context } = params;
   const { recorder } = context;
 
@@ -29,7 +29,7 @@ export async function createGenerationRequestWithChatCompletion(params: {
 
   recorder?.debug?.log(request);
 
-  let result: GenerationResult;
+  let result: ModelResult;
   try {
     const completion = await client.chat.completions.create(request);
     result = fromModelResponse(completion);
@@ -61,9 +61,7 @@ function toModelTools(
   return undefined;
 }
 
-export function fromModelResponse(
-  completion: OpenAI.Chat.Completions.ChatCompletion,
-): GenerationResult {
+export function fromModelResponse(completion: OpenAI.Chat.Completions.ChatCompletion): ModelResult {
   if (completion.choices.length > 0) {
     const choice = completion.choices[0];
     const toolCalls = choice.message.tool_calls
@@ -81,7 +79,7 @@ export function fromModelResponse(
       id: completion.id,
       model: completion.model,
       role: choice.message.role,
-      reason: convertStopReason(choice.finish_reason),
+      finishReason: convertStopReason(choice.finish_reason),
       content: contentParts,
       text: getTextContent(contentParts) ?? "",
       toolCalls: toolCalls,
