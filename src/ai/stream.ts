@@ -2,14 +2,17 @@ import { AnyStreamChunk } from "../messages/streaming/types.js";
 import { AxleAssistantMessage, AxleMessage } from "../messages/types.js";
 import { Recorder } from "../recorder/recorder.js";
 import { ToolDefinition } from "../tools/types.js";
+import { GenerateOptions } from "./generate.js";
 import { StreamParts } from "./streamparts.js";
 import { AIProvider, ModelResult } from "./types.js";
 
 interface StreamProps {
   provider: AIProvider;
   messages: Array<AxleMessage>;
+  system?: string;
   tools?: Array<ToolDefinition>;
   recorder?: Recorder;
+  options?: GenerateOptions;
 }
 
 export interface StreamResult {
@@ -19,11 +22,13 @@ export interface StreamResult {
 }
 
 export function stream(props: StreamProps): StreamResult {
-  const { provider, messages, tools, recorder } = props;
+  const { provider, messages, system, tools, recorder, options } = props;
   const streamSource = provider.createStreamingRequest?.({
     messages,
+    system,
     tools,
     context: { recorder },
+    options,
   });
 
   console.log(streamSource);
