@@ -1,7 +1,7 @@
 import { Command, Option } from "commander";
 import { Axle } from "../../src/index.js";
 
-const PROVIDERS = ["openai", "anthropic", "ollama", "googleai"] as const;
+const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
 type ProviderNames = (typeof PROVIDERS)[number];
 const INSTRUCT_TYPES = ["instruct", "cot"] as const;
 
@@ -73,14 +73,14 @@ function getProvider(provider: ProviderNames): Axle {
       break;
     }
 
-    case "googleai": {
-      if (!process.env.GOOGLE_AI_API_KEY) {
-        console.error("GOOGLE_AI_API_KEY not found. Check your .env file");
+    case "gemini": {
+      if (!process.env.GEMINI_API_KEY) {
+        console.error("GEMINI_API_KEY not found. Check your .env file");
         process.exit(1);
       }
       axle = new Axle({
-        googleai: {
-          "api-key": process.env.GOOGLE_AI_API_KEY,
+        gemini: {
+          "api-key": process.env.GEMINI_API_KEY,
           model: options.model,
         },
       });

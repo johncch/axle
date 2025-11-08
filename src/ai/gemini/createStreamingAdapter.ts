@@ -2,7 +2,7 @@ import { GenerateContentResponse } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { convertStopReason } from "./utils.js";
 
-export function createGoogleAIStreamingAdapter() {
+export function createGeminiStreamingAdapter() {
   let currentContentIndex = 0;
   let currentThinkingIndex = -1;
   let messageId = "";
@@ -15,7 +15,7 @@ export function createGoogleAIStreamingAdapter() {
 
     // First chunk - extract metadata
     if (!messageId) {
-      messageId = chunk.responseId || `googleai-${Date.now()}`;
+      messageId = chunk.responseId || `gemini-${Date.now()}`;
       model = chunk.modelVersion || "gemini";
       chunks.push({
         type: "start",

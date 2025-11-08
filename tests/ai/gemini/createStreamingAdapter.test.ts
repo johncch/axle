@@ -1,11 +1,11 @@
-import { FinishReason, GenerateContentResponse } from "@google/genai";
+import { FinishReason } from "@google/genai";
+import { createGeminiStreamingAdapter } from "../../../src/ai/gemini/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
-import { createGoogleAIStreamingAdapter } from "../../../src/ai/googleai/createStreamingAdapter.js";
 
-describe("createGoogleAIStreamingAdapter", () => {
+describe("createGeminiStreamingAdapter", () => {
   describe("basic streaming events", () => {
     test("should handle first chunk and emit start event", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       const chunk = {
         responseId: "resp_123",
@@ -38,7 +38,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle text content", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       // First chunk to initialize
       adapter.handleChunk({
@@ -81,7 +81,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle multiple text chunks", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       // Initialize
       adapter.handleChunk({
@@ -134,7 +134,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle completion with STOP finish reason", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       // Initialize
       adapter.handleChunk({
@@ -180,7 +180,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle completion with MAX_TOKENS finish reason", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       adapter.handleChunk({
         responseId: "resp_123",
@@ -193,8 +193,6 @@ describe("createGoogleAIStreamingAdapter", () => {
           },
         ],
       } as any);
-
-
 
       const chunk = {
         responseId: "resp_123",
@@ -218,7 +216,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle error finish reasons", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       adapter.handleChunk({
         responseId: "resp_123",
@@ -231,8 +229,6 @@ describe("createGoogleAIStreamingAdapter", () => {
           },
         ],
       } as any);
-
-
 
       const chunk = {
         responseId: "resp_123",
@@ -259,7 +255,7 @@ describe("createGoogleAIStreamingAdapter", () => {
 
   describe("thinking content", () => {
     test("should handle thinking content (Gemini 2.5+)", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       // Initialize
       adapter.handleChunk({
@@ -309,7 +305,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle multiple thinking deltas", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       adapter.handleChunk({
         responseId: "resp_123",
@@ -370,7 +366,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should distinguish between thinking and regular text", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       adapter.handleChunk({
         responseId: "resp_123",
@@ -427,7 +423,7 @@ describe("createGoogleAIStreamingAdapter", () => {
 
   describe("function call events", () => {
     test("should handle function call (buffered, not streamed)", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       // Initialize
       adapter.handleChunk({
@@ -485,7 +481,7 @@ describe("createGoogleAIStreamingAdapter", () => {
     });
 
     test("should handle multiple function calls", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       adapter.handleChunk({
         responseId: "resp_123",
@@ -547,7 +543,7 @@ describe("createGoogleAIStreamingAdapter", () => {
 
   describe("mixed content", () => {
     test("should handle text followed by function call", () => {
-      const adapter = createGoogleAIStreamingAdapter();
+      const adapter = createGeminiStreamingAdapter();
 
       adapter.handleChunk({
         responseId: "resp_123",

@@ -15,13 +15,13 @@ import { Stats } from "../types.js";
 export type OllamaProviderConfig = { url?: string; model: string };
 export type AnthropicProviderConfig = { "api-key": string; model?: string };
 export type OpenAIProviderConfig = { "api-key": string; model?: string };
-export type GoogleAIProviderConfig = { "api-key": string; model?: string };
+export type GeminiProviderConfig = { "api-key": string; model?: string };
 
 export interface AIProviderConfig {
   ollama: OllamaProviderConfig;
   anthropic: AnthropicProviderConfig;
   openai: OpenAIProviderConfig;
-  googleai: GoogleAIProviderConfig;
+  gemini: GeminiProviderConfig;
 }
 
 /*

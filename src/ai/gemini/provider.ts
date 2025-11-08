@@ -8,8 +8,8 @@ import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL } from "./models.js";
 
-export class GoogleAIProvider implements AIProvider {
-  name = "GoogleAI";
+export class GeminiProvider implements AIProvider {
+  name = "Gemini";
   client: GoogleGenAI;
   model: string;
 

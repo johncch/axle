@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../schemas/v1/job.yaml
 using:
-  engine: googleai
+  engine: gemini
 
 jobs:
   text-references:

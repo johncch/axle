@@ -3,8 +3,8 @@ import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { createGoogleAIStreamingAdapter } from "./createStreamingAdapter.js";
-import { convertAxleMessagesToGoogleAI, prepareConfig } from "./utils.js";
+import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
+import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
 
 export async function* createStreamingRequest(params: {
   client: GoogleGenAI;
@@ -46,12 +46,12 @@ export async function* createStreamingRequest(params: {
   }
 
   const request = {
-    contents: convertAxleMessagesToGoogleAI(messages),
+    contents: convertAxleMessagesToGemini(messages),
     config: prepareConfig(tools, system, googleOptions),
   };
   recorder?.debug?.log(request);
 
-  const streamingAdapter = createGoogleAIStreamingAdapter();
+  const streamingAdapter = createGeminiStreamingAdapter();
 
   try {
     const stream = await client.models.generateContentStream({

@@ -53,7 +53,7 @@ definitions:
         properties:
           engine:
             type: string
-            const: "googleai"
+            const: "gemini"
           "api-key":
             type: string
           model:

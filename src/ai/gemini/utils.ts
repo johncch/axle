@@ -39,7 +39,7 @@ export function prepareConfig(
   return config;
 }
 
-export function convertAxleMessagesToGoogleAI(messages: AxleMessage[]): Content[] {
+export function convertAxleMessagesToGemini(messages: AxleMessage[]): Content[] {
   return messages.map(convertMessage).filter((msg): msg is Content => msg !== undefined);
 }
 

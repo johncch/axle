@@ -1,11 +1,16 @@
 import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
 import { getTextContent } from "../../messages/chat.js";
-import { AxleMessage, ContentPartText, ContentPartThinking, ContentPartToolCall } from "../../messages/types.js";
+import {
+  AxleMessage,
+  ContentPartText,
+  ContentPartThinking,
+  ContentPartToolCall,
+} from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessagesToGoogleAI, convertStopReason, prepareConfig } from "./utils.js";
+import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
 
 export async function createGenerationRequest(params: {
   client: GoogleGenAI;
@@ -47,7 +52,7 @@ export async function createGenerationRequest(params: {
   }
 
   const request = {
-    contents: convertAxleMessagesToGoogleAI(messages),
+    contents: convertAxleMessagesToGemini(messages),
     config: prepareConfig(tools, system, googleOptions),
   };
   recorder?.debug?.log(request);

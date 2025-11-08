@@ -1,9 +1,6 @@
 import { ServiceConfig, ValidationError } from "./types.js";
 
-export function isServiceConfig(
-  config: any,
-  error?: ValidationError,
-): config is ServiceConfig {
+export function isServiceConfig(config: any, error?: ValidationError): config is ServiceConfig {
   if (typeof config !== "object" || config === null) {
     error && (error.value = "Config: must be a non-null object");
     return false;
@@ -62,20 +59,20 @@ export function isServiceConfig(
     }
   }
 
-  if ("googleai" in config) {
-    const googleai = config.googleai;
-    if (typeof googleai !== "object" || googleai === null) {
-      error && (error.value = "Config: googleai must be an object");
+  if ("gemini" in config) {
+    const gemini = config.gemini;
+    if (typeof gemini !== "object" || gemini === null) {
+      error && (error.value = "Config: gemini must be an object");
       return false;
     }
 
-    if (typeof googleai["api-key"] !== "string") {
-      error && (error.value = "Config: googleai.api-key must be a string");
+    if (typeof gemini["api-key"] !== "string") {
+      error && (error.value = "Config: gemini.api-key must be a string");
       return false;
     }
 
-    if ("model" in googleai && typeof googleai.model !== "string") {
-      error && (error.value = "Config: googleai.model must be a string");
+    if ("model" in gemini && typeof gemini.model !== "string") {
+      error && (error.value = "Config: gemini.model must be a string");
       return false;
     }
   }

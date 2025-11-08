@@ -237,7 +237,7 @@ type OpenAIProviderConfig = {
     "api-key": string;
     model?: string;
 };
-type GoogleAIProviderConfig = {
+type GeminiProviderConfig = {
     "api-key": string;
     model?: string;
 };
@@ -245,7 +245,7 @@ interface AIProviderConfig {
     ollama: OllamaProviderConfig;
     anthropic: AnthropicProviderConfig;
     openai: OpenAIProviderConfig;
-    googleai: GoogleAIProviderConfig;
+    gemini: GeminiProviderConfig;
 }
 interface AIProvider {
     get name(): string;

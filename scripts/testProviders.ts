@@ -6,8 +6,7 @@ import { Axle, Instruct } from "../src/index.js";
 
 dotenv.config();
 
-const TEST_MESSAGE =
-  "Hello! Please respond with a brief greeting. Keep it under 20 words.";
+const TEST_MESSAGE = "Hello! Please respond with a brief greeting. Keep it under 20 words.";
 
 interface TestResult {
   provider: string;
@@ -24,9 +23,7 @@ interface ProviderConfig {
   envKey?: string;
 }
 
-async function testProvider(
-  providerConfig: ProviderConfig,
-): Promise<TestResult> {
+async function testProvider(providerConfig: ProviderConfig): Promise<TestResult> {
   const { name, config, envKey } = providerConfig;
   console.log(`Testing ${chalk.cyan(name)}...`);
 
@@ -105,10 +102,10 @@ async function main() {
     },
     {
       name: "google",
-      envKey: "GOOGLE_AI_API_KEY",
+      envKey: "GEMINI_API_KEY",
       config: {
-        googleai: {
-          "api-key": process.env.GOOGLE_AI_API_KEY || "",
+        gemini: {
+          "api-key": process.env.GEMINI_API_KEY || "",
         },
       },
     },
@@ -131,9 +128,7 @@ async function main() {
     results.push(result);
 
     if (result.success) {
-      console.log(
-        `${chalk.green("✅")} ${chalk.cyan(result.provider)} - Success`,
-      );
+      console.log(`${chalk.green("✅")} ${chalk.cyan(result.provider)} - Success`);
       console.log(`   Model: ${result.model}`);
       console.log(`   Time: ${result.executionTime}ms`);
       console.log(
@@ -167,20 +162,14 @@ async function main() {
   }
 
   if (failed.length > 0) {
-    console.log(
-      `\n${chalk.red("Failed providers:")} ${failed.map((r) => r.provider).join(", ")}`,
-    );
+    console.log(`\n${chalk.red("Failed providers:")} ${failed.map((r) => r.provider).join(", ")}`);
     console.log(chalk.yellow("\n💡 Tips for common issues:"));
     console.log("• Add API keys to your .env file:");
     console.log("  - ANTHROPIC_API_KEY=your_key_here");
     console.log("  - OPENAI_API_KEY=your_key_here");
-    console.log("  - GOOGLE_AI_API_KEY=your_key_here");
-    console.log(
-      "• For Ollama: Make sure the service is running (ollama serve)",
-    );
-    console.log(
-      "• For Ollama: Ensure you have models installed (ollama pull llama3.2)",
-    );
+    console.log("  - GEMINI_API_KEY=your_key_here");
+    console.log("• For Ollama: Make sure the service is running (ollama serve)");
+    console.log("• For Ollama: Ensure you have models installed (ollama pull llama3.2)");
     console.log("• Check your internet connection for cloud providers");
   }
 

@@ -6,7 +6,7 @@ import { Axle, ChainOfThought, Instruct } from "../src/index.js";
 
 dotenv.config();
 
-const PROVIDERS = ["openai", "anthropic", "ollama", "googleai"] as const;
+const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
 const INSTRUCT_TYPES = ["instruct", "cot"] as const;
 
 // Define interface for command options
@@ -19,9 +19,7 @@ interface CommandOptions {
 const program = new Command();
 program
   .name("prompt-scenarios")
-  .description(
-    "Run prompt scenarios with different LLM models to test Instruct",
-  )
+  .description("Run prompt scenarios with different LLM models to test Instruct")
   .addOption(
     new Option("-p, --provider <provider>", "LLM provider to use")
       .choices(PROVIDERS)
@@ -76,8 +74,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   {
     id: "single_number_02_boiling_point",
     description: "Single number output: Boiling point of water in Celsius.",
-    prompt:
-      "What is the boiling point of water in Celsius at standard atmospheric pressure?",
+    prompt: "What is the boiling point of water in Celsius at standard atmospheric pressure?",
     resFormat: { boilingPointC: "number" },
   },
 
@@ -97,8 +94,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   {
     id: "single_boolean_03_is_square_root",
     description: "Consider if 1024 is a perfect square.",
-    prompt:
-      "Consider whether the following statement is true or false: 1024 is a perfect square.",
+    prompt: "Consider whether the following statement is true or false: 1024 is a perfect square.",
     resFormat: { isTrue: "boolean" },
   },
 
@@ -135,25 +131,21 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   // String & Number
   {
     id: "double_string_number_01_country_population",
-    description:
-      "String and Number outputs: Country name and its approximate population.",
+    description: "String and Number outputs: Country name and its approximate population.",
     prompt: "What is the approximate population of Canada in millions?",
     resFormat: { countryName: "string", populationMillions: "number" },
   },
   {
     id: "double_string_number_02_product_rating",
-    description:
-      "String and Number outputs: Product name and its average rating (1-5).",
-    prompt:
-      "Suggest a common electronic product and its average user rating out of 5.",
+    description: "String and Number outputs: Product name and its average rating (1-5).",
+    prompt: "Suggest a common electronic product and its average user rating out of 5.",
     resFormat: { productName: "string", averageRating: "number" },
   },
 
   // String & Boolean
   {
     id: "double_string_boolean_01_animal_mammal",
-    description:
-      "String and Boolean outputs: Animal name and if it is a mammal.",
+    description: "String and Boolean outputs: Animal name and if it is a mammal.",
     prompt: "Is a whale a mammal?",
     resFormat: { animalName: "string", isMammal: "boolean" },
   },
@@ -161,8 +153,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   // String & List
   {
     id: "double_string_list_01_band_albums",
-    description:
-      "String and List outputs: Music band and a list of their albums.",
+    description: "String and List outputs: Music band and a list of their albums.",
     prompt: "Name a famous rock band and list two of their albums.",
     resFormat: { bandName: "string", albumList: "string[]" },
   },
@@ -170,8 +161,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   // Number & Boolean
   {
     id: "double_number_boolean_01_year_leap",
-    description:
-      "Number and Boolean outputs: Year and whether it is a leap year.",
+    description: "Number and Boolean outputs: Year and whether it is a leap year.",
     prompt: "Was the year 2000 a leap year?",
     resFormat: { yearValue: "number", isLeapYear: "boolean" },
   },
@@ -182,8 +172,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   {
     id: "triple_string_string_string_01_person_city_profession",
     description: "Three string outputs: Person's name, city, and profession.",
-    prompt:
-      "Describe a fictional character with their name, city of residence, and profession.",
+    prompt: "Describe a fictional character with their name, city of residence, and profession.",
     resFormat: {
       characterName: "string",
       cityOfResidence: "string",
@@ -265,8 +254,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   {
     id: "nested_simple_01_book_author",
     description: "Nested object: Book with author details.",
-    prompt:
-      "Tell me about a famous book including the author's name and birth year.",
+    prompt: "Tell me about a famous book including the author's name and birth year.",
     resFormat: {
       bookTitle: "string",
       author: {
@@ -279,10 +267,8 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   // Nested object with multiple fields
   {
     id: "nested_complex_01_product_details",
-    description:
-      "Complex nested object: Product with pricing and specifications.",
-    prompt:
-      "Describe a smartphone with its pricing information and key specifications.",
+    description: "Complex nested object: Product with pricing and specifications.",
+    prompt: "Describe a smartphone with its pricing information and key specifications.",
     resFormat: {
       productName: "string",
       pricing: {
@@ -302,8 +288,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   {
     id: "nested_array_01_restaurant_menu",
     description: "Nested object with array: Restaurant with menu items.",
-    prompt:
-      "Describe a restaurant including its basic info and 2 popular menu items with prices.",
+    prompt: "Describe a restaurant including its basic info and 2 popular menu items with prices.",
     resFormat: {
       restaurantName: "string",
       cuisine: "string",
@@ -319,8 +304,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   // Deep nested object
   {
     id: "nested_deep_01_company_structure",
-    description:
-      "Deep nested object: Company with department and employee info.",
+    description: "Deep nested object: Company with department and employee info.",
     prompt:
       "Describe a tech company with information about one of its departments and a key employee.",
     resFormat: {
@@ -341,8 +325,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   // Mixed nested with arrays
   {
     id: "nested_mixed_01_university_course",
-    description:
-      "Mixed nested object: University course with instructor and student info.",
+    description: "Mixed nested object: University course with instructor and student info.",
     prompt:
       "Describe a university course including instructor details and information about enrolled students.",
     resFormat: {
@@ -363,10 +346,7 @@ const PROMPT_SCENARIOS: PromptScenario[] = [
   },
 ];
 
-function validateResult(
-  obj: Record<string, unknown>,
-  resFormat: DeclarativeSchema,
-) {
+function validateResult(obj: Record<string, unknown>, resFormat: DeclarativeSchema) {
   if (!obj) {
     return false;
   }
@@ -402,12 +382,7 @@ function validateResult(
         return false;
       }
       // Recursively validate nested object
-      if (
-        !validateResult(
-          obj[key] as Record<string, unknown>,
-          type as DeclarativeSchema,
-        )
-      ) {
+      if (!validateResult(obj[key] as Record<string, unknown>, type as DeclarativeSchema)) {
         console.error(`fail nested validation for key ${key}`);
         return false;
       }
@@ -440,13 +415,13 @@ const createAxleConfig = () => {
     case "ollama":
       model = model ?? "gemma3"; // smallest model
       return { ollama: { model, url: "http://localhost:11434" } };
-    case "googleai":
-      if (!process.env.GOOGLE_AI_API_KEY) {
+    case "gemini":
+      if (!process.env.GEMINI_API_KEY) {
         console.error("The API Key is not found. Check your .env file");
         process.exit(1);
       }
       return {
-        googleai: { "api-key": process.env.GOOGLE_AI_API_KEY || "", model },
+        gemini: { "api-key": process.env.GEMINI_API_KEY || "", model },
       };
     default:
       console.error(`Unknown provider: ${provider}`);

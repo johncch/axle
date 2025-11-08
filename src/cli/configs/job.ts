@@ -18,10 +18,7 @@ import {
   WriteToDiskStep,
 } from "./types.js";
 
-export function isJobConfig(
-  obj: any,
-  errVal?: ValidationError,
-): obj is JobConfig {
+export function isJobConfig(obj: any, errVal?: ValidationError): obj is JobConfig {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -45,10 +42,7 @@ export function isJobConfig(
   return true;
 }
 
-export function isUsing(
-  obj: any,
-  errVal?: ValidationError,
-): obj is AIProviderUse {
+export function isUsing(obj: any, errVal?: ValidationError): obj is AIProviderUse {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -60,11 +54,10 @@ export function isUsing(
   }
 
   // The engine property should be a valid key for AIProviderConfig
-  const validProviders = ["openai", "anthropic", "ollama", "googleai"];
+  const validProviders = ["openai", "anthropic", "ollama", "gemini"];
   if (!validProviders.includes(obj.engine)) {
     if (errVal)
-      errVal.value =
-        "Invalid provider type. Must be 'openai', 'anthropic', 'googleai', or 'ollama'";
+      errVal.value = "Invalid provider type. Must be 'openai', 'anthropic', 'gemini', or 'ollama'";
     return false;
   }
 
@@ -82,7 +75,7 @@ export function isUsing(
         return false;
       }
       break;
-    case "googleai":
+    case "gemini":
     case "anthropic":
     case "openai":
       // Optional api-key property
@@ -133,15 +126,12 @@ export function isDAGJobValue(
     } else if (Array.isArray(dependsOn)) {
       for (let i = 0; i < dependsOn.length; i++) {
         if (typeof dependsOn[i] !== "string") {
-          if (errVal)
-            errVal.value = `Dependency at index ${i} must be a string`;
+          if (errVal) errVal.value = `Dependency at index ${i} must be a string`;
           return false;
         }
       }
     } else {
-      if (errVal)
-        errVal.value =
-          "Property 'dependsOn' must be a string or array of strings";
+      if (errVal) errVal.value = "Property 'dependsOn' must be a string or array of strings";
       return false;
     }
   }
@@ -163,10 +153,7 @@ export function isJob(obj: any, errVal?: ValidationError): obj is Job {
   }
 }
 
-export function isSerialJob(
-  obj: any,
-  errVal?: ValidationError,
-): obj is SerialJob {
+export function isSerialJob(obj: any, errVal?: ValidationError): obj is SerialJob {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -209,10 +196,7 @@ export function isSerialJob(
   return true;
 }
 
-export function isBatchJob(
-  obj: any,
-  errVal?: ValidationError,
-): obj is BatchJob {
+export function isBatchJob(obj: any, errVal?: ValidationError): obj is BatchJob {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -241,8 +225,7 @@ export function isBatchJob(
 
   for (let i = 0; i < obj.batch.length; i++) {
     if (!isBatchOptions(obj.batch[i], errVal)) {
-      if (errVal)
-        errVal.value = `Invalid batch item at index ${i}: ${errVal?.value}`;
+      if (errVal) errVal.value = `Invalid batch item at index ${i}: ${errVal?.value}`;
       return false;
     }
   }
@@ -263,10 +246,7 @@ export function isBatchJob(
   return true;
 }
 
-export function isBatchOptions(
-  obj: any,
-  errVal?: ValidationError,
-): obj is BatchOptions {
+export function isBatchOptions(obj: any, errVal?: ValidationError): obj is BatchOptions {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -296,8 +276,7 @@ export function isBatchOptions(
 
     for (let j = 0; j < obj["skip-if"].length; j++) {
       if (!isSkipOptions(obj["skip-if"][j], errVal)) {
-        if (errVal)
-          errVal.value = `Invalid skip condition at index ${j}: ${errVal?.value}`;
+        if (errVal) errVal.value = `Invalid skip condition at index ${j}: ${errVal?.value}`;
         return false;
       }
     }
@@ -306,10 +285,7 @@ export function isBatchOptions(
   return true;
 }
 
-export function isSkipOptions(
-  obj: any,
-  errVal?: ValidationError,
-): obj is SkipOptions {
+export function isSkipOptions(obj: any, errVal?: ValidationError): obj is SkipOptions {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -349,10 +325,7 @@ export function isStep(obj: any, errVal?: ValidationError): obj is Step {
   }
 }
 
-export function isChatStep(
-  obj: any,
-  errVal?: ValidationError,
-): obj is ChatStep {
+export function isChatStep(obj: any, errVal?: ValidationError): obj is ChatStep {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -370,22 +343,13 @@ export function isChatStep(
 
   // Check optional output property
   if (obj.output !== undefined) {
-    if (
-      !obj.output ||
-      typeof obj.output !== "object" ||
-      Array.isArray(obj.output)
-    ) {
+    if (!obj.output || typeof obj.output !== "object" || Array.isArray(obj.output)) {
       if (errVal) errVal.value = "Property 'output' must be an object";
       return false;
     }
 
     // Validate output is Record<string, ResTypeStrings>
-    const validResTypes: ResultTypeUnion[] = [
-      "string",
-      "string[]",
-      "number",
-      "boolean",
-    ];
+    const validResTypes: ResultTypeUnion[] = ["string", "string[]", "number", "boolean"];
     for (const [key, value] of Object.entries(obj.output)) {
       if (
         typeof key !== "string" ||
@@ -415,8 +379,7 @@ export function isChatStep(
 
     for (let i = 0; i < obj.replace.length; i++) {
       if (!isReplace(obj.replace[i], errVal)) {
-        if (errVal)
-          errVal.value = `Invalid replace at index ${i}: ${errVal?.value}`;
+        if (errVal) errVal.value = `Invalid replace at index ${i}: ${errVal?.value}`;
         return false;
       }
     }
@@ -446,8 +409,7 @@ export function isChatStep(
 
     for (let i = 0; i < obj.images.length; i++) {
       if (!isImageReference(obj.images[i], errVal)) {
-        if (errVal)
-          errVal.value = `Invalid image at index ${i}: ${errVal?.value}`;
+        if (errVal) errVal.value = `Invalid image at index ${i}: ${errVal?.value}`;
         return false;
       }
     }
@@ -462,8 +424,7 @@ export function isChatStep(
 
     for (let i = 0; i < obj.documents.length; i++) {
       if (!isDocumentReference(obj.documents[i], errVal)) {
-        if (errVal)
-          errVal.value = `Invalid document at index ${i}: ${errVal?.value}`;
+        if (errVal) errVal.value = `Invalid document at index ${i}: ${errVal?.value}`;
         return false;
       }
     }
@@ -478,8 +439,7 @@ export function isChatStep(
 
     for (let i = 0; i < obj.references.length; i++) {
       if (!isTextFileReference(obj.references[i], errVal)) {
-        if (errVal)
-          errVal.value = `Invalid reference at index ${i}: ${errVal?.value}`;
+        if (errVal) errVal.value = `Invalid reference at index ${i}: ${errVal?.value}`;
         return false;
       }
     }
@@ -488,10 +448,7 @@ export function isChatStep(
   return true;
 }
 
-export function isWriteToDiskStep(
-  obj: any,
-  errVal?: ValidationError,
-): obj is WriteToDiskStep {
+export function isWriteToDiskStep(obj: any, errVal?: ValidationError): obj is WriteToDiskStep {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -519,8 +476,7 @@ export function isWriteToDiskStep(
         }
       }
     } else {
-      if (errVal)
-        errVal.value = "Property 'keys' must be a string or array of strings";
+      if (errVal) errVal.value = "Property 'keys' must be a string or array of strings";
       return false;
     }
   }
@@ -545,8 +501,7 @@ export function isReplace(obj: any, errVal?: ValidationError): obj is Replace {
   }
 
   if (typeof obj.files !== "string" && !Array.isArray(obj.files)) {
-    if (errVal)
-      errVal.value = "Property 'files' must be a string or an array of strings";
+    if (errVal) errVal.value = "Property 'files' must be a string or an array of strings";
     return false;
   }
 
@@ -562,10 +517,7 @@ export function isReplace(obj: any, errVal?: ValidationError): obj is Replace {
   return true;
 }
 
-export function isImageReference(
-  obj: any,
-  errVal?: ValidationError,
-): obj is ImageReference {
+export function isImageReference(obj: any, errVal?: ValidationError): obj is ImageReference {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -579,10 +531,7 @@ export function isImageReference(
   return true;
 }
 
-export function isDocumentReference(
-  obj: any,
-  errVal?: ValidationError,
-): obj is DocumentReference {
+export function isDocumentReference(obj: any, errVal?: ValidationError): obj is DocumentReference {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;
@@ -596,10 +545,7 @@ export function isDocumentReference(
   return true;
 }
 
-export function isTextFileReference(
-  obj: any,
-  errVal?: ValidationError,
-): obj is TextFileReference {
+export function isTextFileReference(obj: any, errVal?: ValidationError): obj is TextFileReference {
   if (!obj || typeof obj !== "object") {
     if (errVal) errVal.value = "Not an object";
     return false;

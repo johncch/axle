@@ -31,10 +31,12 @@ async function getAnthropicModels(): Promise<ModelInfo> {
     }
 
     const data = await response.json();
-    const models = data.data?.map((model: any) => ({
-      id: model.id,
-      multimodal: model.input_modalities?.includes("text") && model.input_modalities?.includes("image")
-    })) || [];
+    const models =
+      data.data?.map((model: any) => ({
+        id: model.id,
+        multimodal:
+          model.input_modalities?.includes("text") && model.input_modalities?.includes("image"),
+      })) || [];
     return { provider: "Anthropic", models };
   } catch (error) {
     return { provider: "Anthropic", models: [], error: error.message };
@@ -50,7 +52,7 @@ async function getOpenAIModels(): Promise<ModelInfo> {
   try {
     const response = await fetch("https://api.openai.com/v1/models", {
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
     });
@@ -60,47 +62,56 @@ async function getOpenAIModels(): Promise<ModelInfo> {
     }
 
     const data = await response.json();
-    const models = data.data?.map((model: any) => ({
-      id: model.id
-    })).sort((a, b) => a.id.localeCompare(b.id)) || [];
+    const models =
+      data.data
+        ?.map((model: any) => ({
+          id: model.id,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)) || [];
     return { provider: "OpenAI", models };
   } catch (error) {
     return { provider: "OpenAI", models: [], error: error.message };
   }
 }
 
-async function getGoogleAIModels(): Promise<ModelInfo> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+async function getGeminiModels(): Promise<ModelInfo> {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return { provider: "GoogleAI", models: [], error: "Missing GOOGLE_AI_API_KEY" };
+    return { provider: "Gemini", models: [], error: "Missing GEMINI_API_KEY" };
   }
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-      headers: {
-        "Content-Type": "application/json",
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
-    const models = data.models?.map((model: any) => ({
-      id: model.name.replace("models/", ""),
-      multimodal: model.supportedGenerationMethods?.includes("generateContent") && 
-                  model.inputTokenLimit && model.outputTokenLimit
-    })) || [];
-    return { provider: "GoogleAI", models };
+    const models =
+      data.models?.map((model: any) => ({
+        id: model.name.replace("models/", ""),
+        multimodal:
+          model.supportedGenerationMethods?.includes("generateContent") &&
+          model.inputTokenLimit &&
+          model.outputTokenLimit,
+      })) || [];
+    return { provider: "Gemini", models };
   } catch (error) {
-    return { provider: "GoogleAI", models: [], error: error.message };
+    return { provider: "Gemini", models: [], error: error.message };
   }
 }
 
 async function getOllamaModels(): Promise<ModelInfo> {
   const url = process.env.OLLAMA_URL || "http://localhost:11434";
-  
+
   try {
     const response = await fetch(`${url}/api/tags`, {
       headers: {
@@ -113,12 +124,14 @@ async function getOllamaModels(): Promise<ModelInfo> {
     }
 
     const data = await response.json();
-    const models = data.models?.map((model: any) => ({
-      id: model.name,
-      multimodal: model.details?.family?.includes("vision") || 
-                  model.name.includes("vision") || 
-                  model.name.includes("llava")
-    })) || [];
+    const models =
+      data.models?.map((model: any) => ({
+        id: model.name,
+        multimodal:
+          model.details?.family?.includes("vision") ||
+          model.name.includes("vision") ||
+          model.name.includes("llava"),
+      })) || [];
     return { provider: "Ollama", models };
   } catch (error) {
     return { provider: "Ollama", models: [], error: error.message };
@@ -128,12 +141,7 @@ async function getOllamaModels(): Promise<ModelInfo> {
 async function main() {
   console.log("Fetching models from all providers...\n");
 
-  const providers = [
-    getAnthropicModels(),
-    getOpenAIModels(),
-    getGoogleAIModels(),
-    getOllamaModels(),
-  ];
+  const providers = [getAnthropicModels(), getOpenAIModels(), getGeminiModels(), getOllamaModels()];
 
   const results = await Promise.all(providers);
 
@@ -160,8 +168,8 @@ async function main() {
 
 function generateConstName(modelId: string): string {
   return modelId
-    .replace(/[^a-zA-Z0-9]/g, '_')
-    .replace(/^(\d)/, '_$1')
+    .replace(/[^a-zA-Z0-9]/g, "_")
+    .replace(/^(\d)/, "_$1")
     .toUpperCase();
 }
 
@@ -170,25 +178,25 @@ async function generateProviderFile(provider: ModelInfo, outputDir: string): Pro
 
   const providerName = provider.provider.toLowerCase();
   let content = `// Auto-generated ${provider.provider} model definitions\n\n`;
-  
+
   // Generate Models const
   content += "export const Models = {\n";
   const modelEntries: Array<{ constName: string; modelId: string; multimodal: boolean }> = [];
-  
+
   for (const model of provider.models) {
     const constName = generateConstName(model.id);
-    modelEntries.push({ 
-      constName, 
-      modelId: model.id, 
-      multimodal: model.multimodal || false
+    modelEntries.push({
+      constName,
+      modelId: model.id,
+      multimodal: model.multimodal || false,
     });
     content += `  ${constName}: "${model.id}",\n`;
   }
-  
+
   content += "} as const;\n\n";
-  
+
   // Generate MULTIMODAL_MODELS const if any multimodal models exist
-  const multimodalModels = modelEntries.filter(m => m.multimodal);
+  const multimodalModels = modelEntries.filter((m) => m.multimodal);
   if (multimodalModels.length > 0) {
     content += "export const MULTIMODAL_MODELS = [\n";
     for (const model of multimodalModels) {
@@ -204,15 +212,15 @@ async function generateProviderFile(provider: ModelInfo, outputDir: string): Pro
 
 async function generateModelFile(results: ModelInfo[]): Promise<void> {
   const outputDir = join(process.cwd(), "output");
-  
+
   try {
     await mkdir(outputDir, { recursive: true });
   } catch (error) {
     // Directory might already exist
   }
 
-  const commercialProviders = results.filter(r => 
-    r.provider === "Anthropic" || r.provider === "OpenAI" || r.provider === "GoogleAI"
+  const commercialProviders = results.filter(
+    (r) => r.provider === "Anthropic" || r.provider === "OpenAI" || r.provider === "Gemini",
   );
 
   for (const provider of commercialProviders) {

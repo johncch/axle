@@ -2,7 +2,7 @@ import { FinishReason, GoogleGenAI } from "@google/genai";
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { Chat } from "../../../src/messages/chat.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
-import { createGenerationRequest } from "../../../src/ai/googleai/createGenerationRequest.js";
+import { createGenerationRequest } from "../../../src/ai/gemini/createGenerationRequest.js";
 
 describe("createGenerationRequest (Google AI)", () => {
   let mockClient: GoogleGenAI;

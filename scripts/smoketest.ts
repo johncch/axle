@@ -23,9 +23,7 @@ interface ProviderConfig {
   displayName: string;
 }
 
-async function runSmokeTest(
-  providerConfig: ProviderConfig,
-): Promise<SmokeTestResult> {
+async function runSmokeTest(providerConfig: ProviderConfig): Promise<SmokeTestResult> {
   const { name, config, envKey, displayName } = providerConfig;
   console.log(`🧪 Testing ${chalk.cyan(displayName)}...`);
 
@@ -85,11 +83,8 @@ async function runSmokeTest(
     return {
       provider: displayName,
       success: true,
-      axleResponse:
-        (greetingInstruct.result as any)?.greeting ||
-        greetingInstruct.rawResponse,
-      instructResponse:
-        (directInstruct.result as any)?.status || directInstruct.rawResponse,
+      axleResponse: (greetingInstruct.result as any)?.greeting || greetingInstruct.rawResponse,
+      instructResponse: (directInstruct.result as any)?.status || directInstruct.rawResponse,
       model: axle.provider.model,
       executionTime,
     };
@@ -134,12 +129,12 @@ async function main() {
       },
     },
     {
-      name: "googleai",
+      name: "gemini",
       displayName: "Google AI (Gemini)",
-      envKey: "GOOGLE_AI_API_KEY",
+      envKey: "GEMINI_API_KEY",
       config: {
-        googleai: {
-          "api-key": process.env.GOOGLE_AI_API_KEY || "",
+        gemini: {
+          "api-key": process.env.GEMINI_API_KEY || "",
           model: "gemini-1.5-flash",
         },
       },
@@ -164,9 +159,7 @@ async function main() {
     results.push(result);
 
     if (result.success) {
-      console.log(
-        `${chalk.green("✅")} ${chalk.cyan(result.provider)} - All tests passed`,
-      );
+      console.log(`${chalk.green("✅")} ${chalk.cyan(result.provider)} - All tests passed`);
       console.log(`   Model: ${result.model}`);
       console.log(`   Time: ${result.executionTime}ms`);
       console.log(
@@ -210,7 +203,7 @@ async function main() {
     console.log("• Create a .env file with your API keys:");
     console.log("  ANTHROPIC_API_KEY=your_anthropic_key");
     console.log("  OPENAI_API_KEY=your_openai_key");
-    console.log("  GOOGLE_AI_API_KEY=your_google_key");
+    console.log("  GEMINI_API_KEY=your_google_key");
     console.log("• For Ollama:");
     console.log("  - Start the service: ollama serve");
     console.log("  - Install model: ollama pull llama3.2");

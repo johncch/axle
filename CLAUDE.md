@@ -22,7 +22,7 @@
 # Repository Structure
 
 - `src/`: Source code
-  - `ai/`: LLM provider integrations (Anthropic, OpenAI, Ollama, Google AI)
+  - `ai/`: LLM provider integrations (Anthropic, OpenAI, Ollama, Gemini)
   - `cli/`: CLI implementation
     - `configs/`: Configuration handling
     - `converters/`: Data format converters
@@ -37,7 +37,7 @@
 - `tests/`: Test files (mirrors src/ structure)
   - `ai/`: AI provider tests
     - `anthropic/`: Anthropic provider tests
-    - `googleai/`: Google AI provider tests
+    - `gemini/`: Gemini provider tests
     - `ollama/`: Ollama provider tests
     - `openai/`: OpenAI provider tests
   - `core/`: Core functionality tests

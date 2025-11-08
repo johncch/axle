@@ -1,7 +1,7 @@
 import {
   AIProviderConfig,
   AnthropicProviderConfig,
-  GoogleAIProviderConfig,
+  GeminiProviderConfig,
   OllamaProviderConfig,
   OpenAIProviderConfig,
 } from "../../ai/types.js";
@@ -35,7 +35,7 @@ export type AIProviderUse =
   | ({ engine: "ollama" } & Partial<OllamaProviderConfig>)
   | ({ engine: "anthropic" } & Partial<AnthropicProviderConfig>)
   | ({ engine: "openai" } & Partial<OpenAIProviderConfig>)
-  | ({ engine: "googleai" } & Partial<GoogleAIProviderConfig>);
+  | ({ engine: "gemini" } & Partial<GeminiProviderConfig>);
 
 export interface DAGJob {
   [name: string]: Job & { dependsOn?: string | string[] };
