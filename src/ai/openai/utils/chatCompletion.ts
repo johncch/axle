@@ -72,16 +72,17 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }) {
   const toolCallParts = msg.content.filter((c) => c.type === "tool-call");
   const textParts = msg.content.filter((c) => c.type === "text");
 
-  const toolCalls = toolCallParts.length > 0
-    ? toolCallParts.map((call: any) => ({
-        type: "function",
-        id: call.id,
-        function: {
-          name: call.name,
-          arguments: JSON.stringify(call.parameters),
-        },
-      }))
-    : undefined;
+  const toolCalls =
+    toolCallParts.length > 0
+      ? toolCallParts.map((call: any) => ({
+          type: "function" as const,
+          id: call.id,
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.parameters),
+          },
+        }))
+      : undefined;
 
   return {
     role: msg.role,

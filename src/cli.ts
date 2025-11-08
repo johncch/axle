@@ -16,10 +16,7 @@ const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
   .version(pkg.version)
-  .option(
-    "--dry-run",
-    "Run the application without executing against the AI providers",
-  )
+  .option("--dry-run", "Run the application without executing against the AI providers")
   .option("-c, --config <path>", "Path to the config file")
   .option("-j, --job <path>", "Path to the job file")
   .option("--no-log", "Do not write the output to a log file")

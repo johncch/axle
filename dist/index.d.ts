@@ -186,7 +186,7 @@ interface AxleToolCallResult {
     name: string;
     content: string;
 }
-type ContentPart = ContentPartText | ContentPartFile | ContentPartInstructions | ContentPartThinking;
+type ContentPart = ContentPartText | ContentPartFile | ContentPartToolCall | ContentPartInstructions | ContentPartThinking;
 interface ContentPartText {
     type: "text";
     text: string;

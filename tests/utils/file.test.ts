@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  test,
-} from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, test } from "@jest/globals";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -15,7 +8,7 @@ import {
   replaceFilePattern,
 } from "../../src/utils/file.js";
 
-const TEST_DIR = join(process.cwd(), "test-temp");
+const TEST_DIR = join(process.cwd(), "test-temp", "file-test");
 
 describe("file module", () => {
   describe("path to components", () => {
@@ -118,15 +111,7 @@ describe("file module", () => {
 
     describe("image file detection", () => {
       it("should detect common image formats as base64", () => {
-        const imageFormats = [
-          ".jpg",
-          ".jpeg",
-          ".png",
-          ".gif",
-          ".webp",
-          ".bmp",
-          ".tiff",
-        ];
+        const imageFormats = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"];
 
         imageFormats.forEach((ext) => {
           expect(getEncodingForFile(`image${ext}`)).toBe("base64");
@@ -210,9 +195,7 @@ describe("file module", () => {
     describe("edge cases", () => {
       it("should handle absolute paths", () => {
         expect(getEncodingForFile("/usr/local/bin/readme.md")).toBe("utf-8");
-        expect(getEncodingForFile("/home/user/images/photo.jpg")).toBe(
-          "base64",
-        );
+        expect(getEncodingForFile("/home/user/images/photo.jpg")).toBe("base64");
       });
 
       it("should handle relative paths", () => {
@@ -221,12 +204,8 @@ describe("file module", () => {
       });
 
       it("should handle complex paths", () => {
-        expect(() =>
-          getEncodingForFile("./src/components/icons/arrow.svg"),
-        ).toThrow();
-        expect(() =>
-          getEncodingForFile("../../../backup/data/export.csv"),
-        ).toThrow();
+        expect(() => getEncodingForFile("./src/components/icons/arrow.svg")).toThrow();
+        expect(() => getEncodingForFile("../../../backup/data/export.csv")).toThrow();
       });
 
       it("should handle Windows-style paths", () => {
@@ -269,8 +248,7 @@ describe("file module", () => {
     });
 
     it("should load a markdown file successfully with explicit utf-8 encoding", async () => {
-      const testContent =
-        "# Test Markdown\n\nThis is a **test** markdown file.";
+      const testContent = "# Test Markdown\n\nThis is a **test** markdown file.";
       const filePath = join(TEST_DIR, "test.md");
       await writeFile(filePath, testContent);
 
@@ -422,18 +400,14 @@ describe("file module", () => {
         const filePath = join(TEST_DIR, "test.unknown");
         await writeFile(filePath, "content");
 
-        await expect(loadFileContent(filePath)).rejects.toThrow(
-          "Unsupported file type: .unknown",
-        );
+        await expect(loadFileContent(filePath)).rejects.toThrow("Unsupported file type: .unknown");
       });
 
       it("should work with files without extensions", async () => {
         const filePath = join(TEST_DIR, "README");
         await writeFile(filePath, "readme content");
 
-        await expect(loadFileContent(filePath)).rejects.toThrow(
-          "Unsupported file type:",
-        );
+        await expect(loadFileContent(filePath)).rejects.toThrow("Unsupported file type:");
       });
 
       it("should handle case-insensitive extensions", async () => {

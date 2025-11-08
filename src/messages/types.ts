@@ -31,6 +31,7 @@ export interface AxleToolCallResult {
 export type ContentPart =
   | ContentPartText
   | ContentPartFile
+  | ContentPartToolCall
   | ContentPartInstructions
   | ContentPartThinking;
 

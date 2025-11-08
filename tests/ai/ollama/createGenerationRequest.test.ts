@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
-import { Chat } from "../../../src/messages/chat.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
 import { createGenerationRequest } from "../../../src/ai/ollama/createGenerationRequest.js";
+import { AxleStopReason } from "../../../src/ai/types.js";
+import { Chat } from "../../../src/messages/chat.js";
 
 // Mock fetch globally
 global.fetch = jest.fn() as any;
@@ -83,7 +83,7 @@ describe("createGenerationRequest (Ollama)", () => {
         },
       });
 
-      const requestBody = JSON.parse((((global.fetch as jest.Mock).mock.calls[0][1] as any).body));
+      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
       expect(requestBody.options.temperature).toBe(0.7);
       expect(requestBody.options.top_p).toBe(0.9);
       expect(requestBody.options.stop).toEqual(["STOP"]);
@@ -114,7 +114,7 @@ describe("createGenerationRequest (Ollama)", () => {
         context: {},
       });
 
-      const requestBody = JSON.parse((((global.fetch as jest.Mock).mock.calls[0][1] as any).body));
+      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
       expect(requestBody.options.temperature).toBe(0.7);
     });
 
@@ -144,7 +144,7 @@ describe("createGenerationRequest (Ollama)", () => {
         context: {},
       });
 
-      const requestBody = JSON.parse((((global.fetch as jest.Mock).mock.calls[0][1] as any).body));
+      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
       expect(requestBody.system).toBe("You are a helpful assistant");
     });
   });
@@ -581,7 +581,10 @@ describe("createGenerationRequest (Ollama)", () => {
       if (result.type === "success") {
         expect(result.text).toBe("");
         expect(result.content).toHaveLength(1);
-        expect(result.content[0].text).toBe("");
+        expect(result.content[0].type).toBe("text");
+        if (result.content[0].type === "text") {
+          expect(result.content[0].text).toBe("");
+        }
       }
     });
 

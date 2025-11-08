@@ -59,9 +59,7 @@ export async function loadManyFiles(filenames: string[], recorder?: Recorder) {
   let replacement = "";
   for (const name of filenames) {
     const files = await glob(name);
-    recorder?.debug?.log(
-      `many-files parser. For glob "${name}", found ${files.length} files.`,
-    );
+    recorder?.debug?.log(`many-files parser. For glob "${name}", found ${files.length} files.`);
     const replacements = await Promise.all(
       files.map(async (name) => {
         const c = await readFile(name, "utf-8");
@@ -151,15 +149,7 @@ export async function writeFileWithDirectories({
   await writeFile(filePath, content);
 }
 
-const SUPPORTED_IMAGE_TYPES = [
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".tiff",
-];
+const SUPPORTED_IMAGE_TYPES = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"];
 const SUPPORTED_DOCUMENT_TYPES = [".pdf"];
 const SUPPORTED_TEXT_TYPES = [".txt", ".md", ".markdown"];
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -190,9 +180,7 @@ export function isTextFileInfo(fileInfo: FileInfo): fileInfo is TextFileInfo {
   return fileInfo.type === "text";
 }
 
-export function isBase64FileInfo(
-  fileInfo: FileInfo,
-): fileInfo is Base64FileInfo {
+export function isBase64FileInfo(fileInfo: FileInfo): fileInfo is Base64FileInfo {
   return fileInfo.type === "image" || fileInfo.type === "document";
 }
 
@@ -206,10 +194,7 @@ export function getEncodingForFile(filePath: string): "utf-8" | "base64" {
 
   if (SUPPORTED_TEXT_TYPES.includes(ext)) {
     return "utf-8";
-  } else if (
-    SUPPORTED_IMAGE_TYPES.includes(ext) ||
-    SUPPORTED_DOCUMENT_TYPES.includes(ext)
-  ) {
+  } else if (SUPPORTED_IMAGE_TYPES.includes(ext) || SUPPORTED_DOCUMENT_TYPES.includes(ext)) {
     return "base64";
   } else {
     const allSupportedTypes = [
@@ -230,10 +215,7 @@ export function getEncodingForFile(filePath: string): "utf-8" | "base64" {
  * @returns FileInfo object with appropriate content based on encoding
  */
 export async function loadFileContent(filePath: string): Promise<FileInfo>;
-export async function loadFileContent(
-  filePath: string,
-  encoding: "utf-8",
-): Promise<TextFileInfo>;
+export async function loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
 export async function loadFileContent(
   filePath: string,
   encoding: "base64",
@@ -253,9 +235,7 @@ export async function loadFileContent(
   const stats = await stat(resolvedPath);
 
   if (stats.size > MAX_FILE_SIZE) {
-    throw new Error(
-      `File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`,
-    );
+    throw new Error(`File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`);
   }
 
   const ext = extname(resolvedPath).toLowerCase();

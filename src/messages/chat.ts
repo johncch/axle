@@ -137,7 +137,7 @@ export function getTextAndInstructions(
   return [...textParts, ...instructionsParts].join(delimiter);
 }
 
-export function getTextContent(content: string | ContentPart[]): string | null {
+export function getTextContent(content: ContentPart[]): string | null {
   if (typeof content === "string") {
     return content;
   }
