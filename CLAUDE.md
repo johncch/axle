@@ -22,7 +22,7 @@
 # Repository Structure
 
 - `src/`: Source code
-  - `ai/`: LLM provider integrations (Anthropic, OpenAI, Ollama)
+  - `ai/`: LLM provider integrations (Anthropic, OpenAI, Ollama, Google AI)
   - `cli/`: CLI implementation
     - `configs/`: Configuration handling
     - `converters/`: Data format converters
@@ -34,7 +34,16 @@
   - `tools/`: External tool integrations (Brave, Calculator)
   - `utils/`: Helper functions
   - `workflows/`: Workflow implementations (Serial, Concurrent)
+- `tests/`: Test files (mirrors src/ structure)
+  - `ai/`: AI provider tests
+    - `anthropic/`: Anthropic provider tests
+    - `googleai/`: Google AI provider tests
+    - `ollama/`: Ollama provider tests
+    - `openai/`: OpenAI provider tests
+  - `core/`: Core functionality tests
+  - `messages/`: Message handling tests
+  - `recorder/`: Recorder tests
+  - `utils/`: Utility function tests
 - `examples/`: Sample job definitions
 - `scripts/`: Utility scripts
 - `dist/`: Build output (not checked in)
-- `tests/`: Test files

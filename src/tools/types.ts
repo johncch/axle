@@ -1,18 +1,14 @@
-export interface ToolSchema {
-  name: string;
-  description: string;
-  parameters: {
-    type: "object";
-    properties: Record<string, object>;
-    required: string[];
-  };
-}
+import { z, ZodObject } from "zod";
 
-export interface ToolExecutable {
+export type ToolDefinition<Z extends ZodObject = ZodObject> = {
   name: string;
-  schema: ToolSchema;
+  description?: string;
+  schema: Z;
+};
+
+export interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
   setConfig?: (config: { [key: string]: any }) => void;
-  execute: (params: { [key: string]: any }) => Promise<string>;
+  execute: (params: z.infer<Z>) => Promise<string>;
 }
 
 export interface ToolConstructor<T extends ToolExecutable = ToolExecutable> {

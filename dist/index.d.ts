@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import z__default from 'zod';
+import z__default, { ZodObject, z as z$1 } from 'zod';
 
 type PlainObject = Record<string, unknown>;
 type ProgramOptions = {
@@ -44,6 +44,75 @@ interface RecorderWriter {
     handleEvent(event: RecorderEntry): void | Promise<void>;
     flush?(): Promise<void>;
 }
+
+interface StreamChunk {
+    type: "start" | "text" | "tool-call-start" | "tool-call-delta" | "tool-call-complete" | "thinking-start" | "thinking-delta" | "complete" | "error";
+    id?: string;
+    data?: any;
+}
+interface StreamStartChunk extends StreamChunk {
+    type: "start";
+    id: string;
+    data: {
+        model: string;
+        timestamp: number;
+    };
+}
+interface StreamCompleteChunk extends StreamChunk {
+    type: "complete";
+    data: {
+        finishReason: AxleStopReason;
+        usage: Stats;
+    };
+}
+interface StreamTextChunk extends StreamChunk {
+    type: "text";
+    data: {
+        text: string;
+        index: number;
+    };
+}
+interface StreamThinkingStartChunk extends StreamChunk {
+    type: "thinking-start";
+    data: {
+        index: number;
+        redacted?: boolean;
+    };
+}
+interface StreamThinkingDeltaChunk extends StreamChunk {
+    type: "thinking-delta";
+    data: {
+        index: number;
+        text: string;
+    };
+}
+interface StreamToolCallStartChunk extends StreamChunk {
+    type: "tool-call-start";
+    data: {
+        index: number;
+        id: string;
+        name: string;
+    };
+}
+interface StreamToolCallCompleteChunk extends StreamChunk {
+    type: "tool-call-complete";
+    data: {
+        index: number;
+        id: string;
+        name: string;
+        arguments: any;
+    };
+}
+interface StreamErrorChunk extends StreamChunk {
+    type: "error";
+    data: {
+        type: string;
+        message: string;
+        usage?: Stats;
+        raw?: any;
+    };
+}
+type AnyStreamChunk = StreamStartChunk | StreamCompleteChunk | StreamTextChunk | StreamToolCallStartChunk | StreamToolCallCompleteChunk | StreamThinkingStartChunk | StreamThinkingDeltaChunk | StreamErrorChunk;
 
 declare class Recorder {
     instanceId: `${string}-${string}-${string}-${string}-${string}`;
@@ -95,41 +164,66 @@ type Base64FileInfo = FileInfo & {
     type: "image" | "document";
 };
 
-interface ToolSchema {
-    name: string;
-    description: string;
-    parameters: {
-        type: "object";
-        properties: Record<string, object>;
-        required: string[];
-    };
+type AxleMessage = AxleUserMessage | AxleAssistantMessage | AxleToolCallMessage;
+interface AxleUserMessage {
+    role: "user";
+    name?: string;
+    content: string | Array<ContentPart>;
 }
-interface ToolExecutable {
+interface AxleAssistantMessage {
+    role: "assistant";
+    id: string;
+    model?: string;
+    content: Array<ContentPartText | ContentPartThinking>;
+    toolCalls?: Array<ContentPartToolCall>;
+    finishReason?: AxleStopReason;
+}
+interface AxleToolCallMessage {
+    role: "tool";
+    content: Array<AxleToolCallResult>;
+}
+interface AxleToolCallResult {
+    id: string;
     name: string;
-    schema: ToolSchema;
+    content: string;
+}
+type ContentPart = ContentPartText | ContentPartFile | ContentPartInstructions | ContentPartThinking;
+interface ContentPartText {
+    type: "text";
+    text: string;
+}
+interface ContentPartInstructions {
+    type: "instructions";
+    instructions: string;
+}
+interface ContentPartFile {
+    type: "file";
+    file: FileInfo;
+}
+interface ContentPartThinking {
+    type: "thinking";
+    text: string;
+    redacted?: boolean;
+    encrypted?: string;
+    signature?: string;
+}
+interface ContentPartToolCall {
+    type: "tool-call";
+    id: string;
+    name: string;
+    parameters: Record<string, unknown>;
+}
+
+type ToolDefinition<Z extends ZodObject = ZodObject> = {
+    name: string;
+    description?: string;
+    schema: Z;
+};
+interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
     setConfig?: (config: {
         [key: string]: any;
     }) => void;
-    execute: (params: {
-        [key: string]: any;
-    }) => Promise<string>;
-}
-
-declare class Chat {
-    system: string;
-    messages: ChatItem[];
-    tools: ToolSchema[];
-    setToolSchemas(schemas: ToolSchema[]): void;
-    addSystem(message: string): void;
-    addUser(message: string): void;
-    addUser(message: string, instruction: string): void;
-    addUser(message: string, instruction: string, files: FileInfo[]): void;
-    addUser(message: string, files: FileInfo[]): any;
-    addAssistant(message: string, toolCalls?: ToolCall[]): void;
-    addTools(input: Array<ChatItemToolCallResult>): void;
-    hasFiles(): boolean;
-    latest(): ChatItem | undefined;
-    toString(): string;
+    execute: (params: z$1.infer<Z>) => Promise<string>;
 }
 
 type OllamaProviderConfig = {
@@ -157,78 +251,69 @@ interface AIProviderConfig {
 interface AIProvider {
     get name(): string;
     get model(): string;
-    createChatRequest(chat: Chat, context: {
-        recorder?: Recorder;
-    }): AIRequest;
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): Promise<ModelResult>;
+    createStreamingRequest?(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
-interface AIRequest {
-    execute(runtime: {
-        recorder?: Recorder;
-    }): Promise<AIResponse>;
-}
-interface ToolCall {
-    id: string;
-    name: string;
-    arguments: string | Record<string, unknown>;
-}
-type AIResponse = AISuccessResponse | AIErrorResponse;
-interface AISuccessResponse {
+interface ModelResponse {
     type: "success";
+    role: "assistant";
     id: string;
-    reason: StopReason;
-    message: ChatItemAssistant;
     model: string;
-    toolCalls?: ToolCall[];
+    text: string;
+    content: Array<ContentPartText | ContentPartThinking>;
+    finishReason: AxleStopReason;
+    toolCalls?: ContentPartToolCall[];
     usage: Stats;
     raw: any;
 }
-interface AIErrorResponse {
+interface ModelError {
     type: "error";
     error: {
         type: string;
         message: string;
     };
-    usage: Stats;
-    raw: any;
+    usage?: Stats;
+    raw?: any;
 }
-declare enum StopReason {
+type ModelResult = ModelResponse | ModelError;
+declare enum AxleStopReason {
     Stop = 0,
     Length = 1,
     FunctionCall = 2,
-    Error = 3
-}
-type ChatItem = ChatItemUser | ChatItemAssistant | ChatItemToolCall;
-interface ChatItemUser {
-    role: "user";
-    name?: string;
-    content: string | ChatContent[];
-}
-interface ChatItemAssistant {
-    role: "assistant";
-    content?: string;
-    toolCalls?: ToolCall[];
-}
-interface ChatItemToolCallResult {
-    id: string;
-    name: string;
-    content: string;
-}
-interface ChatItemToolCall {
-    role: "tool";
-    content: Array<ChatItemToolCallResult>;
-}
-type ChatContent = ChatContentText | ChatContentFile | ChatContentInstructions;
-interface ChatContentText {
-    type: "text";
-    text: string;
-}
-interface ChatContentInstructions {
-    type: "instructions";
-    instructions: string;
-}
-interface ChatContentFile {
-    type: "file";
-    file: FileInfo;
+    Error = 3,
+    Custom = 4
 }
 
 declare class AxleError extends Error {
@@ -320,6 +405,40 @@ declare class Axle {
     static loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
     static loadFileContent(filePath: string, encoding: "base64"): Promise<Base64FileInfo>;
 }
+
+interface GenerateOptions {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+}
+interface GenerateProps {
+    provider: AIProvider;
+    messages: Array<AxleMessage>;
+    system?: string;
+    tools?: Array<ToolDefinition>;
+    recorder?: Recorder;
+    options?: GenerateOptions;
+}
+declare function generate(props: GenerateProps): Promise<ModelResult>;
+
+interface StreamProps {
+    provider: AIProvider;
+    messages: Array<AxleMessage>;
+    system?: string;
+    tools?: Array<ToolDefinition>;
+    recorder?: Recorder;
+    options?: GenerateOptions;
+}
+interface StreamResult {
+    get final(): Promise<ModelResult>;
+    get current(): AxleAssistantMessage;
+    [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
+}
+declare function stream(props: StreamProps): StreamResult;
 
 declare enum ResultType {
     String = "string",
@@ -530,5 +649,5 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, serialWorkflow };
+export { Axle, ChainOfThought, ConsoleWriter, Instruct, LogLevel, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
 export type { AIProvider, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };
