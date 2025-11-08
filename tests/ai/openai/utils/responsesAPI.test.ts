@@ -177,8 +177,6 @@ describe("responsesAPI utils", () => {
               type: "text" as const,
               text: "Let me search for that.",
             } as ContentPartText,
-          ],
-          toolCalls: [
             {
               type: "tool-call" as const,
               id: "call_123",

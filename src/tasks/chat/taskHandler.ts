@@ -2,7 +2,7 @@ import * as z from "zod";
 import { generate } from "../../ai/generate.js";
 import { AIProvider, AxleStopReason } from "../../ai/types.js";
 import { Instruct } from "../../core/Instruct.js";
-import { Chat, getTextContent } from "../../messages/chat.js";
+import { Chat, getTextContent, getToolCalls } from "../../messages/chat.js";
 import { AxleToolCallResult, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { TaskHandler } from "../../registry/taskHandler.js";
@@ -95,7 +95,6 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
               finishReason: response.finishReason,
             });
             const textContent = getTextContent(content);
-            chat.addAssistant(textContent);
             const result = instruct.finalize(textContent, { recorder });
             setResultsIntoVariables(result as Record<string, unknown>, variables, {
               options,
@@ -116,12 +115,12 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
               model: response.model,
               content: response.content,
               finishReason: response.finishReason,
-              toolCalls: response.toolCalls,
             });
           }
 
-          if (response.toolCalls && response.toolCalls.length > 0) {
-            const results = await executeToolCalls(response.toolCalls, instruct, { recorder });
+          const toolCalls = getToolCalls(response.content);
+          if (toolCalls && toolCalls.length > 0) {
+            const results = await executeToolCalls(toolCalls, instruct, { recorder });
             recorder?.debug?.log(results);
             chat.addTools(results);
 

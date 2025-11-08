@@ -13,8 +13,7 @@ export interface AxleAssistantMessage {
   role: "assistant";
   id: string;
   model?: string;
-  content: Array<ContentPartText | ContentPartThinking>;
-  toolCalls?: Array<ContentPartToolCall>;
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
   finishReason?: AxleStopReason;
 }
 

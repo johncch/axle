@@ -72,16 +72,18 @@ function convertToolMessage(msg: AxleMessage & { role: "tool" }): Content {
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Content {
   const parts: any[] = [];
 
-  if (msg.content !== undefined && msg.content.length > 0) {
-    const text = msg.content.map((c) => c.text).join("");
+  const textParts = msg.content.filter((c) => c.type === "text");
+  if (textParts.length > 0) {
+    const text = textParts.map((c: any) => c.text).join("");
     if (text) {
       parts.push({ text });
     }
   }
 
-  if (msg.toolCalls) {
+  const toolCallParts = msg.content.filter((c) => c.type === "tool-call");
+  if (toolCallParts.length > 0) {
     parts.push(
-      ...msg.toolCalls.map((item) => {
+      ...toolCallParts.map((item: any) => {
         return {
           functionCall: {
             id: item.id ?? undefined,

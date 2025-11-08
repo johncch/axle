@@ -97,27 +97,26 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle assistant message with tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ContentPartToolCall[] = [
-        {
-          type: "tool-call",
-          id: "call_123",
-          name: "get_weather",
-          parameters: { location: "Boston", units: "celsius" },
-        },
-        {
-          type: "tool-call",
-          id: "call_456",
-          name: "calculate",
-          parameters: { expression: "2 + 2" },
-        },
-      ];
 
       chat.addAssistant({
         id: crypto.randomUUID(),
         model: "test",
-        content: [{ type: "text", text: "I'll help you with both requests." }],
+        content: [
+          { type: "text", text: "I'll help you with both requests." },
+          {
+            type: "tool-call",
+            id: "call_123",
+            name: "get_weather",
+            parameters: { location: "Boston", units: "celsius" },
+          },
+          {
+            type: "tool-call",
+            id: "call_456",
+            name: "calculate",
+            parameters: { expression: "2 + 2" },
+          },
+        ],
         finishReason: AxleStopReason.FunctionCall,
-        toolCalls,
       });
       const result = prepareRequest(chat);
 
@@ -148,21 +147,19 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle assistant message with empty content and tool calls", () => {
       const chat = new Chat();
-      const toolCalls: ContentPartToolCall[] = [
-        {
-          type: "tool-call",
-          id: "call_123",
-          name: "test_tool",
-          parameters: {},
-        },
-      ];
-
       chat.addAssistant({
         id: crypto.randomUUID(),
         model: "test",
-        content: [{ type: "text", text: "" }],
+        content: [
+          { type: "text", text: "" },
+          {
+            type: "tool-call",
+            id: "call_123",
+            name: "test_tool",
+            parameters: {},
+          },
+        ],
         finishReason: AxleStopReason.FunctionCall,
-        toolCalls,
       });
       const result = prepareRequest(chat);
 
@@ -552,9 +549,8 @@ describe("Anthropic prepareRequest", () => {
       chat.addAssistant({
         id: crypto.randomUUID(),
         model: "test",
-        content: [{ type: "text", text: "I'll analyze this chart for you." }],
-        finishReason: AxleStopReason.FunctionCall,
-        toolCalls: [
+        content: [
+          { type: "text", text: "I'll analyze this chart for you." },
           {
             type: "tool-call",
             id: "call_789",
@@ -562,6 +558,7 @@ describe("Anthropic prepareRequest", () => {
             parameters: { image_path: "/test/chart.png" },
           },
         ],
+        finishReason: AxleStopReason.FunctionCall,
       });
       chat.addTools([
         {
@@ -673,21 +670,20 @@ describe("Anthropic prepareRequest", () => {
   describe("malformed data handling", () => {
     test("should handle tool calls with string arguments that are JSON", () => {
       const chat = new Chat();
-      const toolCalls: ContentPartToolCall[] = [
-        {
-          type: "tool-call",
-          id: "call_123",
-          name: "test_tool",
-          parameters: { param: "value" },
-        },
-      ];
 
       chat.addAssistant({
         id: crypto.randomUUID(),
         model: "test",
-        content: [{ type: "text", text: "Using tool" }],
+        content: [
+          { type: "text", text: "Using tool" },
+          {
+            type: "tool-call",
+            id: "call_123",
+            name: "test_tool",
+            parameters: { param: "value" },
+          },
+        ],
         finishReason: AxleStopReason.FunctionCall,
-        toolCalls,
       });
       const result = prepareRequest(chat);
 
@@ -747,21 +743,20 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle tool calls with string arguments", () => {
       const chat = new Chat();
-      const toolCalls: ContentPartToolCall[] = [
-        {
-          type: "tool-call",
-          id: "call_123",
-          name: "test_tool",
-          parameters: { param: "value" },
-        },
-      ];
 
       chat.addAssistant({
         id: crypto.randomUUID(),
         model: "test",
-        content: [{ type: "text", text: "Using tool" }],
+        content: [
+          { type: "text", text: "Using tool" },
+          {
+            type: "tool-call",
+            id: "call_123",
+            name: "test_tool",
+            parameters: { param: "value" },
+          },
+        ],
         finishReason: AxleStopReason.FunctionCall,
-        toolCalls,
       });
       const result = prepareRequest(chat);
 
@@ -777,21 +772,20 @@ describe("Anthropic prepareRequest", () => {
 
     test("should handle tool calls with object arguments", () => {
       const chat = new Chat();
-      const toolCalls: ContentPartToolCall[] = [
-        {
-          type: "tool-call",
-          id: "call_456",
-          name: "test_tool",
-          parameters: { param: "value", number: 42 },
-        },
-      ];
 
       chat.addAssistant({
         id: crypto.randomUUID(),
         model: "test",
-        content: [{ type: "text", text: "Using tool" }],
+        content: [
+          { type: "text", text: "Using tool" },
+          {
+            type: "tool-call",
+            id: "call_456",
+            name: "test_tool",
+            parameters: { param: "value", number: 42 },
+          },
+        ],
         finishReason: AxleStopReason.FunctionCall,
-        toolCalls,
       });
       const result = prepareRequest(chat);
 

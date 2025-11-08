@@ -15,9 +15,8 @@ import {
 interface ChatAssistantParams {
   id: string;
   model: string;
-  content: Array<ContentPartText | ContentPartThinking>;
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
   finishReason: AxleStopReason;
-  toolCalls?: ContentPartToolCall[];
 }
 
 export class Chat {
@@ -191,4 +190,10 @@ export function getFiles(content: string | ContentPart[]): FileInfo[] {
   return content
     .filter((item) => item.type === "file")
     .map((item) => (item as ContentPartFile).file);
+}
+
+export function getToolCalls(
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>,
+): ContentPartToolCall[] {
+  return content.filter((item) => item.type === "tool-call") as ContentPartToolCall[];
 }
