@@ -6,7 +6,8 @@ import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 
-const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+export const NAME = "Ollama" as const;
 
 export class OllamaProvider implements AIProvider {
   name = "Ollama";

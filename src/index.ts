@@ -1,6 +1,12 @@
 // Export the Axle class
 export { Axle } from "./core/Axle.js";
 
+// Common constants
+export * as Anthropic from "./ai/anthropic/index.js";
+export * as Gemini from "./ai/gemini/index.js";
+export * as Ollama from "./ai/ollama/index.js";
+export * as OpenAI from "./ai/openai/index.js";
+
 // Export basic methods
 export { generate, stream } from "./ai/index.js";
 

@@ -1,8 +1,8 @@
 import { AxleError } from "../errors/AxleError.js";
-import { AnthropicProvider } from "./anthropic/index.js";
-import { GeminiProvider } from "./gemini/index.js";
-import { OllamaProvider } from "./ollama/index.js";
-import { OpenAIProvider } from "./openai/index.js";
+import { AnthropicProvider } from "./anthropic/provider.js";
+import { GeminiProvider } from "./gemini/provider.js";
+import { OllamaProvider } from "./ollama/provider.js";
+import { OpenAIProvider } from "./openai/provider.js";
 import { AIProviderConfig, OllamaProviderConfig } from "./types.js";
 
 type ProviderMap = {

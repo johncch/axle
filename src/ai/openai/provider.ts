@@ -9,8 +9,10 @@ import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL, RESPONSES_API_MODELS } from "./models.js";
 import { createGenerationRequestWithResponsesAPI } from "./responsesAPI.js";
 
+export const NAME = "OpenAI" as const;
+
 export class OpenAIProvider implements AIProvider {
-  name = "OpenAI";
+  name = NAME;
   client: OpenAI;
   model: string;
 

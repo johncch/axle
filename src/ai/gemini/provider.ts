@@ -8,8 +8,10 @@ import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL } from "./models.js";
 
+export const NAME = "Gemini" as const;
+
 export class GeminiProvider implements AIProvider {
-  name = "Gemini";
+  name = NAME;
   client: GoogleGenAI;
   model: string;
 

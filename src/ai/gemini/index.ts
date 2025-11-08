@@ -1,2 +1,2 @@
-export { Models } from "./models.js";
-export { GeminiProvider } from "./provider.js";
+export { DEFAULT_MODEL, Models } from "./models.js";
+export { NAME } from "./provider.js";
