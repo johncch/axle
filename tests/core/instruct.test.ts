@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { loadFileContent } from "../../src/utils/file.js";
 import { Instruct } from "../../src/core/Instruct.js";
+import { loadFileContent } from "../../src/utils/file.js";
 
-const TEST_DIR = join(process.cwd(), "test-temp");
+const TEST_DIR = join(process.cwd(), "test-temp", "instruct-test");
 
 describe("Instruct with text references", () => {
   beforeEach(async () => {
@@ -32,8 +32,7 @@ describe("Instruct with text references", () => {
   });
 
   it("should use filename as default reference name", async () => {
-    const textContent =
-      "# Important Document\n\nThis contains important information.";
+    const textContent = "# Important Document\n\nThis contains important information.";
     const filePath = join(TEST_DIR, "document.md");
     await writeFile(filePath, textContent);
 
@@ -80,9 +79,7 @@ describe("Instruct with text references", () => {
     await writeFile(filePath, textContent);
 
     const textFile = await loadFileContent(filePath, "utf-8");
-    const instruct = Instruct.with(
-      "Analyze the {{analysis_type}} in this document",
-    );
+    const instruct = Instruct.with("Analyze the {{analysis_type}} in this document");
     instruct.addReference(textFile, { name: "Reference Doc" });
 
     const compiled = instruct.compile({
@@ -90,9 +87,7 @@ describe("Instruct with text references", () => {
       analysis_type: "methodology",
     });
 
-    expect(compiled.message).toContain(
-      "Analyze the methodology in this document",
-    );
+    expect(compiled.message).toContain("Analyze the methodology in this document");
     expect(compiled.message).toContain("## Reference 1: Reference Doc");
     expect(compiled.message).toContain("Document about {{topic}}.");
   });

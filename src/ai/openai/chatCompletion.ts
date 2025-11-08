@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { getTextContent } from "../../messages/chat.js";
-import { AxleMessage, ContentPartText } from "../../messages/types.js";
+import { AxleMessage, ContentPartText, ContentPartThinking, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { convertStopReason } from "../anthropic/utils.js";
@@ -54,26 +54,29 @@ export async function createGenerationRequestWithChatCompletion(params: {
 export function fromModelResponse(completion: OpenAI.Chat.Completions.ChatCompletion): ModelResult {
   if (completion.choices.length > 0) {
     const choice = completion.choices[0];
-    const toolCalls = choice.message.tool_calls
-      ?.filter((item) => item.type === "function")
-      ?.map((call) => {
-        try {
-          return {
-            type: "tool-call" as const,
-            id: call.id,
-            name: call.function.name,
-            parameters: JSON.parse(call.function.arguments),
-          };
-        } catch (e) {
-          throw new Error(
-            `Failed to parse tool call arguments for ${call.function.name}: ${e instanceof Error ? e.message : String(e)}`,
-          );
-        }
-      });
+    const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
 
-    const contentParts: ContentPartText[] = [];
     if (choice.message.content) {
-      contentParts.push({ type: "text" as const, text: choice.message.content });
+      content.push({ type: "text" as const, text: choice.message.content });
+    }
+
+    if (choice.message.tool_calls) {
+      for (const call of choice.message.tool_calls) {
+        if (call.type === "function") {
+          try {
+            content.push({
+              type: "tool-call" as const,
+              id: call.id,
+              name: call.function.name,
+              parameters: JSON.parse(call.function.arguments),
+            });
+          } catch (e) {
+            throw new Error(
+              `Failed to parse tool call arguments for ${call.function.name}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        }
+      }
     }
 
     return {
@@ -82,9 +85,8 @@ export function fromModelResponse(completion: OpenAI.Chat.Completions.ChatComple
       model: completion.model,
       role: choice.message.role,
       finishReason: convertStopReason(choice.finish_reason),
-      content: contentParts,
-      text: getTextContent(contentParts) ?? "",
-      toolCalls: toolCalls,
+      content,
+      text: getTextContent(content) ?? "",
       usage: {
         in: completion.usage?.prompt_tokens ?? 0,
         out: completion.usage?.completion_tokens ?? 0,

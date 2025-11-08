@@ -71,9 +71,8 @@ export interface ModelResponse {
   id: string;
   model: string;
   text: string;
-  content: Array<ContentPartText | ContentPartThinking>;
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
   finishReason: AxleStopReason;
-  toolCalls?: ContentPartToolCall[];
   usage: Stats;
   raw: any;
 }

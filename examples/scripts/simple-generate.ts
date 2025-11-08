@@ -44,16 +44,16 @@ function printResults(provider: AIProvider, result: ModelResult) {
   if (result.type === "success") {
     console.log(`${spacer("Text")}: ${result.text}`);
 
+    let toolIndex = 0;
     console.log(`${spacer(`Content Parts`)}: `);
     for (const part of result.content) {
-      console.log(`${spacer(part.type)}: ${part.text}`);
-    }
-
-    if (result.toolCalls) {
-      for (const [index, toolCall] of result.toolCalls.entries()) {
-        console.log(`${spacer(`Tool Call ${index + 1}`)}: ${toolCall.id}`);
-        console.log(`${spacer("Name", { indent: 2 })}: ${toolCall.name}`);
-        console.log(`${spacer("Arguments", { indent: 2 })}: ${stringify(toolCall.parameters)}`);
+      if (part.type === "text" || part.type === "thinking") {
+        console.log(`${spacer(part.type)}: ${part.text}`);
+      } else {
+        toolIndex += 1;
+        console.log(`${spacer(`Tool Call ${toolIndex}`)}: ${part.id}`);
+        console.log(`${spacer("Name", { indent: 2 })}: ${part.name}`);
+        console.log(`${spacer("Arguments", { indent: 2 })}: ${stringify(part.parameters)}`);
       }
     }
   } else {

@@ -46,19 +46,33 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
   return messages.map((msg) => {
     if (msg.role === "assistant") {
       const content: Array<ContentBlockParam> = [];
-      content.push(...converToProviderContentParts(msg.content));
-      if (msg.toolCalls) {
-        content.push(
-          ...msg.toolCalls.map(
-            (call) =>
-              ({
-                type: "tool_use",
-                id: call.id,
-                name: call.name,
-                input: call.parameters,
-              }) satisfies ToolUseBlockParam,
-          ),
-        );
+      for (const part of msg.content) {
+        if (part.type === "text") {
+          content.push({
+            type: "text",
+            text: part.text,
+          });
+        } else if (part.type === "thinking") {
+          if (part.redacted) {
+            content.push({
+              type: "redacted_thinking",
+              data: part.text,
+            });
+          } else {
+            content.push({
+              type: "thinking",
+              thinking: part.text,
+              signature: part.signature,
+            });
+          }
+        } else if (part.type === "tool-call") {
+          content.push({
+            type: "tool_use",
+            id: part.id,
+            name: part.name,
+            input: part.parameters,
+          } satisfies ToolUseBlockParam);
+        }
       }
       return {
         role: "assistant",
@@ -159,8 +173,8 @@ export function convertToProviderTools(
 
 export function convertToAxleContentParts(
   contentBlocks: Anthropic.Messages.ContentBlock[],
-): Array<ContentPartText | ContentPartThinking> {
-  const result: Array<ContentPartText | ContentPartThinking> = [];
+): Array<ContentPartText | ContentPartThinking | ContentPartToolCall> {
+  const result: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
 
   for (const block of contentBlocks) {
     if (block.type === "text") {
@@ -180,71 +194,28 @@ export function convertToAxleContentParts(
         text: (block as any).text || "",
         redacted: true,
       });
-    }
-    // Note: tool_use blocks are handled separately as toolCalls in AxleAssistantMessage
-    // TODO - implement
-  }
-
-  return result;
-}
-
-export function converToProviderContentParts(
-  parts: Array<ContentPartText | ContentPartThinking>,
-): Anthropic.Messages.ContentBlockParam[] {
-  const result: Anthropic.Messages.ContentBlockParam[] = [];
-
-  for (const part of parts) {
-    if (part.type === "text") {
+    } else if (block.type === "tool_use") {
+      if (
+        typeof block.input !== "object" ||
+        block.input === null ||
+        Array.isArray(block.input)
+      ) {
+        throw new Error(
+          `Invalid tool call input for ${block.name}: expected object, got ${typeof block.input}`,
+        );
+      }
       result.push({
-        type: "text",
-        text: part.text,
+        type: "tool-call",
+        id: block.id,
+        name: block.name,
+        parameters: block.input as Record<string, unknown>,
       });
-    } else if (part.type === "thinking") {
-      if (part.redacted) {
-        result.push({
-          type: "redacted_thinking",
-          data: part.text,
-        });
-      } else {
-        result.push({
-          type: "thinking",
-          thinking: part.text,
-          signature: part.signature,
-        });
-      }
     }
   }
 
   return result;
 }
 
-export function convertToAxleToolCalls(
-  parts: Array<Messages.ContentBlock>,
-): Array<ContentPartToolCall> {
-  return parts
-    .slice(1)
-    .map((toolUse) => {
-      if (toolUse.type === "tool_use") {
-        // Validate that input is an object
-        if (
-          typeof toolUse.input !== "object" ||
-          toolUse.input === null ||
-          Array.isArray(toolUse.input)
-        ) {
-          throw new Error(
-            `Invalid tool call input for ${toolUse.name}: expected object, got ${typeof toolUse.input}`,
-          );
-        }
-        return {
-          type: "tool-call" as const,
-          id: toolUse.id,
-          name: toolUse.name,
-          parameters: toolUse.input as Record<string, unknown>,
-        };
-      }
-    })
-    .filter((v) => v);
-}
 
 export function convertStopReason(reason: string) {
   switch (reason) {

@@ -174,8 +174,7 @@ interface AxleAssistantMessage {
     role: "assistant";
     id: string;
     model?: string;
-    content: Array<ContentPartText | ContentPartThinking>;
-    toolCalls?: Array<ContentPartToolCall>;
+    content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
     finishReason?: AxleStopReason;
 }
 interface AxleToolCallMessage {
@@ -187,7 +186,7 @@ interface AxleToolCallResult {
     name: string;
     content: string;
 }
-type ContentPart = ContentPartText | ContentPartFile | ContentPartInstructions | ContentPartThinking;
+type ContentPart = ContentPartText | ContentPartFile | ContentPartToolCall | ContentPartInstructions | ContentPartThinking;
 interface ContentPartText {
     type: "text";
     text: string;
@@ -292,9 +291,8 @@ interface ModelResponse {
     id: string;
     model: string;
     text: string;
-    content: Array<ContentPartText | ContentPartThinking>;
+    content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
     finishReason: AxleStopReason;
-    toolCalls?: ContentPartToolCall[];
     usage: Stats;
     raw: any;
 }

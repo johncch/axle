@@ -1,6 +1,6 @@
 import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
 import { getTextContent } from "../../messages/chat.js";
-import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
+import { AxleMessage, ContentPartText, ContentPartThinking, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
@@ -120,40 +120,43 @@ function fromModelResponse(
 
   const candidate = response.candidates[0];
   const parts = candidate.content?.parts || [];
-  const content = parts
+  const textContent = parts
     .map((part) => part.text)
     .filter((text) => text !== undefined)
     .join("");
 
   const [success, reason] = convertStopReason(candidate.finishReason);
   if (success) {
-    let toolCalls: ContentPartToolCall[] | undefined;
+    const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
+
+    if (textContent) {
+      content.push({ type: "text" as const, text: textContent });
+    }
+
     if (response.functionCalls) {
-      toolCalls = response.functionCalls.map((call) => {
-        // Validate that args is an object
+      for (const call of response.functionCalls) {
         if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
           throw new Error(
             `Invalid tool call arguments for ${call.name}: expected object, got ${typeof call.args}`,
           );
         }
-        return {
+        content.push({
           type: "tool-call" as const,
           id: call.id,
           name: call.name,
           parameters: call.args as Record<string, unknown>,
-        };
-      });
+        });
+      }
     }
-    const contentParts = [{ type: "text" as const, text: content }];
+
     return {
       type: "success",
       id: response.responseId,
       model: response.modelVersion,
       role: "assistant",
       finishReason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
-      content: contentParts,
-      text: getTextContent(contentParts) ?? "",
-      ...(toolCalls ? { toolCalls } : {}),
+      content,
+      text: getTextContent(content) ?? "",
       usage,
       raw: response,
     };

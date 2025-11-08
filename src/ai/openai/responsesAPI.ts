@@ -6,7 +6,7 @@ import {
   ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import { getTextContent } from "../../messages/chat.js";
-import { AxleMessage, ContentPartText, ContentPartThinking } from "../../messages/types.js";
+import { AxleMessage, ContentPartText, ContentPartThinking, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
@@ -73,36 +73,18 @@ export function fromModelResponse(response: Response): ModelResult {
     };
   }
 
-  // TODO: Refactor Messages to hold function calls
-  const toolCalls = response.output
-    ?.filter((item) => item.type === "function_call")
-    ?.map((item: ResponseFunctionToolCall) => {
-      try {
-        return {
-          type: "tool-call" as const,
-          id: item.id || "",
-          name: item.name || "",
-          parameters: item.arguments ? JSON.parse(item.arguments) : {},
-        };
-      } catch (e) {
-        throw new Error(
-          `Failed to parse tool call arguments for ${item.name}: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    });
-
   const reasoningItems = response.output
     ?.filter((item) => item.type === "reasoning")
     ?.map((item: ResponseReasoningItem) => item);
 
-  const contentParts: Array<ContentPartText | ContentPartThinking> = [];
+  const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
 
   if (reasoningItems && reasoningItems.length > 0) {
     for (const reasoning of reasoningItems) {
       const thinkingText = reasoning.summary?.[0]?.text || reasoning.content?.[0]?.text || "";
 
       if (thinkingText || reasoning.encrypted_content) {
-        contentParts.push({
+        content.push({
           type: "thinking" as const,
           text: thinkingText,
           ...(reasoning.encrypted_content && { encrypted: reasoning.encrypted_content }),
@@ -112,7 +94,26 @@ export function fromModelResponse(response: Response): ModelResult {
   }
 
   if (response.output_text) {
-    contentParts.push({ type: "text" as const, text: response.output_text });
+    content.push({ type: "text" as const, text: response.output_text });
+  }
+
+  const toolCallItems = response.output?.filter((item) => item.type === "function_call");
+  if (toolCallItems && toolCallItems.length > 0) {
+    for (const item of toolCallItems) {
+      const toolCall = item as ResponseFunctionToolCall;
+      try {
+        content.push({
+          type: "tool-call" as const,
+          id: toolCall.id || "",
+          name: toolCall.name || "",
+          parameters: toolCall.arguments ? JSON.parse(toolCall.arguments) : {},
+        });
+      } catch (e) {
+        throw new Error(
+          `Failed to parse tool call arguments for ${toolCall.name}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
   }
 
   return {
@@ -121,9 +122,8 @@ export function fromModelResponse(response: Response): ModelResult {
     model: response.model || "",
     role: "assistant" as const,
     finishReason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
-    content: contentParts,
-    text: getTextContent(contentParts) ?? "",
-    ...(toolCalls?.length && { toolCalls }),
+    content,
+    text: getTextContent(content) ?? "",
     usage: {
       in: response.usage?.input_tokens ?? 0,
       out: response.usage?.output_tokens ?? 0,

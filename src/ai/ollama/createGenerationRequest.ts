@@ -1,5 +1,5 @@
 import { getTextContent } from "../../messages/chat.js";
-import { AxleMessage, ContentPartToolCall } from "../../messages/types.js";
+import { AxleMessage, ContentPartText, ContentPartThinking, ContentPartToolCall } from "../../messages/types.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
@@ -91,11 +91,14 @@ export async function createGenerationRequest(params: {
 
 function fromModelResponse(data: OllamaGenerationResponse): ModelResult {
   if (data.done_reason === "stop" && data.message) {
-    const content = data.message.content;
-    const toolCalls: ContentPartToolCall[] = [];
+    const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
+
+    if (data.message.content !== undefined) {
+      content.push({ type: "text" as const, text: data.message.content });
+    }
+
     if (data.message.tool_calls) {
       for (const call of data.message.tool_calls) {
-        // Validate that arguments is an object
         if (
           typeof call.function.arguments !== "object" ||
           call.function.arguments === null ||
@@ -105,7 +108,7 @@ function fromModelResponse(data: OllamaGenerationResponse): ModelResult {
             `Invalid tool call arguments for ${call.function.name}: expected object, got ${typeof call.function.arguments}`,
           );
         }
-        toolCalls.push({
+        content.push({
           type: "tool-call",
           id: call.id,
           name: call.function.name,
@@ -113,8 +116,8 @@ function fromModelResponse(data: OllamaGenerationResponse): ModelResult {
         });
       }
     }
-    const hasToolCalls = toolCalls.length > 0;
-    const contentParts = [{ type: "text" as const, text: content }];
+
+    const hasToolCalls = content.some((c) => c.type === "tool-call");
 
     return {
       type: "success",
@@ -122,9 +125,8 @@ function fromModelResponse(data: OllamaGenerationResponse): ModelResult {
       model: data.model,
       role: "assistant",
       finishReason: hasToolCalls ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
-      content: contentParts,
-      text: getTextContent(contentParts) ?? "",
-      ...(hasToolCalls && { toolCalls }),
+      content,
+      text: getTextContent(content) ?? "",
       usage: {
         in: data.prompt_eval_count || 0,
         out: data.eval_count || 0,

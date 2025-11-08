@@ -262,8 +262,9 @@ describe("createGenerationRequest (Google AI)", () => {
       expect(result.type).toBe("success");
       if (result.type === "success") {
         expect(result.finishReason).toBe(AxleStopReason.FunctionCall);
-        expect(result.toolCalls).toHaveLength(1);
-        expect(result.toolCalls[0]).toEqual({
+        const toolCalls = result.content.filter((c) => c.type === "tool-call");
+        expect(toolCalls).toHaveLength(1);
+        expect(toolCalls[0]).toEqual({
           type: "tool-call",
           id: "call_123",
           name: "search",

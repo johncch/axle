@@ -8,7 +8,6 @@ import { getUndefinedError } from "../utils.js";
 import {
     convertStopReason,
     convertToAxleContentParts,
-    convertToAxleToolCalls,
     convertToProviderMessages,
     convertToProviderTools,
 } from "./utils.js";
@@ -91,7 +90,6 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       finishReason: AxleStopReason.FunctionCall,
       content,
       text: getTextContent(content) ?? "",
-      toolCalls: convertToAxleToolCalls(completion.content),
       usage: {
         in: completion.usage.input_tokens,
         out: completion.usage.output_tokens,

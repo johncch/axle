@@ -83,15 +83,8 @@ export class StreamParts {
     this.stats = stats;
     this.isComplete = true;
 
-    const content = this.parts.filter((p) => p.type === "text" || p.type === "thinking") as Array<
-      ContentPartText | ContentPartThinking
-    >;
-    const toolCalls = this.parts.filter(
-      (p) => p.type === "tool-call",
-    ) as Array<ContentPartToolCall>;
-
     // Concatenate all text parts for convenience
-    const text = content
+    const text = this.parts
       .filter((p) => p.type === "text")
       .map((p) => (p as ContentPartText).text)
       .join("");
@@ -101,8 +94,7 @@ export class StreamParts {
       role: "assistant",
       id: this.id,
       model: this.model,
-      content,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      content: this.parts,
       finishReason,
       usage: stats,
       text,
@@ -201,8 +193,7 @@ export class StreamParts {
   get currentMessage(): AxleAssistantMessage {
     return {
       role: "assistant",
-      content: [...this.parts.filter((part) => part.type === "text" || part.type === "thinking")],
-      toolCalls: [...this.parts.filter((part) => part.type === "tool-call")],
+      content: [...this.parts],
       id: this.id,
       model: this.model,
       ...(this.finishReason ? { finishReason: this.finishReason } : {}),

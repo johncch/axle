@@ -208,8 +208,12 @@ describe("createGenerationRequest (Anthropic)", () => {
       expect(result.type).toBe("success");
       if (result.type === "success") {
         expect(result.finishReason).toBe(AxleStopReason.FunctionCall);
-        expect(result.toolCalls).toHaveLength(1);
-        expect(result.toolCalls[0]).toEqual({
+        expect(result.content).toHaveLength(2);
+        expect(result.content[0]).toEqual({
+          type: "text",
+          text: "Let me search for that.",
+        });
+        expect(result.content[1]).toEqual({
           type: "tool-call",
           id: "toolu_123",
           name: "search",

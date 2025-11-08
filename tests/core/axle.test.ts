@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Axle } from "../../src/core/Axle.js";
 
-const TEST_DIR = join(process.cwd(), "test-temp");
+const TEST_DIR = join(process.cwd(), "test-temp", "axle-test");
 
 describe("Axle file loading methods", () => {
   beforeEach(async () => {
@@ -30,8 +30,7 @@ describe("Axle file loading methods", () => {
     });
 
     it("should auto-detect text files when encoding is omitted", async () => {
-      const textContent =
-        "# Auto-detected Document\n\nThis should be loaded as text.";
+      const textContent = "# Auto-detected Document\n\nThis should be loaded as text.";
       const filePath = join(TEST_DIR, "auto.md");
       await writeFile(filePath, textContent);
 
