@@ -1,13 +1,4 @@
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  ContentBlockParam,
-  DocumentBlockParam,
-  ImageBlockParam,
-  MessageParam,
-  TextBlockParam,
-  ToolResultBlockParam,
-  ToolUseBlockParam,
-} from "@anthropic-ai/sdk/resources";
 import z from "zod";
 import {
   AxleMessage,
@@ -18,10 +9,12 @@ import {
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason } from "../types.js";
 
-export function convertToProviderMessages(messages: Array<AxleMessage>): Array<MessageParam> {
+export function convertToProviderMessages(
+  messages: Array<AxleMessage>,
+): Array<Anthropic.MessageParam> {
   return messages.map((msg) => {
     if (msg.role === "assistant") {
-      const content: Array<ContentBlockParam> = [];
+      const content: Array<Anthropic.ContentBlockParam> = [];
       for (const part of msg.content) {
         if (part.type === "text") {
           content.push({
@@ -47,7 +40,7 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
             id: part.id,
             name: part.name,
             input: part.parameters,
-          } satisfies ToolUseBlockParam);
+          } satisfies Anthropic.ToolUseBlockParam);
         }
       }
       return {
@@ -63,24 +56,26 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
           type: "tool_result",
           tool_use_id: r.id,
           content: r.content,
-        })) satisfies Array<ToolResultBlockParam>,
-      } satisfies MessageParam;
+        })) satisfies Array<Anthropic.ToolResultBlockParam>,
+      } satisfies Anthropic.MessageParam;
     }
 
     if (typeof msg.content === "string") {
       return {
         role: "user",
         content: msg.content,
-      } satisfies MessageParam;
+      } satisfies Anthropic.MessageParam;
     } else {
-      const content: Array<TextBlockParam | ImageBlockParam | DocumentBlockParam> = [];
+      const content: Array<
+        Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam
+      > = [];
 
       for (const part of msg.content) {
         if (part.type === "text") {
           content.push({
             type: "text",
             text: part.text,
-          } satisfies TextBlockParam);
+          } satisfies Anthropic.TextBlockParam);
         } else if (part.type === "file") {
           if (part.file.type === "image") {
             content.push({
@@ -94,7 +89,7 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
                   | "image/webp",
                 data: part.file.base64,
               },
-            } satisfies ImageBlockParam);
+            } satisfies Anthropic.ImageBlockParam);
           } else if (part.file.type === "document" && part.file.mimeType === "application/pdf") {
             content.push({
               type: "document",
@@ -103,7 +98,7 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
                 media_type: "application/pdf",
                 data: part.file.base64,
               },
-            } satisfies DocumentBlockParam);
+            } satisfies Anthropic.DocumentBlockParam);
           }
           // Skip unsupported file types (non-PDF documents, videos, etc.)
         }
@@ -112,7 +107,7 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
       return {
         role: "user",
         content,
-      } satisfies MessageParam;
+      } satisfies Anthropic.MessageParam;
     }
   });
 }
