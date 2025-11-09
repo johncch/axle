@@ -1,11 +1,11 @@
 import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
-import { getTextContent } from "../../messages/chat.js";
 import {
   AxleMessage,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/types.js";
+import { getTextContent } from "../../messages/utils.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";

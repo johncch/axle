@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { createGenerationRequest } from "../../../src/ai/ollama/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
-import { Chat } from "../../../src/messages/chat.js";
+import { Conversation } from "../../../src/messages/conversation.js";
 
 // Mock fetch globally
 global.fetch = jest.fn() as any;
@@ -30,7 +30,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -68,7 +68,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -104,7 +104,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -133,7 +133,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -165,7 +165,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -210,7 +210,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search for test");
 
       const result = await createGenerationRequest({
@@ -265,7 +265,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search and calculate");
 
       const result = await createGenerationRequest({
@@ -298,7 +298,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -323,7 +323,7 @@ describe("createGenerationRequest (Ollama)", () => {
         status: 500,
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -344,7 +344,7 @@ describe("createGenerationRequest (Ollama)", () => {
         new Error("Network connection failed"),
       );
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -368,7 +368,7 @@ describe("createGenerationRequest (Ollama)", () => {
         },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -403,7 +403,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search");
 
       const result = await createGenerationRequest({
@@ -441,7 +441,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search");
 
       const result = await createGenerationRequest({
@@ -479,7 +479,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search");
 
       const result = await createGenerationRequest({
@@ -508,7 +508,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -534,7 +534,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -567,7 +567,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -605,7 +605,7 @@ describe("createGenerationRequest (Ollama)", () => {
         json: async () => mockResponse,
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -634,7 +634,7 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -662,7 +662,7 @@ describe("createGenerationRequest (Ollama)", () => {
         json: async () => mockErrorResponse,
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({

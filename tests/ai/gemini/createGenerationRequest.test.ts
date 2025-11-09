@@ -1,8 +1,8 @@
 import { FinishReason, GoogleGenAI } from "@google/genai";
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
-import { Chat } from "../../../src/messages/chat.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
 import { createGenerationRequest } from "../../../src/ai/gemini/createGenerationRequest.js";
+import { AxleStopReason } from "../../../src/ai/types.js";
+import { Conversation } from "../../../src/messages/conversation.js";
 
 describe("createGenerationRequest (Google AI)", () => {
   let mockClient: GoogleGenAI;
@@ -32,7 +32,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -67,7 +67,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -101,7 +101,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -135,7 +135,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -170,7 +170,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -206,7 +206,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -249,7 +249,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 25 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search for test");
 
       const result = await createGenerationRequest({
@@ -287,7 +287,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 110 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Write a long essay");
 
       const result = await createGenerationRequest({
@@ -320,7 +320,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 25 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -341,7 +341,7 @@ describe("createGenerationRequest (Google AI)", () => {
     test("should handle network errors", async () => {
       (mockGenerateContent.mockRejectedValue as any)(new Error("Network error"));
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -368,7 +368,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Dangerous content");
 
       const result = await createGenerationRequest({
@@ -393,7 +393,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -423,7 +423,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Content");
 
       const result = await createGenerationRequest({
@@ -460,7 +460,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 25 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Search");
 
       const result = await createGenerationRequest({
@@ -492,7 +492,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 20 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -519,7 +519,7 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -551,7 +551,7 @@ describe("createGenerationRequest (Google AI)", () => {
 
       (mockGenerateContent.mockResolvedValue as any)(mockResponse);
 
-      const chat = new Chat();
+      const chat = new Conversation();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({

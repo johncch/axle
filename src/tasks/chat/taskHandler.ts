@@ -2,8 +2,9 @@ import * as z from "zod";
 import { generate } from "../../ai/generate.js";
 import { AIProvider, AxleStopReason } from "../../ai/types.js";
 import { Instruct } from "../../core/Instruct.js";
-import { Chat, getTextContent, getToolCalls } from "../../messages/chat.js";
+import { Conversation } from "../../messages/conversation.js";
 import { AxleToolCallResult, ContentPartToolCall } from "../../messages/types.js";
+import { getTextContent, getToolCalls, toContentParts } from "../../messages/utils.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { TaskHandler } from "../../registry/taskHandler.js";
 import { ProgramOptions, Stats } from "../../types.js";
@@ -20,7 +21,7 @@ export class ChatTaskHandler<T extends SchemaRecord> implements TaskHandler<Inst
 
   async execute(params: {
     task: Instruct<T>;
-    chat: Chat;
+    chat: Conversation;
     provider: AIProvider;
     variables: Record<string, any>;
     options?: ProgramOptions;
@@ -37,7 +38,7 @@ export class ChatTaskHandler<T extends SchemaRecord> implements TaskHandler<Inst
 
 export async function executeChatAction<T extends SchemaRecord>(params: {
   instruct: Instruct<T>;
-  chat: Chat;
+  chat: Conversation;
   provider: AIProvider;
   stats?: Stats;
   variables: Record<string, any>;
@@ -53,14 +54,8 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
     recorder,
     options,
   });
-  if (instruct.hasFiles()) {
-    chat.addUser(message, instructions, instruct.files);
-  } else {
-    chat.addUser(message, instructions);
-  }
-  if (instruct.hasTools()) {
-    chat.setTools(Object.values(instruct.tools));
-  }
+  const files = instruct.files;
+  chat.addUser(toContentParts({ text: instructions + message, files: files }));
 
   if (options?.dryRun) {
     recorder?.debug?.log(chat);
@@ -72,7 +67,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
     const response = await generate({
       provider,
       messages: chat.messages,
-      tools: chat.tools,
+      tools: Object.values(instruct.tools),
       recorder: recorder,
     });
 
@@ -122,7 +117,7 @@ export async function executeChatAction<T extends SchemaRecord>(params: {
           if (toolCalls && toolCalls.length > 0) {
             const results = await executeToolCalls(toolCalls, instruct, { recorder });
             recorder?.debug?.log(results);
-            chat.addTools(results);
+            chat.addToolResults(results);
 
             continueProcessing = true;
           } else {

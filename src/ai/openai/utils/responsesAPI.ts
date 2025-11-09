@@ -1,7 +1,7 @@
 import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
-import { getTextContent } from "../../../messages/chat.js";
 import { AxleMessage, ContentPart } from "../../../messages/types.js";
+import { getTextContent } from "../../../messages/utils.js";
 import { ToolDefinition } from "../../../tools/types.js";
 
 /* To Request */
@@ -71,16 +71,17 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
     ContentPart & { type: "tool-call" }
   >;
 
-  const toolCalls = toolCallParts.length > 0
-    ? toolCallParts.map((call: any) => ({
-        type: "function",
-        id: call.id,
-        function: {
-          name: call.name,
-          arguments: JSON.stringify(call.parameters),
-        },
-      }))
-    : undefined;
+  const toolCalls =
+    toolCallParts.length > 0
+      ? toolCallParts.map((call: any) => ({
+          type: "function",
+          id: call.id,
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.parameters),
+          },
+        }))
+      : undefined;
 
   if (textContent || toolCalls) {
     result.push({

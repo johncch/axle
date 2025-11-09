@@ -4,13 +4,11 @@ import {
   DocumentBlockParam,
   ImageBlockParam,
   MessageParam,
-  Messages,
   TextBlockParam,
   ToolResultBlockParam,
   ToolUseBlockParam,
 } from "@anthropic-ai/sdk/resources";
 import z from "zod";
-import { Chat, getDocuments, getImages, getTextAndInstructions } from "../../messages/chat.js";
 import {
   AxleMessage,
   ContentPartText,
@@ -19,28 +17,6 @@ import {
 } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason } from "../types.js";
-
-export function prepareRequest(chat: Chat) {
-  const messages = convertToProviderMessages(chat.messages);
-
-  const tools = chat.tools.map((t) => {
-    const schema = z.toJSONSchema(t.schema);
-    if (!isObjectSchema(schema)) {
-      throw new Error(`Schema for tool ${t.name} must be an object type`);
-    }
-    return {
-      name: t.name,
-      description: t.description,
-      input_schema: schema,
-    };
-  });
-
-  return {
-    system: chat.system,
-    messages: messages,
-    tools: tools,
-  };
-}
 
 export function convertToProviderMessages(messages: Array<AxleMessage>): Array<MessageParam> {
   return messages.map((msg) => {
@@ -99,52 +75,38 @@ export function convertToProviderMessages(messages: Array<AxleMessage>): Array<M
     } else {
       const content: Array<TextBlockParam | ImageBlockParam | DocumentBlockParam> = [];
 
-      const text = getTextAndInstructions(msg.content);
-      if (text) {
-        content.push({
-          type: "text",
-          text,
-        } satisfies TextBlockParam);
-      }
-
-      const images = getImages(msg.content);
-      if (images.length > 0) {
-        content.push(
-          ...images.map(
-            (img) =>
-              ({
-                type: "image" as const,
-                source: {
-                  type: "base64",
-                  media_type: img.mimeType as
-                    | "image/jpeg"
-                    | "image/png"
-                    | "image/gif"
-                    | "image/webp",
-                  data: img.base64,
-                },
-              }) satisfies ImageBlockParam,
-          ),
-        );
-      }
-
-      const documents = getDocuments(msg.content);
-      if (documents.length > 0) {
-        content.push(
-          ...documents
-            .filter((doc) => doc.mimeType === "application/pdf")
-            .map(
-              (doc) =>
-                ({
-                  type: "document" as const,
-                  source: {
-                    type: "base64",
-                    media_type: "application/pdf",
-                    data: doc.base64,
-                  },
-                }) satisfies DocumentBlockParam,
-            ),
-        );
+      for (const part of msg.content) {
+        if (part.type === "text") {
+          content.push({
+            type: "text",
+            text: part.text,
+          } satisfies TextBlockParam);
+        } else if (part.type === "file") {
+          if (part.file.type === "image") {
+            content.push({
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: part.file.mimeType as
+                  | "image/jpeg"
+                  | "image/png"
+                  | "image/gif"
+                  | "image/webp",
+                data: part.file.base64,
+              },
+            } satisfies ImageBlockParam);
+          } else if (part.file.type === "document" && part.file.mimeType === "application/pdf") {
+            content.push({
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: part.file.base64,
+              },
+            } satisfies DocumentBlockParam);
+          }
+          // Skip unsupported file types (non-PDF documents, videos, etc.)
+        }
       }
 
       return {
@@ -195,11 +157,7 @@ export function convertToAxleContentParts(
         redacted: true,
       });
     } else if (block.type === "tool_use") {
-      if (
-        typeof block.input !== "object" ||
-        block.input === null ||
-        Array.isArray(block.input)
-      ) {
+      if (typeof block.input !== "object" || block.input === null || Array.isArray(block.input)) {
         throw new Error(
           `Invalid tool call input for ${block.name}: expected object, got ${typeof block.input}`,
         );
@@ -215,7 +173,6 @@ export function convertToAxleContentParts(
 
   return result;
 }
-
 
 export function convertStopReason(reason: string) {
   switch (reason) {

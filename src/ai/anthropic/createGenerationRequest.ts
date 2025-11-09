@@ -1,15 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { getTextContent } from "../../messages/chat.js";
 import { AxleMessage } from "../../messages/types.js";
+import { getTextContent } from "../../messages/utils.js";
 import { Recorder } from "../../recorder/recorder.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
-    convertStopReason,
-    convertToAxleContentParts,
-    convertToProviderMessages,
-    convertToProviderTools,
+  convertStopReason,
+  convertToAxleContentParts,
+  convertToProviderMessages,
+  convertToProviderTools,
 } from "./utils.js";
 
 export async function createGenerationRequest(params: {

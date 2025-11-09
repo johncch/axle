@@ -1,5 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
-import { Chat, getFiles, getTextContent } from "../../src/messages/chat.js";
+import { Conversation } from "../../src/messages/conversation.js";
+import { ContentPartFile, ContentPartText } from "../../src/messages/types.js";
+import { getFiles, getTextContent } from "../../src/messages/utils.js";
 import { FileInfo } from "../../src/utils/file.js";
 
 describe("Multimodal Support", () => {
@@ -23,28 +25,40 @@ describe("Multimodal Support", () => {
     type: "document",
   };
 
-  describe("Chat Integration", () => {
+  describe("Conversation Integration", () => {
     test("multimodal content structure is preserved", () => {
-      const chat = new Chat();
-      chat.addUser("Analyze these files", [mockImageFile, mockPdfFile]);
+      const chat = new Conversation();
+      const content: Array<ContentPartText | ContentPartFile> = [
+        { type: "text", text: "Analyze these files" },
+        { type: "file", file: mockImageFile },
+        { type: "file", file: mockPdfFile },
+      ];
+
+      chat.addUser(content);
 
       expect(chat.messages).toHaveLength(1);
       const message = chat.messages[0];
       expect(Array.isArray(message.content)).toBe(true);
 
-      const content = message.content as any[];
-      expect(content).toHaveLength(3);
-      expect(content[0].type).toBe("text");
-      expect(content[0].text).toBe("Analyze these files");
-      expect(content[1].type).toBe("file");
-      expect(content[1].file).toBe(mockImageFile);
-      expect(content[2].type).toBe("file");
-      expect(content[2].file).toBe(mockPdfFile);
+      const msgContent = message.content as Array<ContentPartText | ContentPartFile>;
+      expect(msgContent).toHaveLength(3);
+      expect(msgContent[0].type).toBe("text");
+      expect((msgContent[0] as ContentPartText).text).toBe("Analyze these files");
+      expect(msgContent[1].type).toBe("file");
+      expect((msgContent[1] as ContentPartFile).file).toBe(mockImageFile);
+      expect(msgContent[2].type).toBe("file");
+      expect((msgContent[2] as ContentPartFile).file).toBe(mockPdfFile);
     });
 
     test("helper methods work with multimodal content", () => {
-      const chat = new Chat();
-      chat.addUser("Look at this image and PDF", [mockImageFile, mockPdfFile]);
+      const chat = new Conversation();
+      const content: Array<ContentPartText | ContentPartFile> = [
+        { type: "text", text: "Look at this image and PDF" },
+        { type: "file", file: mockImageFile },
+        { type: "file", file: mockPdfFile },
+      ];
+
+      chat.addUser(content);
 
       const message = chat.messages[0];
       expect(message.role).toBe("user");
@@ -55,24 +69,6 @@ describe("Multimodal Support", () => {
       expect(files).toHaveLength(2);
       expect(files[0]).toBe(mockImageFile);
       expect(files[1]).toBe(mockPdfFile);
-    });
-
-    test("mixed content types are handled correctly", () => {
-      const chat = new Chat();
-      chat.addUser("Text only message");
-      chat.addUser("Message with image", [mockImageFile]);
-
-      expect(chat.messages).toHaveLength(2);
-      expect(typeof chat.messages[0].content).toBe("string");
-      expect(Array.isArray(chat.messages[1].content)).toBe(true);
-    });
-
-    test("empty file arrays behave like text-only messages", () => {
-      const chat = new Chat();
-      chat.addUser("Hello", []);
-
-      expect(typeof chat.messages[0].content).toBe("string");
-      expect(chat.messages[0].content).toBe("Hello");
     });
   });
 });

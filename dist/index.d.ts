@@ -186,14 +186,10 @@ interface AxleToolCallResult {
     name: string;
     content: string;
 }
-type ContentPart = ContentPartText | ContentPartFile | ContentPartToolCall | ContentPartInstructions | ContentPartThinking;
+type ContentPart = ContentPartText | ContentPartFile | ContentPartToolCall | ContentPartThinking;
 interface ContentPartText {
     type: "text";
     text: string;
-}
-interface ContentPartInstructions {
-    type: "instructions";
-    instructions: string;
 }
 interface ContentPartFile {
     type: "file";

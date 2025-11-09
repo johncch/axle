@@ -31,4 +31,6 @@ export default {
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
   // Increase timeout for async operations
   testTimeout: 10000,
+  // Global teardown to clean up test-temp directory
+  globalTeardown: "<rootDir>/tests/globalTeardown.ts",
 };

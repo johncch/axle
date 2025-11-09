@@ -29,7 +29,8 @@
     "get-models": "npx tsx scripts/getModels.ts",
     "prompt-scenarios": "npx tsx ./scripts/prompt.scenarios.ts",
     "test-providers": "npx tsx ./scripts/testProviders.ts",
-    "smoketest": "npx tsx ./scripts/smoketest.ts"
+    "smoketest": "npx tsx ./scripts/smoketest.ts",
+    "sanity-check": "npx tsx ./scripts/sanity-check.ts"
   },
   "author": "",
   "license": "ISC",

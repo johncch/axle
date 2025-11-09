@@ -80,10 +80,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
     this.files.push(file);
   }
 
-  addReference(
-    textFile: FileInfo | TextFileInfo | string,
-    options?: { name?: string },
-  ) {
+  addReference(textFile: FileInfo | TextFileInfo | string, options?: { name?: string }) {
     if (typeof textFile === "string") {
       this.textReferences.push({
         content: textFile,
@@ -158,9 +155,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
     if (options?.warnUnused) {
       const unreplaced = finalPrompt.match(/\{\{(.*?)\}\}/g);
       if (unreplaced) {
-        recorder?.error.log(
-          `Warning unused variables ${unreplaced.join(", ")}`,
-        );
+        recorder?.error.log(`Warning unused variables ${unreplaced.join(", ")}`);
         throw new Error(`Unused variables: ${unreplaced.join(", ")}`);
       }
     }
@@ -177,10 +172,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
         "\nHere is how you should format your output. Follow the instructions strictly.\n";
 
       for (const [key, fieldSchema] of Object.entries(this.schema)) {
-        const fieldInstructions = this.generateFieldInstructions(
-          key,
-          fieldSchema,
-        );
+        const fieldInstructions = this.generateFieldInstructions(key, fieldSchema);
         instructions += fieldInstructions;
       }
     }
@@ -195,18 +187,12 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
     return instructions;
   }
 
-  protected generateFieldInstructions(
-    key: string,
-    schema: z.ZodTypeAny,
-  ): string {
+  protected generateFieldInstructions(key: string, schema: z.ZodTypeAny): string {
     const [value, example] = zodToExample(schema);
     return `\n- Use <${key}></${key}> tags to indicate the answer for ${key}. The answer must be a ${value}.\n  Example: <${key}>${JSON.stringify(example)}</${key}>\n`;
   }
 
-  finalize(
-    rawValue: string,
-    runtime: { recorder?: Recorder } = {},
-  ): InferedOutputSchema<T> {
+  finalize(rawValue: string, runtime: { recorder?: Recorder } = {}): InferedOutputSchema<T> {
     const { recorder } = runtime;
     this.rawResponse = rawValue;
 
@@ -222,8 +208,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
       );
     }
 
-    this._taggedSections =
-      this._taggedSections || this.parseTaggedSections(rawValue);
+    this._taggedSections = this._taggedSections || this.parseTaggedSections(rawValue);
 
     const parseInput: any = {};
     for (const [key, fieldSchema] of Object.entries(this.schema)) {
@@ -231,9 +216,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
       if (tagContent !== undefined) {
         parseInput[key] = this.preprocessValue(fieldSchema, tagContent);
       } else if (fieldSchema.def.type !== "optional") {
-        throw new Error(
-          `Expected results with tag ${key} but it does not exist`,
-        );
+        throw new Error(`Expected results with tag ${key} but it does not exist`);
       }
     }
 
@@ -284,9 +267,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
         const lowerValue = rawValue.toLowerCase();
         if (lowerValue === "true") return true;
         if (lowerValue === "false") return false;
-        throw new Error(
-          `Cannot parse '${rawValue}' as boolean. Expected 'true' or 'false'`,
-        );
+        throw new Error(`Cannot parse '${rawValue}' as boolean. Expected 'true' or 'false'`);
       }
       case "array": {
         if (rawValue === "") return [];

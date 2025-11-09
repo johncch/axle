@@ -32,17 +32,11 @@ export type ContentPart =
   | ContentPartText
   | ContentPartFile
   | ContentPartToolCall
-  | ContentPartInstructions
   | ContentPartThinking;
 
 export interface ContentPartText {
   type: "text";
   text: string;
-}
-
-export interface ContentPartInstructions {
-  type: "instructions";
-  instructions: string;
 }
 
 export interface ContentPartFile {

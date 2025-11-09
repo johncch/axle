@@ -3,7 +3,7 @@ import { SerialJob } from "../cli/configs/types.js";
 import { configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
-import { Chat } from "../messages/chat.js";
+import { Conversation } from "../messages/conversation.js";
 import { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
 import { createNodeRegistry } from "../registry/nodeRegistryFactory.js";
@@ -52,7 +52,7 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
 
     try {
       const tasks = await prepare({ recorder });
-      const chat = new Chat();
+      const chat = new Conversation();
 
       for (const [index, task] of tasks.entries()) {
         recorder?.info?.log({
