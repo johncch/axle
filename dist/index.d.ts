@@ -814,5 +814,20 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-export { index$3 as Anthropic, Axle, ChainOfThought, ConsoleWriter, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
-export type { AIProvider, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };
+declare class Conversation {
+    system: string;
+    private _messages;
+    constructor(messages?: AxleMessage[]);
+    get messages(): AxleMessage[];
+    addSystem(message: string): void;
+    addUser(message: string): void;
+    addUser(parts: AxleUserMessage["content"]): void;
+    addAssistant(message: string): void;
+    addAssistant(params: Omit<AxleAssistantMessage, "role">): void;
+    addToolResults(input: Array<AxleToolCallResult>): void;
+    latest(): AxleMessage | undefined;
+    toString(): string;
+}
+
+export { index$3 as Anthropic, Axle, AxleStopReason, ChainOfThought, ConsoleWriter, Conversation, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
+export type { AIProvider, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };

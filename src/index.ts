@@ -31,3 +31,19 @@ export type {
   DAGWorkflowOptions,
   SerializedExecutionResponse,
 } from "./workflows/types.js";
+
+// Message types
+export { AxleStopReason } from "./ai/types.js";
+export { Conversation } from "./messages/conversation.js";
+export type {
+  AxleAssistantMessage,
+  AxleMessage,
+  AxleToolCallMessage,
+  AxleToolCallResult,
+  AxleUserMessage,
+  ContentPart,
+  ContentPartFile,
+  ContentPartText,
+  ContentPartThinking,
+  ContentPartToolCall,
+} from "./messages/types.js";

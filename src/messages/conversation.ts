@@ -5,6 +5,12 @@ export class Conversation {
   system: string;
   private _messages: AxleMessage[] = [];
 
+  constructor(messages?: AxleMessage[]) {
+    if (messages) {
+      this._messages = messages;
+    }
+  }
+
   get messages() {
     return [...this._messages];
   }
