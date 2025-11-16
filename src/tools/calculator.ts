@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExecutableContext } from "../types.js";
 import { ToolExecutable } from "./types.js";
 
 const calculatorSchema = z.object({
@@ -13,7 +14,7 @@ const calculatorTool: ToolExecutable<typeof calculatorSchema> = {
   name: "calculator",
   description: "Performs basic arithmetic operations",
   schema: calculatorSchema,
-  execute: async ({ operation, a, b }) => {
+  execute: async ({ operation, a, b }, context: ExecutableContext) => {
     switch (operation) {
       case "add":
         return `${a} + ${b} = ${a + b}`;

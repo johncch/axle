@@ -13,7 +13,12 @@ import {
   toContentParts,
 } from "../messages/utils.js";
 import { Recorder } from "../recorder/recorder.js";
-import { LLMContext, ProgramOptions, TaskResult } from "../types.js";
+import {
+  ExecutableContext,
+  LLMContext,
+  ProgramOptions,
+  TaskResult,
+} from "../types.js";
 import { Keys } from "../utils/variables.js";
 
 type SchemaRecord = Record<string, z.ZodTypeAny>;
@@ -97,6 +102,8 @@ export class LLMExecutor {
             const toolCalls = getToolCalls(response.content);
             if (toolCalls && toolCalls.length > 0) {
               const results = await executeToolCalls(toolCalls, instruct, {
+                variables,
+                options,
                 recorder,
               });
               recorder?.debug?.log(results);
@@ -131,9 +138,9 @@ export class LLMExecutor {
 async function executeToolCalls<T extends SchemaRecord>(
   toolCalls: ContentPartToolCall[],
   instruct: Instruct<T>,
-  runtime: { recorder?: Recorder } = {},
+  context: ExecutableContext,
 ): Promise<AxleToolCallResult[]> {
-  const { recorder } = runtime;
+  const { recorder } = context;
   const promises = [];
   for (const call of toolCalls) {
     promises.push(
@@ -148,7 +155,7 @@ async function executeToolCalls<T extends SchemaRecord>(
         const args: Record<string, any> = call.parameters;
 
         tool
-          .execute(args)
+          .execute(args, context)
           .then((results) => {
             recorder?.debug?.log(`Complete tool ${tool.name}: ${call.id}`);
             resolve({

@@ -170,11 +170,10 @@ type ToolDefinition<Z extends ZodObject = ZodObject> = {
     description?: string;
     schema: Z;
 };
-interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
+interface ToolExecutable<Z extends ZodObject = ZodObject> extends Executable<z$1.infer<Z>, string> {
     setConfig?: (config: {
         [key: string]: any;
     }) => void;
-    execute: (params: z$1.infer<Z>) => Promise<string>;
 }
 
 type OllamaProviderConfig = {
