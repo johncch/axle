@@ -296,6 +296,7 @@ interface Stats {
 }
 interface Task {
     readonly type: string;
+    _executable?: Executable;
 }
 interface TaskResult {
     outputs: Record<string, any>;
@@ -750,6 +751,7 @@ declare class WriteOutputTask implements WriteToDiskTask {
     output: string;
     keys: string[];
     type: "write-to-disk";
+    _executable?: Executable;
     constructor(output: string, keys?: string[]);
 }
 

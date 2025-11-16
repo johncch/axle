@@ -1,3 +1,4 @@
+import writeToDiskExecutable from "../../executables/writeToDisk.js";
 import {
   WriteOutputTask,
   WriteToDiskTask,
@@ -11,10 +12,13 @@ export const writeToDiskConverter: StepToClassConverter<
   WriteToDiskTask
 > = {
   async convert(step: WriteToDiskStep): Promise<WriteToDiskTask> {
-    if (step.keys) {
-      const keys = arrayify(step.keys);
-      return new WriteOutputTask(step.output, keys);
-    }
-    return new WriteOutputTask(step.output);
+    const task = step.keys
+      ? new WriteOutputTask(step.output, arrayify(step.keys))
+      : new WriteOutputTask(step.output);
+
+    // Attach the executable to the task
+    task._executable = writeToDiskExecutable;
+
+    return task;
   },
 };

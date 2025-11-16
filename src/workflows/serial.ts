@@ -6,7 +6,6 @@ import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
 import { ExecutableExecutor } from "../execution/ExecutableExecutor.js";
 import { LLMExecutor } from "../execution/LLMExecutor.js";
-import { createExecutableRegistry } from "../execution/createRegistry.js";
 import { Conversation } from "../messages/conversation.js";
 import { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
@@ -48,7 +47,6 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
     // Create executors
     const llmExecutor = new LLMExecutor();
     const executableExecutor = new ExecutableExecutor();
-    const executableRegistry = createExecutableRegistry();
 
     recorder?.info?.log({
       type: "task",
@@ -83,16 +81,24 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
             });
           } else {
             // Executable execution path
-            const executable = executableRegistry.get(task.type);
+            if (!task._executable) {
+              throw new Error(
+                `Task "${task.type}" is missing executable. Tasks must either be LLM tasks or have an executable attached.`,
+              );
+            }
 
-            // Extract parameters from task (excluding the 'type' field)
-            const { type, ...params } = task as any;
+            // Extract parameters from task (excluding the 'type' and '_executable' fields)
+            const { type, _executable, ...params } = task as any;
 
-            result = await executableExecutor.execute(executable, params, {
-              variables,
-              options,
-              recorder,
-            });
+            result = await executableExecutor.execute(
+              task._executable,
+              params,
+              {
+                variables,
+                options,
+                recorder,
+              },
+            );
           }
 
           // Merge outputs into variables
