@@ -14,6 +14,15 @@ export { generate, stream } from "./ai/index.js";
 export { ChainOfThought, Instruct } from "./core/index.js";
 export * from "./tasks/index.js";
 
+// Export Execution System
+export { ExecutableRegistry } from "./execution/ExecutableRegistry.js";
+export type {
+  Executable,
+  ExecutableContext,
+  LLMContext,
+  TaskResult,
+} from "./types.js";
+
 // Export Workflows
 export { concurrentWorkflow } from "./workflows/concurrent.js";
 export { dagWorkflow } from "./workflows/dag.js";
