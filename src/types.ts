@@ -17,7 +17,11 @@ export interface Stats {
 
 export interface Task {
   readonly type: string;
-  _executable?: Executable;
+}
+
+export interface ExecutableTask extends Task {
+  readonly type: string;
+  _executable: Executable;
 }
 
 export interface TaskResult {

@@ -296,7 +296,10 @@ interface Stats {
 }
 interface Task {
     readonly type: string;
-    _executable?: Executable;
+}
+interface ExecutableTask extends Task {
+    readonly type: string;
+    _executable: Executable;
 }
 interface TaskResult {
     outputs: Record<string, any>;
@@ -742,7 +745,7 @@ declare class ChainOfThought<T extends OutputSchema> extends AbstractInstruct<T>
     };
 }
 
-interface WriteToDiskTask extends Task {
+interface WriteToDiskTask extends ExecutableTask {
     type: "write-to-disk";
     output: string;
     keys: string[];
@@ -751,7 +754,7 @@ declare class WriteOutputTask implements WriteToDiskTask {
     output: string;
     keys: string[];
     type: "write-to-disk";
-    _executable?: Executable;
+    _executable: Executable;
     constructor(output: string, keys?: string[]);
 }
 
@@ -861,4 +864,4 @@ declare class ConsoleWriter implements RecorderWriter {
 }
 
 export { index$3 as Anthropic, Axle, AxleStopReason, ChainOfThought, ConsoleWriter, Conversation, ExecutableRegistry, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
-export type { AIProvider, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, Executable, ExecutableContext, FileInfo, LLMContext, SerializedExecutionResponse, TaskResult };
+export type { AIProvider, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, Executable, ExecutableContext, ExecutableTask, FileInfo, LLMContext, SerializedExecutionResponse, TaskResult };

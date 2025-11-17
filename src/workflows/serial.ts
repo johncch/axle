@@ -9,7 +9,13 @@ import { LLMExecutor } from "../execution/LLMExecutor.js";
 import { Conversation } from "../messages/conversation.js";
 import { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
-import { ProgramOptions, Stats, Task, TaskResult } from "../types.js";
+import {
+  ExecutableTask,
+  ProgramOptions,
+  Stats,
+  Task,
+  TaskResult,
+} from "../types.js";
 import { createErrorResult, createResult } from "../utils/result.js";
 import { friendly } from "../utils/utils.js";
 import { Keys } from "../utils/variables.js";
@@ -81,24 +87,16 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
             });
           } else {
             // Executable execution path
-            if (!task._executable) {
-              throw new Error(
-                `Task "${task.type}" is missing executable. Tasks must either be LLM tasks or have an executable attached.`,
-              );
-            }
+            const executableTask = task as ExecutableTask;
 
             // Extract parameters from task (excluding the 'type' and '_executable' fields)
-            const { type, _executable, ...params } = task as any;
+            const { type, _executable, ...params } = executableTask as any;
 
-            result = await executableExecutor.execute(
-              task._executable,
-              params,
-              {
-                variables,
-                options,
-                recorder,
-              },
-            );
+            result = await executableExecutor.execute(_executable, params, {
+              variables,
+              options,
+              recorder,
+            });
           }
 
           // Merge outputs into variables

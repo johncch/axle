@@ -19,6 +19,7 @@ export { ExecutableRegistry } from "./execution/ExecutableRegistry.js";
 export type {
   Executable,
   ExecutableContext,
+  ExecutableTask,
   LLMContext,
   TaskResult,
 } from "./types.js";
