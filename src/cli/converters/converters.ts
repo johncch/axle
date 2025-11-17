@@ -1,6 +1,8 @@
 import type { WorkflowStep } from "../../actions/types.js";
 import type { Recorder } from "../../recorder/recorder.js";
-import type { StepBase } from "../configs/types.js";
+import type { Step } from "../configs/schemas.js";
+
+type StepBase = Extract<Step, { uses: string }>;
 
 export interface StepToClassConverter<S extends StepBase, T extends WorkflowStep> {
   convert(s: S, context?: { recorder?: Recorder; [key: string]: any }): Promise<T>;

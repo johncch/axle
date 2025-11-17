@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { BraveProviderConfig } from "../cli/configs/types.js";
+import { BraveProviderConfig } from "../cli/configs/schemas.js";
 import { delay } from "../utils/utils.js";
 import type { Tool } from "./types.js";
 

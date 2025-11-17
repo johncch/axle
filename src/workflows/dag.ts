@@ -1,7 +1,6 @@
 import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
-import { isDAGJob } from "../cli/configs/job.js";
-import type { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
+import type { BatchJob, DAGJob, Job } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { Recorder } from "../recorder/recorder.js";
@@ -162,10 +161,16 @@ export class DAGJobToDefinition {
     for (const [nodeId, jobWithDeps] of Object.entries(definition)) {
       const { dependsOn, ...job } = jobWithDeps;
 
+<<<<<<< HEAD
       if ("batch" in job) {
         const batchJob = job as BatchJob;
         const planner = await configToPlanner(batchJob, { recorder });
         const steps: WorkflowStep[] = await configToTasks(batchJob, { recorder });
+=======
+      if (job.type === "batch") {
+        const planner = await configToPlanner(job, { recorder });
+        const tasks = await configToTasks(job, { recorder });
+>>>>>>> a971804 (Convert type checking from manual guards to Zod schemas)
 
         const nodeDefinition: DAGConcurrentNodeDefinition = {
           planner,
@@ -174,7 +179,11 @@ export class DAGJobToDefinition {
         };
         dagDefinition[nodeId] = nodeDefinition;
       } else {
+<<<<<<< HEAD
         const steps: WorkflowStep[] = await configToTasks(job as Job, { recorder });
+=======
+        const tasks = await configToTasks(job, { recorder });
+>>>>>>> a971804 (Convert type checking from manual guards to Zod schemas)
 
         if (dependsOn) {
           const nodeDefinition: DAGNodeDefinition = {

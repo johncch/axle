@@ -3,7 +3,7 @@ import { Instruct } from "../../core/Instruct.js";
 import type { Recorder } from "../../recorder/recorder.js";
 import { loadFileContent, loadManyFiles } from "../../utils/file.js";
 import { arrayify } from "../../utils/utils.js";
-import type { ChatStep, ToolProviderConfig } from "../configs/types.js";
+import type { ChatStep, ToolProviderConfig } from "../configs/schemas.js";
 import { createTools } from "../factories.js";
 import type { StepToClassConverter } from "./converters.js";
 

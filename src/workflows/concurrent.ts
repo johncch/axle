@@ -1,6 +1,6 @@
 import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
-import type { BatchJob } from "../cli/configs/types.js";
+import type { BatchJob } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { Recorder } from "../recorder/recorder.js";
@@ -25,10 +25,16 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
     const { recorder } = context;
     let steps: WorkflowStep[] = [];
     let planner: Planner = null;
+<<<<<<< HEAD
     if ("batch" in first) {
       const jobConfig = first as BatchJob;
       planner = await configToPlanner(jobConfig, { recorder });
       steps = await configToTasks(jobConfig, { recorder });
+=======
+    if ("type" in first && first.type === "batch") {
+      planner = await configToPlanner(first, { recorder });
+      tasks = await configToTasks(first, { recorder });
+>>>>>>> a971804 (Convert type checking from manual guards to Zod schemas)
     } else {
       planner = first as Planner;
       steps = [...rest];

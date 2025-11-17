@@ -2,7 +2,7 @@ import type { Action, WorkflowStep } from "../actions/types.js";
 import { generate } from "../ai/generate.js";
 import type { AIProvider } from "../ai/types.js";
 import { AxleStopReason } from "../ai/types.js";
-import type { SerialJob } from "../cli/configs/types.js";
+import type { SerialJob } from "../cli/configs/schemas.js";
 import { configToTasks } from "../cli/utils.js";
 import { Instruct } from "../core/Instruct.js";
 import { AxleError } from "../errors/AxleError.js";

@@ -3,7 +3,7 @@ import pkg from "../package.json";
 import { getProvider } from "./ai/index.js";
 import type { AIProvider } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
-import type { JobConfig, ServiceConfig } from "./cli/configs/types.js";
+import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { ConsoleWriter } from "./recorder/consoleWriter.js";
 import { LogWriter } from "./recorder/logWriter.js";
 import { Recorder } from "./recorder/recorder.js";
