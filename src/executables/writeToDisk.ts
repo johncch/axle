@@ -1,37 +1,34 @@
-import { Recorder } from "../../recorder/recorder.js";
-import { TaskHandler } from "../../registry/taskHandler.js";
-import { ProgramOptions } from "../../types.js";
+import * as z from "zod";
+import { Executable, ExecutableContext } from "../types.js";
 import {
   replaceFilePattern,
   writeFileWithDirectories,
-} from "../../utils/file.js";
-import { replaceVariables } from "../../utils/replace.js";
-import { FilePathInfo } from "../../utils/types.js";
-import { WriteToDiskTask } from "./task.js";
+} from "../utils/file.js";
+import { replaceVariables } from "../utils/replace.js";
+import { FilePathInfo } from "../utils/types.js";
 
-export class WriteToDiskTaskHandler implements TaskHandler<WriteToDiskTask> {
-  readonly taskType = "write-to-disk";
+const writeToDiskSchema = z.object({
+  output: z.string().describe("The file path to write to"),
+  keys: z
+    .array(z.string())
+    .default(["response"])
+    .describe("Variable names to write to the file"),
+});
 
-  canHandle(task: any): task is WriteToDiskTask {
-    return (
-      task &&
-      typeof task === "object" &&
-      "type" in task &&
-      task.type === "write-to-disk"
-    );
-  }
+const writeToDiskExecutable: Executable<
+  z.infer<typeof writeToDiskSchema>,
+  void
+> = {
+  name: "write-to-disk",
+  description: "Write variables to a file on disk",
+  schema: writeToDiskSchema,
 
-  async execute(params: {
-    task: WriteToDiskTask;
-    variables: Record<string, any>;
-    options?: ProgramOptions;
-    recorder?: Recorder;
-  }): Promise<void> {
-    const { task, variables, options = {}, recorder } = params;
-
-    const output = task.output;
-
-    const keys = task.keys ?? [];
+  async execute(
+    params: z.infer<typeof writeToDiskSchema>,
+    context: ExecutableContext,
+  ): Promise<void> {
+    const { output, keys } = params;
+    const { variables, options, recorder } = context;
 
     if (options?.warnUnused) {
       const unusedKeys = keys.filter((key) => !(key in variables));
@@ -62,9 +59,12 @@ export class WriteToDiskTaskHandler implements TaskHandler<WriteToDiskTask> {
     } else {
       filepath = replaceVariables(output, variables, "{}");
     }
+
     await writeFileWithDirectories({
       filePath: filepath,
       content,
     });
-  }
-}
+  },
+};
+
+export default writeToDiskExecutable;

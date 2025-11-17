@@ -1,50 +1,6 @@
 import * as z from 'zod';
 import z__default, { ZodObject, z as z$1 } from 'zod';
 
-type PlainObject = Record<string, unknown>;
-type ProgramOptions = {
-    dryRun?: boolean;
-    config?: string;
-    warnUnused?: boolean;
-    job?: string;
-    log?: boolean;
-    debug?: boolean;
-    args?: string[];
-};
-interface Stats {
-    in: number;
-    out: number;
-}
-interface Task {
-    readonly type: string;
-}
-
-interface RecorderLevelFunctions {
-    log: (...message: (string | unknown | Error)[]) => void;
-    heading: {
-        log: (...message: (string | unknown | Error)[]) => void;
-    };
-}
-type RecorderEntry = {
-    level: LogLevel;
-    time: number;
-    kind: VisualLevel;
-    payload: PlainObject[];
-};
-type VisualLevel = "heading" | "body";
-declare enum LogLevel {
-    Trace = 10,
-    Debug = 20,
-    Info = 30,
-    Warn = 40,
-    Error = 50,
-    Fatal = 60
-}
-interface RecorderWriter {
-    handleEvent(event: RecorderEntry): void | Promise<void>;
-    flush?(): Promise<void>;
-}
-
 interface StreamChunk {
     type: "start" | "text" | "tool-call-start" | "tool-call-delta" | "tool-call-complete" | "thinking-start" | "thinking-delta" | "complete" | "error";
     id?: string;
@@ -214,11 +170,10 @@ type ToolDefinition<Z extends ZodObject = ZodObject> = {
     description?: string;
     schema: Z;
 };
-interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
+interface ToolExecutable<Z extends ZodObject = ZodObject> extends Executable<z$1.infer<Z>, string> {
     setConfig?: (config: {
         [key: string]: any;
     }) => void;
-    execute: (params: z$1.infer<Z>) => Promise<string>;
 }
 
 type OllamaProviderConfig = {
@@ -308,6 +263,90 @@ declare enum AxleStopReason {
     FunctionCall = 2,
     Error = 3,
     Custom = 4
+}
+
+declare class Conversation {
+    system: string;
+    private _messages;
+    constructor(messages?: AxleMessage[]);
+    get messages(): AxleMessage[];
+    addSystem(message: string): void;
+    addUser(message: string): void;
+    addUser(parts: AxleUserMessage["content"]): void;
+    addAssistant(message: string): void;
+    addAssistant(params: Omit<AxleAssistantMessage, "role">): void;
+    addToolResults(input: Array<AxleToolCallResult>): void;
+    latest(): AxleMessage | undefined;
+    toString(): string;
+}
+
+type PlainObject = Record<string, unknown>;
+type ProgramOptions = {
+    dryRun?: boolean;
+    config?: string;
+    warnUnused?: boolean;
+    job?: string;
+    log?: boolean;
+    debug?: boolean;
+    args?: string[];
+};
+interface Stats {
+    in: number;
+    out: number;
+}
+interface Task {
+    readonly type: string;
+}
+interface ExecutableTask extends Task {
+    readonly type: string;
+    _executable: Executable;
+}
+interface TaskResult {
+    outputs: Record<string, any>;
+}
+interface ExecutableContext {
+    variables: Record<string, any>;
+    options?: ProgramOptions;
+    recorder?: Recorder;
+}
+interface LLMContext {
+    conversation: Conversation;
+    provider: AIProvider;
+    stats: Stats;
+    variables: Record<string, any>;
+    recorder?: Recorder;
+}
+interface Executable<TInput = any, TOutput = any> {
+    name: string;
+    description?: string;
+    schema: z.ZodObject<any>;
+    execute(input: TInput, context: ExecutableContext): Promise<TOutput>;
+}
+
+interface RecorderLevelFunctions {
+    log: (...message: (string | unknown | Error)[]) => void;
+    heading: {
+        log: (...message: (string | unknown | Error)[]) => void;
+    };
+}
+type RecorderEntry = {
+    level: LogLevel;
+    time: number;
+    kind: VisualLevel;
+    payload: PlainObject[];
+};
+type VisualLevel = "heading" | "body";
+declare enum LogLevel {
+    Trace = 10,
+    Debug = 20,
+    Info = 30,
+    Warn = 40,
+    Error = 50,
+    Fatal = 60
+}
+interface RecorderWriter {
+    handleEvent(event: RecorderEntry): void | Promise<void>;
+    flush?(): Promise<void>;
 }
 
 declare class AxleError extends Error {
@@ -654,6 +693,7 @@ declare abstract class AbstractInstruct<T extends OutputSchema> implements Task 
     hasTools(): boolean;
     hasFiles(): boolean;
     get result(): InferedOutputSchema<T> | undefined;
+    getOutputs(): Record<string, any>;
     compile(variables: Record<string, string>, runtime?: {
         recorder?: Recorder;
         options?: {
@@ -705,7 +745,7 @@ declare class ChainOfThought<T extends OutputSchema> extends AbstractInstruct<T>
     };
 }
 
-interface WriteToDiskTask extends Task {
+interface WriteToDiskTask extends ExecutableTask {
     type: "write-to-disk";
     output: string;
     keys: string[];
@@ -714,7 +754,16 @@ declare class WriteOutputTask implements WriteToDiskTask {
     output: string;
     keys: string[];
     type: "write-to-disk";
+    _executable: Executable;
     constructor(output: string, keys?: string[]);
+}
+
+declare class ExecutableRegistry {
+    private executables;
+    register(executable: Executable): void;
+    get(name: string): Executable;
+    has(name: string): boolean;
+    getAll(): Executable[];
 }
 
 interface DAGJob {
@@ -814,20 +863,5 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-declare class Conversation {
-    system: string;
-    private _messages;
-    constructor(messages?: AxleMessage[]);
-    get messages(): AxleMessage[];
-    addSystem(message: string): void;
-    addUser(message: string): void;
-    addUser(parts: AxleUserMessage["content"]): void;
-    addAssistant(message: string): void;
-    addAssistant(params: Omit<AxleAssistantMessage, "role">): void;
-    addToolResults(input: Array<AxleToolCallResult>): void;
-    latest(): AxleMessage | undefined;
-    toString(): string;
-}
-
-export { index$3 as Anthropic, Axle, AxleStopReason, ChainOfThought, ConsoleWriter, Conversation, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
-export type { AIProvider, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };
+export { index$3 as Anthropic, Axle, AxleStopReason, ChainOfThought, ConsoleWriter, Conversation, ExecutableRegistry, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
+export type { AIProvider, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, Executable, ExecutableContext, ExecutableTask, FileInfo, LLMContext, SerializedExecutionResponse, TaskResult };

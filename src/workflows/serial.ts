@@ -1,13 +1,21 @@
 import { AIProvider } from "../ai/types.js";
 import { SerialJob } from "../cli/configs/types.js";
 import { configToTasks } from "../cli/utils.js";
+import { Instruct } from "../core/Instruct.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
+import { ExecutableExecutor } from "../execution/ExecutableExecutor.js";
+import { LLMExecutor } from "../execution/LLMExecutor.js";
 import { Conversation } from "../messages/conversation.js";
 import { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
-import { createNodeRegistry } from "../registry/nodeRegistryFactory.js";
-import { ProgramOptions, Stats, Task } from "../types.js";
+import {
+  ExecutableTask,
+  ProgramOptions,
+  Stats,
+  Task,
+  TaskResult,
+} from "../types.js";
 import { createErrorResult, createResult } from "../utils/result.js";
 import { friendly } from "../utils/utils.js";
 import { Keys } from "../utils/variables.js";
@@ -41,7 +49,10 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
   }): Promise<WorkflowResult> => {
     const { provider, variables, options, stats, recorder, name } = context;
     const id = crypto.randomUUID();
-    const actionRegistry = createNodeRegistry();
+
+    // Create executors
+    const llmExecutor = new LLMExecutor();
+    const executableExecutor = new ExecutableExecutor();
 
     recorder?.info?.log({
       type: "task",
@@ -52,7 +63,7 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
 
     try {
       const tasks = await prepare({ recorder });
-      const chat = new Conversation();
+      const conversation = new Conversation();
 
       for (const [index, task] of tasks.entries()) {
         recorder?.info?.log({
@@ -63,15 +74,33 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
         });
 
         try {
-          await actionRegistry.executeTask({
-            task,
-            chat,
-            provider,
-            variables,
-            options,
-            stats,
-            recorder,
-          });
+          let result: TaskResult;
+
+          if (task.type === "instruct") {
+            // LLM execution path
+            result = await llmExecutor.execute(task as Instruct<any>, {
+              conversation,
+              provider,
+              stats,
+              variables,
+              recorder,
+            });
+          } else {
+            // Executable execution path
+            const executableTask = task as ExecutableTask;
+
+            // Extract parameters from task (excluding the 'type' and '_executable' fields)
+            const { type, _executable, ...params } = executableTask as any;
+
+            result = await executableExecutor.execute(_executable, params, {
+              variables,
+              options,
+              recorder,
+            });
+          }
+
+          // Merge outputs into variables
+          Object.assign(variables, result.outputs);
         } catch (error) {
           const taskError =
             error instanceof AxleError
@@ -80,7 +109,8 @@ export const serialWorkflow: SerialWorkflow = (first: SerialJob | Task, ...rest:
                   id: id,
                   taskType: task.type,
                   taskIndex: index,
-                  cause: error instanceof Error ? error : new Error(String(error)),
+                  cause:
+                    error instanceof Error ? error : new Error(String(error)),
                 });
           throw taskError;
         }

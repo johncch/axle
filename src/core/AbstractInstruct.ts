@@ -118,6 +118,14 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
     return this._result;
   }
 
+  getOutputs(): Record<string, any> {
+    if (!this._result) {
+      return {};
+    }
+    // Schema keys become outputs
+    return this._result as Record<string, any>;
+  }
+
   compile(
     variables: Record<string, string>,
     runtime: {
