@@ -3,7 +3,7 @@ import {
   WriteToDiskTask,
 } from "../../tasks/writeToDisk/task.js";
 import { arrayify } from "../../utils/utils.js";
-import { WriteToDiskStep } from "../configs/types.js";
+import { WriteToDiskStep } from "../configs/schemas.js";
 import { StepToClassConverter } from "./converters.js";
 
 export const writeToDiskConverter: StepToClassConverter<

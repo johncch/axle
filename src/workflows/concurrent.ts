@@ -1,5 +1,5 @@
 import { AIProvider } from "../ai/types.js";
-import { BatchJob } from "../cli/configs/types.js";
+import { BatchJob } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import { Recorder } from "../recorder/recorder.js";
@@ -30,10 +30,9 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
     const { recorder } = context;
     let tasks: Task[] = [];
     let planner: Planner = null;
-    if ("batch" in first) {
-      const jobConfig = first as BatchJob;
-      planner = await configToPlanner(jobConfig, { recorder });
-      tasks = await configToTasks(jobConfig, { recorder });
+    if ("type" in first && first.type === "batch") {
+      planner = await configToPlanner(first, { recorder });
+      tasks = await configToTasks(first, { recorder });
     } else {
       planner = first as Planner;
       tasks = [...rest];

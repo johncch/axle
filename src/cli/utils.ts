@@ -2,7 +2,7 @@ import { Recorder } from "../recorder/recorder.js";
 import { FileRunPlanner } from "../workflows/planners/fileRunPlanner.js";
 import { MultiPlanner } from "../workflows/planners/multiPlanner.js";
 import { FileExistSkipCondition } from "../workflows/skipConditions/fileExistSkipCondition.js";
-import { BatchOptions, SkipOptions, Step } from "./configs/types.js";
+import { BatchOptions, SkipOptions, Step } from "./configs/schemas.js";
 import { converters } from "./converters/index.js";
 
 export async function configToTasks(

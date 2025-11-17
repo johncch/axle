@@ -1,5 +1,5 @@
 import { AIProvider } from "../ai/types.js";
-import { SerialJob } from "../cli/configs/types.js";
+import { SerialJob } from "../cli/configs/schemas.js";
 import { configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";

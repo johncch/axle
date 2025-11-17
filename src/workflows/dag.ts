@@ -1,6 +1,5 @@
 import { AIProvider } from "../ai/types.js";
-import { isDAGJob } from "../cli/configs/job.js";
-import { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
+import { BatchJob, DAGJob, Job } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import { Recorder } from "../recorder/recorder.js";
@@ -177,10 +176,9 @@ export class DAGJobToDefinition {
     for (const [nodeId, jobWithDeps] of Object.entries(definition)) {
       const { dependsOn, ...job } = jobWithDeps;
 
-      if ("batch" in job) {
-        const batchJob = job as BatchJob;
-        const planner = await configToPlanner(batchJob, { recorder });
-        const tasks = await configToTasks(batchJob, { recorder });
+      if (job.type === "batch") {
+        const planner = await configToPlanner(job, { recorder });
+        const tasks = await configToTasks(job, { recorder });
 
         const nodeDefinition: DAGConcurrentNodeDefinition = {
           planner,
@@ -189,7 +187,7 @@ export class DAGJobToDefinition {
         };
         dagDefinition[nodeId] = nodeDefinition;
       } else {
-        const tasks = await configToTasks(job as Job, { recorder });
+        const tasks = await configToTasks(job, { recorder });
 
         if (dependsOn) {
           const nodeDefinition: DAGNodeDefinition = {
