@@ -1,7 +1,7 @@
 import { Command } from "@commander-js/extra-typings";
 import pkg from "../package.json";
 import { getProvider } from "./ai/index.js";
-import { AIProvider } from "./ai/types.js";
+import { AIProvider, AIProviderConfig } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { ConsoleWriter } from "./recorder/consoleWriter.js";
@@ -102,9 +102,13 @@ try {
  */
 let provider: AIProvider;
 try {
-  const { engine: providerKey, ...otherConfig } = jobConfig.using;
+  const using = jobConfig.using as {
+    engine: keyof AIProviderConfig;
+    [key: string]: any;
+  };
+  const { engine: providerKey, ...otherConfig } = using;
   const providerConfig = {
-    ...serviceConfig[providerKey],
+    ...(serviceConfig as any)[providerKey],
     ...otherConfig,
   };
   provider = getProvider(providerKey, providerConfig);

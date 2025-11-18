@@ -174,7 +174,9 @@ export class DAGJobToDefinition {
     const dagDefinition: DAGDefinition = {};
 
     for (const [nodeId, jobWithDeps] of Object.entries(definition)) {
-      const { dependsOn, ...job } = jobWithDeps;
+      const { dependsOn, ...job } = jobWithDeps as Job & {
+        dependsOn?: string | string[];
+      };
 
       if (job.type === "batch") {
         const planner = await configToPlanner(job, { recorder });
@@ -276,11 +278,17 @@ export const dagWorkflow: DAGWorkflow = (
     context: { recorder?: Recorder },
   ): Promise<DAGDefinition> => {
     const { recorder } = context;
-    const errVal = { value: "" };
-    if (isDAGJob(definition, errVal)) {
-      return await DAGJobToDefinition.convert(definition, context);
+
+    // Check if it's a DAGJob by checking if values have 'steps' property
+    const firstValue = Object.values(definition)[0];
+    const isJobDefinition =
+      firstValue &&
+      typeof firstValue === "object" &&
+      "steps" in firstValue;
+
+    if (isJobDefinition) {
+      return await DAGJobToDefinition.convert(definition as DAGJob, context);
     }
-    recorder?.warn?.log(errVal);
     return definition as DAGDefinition;
   };
 

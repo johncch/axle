@@ -1,5 +1,5 @@
 import YAML from "yaml";
-import { ZodError } from "zod";
+import * as z from "zod";
 import { Recorder } from "../../recorder/recorder.js";
 import { searchAndLoadFile } from "../../utils/file.js";
 import {
@@ -89,11 +89,11 @@ export async function getServiceConfig(
 /**
  * Formats a Zod error into a readable string
  */
-function formatZodError(error: ZodError): string {
-  return error.errors
-    .map((err) => {
-      const path = err.path.join(".");
-      return `  - ${path || "root"}: ${err.message}`;
+function formatZodError(error: z.ZodError<any>): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.join(".");
+      return `  - ${path || "root"}: ${issue.message}`;
     })
     .join("\n");
 }

@@ -717,39 +717,9 @@ declare class WriteOutputTask implements WriteToDiskTask {
     constructor(output: string, keys?: string[]);
 }
 
-declare const SerialJobSchema: z$1.ZodObject<{
-    type: z$1.ZodLiteral<"serial">;
+declare const JobSchema: z$1.ZodPipe<z$1.ZodObject<{
     tools: z$1.ZodOptional<z$1.ZodArray<z$1.ZodString>>;
-    steps: z$1.ZodArray<z$1.ZodDiscriminatedUnion<[z$1.ZodObject<{
-        uses: z$1.ZodLiteral<"chat">;
-        system: z$1.ZodOptional<z$1.ZodString>;
-        message: z$1.ZodString;
-        output: z$1.ZodOptional<z$1.ZodRecord<z$1.ZodCustom<"string" | "number" | "boolean" | "string[]", "string" | "number" | "boolean" | "string[]">, z$1.core.SomeType>>;
-        replace: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
-            source: z$1.ZodLiteral<"file">;
-            pattern: z$1.ZodString;
-            files: z$1.ZodUnion<readonly [z$1.ZodString, z$1.ZodArray<z$1.ZodString>]>;
-        }, z$1.core.$strip>>>;
-        tools: z$1.ZodOptional<z$1.ZodArray<z$1.ZodString>>;
-        images: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
-            file: z$1.ZodString;
-        }, z$1.core.$strip>>>;
-        documents: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
-            file: z$1.ZodString;
-        }, z$1.core.$strip>>>;
-        references: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
-            file: z$1.ZodString;
-        }, z$1.core.$strip>>>;
-    }, z$1.core.$strip>, z$1.ZodObject<{
-        uses: z$1.ZodLiteral<"write-to-disk">;
-        output: z$1.ZodString;
-        keys: z$1.ZodOptional<z$1.ZodUnion<readonly [z$1.ZodString, z$1.ZodArray<z$1.ZodString>]>>;
-    }, z$1.core.$strip>], "uses">>;
-}, z$1.core.$strip>;
-declare const BatchJobSchema: z$1.ZodObject<{
-    type: z$1.ZodLiteral<"batch">;
-    tools: z$1.ZodOptional<z$1.ZodArray<z$1.ZodString>>;
-    batch: z$1.ZodArray<z$1.ZodObject<{
+    batch: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
         type: z$1.ZodLiteral<"files">;
         source: z$1.ZodString;
         bind: z$1.ZodString;
@@ -757,12 +727,12 @@ declare const BatchJobSchema: z$1.ZodObject<{
             type: z$1.ZodLiteral<"file-exist">;
             pattern: z$1.ZodString;
         }, z$1.core.$strip>>>;
-    }, z$1.core.$strip>>;
+    }, z$1.core.$strip>>>;
     steps: z$1.ZodArray<z$1.ZodDiscriminatedUnion<[z$1.ZodObject<{
         uses: z$1.ZodLiteral<"chat">;
         system: z$1.ZodOptional<z$1.ZodString>;
         message: z$1.ZodString;
-        output: z$1.ZodOptional<z$1.ZodRecord<z$1.ZodCustom<"string" | "number" | "boolean" | "string[]", "string" | "number" | "boolean" | "string[]">, z$1.core.SomeType>>;
+        output: z$1.ZodOptional<z$1.ZodRecord<z$1.ZodString, z$1.ZodAny>>;
         replace: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
             source: z$1.ZodLiteral<"file">;
             pattern: z$1.ZodString;
@@ -783,10 +753,259 @@ declare const BatchJobSchema: z$1.ZodObject<{
         output: z$1.ZodString;
         keys: z$1.ZodOptional<z$1.ZodUnion<readonly [z$1.ZodString, z$1.ZodArray<z$1.ZodString>]>>;
     }, z$1.core.$strip>], "uses">>;
-}, z$1.core.$strip>;
-type SerialJob = z$1.infer<typeof SerialJobSchema>;
-type BatchJob = z$1.infer<typeof BatchJobSchema>;
-declare const DAGJobSchema: z$1.ZodRecord<z$1.core.$ZodRecordKey, z$1.core.SomeType>;
+}, z$1.core.$strip>, z$1.ZodTransform<{
+    type: "batch";
+    tools: string[];
+    batch: {
+        type: "files";
+        source: string;
+        bind: string;
+        "skip-if"?: {
+            type: "file-exist";
+            pattern: string;
+        }[];
+    }[];
+    steps: ({
+        uses: "chat";
+        message: string;
+        system?: string;
+        output?: Record<string, any>;
+        replace?: {
+            source: "file";
+            pattern: string;
+            files?: string | string[];
+        }[];
+        tools?: string[];
+        images?: {
+            file: string;
+        }[];
+        documents?: {
+            file: string;
+        }[];
+        references?: {
+            file: string;
+        }[];
+    } | {
+        uses: "write-to-disk";
+        output: string;
+        keys?: string | string[];
+    })[];
+} | {
+    type: "serial";
+    tools: string[];
+    steps: ({
+        uses: "chat";
+        message: string;
+        system?: string;
+        output?: Record<string, any>;
+        replace?: {
+            source: "file";
+            pattern: string;
+            files?: string | string[];
+        }[];
+        tools?: string[];
+        images?: {
+            file: string;
+        }[];
+        documents?: {
+            file: string;
+        }[];
+        references?: {
+            file: string;
+        }[];
+    } | {
+        uses: "write-to-disk";
+        output: string;
+        keys?: string | string[];
+    })[];
+    batch?: undefined;
+}, {
+    steps: ({
+        uses: "chat";
+        message: string;
+        system?: string;
+        output?: Record<string, any>;
+        replace?: {
+            source: "file";
+            pattern: string;
+            files?: string | string[];
+        }[];
+        tools?: string[];
+        images?: {
+            file: string;
+        }[];
+        documents?: {
+            file: string;
+        }[];
+        references?: {
+            file: string;
+        }[];
+    } | {
+        uses: "write-to-disk";
+        output: string;
+        keys?: string | string[];
+    })[];
+    tools?: string[];
+    batch?: {
+        type: "files";
+        source: string;
+        bind: string;
+        "skip-if"?: {
+            type: "file-exist";
+            pattern: string;
+        }[];
+    }[];
+}>>;
+type Job = z$1.infer<typeof JobSchema>;
+type SerialJob = Extract<Job, {
+    type: "serial";
+}>;
+type BatchJob = Extract<Job, {
+    type: "batch";
+}>;
+declare const DAGJobSchema: z$1.ZodRecord<z$1.ZodString, z$1.ZodPipe<z$1.ZodObject<{
+    tools: z$1.ZodOptional<z$1.ZodArray<z$1.ZodString>>;
+    batch: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
+        type: z$1.ZodLiteral<"files">;
+        source: z$1.ZodString;
+        bind: z$1.ZodString;
+        "skip-if": z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
+            type: z$1.ZodLiteral<"file-exist">;
+            pattern: z$1.ZodString;
+        }, z$1.core.$strip>>>;
+    }, z$1.core.$strip>>>;
+    steps: z$1.ZodArray<z$1.ZodDiscriminatedUnion<[z$1.ZodObject<{
+        uses: z$1.ZodLiteral<"chat">;
+        system: z$1.ZodOptional<z$1.ZodString>;
+        message: z$1.ZodString;
+        output: z$1.ZodOptional<z$1.ZodRecord<z$1.ZodString, z$1.ZodAny>>;
+        replace: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
+            source: z$1.ZodLiteral<"file">;
+            pattern: z$1.ZodString;
+            files: z$1.ZodUnion<readonly [z$1.ZodString, z$1.ZodArray<z$1.ZodString>]>;
+        }, z$1.core.$strip>>>;
+        tools: z$1.ZodOptional<z$1.ZodArray<z$1.ZodString>>;
+        images: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
+            file: z$1.ZodString;
+        }, z$1.core.$strip>>>;
+        documents: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
+            file: z$1.ZodString;
+        }, z$1.core.$strip>>>;
+        references: z$1.ZodOptional<z$1.ZodArray<z$1.ZodObject<{
+            file: z$1.ZodString;
+        }, z$1.core.$strip>>>;
+    }, z$1.core.$strip>, z$1.ZodObject<{
+        uses: z$1.ZodLiteral<"write-to-disk">;
+        output: z$1.ZodString;
+        keys: z$1.ZodOptional<z$1.ZodUnion<readonly [z$1.ZodString, z$1.ZodArray<z$1.ZodString>]>>;
+    }, z$1.core.$strip>], "uses">>;
+    dependsOn: z$1.ZodOptional<z$1.ZodUnion<readonly [z$1.ZodString, z$1.ZodArray<z$1.ZodString>]>>;
+}, z$1.core.$strip>, z$1.ZodTransform<{
+    dependsOn?: string | string[];
+    type: "batch";
+    tools: string[];
+    batch: {
+        type: "files";
+        source: string;
+        bind: string;
+        "skip-if"?: {
+            type: "file-exist";
+            pattern: string;
+        }[];
+    }[];
+    steps: ({
+        uses: "chat";
+        message: string;
+        system?: string;
+        output?: Record<string, any>;
+        replace?: {
+            source: "file";
+            pattern: string;
+            files?: string | string[];
+        }[];
+        tools?: string[];
+        images?: {
+            file: string;
+        }[];
+        documents?: {
+            file: string;
+        }[];
+        references?: {
+            file: string;
+        }[];
+    } | {
+        uses: "write-to-disk";
+        output: string;
+        keys?: string | string[];
+    })[];
+} | {
+    dependsOn?: string | string[];
+    type: "serial";
+    tools: string[];
+    steps: ({
+        uses: "chat";
+        message: string;
+        system?: string;
+        output?: Record<string, any>;
+        replace?: {
+            source: "file";
+            pattern: string;
+            files?: string | string[];
+        }[];
+        tools?: string[];
+        images?: {
+            file: string;
+        }[];
+        documents?: {
+            file: string;
+        }[];
+        references?: {
+            file: string;
+        }[];
+    } | {
+        uses: "write-to-disk";
+        output: string;
+        keys?: string | string[];
+    })[];
+    batch?: undefined;
+}, {
+    steps: ({
+        uses: "chat";
+        message: string;
+        system?: string;
+        output?: Record<string, any>;
+        replace?: {
+            source: "file";
+            pattern: string;
+            files?: string | string[];
+        }[];
+        tools?: string[];
+        images?: {
+            file: string;
+        }[];
+        documents?: {
+            file: string;
+        }[];
+        references?: {
+            file: string;
+        }[];
+    } | {
+        uses: "write-to-disk";
+        output: string;
+        keys?: string | string[];
+    })[];
+    tools?: string[];
+    batch?: {
+        type: "files";
+        source: string;
+        bind: string;
+        "skip-if"?: {
+            type: "file-exist";
+            pattern: string;
+        }[];
+    }[];
+    dependsOn?: string | string[];
+}>>>;
 type DAGJob = z$1.infer<typeof DAGJobSchema>;
 
 interface ConcurrentWorkflow {
