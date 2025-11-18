@@ -102,16 +102,36 @@ try {
  */
 let provider: AIProvider;
 try {
-  const using = jobConfig.using as {
-    engine: keyof AIProviderConfig;
-    [key: string]: any;
-  };
-  const { engine: providerKey, ...otherConfig } = using;
-  const providerConfig = {
-    ...(serviceConfig as any)[providerKey],
-    ...otherConfig,
-  };
-  provider = getProvider(providerKey, providerConfig);
+  const using = jobConfig.using;
+
+  // Build provider config by merging service config with job config
+  // and create the provider (switch ensures type safety)
+  switch (using.engine) {
+    case "ollama":
+      provider = getProvider("ollama", {
+        ...serviceConfig.ollama,
+        ...using,
+      });
+      break;
+    case "anthropic":
+      provider = getProvider("anthropic", {
+        ...serviceConfig.anthropic,
+        ...using,
+      });
+      break;
+    case "openai":
+      provider = getProvider("openai", {
+        ...serviceConfig.openai,
+        ...using,
+      });
+      break;
+    case "gemini":
+      provider = getProvider("gemini", {
+        ...serviceConfig.gemini,
+        ...using,
+      });
+      break;
+  }
 } catch (e) {
   recorder.error.log(e.message);
   recorder.error.log(e.stack);
