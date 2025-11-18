@@ -101,12 +101,12 @@ try {
  */
 let provider: AIProvider;
 try {
-  const { engine: providerKey, ...otherConfig } = jobConfig.using;
+  const { engine, ...otherConfig } = jobConfig.using;
   const providerConfig = {
-    ...serviceConfig[providerKey],
+    ...serviceConfig[engine],
     ...otherConfig,
   };
-  provider = getProvider(providerKey, providerConfig);
+  provider = getProvider(engine, providerConfig);
 } catch (e) {
   recorder.error.log(e.message);
   recorder.error.log(e.stack);

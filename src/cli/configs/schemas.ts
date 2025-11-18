@@ -34,25 +34,25 @@ const OllamaProviderUseSchema = z
   .object({
     engine: z.literal("ollama"),
   })
-  .and(z.custom<Partial<OllamaConfig>>());
+  .passthrough();
 
 const AnthropicProviderUseSchema = z
   .object({
     engine: z.literal("anthropic"),
   })
-  .and(z.custom<Partial<AnthropicConfig>>());
+  .passthrough();
 
 const OpenAIProviderUseSchema = z
   .object({
     engine: z.literal("openai"),
   })
-  .and(z.custom<Partial<OpenAIConfig>>());
+  .passthrough();
 
 const GeminiProviderUseSchema = z
   .object({
     engine: z.literal("gemini"),
   })
-  .and(z.custom<Partial<GeminiConfig>>());
+  .passthrough();
 
 export const AIProviderUseSchema = z.discriminatedUnion("engine", [
   OllamaProviderUseSchema,
@@ -144,7 +144,7 @@ export const ChatStepSchema = z.object({
   uses: z.literal("chat"),
   system: z.string().optional(),
   message: z.string(),
-  output: z.record(z.custom<ResultTypeUnion>()).optional(),
+  output: z.record(z.string(), z.any()).optional(),
   replace: z.array(ReplaceSchema).optional(),
   tools: z.array(z.string()).optional(),
   images: z.array(ImageReferenceSchema).optional(),
@@ -208,13 +208,11 @@ export const JobSchema = JobInputSchema.transform((data) => {
       steps: data.steps,
     };
   }
-}).pipe(
-  z.discriminatedUnion("type", [SerialJobSchema, BatchJobSchema])
-);
+});
 
-export type SerialJob = z.infer<typeof SerialJobSchema>;
-export type BatchJob = z.infer<typeof BatchJobSchema>;
 export type Job = z.infer<typeof JobSchema>;
+export type SerialJob = Extract<Job, { type: "serial" }>;
+export type BatchJob = Extract<Job, { type: "batch" }>;
 
 /* ============================================================================
  * DAG Job Schema
@@ -242,7 +240,7 @@ const DAGJobValueSchema = DAGJobValueInputSchema.transform((data) => {
   };
 });
 
-export const DAGJobSchema = z.record(DAGJobValueSchema);
+export const DAGJobSchema = z.record(z.string(), DAGJobValueSchema);
 
 export type DAGJob = z.infer<typeof DAGJobSchema>;
 
