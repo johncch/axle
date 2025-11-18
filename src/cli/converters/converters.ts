@@ -1,6 +1,8 @@
 import { Recorder } from "../../recorder/recorder.js";
 import { Task } from "../../types.js";
-import { StepBase } from "../configs/types.js";
+import { Step } from "../configs/schemas.js";
+
+type StepBase = Extract<Step, { uses: string }>;
 
 export interface StepToClassConverter<S extends StepBase, T extends Task> {
   convert(

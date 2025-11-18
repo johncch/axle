@@ -1,9 +1,13 @@
 import YAML from "yaml";
+import * as z from "zod";
 import { Recorder } from "../../recorder/recorder.js";
 import { searchAndLoadFile } from "../../utils/file.js";
-import { isJobConfig } from "./job.js";
-import { isServiceConfig } from "./service.js";
-import { JobConfig, ServiceConfig } from "./types.js";
+import {
+  JobConfig,
+  JobConfigSchema,
+  ServiceConfig,
+  ServiceConfigSchema,
+} from "./schemas.js";
 
 const DEFAULT_JOB_NAME = "ax.job";
 const DEFAULT_JOB_FORMATS = ["yaml", "yml", "json"];
@@ -34,11 +38,13 @@ export async function getJobConfig(
   recorder?.debug?.heading.log("The Job Object");
   recorder?.debug?.log(result);
 
-  const errVal = { value: "" };
-  if (isJobConfig(result, errVal)) {
-    return result as JobConfig;
+  const parsed = JobConfigSchema.safeParse(result);
+  if (!parsed.success) {
+    throw new Error(
+      `The job file is not valid:\n${formatZodError(parsed.error)}`,
+    );
   }
-  throw new Error(`The job file is not valid: ${errVal.value}`);
+  return parsed.data;
 }
 
 const DEFAULT_CONFIG_NAME = "ax.config";
@@ -70,10 +76,24 @@ export async function getServiceConfig(
   recorder?.debug?.heading.log("The Config Object");
   recorder?.debug?.log(result);
 
-  const valError = { value: "" };
-  if (isServiceConfig(result, valError)) {
-    return result;
+  const parsed = ServiceConfigSchema.safeParse(result);
+  if (!parsed.success) {
+    throw new Error(
+      `The config file is not valid:\n${formatZodError(parsed.error)}`,
+    );
   }
 
-  throw new Error(valError.value);
+  return parsed.data;
+}
+
+/**
+ * Formats a Zod error into a readable string
+ */
+function formatZodError(error: z.ZodError<any>): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.join(".");
+      return `  - ${path || "root"}: ${issue.message}`;
+    })
+    .join("\n");
 }

@@ -1,5 +1,7 @@
-import { ToolProviderConfig } from "../cli/configs/types.js";
+import { ServiceConfig } from "../cli/configs/schemas.js";
 import { ToolExecutable } from "./types.js";
+
+type ToolProviderConfig = Pick<ServiceConfig, "brave">;
 
 export class ToolRegistry {
   private executables: Record<string, ToolExecutable> = {};

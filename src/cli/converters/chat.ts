@@ -4,7 +4,7 @@ import { Recorder } from "../../recorder/recorder.js";
 import { getToolRegistry } from "../../tools/index.js";
 import { loadFileContent, loadManyFiles } from "../../utils/file.js";
 import { arrayify } from "../../utils/utils.js";
-import { ChatStep } from "../configs/types.js";
+import { ChatStep } from "../configs/schemas.js";
 import { StepToClassConverter } from "./converters.js";
 
 type SchemaRecord = Record<string, z.ZodTypeAny>;

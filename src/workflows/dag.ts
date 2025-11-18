@@ -1,6 +1,5 @@
 import { AIProvider } from "../ai/types.js";
-import { isDAGJob } from "../cli/configs/job.js";
-import { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
+import { BatchJob, DAGJob, Job } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import { Recorder } from "../recorder/recorder.js";
@@ -49,41 +48,55 @@ export class DAGParser {
     }
 
     if (this.isConcurrentNodeDefinition(definition)) {
-      const nodeDefinition = definition as DAGConcurrentNodeDefinition;
-      const dependencies = nodeDefinition.dependsOn
-        ? arrayify(nodeDefinition.dependsOn)
+      const dependencies = definition.dependsOn
+        ? arrayify(definition.dependsOn)
         : [];
 
       return {
         id: nodeId,
-        tasks: nodeDefinition.tasks,
+        tasks: definition.tasks,
         dependencies,
-        planner: nodeDefinition.planner,
+        planner: definition.planner,
         executionType: "concurrent",
       };
     }
 
-    const nodeDefinition = definition as DAGNodeDefinition;
-    const dependencies = nodeDefinition.dependsOn
-      ? arrayify(nodeDefinition.dependsOn)
-      : [];
-    const tasks = arrayify(nodeDefinition.task);
+    if (this.isNodeDefinition(definition)) {
+      const dependencies = definition.dependsOn
+        ? arrayify(definition.dependsOn)
+        : [];
+      const tasks = arrayify(definition.task);
 
-    return {
-      id: nodeId,
-      tasks,
-      dependencies,
-      executionType: "serial",
-    };
+      return {
+        id: nodeId,
+        tasks,
+        dependencies,
+        executionType: "serial",
+      };
+    }
+
+    throw new Error(`Invalid DAG node definition for '${nodeId}'`);
   }
 
-  private static isSimpleTask(definition: any): boolean {
+  private static isSimpleTask(
+    definition: any,
+  ): definition is Task | Task[] {
     return definition.type || Array.isArray(definition);
   }
 
-  private static isConcurrentNodeDefinition(definition: any): boolean {
+  private static isConcurrentNodeDefinition(
+    definition: any,
+  ): definition is DAGConcurrentNodeDefinition {
     return (
       definition && typeof definition === "object" && "planner" in definition
+    );
+  }
+
+  private static isNodeDefinition(
+    definition: any,
+  ): definition is DAGNodeDefinition {
+    return (
+      definition && typeof definition === "object" && "task" in definition
     );
   }
 
@@ -177,10 +190,9 @@ export class DAGJobToDefinition {
     for (const [nodeId, jobWithDeps] of Object.entries(definition)) {
       const { dependsOn, ...job } = jobWithDeps;
 
-      if ("batch" in job) {
-        const batchJob = job as BatchJob;
-        const planner = await configToPlanner(batchJob, { recorder });
-        const tasks = await configToTasks(batchJob, { recorder });
+      if (job.type === "batch") {
+        const planner = await configToPlanner(job, { recorder });
+        const tasks = await configToTasks(job, { recorder });
 
         const nodeDefinition: DAGConcurrentNodeDefinition = {
           planner,
@@ -189,7 +201,7 @@ export class DAGJobToDefinition {
         };
         dagDefinition[nodeId] = nodeDefinition;
       } else {
-        const tasks = await configToTasks(job as Job, { recorder });
+        const tasks = await configToTasks(job, { recorder });
 
         if (dependsOn) {
           const nodeDefinition: DAGNodeDefinition = {
@@ -269,6 +281,20 @@ interface DAGWorkflow {
   ): WorkflowExecutable;
 }
 
+/**
+ * Type guard to check if the definition is a DAGJob
+ */
+function isDAGJob(
+  definition: DAGDefinition | DAGJob,
+): definition is DAGJob {
+  const firstValue = Object.values(definition)[0];
+  return (
+    firstValue &&
+    typeof firstValue === "object" &&
+    "steps" in firstValue
+  );
+}
+
 export const dagWorkflow: DAGWorkflow = (
   definition: DAGDefinition | DAGJob,
   options: DAGWorkflowOptions = {},
@@ -278,12 +304,11 @@ export const dagWorkflow: DAGWorkflow = (
     context: { recorder?: Recorder },
   ): Promise<DAGDefinition> => {
     const { recorder } = context;
-    const errVal = { value: "" };
-    if (isDAGJob(definition, errVal)) {
+
+    if (isDAGJob(definition)) {
       return await DAGJobToDefinition.convert(definition, context);
     }
-    recorder?.warn?.log(errVal);
-    return definition as DAGDefinition;
+    return definition;
   };
 
   const execute = async (context: {
