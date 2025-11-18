@@ -23,17 +23,25 @@ interface SerialWorkflow {
   (...steps: WorkflowStep[]): WorkflowExecutable;
 }
 
+/**
+ * Type guard to check if the input is a SerialJob
+ */
+function isSerialJob(obj: SerialJob | WorkflowStep): obj is SerialJob {
+  return "steps" in obj && "type" in obj && obj.type === "serial";
+}
+
 export const serialWorkflow: SerialWorkflow = (
   first: SerialJob | WorkflowStep,
   ...rest: WorkflowStep[]
 ) => {
   const prepare = async (context: { recorder?: Recorder }): Promise<WorkflowStep[]> => {
     const { recorder } = context;
-    if ("steps" in first) {
-      const jobConfig = first as SerialJob;
-      return await configToTasks(jobConfig, { recorder });
+
+    if (isSerialJob(first)) {
+      return await configToTasks(first, { recorder });
+    } else {
+      return [first, ...rest];
     }
-    return [first as WorkflowStep, ...rest];
   };
 
   const execute = async (context: {

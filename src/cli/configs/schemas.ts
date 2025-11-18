@@ -168,15 +168,8 @@ export type WriteToDiskStep = z.infer<typeof WriteToDiskStepSchema>;
 export type Step = z.infer<typeof StepSchema>;
 
 /* ============================================================================
- * Job Schemas - Discriminator added via transform
+ * Job Schemas - Discriminator added via preprocess
  * ========================================================================== */
-
-// Input schema (what users write)
-const JobInputSchema = z.object({
-  tools: z.array(z.string()).optional(),
-  batch: z.array(BatchOptionsSchema).optional(),
-  steps: z.array(StepSchema),
-});
 
 // Output schemas (with discriminator)
 const SerialJobSchema = z.object({
@@ -192,23 +185,17 @@ const BatchJobSchema = z.object({
   steps: z.array(StepSchema),
 });
 
-// Transform to add discriminator based on presence of 'batch' property
-export const JobSchema = JobInputSchema.transform((data) => {
-  if (data.batch && data.batch.length > 0) {
-    return {
-      type: "batch" as const,
-      tools: data.tools,
-      batch: data.batch,
-      steps: data.steps,
-    };
-  } else {
-    return {
-      type: "serial" as const,
-      tools: data.tools,
-      steps: data.steps,
-    };
-  }
-});
+// Preprocess to add discriminator, then validate with discriminated union
+export const JobSchema = z.preprocess(
+  (data: any) => {
+    // Add the type discriminator based on presence of batch
+    if (data.batch && data.batch.length > 0) {
+      return { ...data, type: "batch" };
+    }
+    return { ...data, type: "serial" };
+  },
+  z.discriminatedUnion("type", [SerialJobSchema, BatchJobSchema])
+);
 
 export type Job = z.infer<typeof JobSchema>;
 export type SerialJob = Extract<Job, { type: "serial" }>;
@@ -218,27 +205,36 @@ export type BatchJob = Extract<Job, { type: "batch" }>;
  * DAG Job Schema
  * ========================================================================== */
 
-// Input schema for DAG job value (what users write)
-const DAGJobValueInputSchema = z.object({
+// Output schemas (SerialJob/BatchJob with optional dependsOn)
+const SerialDAGJobValueSchema = z.object({
+  type: z.literal("serial"),
   tools: z.array(z.string()).optional(),
-  batch: z.array(BatchOptionsSchema).optional(),
   steps: z.array(StepSchema),
   dependsOn: z.union([z.string(), z.array(z.string())]).optional(),
 });
 
-// Transform to add discriminator to the job part
-const DAGJobValueSchema = DAGJobValueInputSchema.transform((data) => {
-  const { dependsOn, ...jobData } = data;
-
-  // Parse the job part to add discriminator
-  const job = JobInputSchema.parse(jobData);
-  const transformedJob = JobSchema.parse(job);
-
-  return {
-    ...transformedJob,
-    ...(dependsOn ? { dependsOn } : {}),
-  };
+const BatchDAGJobValueSchema = z.object({
+  type: z.literal("batch"),
+  tools: z.array(z.string()).optional(),
+  batch: z.array(BatchOptionsSchema),
+  steps: z.array(StepSchema),
+  dependsOn: z.union([z.string(), z.array(z.string())]).optional(),
 });
+
+// Preprocess to add discriminator, then validate with discriminated union
+const DAGJobValueSchema = z.preprocess(
+  (data: any) => {
+    // Add the type discriminator based on presence of batch
+    if (data.batch && data.batch.length > 0) {
+      return { ...data, type: "batch" };
+    }
+    return { ...data, type: "serial" };
+  },
+  z.discriminatedUnion("type", [
+    SerialDAGJobValueSchema,
+    BatchDAGJobValueSchema,
+  ])
+);
 
 export const DAGJobSchema = z.record(z.string(), DAGJobValueSchema);
 
