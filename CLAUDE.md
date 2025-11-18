@@ -1,3 +1,9 @@
+# Package Manager
+
+**This project uses pnpm, not npm.**
+- Always use `pnpm` commands instead of `npm`
+- Never commit `package-lock.json` (it's gitignored)
+
 # Build, Test & Lint Commands
 
 **Note:** This project uses `pnpm` for development. All commands below use `pnpm`.
