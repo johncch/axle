@@ -1,12 +1,18 @@
+# Package Manager
+
+**This project uses pnpm, not npm.**
+- Always use `pnpm` commands instead of `npm`
+- Never commit `package-lock.json` (it's gitignored)
+
 # Build, Test & Lint Commands
 
-- Build: `npm run build` (pkgroll with clean-dist and minify)
-- Build (dev): `npm run build-dev` (pkgroll with clean-dist, no minify)
-- Test all: `npm test`
-- Test single: `npm test -- -t "test name pattern"` or `npm test -- path/to/file.test.ts`
-- Start: `npm start` (runs with tsx)
-- Get models: `npm run get-models`
-- Run prompt scenarios: `npm run prompt-scenarios`
+- Build: `pnpm run build` (pkgroll with clean-dist and minify)
+- Build (dev): `pnpm run build-dev` (pkgroll with clean-dist, no minify)
+- Test all: `pnpm test`
+- Test single: `pnpm test -- -t "test name pattern"` or `pnpm test -- path/to/file.test.ts`
+- Start: `pnpm start` (runs with tsx)
+- Get models: `pnpm run get-models`
+- Run prompt scenarios: `pnpm run prompt-scenarios`
 
 # Code Style Guidelines
 
