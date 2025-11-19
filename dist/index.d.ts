@@ -1,5 +1,8 @@
 import * as z from 'zod';
 import z__default, { ZodObject, z as z$1 } from 'zod';
+import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
 type PlainObject = Record<string, unknown>;
 type ProgramOptions = {
@@ -419,13 +422,54 @@ declare const Models$2: {
 };
 declare const DEFAULT_MODEL$2: "claude-haiku-4-5";
 
-declare const NAME$3: "anthorpic";
+declare const NAME$3: "anthropic";
+declare class AnthropicProvider implements AIProvider {
+    name: "anthropic";
+    client: Anthropic;
+    model: string;
+    constructor(apiKey: string, model?: string);
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): Promise<ModelResult>;
+    createStreamingRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
 
 declare namespace index$3 {
   export {
     DEFAULT_MODEL$2 as DEFAULT_MODEL,
     Models$2 as Models,
     NAME$3 as NAME,
+    AnthropicProvider as Provider,
   };
 }
 
@@ -471,23 +515,106 @@ declare const Models$1: {
 declare const DEFAULT_MODEL$1: "gemini-2.5-flash";
 
 declare const NAME$2: "Gemini";
+declare class GeminiProvider implements AIProvider {
+    name: "Gemini";
+    client: GoogleGenAI;
+    model: string;
+    constructor(apiKey: string, model?: string);
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): Promise<ModelResult>;
+    createStreamingRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
 
 declare namespace index$2 {
   export {
     DEFAULT_MODEL$1 as DEFAULT_MODEL,
     Models$1 as Models,
     NAME$2 as NAME,
+    GeminiProvider as Provider,
   };
 }
 
 declare const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 declare const NAME$1: "Ollama";
+declare class OllamaProvider implements AIProvider {
+    name: string;
+    url: string;
+    model: string;
+    recorder?: Recorder;
+    constructor(model: string, url?: string);
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): Promise<ModelResult>;
+    createStreamingRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
 
 declare const index$1_DEFAULT_OLLAMA_URL: typeof DEFAULT_OLLAMA_URL;
 declare namespace index$1 {
   export {
     index$1_DEFAULT_OLLAMA_URL as DEFAULT_OLLAMA_URL,
     NAME$1 as NAME,
+    OllamaProvider as Provider,
   };
 }
 
@@ -559,6 +686,46 @@ declare const Models: {
 declare const DEFAULT_MODEL: "gpt-5";
 
 declare const NAME: "OpenAI";
+declare class OpenAIProvider implements AIProvider {
+    name: "OpenAI";
+    client: OpenAI;
+    model: string;
+    constructor(apiKey: string, model?: string | undefined);
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): Promise<ModelResult>;
+    createStreamingRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
 
 declare const index_DEFAULT_MODEL: typeof DEFAULT_MODEL;
 declare const index_Models: typeof Models;
@@ -568,6 +735,7 @@ declare namespace index {
     index_DEFAULT_MODEL as DEFAULT_MODEL,
     index_Models as Models,
     index_NAME as NAME,
+    OpenAIProvider as Provider,
   };
 }
 

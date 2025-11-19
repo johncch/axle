@@ -9,7 +9,7 @@ import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL } from "./models.js";
 
-export const NAME = "anthorpic" as const;
+export const NAME = "anthropic" as const;
 
 export class AnthropicProvider implements AIProvider {
   name = NAME;
