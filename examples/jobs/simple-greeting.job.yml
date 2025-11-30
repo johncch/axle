@@ -12,4 +12,4 @@ jobs:
         message: |
           Please provide a friendly greeting for {{name}}.
       - uses: write-to-disk
-        output: ./output/greeting-{name}.txt
+        output: ./output/greeting-{{name}}.txt

@@ -129,12 +129,7 @@ export async function fileExists({
 // Function to ensure the directory exists
 export async function ensureDirectoryExistence(filePath: string) {
   const dirName = dirname(filePath);
-  try {
-    await access(dirName);
-  } catch (err) {
-    await mkdir(dirName);
-    await ensureDirectoryExistence(dirName);
-  }
+  await mkdir(dirName, { recursive: true });
 }
 
 // Function to write the file

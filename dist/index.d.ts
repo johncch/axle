@@ -988,16 +988,16 @@ declare const calculatorTool: Tool<typeof calculatorSchema>;
  *   - uses: chat
  *     message: Generate a greeting for {{name}}
  *   - uses: write-to-disk
- *     output: ./output/greeting-{name}.txt
+ *     output: ./output/greeting-{{name}}.txt
  * ```
  *
  * ### Properties
  *
- * | Property | Type                 | Required | Description                                    |
- * |----------|----------------------|----------|------------------------------------------------|
- * | `uses`   | `"write-to-disk"`    | Yes      | Identifies this as a WriteToDisk step          |
- * | `output` | `string`             | Yes      | File path template (supports `{}` placeholders)|
- * | `keys`   | `string \| string[]` | No       | Variable keys to include in output content     |
+ * | Property | Type                 | Required | Description                                      |
+ * |----------|----------------------|----------|--------------------------------------------------|
+ * | `uses`   | `"write-to-disk"`    | Yes      | Identifies this as a WriteToDisk step            |
+ * | `output` | `string`             | Yes      | File path template (supports `{{}}` placeholders)|
+ * | `keys`   | `string \| string[]` | No       | Variable keys to include in output content       |
  *
  * ### Examples
  *
@@ -1007,10 +1007,10 @@ declare const calculatorTool: Tool<typeof calculatorSchema>;
  *   output: ./output/result.txt
  * ```
  *
- * **With path variables** - uses `{}` placeholders in path:
+ * **With path variables** - uses `{{}}` placeholders in path:
  * ```yaml
  * - uses: write-to-disk
- *   output: ./output/greeting-{name}.txt
+ *   output: ./output/greeting-{{name}}.txt
  * ```
  *
  * **With file pattern** (batch processing) - uses `*` to substitute file stem:
@@ -1038,13 +1038,13 @@ declare const calculatorTool: Tool<typeof calculatorSchema>;
  *
  * ## Placeholder Styles
  *
- * This action uses **two different placeholder styles**:
+ * This action uses `{{variable}}` placeholder style for all variable substitution:
  *
- * - **Path template** (`output`): Uses single-brace `{variable}` style
- *   - Example: `./output/greeting-{name}.txt`
+ * - **Path template** (`output`): Uses `{{variable}}` placeholders
+ *   - Example: `./output/greeting-{{name}}.txt`
  *   - Also supports `*` for file stem substitution in batch processing
  *
- * - **Content template** (`keys`): Uses double-brace `{{variable}}` style
+ * - **Content template** (`keys`): Uses `{{variable}}` placeholders
  *   - Default template: `{{response}}`
  *   - When `keys` is specified, generates: `{{key1}}\n{{key2}}\n...`
  *
@@ -1067,7 +1067,7 @@ declare class WriteToDisk implements Action {
      * Creates a new WriteToDisk action.
      *
      * @param pathTemplate - The file path template. Supports:
-     *   - `{variable}` placeholders for variable substitution
+     *   - `{{variable}}` placeholders for variable substitution
      *   - `*` for file stem substitution (batch processing)
      * @param contentTemplate - The content template using `{{variable}}` placeholders.
      *   Defaults to `{{response}}` to output the LLM response.

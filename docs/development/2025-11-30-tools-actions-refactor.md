@@ -90,20 +90,20 @@ The `$previous` variable is the single source-of-truth for step-to-step data flo
 
 ### 4. Placeholder Styles
 
-**Decision:** Use different placeholder styles for different contexts.
+**Decision:** Standardize on `{{variable}}` for all variable substitution.
 
 | Style | Context | Example |
 |-------|---------|---------|
-| `{{var}}` | LLM prompts, content templates | `Hello {{name}}` |
-| `{var}` | File path templates | `./output/{name}.txt` |
-| `*` / `**` | Batch file patterns | `./output/*.txt` |
+| `{{var}}` | All variable substitution | `Hello {{name}}`, `./output/{{name}}.txt` |
+| `*` / `**` | Batch file patterns (glob) | `./output/*.txt` |
 
 **Rationale:**
 - `{{}}` avoids conflicts with JSON/code in LLM prompts
-- `{}` is natural for file paths
-- `*`/`**` matches glob conventions
+- Single style reduces cognitive overhead for users
+- Matches industry standards (Handlebars, Mustache, Jinja2, GitHub Actions)
+- `*`/`**` are conceptually different (file patterns, not variables)
 
-**Note:** A future refactor may standardize on `{{}}` everywhere for consistency.
+**See:** `2025-11-30-standardize-placeholder-syntax.md` for full details on this decision.
 
 ## Code Changes Summary
 
@@ -138,12 +138,7 @@ For downstream users updating to this version:
 3. **Use `$previous` for step results** - `Keys.LastResult` is removed
 4. **Update YAML configs** - Use `step` property instead of `task`
 
-## Known Issues
-
-1. **Nested directory creation bug** - `ensureDirectoryExistence` has issues with deeply nested directories. A test is skipped pending fix.
-
 ## Future Considerations
 
-1. **Placeholder standardization** - Consider moving to `{{}}` everywhere for consistency
-2. **Additional built-in actions** - Expand `factories.ts` as new actions are added
-3. **Integration examples** - Add end-to-end examples showing YAML → CLI → workflow execution
+1. **Additional built-in actions** - Expand `factories.ts` as new actions are added
+2. **Integration examples** - Add end-to-end examples showing YAML → CLI → workflow execution

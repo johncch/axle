@@ -15,4 +15,4 @@ jobs:
           You are trying to find out about this musical act: {{name}} .
           Use the tools to collate a short biography, their recent discograph, and their upcoming tour dates and locations based on results on the internet.
       - uses: write-to-disk
-        output: ./output/{name}.txt
+        output: ./output/{{name}}.txt

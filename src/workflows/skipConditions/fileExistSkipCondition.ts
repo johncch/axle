@@ -7,7 +7,7 @@ export class FileExistSkipCondition implements SkipCondition {
   type = "file-exist";
   constructor(public pattern: string) {}
   async eval(params: { components: FilePathInfo }): Promise<boolean> {
-    const path = replaceVariables(this.pattern, params.components, "{}");
+    const path = replaceVariables(this.pattern, params.components, "{{}}");
     try {
       await access(path, constants.F_OK);
       return true;

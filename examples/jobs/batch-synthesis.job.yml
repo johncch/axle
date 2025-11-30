@@ -11,7 +11,7 @@ jobs:
         bind: transcript
         # skip-if:
         #   - type: file-exist
-        #     pattern: "./output/results-{stem}.txt"
+        #     pattern: "./output/results-{{stem}}.txt"
 
     steps:
       - uses: chat
@@ -34,4 +34,4 @@ jobs:
 
           {{transcript}}
       - uses: write-to-disk
-        output: ./output/results-{stem}.txt
+        output: ./output/results-{{stem}}.txt

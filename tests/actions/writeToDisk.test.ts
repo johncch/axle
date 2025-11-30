@@ -22,13 +22,13 @@ describe("WriteToDisk Action", () => {
     });
 
     it("should create with path and content templates", () => {
-      const action = new WriteToDisk("./output/test.txt", "{custom}");
+      const action = new WriteToDisk("./output/test.txt", "{{custom}}");
       expect(action.name).toBe("write-to-disk");
     });
   });
 
   describe("execute", () => {
-    // Note: WriteToDisk uses "{}" for path templates and "{{}}" for content templates
+    // Note: WriteToDisk uses "{{}}" for both path and content templates
     it("should write content using default template ({{response}})", async () => {
       const filePath = join(TEST_DIR, "default-template.txt");
       // Default template is "{{response}}" and replacement uses "{{}}" style
@@ -65,8 +65,8 @@ describe("WriteToDisk Action", () => {
       expect(content).toBe("Name: John, Age: 30");
     });
 
-    it("should replace variables in path template using {} style", async () => {
-      const pathTemplate = join(TEST_DIR, "{filename}.txt");
+    it("should replace variables in path template using {{}} style", async () => {
+      const pathTemplate = join(TEST_DIR, "{{filename}}.txt");
       const action = new WriteToDisk(pathTemplate, "{{response}}");
 
       const context: ActionContext = {
@@ -84,8 +84,7 @@ describe("WriteToDisk Action", () => {
       expect(content).toBe("Dynamic content");
     });
 
-    // Skip: there's a bug in ensureDirectoryExistence with deeply nested dirs
-    it.skip("should create nested directories if they do not exist", async () => {
+    it("should create nested directories if they do not exist", async () => {
       const filePath = join(TEST_DIR, "nested", "deep", "file.txt");
       const action = new WriteToDisk(filePath, "{{response}}");
 
