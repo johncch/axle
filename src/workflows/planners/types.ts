@@ -1,6 +1,6 @@
-import { Task } from "../../types.js";
-import { Run } from "../types.js";
+import type { WorkflowStep } from "../../actions/types.js";
+import type { Run } from "../types.js";
 
 export interface Planner {
-  plan(tasks: Task[]): Promise<Run[]>;
+  plan(steps: WorkflowStep[]): Promise<Run[]>;
 }

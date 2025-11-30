@@ -1,44 +1,39 @@
-import { AIProvider } from "../ai/types.js";
-import { BatchJob } from "../cli/configs/types.js";
+import type { WorkflowStep } from "../actions/types.js";
+import type { AIProvider } from "../ai/types.js";
+import type { BatchJob } from "../cli/configs/types.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
-import { Recorder } from "../recorder/recorder.js";
+import type { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
-import { ProgramOptions, Stats, Task } from "../types.js";
-import {
-  createErrorResult,
-  createResult,
-  isErrorResult,
-} from "../utils/result.js";
+import type { ProgramOptions, Stats } from "../types.js";
+import { createErrorResult, createResult, isErrorResult } from "../utils/result.js";
 import { friendly } from "../utils/utils.js";
-import { Planner } from "./planners/types.js";
+import type { Planner } from "./planners/types.js";
 import { serialWorkflow } from "./serial.js";
-import { Run, WorkflowExecutable, WorkflowResult } from "./types.js";
+import type { Run, WorkflowExecutable, WorkflowResult } from "./types.js";
 
 interface ConcurrentWorkflow {
   (jobConfig: BatchJob): WorkflowExecutable;
-  (planner: Planner, ...instructions: Task[]): WorkflowExecutable;
+  (planner: Planner, ...steps: WorkflowStep[]): WorkflowExecutable;
 }
 
 export const concurrentWorkflow: ConcurrentWorkflow = (
   first: BatchJob | Planner,
-  ...rest: Task[]
+  ...rest: WorkflowStep[]
 ) => {
-  const prepare = async (context: {
-    recorder?: Recorder;
-  }): Promise<[Planner, Task[]]> => {
+  const prepare = async (context: { recorder?: Recorder }): Promise<[Planner, WorkflowStep[]]> => {
     const { recorder } = context;
-    let tasks: Task[] = [];
+    let steps: WorkflowStep[] = [];
     let planner: Planner = null;
     if ("batch" in first) {
       const jobConfig = first as BatchJob;
       planner = await configToPlanner(jobConfig, { recorder });
-      tasks = await configToTasks(jobConfig, { recorder });
+      steps = await configToTasks(jobConfig, { recorder });
     } else {
       planner = first as Planner;
-      tasks = [...rest];
+      steps = [...rest];
     }
-    return [planner, tasks];
+    return [planner, steps];
   };
 
   const execute = async (context: {
@@ -54,8 +49,8 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
     const id = crypto.randomUUID();
 
     try {
-      const [planner, tasks] = await prepare({ recorder });
-      const runs = await planner.plan(tasks);
+      const [planner, steps] = await prepare({ recorder });
+      const runs = await planner.plan(steps);
       recorder?.debug?.heading.log("Runs", runs);
 
       if (runs.length === 0) {
@@ -73,7 +68,7 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
 
       const executeRun = async (run: Run, index: number) => {
         try {
-          const result = await serialWorkflow(...run.tasks).execute({
+          const result = await serialWorkflow(...run.steps).execute({
             provider: provider,
             variables: { ...run.variables, ...variables },
             options,

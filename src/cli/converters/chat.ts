@@ -1,23 +1,20 @@
 import * as z from "zod";
 import { Instruct } from "../../core/Instruct.js";
-import { Recorder } from "../../recorder/recorder.js";
-import { getToolRegistry } from "../../tools/index.js";
+import type { Recorder } from "../../recorder/recorder.js";
 import { loadFileContent, loadManyFiles } from "../../utils/file.js";
 import { arrayify } from "../../utils/utils.js";
-import { ChatStep } from "../configs/types.js";
-import { StepToClassConverter } from "./converters.js";
+import type { ChatStep, ToolProviderConfig } from "../configs/types.js";
+import { createTools } from "../factories.js";
+import type { StepToClassConverter } from "./converters.js";
 
 type SchemaRecord = Record<string, z.ZodTypeAny>;
 
-export const chatConverter: StepToClassConverter<
-  ChatStep,
-  Instruct<SchemaRecord>
-> = {
+export const chatConverter: StepToClassConverter<ChatStep, Instruct<SchemaRecord>> = {
   async convert(
     step: ChatStep,
-    context: { recorder?: Recorder; toolNames?: string[] },
+    context: { recorder?: Recorder; toolNames?: string[]; toolConfig?: ToolProviderConfig },
   ): Promise<Instruct<SchemaRecord>> {
-    const { recorder, toolNames } = context;
+    const { recorder, toolNames, toolConfig } = context;
     const { message, system, replace } = step;
 
     let instruct: Instruct<SchemaRecord>;
@@ -30,12 +27,10 @@ export const chatConverter: StepToClassConverter<
       instruct.system = system;
     }
 
-    const allToolNames = [
-      ...new Set([...(toolNames ?? []), ...(step.tools ?? [])]),
-    ];
-    for (const toolName of allToolNames) {
-      const tool = getToolRegistry().get(toolName);
-      instruct.addTool(tool);
+    const allToolNames = [...new Set([...(toolNames ?? []), ...(step.tools ?? [])])];
+    if (allToolNames.length > 0) {
+      const tools = createTools(allToolNames, toolConfig);
+      instruct.addTools(tools);
     }
 
     if (replace) {
@@ -54,9 +49,7 @@ export const chatConverter: StepToClassConverter<
           const fileInfo = await loadFileContent(imageRef.file, "base64");
           instruct.addFile(fileInfo);
         } catch (error) {
-          throw new Error(
-            `Failed to load image '${imageRef.file}': ${error.message}`,
-          );
+          throw new Error(`Failed to load image '${imageRef.file}': ${error.message}`);
         }
       }
     }
@@ -67,9 +60,7 @@ export const chatConverter: StepToClassConverter<
           const fileInfo = await loadFileContent(documentRef.file, "base64");
           instruct.addFile(fileInfo);
         } catch (error) {
-          throw new Error(
-            `Failed to load document '${documentRef.file}': ${error.message}`,
-          );
+          throw new Error(`Failed to load document '${documentRef.file}': ${error.message}`);
         }
       }
     }
@@ -80,9 +71,7 @@ export const chatConverter: StepToClassConverter<
           const fileInfo = await loadFileContent(ref.file, "utf-8");
           instruct.addReference(fileInfo);
         } catch (error) {
-          throw new Error(
-            `Failed to load reference file '${ref.file}': ${error.message}`,
-          );
+          throw new Error(`Failed to load reference file '${ref.file}': ${error.message}`);
         }
       }
     }

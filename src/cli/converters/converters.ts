@@ -1,15 +1,12 @@
-import { Recorder } from "../../recorder/recorder.js";
-import { Task } from "../../types.js";
-import { StepBase } from "../configs/types.js";
+import type { WorkflowStep } from "../../actions/types.js";
+import type { Recorder } from "../../recorder/recorder.js";
+import type { StepBase } from "../configs/types.js";
 
-export interface StepToClassConverter<S extends StepBase, T extends Task> {
-  convert(
-    s: S,
-    context?: { recorder?: Recorder; [key: string]: any },
-  ): Promise<T>;
+export interface StepToClassConverter<S extends StepBase, T extends WorkflowStep> {
+  convert(s: S, context?: { recorder?: Recorder; [key: string]: any }): Promise<T>;
 }
 
-export class StepToClassRegistry<S extends StepBase, T extends Task> {
+export class StepToClassRegistry<S extends StepBase, T extends WorkflowStep> {
   converters: Map<string, StepToClassConverter<S, T>> = new Map();
 
   get(name: string): StepToClassConverter<S, T> {

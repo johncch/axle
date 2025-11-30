@@ -20,31 +20,42 @@ This directory contains example scripts demonstrating various features of Axle.
    npm start examples/scripts/simple-greeting.ts
    ```
 
+## Core Concepts
+
+### Instruct
+LLM-callable steps that send prompts and receive structured responses.
+
+### Action
+Workflow-callable steps executed between LLM calls (e.g., `WriteToDisk`).
+
+### WorkflowStep
+Union type: `Instruct | Action` - the building blocks of workflows.
+
 ## Text Examples
 
 ### `simple-greeting.ts`
-Basic text instruction with variable substitution.
+Basic text instruction with variable substitution and file output.
 - Shows how to create instructions with structured output
 - Demonstrates variable interpolation with `{{name}}`
-- Uses string output format
+- Uses `WriteToDisk` action to save results
 
 ### `simple-dag.ts`
 Demonstrates directed acyclic graph (DAG) workflows.
-- Shows how to chain multiple tasks
-- Illustrates dependencies between tasks
-- Uses workflow orchestration
+- Shows how to chain multiple steps (Instruct + Action)
+- Illustrates dependencies between nodes using `dependsOn`
+- Uses `step` property for node definitions
 
 ### `dag-patterns.ts`
 Advanced DAG patterns and configurations.
-- Complex workflow examples
-- Error handling in workflows
-- Conditional task execution
+- Complex workflow examples with fan-in/fan-out
+- Multiple steps per node (Instruct followed by WriteToDisk)
+- Error handling and concurrency control
 
 ### `research-dag.ts`
 Research-oriented workflow example.
-- Multi-step research process
-- Data gathering and analysis
-- Report generation
+- Multi-step research process with parallel analyzers
+- Data synthesis from multiple sources
+- Report generation with WriteToDisk action
 
 ## Multimodal Examples
 
@@ -113,10 +124,13 @@ The `examples/data/` directory contains sample images:
 ### Loading Files
 ```typescript
 // Load an image
-const imageFile = await Axle.loadFile("./path/to/image.jpg");
+const imageFile = await Axle.loadFileContent("./path/to/image.jpg");
 
 // Load a PDF (Anthropic only)
-const pdfFile = await Axle.loadFile("./path/to/document.pdf");
+const pdfFile = await Axle.loadFileContent("./path/to/document.pdf");
+
+// Load text file
+const textFile = await Axle.loadFileContent("./path/to/file.txt", "utf-8");
 ```
 
 ### Adding Files to Instructions
@@ -133,6 +147,43 @@ instruction.addFile(anyFile);
 instruction.addImage(image1);
 instruction.addImage(image2);
 instruction.addFile(document);
+```
+
+### Using Actions (WriteToDisk)
+```typescript
+import { Instruct, WriteToDisk } from "@anthropic/axle";
+
+// Create an instruction
+const instruct = Instruct.with("Generate a greeting for {name}");
+
+// Create an action to write output (uses {} placeholder style)
+const writeAction = new WriteToDisk("./output/{name}.txt", "{response}");
+
+// Execute as a workflow
+const result = await axle.execute(instruct, writeAction);
+```
+
+### DAG Node Definitions
+```typescript
+// Simple node (just an Instruct)
+const dag = {
+  step1: Instruct.with("Do something"),
+  
+  // Node with dependency
+  step2: {
+    step: Instruct.with("Use {{step1}}"),
+    dependsOn: "step1",
+  },
+  
+  // Node with multiple steps (Instruct + Action)
+  step3: {
+    step: [
+      Instruct.with("Generate content", { response: "string" }),
+      new WriteToDisk("./output/result.txt", "{response}"),
+    ],
+    dependsOn: "step2",
+  },
+};
 ```
 
 ### Provider Configuration

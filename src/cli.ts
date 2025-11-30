@@ -1,15 +1,14 @@
 import { Command } from "@commander-js/extra-typings";
 import pkg from "../package.json";
 import { getProvider } from "./ai/index.js";
-import { AIProvider } from "./ai/types.js";
+import type { AIProvider } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
-import { JobConfig, ServiceConfig } from "./cli/configs/types.js";
+import type { JobConfig, ServiceConfig } from "./cli/configs/types.js";
 import { ConsoleWriter } from "./recorder/consoleWriter.js";
 import { LogWriter } from "./recorder/logWriter.js";
 import { Recorder } from "./recorder/recorder.js";
 import { LogLevel } from "./recorder/types.js";
-import { getToolRegistry } from "./tools/index.js";
-import { Stats } from "./types.js";
+import type { Stats } from "./types.js";
 import { dagWorkflow } from "./workflows/dag.js";
 
 const program = new Command()
@@ -115,8 +114,6 @@ try {
   program.outputHelp();
   process.exit(1);
 }
-
-getToolRegistry().setConfig(serviceConfig);
 
 recorder.info?.heading.log("All systems operational. Running job...");
 const startTime = Date.now();

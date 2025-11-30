@@ -1,4 +1,4 @@
-import { Axle, Instruct, WriteOutputTask } from "../../src/index.js";
+import { Axle, Instruct, WriteToDisk } from "../../src/index.js";
 
 /** UNTESTED */
 
@@ -25,7 +25,7 @@ const patternsDAG = {
 
   // Pattern 2: Parallel processing (multiple tasks depend on same parent)
   statisticalAnalyzer: {
-    task: Instruct.with(`
+    step: Instruct.with(`
       Perform statistical analysis on this data: {{dataGenerator}}
 
       Calculate:
@@ -37,7 +37,7 @@ const patternsDAG = {
   },
 
   trendAnalyzer: {
-    task: Instruct.with(`
+    step: Instruct.with(`
       Analyze trends in this data: {{dataGenerator}}
 
       Identify:
@@ -50,7 +50,7 @@ const patternsDAG = {
   },
 
   categoricalAnalyzer: {
-    task: Instruct.with(`
+    step: Instruct.with(`
       Analyze categorical distribution in: {{dataGenerator}}
 
       Provide:
@@ -63,7 +63,7 @@ const patternsDAG = {
 
   // Pattern 3: Fan-in (multiple dependencies)
   comprehensiveReport: {
-    task: Instruct.with(`
+    step: Instruct.with(`
       Create a comprehensive analysis report using:
 
       Original Data: {{dataGenerator}}
@@ -82,7 +82,7 @@ const patternsDAG = {
 
   // Pattern 4: Chain continuation
   actionPlan: {
-    task: Instruct.with(`
+    step: Instruct.with(`
       Based on this comprehensive report: {{comprehensiveReport}}
 
       Create an action plan with:
@@ -96,10 +96,11 @@ const patternsDAG = {
     dependsOn: "comprehensiveReport",
   },
 
-  // Pattern 5: Multiple tasks in a node
+  // Pattern 5: Multiple tasks in a node (Instruct + Action)
   outputPackage: {
-    task: [
-      Instruct.with(`
+    step: [
+      Instruct.with(
+        `
         Package all analysis results for presentation:
 
         Report: {{comprehensiveReport}}
@@ -108,29 +109,35 @@ const patternsDAG = {
 
         Create a formatted summary for {{audience}}.
         Include visualizations descriptions and key takeaways.
-      `),
-      new WriteOutputTask("./output/analysis-package.md"),
+      `,
+        { response: "string" },
+      ),
+      new WriteToDisk("./output/analysis-package.md", "{{response}}"),
     ],
     dependsOn: ["comprehensiveReport", "actionPlan"],
   },
 
   // Pattern 6: Parallel final tasks
   executiveSummary: {
-    task: [
-      Instruct.with(`
+    step: [
+      Instruct.with(
+        `
         Create a 1-page executive summary from: {{comprehensiveReport}}
 
         For audience: {{audience}}
         Focus on business impact and ROI.
-      `),
-      new WriteOutputTask("./output/executive-summary.md"),
+      `,
+        { response: "string" },
+      ),
+      new WriteToDisk("./output/executive-summary.md", "{{response}}"),
     ],
     dependsOn: "comprehensiveReport",
   },
 
   technicalSummary: {
-    task: [
-      Instruct.with(`
+    step: [
+      Instruct.with(
+        `
         Create a technical summary from: {{comprehensiveReport}}
 
         Include:
@@ -138,8 +145,10 @@ const patternsDAG = {
         - Statistical significance
         - Technical recommendations
         - Implementation notes
-      `),
-      new WriteOutputTask("./output/technical-summary.md"),
+      `,
+        { response: "string" },
+      ),
+      new WriteToDisk("./output/technical-summary.md", "{{response}}"),
     ],
     dependsOn: "comprehensiveReport",
   },
@@ -150,9 +159,7 @@ const errorProneDAG = {
   normalTask: Instruct.with(`Generate a simple greeting for {{name}}`),
 
   dependentTask: {
-    task: Instruct.with(
-      `Elaborate on: {{normalTask}} with more details about {{name}}`,
-    ),
+    step: Instruct.with(`Elaborate on: {{normalTask}} with more details about {{name}}`),
     dependsOn: "normalTask",
   },
 };
@@ -180,18 +187,9 @@ async function runPatterns() {
     if (result1.success) {
       console.log("✅ Comprehensive DAG completed");
       console.log("Generated files:");
-      console.log(
-        "  - Analysis Package:",
-        result1.response.outputPackage ? "✅" : "❌",
-      );
-      console.log(
-        "  - Executive Summary:",
-        result1.response.executiveSummary ? "✅" : "❌",
-      );
-      console.log(
-        "  - Technical Summary:",
-        result1.response.technicalSummary ? "✅" : "❌",
-      );
+      console.log("  - Analysis Package:", result1.response.outputPackage ? "✅" : "❌");
+      console.log("  - Executive Summary:", result1.response.executiveSummary ? "✅" : "❌");
+      console.log("  - Technical Summary:", result1.response.technicalSummary ? "✅" : "❌");
     } else {
       console.log("❌ Comprehensive DAG failed:", result1.error?.message);
     }
@@ -211,10 +209,7 @@ async function runPatterns() {
       },
     );
 
-    console.log(
-      "Error handling test:",
-      result2.success ? "✅ Success" : "❌ Failed",
-    );
+    console.log("Error handling test:", result2.success ? "✅ Success" : "❌ Failed");
     if (!result2.success) {
       console.log("Expected behavior - error was handled");
     }
@@ -227,9 +222,7 @@ async function runPatterns() {
     const simpleDAG = {
       step1: Instruct.with("Count to {{number}}"),
       step2: {
-        task: Instruct.with(
-          "Take this count: {{step1}} and double each number",
-        ),
+        step: Instruct.with("Take this count: {{step1}} and double each number"),
         dependsOn: "step1",
       },
     };
@@ -238,10 +231,7 @@ async function runPatterns() {
       number: "5",
     });
 
-    console.log(
-      "Direct workflow test:",
-      result3.success ? "✅ Success" : "❌ Failed",
-    );
+    console.log("Direct workflow test:", result3.success ? "✅ Success" : "❌ Failed");
   } catch (error) {
     console.error("Error in direct workflow test:", error);
   }
@@ -255,9 +245,7 @@ async function runPatterns() {
       task4: Instruct.with("Generate fact 4 about {{topic}}"),
 
       summary: {
-        task: Instruct.with(
-          "Summarize: {{task1}}, {{task2}}, {{task3}}, {{task4}}",
-        ),
+        step: Instruct.with("Summarize: {{task1}}, {{task2}}, {{task3}}, {{task4}}"),
         dependsOn: ["task1", "task2", "task3", "task4"],
       },
     };
@@ -275,10 +263,7 @@ async function runPatterns() {
     );
     const duration = Date.now() - start;
 
-    console.log(
-      `Concurrency test completed in ${duration}ms:`,
-      result4.success ? "✅" : "❌",
-    );
+    console.log(`Concurrency test completed in ${duration}ms:`, result4.success ? "✅" : "❌");
   } catch (error) {
     console.error("Error in concurrency test:", error);
   }
@@ -297,15 +282,12 @@ async function demonstrateDAGStructure() {
     console.log(`Execution stages: ${plan.stages.length}`);
 
     plan.stages.forEach((stage, index) => {
-      console.log(
-        `Stage ${index + 1}: [${stage.join(", ")}] (${stage.length} parallel tasks)`,
-      );
+      console.log(`Stage ${index + 1}: [${stage.join(", ")}] (${stage.length} parallel tasks)`);
     });
 
     console.log("\n=== Node Dependencies ===");
     for (const [nodeId, node] of plan.nodes) {
-      const deps =
-        node.dependencies.length > 0 ? node.dependencies.join(", ") : "none";
+      const deps = node.dependencies.length > 0 ? node.dependencies.join(", ") : "none";
       console.log(`${nodeId}: depends on [${deps}]`);
     }
   } catch (error) {

@@ -14,7 +14,3 @@ export interface Stats {
   in: number;
   out: number;
 }
-
-export interface Task {
-  readonly type: string;
-}

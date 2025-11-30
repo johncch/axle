@@ -1,9 +1,5 @@
 import { Recorder } from "../recorder/recorder.js";
 
-export const enum Keys {
-  LastResult = "lastResult",
-}
-
 export function setResultsIntoVariables(
   results: Record<string, unknown>,
   variables: Record<string, unknown>,

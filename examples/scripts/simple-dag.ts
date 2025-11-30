@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { Axle, Instruct, WriteOutputTask } from "../../src/index.js";
+import { Axle, Instruct, WriteToDisk } from "../../src/index.js";
 import { ConsoleWriter } from "../../src/recorder/consoleWriter.js";
 
 dotenv.config();
@@ -29,7 +29,7 @@ const simpleDAG = {
 
   // Step 2: Create outline and content (parallel)
   outlineCreator: {
-    task: Instruct.with(
+    step: Instruct.with(
       `
       Create a detailed outline for this blog post topic: {{topicGenerator}}
 
@@ -46,7 +46,7 @@ const simpleDAG = {
   },
 
   keywordResearcher: {
-    task: Instruct.with(
+    step: Instruct.with(
       `
       Research relevant keywords and SEO terms for this topic: {{topicGenerator}}
 
@@ -62,7 +62,7 @@ const simpleDAG = {
 
   // Step 3: Write the blog post
   contentWriter: {
-    task: Instruct.with(
+    step: Instruct.with(
       `
       Write a complete blog post using:
 
@@ -86,7 +86,12 @@ const simpleDAG = {
 
   // Step 4: Save to file
   fileSaver: {
-    task: new WriteOutputTask("./output/blog-post.md", ["contentWriter"]),
+    step: [
+      Instruct.with("Format the following content as a final blog post:\n\n{{contentWriter}}", {
+        response: "string",
+      }),
+      new WriteToDisk("./output/blog-post.md", "{{response}}"),
+    ],
     dependsOn: "contentWriter",
   },
 };
@@ -114,22 +119,10 @@ async function runSimpleDAG() {
       console.log("✅ Blog post generation completed!\n");
 
       console.log("Generated Topic:", result.response.topicGenerator);
-      console.log(
-        "Outline Created:",
-        result.response.outlineCreator ? "✅" : "❌",
-      );
-      console.log(
-        "Keywords Researched:",
-        result.response.keywordResearcher ? "✅" : "❌",
-      );
-      console.log(
-        "Content Written:",
-        result.response.contentWriter ? "✅" : "❌",
-      );
-      console.log(
-        "File Saved:",
-        result.response.fileSaver ? "✅ ./output/blog-post.md" : "❌",
-      );
+      console.log("Outline Created:", result.response.outlineCreator ? "✅" : "❌");
+      console.log("Keywords Researched:", result.response.keywordResearcher ? "✅" : "❌");
+      console.log("Content Written:", result.response.contentWriter ? "✅" : "❌");
+      console.log("File Saved:", result.response.fileSaver ? "✅ ./output/blog-post.md" : "❌");
     } else {
       console.error("❌ DAG execution failed:", result.error?.message);
     }

@@ -1,13 +1,13 @@
 import * as z from "zod";
 import { BraveProviderConfig } from "../cli/configs/types.js";
 import { delay } from "../utils/utils.js";
-import { ToolExecutable } from "./types.js";
+import type { Tool } from "./types.js";
 
 const braveSearchSchema = z.object({
   searchTerm: z.string().describe("The search term to query"),
 });
 
-class BraveSearchTool implements ToolExecutable<typeof braveSearchSchema> {
+class BraveSearchTool implements Tool<typeof braveSearchSchema> {
   name = "brave";
   description = "Perform a search using the Brave search engine";
   schema = braveSearchSchema;
@@ -18,11 +18,11 @@ class BraveSearchTool implements ToolExecutable<typeof braveSearchSchema> {
 
   constructor(config?: BraveProviderConfig) {
     if (config) {
-      this.setConfig(config);
+      this.configure(config);
     }
   }
 
-  setConfig(config: BraveProviderConfig) {
+  configure(config: BraveProviderConfig) {
     const { rateLimit } = config;
     this.apiKey = config["api-key"];
     this.throttle = rateLimit ? 1100 / rateLimit : undefined;

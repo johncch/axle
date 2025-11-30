@@ -1,6 +1,6 @@
-import { Task } from "../../types.js";
-import { Run } from "../types.js";
-import { Planner } from "./types.js";
+import type { WorkflowStep } from "../../actions/types.js";
+import type { Run } from "../types.js";
+import type { Planner } from "./types.js";
 
 export class MultiPlanner implements Planner {
   planners: Planner[];
@@ -8,9 +8,9 @@ export class MultiPlanner implements Planner {
     this.planners = planners;
   }
 
-  async plan(tasks: Task[]): Promise<Run[]> {
+  async plan(steps: WorkflowStep[]): Promise<Run[]> {
     const promises = this.planners.map(async (p) => {
-      return await p.plan(tasks);
+      return await p.plan(steps);
     });
     const allRuns = await Promise.all(promises);
     return allRuns.flat();

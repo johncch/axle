@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ToolExecutable } from "./types.js";
+import type { Tool } from "./types.js";
 
 const calculatorSchema = z.object({
   operation: z
@@ -9,7 +9,7 @@ const calculatorSchema = z.object({
   b: z.number().describe("Second operand"),
 });
 
-const calculatorTool: ToolExecutable<typeof calculatorSchema> = {
+const calculatorTool: Tool<typeof calculatorSchema> = {
   name: "calculator",
   description: "Performs basic arithmetic operations",
   schema: calculatorSchema,

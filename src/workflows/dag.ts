@@ -1,16 +1,17 @@
-import { AIProvider } from "../ai/types.js";
+import type { WorkflowStep } from "../actions/types.js";
+import type { AIProvider } from "../ai/types.js";
 import { isDAGJob } from "../cli/configs/job.js";
-import { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
+import type { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
-import { Recorder } from "../recorder/recorder.js";
+import type { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
-import { ProgramOptions, Stats } from "../types.js";
+import type { ProgramOptions, Stats } from "../types.js";
 import { createErrorResult, createResult } from "../utils/result.js";
 import { arrayify, friendly } from "../utils/utils.js";
 import { concurrentWorkflow } from "./concurrent.js";
 import { serialWorkflow } from "./serial.js";
-import {
+import type {
   DAGConcurrentNodeDefinition,
   DAGDefinition,
   DAGExecutionPlan,
@@ -39,10 +40,10 @@ export class DAGParser {
   }
 
   private static parseNodeDefinition(nodeId: string, definition: any): DAGNode {
-    if (this.isSimpleTask(definition)) {
+    if (this.isSimpleStep(definition)) {
       return {
         id: nodeId,
-        tasks: Array.isArray(definition) ? definition : [definition],
+        steps: Array.isArray(definition) ? definition : [definition],
         dependencies: [],
         executionType: "serial",
       };
@@ -50,13 +51,11 @@ export class DAGParser {
 
     if (this.isConcurrentNodeDefinition(definition)) {
       const nodeDefinition = definition as DAGConcurrentNodeDefinition;
-      const dependencies = nodeDefinition.dependsOn
-        ? arrayify(nodeDefinition.dependsOn)
-        : [];
+      const dependencies = nodeDefinition.dependsOn ? arrayify(nodeDefinition.dependsOn) : [];
 
       return {
         id: nodeId,
-        tasks: nodeDefinition.tasks,
+        steps: nodeDefinition.steps,
         dependencies,
         planner: nodeDefinition.planner,
         executionType: "concurrent",
@@ -64,36 +63,30 @@ export class DAGParser {
     }
 
     const nodeDefinition = definition as DAGNodeDefinition;
-    const dependencies = nodeDefinition.dependsOn
-      ? arrayify(nodeDefinition.dependsOn)
-      : [];
-    const tasks = arrayify(nodeDefinition.task);
+    const dependencies = nodeDefinition.dependsOn ? arrayify(nodeDefinition.dependsOn) : [];
+    const steps = arrayify(nodeDefinition.step);
 
     return {
       id: nodeId,
-      tasks,
+      steps,
       dependencies,
       executionType: "serial",
     };
   }
 
-  private static isSimpleTask(definition: any): boolean {
-    return definition.type || Array.isArray(definition);
+  private static isSimpleStep(definition: any): boolean {
+    return definition.name || Array.isArray(definition);
   }
 
   private static isConcurrentNodeDefinition(definition: any): boolean {
-    return (
-      definition && typeof definition === "object" && "planner" in definition
-    );
+    return definition && typeof definition === "object" && "planner" in definition;
   }
 
   private static validateDependencies(nodes: Map<string, DAGNode>): void {
     for (const node of nodes.values()) {
       for (const dep of node.dependencies) {
         if (!nodes.has(dep)) {
-          throw new AxleError(
-            `Node "${node.id}" depends on non-existent node "${dep}"`,
-          );
+          throw new AxleError(`Node "${node.id}" depends on non-existent node "${dep}"`);
         }
       }
     }
@@ -121,16 +114,12 @@ export class DAGParser {
 
     for (const nodeId of nodes.keys()) {
       if (hasCycle(nodeId)) {
-        throw new AxleError(
-          `Circular dependency detected involving node "${nodeId}"`,
-        );
+        throw new AxleError(`Circular dependency detected involving node "${nodeId}"`);
       }
     }
   }
 
-  private static createExecutionStages(
-    nodes: Map<string, DAGNode>,
-  ): string[][] {
+  private static createExecutionStages(nodes: Map<string, DAGNode>): string[][] {
     const stages: string[][] = [];
     const completed = new Set<string>();
     const remaining = new Set(nodes.keys());
@@ -140,9 +129,7 @@ export class DAGParser {
 
       for (const nodeId of remaining) {
         const node = nodes.get(nodeId)!;
-        const allDependenciesCompleted = node.dependencies.every((dep) =>
-          completed.has(dep),
-        );
+        const allDependenciesCompleted = node.dependencies.every((dep) => completed.has(dep));
 
         if (allDependenciesCompleted) {
           currentStage.push(nodeId);
@@ -150,9 +137,7 @@ export class DAGParser {
       }
 
       if (currentStage.length === 0) {
-        throw new AxleError(
-          "Unable to resolve DAG dependencies - possible circular reference",
-        );
+        throw new AxleError("Unable to resolve DAG dependencies - possible circular reference");
       }
 
       stages.push(currentStage);
@@ -180,25 +165,25 @@ export class DAGJobToDefinition {
       if ("batch" in job) {
         const batchJob = job as BatchJob;
         const planner = await configToPlanner(batchJob, { recorder });
-        const tasks = await configToTasks(batchJob, { recorder });
+        const steps: WorkflowStep[] = await configToTasks(batchJob, { recorder });
 
         const nodeDefinition: DAGConcurrentNodeDefinition = {
           planner,
-          tasks,
+          steps,
           ...(dependsOn ? { dependsOn } : {}),
         };
         dagDefinition[nodeId] = nodeDefinition;
       } else {
-        const tasks = await configToTasks(job as Job, { recorder });
+        const steps: WorkflowStep[] = await configToTasks(job as Job, { recorder });
 
         if (dependsOn) {
           const nodeDefinition: DAGNodeDefinition = {
-            task: tasks,
-            dependsOn: dependsOn,
+            step: steps,
+            dependsOn,
           };
           dagDefinition[nodeId] = nodeDefinition;
         } else {
-          dagDefinition[nodeId] = tasks;
+          dagDefinition[nodeId] = steps;
         }
       }
     }
@@ -207,17 +192,6 @@ export class DAGJobToDefinition {
   }
 }
 
-/**
- * This function executes a single node in the DAG execution plan.
- * Inside, it does two jobs, delegate the execution to another more appropriate workflow like
- * serialWorkflow, and unwraps results, and updates variables.
- *
- * @param nodeId
- * @param executionPlan
- * @param context
- * @param workflowOptions
- * @returns
- */
 async function executeNode(
   nodeId: string,
   executionPlan: DAGExecutionPlan,
@@ -236,13 +210,13 @@ async function executeNode(
   try {
     let result: WorkflowResult;
     if (node.executionType === "concurrent" && node.planner) {
-      result = await concurrentWorkflow(node.planner, ...node.tasks).execute({
+      result = await concurrentWorkflow(node.planner, ...node.steps).execute({
         ...context,
         variables,
         name: nodeId,
       });
     } else {
-      result = await serialWorkflow(...node.tasks).execute({
+      result = await serialWorkflow(...node.steps).execute({
         ...context,
         variables,
         name: nodeId,
@@ -257,16 +231,12 @@ async function executeNode(
     if (!workflowOptions.continueOnError) {
       throw error;
     }
-
     return null;
   }
 }
 
 interface DAGWorkflow {
-  (
-    definition: DAGDefinition | DAGJob,
-    options?: DAGWorkflowOptions,
-  ): WorkflowExecutable;
+  (definition: DAGDefinition | DAGJob, options?: DAGWorkflowOptions): WorkflowExecutable;
 }
 
 export const dagWorkflow: DAGWorkflow = (
@@ -325,12 +295,7 @@ export const dagWorkflow: DAGWorkflow = (
 
           const results = await Promise.all(
             batch.map(async (nodeId) => {
-              const result = await executeNode(
-                nodeId,
-                executionPlan,
-                context,
-                options,
-              );
+              const result = await executeNode(nodeId, executionPlan, context, options);
               return { nodeId, result };
             }),
           );

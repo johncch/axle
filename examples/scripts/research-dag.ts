@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { Axle, Instruct, WriteOutputTask } from "../../src/index.js";
+import { Axle, Instruct, WriteToDisk } from "../../src/index.js";
 import { ConsoleWriter } from "../../src/recorder/consoleWriter.js";
 
 dotenv.config();
@@ -29,7 +29,7 @@ const researchDAG = {
 
   // Step 2: Source Analysis (parallel execution for different source types)
   academicAnalyzer: {
-    task: Instruct.with(
+    step: Instruct.with(
       `
       Analyze academic sources related to: {{researchQuestion}}
       Research plan: {{researchPlanner}}
@@ -48,7 +48,7 @@ const researchDAG = {
   },
 
   industryAnalyzer: {
-    task: Instruct.with(
+    step: Instruct.with(
       `
       Analyze industry reports and data for: {{researchQuestion}}
       Research plan: {{researchPlanner}}
@@ -68,7 +68,7 @@ const researchDAG = {
 
   // Step 3: Synthesis
   synthesizer: {
-    task: Instruct.with(
+    step: Instruct.with(
       `
       Synthesize all research findings:
 
@@ -91,7 +91,7 @@ const researchDAG = {
 
   // Step 4: Report Generation
   reportGenerator: {
-    task: [
+    step: [
       Instruct.with(
         `
         Generate a comprehensive research report:
@@ -114,7 +114,7 @@ const researchDAG = {
       `,
         { report: "string" },
       ),
-      new WriteOutputTask("./output/research-report.md", ["report"]),
+      new WriteToDisk("./output/research-report.md", "{{report}}"),
     ],
     dependsOn: "synthesizer",
   },
@@ -127,8 +127,7 @@ async function runResearchDAG() {
   axle.addWriter(new ConsoleWriter());
 
   const variables = {
-    researchQuestion:
-      "What are the impacts of AI on software development productivity?",
+    researchQuestion: "What are the impacts of AI on software development productivity?",
     researchAngle: "Developer experience and workflow optimization",
     targetAudience: "Technical leadership",
     reportLength: "2000",
@@ -156,23 +155,16 @@ async function runResearchDAG() {
       );
       console.log(
         "Academic Analysis:",
-        result.response.academicAnalyzer?.academicAnalyzer.slice(0, 200) +
-          "...",
+        result.response.academicAnalyzer?.academicAnalyzer.slice(0, 200) + "...",
       );
       console.log(
         "Industry Analysis:",
-        result.response.industryAnalyzer?.industryAnalyzer.slice(0, 200) +
-          "...",
+        result.response.industryAnalyzer?.industryAnalyzer.slice(0, 200) + "...",
       );
-      console.log(
-        "Synthesis:",
-        result.response.synthesizer?.synthesizer.slice(0, 200) + "...",
-      );
+      console.log("Synthesis:", result.response.synthesizer?.synthesizer.slice(0, 200) + "...");
       console.log(
         "Report Generated:",
-        result.response.reportGenerator
-          ? "✅ Saved to ./output/research-report.md"
-          : "❌ Failed",
+        result.response.reportGenerator ? "✅ Saved to ./output/research-report.md" : "❌ Failed",
       );
 
       console.log("\n=== Execution Logs ===");

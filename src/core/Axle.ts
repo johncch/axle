@@ -1,22 +1,13 @@
+import { WorkflowStep } from "../actions/types.js";
 import { getProvider } from "../ai/index.js";
 import { AIProvider, AIProviderConfig } from "../ai/types.js";
 import { AxleError } from "../errors/index.js";
 import { Recorder } from "../recorder/recorder.js";
 import { RecorderWriter } from "../recorder/types.js";
-import { Task } from "../types.js";
-import {
-  Base64FileInfo,
-  FileInfo,
-  TextFileInfo,
-  loadFileContent,
-} from "../utils/file.js";
+import { Base64FileInfo, FileInfo, TextFileInfo, loadFileContent } from "../utils/file.js";
 import { dagWorkflow } from "../workflows/dag.js";
 import { serialWorkflow } from "../workflows/serial.js";
-import {
-  DAGDefinition,
-  DAGWorkflowOptions,
-  WorkflowResult,
-} from "../workflows/types.js";
+import { DAGDefinition, DAGWorkflowOptions, WorkflowResult } from "../workflows/types.js";
 
 export class Axle {
   provider: AIProvider;
@@ -51,13 +42,13 @@ export class Axle {
 
   /**
    * The execute function takes in a list of Tasks
-   * @param tasks
+   * @param steps
    * @returns
    */
-  async execute(...tasks: Task[]): Promise<WorkflowResult> {
+  async execute(...steps: WorkflowStep[]): Promise<WorkflowResult> {
     try {
       let result: WorkflowResult;
-      result = await serialWorkflow(...tasks).execute({
+      result = await serialWorkflow(...steps).execute({
         provider: this.provider,
         variables: this.variables,
         stats: this.stats,
@@ -122,18 +113,9 @@ export class Axle {
    * @returns FileInfo object with appropriate content based on encoding
    */
   static async loadFileContent(filePath: string): Promise<FileInfo>;
-  static async loadFileContent(
-    filePath: string,
-    encoding: "utf-8",
-  ): Promise<TextFileInfo>;
-  static async loadFileContent(
-    filePath: string,
-    encoding: "base64",
-  ): Promise<Base64FileInfo>;
-  static async loadFileContent(
-    filePath: string,
-    encoding?: "utf-8" | "base64",
-  ): Promise<FileInfo> {
+  static async loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
+  static async loadFileContent(filePath: string, encoding: "base64"): Promise<Base64FileInfo>;
+  static async loadFileContent(filePath: string, encoding?: "utf-8" | "base64"): Promise<FileInfo> {
     if (encoding === "utf-8") {
       return loadFileContent(filePath, "utf-8");
     } else if (encoding === "base64") {

@@ -1,12 +1,14 @@
 # Build, Test & Lint Commands
 
-- Build: `npm run build` (pkgroll with clean-dist and minify)
-- Build (dev): `npm run build-dev` (pkgroll with clean-dist, no minify)
-- Test all: `npm test`
-- Test single: `npm test -- -t "test name pattern"` or `npm test -- path/to/file.test.ts`
-- Start: `npm start` (runs with tsx)
-- Get models: `npm run get-models`
-- Run prompt scenarios: `npm run prompt-scenarios`
+**Note:** This project uses `pnpm` for development. All commands below use `pnpm`.
+
+- Build: `pnpm run build` (pkgroll with clean-dist and minify)
+- Build (dev): `pnpm run build-dev` (pkgroll with clean-dist, no minify)
+- Test all: `pnpm test`
+- Test single: `pnpm test -- -t "test name pattern"` or `pnpm test -- path/to/file.test.ts`
+- Start: `pnpm start` (runs with tsx)
+- Get models: `pnpm run get-models`
+- Run prompt scenarios: `pnpm run prompt-scenarios`
 
 # Code Style Guidelines
 
@@ -22,28 +24,42 @@
 # Repository Structure
 
 - `src/`: Source code
+  - `actions/`: Workflow actions (WriteToDisk) - executed between LLM calls
   - `ai/`: LLM provider integrations (Anthropic, OpenAI, Ollama, Gemini)
   - `cli/`: CLI implementation
     - `configs/`: Configuration handling
     - `converters/`: Data format converters
+    - `factories.ts`: Tool and action factory functions
   - `core/`: Core functionality (Axle, Instruct, ChainOfThought)
   - `errors/`: Custom error classes
+  - `messages/`: Conversation and message handling
   - `recorder/`: Logging and recording functionality
-  - `registry/`: Task and node registry
-  - `tasks/`: Task implementations
-  - `tools/`: External tool integrations (Brave, Calculator)
+  - `tools/`: LLM-callable tools (Brave, Calculator)
   - `utils/`: Helper functions
-  - `workflows/`: Workflow implementations (Serial, Concurrent)
+  - `workflows/`: Workflow implementations (Serial, Concurrent, DAG)
 - `tests/`: Test files (mirrors src/ structure)
+  - `actions/`: Action tests
   - `ai/`: AI provider tests
     - `anthropic/`: Anthropic provider tests
     - `gemini/`: Gemini provider tests
     - `ollama/`: Ollama provider tests
     - `openai/`: OpenAI provider tests
+  - `cli/`: CLI tests (factories, converters)
   - `core/`: Core functionality tests
   - `messages/`: Message handling tests
   - `recorder/`: Recorder tests
   - `utils/`: Utility function tests
-- `examples/`: Sample job definitions
+  - `workflows/`: Workflow tests
+- `examples/`: Sample job definitions and scripts
 - `scripts/`: Utility scripts
+- `docs/`: Documentation
+  - `development/`: Development decision documents (dated design docs)
 - `dist/`: Build output (not checked in)
+
+# Key Concepts
+
+- **Instruct**: LLM-callable steps that send prompts and receive structured responses
+- **Action**: Workflow-callable steps executed between LLM calls (e.g., WriteToDisk)
+- **WorkflowStep**: Union type `Instruct | Action` - building blocks of workflows
+- **Tool**: LLM-callable functions with Zod schemas (e.g., brave, calculator)
+- **$previous**: Variable containing the output from the previous workflow step

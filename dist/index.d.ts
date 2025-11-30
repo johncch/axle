@@ -18,9 +18,6 @@ interface Stats {
     in: number;
     out: number;
 }
-interface Task {
-    readonly type: string;
-}
 
 interface RecorderLevelFunctions {
     log: (...message: (string | unknown | Error)[]) => void;
@@ -47,6 +44,162 @@ interface RecorderWriter {
     handleEvent(event: RecorderEntry): void | Promise<void>;
     flush?(): Promise<void>;
 }
+
+declare class Recorder {
+    instanceId: `${string}-${string}-${string}-${string}-${string}`;
+    private currentLevel;
+    private logs;
+    private writers;
+    private _debug;
+    private _info;
+    private _warn;
+    private _error;
+    constructor();
+    buildMethods(): void;
+    set level(level: LogLevel);
+    get level(): LogLevel;
+    get info(): RecorderLevelFunctions;
+    get warn(): RecorderLevelFunctions;
+    get error(): RecorderLevelFunctions;
+    get debug(): RecorderLevelFunctions;
+    subscribe(writer: RecorderWriter): void;
+    unsubscribe(writer: RecorderWriter): void;
+    private publish;
+    private logFunction;
+    private createLoggingFunction;
+    getLogs(level?: LogLevel): RecorderEntry[];
+    /**
+     * Ensures all writers have completed their pending operations
+     * Call this before exiting the process to ensure logs are written
+     */
+    shutdown(): Promise<void>;
+}
+
+interface Tool<TSchema extends ZodObject<any> = ZodObject<any>> {
+    name: string;
+    description: string;
+    schema: TSchema;
+    execute(input: z$1.infer<TSchema>): Promise<string>;
+    configure?(config: Record<string, any>): void;
+}
+type ToolDefinition = Pick<Tool, "name" | "description" | "schema">;
+
+interface FileInfo {
+    path: string;
+    base64?: string;
+    content?: string;
+    mimeType: string;
+    size: number;
+    name: string;
+    type: "image" | "document" | "text";
+}
+type TextFileInfo = FileInfo & {
+    content: string;
+    base64?: never;
+    type: "text";
+};
+type Base64FileInfo = FileInfo & {
+    base64: string;
+    content?: never;
+    type: "image" | "document";
+};
+
+declare enum ResultType {
+    String = "string",
+    List = "string[]",
+    Number = "number",
+    Boolean = "boolean"
+}
+type ResultTypeUnion = `${ResultType}`;
+type DeclarativeSchema = {
+    [key: string]: ResultTypeUnion | DeclarativeSchema | DeclarativeSchema[];
+};
+type OutputSchema = Record<string, z__default.ZodTypeAny>;
+type InferedOutputSchema<T extends OutputSchema> = {
+    [K in keyof T]: z__default.output<T[K]>;
+};
+
+declare abstract class AbstractInstruct<T extends OutputSchema> {
+    readonly name = "instruct";
+    prompt: string;
+    system: string | null;
+    inputs: Record<string, string>;
+    tools: Record<string, Tool>;
+    files: Base64FileInfo[];
+    textReferences: Array<{
+        content: string;
+        name?: string;
+    }>;
+    instructions: string[];
+    schema: T;
+    rawResponse: string;
+    protected _taggedSections: {
+        tags: Record<string, string>;
+        remaining: string;
+    } | undefined;
+    protected _result: InferedOutputSchema<T> | undefined;
+    protected constructor(prompt: string, schema: T);
+    setInputs(inputs: Record<string, string>): void;
+    addInput(name: string, value: string): void;
+    addTools(tools: Tool[]): void;
+    addTool(tool: Tool): void;
+    addImage(file: FileInfo): void;
+    addDocument(file: FileInfo): void;
+    addFile(file: FileInfo): void;
+    addReference(textFile: FileInfo | TextFileInfo | string, options?: {
+        name?: string;
+    }): void;
+    addInstructions(instruction: string): void;
+    hasTools(): boolean;
+    hasFiles(): boolean;
+    get result(): InferedOutputSchema<T> | undefined;
+    compile(variables: Record<string, string>, runtime?: {
+        recorder?: Recorder;
+        options?: {
+            warnUnused?: boolean;
+        };
+    }): {
+        message: string;
+        instructions: string;
+    };
+    protected createUserMessage(variables: Record<string, string>, runtime?: {
+        recorder?: Recorder;
+        options?: {
+            warnUnused?: boolean;
+        };
+    }): string;
+    protected createInstructions(instructions?: string): string;
+    protected generateFieldInstructions(key: string, schema: z.ZodTypeAny): string;
+    finalize(rawValue: string, runtime?: {
+        recorder?: Recorder;
+    }): InferedOutputSchema<T>;
+    private preprocessValue;
+    protected parseTaggedSections(input: string): {
+        tags: Record<string, string>;
+        remaining: string;
+    };
+}
+
+declare class Instruct<T extends OutputSchema> extends AbstractInstruct<T> {
+    constructor(prompt: string, schema: T);
+    static with<T extends OutputSchema>(prompt: string, schema: T): Instruct<T>;
+    static with<T extends DeclarativeSchema>(prompt: string, schema: T): Instruct<OutputSchema>;
+    static with(prompt: string): Instruct<{
+        response: z.ZodString;
+    }>;
+}
+
+interface ActionContext {
+    input: string;
+    variables: Record<string, any>;
+    options?: ProgramOptions;
+    recorder?: Recorder;
+}
+interface Action {
+    name: string;
+    execute(context: ActionContext): Promise<string | void>;
+}
+type WorkflowStep = Instruct<any> | Action;
 
 interface StreamChunk {
     type: "start" | "text" | "tool-call-start" | "tool-call-delta" | "tool-call-complete" | "thinking-start" | "thinking-delta" | "complete" | "error";
@@ -117,56 +270,6 @@ interface StreamErrorChunk extends StreamChunk {
 }
 type AnyStreamChunk = StreamStartChunk | StreamCompleteChunk | StreamTextChunk | StreamToolCallStartChunk | StreamToolCallCompleteChunk | StreamThinkingStartChunk | StreamThinkingDeltaChunk | StreamErrorChunk;
 
-declare class Recorder {
-    instanceId: `${string}-${string}-${string}-${string}-${string}`;
-    private currentLevel;
-    private logs;
-    private writers;
-    private _debug;
-    private _info;
-    private _warn;
-    private _error;
-    constructor();
-    buildMethods(): void;
-    set level(level: LogLevel);
-    get level(): LogLevel;
-    get info(): RecorderLevelFunctions;
-    get warn(): RecorderLevelFunctions;
-    get error(): RecorderLevelFunctions;
-    get debug(): RecorderLevelFunctions;
-    subscribe(writer: RecorderWriter): void;
-    unsubscribe(writer: RecorderWriter): void;
-    private publish;
-    private logFunction;
-    private createLoggingFunction;
-    getLogs(level?: LogLevel): RecorderEntry[];
-    /**
-     * Ensures all writers have completed their pending operations
-     * Call this before exiting the process to ensure logs are written
-     */
-    shutdown(): Promise<void>;
-}
-
-interface FileInfo {
-    path: string;
-    base64?: string;
-    content?: string;
-    mimeType: string;
-    size: number;
-    name: string;
-    type: "image" | "document" | "text";
-}
-type TextFileInfo = FileInfo & {
-    content: string;
-    base64?: never;
-    type: "text";
-};
-type Base64FileInfo = FileInfo & {
-    base64: string;
-    content?: never;
-    type: "image" | "document";
-};
-
 type AxleMessage = AxleUserMessage | AxleAssistantMessage | AxleToolCallMessage;
 interface AxleUserMessage {
     role: "user";
@@ -210,18 +313,6 @@ interface ContentPartToolCall {
     id: string;
     name: string;
     parameters: Record<string, unknown>;
-}
-
-type ToolDefinition<Z extends ZodObject = ZodObject> = {
-    name: string;
-    description?: string;
-    schema: Z;
-};
-interface ToolExecutable<Z extends ZodObject = ZodObject> extends ToolDefinition<Z> {
-    setConfig?: (config: {
-        [key: string]: any;
-    }) => void;
-    execute: (params: z$1.infer<Z>) => Promise<string>;
 }
 
 type OllamaProviderConfig = {
@@ -326,11 +417,11 @@ declare class AxleError extends Error {
 }
 
 interface Planner {
-    plan(tasks: Task[]): Promise<Run[]>;
+    plan(steps: WorkflowStep[]): Promise<Run[]>;
 }
 
 interface Run {
-    tasks: Task[];
+    steps: WorkflowStep[];
     variables: Record<string, any>;
 }
 interface SerializedExecutionResponse {
@@ -354,16 +445,16 @@ interface WorkflowExecutable {
     }) => Promise<WorkflowResult>;
 }
 interface DAGNodeDefinition {
-    task: Task | Task[];
+    step: WorkflowStep | WorkflowStep[];
     dependsOn?: string | string[];
 }
 interface DAGConcurrentNodeDefinition {
     planner: Planner;
-    tasks: Task[];
+    steps: WorkflowStep[];
     dependsOn?: string | string[];
 }
 interface DAGDefinition {
-    [nodeName: string]: Task | Task[] | DAGNodeDefinition | DAGConcurrentNodeDefinition;
+    [nodeName: string]: WorkflowStep | WorkflowStep[] | DAGNodeDefinition | DAGConcurrentNodeDefinition;
 }
 interface DAGWorkflowOptions {
     continueOnError?: boolean;
@@ -379,10 +470,10 @@ declare class Axle {
     addWriter(writer: RecorderWriter): void;
     /**
      * The execute function takes in a list of Tasks
-     * @param tasks
+     * @param steps
      * @returns
      */
-    execute(...tasks: Task[]): Promise<WorkflowResult>;
+    execute(...steps: WorkflowStep[]): Promise<WorkflowResult>;
     /**
      * Execute a DAG workflow
      * @param dagDefinition - The DAG definition object
@@ -401,6 +492,21 @@ declare class Axle {
     static loadFileContent(filePath: string): Promise<FileInfo>;
     static loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
     static loadFileContent(filePath: string, encoding: "base64"): Promise<Base64FileInfo>;
+}
+
+declare class ChainOfThought<T extends OutputSchema> extends AbstractInstruct<T> {
+    constructor(prompt: string, schema: T);
+    static with<T extends OutputSchema>(prompt: string, schema: T): ChainOfThought<T>;
+    static with<T extends DeclarativeSchema>(prompt: string, schema: T): ChainOfThought<OutputSchema>;
+    static with(prompt: string): ChainOfThought<{
+        response: z.ZodString;
+    }>;
+    createInstructions(instructions?: string): string;
+    finalize(rawValue: string, runtime?: {
+        recorder?: Recorder;
+    }): InferedOutputSchema<T> & {
+        thinking: string;
+    };
 }
 
 declare const Models$2: {
@@ -609,6 +715,82 @@ declare class OllamaProvider implements AIProvider {
     }): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 
+declare const NAME: "OpenAI";
+declare class OpenAIProvider implements AIProvider {
+    name: "OpenAI";
+    client: OpenAI;
+    model: string;
+    constructor(apiKey: string, model?: string | undefined);
+    createGenerationRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): Promise<ModelResult>;
+    createStreamingRequest(params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: {
+            recorder?: Recorder;
+        };
+        options?: {
+            temperature?: number;
+            top_p?: number;
+            max_tokens?: number;
+            frequency_penalty?: number;
+            presence_penalty?: number;
+            stop?: string | string[];
+            [key: string]: any;
+        };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
+
+interface GenerateOptions {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    stop?: string | string[];
+    [key: string]: any;
+}
+interface GenerateProps {
+    provider: AIProvider;
+    messages: Array<AxleMessage>;
+    system?: string;
+    tools?: Array<ToolDefinition>;
+    recorder?: Recorder;
+    options?: GenerateOptions;
+}
+declare function generate(props: GenerateProps): Promise<ModelResult>;
+
+interface StreamProps {
+    provider: AIProvider;
+    messages: Array<AxleMessage>;
+    system?: string;
+    tools?: Array<ToolDefinition>;
+    recorder?: Recorder;
+    options?: GenerateOptions;
+}
+interface StreamResult {
+    get final(): Promise<ModelResult>;
+    get current(): AxleAssistantMessage;
+    [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
+}
+declare function stream(props: StreamProps): StreamResult;
+
 declare const index$1_DEFAULT_OLLAMA_URL: typeof DEFAULT_OLLAMA_URL;
 declare namespace index$1 {
   export {
@@ -685,48 +867,6 @@ declare const Models: {
 };
 declare const DEFAULT_MODEL: "gpt-5";
 
-declare const NAME: "OpenAI";
-declare class OpenAIProvider implements AIProvider {
-    name: "OpenAI";
-    client: OpenAI;
-    model: string;
-    constructor(apiKey: string, model?: string | undefined);
-    createGenerationRequest(params: {
-        messages: Array<AxleMessage>;
-        system?: string;
-        tools?: Array<ToolDefinition>;
-        context: {
-            recorder?: Recorder;
-        };
-        options?: {
-            temperature?: number;
-            top_p?: number;
-            max_tokens?: number;
-            frequency_penalty?: number;
-            presence_penalty?: number;
-            stop?: string | string[];
-            [key: string]: any;
-        };
-    }): Promise<ModelResult>;
-    createStreamingRequest(params: {
-        messages: Array<AxleMessage>;
-        system?: string;
-        tools?: Array<ToolDefinition>;
-        context: {
-            recorder?: Recorder;
-        };
-        options?: {
-            temperature?: number;
-            top_p?: number;
-            max_tokens?: number;
-            frequency_penalty?: number;
-            presence_penalty?: number;
-            stop?: string | string[];
-            [key: string]: any;
-        };
-    }): AsyncGenerator<AnyStreamChunk, void, unknown>;
-}
-
 declare const index_DEFAULT_MODEL: typeof DEFAULT_MODEL;
 declare const index_Models: typeof Models;
 declare const index_NAME: typeof NAME;
@@ -739,152 +879,10 @@ declare namespace index {
   };
 }
 
-interface GenerateOptions {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
+interface BraveProviderConfig {
+    "api-key": string;
+    rateLimit?: number;
 }
-interface GenerateProps {
-    provider: AIProvider;
-    messages: Array<AxleMessage>;
-    system?: string;
-    tools?: Array<ToolDefinition>;
-    recorder?: Recorder;
-    options?: GenerateOptions;
-}
-declare function generate(props: GenerateProps): Promise<ModelResult>;
-
-interface StreamProps {
-    provider: AIProvider;
-    messages: Array<AxleMessage>;
-    system?: string;
-    tools?: Array<ToolDefinition>;
-    recorder?: Recorder;
-    options?: GenerateOptions;
-}
-interface StreamResult {
-    get final(): Promise<ModelResult>;
-    get current(): AxleAssistantMessage;
-    [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
-}
-declare function stream(props: StreamProps): StreamResult;
-
-declare enum ResultType {
-    String = "string",
-    List = "string[]",
-    Number = "number",
-    Boolean = "boolean"
-}
-type ResultTypeUnion = `${ResultType}`;
-type DeclarativeSchema = {
-    [key: string]: ResultTypeUnion | DeclarativeSchema | DeclarativeSchema[];
-};
-type OutputSchema = Record<string, z__default.ZodTypeAny>;
-type InferedOutputSchema<T extends OutputSchema> = {
-    [K in keyof T]: z__default.output<T[K]>;
-};
-
-declare abstract class AbstractInstruct<T extends OutputSchema> implements Task {
-    readonly type = "instruct";
-    prompt: string;
-    system: string | null;
-    inputs: Record<string, string>;
-    tools: Record<string, ToolExecutable>;
-    files: Base64FileInfo[];
-    textReferences: Array<{
-        content: string;
-        name?: string;
-    }>;
-    instructions: string[];
-    schema: T;
-    rawResponse: string;
-    protected _taggedSections: {
-        tags: Record<string, string>;
-        remaining: string;
-    } | undefined;
-    protected _result: InferedOutputSchema<T> | undefined;
-    protected constructor(prompt: string, schema: T);
-    setInputs(inputs: Record<string, string>): void;
-    addInput(name: string, value: string): void;
-    addTools(tools: ToolExecutable[]): void;
-    addTool(tool: ToolExecutable): void;
-    addImage(file: FileInfo): void;
-    addDocument(file: FileInfo): void;
-    addFile(file: FileInfo): void;
-    addReference(textFile: FileInfo | TextFileInfo | string, options?: {
-        name?: string;
-    }): void;
-    addInstructions(instruction: string): void;
-    hasTools(): boolean;
-    hasFiles(): boolean;
-    get result(): InferedOutputSchema<T> | undefined;
-    compile(variables: Record<string, string>, runtime?: {
-        recorder?: Recorder;
-        options?: {
-            warnUnused?: boolean;
-        };
-    }): {
-        message: string;
-        instructions: string;
-    };
-    protected createUserMessage(variables: Record<string, string>, runtime?: {
-        recorder?: Recorder;
-        options?: {
-            warnUnused?: boolean;
-        };
-    }): string;
-    protected createInstructions(instructions?: string): string;
-    protected generateFieldInstructions(key: string, schema: z.ZodTypeAny): string;
-    finalize(rawValue: string, runtime?: {
-        recorder?: Recorder;
-    }): InferedOutputSchema<T>;
-    private preprocessValue;
-    protected parseTaggedSections(input: string): {
-        tags: Record<string, string>;
-        remaining: string;
-    };
-}
-
-declare class Instruct<T extends OutputSchema> extends AbstractInstruct<T> {
-    constructor(prompt: string, schema: T);
-    static with<T extends OutputSchema>(prompt: string, schema: T): Instruct<T>;
-    static with<T extends DeclarativeSchema>(prompt: string, schema: T): Instruct<OutputSchema>;
-    static with(prompt: string): Instruct<{
-        response: z.ZodString;
-    }>;
-}
-
-declare class ChainOfThought<T extends OutputSchema> extends AbstractInstruct<T> {
-    constructor(prompt: string, schema: T);
-    static with<T extends OutputSchema>(prompt: string, schema: T): ChainOfThought<T>;
-    static with<T extends DeclarativeSchema>(prompt: string, schema: T): ChainOfThought<OutputSchema>;
-    static with(prompt: string): ChainOfThought<{
-        response: z.ZodString;
-    }>;
-    createInstructions(instructions?: string): string;
-    finalize(rawValue: string, runtime?: {
-        recorder?: Recorder;
-    }): InferedOutputSchema<T> & {
-        thinking: string;
-    };
-}
-
-interface WriteToDiskTask extends Task {
-    type: "write-to-disk";
-    output: string;
-    keys: string[];
-}
-declare class WriteOutputTask implements WriteToDiskTask {
-    output: string;
-    keys: string[];
-    type: "write-to-disk";
-    constructor(output: string, keys?: string[]);
-}
-
 interface DAGJob {
     [name: string]: Job & {
         dependsOn?: string | string[];
@@ -945,9 +943,154 @@ interface TextFileReference {
     file: string;
 }
 
+declare const braveSearchSchema: z.ZodObject<{
+    searchTerm: z.ZodString;
+}, z.core.$strip>;
+declare class BraveSearchTool implements Tool<typeof braveSearchSchema> {
+    name: string;
+    description: string;
+    schema: z.ZodObject<{
+        searchTerm: z.ZodString;
+    }, z.core.$strip>;
+    apiKey: string;
+    throttle: number | undefined;
+    lastExecTime: number;
+    constructor(config?: BraveProviderConfig);
+    configure(config: BraveProviderConfig): void;
+    execute(params: z.infer<typeof braveSearchSchema>): Promise<string>;
+}
+declare const braveSearchTool: BraveSearchTool;
+
+declare const calculatorSchema: z$1.ZodObject<{
+    operation: z$1.ZodEnum<{
+        add: "add";
+        subtract: "subtract";
+        multiply: "multiply";
+        divide: "divide";
+    }>;
+    a: z$1.ZodNumber;
+    b: z$1.ZodNumber;
+}, z$1.core.$strip>;
+declare const calculatorTool: Tool<typeof calculatorSchema>;
+
+/**
+ * WriteToDisk Action
+ *
+ * Writes content to a file on disk. This action is typically used as a workflow
+ * step following an LLM call to persist the generated output.
+ *
+ * ## CLI Job Definition (YAML)
+ *
+ * In job YAML files, use the `write-to-disk` step type:
+ *
+ * ```yaml
+ * steps:
+ *   - uses: chat
+ *     message: Generate a greeting for {{name}}
+ *   - uses: write-to-disk
+ *     output: ./output/greeting-{name}.txt
+ * ```
+ *
+ * ### Properties
+ *
+ * | Property | Type                 | Required | Description                                    |
+ * |----------|----------------------|----------|------------------------------------------------|
+ * | `uses`   | `"write-to-disk"`    | Yes      | Identifies this as a WriteToDisk step          |
+ * | `output` | `string`             | Yes      | File path template (supports `{}` placeholders)|
+ * | `keys`   | `string \| string[]` | No       | Variable keys to include in output content     |
+ *
+ * ### Examples
+ *
+ * **Basic usage** - writes the LLM response to a file:
+ * ```yaml
+ * - uses: write-to-disk
+ *   output: ./output/result.txt
+ * ```
+ *
+ * **With path variables** - uses `{}` placeholders in path:
+ * ```yaml
+ * - uses: write-to-disk
+ *   output: ./output/greeting-{name}.txt
+ * ```
+ *
+ * **With file pattern** (batch processing) - uses `*` to substitute file stem:
+ * ```yaml
+ * - uses: write-to-disk
+ *   output: ./output/results-*.txt
+ * ```
+ *
+ * **With specific keys** - outputs only specified variables:
+ * ```yaml
+ * - uses: write-to-disk
+ *   output: ./output/summary.txt
+ *   keys: summary
+ * ```
+ *
+ * **With multiple keys** - outputs multiple variables, each on a new line:
+ * ```yaml
+ * - uses: write-to-disk
+ *   output: ./output/report.txt
+ *   keys:
+ *     - title
+ *     - summary
+ *     - conclusion
+ * ```
+ *
+ * ## Placeholder Styles
+ *
+ * This action uses **two different placeholder styles**:
+ *
+ * - **Path template** (`output`): Uses single-brace `{variable}` style
+ *   - Example: `./output/greeting-{name}.txt`
+ *   - Also supports `*` for file stem substitution in batch processing
+ *
+ * - **Content template** (`keys`): Uses double-brace `{{variable}}` style
+ *   - Default template: `{{response}}`
+ *   - When `keys` is specified, generates: `{{key1}}\n{{key2}}\n...`
+ *
+ * ## Variables Available
+ *
+ * All variables from the workflow context are available for substitution:
+ * - `response` - The text response from the previous LLM step
+ * - `$previous` - The full output object from the previous step
+ * - `file` - File info object when processing batches (contains `stem`, `name`, `ext`, etc.)
+ * - Any custom variables defined in the workflow or extracted by previous steps
+ *
+ * @see WriteToDiskStep in `src/cli/configs/types.ts` for the TypeScript interface
+ * @see writeToDiskConverter in `src/cli/converters/writeToDisk.ts` for CLI conversion logic
+ */
+declare class WriteToDisk implements Action {
+    private pathTemplate;
+    private contentTemplate;
+    name: string;
+    /**
+     * Creates a new WriteToDisk action.
+     *
+     * @param pathTemplate - The file path template. Supports:
+     *   - `{variable}` placeholders for variable substitution
+     *   - `*` for file stem substitution (batch processing)
+     * @param contentTemplate - The content template using `{{variable}}` placeholders.
+     *   Defaults to `{{response}}` to output the LLM response.
+     */
+    constructor(pathTemplate: string, contentTemplate?: string);
+    /**
+     * Executes the write-to-disk action.
+     *
+     * Resolves the path and content templates using workflow variables,
+     * then writes the content to the resolved file path.
+     *
+     * @param context - The action execution context containing:
+     *   - `variables`: All workflow variables available for substitution
+     *   - `options`: Execution options (e.g., `dryRun`)
+     *   - `recorder`: Optional recorder for logging
+     * @returns A promise that resolves when the file has been written
+     */
+    execute(context: ActionContext): Promise<void>;
+}
+
 interface ConcurrentWorkflow {
     (jobConfig: BatchJob): WorkflowExecutable;
-    (planner: Planner, ...instructions: Task[]): WorkflowExecutable;
+    (planner: Planner, ...steps: WorkflowStep[]): WorkflowExecutable;
 }
 declare const concurrentWorkflow: ConcurrentWorkflow;
 
@@ -958,9 +1101,24 @@ declare const dagWorkflow: DAGWorkflow;
 
 interface SerialWorkflow {
     (jobConfig: SerialJob): WorkflowExecutable;
-    (...instructions: Task[]): WorkflowExecutable;
+    (...steps: WorkflowStep[]): WorkflowExecutable;
 }
 declare const serialWorkflow: SerialWorkflow;
+
+declare class Conversation {
+    system: string;
+    private _messages;
+    constructor(messages?: AxleMessage[]);
+    get messages(): AxleMessage[];
+    addSystem(message: string): void;
+    addUser(message: string): void;
+    addUser(parts: AxleUserMessage["content"]): void;
+    addAssistant(message: string): void;
+    addAssistant(params: Omit<AxleAssistantMessage, "role">): void;
+    addToolResults(input: Array<AxleToolCallResult>): void;
+    latest(): AxleMessage | undefined;
+    toString(): string;
+}
 
 declare class ConsoleWriter implements RecorderWriter {
     private tasks;
@@ -982,20 +1140,5 @@ declare class ConsoleWriter implements RecorderWriter {
     destroy(): void;
 }
 
-declare class Conversation {
-    system: string;
-    private _messages;
-    constructor(messages?: AxleMessage[]);
-    get messages(): AxleMessage[];
-    addSystem(message: string): void;
-    addUser(message: string): void;
-    addUser(parts: AxleUserMessage["content"]): void;
-    addAssistant(message: string): void;
-    addAssistant(params: Omit<AxleAssistantMessage, "role">): void;
-    addToolResults(input: Array<AxleToolCallResult>): void;
-    latest(): AxleMessage | undefined;
-    toString(): string;
-}
-
-export { index$3 as Anthropic, Axle, AxleStopReason, ChainOfThought, ConsoleWriter, Conversation, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteOutputTask, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
-export type { AIProvider, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse };
+export { index$3 as Anthropic, Axle, AxleStopReason, ChainOfThought, ConsoleWriter, Conversation, index$2 as Gemini, Instruct, LogLevel, index$1 as Ollama, index as OpenAI, WriteToDisk, braveSearchTool, calculatorTool, concurrentWorkflow, dagWorkflow, generate, serialWorkflow, stream };
+export type { AIProvider, Action, ActionContext, AxleAssistantMessage, AxleMessage, AxleToolCallMessage, AxleToolCallResult, AxleUserMessage, ContentPart, ContentPartFile, ContentPartText, ContentPartThinking, ContentPartToolCall, DAGDefinition, DAGWorkflowOptions, FileInfo, SerializedExecutionResponse, Tool, ToolDefinition, WorkflowStep };

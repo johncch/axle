@@ -1,11 +1,12 @@
-import { AIProvider } from "../ai/types.js";
-import { AxleError } from "../errors/AxleError.js";
-import { Recorder } from "../recorder/recorder.js";
-import { ProgramOptions, Stats, Task } from "../types.js";
-import { Planner } from "./planners/types.js";
+import type { WorkflowStep } from "../actions/types.js";
+import type { AIProvider } from "../ai/types.js";
+import type { AxleError } from "../errors/AxleError.js";
+import type { Recorder } from "../recorder/recorder.js";
+import type { ProgramOptions, Stats } from "../types.js";
+import type { Planner } from "./planners/types.js";
 
 export interface Run {
-  tasks: Task[];
+  steps: WorkflowStep[];
   variables: Record<string, any>;
 }
 
@@ -38,27 +39,27 @@ export interface WorkflowExecutable {
 
 /* DAG types */
 export interface DAGNodeDefinition {
-  task: Task | Task[];
+  step: WorkflowStep | WorkflowStep[];
   dependsOn?: string | string[];
 }
 
 export interface DAGConcurrentNodeDefinition {
   planner: Planner;
-  tasks: Task[];
+  steps: WorkflowStep[];
   dependsOn?: string | string[];
 }
 
 export interface DAGDefinition {
   [nodeName: string]:
-    | Task
-    | Task[]
+    | WorkflowStep
+    | WorkflowStep[]
     | DAGNodeDefinition
     | DAGConcurrentNodeDefinition;
 }
 
 export interface DAGNode {
   id: string;
-  tasks: Task[];
+  steps: WorkflowStep[];
   dependencies: string[];
   planner?: Planner;
   executionType: "serial" | "concurrent";

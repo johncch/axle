@@ -1,20 +1,21 @@
-import { Recorder } from "../recorder/recorder.js";
+import type { WorkflowStep } from "../actions/types.js";
+import type { Recorder } from "../recorder/recorder.js";
 import { FileRunPlanner } from "../workflows/planners/fileRunPlanner.js";
 import { MultiPlanner } from "../workflows/planners/multiPlanner.js";
 import { FileExistSkipCondition } from "../workflows/skipConditions/fileExistSkipCondition.js";
-import { BatchOptions, SkipOptions, Step } from "./configs/types.js";
+import type { BatchOptions, SkipOptions, Step, ToolProviderConfig } from "./configs/types.js";
 import { converters } from "./converters/index.js";
 
 export async function configToTasks(
-  config: { steps: Step[]; tools?: string[] },
+  config: { steps: Step[]; tools?: string[]; toolConfig?: ToolProviderConfig },
   context: { recorder?: Recorder },
-) {
+): Promise<WorkflowStep[]> {
   const { recorder } = context;
   const toolNames = config.tools ?? undefined;
+  const toolConfig = config.toolConfig ?? undefined;
   const promises = config.steps.map(async (step) => {
-    const actionType = step.uses;
     const converter = converters.get(step.uses);
-    return await converter.convert(step, { recorder, toolNames });
+    return await converter.convert(step, { recorder, toolNames, toolConfig });
   });
   return Promise.all(promises);
 }

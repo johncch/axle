@@ -1,10 +1,10 @@
 import { readFile } from "fs/promises";
 import { glob } from "glob";
-import { Task } from "../../types.js";
+import type { WorkflowStep } from "../../actions/types.js";
 import { pathToComponents } from "../../utils/file.js";
-import { SkipCondition } from "../skipConditions/types.js";
-import { Run } from "../types.js";
-import { Planner } from "./types.js";
+import type { SkipCondition } from "../skipConditions/types.js";
+import type { Run } from "../types.js";
+import type { Planner } from "./types.js";
 
 export class FileRunPlanner implements Planner {
   constructor(
@@ -13,7 +13,7 @@ export class FileRunPlanner implements Planner {
     public skipConditions: SkipCondition[] = [],
   ) {}
 
-  async plan(tasks: Task[]): Promise<Run[]> {
+  async plan(steps: WorkflowStep[]): Promise<Run[]> {
     const runs: Run[] = [];
     const files = await glob(this.source, { withFileTypes: true });
 
@@ -36,7 +36,7 @@ export class FileRunPlanner implements Planner {
             [this.bind]: content,
             ...components,
           },
-          tasks,
+          steps,
         };
         runs.push(run);
       }

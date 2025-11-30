@@ -1,20 +1,16 @@
-import {
-  WriteOutputTask,
-  WriteToDiskTask,
-} from "../../tasks/writeToDisk/task.js";
+import { WriteToDisk } from "../../actions/writeToDisk.js";
 import { arrayify } from "../../utils/utils.js";
-import { WriteToDiskStep } from "../configs/types.js";
-import { StepToClassConverter } from "./converters.js";
+import type { WriteToDiskStep } from "../configs/types.js";
+import { createWriteToDiskAction } from "../factories.js";
+import type { StepToClassConverter } from "./converters.js";
 
-export const writeToDiskConverter: StepToClassConverter<
-  WriteToDiskStep,
-  WriteToDiskTask
-> = {
-  async convert(step: WriteToDiskStep): Promise<WriteToDiskTask> {
-    if (step.keys) {
-      const keys = arrayify(step.keys);
-      return new WriteOutputTask(step.output, keys);
-    }
-    return new WriteOutputTask(step.output);
+export const writeToDiskConverter: StepToClassConverter<WriteToDiskStep, WriteToDisk> = {
+  async convert(step: WriteToDiskStep): Promise<WriteToDisk> {
+    const contentTemplate = step.keys
+      ? arrayify(step.keys)
+          .map((k) => `{{${k}}}`)
+          .join("\n")
+      : "{{response}}";
+    return createWriteToDiskAction(step.output, contentTemplate);
   },
 };

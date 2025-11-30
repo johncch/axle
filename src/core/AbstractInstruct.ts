@@ -1,7 +1,6 @@
 import * as z from "zod";
-import { Recorder } from "../recorder/recorder.js";
-import { ToolExecutable } from "../tools/types.js";
-import { Task } from "../types.js";
+import type { Recorder } from "../recorder/recorder.js";
+import type { Tool } from "../tools/types.js";
 import {
   Base64FileInfo,
   FileInfo,
@@ -13,13 +12,13 @@ import { replaceVariables } from "../utils/replace.js";
 import { zodToExample } from "./typecheck.js";
 import { InferedOutputSchema, OutputSchema } from "./types.js";
 
-export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
-  readonly type = "instruct";
+export abstract class AbstractInstruct<T extends OutputSchema> {
+  readonly name = "instruct";
 
   prompt: string;
   system: string | null = null;
   inputs: Record<string, string> = {};
-  tools: Record<string, ToolExecutable> = {};
+  tools: Record<string, Tool> = {};
   files: Base64FileInfo[] = [];
   textReferences: Array<{ content: string; name?: string }> = [];
   instructions: string[] = [];
@@ -47,13 +46,13 @@ export abstract class AbstractInstruct<T extends OutputSchema> implements Task {
     this.inputs[name] = value;
   }
 
-  addTools(tools: ToolExecutable[]) {
+  addTools(tools: Tool[]) {
     for (const tool of tools) {
       this.tools[tool.name] = tool;
     }
   }
 
-  addTool(tool: ToolExecutable) {
+  addTool(tool: Tool) {
     this.tools[tool.name] = tool;
   }
 
