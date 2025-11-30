@@ -5,7 +5,6 @@ import {
   OllamaProviderConfig as OllamaConfig,
   OpenAIProviderConfig as OpenAIConfig,
 } from "../../ai/types.js";
-import { ResultTypeUnion } from "../../core/types.js";
 
 /* ============================================================================
  * Validation Error Type
@@ -34,25 +33,25 @@ const OllamaProviderUseSchema = z
   .object({
     engine: z.literal("ollama"),
   })
-  .passthrough();
+  .loose();
 
 const AnthropicProviderUseSchema = z
   .object({
     engine: z.literal("anthropic"),
   })
-  .passthrough();
+  .loose();
 
 const OpenAIProviderUseSchema = z
   .object({
     engine: z.literal("openai"),
   })
-  .passthrough();
+  .loose();
 
 const GeminiProviderUseSchema = z
   .object({
     engine: z.literal("gemini"),
   })
-  .passthrough();
+  .loose();
 
 export const AIProviderUseSchema = z.discriminatedUnion("engine", [
   OllamaProviderUseSchema,
@@ -72,7 +71,7 @@ export const ServiceConfigSchema = z
     gemini: z.custom<GeminiConfig>().optional(),
     brave: BraveProviderConfigSchema.optional(),
   })
-  .passthrough();
+  .loose();
 
 export type ServiceConfig = z.infer<typeof ServiceConfigSchema>;
 
@@ -158,10 +157,7 @@ export const WriteToDiskStepSchema = z.object({
   keys: z.union([z.string(), z.array(z.string())]).optional(),
 });
 
-export const StepSchema = z.discriminatedUnion("uses", [
-  ChatStepSchema,
-  WriteToDiskStepSchema,
-]);
+export const StepSchema = z.discriminatedUnion("uses", [ChatStepSchema, WriteToDiskStepSchema]);
 
 export type ChatStep = z.infer<typeof ChatStepSchema>;
 export type WriteToDiskStep = z.infer<typeof WriteToDiskStepSchema>;
@@ -194,7 +190,7 @@ export const JobSchema = z.preprocess(
     }
     return { ...data, type: "serial" };
   },
-  z.discriminatedUnion("type", [SerialJobSchema, BatchJobSchema])
+  z.discriminatedUnion("type", [SerialJobSchema, BatchJobSchema]),
 );
 
 export type Job = z.infer<typeof JobSchema>;
@@ -230,10 +226,7 @@ const DAGJobValueSchema = z.preprocess(
     }
     return { ...data, type: "serial" };
   },
-  z.discriminatedUnion("type", [
-    SerialDAGJobValueSchema,
-    BatchDAGJobValueSchema,
-  ])
+  z.discriminatedUnion("type", [SerialDAGJobValueSchema, BatchDAGJobValueSchema]),
 );
 
 export const DAGJobSchema = z.record(z.string(), DAGJobValueSchema);
