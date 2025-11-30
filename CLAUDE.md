@@ -4,6 +4,7 @@
 
 - Build: `pnpm run build` (pkgroll with clean-dist and minify)
 - Build (dev): `pnpm run build-dev` (pkgroll with clean-dist, no minify)
+- Build (watch): `pnpm run build:watch` (for npm link development scenarios)
 - Test all: `pnpm test`
 - Test single: `pnpm test -- -t "test name pattern"` or `pnpm test -- path/to/file.test.ts`
 - Start: `pnpm start` (runs with tsx)
@@ -54,7 +55,13 @@
 - `scripts/`: Utility scripts
 - `docs/`: Documentation
   - `development/`: Development decision documents (dated design docs)
-- `dist/`: Build output (not checked in)
+- `dist/`: Build output (generated, not checked in)
+
+# Build Notes
+
+- **`dist/` is not checked in** — It's generated during build and ignored by git
+- **`prepare` script** — Runs `npm run build` automatically when installing from git URLs
+- **npm link workflow** — Use `pnpm run build:watch` for live rebuilding during development
 
 # Key Concepts
 
