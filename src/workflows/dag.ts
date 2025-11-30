@@ -1,7 +1,6 @@
 import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
-import { isDAGJob } from "../cli/configs/job.js";
-import type { BatchJob, DAGJob, Job } from "../cli/configs/types.js";
+import type { BatchJob, DAGJob, Job } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { Recorder } from "../recorder/recorder.js";
@@ -50,36 +49,56 @@ export class DAGParser {
     }
 
     if (this.isConcurrentNodeDefinition(definition)) {
-      const nodeDefinition = definition as DAGConcurrentNodeDefinition;
-      const dependencies = nodeDefinition.dependsOn ? arrayify(nodeDefinition.dependsOn) : [];
+      const dependencies = definition.dependsOn
+        ? arrayify(definition.dependsOn)
+        : [];
 
       return {
         id: nodeId,
-        steps: nodeDefinition.steps,
+        steps: definition.steps,
         dependencies,
-        planner: nodeDefinition.planner,
+        planner: definition.planner,
         executionType: "concurrent",
       };
     }
 
-    const nodeDefinition = definition as DAGNodeDefinition;
-    const dependencies = nodeDefinition.dependsOn ? arrayify(nodeDefinition.dependsOn) : [];
-    const steps = arrayify(nodeDefinition.step);
+    if (this.isNodeDefinition(definition)) {
+      const dependencies = definition.dependsOn
+        ? arrayify(definition.dependsOn)
+        : [];
+      const steps = arrayify(definition.step);
 
-    return {
-      id: nodeId,
-      steps,
-      dependencies,
-      executionType: "serial",
-    };
+      return {
+        id: nodeId,
+        steps,
+        dependencies,
+        executionType: "serial",
+      };
+    }
+
+    throw new Error(`Invalid DAG node definition for '${nodeId}'`);
   }
 
-  private static isSimpleStep(definition: any): boolean {
+  private static isSimpleStep(
+    definition: any,
+  ): definition is WorkflowStep | WorkflowStep[] {
     return definition.name || Array.isArray(definition);
   }
 
-  private static isConcurrentNodeDefinition(definition: any): boolean {
-    return definition && typeof definition === "object" && "planner" in definition;
+  private static isConcurrentNodeDefinition(
+    definition: any,
+  ): definition is DAGConcurrentNodeDefinition {
+    return (
+      definition && typeof definition === "object" && "planner" in definition
+    );
+  }
+
+  private static isNodeDefinition(
+    definition: any,
+  ): definition is DAGNodeDefinition {
+    return (
+      definition && typeof definition === "object" && "step" in definition
+    );
   }
 
   private static validateDependencies(nodes: Map<string, DAGNode>): void {
@@ -162,10 +181,9 @@ export class DAGJobToDefinition {
     for (const [nodeId, jobWithDeps] of Object.entries(definition)) {
       const { dependsOn, ...job } = jobWithDeps;
 
-      if ("batch" in job) {
-        const batchJob = job as BatchJob;
-        const planner = await configToPlanner(batchJob, { recorder });
-        const steps: WorkflowStep[] = await configToTasks(batchJob, { recorder });
+      if (job.type === "batch") {
+        const planner = await configToPlanner(job, { recorder });
+        const steps: WorkflowStep[] = await configToTasks(job, { recorder });
 
         const nodeDefinition: DAGConcurrentNodeDefinition = {
           planner,
@@ -174,7 +192,7 @@ export class DAGJobToDefinition {
         };
         dagDefinition[nodeId] = nodeDefinition;
       } else {
-        const steps: WorkflowStep[] = await configToTasks(job as Job, { recorder });
+        const steps: WorkflowStep[] = await configToTasks(job, { recorder });
 
         if (dependsOn) {
           const nodeDefinition: DAGNodeDefinition = {
@@ -239,6 +257,20 @@ interface DAGWorkflow {
   (definition: DAGDefinition | DAGJob, options?: DAGWorkflowOptions): WorkflowExecutable;
 }
 
+/**
+ * Type guard to check if the definition is a DAGJob
+ */
+function isDAGJob(
+  definition: DAGDefinition | DAGJob,
+): definition is DAGJob {
+  const firstValue = Object.values(definition)[0];
+  return (
+    firstValue &&
+    typeof firstValue === "object" &&
+    "steps" in firstValue
+  );
+}
+
 export const dagWorkflow: DAGWorkflow = (
   definition: DAGDefinition | DAGJob,
   options: DAGWorkflowOptions = {},
@@ -248,12 +280,11 @@ export const dagWorkflow: DAGWorkflow = (
     context: { recorder?: Recorder },
   ): Promise<DAGDefinition> => {
     const { recorder } = context;
-    const errVal = { value: "" };
-    if (isDAGJob(definition, errVal)) {
+
+    if (isDAGJob(definition)) {
       return await DAGJobToDefinition.convert(definition, context);
     }
-    recorder?.warn?.log(errVal);
-    return definition as DAGDefinition;
+    return definition;
   };
 
   const execute = async (context: {

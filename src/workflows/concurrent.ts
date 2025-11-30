@@ -1,6 +1,6 @@
 import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
-import type { BatchJob } from "../cli/configs/types.js";
+import type { BatchJob } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { Recorder } from "../recorder/recorder.js";
@@ -17,23 +17,27 @@ interface ConcurrentWorkflow {
   (planner: Planner, ...steps: WorkflowStep[]): WorkflowExecutable;
 }
 
+/**
+ * Type guard to check if the input is a BatchJob
+ */
+function isBatchJob(obj: BatchJob | Planner): obj is BatchJob {
+  return "type" in obj && obj.type === "batch";
+}
+
 export const concurrentWorkflow: ConcurrentWorkflow = (
   first: BatchJob | Planner,
   ...rest: WorkflowStep[]
 ) => {
   const prepare = async (context: { recorder?: Recorder }): Promise<[Planner, WorkflowStep[]]> => {
     const { recorder } = context;
-    let steps: WorkflowStep[] = [];
-    let planner: Planner = null;
-    if ("batch" in first) {
-      const jobConfig = first as BatchJob;
-      planner = await configToPlanner(jobConfig, { recorder });
-      steps = await configToTasks(jobConfig, { recorder });
+
+    if (isBatchJob(first)) {
+      const planner = await configToPlanner(first, { recorder });
+      const tasks = await configToTasks(first, { recorder });
+      return [planner, tasks];
     } else {
-      planner = first as Planner;
-      steps = [...rest];
+      return [first, [...rest]];
     }
-    return [planner, steps];
   };
 
   const execute = async (context: {

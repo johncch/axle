@@ -3,7 +3,7 @@ import pkg from "../package.json";
 import { getProvider } from "./ai/index.js";
 import type { AIProvider } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
-import type { JobConfig, ServiceConfig } from "./cli/configs/types.js";
+import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { ConsoleWriter } from "./recorder/consoleWriter.js";
 import { LogWriter } from "./recorder/logWriter.js";
 import { Recorder } from "./recorder/recorder.js";
@@ -101,12 +101,12 @@ try {
  */
 let provider: AIProvider;
 try {
-  const { engine: providerKey, ...otherConfig } = jobConfig.using;
+  const { engine, ...otherConfig } = jobConfig.using;
   const providerConfig = {
-    ...serviceConfig[providerKey],
+    ...serviceConfig[engine],
     ...otherConfig,
   };
-  provider = getProvider(providerKey, providerConfig);
+  provider = getProvider(engine, providerConfig);
 } catch (e) {
   recorder.error.log(e.message);
   recorder.error.log(e.stack);

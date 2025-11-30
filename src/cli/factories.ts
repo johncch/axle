@@ -2,7 +2,7 @@ import { WriteToDisk } from "../actions/writeToDisk.js";
 import braveSearchTool from "../tools/brave.js";
 import calculatorTool from "../tools/calculator.js";
 import type { Tool } from "../tools/types.js";
-import type { ToolProviderConfig } from "./configs/types.js";
+import type { ToolProviderConfig } from "./configs/schemas.js";
 
 /**
  * Factory for creating Tool instances by name.

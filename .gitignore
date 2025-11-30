@@ -5,3 +5,4 @@ input
 ax.config.yml
 logs
 dist
+package-lock.json
