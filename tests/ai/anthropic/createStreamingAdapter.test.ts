@@ -1,6 +1,7 @@
 import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
+import { describe, expect, test } from "vitest";
 import { createAnthropicStreamingAdapter } from "../../../src/ai/anthropic/createStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/ai/types.js";
 
 describe("createAnthropicStreamingAdapter", () => {
   describe("basic streaming events", () => {

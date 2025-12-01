@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  jest,
-  test,
-} from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Recorder } from "../../src/recorder/recorder.js";
 import { LogLevel, RecorderEntry, RecorderWriter, TaskStatus } from "../../src/recorder/types.js";
 
@@ -17,18 +10,16 @@ describe("Recorder", () => {
 
   beforeEach(() => {
     // Mock UUID generation for consistent testing
-    jest
-      .spyOn(global.crypto, "randomUUID")
-      .mockReturnValue("00000000-0000-0000-0000-000000000000");
+    vi.spyOn(global.crypto, "randomUUID").mockReturnValue("00000000-0000-0000-0000-000000000000");
 
     // Mock Date.now() for consistent timestamps
-    jest.spyOn(Date, "now").mockReturnValue(1000000000000);
+    vi.spyOn(Date, "now").mockReturnValue(1000000000000);
 
     recorder = new Recorder();
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe("initialization", () => {
@@ -42,7 +33,7 @@ describe("Recorder", () => {
   describe("writer subscription", () => {
     test("subscribes writers", () => {
       const mockWriter: RecorderWriter = {
-        handleEvent: jest.fn() as unknown as HandleEventFn,
+        handleEvent: vi.fn() as unknown as HandleEventFn,
       };
 
       recorder.subscribe(mockWriter);
@@ -61,7 +52,7 @@ describe("Recorder", () => {
 
     test("unsubscribes writers", () => {
       const mockWriter: RecorderWriter = {
-        handleEvent: jest.fn() as unknown as HandleEventFn,
+        handleEvent: vi.fn() as unknown as HandleEventFn,
       };
 
       recorder.subscribe(mockWriter);
@@ -73,7 +64,7 @@ describe("Recorder", () => {
 
     test("doesn't duplicate writer subscriptions", () => {
       const mockWriter: RecorderWriter = {
-        handleEvent: jest.fn() as unknown as HandleEventFn,
+        handleEvent: vi.fn() as unknown as HandleEventFn,
       };
 
       recorder.subscribe(mockWriter);
@@ -99,12 +90,14 @@ describe("Recorder", () => {
         level: LogLevel.Info,
         time: 1000000000000,
         kind: "body",
-        payload: [{
-          type: "task",
-          status: TaskStatus.Running,
-          id: "task1",
-          message: "Starting task",
-        }],
+        payload: [
+          {
+            type: "task",
+            status: TaskStatus.Running,
+            id: "task1",
+            message: "Starting task",
+          },
+        ],
       });
     });
 
@@ -120,12 +113,14 @@ describe("Recorder", () => {
       expect(logs[0]).toMatchObject({
         level: LogLevel.Info,
         kind: "body",
-        payload: [expect.objectContaining({
-          type: "task",
-          status: TaskStatus.Success,
-          id: "task1",
-          message: "Task completed",
-        })],
+        payload: [
+          expect.objectContaining({
+            type: "task",
+            status: TaskStatus.Success,
+            id: "task1",
+            message: "Task completed",
+          }),
+        ],
       });
     });
 
@@ -141,12 +136,14 @@ describe("Recorder", () => {
       expect(logs[0]).toMatchObject({
         level: LogLevel.Info,
         kind: "body",
-        payload: [expect.objectContaining({
-          type: "task",
-          status: TaskStatus.Fail,
-          id: "task1",
-          message: "Task failed",
-        })],
+        payload: [
+          expect.objectContaining({
+            type: "task",
+            status: TaskStatus.Fail,
+            id: "task1",
+            message: "Task failed",
+          }),
+        ],
       });
     });
   });
@@ -217,10 +214,12 @@ describe("Recorder", () => {
         level: LogLevel.Info,
         time: 1000000000000,
         kind: "body",
-        payload: [{
-          message: "Custom message",
-          customProp: "custom value",
-        }],
+        payload: [
+          {
+            message: "Custom message",
+            customProp: "custom value",
+          },
+        ],
       });
     });
 
@@ -255,10 +254,10 @@ describe("Recorder", () => {
   describe("event publishing", () => {
     test("publishes events to multiple writers", () => {
       const mockWriter1: RecorderWriter = {
-        handleEvent: jest.fn() as unknown as HandleEventFn,
+        handleEvent: vi.fn() as unknown as HandleEventFn,
       };
       const mockWriter2: RecorderWriter = {
-        handleEvent: jest.fn() as unknown as HandleEventFn,
+        handleEvent: vi.fn() as unknown as HandleEventFn,
       };
 
       recorder.subscribe(mockWriter1);

@@ -1,15 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { beforeEach, describe, expect, jest, test } from "@jest/globals";
+import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
 import { createGenerationRequest } from "../../../src/ai/anthropic/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
 import { Conversation } from "../../../src/messages/conversation.js";
 
 describe("createGenerationRequest (Anthropic)", () => {
   let mockClient: Anthropic;
-  let mockCreate: jest.Mock;
+  let mockCreate: Mock;
 
   beforeEach(() => {
-    mockCreate = jest.fn() as any;
+    mockCreate = vi.fn() as any;
     mockClient = {
       messages: {
         create: mockCreate,

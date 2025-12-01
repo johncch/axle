@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@jest/globals";
+import { describe, expect, test } from "vitest";
 import { Conversation } from "../../src/messages/conversation.js";
 import { ContentPartFile, ContentPartText } from "../../src/messages/types.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";

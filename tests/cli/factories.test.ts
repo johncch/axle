@@ -1,10 +1,10 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import { WriteToDisk } from "../../src/actions/writeToDisk.js";
 import {
-    availableTools,
-    createTool,
-    createTools,
-    createWriteToDiskAction,
+  availableTools,
+  createTool,
+  createTools,
+  createWriteToDiskAction,
 } from "../../src/cli/factories.js";
 
 describe("CLI Factories", () => {

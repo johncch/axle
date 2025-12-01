@@ -1,22 +1,22 @@
-import { beforeEach, describe, expect, jest, test } from "@jest/globals";
+import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
 import { createGenerationRequest } from "../../../src/ai/ollama/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
 import { Conversation } from "../../../src/messages/conversation.js";
 
 // Mock fetch globally
-global.fetch = jest.fn() as any;
+global.fetch = vi.fn() as any;
 
 describe("createGenerationRequest (Ollama)", () => {
   const mockUrl = "http://localhost:11434";
   const mockModel = "llama2";
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("parameter normalization", () => {
     test("should convert max_tokens to num_predict", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -48,13 +48,13 @@ describe("createGenerationRequest (Ollama)", () => {
         }),
       );
 
-      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
+      const requestBody = JSON.parse(((global.fetch as Mock).mock.calls[0][1] as any).body);
       expect(requestBody.options.num_predict).toBe(1000);
       expect(requestBody.options.max_tokens).toBeUndefined();
     });
 
     test("should pass through other options unchanged", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -83,14 +83,14 @@ describe("createGenerationRequest (Ollama)", () => {
         },
       });
 
-      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
+      const requestBody = JSON.parse(((global.fetch as Mock).mock.calls[0][1] as any).body);
       expect(requestBody.options.temperature).toBe(0.7);
       expect(requestBody.options.top_p).toBe(0.9);
       expect(requestBody.options.stop).toEqual(["STOP"]);
     });
 
     test("should use default temperature when no options provided", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -114,12 +114,12 @@ describe("createGenerationRequest (Ollama)", () => {
         context: {},
       });
 
-      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
+      const requestBody = JSON.parse(((global.fetch as Mock).mock.calls[0][1] as any).body);
       expect(requestBody.options.temperature).toBe(0.7);
     });
 
     test("should include system message when provided", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -144,14 +144,14 @@ describe("createGenerationRequest (Ollama)", () => {
         context: {},
       });
 
-      const requestBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as any).body);
+      const requestBody = JSON.parse(((global.fetch as Mock).mock.calls[0][1] as any).body);
       expect(requestBody.system).toBe("You are a helpful assistant");
     });
   });
 
   describe("successful responses", () => {
     test("should handle text-only response", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -187,7 +187,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should handle response with tool calls", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -235,7 +235,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should handle multiple tool calls", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -286,7 +286,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should handle missing usage counts", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -318,7 +318,7 @@ describe("createGenerationRequest (Ollama)", () => {
 
   describe("error handling", () => {
     test("should handle HTTP errors", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: false,
         status: 500,
       });
@@ -340,9 +340,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should handle network errors", async () => {
-      ((global.fetch as jest.Mock).mockRejectedValue as any)(
-        new Error("Network connection failed"),
-      );
+      ((global.fetch as Mock).mockRejectedValue as any)(new Error("Network connection failed"));
 
       const chat = new Conversation();
       chat.addUser("Hello");
@@ -361,7 +359,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should handle invalid JSON response", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => {
           throw new Error("Invalid JSON");
@@ -382,7 +380,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should throw error for invalid tool call arguments (string)", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -420,7 +418,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should throw error for invalid tool call arguments (null)", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -458,7 +456,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should throw error for invalid tool call arguments (array)", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -496,7 +494,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should return error for unrecognized done_reason", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -526,7 +524,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should return error for missing message", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -553,7 +551,7 @@ describe("createGenerationRequest (Ollama)", () => {
 
   describe("edge cases", () => {
     test("should handle empty content", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -600,7 +598,7 @@ describe("createGenerationRequest (Ollama)", () => {
         eval_count: 20,
       };
 
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => mockResponse,
       });
@@ -622,7 +620,7 @@ describe("createGenerationRequest (Ollama)", () => {
     });
 
     test("should generate unique IDs with timestamp", async () => {
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => ({
           model: mockModel,
@@ -657,7 +655,7 @@ describe("createGenerationRequest (Ollama)", () => {
         error: "Something went wrong",
       };
 
-      ((global.fetch as jest.Mock).mockResolvedValue as any)({
+      ((global.fetch as Mock).mockResolvedValue as any)({
         ok: true,
         json: async () => mockErrorResponse,
       });

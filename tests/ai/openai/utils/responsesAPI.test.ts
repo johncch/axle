@@ -1,6 +1,6 @@
-import { describe, expect, test } from "@jest/globals";
-import { ContentPartText, ContentPartThinking } from "../../../../src/messages/types.js";
+import { describe, expect, test } from "vitest";
 import { convertAxleMessageToResponseInput } from "../../../../src/ai/openai/utils/responsesAPI.js";
+import { ContentPartText, ContentPartThinking } from "../../../../src/messages/types.js";
 
 describe("responsesAPI utils", () => {
   describe("convertAxleMessageToResponseInput", () => {

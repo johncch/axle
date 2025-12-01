@@ -1,15 +1,15 @@
 import { FinishReason, GoogleGenAI } from "@google/genai";
-import { beforeEach, describe, expect, jest, test } from "@jest/globals";
+import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
 import { createGenerationRequest } from "../../../src/ai/gemini/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
 import { Conversation } from "../../../src/messages/conversation.js";
 
 describe("createGenerationRequest (Google AI)", () => {
   let mockClient: GoogleGenAI;
-  let mockGenerateContent: jest.Mock;
+  let mockGenerateContent: Mock;
 
   beforeEach(() => {
-    mockGenerateContent = jest.fn() as any;
+    mockGenerateContent = vi.fn() as any;
     mockClient = {
       models: {
         generateContent: mockGenerateContent,

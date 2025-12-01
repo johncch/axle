@@ -1,5 +1,6 @@
-import { AxleStopReason } from "../../../src/ai/types.js";
+import { describe, expect, test } from "vitest";
 import { createOllamaStreamingAdapter } from "../../../src/ai/ollama/createStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/ai/types.js";
 
 interface OllamaStreamChunk {
   model: string;

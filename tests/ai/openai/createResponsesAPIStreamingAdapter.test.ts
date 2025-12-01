@@ -1,5 +1,5 @@
-import { describe, expect, test } from "@jest/globals";
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
+import { describe, expect, test } from "vitest";
 import { createResponsesAPIStreamingAdapter } from "../../../src/ai/openai/createResponsesAPIStreamingAdapter.js";
 
 describe("createResponsesAPIStreamingAdapter", () => {

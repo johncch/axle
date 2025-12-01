@@ -1,6 +1,7 @@
 import OpenAI from "openai";
-import { AxleStopReason } from "../../../src/ai/types.js";
+import { describe, expect, test } from "vitest";
 import { createChatCompletionStreamingAdapter } from "../../../src/ai/openai/createChatCompletionStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/ai/types.js";
 
 describe("createChatCompletionStreamingAdapter", () => {
   describe("basic streaming events", () => {

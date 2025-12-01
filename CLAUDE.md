@@ -12,7 +12,8 @@
 - Build (dev): `pnpm run build-dev` (pkgroll with clean-dist, no minify)
 - Build (watch): `pnpm run build:watch` (for npm link development scenarios)
 - Test all: `pnpm test`
-- Test single: `pnpm test -- -t "test name pattern"` or `pnpm test -- path/to/file.test.ts`
+- Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
+- Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
 - Get models: `pnpm run get-models`
 - Run prompt scenarios: `pnpm run prompt-scenarios`
@@ -26,7 +27,7 @@
   - PascalCase for classes and interfaces (e.g., `FilePathInfo`, `Instruct`, `Axle`)
   - camelCase for functions and variables
 - **Error Handling**: Use descriptive error messages in try/catch blocks, utilize custom error classes
-- **Testing**: Jest with descriptive test names, organize with nested describe blocks
+- **Testing**: Vitest with descriptive test names, organize with nested describe blocks
 
 # Repository Structure
 

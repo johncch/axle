@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, test } from "@jest/globals";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import {
   getEncodingForFile,
   loadFileContent,
@@ -165,7 +165,7 @@ describe("file module", () => {
       it("should provide helpful error message with supported types", () => {
         try {
           getEncodingForFile("script.js");
-          fail("Expected error to be thrown");
+          expect.fail("Expected error to be thrown");
         } catch (error) {
           expect(error.message).toContain("Unsupported file type:");
           expect(error.message).toContain("Supported types:");

@@ -1,4 +1,4 @@
-import { describe, expect } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 
 describe("Ollama Provider", () => {
   // Tests removed - prepareRequest method has been removed from the provider

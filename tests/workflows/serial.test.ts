@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import type { Action, ActionContext } from "../../src/actions/types.js";
 import type { AIProvider } from "../../src/ai/types.js";
 import { AxleStopReason } from "../../src/ai/types.js";
@@ -11,6 +11,7 @@ function createMockProvider(responses: string[]): AIProvider {
 
   return {
     name: "mock",
+    model: "mock-model",
     async createGenerationRequest() {
       const response = responses[callIndex] || "default response";
       callIndex++;

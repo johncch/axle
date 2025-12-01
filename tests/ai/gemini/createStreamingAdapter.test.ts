@@ -1,4 +1,5 @@
 import { FinishReason } from "@google/genai";
+import { describe, expect, test } from "vitest";
 import { createGeminiStreamingAdapter } from "../../../src/ai/gemini/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/ai/types.js";
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import { declarativeToOutputSchema, zodToExample } from "../../src/core/typecheck.js";
 import { DeclarativeSchema, ResultType } from "../../src/core/types.js";
@@ -32,10 +32,7 @@ describe("zodToExample", () => {
       const schema = z.array(z.string());
       const result = zodToExample(schema);
 
-      expect(result).toEqual([
-        "string array",
-        ["answer 1", "answer 2", "third answer"],
-      ]);
+      expect(result).toEqual(["string array", ["answer 1", "answer 2", "third answer"]]);
     });
 
     it("should handle ZodArray of numbers", () => {
@@ -466,11 +463,7 @@ describe("zodToExample", () => {
 
       const loggingExample = example.logging;
       expect(loggingExample.level).toBe("Your answer");
-      expect(loggingExample.outputs).toEqual([
-        "answer 1",
-        "answer 2",
-        "third answer",
-      ]);
+      expect(loggingExample.outputs).toEqual(["answer 1", "answer 2", "third answer"]);
       expect(loggingExample.structured).toBe(true);
     });
 
@@ -614,9 +607,7 @@ describe("declarativeToSchemaRecord", () => {
       const result = declarativeToOutputSchema(declarativeType);
 
       expect(result.tags).toBeInstanceOf(z.ZodArray);
-      expect((result.tags as z.ZodArray<any>).element).toBeInstanceOf(
-        z.ZodString,
-      );
+      expect((result.tags as z.ZodArray<any>).element).toBeInstanceOf(z.ZodString);
     });
   });
 
@@ -721,10 +712,7 @@ describe("declarativeToSchemaRecord", () => {
       expect(schemaRecord.title.parse("test")).toBe("test");
       expect(schemaRecord.count.parse(42)).toBe(42);
       expect(schemaRecord.active.parse(true)).toBe(true);
-      expect(schemaRecord.tags.parse(["tag1", "tag2"])).toEqual([
-        "tag1",
-        "tag2",
-      ]);
+      expect(schemaRecord.tags.parse(["tag1", "tag2"])).toEqual(["tag1", "tag2"]);
 
       // Test validation failures
       expect(() => schemaRecord.title.parse(123)).toThrow();
@@ -747,9 +735,7 @@ describe("declarativeToSchemaRecord", () => {
       expect(result).toEqual(validData);
 
       const invalidData = { name: "John", age: "thirty" };
-      expect(() =>
-        (schemaRecord.user as z.ZodObject<any>).parse(invalidData),
-      ).toThrow();
+      expect(() => (schemaRecord.user as z.ZodObject<any>).parse(invalidData)).toThrow();
     });
   });
 
@@ -793,12 +779,8 @@ describe("declarativeToSchemaRecord", () => {
       };
 
       expect(result.success.parse(testData.success)).toBe(true);
-      expect((result.data as z.ZodObject<any>).parse(testData.data)).toEqual(
-        testData.data,
-      );
-      expect((result.meta as z.ZodObject<any>).parse(testData.meta)).toEqual(
-        testData.meta,
-      );
+      expect((result.data as z.ZodObject<any>).parse(testData.data)).toEqual(testData.data);
+      expect((result.meta as z.ZodObject<any>).parse(testData.meta)).toEqual(testData.meta);
     });
 
     it("should handle form validation schema", () => {
@@ -825,12 +807,10 @@ describe("declarativeToSchemaRecord", () => {
       expect(result.username.parse(testData.username)).toBe(testData.username);
       expect(result.email.parse(testData.email)).toBe(testData.email);
       expect(result.age.parse(testData.age)).toBe(testData.age);
-      expect(result.interests.parse(testData.interests)).toEqual(
-        testData.interests,
+      expect(result.interests.parse(testData.interests)).toEqual(testData.interests);
+      expect((result.preferences as z.ZodObject<any>).parse(testData.preferences)).toEqual(
+        testData.preferences,
       );
-      expect(
-        (result.preferences as z.ZodObject<any>).parse(testData.preferences),
-      ).toEqual(testData.preferences);
     });
 
     it("should handle array schema validation end-to-end", () => {
@@ -849,9 +829,7 @@ describe("declarativeToSchemaRecord", () => {
       expect(result.results.parse(testData.results)).toEqual(testData.results);
 
       // Test that it handles partial objects (properties are optional at nested levels)
-      expect(result.results.parse([{ item: "Rose" }])).toEqual([
-        { item: "Rose" },
-      ]);
+      expect(result.results.parse([{ item: "Rose" }])).toEqual([{ item: "Rose" }]);
       expect(result.results.parse([{ description: "Red flower" }])).toEqual([
         { description: "Red flower" },
       ]);

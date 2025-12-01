@@ -1,6 +1,6 @@
-import { describe, expect, test } from "@jest/globals";
+import { describe, expect, test } from "vitest";
 import { Instruct } from "../../src/core/Instruct.js";
-import { FileInfo } from "../src/utils/file.js";
+import { FileInfo } from "../../src/utils/file.js";
 
 describe("AbstractInstruct", () => {
   describe("file methods", () => {
@@ -32,9 +32,7 @@ describe("AbstractInstruct", () => {
         type: "document",
       };
 
-      expect(() => instruction.addImage(pdfFile)).toThrow(
-        "Expected image file, got document"
-      );
+      expect(() => instruction.addImage(pdfFile)).toThrow("Expected image file, got document");
     });
 
     test("addFile accepts any file type", () => {
