@@ -1,5 +1,5 @@
 import type { Action, WorkflowStep } from "../actions/types.js";
-import { generate } from "../ai/generate.js";
+import { generateWithTools } from "../ai/generateWithTools.js";
 import type { AIProvider } from "../ai/types.js";
 import { AxleStopReason } from "../ai/types.js";
 import type { SerialJob } from "../cli/configs/schemas.js";
@@ -8,8 +8,7 @@ import { Instruct } from "../core/Instruct.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
 import { Conversation } from "../messages/conversation.js";
-import type { AxleToolCallResult, ContentPartToolCall } from "../messages/types.js";
-import { getTextContent, getToolCalls, toContentParts } from "../messages/utils.js";
+import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { Recorder } from "../recorder/recorder.js";
 import { TaskStatus } from "../recorder/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
@@ -186,102 +185,78 @@ async function executeInstruct<T extends Record<string, any>>(
     return;
   }
 
-  let continueProcessing = true;
-  while (continueProcessing) {
-    const response = await generate({
-      provider,
-      messages: conversation.messages,
-      tools: Object.values(instruct.tools),
-      recorder,
-    });
+  const toolDefinitions = Object.values(instruct.tools).map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    schema: tool.schema,
+  }));
 
-    if (stats) {
-      stats.in += response.usage.in;
-      stats.out += response.usage.out;
-    }
-
-    if (response.type === "error") {
-      throw new Error(JSON.stringify(response.error));
-    }
-
-    if (response.type === "success") {
-      switch (response.finishReason) {
-        case AxleStopReason.Stop: {
-          if (response.content) {
-            conversation.addAssistant({
-              id: response.id,
-              model: response.model,
-              content: response.content,
-              finishReason: response.finishReason,
-            });
-            const textContent = getTextContent(response.content);
-            const result = instruct.finalize(textContent, { recorder });
-
-            setResultsIntoVariables(result as Record<string, unknown>, variables, {
-              options,
-              recorder,
-            });
-            variables.$previous = result;
-          }
-          continueProcessing = false;
-          break;
-        }
-        case AxleStopReason.Length: {
-          throw new Error("Incomplete model output due to max_tokens or token limit");
-        }
-        case AxleStopReason.FunctionCall: {
-          if (response.content) {
-            conversation.addAssistant({
-              id: response.id,
-              model: response.model,
-              content: response.content,
-              finishReason: response.finishReason,
-            });
-          }
-
-          const toolCalls = getToolCalls(response.content);
-          if (toolCalls && toolCalls.length > 0) {
-            const results = await executeToolCalls(toolCalls, instruct, { recorder });
-            recorder?.debug?.log(results);
-            conversation.addToolResults(results);
-            continueProcessing = true;
-          } else {
-            continueProcessing = false;
-          }
-          break;
-        }
+  const response = await generateWithTools({
+    provider,
+    messages: conversation.messages,
+    tools: toolDefinitions,
+    recorder,
+    onToolCall: async (name, params) => {
+      const tool = instruct.tools[name];
+      if (!tool) {
+        return null;
       }
-    }
 
-    if (response.type !== "success") {
-      recorder?.debug?.log(response);
-      throw new Error("Unexpected response type");
-    }
-  }
-}
-
-async function executeToolCalls<T extends Record<string, any>>(
-  toolCalls: ContentPartToolCall[],
-  instruct: Instruct<T>,
-  context: { recorder?: Recorder },
-): Promise<AxleToolCallResult[]> {
-  const { recorder } = context;
-  const promises = toolCalls.map(async (call) => {
-    const tool = instruct.tools[call.name];
-    if (!tool) {
-      throw new Error(`Tool not found: ${call.name}`);
-    }
-
-    recorder?.debug?.heading.log(`Executing tool ${tool.name}`);
-    const result = await tool.execute(call.parameters);
-    recorder?.debug?.log(`Complete tool ${tool.name}: ${call.id}`);
-
-    return {
-      id: call.id,
-      name: call.name,
-      content: JSON.stringify(result),
-    };
+      recorder?.debug?.heading.log(`Executing tool ${tool.name}`);
+      try {
+        const result = await tool.execute(params);
+        recorder?.debug?.log(`Complete tool ${tool.name}`);
+        return { type: "success", content: JSON.stringify(result) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        recorder?.debug?.log(`Tool ${tool.name} failed: ${message}`);
+        return {
+          type: "error",
+          error: {
+            type: "execution",
+            message,
+          },
+        };
+      }
+    },
   });
 
-  return Promise.all(promises);
+  if (stats && response.usage) {
+    stats.in += response.usage.in;
+    stats.out += response.usage.out;
+  }
+
+  const newMessages = response.messages.filter(
+    (message) => !(message.role === "assistant" && message.finishReason === AxleStopReason.Length),
+  );
+  conversation.add(newMessages);
+
+  if (response.result === "error") {
+    throw new Error(JSON.stringify(response.error));
+  }
+
+  const finalMessage = response.final;
+  if (!finalMessage) {
+    return;
+  }
+
+  switch (finalMessage.finishReason) {
+    case AxleStopReason.Stop: {
+      const textContent = getTextContent(finalMessage.content);
+      const finalResult = instruct.finalize(textContent, { recorder });
+
+      setResultsIntoVariables(finalResult as Record<string, unknown>, variables, {
+        options,
+        recorder,
+      });
+      variables.$previous = finalResult;
+      break;
+    }
+    case AxleStopReason.Length: {
+      throw new Error("Incomplete model output due to max_tokens or token limit");
+    }
+    case AxleStopReason.FunctionCall: {
+      break;
+    }
+  }
 }

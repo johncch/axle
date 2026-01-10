@@ -64,6 +64,14 @@ export class Conversation {
     });
   }
 
+  add(messages: AxleMessage | AxleMessage[]) {
+    if (Array.isArray(messages)) {
+      this._messages.push(...messages);
+    } else {
+      this._messages.push(messages);
+    }
+  }
+
   latest(): AxleMessage | undefined {
     return this._messages[this._messages.length - 1];
   }
