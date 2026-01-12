@@ -1,6 +1,9 @@
 import { WriteToDisk } from "../actions/writeToDisk.js";
 import braveSearchTool from "../tools/brave.js";
 import calculatorTool from "../tools/calculator.js";
+import execTool from "../tools/exec.js";
+import readFromDiskTool from "../tools/read-from-disk.js";
+import writeToDiskTool from "../tools/write-to-disk.js";
 import type { Tool } from "../tools/types.js";
 import type { ToolProviderConfig } from "./configs/schemas.js";
 
@@ -20,6 +23,18 @@ export function createTool(name: string, config?: ToolProviderConfig): Tool {
     }
     case "calculator": {
       return calculatorTool;
+    }
+    case "exec": {
+      if (toolConfig) {
+        execTool.configure(toolConfig);
+      }
+      return execTool;
+    }
+    case "read-from-disk": {
+      return readFromDiskTool;
+    }
+    case "write-to-disk": {
+      return writeToDiskTool;
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -47,5 +62,5 @@ export function createWriteToDiskAction(
 /**
  * Available tool names for reference.
  */
-export const availableTools = ["brave", "calculator"] as const;
+export const availableTools = ["brave", "calculator", "exec", "read-from-disk", "write-to-disk"] as const;
 export type AvailableToolName = (typeof availableTools)[number];

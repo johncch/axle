@@ -1,5 +1,7 @@
 import { Command, Option } from "commander";
+import dotenv from "dotenv";
 import { Axle } from "../../src/index.js";
+dotenv.config();
 
 const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
 type ProviderNames = (typeof PROVIDERS)[number];

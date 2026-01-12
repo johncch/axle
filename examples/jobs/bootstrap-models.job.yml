@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../schemas/v1/job.yaml
+#
+# Bootstrap Models Job
+#
+# This job fetches available models from all LLM providers and generates
+# TypeScript constant files with modern, recommended models only.
+#
+# Usage:
+#   pnpm start -- examples/jobs/bootstrap-models.job.yml
+
+using:
+  engine: anthropic
+  model: claude-sonnet-4-20250514
+
+jobs:
+  fetch-models:
+    steps:
+      - uses: exec
+        command: npx ./scripts/getModels.ts
+
+  update-models:
+    steps:
+      - uses: chat
+        tools:
+          - exec
+          - write-to-disk
+          - read-from-disk
+        message: |
+          Your task is to update the provider files in ./src/ai/<provider>/models.ts
+
+          I have a script that is in ./scripts/getModels.ts. You can run it using `npx ./scripts/getModels.ts.
+          This file contains a script that runs against all the different APIs in this repositories
+          (OpenAI, Gemini, and Anthropic). If you run the script, it will return all models available in the API.
+
+          Now I need you to filter the models to only include modern, recommended models.
+
+          Filter criteria:
+          - Skip deprecated models (anything with "deprecated" in the name)
+          - Skip fine-tuned models (ft:*, *-ft-*, etc.)
+          - Skip embedding models (text-embedding-*, embed-*)
+          - Skip audio/speech models (whisper-*, tts-*)
+          - Skip image generation models (dall-e-*)
+          - Keep flagship chat/completion models
+          - For versioned models, prefer the latest stable version
+
+          For each provider, output TypeScript code with:
+          1. A `Models` const object mapping CONSTANT_NAMES to model IDs
+          2. A `MULTIMODAL_MODELS` array referencing models that support images
+
+          Format the output as a single TypeScript file that can be used to replace
+          the existing model definitions.

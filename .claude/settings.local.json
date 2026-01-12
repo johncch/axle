@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(npm test)",
-      "Bash(npm start:*)"
+      "Bash(npm start:*)",
+      "Bash(pnpm run build-dev:*)",
+      "Bash(pnpm test:*)"
     ]
   },
   "enableAllProjectMcpServers": false

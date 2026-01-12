@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WriteToDisk } from "../../src/actions/writeToDisk.js";
+import type { ToolProviderConfig } from "../../src/cli/configs/schemas.js";
 import {
   availableTools,
   createTool,
@@ -23,6 +24,13 @@ describe("CLI Factories", () => {
       expect(tool.schema).toBeDefined();
     });
 
+    it("should create exec tool", () => {
+      const tool = createTool("exec");
+      expect(tool.name).toBe("exec");
+      expect(tool.description).toContain("shell command");
+      expect(tool.schema).toBeDefined();
+    });
+
     it("should throw error for unknown tool", () => {
       expect(() => createTool("unknown-tool")).toThrow("Unknown tool: unknown-tool");
     });
@@ -38,6 +46,17 @@ describe("CLI Factories", () => {
       const tool = createTool("brave", config);
       expect(tool.name).toBe("brave");
       // Tool should be configured (we can't easily test internal state)
+    });
+
+    it("should configure exec tool with config", () => {
+      const config: ToolProviderConfig = {
+        exec: {
+          timeout: 5000,
+        },
+      };
+
+      const tool = createTool("exec", config);
+      expect(tool.name).toBe("exec");
     });
 
     it("should handle missing config gracefully", () => {
@@ -109,14 +128,17 @@ describe("CLI Factories", () => {
   });
 
   describe("availableTools", () => {
-    it("should contain brave and calculator", () => {
+    it("should contain all available tools", () => {
       expect(availableTools).toContain("brave");
       expect(availableTools).toContain("calculator");
+      expect(availableTools).toContain("exec");
+      expect(availableTools).toContain("read-from-disk");
+      expect(availableTools).toContain("write-to-disk");
     });
 
     it("should be a readonly array", () => {
       expect(Array.isArray(availableTools)).toBe(true);
-      expect(availableTools).toHaveLength(2);
+      expect(availableTools).toHaveLength(5);
     });
   });
 });

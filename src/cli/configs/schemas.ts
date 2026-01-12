@@ -28,6 +28,15 @@ export const BraveProviderConfigSchema = z.object({
 
 export type BraveProviderConfig = z.infer<typeof BraveProviderConfigSchema>;
 
+// Exec Provider
+export const ExecProviderConfigSchema = z.object({
+  timeout: z.number().optional(),
+  maxBuffer: z.number().optional(),
+  cwd: z.string().optional(),
+});
+
+export type ExecProviderConfig = z.infer<typeof ExecProviderConfigSchema>;
+
 // AI Provider Use - Discriminated by 'engine'
 const OllamaProviderUseSchema = z
   .object({
@@ -77,6 +86,7 @@ export type ServiceConfig = z.infer<typeof ServiceConfigSchema>;
 
 export type ToolProviderConfig = {
   brave?: BraveProviderConfig;
+  exec?: ExecProviderConfig;
 };
 
 /* ============================================================================
