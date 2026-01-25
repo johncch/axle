@@ -6,7 +6,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -18,7 +18,7 @@ export async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context: { recorder?: Recorder };
+  context: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -30,7 +30,7 @@ export async function createGenerationRequest(params: {
   };
 }): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
-  const { recorder } = context;
+  const tracer = context?.tracer;
 
   // Convert max_tokens to maxOutputTokens for Google AI
   const googleOptions = options ? { ...options } : {};
@@ -55,7 +55,7 @@ export async function createGenerationRequest(params: {
     contents: convertAxleMessagesToGemini(messages),
     config: prepareConfig(tools, system, googleOptions),
   };
-  recorder?.debug?.log(request);
+  tracer?.debug("Gemini request", { request });
 
   let result: ModelResult;
   try {
@@ -63,21 +63,21 @@ export async function createGenerationRequest(params: {
       model,
       ...request,
     });
-    result = fromModelResponse(response, { recorder });
+    result = fromModelResponse(response, { tracer });
   } catch (e) {
-    recorder?.error?.log(e);
+    tracer?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }
 
-  recorder?.debug?.log(result);
+  tracer?.debug("Gemini response", { result });
   return result;
 }
 
 function fromModelResponse(
   response: GenerateContentResponse,
-  runtime: { recorder?: Recorder },
+  runtime: { tracer?: TracingContext },
 ): ModelResult {
-  const { recorder } = runtime;
+  const { tracer } = runtime;
 
   const inTokens = response.usageMetadata.promptTokenCount;
   const outTokens = response.usageMetadata.totalTokenCount - inTokens;
@@ -120,7 +120,7 @@ function fromModelResponse(
   }
 
   if (response.candidates.length > 1) {
-    recorder?.warn?.log(`We received ${response.candidates.length} response candidates`);
+    tracer?.warn(`We received ${response.candidates.length} response candidates`);
   }
 
   const candidate = response.candidates[0];

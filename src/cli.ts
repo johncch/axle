@@ -4,10 +4,8 @@ import { getProvider } from "./ai/index.js";
 import type { AIProvider } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
-import { ConsoleWriter } from "./recorder/consoleWriter.js";
-import { LogWriter } from "./recorder/logWriter.js";
-import { Recorder } from "./recorder/recorder.js";
-import { LogLevel } from "./recorder/types.js";
+import { Tracer } from "./tracer/tracer.js";
+import { SimpleWriter } from "./tracer/writers/simple.js";
 import type { Stats } from "./types.js";
 import { dagWorkflow } from "./workflows/dag.js";
 
@@ -43,37 +41,50 @@ if (options.args) {
   });
 }
 
+const tracer = new Tracer();
+if (options.debug) {
+  tracer.minLevel = "debug";
+}
+
+const logWriter = new SimpleWriter({
+  minLevel: options.debug ? "debug" : "info",
+  showInternal: options.debug,
+  showTimestamp: true,
+});
+tracer.addWriter(logWriter);
+
+if (options.log) {
+  const fileWriter = new SimpleWriter({
+    minLevel: "debug",
+    showInternal: true,
+    showTimestamp: true,
+    output: (line) => {
+      // TODO: Write to file instead of console
+      // For now, SimpleWriter outputs to console by default
+    },
+  });
+  tracer.addWriter(fileWriter);
+}
+
+// Create root span for the entire CLI execution
+const rootSpan = tracer.startSpan("cli", { type: "root" });
+
 process.on("uncaughtException", async (err) => {
   console.error("Uncaught exception:");
   console.error(err);
 
-  if (recorder) {
-    recorder.error?.log("Uncaught exception:");
-    recorder.error?.log(err.message);
-    recorder.error?.log(err.stack || "");
-    await recorder.shutdown();
-  }
+  rootSpan.error("Uncaught exception:");
+  rootSpan.error(err.message);
+  rootSpan.error(err.stack || "");
+  rootSpan.end("error");
+  await tracer.flush();
 
   process.exit(1);
 });
 
-const recorder = new Recorder();
 if (options.debug) {
-  recorder.level = LogLevel.Debug;
-}
-const consoleWriter = new ConsoleWriter(options);
-recorder.subscribe(consoleWriter);
-if (options.log) {
-  const logWriter = new LogWriter();
-  await logWriter.initialize();
-  recorder.subscribe(logWriter);
-}
-
-if (options.debug) {
-  recorder.debug?.heading.log("Options");
-  recorder.debug?.log(options);
-  recorder.debug?.heading.log("Additional Arguments:");
-  recorder.debug?.log(variables);
+  rootSpan.debug("Options: " + JSON.stringify(options, null, 2));
+  rootSpan.debug("Additional Arguments: " + JSON.stringify(variables, null, 2));
 }
 
 /**
@@ -83,15 +94,17 @@ let serviceConfig: ServiceConfig;
 let jobConfig: JobConfig;
 try {
   serviceConfig = await getServiceConfig(options.config ?? null, {
-    recorder,
+    tracer: rootSpan,
   });
   jobConfig = await getJobConfig(options.job ?? null, {
-    recorder,
+    tracer: rootSpan,
   });
 } catch (e) {
-  recorder.error.log(e.message);
-  recorder.debug?.log(e.stack);
-  await recorder.shutdown();
+  const error = e instanceof Error ? e : new Error(String(e));
+  rootSpan.error(error.message);
+  rootSpan.debug(error.stack ?? "");
+  rootSpan.end("error");
+  await tracer.flush();
   program.outputHelp();
   process.exit(1);
 }
@@ -108,39 +121,45 @@ try {
   };
   provider = getProvider(engine, providerConfig);
 } catch (e) {
-  recorder.error.log(e.message);
-  recorder.error.log(e.stack);
-  await recorder.shutdown();
+  const error = e instanceof Error ? e : new Error(String(e));
+  rootSpan.error(error.message);
+  rootSpan.error(error.stack ?? "");
+  rootSpan.end("error");
+  await tracer.flush();
   program.outputHelp();
   process.exit(1);
 }
 
-recorder.info?.heading.log("All systems operational. Running job...");
-const startTime = Date.now();
+rootSpan.info("All systems operational. Running job...");
 if (options.dryRun) {
-  recorder.info?.log("Dry run mode enabled. No API calls will be made.");
+  rootSpan.info("Dry run mode enabled. No API calls will be made.");
 }
 
 const stats: Stats = { in: 0, out: 0 };
+const startTime = performance.now();
+const jobSpan = rootSpan.startSpan("job", { type: "workflow" });
+
 const response = await dagWorkflow(jobConfig.jobs).execute({
   provider,
   variables,
   options,
   stats,
-  recorder,
+  tracer: jobSpan,
 });
 
+jobSpan.end();
+
 if (response) {
-  recorder.info?.heading.log("Response");
-  recorder.info.log(response);
+  rootSpan.info("Response: " + JSON.stringify(response, null, 2));
 }
 
-recorder.info?.heading.log("Usage");
-recorder.info?.log(`Total run time: ${Date.now() - startTime}ms`);
-recorder.info?.log(`Input tokens: ${stats.in} `);
-recorder.info?.log(`Output tokens: ${stats.out} `);
+const duration = performance.now() - startTime;
+rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
+rootSpan.info(`Input tokens: ${stats.in}`);
+rootSpan.info(`Output tokens: ${stats.out}`);
 
-recorder.info?.heading.log("Complete. Goodbye");
+rootSpan.info("Complete. Goodbye");
+rootSpan.end();
 
 // Ensure all logs are written before exit
-await recorder.shutdown();
+await tracer.flush();

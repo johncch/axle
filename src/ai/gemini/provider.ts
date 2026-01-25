@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
@@ -24,7 +24,7 @@ export class GeminiProvider implements AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;
@@ -46,7 +46,7 @@ export class GeminiProvider implements AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;

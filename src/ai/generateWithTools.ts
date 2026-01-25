@@ -5,7 +5,7 @@ import type {
   ContentPartToolCall,
 } from "../messages/types.js";
 import { getToolCalls } from "../messages/utils.js";
-import type { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import { generate, GenerateOptions } from "./generate.js";
@@ -46,7 +46,7 @@ export interface GenerateWithToolsOptions {
     params: Record<string, unknown>,
   ) => Promise<ToolCallResult | null | undefined>;
   maxIterations?: number;
-  recorder?: Recorder;
+  tracer?: TracingContext;
   options?: GenerateOptions;
 }
 
@@ -126,7 +126,7 @@ export async function generateWithTools(
     tools,
     onToolCall,
     maxIterations,
-    recorder,
+    tracer,
     options: generateOptions,
   } = options;
   const workingMessages = [...messages];
@@ -166,7 +166,7 @@ export async function generateWithTools(
       messages: workingMessages,
       system,
       tools,
-      recorder,
+      tracer,
       options: generateOptions,
     });
 

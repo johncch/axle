@@ -6,7 +6,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { convertStopReason } from "../anthropic/utils.js";
 import { ModelResult } from "../types.js";
@@ -19,7 +19,7 @@ export async function createGenerationRequestWithChatCompletion(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context: { recorder?: Recorder };
+  context: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -31,7 +31,7 @@ export async function createGenerationRequestWithChatCompletion(params: {
   };
 }): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
-  const { recorder } = context;
+  const tracer = context?.tracer;
 
   let chatTools = toModelTools(tools);
   const request = {
@@ -41,18 +41,18 @@ export async function createGenerationRequestWithChatCompletion(params: {
     ...options,
   };
 
-  recorder?.debug?.log(request);
+  tracer?.debug("OpenAI ChatCompletion request", { request });
 
   let result: ModelResult;
   try {
     const completion = await client.chat.completions.create(request);
     result = fromModelResponse(completion);
   } catch (e) {
-    recorder?.error?.log(e);
+    tracer?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }
 
-  recorder?.debug?.log(result);
+  tracer?.debug("OpenAI ChatCompletion response", { result });
   return result;
 }
 

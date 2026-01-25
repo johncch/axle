@@ -20,4 +20,27 @@ export class AxleError extends Error {
 
     Object.setPrototypeOf(this, AxleError.prototype);
   }
+
+  toJSON() {
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      ...(this.id && { id: this.id }),
+      ...(this.details && { details: this.details }),
+      ...(this.cause && { cause: serializeError(this.cause) }),
+    };
+  }
+}
+
+function serializeError(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack && { stack: error.stack }),
+      ...("cause" in error && error.cause && { cause: serializeError(error.cause) }),
+    };
+  }
+  return error;
 }

@@ -193,4 +193,55 @@ export const CHAT_MODELS = [
   Models.O1_2024_12_17,
 ] as const;
 
+export const RESPONSES_API_MODELS = [
+  // GPT-5.2 family
+  Models.GPT_5_2,
+  Models.GPT_5_2_2025_12_11,
+  Models.GPT_5_2_CHAT_LATEST,
+  Models.GPT_5_2_PRO,
+  Models.GPT_5_2_PRO_2025_12_11,
+
+  // GPT-5.1 family
+  Models.GPT_5_1,
+  Models.GPT_5_1_2025_11_13,
+  Models.GPT_5_1_CHAT_LATEST,
+  Models.GPT_5_1_CODEX,
+  Models.GPT_5_1_CODEX_MAX,
+  Models.GPT_5_1_CODEX_MINI,
+
+  // GPT-5 family
+  Models.GPT_5,
+  Models.GPT_5_2025_08_07,
+  Models.GPT_5_CHAT_LATEST,
+  Models.GPT_5_CODEX,
+  Models.GPT_5_MINI,
+  Models.GPT_5_MINI_2025_08_07,
+  Models.GPT_5_NANO,
+  Models.GPT_5_NANO_2025_08_07,
+  Models.GPT_5_PRO,
+  Models.GPT_5_PRO_2025_10_06,
+
+  // GPT-4.1 family
+  Models.GPT_4_1,
+  Models.GPT_4_1_2025_04_14,
+  Models.GPT_4_1_MINI,
+  Models.GPT_4_1_MINI_2025_04_14,
+  Models.GPT_4_1_NANO,
+  Models.GPT_4_1_NANO_2025_04_14,
+
+  // o-series reasoning
+  Models.O4_MINI,
+  Models.O4_MINI_2025_04_16,
+  Models.O3,
+  Models.O3_2025_04_16,
+  Models.O3_PRO,
+  Models.O3_PRO_2025_06_10,
+  Models.O3_MINI,
+  Models.O3_MINI_2025_01_31,
+  Models.O1_PRO,
+  Models.O1_PRO_2025_03_19,
+  Models.O1,
+  Models.O1_2024_12_17,
+] as const;
+
 export const DEFAULT_MODEL = Models.GPT_5_2;

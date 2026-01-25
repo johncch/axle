@@ -119,10 +119,10 @@ export class WriteToDisk implements Action {
    * @returns A promise that resolves when the file has been written
    */
   async execute(context: ActionContext): Promise<void> {
-    const { variables, options, recorder } = context;
+    const { variables, options, tracer } = context;
 
     if (options?.dryRun) {
-      recorder?.info?.log(`[Dry run] WriteToDisk not executed.`);
+      tracer?.info(`[Dry run] WriteToDisk not executed.`);
       return;
     }
 
@@ -144,6 +144,6 @@ export class WriteToDisk implements Action {
       content,
     });
 
-    recorder?.info?.log(`Wrote to ${filepath}`);
+    tracer?.info(`Wrote to ${filepath}`);
   }
 }

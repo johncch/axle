@@ -1,13 +1,8 @@
 import YAML from "yaml";
 import * as z from "zod";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { searchAndLoadFile } from "../../utils/file.js";
-import {
-  JobConfig,
-  JobConfigSchema,
-  ServiceConfig,
-  ServiceConfigSchema,
-} from "./schemas.js";
+import { JobConfig, JobConfigSchema, ServiceConfig, ServiceConfigSchema } from "./schemas.js";
 
 const DEFAULT_JOB_NAME = "ax.job";
 const DEFAULT_JOB_FORMATS = ["yaml", "yml", "json"];
@@ -15,10 +10,10 @@ const DEFAULT_JOB_FORMATS = ["yaml", "yml", "json"];
 export async function getJobConfig(
   path: string | null,
   context: {
-    recorder?: Recorder;
+    tracer?: TracingContext;
   },
 ): Promise<JobConfig> {
-  const { recorder } = context;
+  const { tracer } = context;
   const { content, format } = await searchAndLoadFile(path, {
     defaults: {
       name: DEFAULT_JOB_NAME,
@@ -35,14 +30,11 @@ export async function getJobConfig(
   } else {
     throw new Error("Invalid job file format");
   }
-  recorder?.debug?.heading.log("The Job Object");
-  recorder?.debug?.log(result);
+  tracer?.debug("Job config: " + JSON.stringify(result, null, 2));
 
   const parsed = JobConfigSchema.safeParse(result);
   if (!parsed.success) {
-    throw new Error(
-      `The job file is not valid:\n${formatZodError(parsed.error)}`,
-    );
+    throw new Error(`The job file is not valid:\n${formatZodError(parsed.error)}`);
   }
   return parsed.data;
 }
@@ -53,10 +45,10 @@ const DEFAULT_CONFIG_FORMATS = ["yaml", "yml", "json"];
 export async function getServiceConfig(
   configPath: string | null,
   context: {
-    recorder?: Recorder;
+    tracer?: TracingContext;
   },
 ): Promise<ServiceConfig> {
-  const { recorder } = context;
+  const { tracer } = context;
   const { content, format } = await searchAndLoadFile(configPath, {
     defaults: {
       name: DEFAULT_CONFIG_NAME,
@@ -73,14 +65,11 @@ export async function getServiceConfig(
   } else {
     throw new Error("Invalid config file format");
   }
-  recorder?.debug?.heading.log("The Config Object");
-  recorder?.debug?.log(result);
+  tracer?.debug("Service config: " + JSON.stringify(result, null, 2));
 
   const parsed = ServiceConfigSchema.safeParse(result);
   if (!parsed.success) {
-    throw new Error(
-      `The config file is not valid:\n${formatZodError(parsed.error)}`,
-    );
+    throw new Error(`The config file is not valid:\n${formatZodError(parsed.error)}`);
   }
 
   return parsed.data;

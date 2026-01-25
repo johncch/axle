@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import { AbstractInstruct } from "./AbstractInstruct.js";
 import { declarativeToOutputSchema, isOutputSchema } from "./typecheck.js";
 import {
@@ -48,7 +48,7 @@ export class ChainOfThought<
 
   override finalize(
     rawValue: string,
-    runtime: { recorder?: Recorder } = {},
+    runtime: { tracer?: TracingContext } = {},
   ): InferedOutputSchema<T> & { thinking: string } {
     const results = super.finalize(rawValue, runtime);
     const taggedSections = this.parseTaggedSections(rawValue);
@@ -57,11 +57,11 @@ export class ChainOfThought<
     if (!("thinking" in taggedSections.tags)) {
       if ("think" in taggedSections.tags) {
         thinkTagName = "think";
-        runtime.recorder?.warn?.log(
+        runtime.tracer?.warn(
           "No <thinking> section found in the response but found <think> instead. This may be a limitation of the model or prompt.",
         );
       } else {
-        runtime.recorder?.warn?.log(
+        runtime.tracer?.warn(
           "No <thinking> section found in the response. Please ensure your response includes a <thinking> tag.",
         );
       }

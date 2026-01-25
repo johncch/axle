@@ -1,13 +1,12 @@
 import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
-import type { BatchJob, DAGJob, Job } from "../cli/configs/schemas.js";
+import type { DAGJob } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
-import type { Recorder } from "../recorder/recorder.js";
-import { TaskStatus } from "../recorder/types.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import { createErrorResult, createResult } from "../utils/result.js";
-import { arrayify, friendly } from "../utils/utils.js";
+import { arrayify } from "../utils/utils.js";
 import { concurrentWorkflow } from "./concurrent.js";
 import { serialWorkflow } from "./serial.js";
 import type {
@@ -49,9 +48,7 @@ export class DAGParser {
     }
 
     if (this.isConcurrentNodeDefinition(definition)) {
-      const dependencies = definition.dependsOn
-        ? arrayify(definition.dependsOn)
-        : [];
+      const dependencies = definition.dependsOn ? arrayify(definition.dependsOn) : [];
 
       return {
         id: nodeId,
@@ -63,9 +60,7 @@ export class DAGParser {
     }
 
     if (this.isNodeDefinition(definition)) {
-      const dependencies = definition.dependsOn
-        ? arrayify(definition.dependsOn)
-        : [];
+      const dependencies = definition.dependsOn ? arrayify(definition.dependsOn) : [];
       const steps = arrayify(definition.step);
 
       return {
@@ -79,26 +74,18 @@ export class DAGParser {
     throw new Error(`Invalid DAG node definition for '${nodeId}'`);
   }
 
-  private static isSimpleStep(
-    definition: any,
-  ): definition is WorkflowStep | WorkflowStep[] {
+  private static isSimpleStep(definition: any): definition is WorkflowStep | WorkflowStep[] {
     return definition.name || Array.isArray(definition);
   }
 
   private static isConcurrentNodeDefinition(
     definition: any,
   ): definition is DAGConcurrentNodeDefinition {
-    return (
-      definition && typeof definition === "object" && "planner" in definition
-    );
+    return definition && typeof definition === "object" && "planner" in definition;
   }
 
-  private static isNodeDefinition(
-    definition: any,
-  ): definition is DAGNodeDefinition {
-    return (
-      definition && typeof definition === "object" && "step" in definition
-    );
+  private static isNodeDefinition(definition: any): definition is DAGNodeDefinition {
+    return definition && typeof definition === "object" && "step" in definition;
   }
 
   private static validateDependencies(nodes: Map<string, DAGNode>): void {
@@ -173,17 +160,17 @@ export class DAGParser {
 export class DAGJobToDefinition {
   static async convert(
     definition: DAGJob,
-    context: { recorder?: Recorder },
+    context: { tracer?: TracingContext },
   ): Promise<DAGDefinition> {
-    const { recorder } = context;
+    const { tracer } = context;
     const dagDefinition: DAGDefinition = {};
 
     for (const [nodeId, jobWithDeps] of Object.entries(definition)) {
       const { dependsOn, ...job } = jobWithDeps;
 
       if (job.type === "batch") {
-        const planner = await configToPlanner(job, { recorder });
-        const steps: WorkflowStep[] = await configToTasks(job, { recorder });
+        const planner = await configToPlanner(job, { tracer });
+        const steps: WorkflowStep[] = await configToTasks(job, { tracer });
 
         const nodeDefinition: DAGConcurrentNodeDefinition = {
           planner,
@@ -192,7 +179,7 @@ export class DAGJobToDefinition {
         };
         dagDefinition[nodeId] = nodeDefinition;
       } else {
-        const steps: WorkflowStep[] = await configToTasks(job, { recorder });
+        const steps: WorkflowStep[] = await configToTasks(job, { tracer });
 
         if (dependsOn) {
           const nodeDefinition: DAGNodeDefinition = {
@@ -218,12 +205,14 @@ async function executeNode(
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
-    recorder?: Recorder;
+    tracer?: TracingContext;
   },
   workflowOptions: DAGWorkflowOptions = {},
 ): Promise<any> {
-  const { variables } = context;
+  const { variables, tracer } = context;
   const node = executionPlan.nodes.get(nodeId)!;
+
+  const nodeSpan = tracer?.startSpan(nodeId, { type: "internal" });
 
   try {
     let result: WorkflowResult;
@@ -231,21 +220,25 @@ async function executeNode(
       result = await concurrentWorkflow(node.planner, ...node.steps).execute({
         ...context,
         variables,
+        tracer: nodeSpan,
         name: nodeId,
       });
     } else {
       result = await serialWorkflow(...node.steps).execute({
         ...context,
         variables,
+        tracer: nodeSpan,
         name: nodeId,
       });
     }
 
     if (!result.success) {
-      throw new AxleError(`Node "${nodeId}" failed: ${result.error?.message}`);
+      throw result.error;
     }
+    nodeSpan?.end();
     return result.response;
   } catch (error) {
+    nodeSpan?.end("error");
     if (!workflowOptions.continueOnError) {
       throw error;
     }
@@ -260,15 +253,9 @@ interface DAGWorkflow {
 /**
  * Type guard to check if the definition is a DAGJob
  */
-function isDAGJob(
-  definition: DAGDefinition | DAGJob,
-): definition is DAGJob {
+function isDAGJob(definition: DAGDefinition | DAGJob): definition is DAGJob {
   const firstValue = Object.values(definition)[0];
-  return (
-    firstValue &&
-    typeof firstValue === "object" &&
-    "steps" in firstValue
-  );
+  return firstValue && typeof firstValue === "object" && "steps" in firstValue;
 }
 
 export const dagWorkflow: DAGWorkflow = (
@@ -277,10 +264,8 @@ export const dagWorkflow: DAGWorkflow = (
 ) => {
   const prepare = async (
     definition: DAGDefinition | DAGJob,
-    context: { recorder?: Recorder },
+    context: { tracer?: TracingContext },
   ): Promise<DAGDefinition> => {
-    const { recorder } = context;
-
     if (isDAGJob(definition)) {
       return await DAGJobToDefinition.convert(definition, context);
     }
@@ -292,32 +277,24 @@ export const dagWorkflow: DAGWorkflow = (
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
-    recorder?: Recorder;
+    tracer?: TracingContext;
   }): Promise<WorkflowResult> => {
-    const { stats, recorder } = context;
+    const { stats, tracer } = context;
     const { maxConcurrency = 3 } = options;
-    const id = crypto.randomUUID();
+
+    const dagSpan = tracer?.startSpan("dag", { type: "workflow" });
 
     try {
-      const dagDefinition = await prepare(definition, { recorder });
-      recorder?.debug?.log(dagDefinition);
+      const dagDefinition = await prepare(definition, { tracer: dagSpan });
+      dagSpan?.debug(JSON.stringify(dagDefinition, null, 2));
       const executionPlan = DAGParser.parse(dagDefinition);
       const nodeResults = new Map<string, any>();
 
-      recorder?.info?.log({
-        type: "task",
-        id,
-        status: TaskStatus.Running,
-        message: `[${friendly(id)}] Starting workflow execution with ${executionPlan.stages.length} stages`,
-      });
+      dagSpan?.setAttribute("stages", executionPlan.stages.length);
 
       for (const [stageIndex, stage] of executionPlan.stages.entries()) {
-        recorder?.info?.log({
-          type: "task",
-          id,
-          status: TaskStatus.Running,
-          message: `[${friendly(id)}] Stage ${stageIndex + 1}/${executionPlan.stages.length}, executing ${stage.length} nodes: ${stage.join(", ")}`,
-        });
+        const stageSpan = dagSpan?.startSpan(`stage-${stageIndex + 1}`, { type: "internal" });
+        stageSpan?.setAttribute("nodes", stage.join(", "));
 
         const concurrencyLimit = Math.min(stage.length, maxConcurrency);
 
@@ -326,7 +303,12 @@ export const dagWorkflow: DAGWorkflow = (
 
           const results = await Promise.all(
             batch.map(async (nodeId) => {
-              const result = await executeNode(nodeId, executionPlan, context, options);
+              const result = await executeNode(
+                nodeId,
+                executionPlan,
+                { ...context, tracer: stageSpan },
+                options,
+              );
               return { nodeId, result };
             }),
           );
@@ -335,14 +317,11 @@ export const dagWorkflow: DAGWorkflow = (
             nodeResults.set(nodeId, result);
           });
         }
+
+        stageSpan?.end();
       }
 
-      recorder?.info?.log({
-        type: "task",
-        status: TaskStatus.Success,
-        id,
-        message: `[${friendly(id)}] Workflow execution completed successfully`,
-      });
+      dagSpan?.end();
 
       const dagResult = Object.fromEntries(nodeResults);
       return createResult(dagResult, stats);
@@ -351,17 +330,11 @@ export const dagWorkflow: DAGWorkflow = (
         error instanceof AxleError
           ? error
           : new AxleError(`DAG workflow execution failed`, {
-              id: id,
               cause: error instanceof Error ? error : new Error(String(error)),
             });
 
-      recorder?.info?.log({
-        type: "task",
-        status: TaskStatus.Fail,
-        id,
-        message: `[${friendly(id)}] Workflow execution failed: ${axleError.message}`,
-      });
-      recorder?.error?.log(axleError);
+      dagSpan?.error(axleError.message);
+      dagSpan?.end("error");
 
       return createErrorResult(axleError, null, stats);
     }

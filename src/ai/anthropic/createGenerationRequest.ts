@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AxleMessage } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -18,7 +18,7 @@ export async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context?: { recorder?: Recorder };
+  context?: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -30,7 +30,7 @@ export async function createGenerationRequest(params: {
   };
 }): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
-  const { recorder } = context;
+  const tracer = context?.tracer;
 
   // Convert stop to stop_sequences for Anthropic
   const anthropicOptions = options ? { ...options } : {};
@@ -49,7 +49,7 @@ export async function createGenerationRequest(params: {
     ...(tools && { tools: convertToProviderTools(tools) }),
     ...anthropicOptions,
   };
-  recorder?.debug?.log(request);
+  tracer?.debug("Anthropic request", { request });
 
   let result: ModelResult;
   try {
@@ -59,7 +59,7 @@ export async function createGenerationRequest(params: {
     result = getUndefinedError(e);
   }
 
-  recorder?.debug?.log(result);
+  tracer?.debug("Anthropic response", { result });
   return result;
 }
 

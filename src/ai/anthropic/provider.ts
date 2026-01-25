@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
@@ -27,7 +27,7 @@ export class AnthropicProvider implements AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;
@@ -45,7 +45,7 @@ export class AnthropicProvider implements AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;

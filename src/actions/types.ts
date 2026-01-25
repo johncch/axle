@@ -1,12 +1,12 @@
 import type { Instruct } from "../core/Instruct.js";
-import type { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions } from "../types.js";
 
 export interface ActionContext {
   input: string;
   variables: Record<string, any>;
   options?: ProgramOptions;
-  recorder?: Recorder;
+  tracer?: TracingContext;
 }
 
 export interface Action {

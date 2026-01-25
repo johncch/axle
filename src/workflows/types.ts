@@ -1,7 +1,7 @@
 import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
 import type { AxleError } from "../errors/AxleError.js";
-import type { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import type { Planner } from "./planners/types.js";
 
@@ -32,7 +32,7 @@ export interface WorkflowExecutable {
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
-    recorder?: Recorder;
+    tracer?: TracingContext;
     name?: string;
   }) => Promise<WorkflowResult>;
 }

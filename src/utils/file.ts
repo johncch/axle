@@ -1,7 +1,7 @@
 import { glob } from "glob";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
-import { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import { FilePathInfo, LoadFileResults } from "./types.js";
 
 /**
@@ -55,11 +55,11 @@ export async function searchAndLoadFile(
   };
 }
 
-export async function loadManyFiles(filenames: string[], recorder?: Recorder) {
+export async function loadManyFiles(filenames: string[], tracer?: TracingContext) {
   let replacement = "";
   for (const name of filenames) {
     const files = await glob(name);
-    recorder?.debug?.log(`many-files parser. For glob "${name}", found ${files.length} files.`);
+    tracer?.debug(`many-files parser. For glob "${name}", found ${files.length} files.`);
     const replacements = await Promise.all(
       files.map(async (name) => {
         const c = await readFile(name, "utf-8");

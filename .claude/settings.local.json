@@ -5,7 +5,18 @@
       "Bash(npm test)",
       "Bash(npm start:*)",
       "Bash(pnpm run build-dev:*)",
-      "Bash(pnpm test:*)"
+      "Bash(pnpm test:*)",
+      "Bash(pnpm run build)",
+      "Bash(npx tsc:*)",
+      "Bash(for f in src/ai/openai/responsesAPI.ts src/ai/openai/chatCompletion.ts src/ai/openai/createStreamingRequest.ts src/ai/ollama/createGenerationRequest.ts src/ai/ollama/createStreamingRequest.ts src/ai/gemini/createGenerationRequest.ts src/ai/gemini/createStreamingRequest.ts src/ai/anthropic/createGenerationRequest.ts src/ai/anthropic/createStreamingRequest.ts)",
+      "Bash(do sed -i '' 's|import { TracingContext } from \"\"../../recorder/recorder.js\"\";|import type { TracingContext } from \"\"../../tracer/types.js\"\";|g' \"$f\")",
+      "Bash(done)",
+      "Bash(node:*)",
+      "Bash(pnpm exec tsx:*)",
+      "Bash(pnpm exec vitest:*)",
+      "mcp__acp__Write",
+      "mcp__acp__Bash",
+      "mcp__acp__Edit"
     ]
   },
   "enableAllProjectMcpServers": false

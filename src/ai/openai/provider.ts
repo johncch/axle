@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequestWithChatCompletion } from "./chatCompletion.js";
@@ -25,7 +25,7 @@ export class OpenAIProvider implements AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;
@@ -57,7 +57,7 @@ export class OpenAIProvider implements AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;

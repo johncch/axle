@@ -2,8 +2,8 @@ import { WorkflowStep } from "../actions/types.js";
 import { getProvider } from "../ai/index.js";
 import { AIProvider, AIProviderConfig } from "../ai/types.js";
 import { AxleError } from "../errors/index.js";
-import { Recorder } from "../recorder/recorder.js";
-import { RecorderWriter } from "../recorder/types.js";
+import { Tracer } from "../tracer/tracer.js";
+import type { TraceWriter } from "../tracer/types.js";
 import { Base64FileInfo, FileInfo, TextFileInfo, loadFileContent } from "../utils/file.js";
 import { dagWorkflow } from "../workflows/dag.js";
 import { serialWorkflow } from "../workflows/serial.js";
@@ -13,7 +13,7 @@ export class Axle {
   provider: AIProvider;
   private stats = { in: 0, out: 0 };
   private variables: Record<string, any> = {};
-  recorder = new Recorder();
+  tracer = new Tracer();
 
   constructor(config: Partial<AIProviderConfig>) {
     if (Object.entries(config).length !== 1) {
@@ -36,8 +36,8 @@ export class Axle {
     }
   }
 
-  addWriter(writer: RecorderWriter) {
-    this.recorder.subscribe(writer);
+  addWriter(writer: TraceWriter) {
+    this.tracer.addWriter(writer);
   }
 
   /**
@@ -46,15 +46,17 @@ export class Axle {
    * @returns
    */
   async execute(...steps: WorkflowStep[]): Promise<WorkflowResult> {
+    const span = this.tracer.startSpan("execute", { type: "root" });
+
     try {
-      let result: WorkflowResult;
-      result = await serialWorkflow(...steps).execute({
+      const result = await serialWorkflow(...steps).execute({
         provider: this.provider,
         variables: this.variables,
         stats: this.stats,
-        recorder: this.recorder,
+        tracer: span,
       });
 
+      span.end();
       return result;
     } catch (error) {
       const axleError =
@@ -63,7 +65,8 @@ export class Axle {
           : new AxleError("Execution failed", {
               cause: error instanceof Error ? error : new Error(String(error)),
             });
-      this.recorder.error?.log(axleError);
+      span.error(axleError.message);
+      span.end("error");
       return { response: null, error: axleError, success: false };
     }
   }
@@ -80,15 +83,18 @@ export class Axle {
     variables: Record<string, any> = {},
     options?: DAGWorkflowOptions,
   ): Promise<WorkflowResult> {
+    const span = this.tracer.startSpan("executeDAG", { type: "root" });
+
     try {
       const workflow = dagWorkflow(dagDefinition, options);
       const result = await workflow.execute({
         provider: this.provider,
         variables: { ...this.variables, ...variables },
         stats: this.stats,
-        recorder: this.recorder,
+        tracer: span,
       });
 
+      span.end();
       return result;
     } catch (error) {
       const axleError =
@@ -97,13 +103,10 @@ export class Axle {
           : new AxleError("DAG execution failed", {
               cause: error instanceof Error ? error : new Error(String(error)),
             });
-      this.recorder.error?.log(axleError);
+      span.error(axleError.message);
+      span.end("error");
       return { response: null, error: axleError, success: false };
     }
-  }
-
-  get logs() {
-    return this.recorder.getLogs();
   }
 
   /**

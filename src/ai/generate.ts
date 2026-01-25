@@ -1,5 +1,5 @@
 import { AxleMessage } from "../messages/types.js";
-import { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import { ToolDefinition } from "../tools/types.js";
 import { AIProvider, ModelResult } from "./types.js";
 
@@ -18,17 +18,17 @@ interface GenerateProps {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  recorder?: Recorder;
+  tracer?: TracingContext;
   options?: GenerateOptions;
 }
 
 export async function generate(props: GenerateProps): Promise<ModelResult> {
-  const { provider, messages, system, tools, recorder, options } = props;
+  const { provider, messages, system, tools, tracer, options } = props;
   return provider.createGenerationRequest({
     messages,
     system,
     tools,
-    context: { recorder },
+    context: { tracer },
     options,
   });
 }

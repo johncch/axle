@@ -5,7 +5,7 @@ import {
   ContentPartThinking,
   ContentPartToolCall,
 } from "../messages/types.js";
-import { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import { ToolDefinition } from "../tools/types.js";
 import { Stats } from "../types.js";
 
@@ -36,7 +36,7 @@ export interface AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;
@@ -52,7 +52,7 @@ export interface AIProvider {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
-    context: { recorder?: Recorder };
+    context: { tracer?: TracingContext };
     options?: {
       temperature?: number;
       top_p?: number;

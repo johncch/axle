@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertToProviderMessages, convertToProviderTools } from "./utils.js";
@@ -12,7 +12,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { recorder?: Recorder };
+  runtime: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -24,7 +24,7 @@ export async function* createStreamingRequest(params: {
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, runtime, options } = params;
-  const { recorder } = runtime;
+  const tracer = runtime?.tracer;
 
   // Convert stop to stop_sequences for Anthropic
   const anthropicOptions = options ? { ...options } : {};
@@ -43,7 +43,7 @@ export async function* createStreamingRequest(params: {
     ...(tools && { tools: convertToProviderTools(tools) }),
     ...anthropicOptions,
   };
-  recorder?.debug?.log(request);
+  tracer?.debug("Anthropic streaming request", { request });
 
   const streamingAdapter = createAnthropicStreamingAdapter();
 

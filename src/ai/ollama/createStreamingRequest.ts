@@ -1,6 +1,6 @@
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { createOllamaStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToOllama, convertToolDefToOllama } from "./utils.js";
@@ -11,7 +11,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { recorder?: Recorder };
+  runtime: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -23,7 +23,7 @@ export async function* createStreamingRequest(params: {
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { url, model, messages, system, tools, runtime, options } = params;
-  const { recorder } = runtime;
+  const tracer = runtime?.tracer;
 
   const chatTools = convertToolDefToOllama(tools);
 
@@ -43,7 +43,7 @@ export async function* createStreamingRequest(params: {
     ...(chatTools && { tools: chatTools }),
   };
 
-  recorder?.debug?.log(requestBody);
+  tracer?.debug("Ollama streaming request", { request: requestBody });
 
   const streamingAdapter = createOllamaStreamingAdapter();
 
@@ -86,12 +86,12 @@ export async function* createStreamingRequest(params: {
             yield streamChunk;
           }
         } catch (e) {
-          recorder?.error?.log("Error parsing Ollama stream chunk:", e, line);
+          tracer?.error("Error parsing Ollama stream chunk", { error: e instanceof Error ? e.message : String(e), line });
         }
       }
     }
   } catch (error) {
-    recorder?.error?.log("Error in Ollama streaming request:", error);
+    tracer?.error("Error in Ollama streaming request", { error: error instanceof Error ? error.message : String(error) });
     yield {
       type: "error",
       data: {

@@ -3,11 +3,9 @@ import type { AIProvider } from "../ai/types.js";
 import type { BatchJob } from "../cli/configs/schemas.js";
 import { configToPlanner, configToTasks } from "../cli/utils.js";
 import { AxleError } from "../errors/AxleError.js";
-import type { Recorder } from "../recorder/recorder.js";
-import { TaskStatus } from "../recorder/types.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import { createErrorResult, createResult, isErrorResult } from "../utils/result.js";
-import { friendly } from "../utils/utils.js";
 import type { Planner } from "./planners/types.js";
 import { serialWorkflow } from "./serial.js";
 import type { Run, WorkflowExecutable, WorkflowResult } from "./types.js";
@@ -28,12 +26,14 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
   first: BatchJob | Planner,
   ...rest: WorkflowStep[]
 ) => {
-  const prepare = async (context: { recorder?: Recorder }): Promise<[Planner, WorkflowStep[]]> => {
-    const { recorder } = context;
+  const prepare = async (context: {
+    tracer?: TracingContext;
+  }): Promise<[Planner, WorkflowStep[]]> => {
+    const { tracer } = context;
 
     if (isBatchJob(first)) {
-      const planner = await configToPlanner(first, { recorder });
-      const tasks = await configToTasks(first, { recorder });
+      const planner = await configToPlanner(first, { tracer });
+      const tasks = await configToTasks(first, { tracer });
       return [planner, tasks];
     } else {
       return [first, [...rest]];
@@ -45,41 +45,38 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
-    recorder?: Recorder;
+    tracer?: TracingContext;
     name?: string;
   }): Promise<WorkflowResult> => {
-    const { provider, variables, options, stats, recorder, name } = context;
+    const { provider, variables, options, stats, tracer, name } = context;
 
-    const id = crypto.randomUUID();
+    const concurrentSpan = tracer?.startSpan(name ?? "concurrent", { type: "workflow" });
 
     try {
-      const [planner, steps] = await prepare({ recorder });
+      const [planner, steps] = await prepare({ tracer: concurrentSpan });
       const runs = await planner.plan(steps);
-      recorder?.debug?.heading.log("Runs", runs);
+      concurrentSpan?.debug(JSON.stringify(runs, null, 2));
 
       if (runs.length === 0) {
-        recorder?.info?.log("No runs to execute");
+        concurrentSpan?.info("No runs to execute");
+        concurrentSpan?.end();
         return createResult([], stats);
       }
 
-      let completed = 0;
-      recorder?.info?.log({
-        type: "task",
-        status: TaskStatus.Running,
-        id,
-        message: `[${friendly(id, "CRW")}] Working on 0/${runs.length}`,
-      });
+      concurrentSpan?.setAttribute("runs", runs.length);
 
       const executeRun = async (run: Run, index: number) => {
+        const runSpan = concurrentSpan?.startSpan(`run-${index}`, { type: "internal" });
         try {
           const result = await serialWorkflow(...run.steps).execute({
             provider: provider,
             variables: { ...run.variables, ...variables },
             options,
             stats,
-            recorder,
+            tracer: runSpan,
             name: `${name}-${index}`,
           });
+          runSpan?.end();
           return result;
         } catch (e) {
           const error =
@@ -88,16 +85,9 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
               : new AxleError(`Error executing run`, {
                   cause: e instanceof Error ? e : new Error(String(e)),
                 });
-          recorder?.error?.log(error);
+          runSpan?.end("error");
+          concurrentSpan?.error(error.message);
           return createErrorResult(error, null, stats);
-        } finally {
-          completed++;
-          recorder?.info?.log({
-            type: "task",
-            status: TaskStatus.Running,
-            id,
-            message: `[${friendly(id, "CRW")}] Working on ${completed}/${runs.length}`,
-          });
         }
       };
 
@@ -110,17 +100,10 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
         batchResults = batchResults.concat(results);
       }
 
-      // Check if any run had errors but continue execution
       const hasErrors = batchResults.some(isErrorResult);
 
-      recorder?.info?.log({
-        type: "task",
-        status: hasErrors ? TaskStatus.PartialSuccess : TaskStatus.Success,
-        id,
-        message: `[${friendly(id, "CRW")}] All jobs (${runs.length}) completed${hasErrors ? " with some errors" : ""}`,
-      });
+      concurrentSpan?.end(hasErrors ? "error" : "ok");
 
-      // Process all results, including those with errors
       const response = batchResults.map((r) => r.response);
       return createResult(response, stats);
     } catch (error) {
@@ -128,11 +111,11 @@ export const concurrentWorkflow: ConcurrentWorkflow = (
         error instanceof AxleError
           ? error
           : new AxleError(`Concurrent workflow execution failed`, {
-              id: id,
               cause: error instanceof Error ? error : new Error(String(error)),
             });
 
-      recorder?.error?.log(axleError);
+      concurrentSpan?.error(axleError.message);
+      concurrentSpan?.end("error");
       return createErrorResult(axleError, null, stats);
     }
   };

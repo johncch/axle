@@ -12,7 +12,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -24,7 +24,7 @@ export async function createGenerationRequestWithResponsesAPI(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context: { recorder?: Recorder };
+  context: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -36,7 +36,7 @@ export async function createGenerationRequestWithResponsesAPI(params: {
   };
 }): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
-  const { recorder } = context;
+  const tracer = context?.tracer;
 
   const modelTools = prepareTools(tools);
   const request: ResponseCreateParamsNonStreaming = {
@@ -47,18 +47,18 @@ export async function createGenerationRequestWithResponsesAPI(params: {
     ...options,
   };
 
-  recorder?.debug?.log(request);
+  tracer?.debug("OpenAI ResponsesAPI request", { request });
 
   let result: ModelResult;
   try {
     const response = await client.responses.create(request);
     result = fromModelResponse(response);
   } catch (e) {
-    recorder?.error?.log(e);
+    tracer?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }
 
-  recorder?.debug?.log(result);
+  tracer?.debug("OpenAI ResponsesAPI response", { result });
   return result;
 }
 

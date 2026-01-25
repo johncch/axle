@@ -1,5 +1,5 @@
 import * as z from "zod";
-import type { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { Tool } from "../tools/types.js";
 import {
   Base64FileInfo,
@@ -120,7 +120,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> {
   compile(
     variables: Record<string, string>,
     runtime: {
-      recorder?: Recorder;
+      tracer?: TracingContext;
       options?: { warnUnused?: boolean };
     } = {},
   ): { message: string; instructions: string } {
@@ -136,11 +136,11 @@ export abstract class AbstractInstruct<T extends OutputSchema> {
   protected createUserMessage(
     variables: Record<string, string>,
     runtime: {
-      recorder?: Recorder;
+      tracer?: TracingContext;
       options?: { warnUnused?: boolean };
     } = {},
   ): string {
-    const { recorder, options } = runtime;
+    const { tracer, options } = runtime;
     const allVars = { ...variables, ...this.inputs };
     let finalPrompt = replaceVariables(this.prompt, allVars);
 
@@ -154,7 +154,7 @@ export abstract class AbstractInstruct<T extends OutputSchema> {
     if (options?.warnUnused) {
       const unreplaced = finalPrompt.match(/\{\{(.*?)\}\}/g);
       if (unreplaced) {
-        recorder?.error.log(`Warning unused variables ${unreplaced.join(", ")}`);
+        tracer?.error(`Warning unused variables ${unreplaced.join(", ")}`);
         throw new Error(`Unused variables: ${unreplaced.join(", ")}`);
       }
     }
@@ -191,8 +191,8 @@ export abstract class AbstractInstruct<T extends OutputSchema> {
     return `\n- Use <${key}></${key}> tags to indicate the answer for ${key}. The answer must be a ${value}.\n  Example: <${key}>${JSON.stringify(example)}</${key}>\n`;
   }
 
-  finalize(rawValue: string, runtime: { recorder?: Recorder } = {}): InferedOutputSchema<T> {
-    const { recorder } = runtime;
+  finalize(rawValue: string, runtime: { tracer?: TracingContext } = {}): InferedOutputSchema<T> {
+    const { tracer } = runtime;
     this.rawResponse = rawValue;
 
     // Handle empty schema case

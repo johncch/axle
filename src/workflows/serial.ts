@@ -9,11 +9,9 @@ import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
 import { Conversation } from "../messages/conversation.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
-import type { Recorder } from "../recorder/recorder.js";
-import { TaskStatus } from "../recorder/types.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import { createErrorResult, createResult } from "../utils/result.js";
-import { friendly } from "../utils/utils.js";
 import { setResultsIntoVariables } from "../utils/variables.js";
 import type { WorkflowExecutable, WorkflowResult } from "./types.js";
 
@@ -33,11 +31,11 @@ export const serialWorkflow: SerialWorkflow = (
   first: SerialJob | WorkflowStep,
   ...rest: WorkflowStep[]
 ) => {
-  const prepare = async (context: { recorder?: Recorder }): Promise<WorkflowStep[]> => {
-    const { recorder } = context;
+  const prepare = async (context: { tracer?: TracingContext }): Promise<WorkflowStep[]> => {
+    const { tracer } = context;
 
     if (isSerialJob(first)) {
-      return await configToTasks(first, { recorder });
+      return await configToTasks(first, { tracer });
     } else {
       return [first, ...rest];
     }
@@ -48,30 +46,19 @@ export const serialWorkflow: SerialWorkflow = (
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
-    recorder?: Recorder;
+    tracer?: TracingContext;
     name?: string;
   }): Promise<WorkflowResult> => {
-    const { provider, variables, options, stats, recorder, name } = context;
-    const id = crypto.randomUUID();
+    const { provider, variables, options, stats, tracer, name } = context;
 
-    recorder?.info?.log({
-      type: "task",
-      id,
-      status: TaskStatus.Running,
-      message: `[${friendly(id, name)}] Starting job`,
-    });
+    const workflowSpan = tracer?.startSpan(name ?? "serial", { type: "workflow" });
 
     try {
-      const steps = await prepare({ recorder });
+      const steps = await prepare({ tracer: workflowSpan });
       const conversation = new Conversation();
 
       for (const [index, step] of steps.entries()) {
-        recorder?.info?.log({
-          type: "task",
-          id,
-          status: TaskStatus.Running,
-          message: `[${friendly(id, name)}] Processing step ${index + 1}: ${step.name}`,
-        });
+        const stepSpan = workflowSpan?.startSpan(step.name, { type: "internal" });
 
         try {
           if (step instanceof Instruct) {
@@ -81,17 +68,18 @@ export const serialWorkflow: SerialWorkflow = (
               stats,
               variables,
               options,
-              recorder,
+              tracer: stepSpan,
             });
           } else {
-            await executeAction(step, { variables, options, recorder });
+            await executeAction(step, { variables, options, tracer: stepSpan });
           }
+          stepSpan?.end();
         } catch (error) {
+          stepSpan?.end("error");
           const taskError =
             error instanceof AxleError
               ? error
               : new TaskError(`Error executing step ${step.name}`, {
-                  id: id,
                   taskType: step.name,
                   taskIndex: index,
                   cause: error instanceof Error ? error : new Error(String(error)),
@@ -100,12 +88,7 @@ export const serialWorkflow: SerialWorkflow = (
         }
       }
 
-      recorder?.info?.log({
-        type: "task",
-        status: TaskStatus.Success,
-        id,
-        message: `[${friendly(id, name)}] Completed ${steps.length} steps`,
-      });
+      workflowSpan?.end();
 
       return createResult(variables.$previous, stats);
     } catch (error) {
@@ -113,17 +96,11 @@ export const serialWorkflow: SerialWorkflow = (
         error instanceof AxleError
           ? error
           : new AxleError(`Serial workflow execution failed`, {
-              id: id,
               cause: error instanceof Error ? error : new Error(String(error)),
             });
 
-      recorder?.info?.log({
-        type: "task",
-        status: TaskStatus.Fail,
-        id,
-        message: `[${friendly(id, name)}] Failed: ${axleError.message}`,
-      });
-      recorder?.error.log(axleError);
+      workflowSpan?.error(axleError.message);
+      workflowSpan?.end("error");
 
       return createErrorResult(axleError, variables.$previous, stats);
     }
@@ -143,13 +120,13 @@ async function executeAction(
   context: {
     variables: Record<string, any>;
     options?: ProgramOptions;
-    recorder?: Recorder;
+    tracer?: TracingContext;
   },
 ): Promise<void> {
-  const { variables, options, recorder } = context;
+  const { variables, options, tracer } = context;
 
   const input = deriveInput(variables.$previous);
-  const output = await action.execute({ input, variables, options, recorder });
+  const output = await action.execute({ input, variables, options, tracer });
 
   if (output !== undefined) {
     variables.output = output;
@@ -167,21 +144,21 @@ async function executeInstruct<T extends Record<string, any>>(
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
-    recorder?: Recorder;
+    tracer?: TracingContext;
   },
 ): Promise<void> {
-  const { conversation, provider, variables, options, stats, recorder } = context;
+  const { conversation, provider, variables, options, stats, tracer } = context;
 
   if (instruct.system) {
     conversation.addSystem(instruct.system);
   }
 
-  const { message, instructions } = instruct.compile(variables, { recorder, options });
+  const { message, instructions } = instruct.compile(variables, { tracer, options });
   const files = instruct.files;
   conversation.addUser(toContentParts({ text: instructions + message, files }));
 
   if (options?.dryRun) {
-    recorder?.debug?.log(conversation);
+    tracer?.debug(JSON.stringify(conversation, null, 2));
     return;
   }
 
@@ -195,21 +172,21 @@ async function executeInstruct<T extends Record<string, any>>(
     provider,
     messages: conversation.messages,
     tools: toolDefinitions,
-    recorder,
+    tracer,
     onToolCall: async (name, params) => {
       const tool = instruct.tools[name];
       if (!tool) {
         return null;
       }
 
-      recorder?.debug?.heading.log(`Executing tool ${tool.name}`);
+      const toolSpan = tracer?.startSpan(`tool:${tool.name}`, { type: "internal" });
       try {
         const result = await tool.execute(params);
-        recorder?.debug?.log(`Complete tool ${tool.name}`);
+        toolSpan?.end();
         return { type: "success", content: JSON.stringify(result) };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        recorder?.debug?.log(`Tool ${tool.name} failed: ${message}`);
+        toolSpan?.end("error");
         return {
           type: "error",
           error: {
@@ -243,11 +220,11 @@ async function executeInstruct<T extends Record<string, any>>(
   switch (finalMessage.finishReason) {
     case AxleStopReason.Stop: {
       const textContent = getTextContent(finalMessage.content);
-      const finalResult = instruct.finalize(textContent, { recorder });
+      const finalResult = instruct.finalize(textContent, { tracer });
 
       setResultsIntoVariables(finalResult as Record<string, unknown>, variables, {
         options,
-        recorder,
+        tracer,
       });
       variables.$previous = finalResult;
       break;

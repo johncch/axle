@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { Instruct } from "../../core/Instruct.js";
-import type { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { loadFileContent, loadManyFiles } from "../../utils/file.js";
 import { arrayify } from "../../utils/utils.js";
 import type { ChatStep, ToolProviderConfig } from "../configs/schemas.js";
@@ -12,9 +12,9 @@ type SchemaRecord = Record<string, z.ZodTypeAny>;
 export const chatConverter: StepToClassConverter<ChatStep, Instruct<SchemaRecord>> = {
   async convert(
     step: ChatStep,
-    context: { recorder?: Recorder; toolNames?: string[]; toolConfig?: ToolProviderConfig },
+    context: { tracer?: TracingContext; toolNames?: string[]; toolConfig?: ToolProviderConfig },
   ): Promise<Instruct<SchemaRecord>> {
-    const { recorder, toolNames, toolConfig } = context;
+    const { tracer, toolNames, toolConfig } = context;
     const { message, system, replace } = step;
 
     let instruct: Instruct<SchemaRecord>;
@@ -37,7 +37,7 @@ export const chatConverter: StepToClassConverter<ChatStep, Instruct<SchemaRecord
       for (const r of replace) {
         if (r.source === "file") {
           const filenames = arrayify(r.files);
-          const replacements = await loadManyFiles(filenames, recorder);
+          const replacements = await loadManyFiles(filenames, tracer);
           instruct.addInput(r.pattern, replacements);
         }
       }

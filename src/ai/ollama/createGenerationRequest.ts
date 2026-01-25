@@ -5,7 +5,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -35,7 +35,7 @@ export async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context: { recorder?: Recorder };
+  context: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -47,7 +47,7 @@ export async function createGenerationRequest(params: {
   };
 }): Promise<ModelResult> {
   const { url, model, messages, system, tools, context, options } = params;
-  const { recorder } = context;
+  const tracer = context?.tracer;
 
   const chatTools = convertToolDefToOllama(tools);
 
@@ -67,7 +67,7 @@ export async function createGenerationRequest(params: {
     ...(chatTools && { tools: chatTools }),
   };
 
-  recorder?.debug?.log(requestBody);
+  tracer?.debug("Ollama request", { request: requestBody });
 
   let result: ModelResult;
   try {
@@ -86,11 +86,11 @@ export async function createGenerationRequest(params: {
     const data = await response.json();
     result = fromModelResponse(data);
   } catch (e) {
-    recorder?.error?.log("Error fetching Ollama response:", e);
+    tracer?.error("Error fetching Ollama response", { error: e instanceof Error ? e.message : String(e) });
     result = getUndefinedError(e);
   }
 
-  recorder?.debug?.log(result);
+  tracer?.debug("Ollama response", { result });
   return result;
 }
 

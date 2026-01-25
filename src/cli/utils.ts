@@ -1,5 +1,5 @@
 import type { WorkflowStep } from "../actions/types.js";
-import type { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 import { FileRunPlanner } from "../workflows/planners/fileRunPlanner.js";
 import { MultiPlanner } from "../workflows/planners/multiPlanner.js";
 import { FileExistSkipCondition } from "../workflows/skipConditions/fileExistSkipCondition.js";
@@ -8,21 +8,21 @@ import { converters } from "./converters/index.js";
 
 export async function configToTasks(
   config: { steps: Step[]; tools?: string[]; toolConfig?: ToolProviderConfig },
-  context: { recorder?: Recorder },
+  context: { tracer?: TracingContext },
 ): Promise<WorkflowStep[]> {
-  const { recorder } = context;
+  const { tracer } = context;
   const toolNames = config.tools ?? undefined;
   const toolConfig = config.toolConfig ?? undefined;
   const promises = config.steps.map(async (step) => {
     const converter = converters.get(step.uses);
-    return await converter.convert(step, { recorder, toolNames, toolConfig });
+    return await converter.convert(step, { tracer, toolNames, toolConfig });
   });
   return Promise.all(promises);
 }
 
 export async function configToPlanner(
   config: { batch: BatchOptions[] },
-  contexts: { recorder?: Recorder },
+  contexts: { tracer?: TracingContext },
 ) {
   const { batch } = config;
   if (batch.length === 1) {

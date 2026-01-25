@@ -1,11 +1,11 @@
 import type { WorkflowStep } from "../../actions/types.js";
-import type { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import type { Step } from "../configs/schemas.js";
 
 type StepBase = Extract<Step, { uses: string }>;
 
 export interface StepToClassConverter<S extends StepBase, T extends WorkflowStep> {
-  convert(s: S, context?: { recorder?: Recorder; [key: string]: any }): Promise<T>;
+  convert(s: S, context?: { tracer?: TracingContext; [key: string]: any }): Promise<T>;
 }
 
 export class StepToClassRegistry<S extends StepBase, T extends WorkflowStep> {

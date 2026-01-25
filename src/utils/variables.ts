@@ -1,16 +1,16 @@
-import { Recorder } from "../recorder/recorder.js";
+import type { TracingContext } from "../tracer/types.js";
 
 export function setResultsIntoVariables(
   results: Record<string, unknown>,
   variables: Record<string, unknown>,
-  context: { options?: { warnUnused?: boolean }; recorder?: Recorder },
+  context: { options?: { warnUnused?: boolean }; tracer?: TracingContext },
 ) {
-  const { options, recorder } = context;
+  const { options, tracer } = context;
   const warnUnused = options?.warnUnused ?? true;
 
   for (const [key, value] of Object.entries(results)) {
     if (warnUnused && variables[key]) {
-      recorder?.warn?.log(
+      tracer?.warn(
         `Warning: Variable "${key}" is being overwritten. Previous value: ${variables[key]}, new value: ${value}`,
       );
     }

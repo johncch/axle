@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { createChatCompletionStreamingAdapter } from "./createChatCompletionStreamingAdapter.js";
 import { createResponsesAPIStreamingAdapter } from "./createResponsesAPIStreamingAdapter.js";
@@ -15,7 +15,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { recorder?: Recorder };
+  runtime: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -27,7 +27,7 @@ export async function* createStreamingRequest(params: {
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, runtime, options } = params;
-  const { recorder } = runtime;
+  const tracer = runtime?.tracer;
 
   const useResponsesAPI = (RESPONSES_API_MODELS as readonly string[]).includes(model);
 
@@ -44,7 +44,7 @@ async function* createChatCompletionStream(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { recorder?: Recorder };
+  runtime: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -56,7 +56,7 @@ async function* createChatCompletionStream(params: {
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, runtime, options } = params;
-  const { recorder } = runtime;
+  const tracer = runtime?.tracer;
 
   const chatTools = toModelTools(tools);
   const request = {
@@ -67,7 +67,7 @@ async function* createChatCompletionStream(params: {
     stream: true as const,
   };
 
-  recorder?.debug?.log(request);
+  tracer?.debug("OpenAI ChatCompletion streaming request", { request });
 
   const streamingAdapter = createChatCompletionStreamingAdapter();
 
@@ -81,7 +81,7 @@ async function* createChatCompletionStream(params: {
       }
     }
   } catch (error) {
-    recorder?.error?.log(error);
+    tracer?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
       data: {
@@ -99,7 +99,7 @@ async function* createResponsesAPIStream(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { recorder?: Recorder };
+  runtime: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -111,7 +111,7 @@ async function* createResponsesAPIStream(params: {
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, runtime, options } = params;
-  const { recorder } = runtime;
+  const tracer = runtime?.tracer;
 
   console.log(options);
 
@@ -125,7 +125,7 @@ async function* createResponsesAPIStream(params: {
     ...options,
   };
 
-  recorder?.debug?.log(request);
+  tracer?.debug("OpenAI ResponsesAPI streaming request", { request });
 
   const streamingAdapter = createResponsesAPIStreamingAdapter();
 
@@ -139,7 +139,7 @@ async function* createResponsesAPIStream(params: {
       }
     }
   } catch (error) {
-    recorder?.error?.log(error);
+    tracer?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
       data: {

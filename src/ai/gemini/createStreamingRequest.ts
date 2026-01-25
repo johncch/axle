@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
-import { Recorder } from "../../recorder/recorder.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
@@ -12,7 +12,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { recorder?: Recorder };
+  runtime: { tracer?: TracingContext };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -24,7 +24,7 @@ export async function* createStreamingRequest(params: {
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, runtime, options } = params;
-  const { recorder } = runtime;
+  const tracer = runtime?.tracer;
 
   // Convert max_tokens to maxOutputTokens for Google AI
   const googleOptions = options ? { ...options } : {};
@@ -49,7 +49,7 @@ export async function* createStreamingRequest(params: {
     contents: convertAxleMessagesToGemini(messages),
     config: prepareConfig(tools, system, googleOptions),
   };
-  recorder?.debug?.log(request);
+  tracer?.debug("Gemini streaming request", { request });
 
   const streamingAdapter = createGeminiStreamingAdapter();
 
@@ -66,7 +66,7 @@ export async function* createStreamingRequest(params: {
       }
     }
   } catch (error) {
-    recorder?.error?.log(error);
+    tracer?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
       data: {
