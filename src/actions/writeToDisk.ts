@@ -115,7 +115,7 @@ export class WriteToDisk implements Action {
    * @param context - The action execution context containing:
    *   - `variables`: All workflow variables available for substitution
    *   - `options`: Execution options (e.g., `dryRun`)
-   *   - `recorder`: Optional recorder for logging
+   *   - `tracer`: Optional tracer for logging
    * @returns A promise that resolves when the file has been written
    */
   async execute(context: ActionContext): Promise<void> {

@@ -44,7 +44,17 @@ export type {
   ContentPartToolCall,
 } from "./messages/types.js";
 
+// Tracer
+export { SimpleWriter, Tracer } from "./tracer/index.js";
+export type {
+  EventLevel,
+  SimpleWriterOptions,
+  SpanData,
+  SpanOptions,
+  SpanType,
+  TraceWriter,
+  TracingContext,
+} from "./tracer/index.js";
+
 // Utils
-export { ConsoleWriter } from "./recorder/consoleWriter.js";
-export { LogLevel } from "./recorder/types.js";
 export type { FileInfo } from "./utils/file.js";

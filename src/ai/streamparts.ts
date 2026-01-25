@@ -18,7 +18,6 @@ export class StreamParts {
     "tool-call-complete": new Set<(id: string, name: string, args: any) => void>(),
     complete: new Set<(result: ModelResult) => void>(),
   };
-  // private recorder?: Recorder;
   private isComplete = false;
 
   /* Events API */
