@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { convertAxleMessageToResponseInput } from "../../../../src/ai/openai/utils/responsesAPI.js";
 import { ContentPartText, ContentPartThinking } from "../../../../src/messages/types.js";
+import { convertAxleMessageToResponseInput } from "../../../../src/providers/openai/utils/responsesAPI.js";
 
 describe("responsesAPI utils", () => {
   describe("convertAxleMessageToResponseInput", () => {

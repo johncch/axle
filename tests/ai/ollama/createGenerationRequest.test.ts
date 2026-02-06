@@ -1,7 +1,7 @@
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
-import { createGenerationRequest } from "../../../src/ai/ollama/createGenerationRequest.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
 import { Conversation } from "../../../src/messages/conversation.js";
+import { createGenerationRequest } from "../../../src/providers/ollama/createGenerationRequest.js";
+import { AxleStopReason } from "../../../src/providers/types.js";
 
 // Mock fetch globally
 global.fetch = vi.fn() as any;

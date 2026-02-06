@@ -1,7 +1,7 @@
 import { config } from "dotenv";
 import { z } from "zod";
-import { AIProvider, ModelResult } from "../../src/ai/types.js";
 import { generate } from "../../src/index.js";
+import { AIProvider, ModelResult } from "../../src/providers/types.js";
 import { getAllAxles } from "./helper.js";
 config();
 

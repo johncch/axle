@@ -1,5 +1,5 @@
-import type { AIProvider } from "../ai/types.js";
 import type { AxleError } from "../errors/AxleError.js";
+import type { AIProvider } from "../providers/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 

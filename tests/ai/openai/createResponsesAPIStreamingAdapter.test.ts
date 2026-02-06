@@ -1,6 +1,6 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, test } from "vitest";
-import { createResponsesAPIStreamingAdapter } from "../../../src/ai/openai/createResponsesAPIStreamingAdapter.js";
+import { createResponsesAPIStreamingAdapter } from "../../../src/providers/openai/createResponsesAPIStreamingAdapter.js";
 
 describe("createResponsesAPIStreamingAdapter", () => {
   describe("basic streaming events", () => {

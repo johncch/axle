@@ -4,7 +4,7 @@ import {
   GeminiProviderConfig as GeminiConfig,
   OllamaProviderConfig as OllamaConfig,
   OpenAIProviderConfig as OpenAIConfig,
-} from "../../ai/types.js";
+} from "../../providers/types.js";
 
 /* ============================================================================
  * Validation Error Type

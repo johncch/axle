@@ -3,13 +3,13 @@ export { Axle } from "./core/Axle.js";
 export { ChainOfThought, Instruct } from "./core/index.js";
 
 // AI Providers
-export * as Anthropic from "./ai/anthropic/index.js";
-export * as Gemini from "./ai/gemini/index.js";
-export { generate, generateWithTools, stream } from "./ai/index.js";
-export * as Ollama from "./ai/ollama/index.js";
-export * as OpenAI from "./ai/openai/index.js";
-export { AxleStopReason } from "./ai/types.js";
-export type { AIProvider } from "./ai/types.js";
+export * as Anthropic from "./providers/anthropic/index.js";
+export * as Gemini from "./providers/gemini/index.js";
+export { generate, generateWithTools, stream } from "./providers/index.js";
+export * as Ollama from "./providers/ollama/index.js";
+export * as OpenAI from "./providers/openai/index.js";
+export { AxleStopReason } from "./providers/types.js";
+export type { AIProvider } from "./providers/types.js";
 
 // Tools
 export { braveSearchTool, calculatorTool } from "./tools/index.js";

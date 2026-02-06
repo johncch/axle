@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
-import { createGenerationRequest } from "../../../src/ai/anthropic/createGenerationRequest.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
 import { Conversation } from "../../../src/messages/conversation.js";
+import { createGenerationRequest } from "../../../src/providers/anthropic/createGenerationRequest.js";
+import { AxleStopReason } from "../../../src/providers/types.js";
 
 describe("createGenerationRequest (Anthropic)", () => {
   let mockClient: Anthropic;

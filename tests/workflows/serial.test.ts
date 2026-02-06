@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AIProvider } from "../../src/ai/types.js";
-import { AxleStopReason } from "../../src/ai/types.js";
 import { Instruct } from "../../src/core/Instruct.js";
+import type { AIProvider } from "../../src/providers/types.js";
+import { AxleStopReason } from "../../src/providers/types.js";
 import { serialWorkflow } from "../../src/workflows/serial.js";
 
 // Mock AI provider that returns predictable responses

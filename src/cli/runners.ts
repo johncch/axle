@@ -1,7 +1,7 @@
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
-import type { AIProvider } from "../ai/types.js";
 import { Instruct } from "../core/Instruct.js";
+import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";

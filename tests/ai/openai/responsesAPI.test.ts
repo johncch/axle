@@ -1,6 +1,6 @@
 import { Response } from "openai/resources/responses/responses.js";
 import { describe, expect, test } from "vitest";
-import { fromModelResponse } from "../../../src/ai/openai/responsesAPI.js";
+import { fromModelResponse } from "../../../src/providers/openai/responsesAPI.js";
 
 describe("responsesAPI", () => {
   describe("fromModelResponse", () => {

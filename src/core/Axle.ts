@@ -1,12 +1,12 @@
-import { getProvider } from "../ai/index.js";
-import { AIProvider, AIProviderConfig } from "../ai/types.js";
 import { AxleError } from "../errors/index.js";
-import type { Instruct } from "./Instruct.js";
+import { getProvider } from "../providers/index.js";
+import { AIProvider, AIProviderConfig } from "../providers/types.js";
 import { Tracer } from "../tracer/tracer.js";
 import type { TraceWriter } from "../tracer/types.js";
 import { Base64FileInfo, FileInfo, TextFileInfo, loadFileContent } from "../utils/file.js";
 import { serialWorkflow } from "../workflows/serial.js";
 import { WorkflowResult } from "../workflows/types.js";
+import type { Instruct } from "./Instruct.js";
 
 export class Axle {
   provider: AIProvider;

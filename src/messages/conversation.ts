@@ -1,4 +1,4 @@
-import { AxleStopReason } from "../ai/types.js";
+import { AxleStopReason } from "../providers/types.js";
 import { AxleAssistantMessage, AxleMessage, AxleToolCallResult, AxleUserMessage } from "./types.js";
 
 export class Conversation {

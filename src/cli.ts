@@ -1,11 +1,11 @@
 import { Command } from "@commander-js/extra-typings";
 import pkg from "../package.json";
-import { getProvider } from "./ai/index.js";
-import type { AIProvider } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { runBatch, runSingle } from "./cli/runners.js";
 import { createTools } from "./cli/tools.js";
+import { getProvider } from "./providers/index.js";
+import type { AIProvider } from "./providers/types.js";
 import { Tool } from "./tools/index.js";
 import { Tracer } from "./tracer/tracer.js";
 import { SimpleWriter } from "./tracer/writers/simple.js";
