@@ -10,7 +10,7 @@
 
 provider:
   type: anthropic
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-5-20250929
 
 task: |
   Your task is to update the provider files in ./src/ai/<provider>/models.ts
@@ -32,7 +32,9 @@ task: |
 
   For each provider, output TypeScript code with:
   1. A `Models` const object mapping CONSTANT_NAMES to model IDs
-  2. A `MULTIMODAL_MODELS` array referencing models that support images
+  2. Inside the Models const, have aliases for latest model family names, i.e., CLAUDE_SONNET_4_5_LATEST mirrors to the latest CLAUDE_SONNET_4_5 if model names are date specific.
+  3. Prefer the cheap models (Haiku, OpenAI 5 mini, Gemini Flash equivalent) as the default model
+  4. You must not rename exported constants because other files refer to them.
 
   Format the output as a single TypeScript file that can be used to replace
   the existing model definitions.

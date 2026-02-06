@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AxleMessage } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
@@ -43,7 +43,7 @@ export async function createGenerationRequest(params: {
 
   const request = {
     model: model,
-    max_tokens: 4096,
+    max_tokens: options?.max_tokens ?? 10000,
     messages: convertToProviderMessages(messages),
     ...(system && { system }),
     ...(tools && { tools: convertToProviderTools(tools) }),

@@ -10,6 +10,7 @@ const readFileTool: Tool<typeof readFileSchema> = {
   name: "read-file",
   description: "Read the contents of a file from disk",
   schema: readFileSchema,
+  summarize: ({ path }) => path,
   execute: async ({ path }) => {
     try {
       const content = await readFile(path, "utf-8");

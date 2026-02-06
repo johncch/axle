@@ -14,6 +14,7 @@ const patchFileTool: Tool<typeof patchFileSchema> = {
   name: "patch-file",
   description: "Patch a file by replacing an exact string match within a specified line range",
   schema: patchFileSchema,
+  summarize: ({ path, start_line, end_line }) => `${path}:${start_line}:${end_line}`,
   execute: async ({ path, old_string, new_string, start_line, end_line }) => {
     if (end_line < start_line) {
       throw new Error(`end_line (${end_line}) must be >= start_line (${start_line})`);

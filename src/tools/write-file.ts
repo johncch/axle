@@ -12,6 +12,7 @@ const writeFileTool: Tool<typeof writeFileSchema> = {
   name: "write-file",
   description: "Write content to a file on disk, creating directories if needed",
   schema: writeFileSchema,
+  summarize: ({ path }) => path,
   execute: async ({ path, content }) => {
     try {
       await mkdir(dirname(path), { recursive: true });

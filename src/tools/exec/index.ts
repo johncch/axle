@@ -28,6 +28,10 @@ class ExecTool implements Tool<typeof execSchema> {
     this.cwd = config.cwd;
   }
 
+  summarize(params: z.infer<typeof execSchema>): string {
+    return params.command;
+  }
+
   async execute(params: z.infer<typeof execSchema>): Promise<string> {
     const { command } = params;
 

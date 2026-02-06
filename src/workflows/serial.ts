@@ -119,7 +119,9 @@ async function executeInstruct<T extends Record<string, any>>(
         return null;
       }
 
-      const toolSpan = tracer?.startSpan(`tool:${tool.name}`, { type: "tool" });
+      const summary = tool.summarize?.(params);
+      const spanName = summary ? `tool:${tool.name} (${summary})` : `tool:${tool.name}`;
+      const toolSpan = tracer?.startSpan(spanName, { type: "tool" });
       try {
         const result = await tool.execute(params);
         toolSpan?.end();
