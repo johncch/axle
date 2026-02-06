@@ -20,7 +20,9 @@
       "Bash(grep:*)",
       "mcp__craft__documents_search",
       "mcp__craft__blocks_get",
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "Bash(git mv:*)",
+      "Bash(git rm:*)"
     ]
   },
   "enableAllProjectMcpServers": false

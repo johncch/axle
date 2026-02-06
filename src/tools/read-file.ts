@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import type { Tool } from "./types.js";
 
-const readFromDiskSchema = z.object({
+const readFileSchema = z.object({
   path: z.string().describe("The file path to read from"),
 });
 
-const readFromDiskTool: Tool<typeof readFromDiskSchema> = {
-  name: "read-from-disk",
+const readFileTool: Tool<typeof readFileSchema> = {
+  name: "read-file",
   description: "Read the contents of a file from disk",
-  schema: readFromDiskSchema,
+  schema: readFileSchema,
   execute: async ({ path }) => {
     try {
       const content = await readFile(path, "utf-8");
@@ -23,4 +23,4 @@ const readFromDiskTool: Tool<typeof readFromDiskSchema> = {
   },
 };
 
-export default readFromDiskTool;
+export default readFileTool;

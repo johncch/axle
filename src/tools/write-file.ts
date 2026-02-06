@@ -3,15 +3,15 @@ import { dirname } from "node:path";
 import { z } from "zod";
 import type { Tool } from "./types.js";
 
-const writeToDiskSchema = z.object({
+const writeFileSchema = z.object({
   path: z.string().describe("The file path to write to"),
   content: z.string().describe("The content to write to the file"),
 });
 
-const writeToDiskTool: Tool<typeof writeToDiskSchema> = {
-  name: "write-to-disk",
+const writeFileTool: Tool<typeof writeFileSchema> = {
+  name: "write-file",
   description: "Write content to a file on disk, creating directories if needed",
-  schema: writeToDiskSchema,
+  schema: writeFileSchema,
   execute: async ({ path, content }) => {
     try {
       await mkdir(dirname(path), { recursive: true });
@@ -26,4 +26,4 @@ const writeToDiskTool: Tool<typeof writeToDiskSchema> = {
   },
 };
 
-export default writeToDiskTool;
+export default writeFileTool;

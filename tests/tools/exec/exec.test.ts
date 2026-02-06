@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import execTool from "../../src/tools/exec.js";
+import execTool from "../../../src/tools/exec/index.js";
 
 describe("ExecTool", () => {
   beforeEach(() => {

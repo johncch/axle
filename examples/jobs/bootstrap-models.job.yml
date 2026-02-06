@@ -39,5 +39,6 @@ task: |
 
 tools:
   - exec
-  - write-to-disk
-  - read-from-disk
+  - write-file
+  - read-file
+  - patch-file

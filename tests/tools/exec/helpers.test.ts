@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatExecError, formatOutput, runCommand } from "../../src/lib/exec.js";
+import { formatExecError, formatOutput, runCommand } from "../../../src/tools/exec/helpers.js";
 
 describe("lib/exec", () => {
   describe("runCommand", () => {

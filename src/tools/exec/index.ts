@@ -1,7 +1,7 @@
 import * as z from "zod";
-import type { ExecProviderConfig } from "../cli/configs/schemas.js";
-import { formatExecError, formatOutput, runCommand } from "../lib/exec.js";
-import type { Tool } from "./types.js";
+import type { ExecProviderConfig } from "../../cli/configs/schemas.js";
+import type { Tool } from "../types.js";
+import { formatExecError, formatOutput, runCommand } from "./helpers.js";
 
 const execSchema = z.object({
   command: z.string().describe("The shell command to execute"),

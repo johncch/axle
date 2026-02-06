@@ -13,4 +13,4 @@ task: |
   Provide a concise summary with key points and write it into "output/summary-{name}.txt"
 
 tools:
-  - write-to-disk
+  - write-file

@@ -106,13 +106,14 @@ describe("CLI Factories", () => {
       expect(availableTools).toContain("brave");
       expect(availableTools).toContain("calculator");
       expect(availableTools).toContain("exec");
-      expect(availableTools).toContain("read-from-disk");
-      expect(availableTools).toContain("write-to-disk");
+      expect(availableTools).toContain("patch-file");
+      expect(availableTools).toContain("read-file");
+      expect(availableTools).toContain("write-file");
     });
 
     it("should be a readonly array", () => {
       expect(Array.isArray(availableTools)).toBe(true);
-      expect(availableTools).toHaveLength(5);
+      expect(availableTools).toHaveLength(6);
     });
   });
 });

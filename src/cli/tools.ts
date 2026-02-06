@@ -1,9 +1,10 @@
 import braveSearchTool from "../tools/brave.js";
 import calculatorTool from "../tools/calculator.js";
-import execTool from "../tools/exec.js";
-import readFromDiskTool from "../tools/read-from-disk.js";
-import writeToDiskTool from "../tools/write-to-disk.js";
+import execTool from "../tools/exec/index.js";
+import patchFileTool from "../tools/patch-file.js";
+import readFileTool from "../tools/read-file.js";
 import type { Tool } from "../tools/types.js";
+import writeFileTool from "../tools/write-file.js";
 import type { ToolProviderConfig } from "./configs/schemas.js";
 
 /**
@@ -29,11 +30,14 @@ export function createTool(name: string, config?: ToolProviderConfig): Tool {
       }
       return execTool;
     }
-    case "read-from-disk": {
-      return readFromDiskTool;
+    case "patch-file": {
+      return patchFileTool;
     }
-    case "write-to-disk": {
-      return writeToDiskTool;
+    case "read-file": {
+      return readFileTool;
+    }
+    case "write-file": {
+      return writeFileTool;
     }
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -50,5 +54,12 @@ export function createTools(names: string[], config?: ToolProviderConfig): Tool[
 /**
  * Available tool names for reference.
  */
-export const availableTools = ["brave", "calculator", "exec", "read-from-disk", "write-to-disk"] as const;
+export const availableTools = [
+  "brave",
+  "calculator",
+  "exec",
+  "patch-file",
+  "read-file",
+  "write-file",
+] as const;
 export type AvailableToolName = (typeof availableTools)[number];
