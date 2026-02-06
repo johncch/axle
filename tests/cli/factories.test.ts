@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { WriteToDisk } from "../../src/actions/writeToDisk.js";
 import type { ToolProviderConfig } from "../../src/cli/configs/schemas.js";
-import {
-  availableTools,
-  createTool,
-  createTools,
-  createWriteToDiskAction,
-} from "../../src/cli/factories.js";
+import { availableTools, createTool, createTools } from "../../src/cli/tools.js";
 
 describe("CLI Factories", () => {
   describe("createTool", () => {
@@ -104,26 +98,6 @@ describe("CLI Factories", () => {
 
     it("should throw if any tool name is unknown", () => {
       expect(() => createTools(["brave", "unknown"])).toThrow("Unknown tool: unknown");
-    });
-  });
-
-  describe("createWriteToDiskAction", () => {
-    it("should create WriteToDisk action with path only", () => {
-      const action = createWriteToDiskAction("./output/test.txt");
-      expect(action).toBeInstanceOf(WriteToDisk);
-      expect(action.name).toBe("write-to-disk");
-    });
-
-    it("should create WriteToDisk action with custom content template", () => {
-      const action = createWriteToDiskAction("./output/test.txt", "{{customField}}");
-      expect(action).toBeInstanceOf(WriteToDisk);
-      expect(action.name).toBe("write-to-disk");
-    });
-
-    it("should use default content template when not specified", () => {
-      const action = createWriteToDiskAction("./output/test.txt");
-      expect(action).toBeInstanceOf(WriteToDisk);
-      // Default template is {{response}}
     });
   });
 

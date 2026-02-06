@@ -1,6 +1,5 @@
 export { Tracer } from "./tracer.js";
 export type {
-  ActionResult,
   EventLevel,
   LLMRequest,
   LLMResponse,

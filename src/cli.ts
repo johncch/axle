@@ -4,10 +4,12 @@ import { getProvider } from "./ai/index.js";
 import type { AIProvider } from "./ai/types.js";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
+import { runBatch, runSingle } from "./cli/runners.js";
+import { createTools } from "./cli/tools.js";
+import { Tool } from "./tools/index.js";
 import { Tracer } from "./tracer/tracer.js";
 import { SimpleWriter } from "./tracer/writers/simple.js";
 import type { Stats } from "./types.js";
-import { dagWorkflow } from "./workflows/dag.js";
 
 const program = new Command()
   .name("axle")
@@ -114,12 +116,12 @@ try {
  */
 let provider: AIProvider;
 try {
-  const { engine, ...otherConfig } = jobConfig.using;
+  const { type, ...otherConfig } = jobConfig.provider;
   const providerConfig = {
-    ...serviceConfig[engine],
+    ...serviceConfig[type],
     ...otherConfig,
   };
-  provider = getProvider(engine, providerConfig);
+  provider = getProvider(type, providerConfig);
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
   rootSpan.error(error.message);
@@ -135,22 +137,15 @@ if (options.dryRun) {
   rootSpan.info("Dry run mode enabled. No API calls will be made.");
 }
 
+const sharedTools: Tool[] = jobConfig.tools?.length ? createTools(jobConfig.tools) : [];
+
 const stats: Stats = { in: 0, out: 0 };
 const startTime = performance.now();
-const jobSpan = rootSpan.startSpan("job", { type: "workflow" });
 
-const response = await dagWorkflow(jobConfig.jobs).execute({
-  provider,
-  variables,
-  options,
-  stats,
-  tracer: jobSpan,
-});
-
-jobSpan.end();
-
-if (response) {
-  rootSpan.info("Response: " + JSON.stringify(response, null, 2));
+if (jobConfig.batch) {
+  await runBatch(jobConfig, provider, sharedTools, variables, options, stats, rootSpan);
+} else {
+  await runSingle(jobConfig, provider, sharedTools, variables, options, stats, rootSpan);
 }
 
 const duration = performance.now() - startTime;
@@ -160,6 +155,4 @@ rootSpan.info(`Output tokens: ${stats.out}`);
 
 rootSpan.info("Complete. Goodbye");
 rootSpan.end();
-
-// Ensure all logs are written before exit
 await tracer.flush();

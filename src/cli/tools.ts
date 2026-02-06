@@ -1,4 +1,3 @@
-import { WriteToDisk } from "../actions/writeToDisk.js";
 import braveSearchTool from "../tools/brave.js";
 import calculatorTool from "../tools/calculator.js";
 import execTool from "../tools/exec.js";
@@ -46,17 +45,6 @@ export function createTool(name: string, config?: ToolProviderConfig): Tool {
  */
 export function createTools(names: string[], config?: ToolProviderConfig): Tool[] {
   return names.map((name) => createTool(name, config));
-}
-
-/**
- * Factory for creating Action instances.
- * Actions are workflow-callable steps executed between LLM calls.
- */
-export function createWriteToDiskAction(
-  pathTemplate: string,
-  contentTemplate: string = "{{response}}",
-): WriteToDisk {
-  return new WriteToDisk(pathTemplate, contentTemplate);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { glob } from "glob";
+import mime from "mime";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import type { TracingContext } from "../tracer/types.js";
@@ -144,9 +145,6 @@ export async function writeFileWithDirectories({
   await writeFile(filePath, content);
 }
 
-const SUPPORTED_IMAGE_TYPES = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"];
-const SUPPORTED_DOCUMENT_TYPES = [".pdf"];
-const SUPPORTED_TEXT_TYPES = [".txt", ".md", ".markdown"];
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 export interface FileInfo {
@@ -180,27 +178,45 @@ export function isBase64FileInfo(fileInfo: FileInfo): fileInfo is Base64FileInfo
 }
 
 /**
- * Detect the appropriate encoding for a file based on its extension
- * @param filePath - Path to the file
- * @returns "utf-8" for text files, "base64" for binary files
+ * Get the file type category based on its mime type
+ */
+const TEXT_LIKE_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/yaml",
+  "application/x-yaml",
+  "application/toml",
+]);
+
+function isTextLikeMimeType(mimeType: string): boolean {
+  return mimeType.startsWith("text/") || TEXT_LIKE_MIME_TYPES.has(mimeType);
+}
+
+function getFileCategory(filePath: string): { type: "image" | "document" | "text"; mimeType: string } {
+  const mimeType = mime.getType(filePath);
+  if (!mimeType) {
+    const ext = extname(filePath).toLowerCase();
+    throw new Error(`Unsupported file type: ${ext || "(no extension)"}`);
+  }
+
+  if (mimeType.startsWith("image/")) {
+    return { type: "image", mimeType };
+  } else if (mimeType === "application/pdf") {
+    return { type: "document", mimeType };
+  } else if (isTextLikeMimeType(mimeType)) {
+    return { type: "text", mimeType };
+  } else {
+    const ext = extname(filePath).toLowerCase();
+    throw new Error(`Unsupported file type: ${ext} (${mimeType})`);
+  }
+}
+
+/**
+ * Detect the appropriate encoding for a file based on its mime type
  */
 export function getEncodingForFile(filePath: string): "utf-8" | "base64" {
-  const ext = extname(filePath).toLowerCase();
-
-  if (SUPPORTED_TEXT_TYPES.includes(ext)) {
-    return "utf-8";
-  } else if (SUPPORTED_IMAGE_TYPES.includes(ext) || SUPPORTED_DOCUMENT_TYPES.includes(ext)) {
-    return "base64";
-  } else {
-    const allSupportedTypes = [
-      ...SUPPORTED_TEXT_TYPES,
-      ...SUPPORTED_IMAGE_TYPES,
-      ...SUPPORTED_DOCUMENT_TYPES,
-    ];
-    throw new Error(
-      `Unsupported file type: ${ext}. Supported types: ${allSupportedTypes.join(", ")}`,
-    );
-  }
+  const { type } = getFileCategory(filePath);
+  return type === "text" ? "utf-8" : "base64";
 }
 
 /**
@@ -233,28 +249,13 @@ export async function loadFileContent(
     throw new Error(`File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`);
   }
 
-  const ext = extname(resolvedPath).toLowerCase();
   const fileName = resolvedPath.split("/").pop() || "";
-  const actualEncoding = encoding || getEncodingForFile(resolvedPath);
+  const category = getFileCategory(resolvedPath);
+  const actualEncoding = encoding || (category.type === "text" ? "utf-8" : "base64");
 
   if (actualEncoding === "utf-8") {
-    if (!SUPPORTED_TEXT_TYPES.includes(ext)) {
-      throw new Error(
-        `Unsupported text file type: ${ext}. Supported types: ${SUPPORTED_TEXT_TYPES.join(", ")}`,
-      );
-    }
-
-    let mimeType: string;
-    switch (ext) {
-      case ".txt":
-        mimeType = "text/plain";
-        break;
-      case ".md":
-      case ".markdown":
-        mimeType = "text/markdown";
-        break;
-      default:
-        mimeType = "text/plain";
+    if (category.type !== "text") {
+      throw new Error(`Cannot read ${category.type} file as text: ${filePath}`);
     }
 
     const content = await readFile(resolvedPath, "utf-8");
@@ -262,47 +263,14 @@ export async function loadFileContent(
     return {
       path: resolvedPath,
       content,
-      mimeType,
+      mimeType: category.mimeType,
       size: stats.size,
       name: fileName,
       type: "text",
     };
   } else {
-    let type: "image" | "document";
-    let mimeType: string;
-
-    if (SUPPORTED_IMAGE_TYPES.includes(ext)) {
-      type = "image";
-      switch (ext) {
-        case ".jpg":
-        case ".jpeg":
-          mimeType = "image/jpeg";
-          break;
-        case ".png":
-          mimeType = "image/png";
-          break;
-        case ".gif":
-          mimeType = "image/gif";
-          break;
-        case ".webp":
-          mimeType = "image/webp";
-          break;
-        case ".bmp":
-          mimeType = "image/bmp";
-          break;
-        case ".tiff":
-          mimeType = "image/tiff";
-          break;
-        default:
-          mimeType = "image/jpeg";
-      }
-    } else if (SUPPORTED_DOCUMENT_TYPES.includes(ext)) {
-      type = "document";
-      mimeType = "application/pdf";
-    } else {
-      throw new Error(
-        `Unsupported file type: ${ext}. Supported types: ${[...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_DOCUMENT_TYPES].join(", ")}`,
-      );
+    if (category.type === "text") {
+      throw new Error(`Cannot read text file as binary: ${filePath}`);
     }
 
     const fileBuffer = await readFile(resolvedPath);
@@ -311,10 +279,10 @@ export async function loadFileContent(
     return {
       path: resolvedPath,
       base64,
-      mimeType,
+      mimeType: category.mimeType,
       size: stats.size,
       name: fileName,
-      type,
+      type: category.type,
     };
   }
 }

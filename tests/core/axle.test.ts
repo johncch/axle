@@ -76,7 +76,7 @@ describe("Axle file loading methods", () => {
       await writeFile(filePath, Buffer.from("fake png", "utf-8"));
 
       await expect(Axle.loadFileContent(filePath, "utf-8")).rejects.toThrow(
-        "Unsupported text file type: .png",
+        "Cannot read image file as text",
       );
     });
 
@@ -85,7 +85,7 @@ describe("Axle file loading methods", () => {
       await writeFile(filePath, "text content");
 
       await expect(Axle.loadFileContent(filePath, "base64")).rejects.toThrow(
-        "Unsupported file type: .txt",
+        "Cannot read text file as binary",
       );
     });
 

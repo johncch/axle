@@ -32,7 +32,7 @@ export interface SpanOptions {
 }
 
 // Discriminated union for typed results
-export type SpanResult = LLMResult | ToolResult | ActionResult;
+export type SpanResult = LLMResult | ToolResult;
 
 export interface LLMResult {
   kind: "llm";
@@ -61,13 +61,6 @@ export interface TokenUsage {
 
 export interface ToolResult {
   kind: "tool";
-  name: string;
-  input: unknown;
-  output: unknown;
-}
-
-export interface ActionResult {
-  kind: "action";
   name: string;
   input: unknown;
   output: unknown;

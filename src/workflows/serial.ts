@@ -1,9 +1,6 @@
-import type { Action, WorkflowStep } from "../actions/types.js";
 import { generateWithTools } from "../ai/generateWithTools.js";
 import type { AIProvider } from "../ai/types.js";
 import { AxleStopReason } from "../ai/types.js";
-import type { SerialJob } from "../cli/configs/schemas.js";
-import { configToTasks } from "../cli/utils.js";
 import { Instruct } from "../core/Instruct.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
@@ -15,32 +12,7 @@ import { createErrorResult, createResult } from "../utils/result.js";
 import { setResultsIntoVariables } from "../utils/variables.js";
 import type { WorkflowExecutable, WorkflowResult } from "./types.js";
 
-interface SerialWorkflow {
-  (jobConfig: SerialJob): WorkflowExecutable;
-  (...steps: WorkflowStep[]): WorkflowExecutable;
-}
-
-/**
- * Type guard to check if the input is a SerialJob
- */
-function isSerialJob(obj: SerialJob | WorkflowStep): obj is SerialJob {
-  return "steps" in obj && "type" in obj && obj.type === "serial";
-}
-
-export const serialWorkflow: SerialWorkflow = (
-  first: SerialJob | WorkflowStep,
-  ...rest: WorkflowStep[]
-) => {
-  const prepare = async (context: { tracer?: TracingContext }): Promise<WorkflowStep[]> => {
-    const { tracer } = context;
-
-    if (isSerialJob(first)) {
-      return await configToTasks(first, { tracer });
-    } else {
-      return [first, ...rest];
-    }
-  };
-
+export function serialWorkflow(...steps: Instruct<any>[]): WorkflowExecutable {
   const execute = async (context: {
     provider: AIProvider;
     variables: Record<string, any>;
@@ -54,25 +26,20 @@ export const serialWorkflow: SerialWorkflow = (
     const workflowSpan = tracer?.startSpan(name ?? "serial", { type: "workflow" });
 
     try {
-      const steps = await prepare({ tracer: workflowSpan });
       const conversation = new Conversation();
 
       for (const [index, step] of steps.entries()) {
         const stepSpan = workflowSpan?.startSpan(step.name, { type: "internal" });
 
         try {
-          if (step instanceof Instruct) {
-            await executeInstruct(step, {
-              conversation,
-              provider,
-              stats,
-              variables,
-              options,
-              tracer: stepSpan,
-            });
-          } else {
-            await executeAction(step, { variables, options, tracer: stepSpan });
-          }
+          await executeInstruct(step, {
+            conversation,
+            provider,
+            stats,
+            variables,
+            options,
+            tracer: stepSpan,
+          });
           stepSpan?.end();
         } catch (error) {
           stepSpan?.end("error");
@@ -107,33 +74,6 @@ export const serialWorkflow: SerialWorkflow = (
   };
 
   return { execute };
-};
-
-function deriveInput(previous: Record<string, any> | undefined): string {
-  if (!previous) return "";
-  if (previous.response !== undefined) return String(previous.response);
-  return JSON.stringify(previous);
-}
-
-async function executeAction(
-  action: Action,
-  context: {
-    variables: Record<string, any>;
-    options?: ProgramOptions;
-    tracer?: TracingContext;
-  },
-): Promise<void> {
-  const { variables, options, tracer } = context;
-
-  const input = deriveInput(variables.$previous);
-  const output = await action.execute({ input, variables, options, tracer });
-
-  if (output !== undefined) {
-    variables.output = output;
-    variables.$previous = { output };
-  } else {
-    variables.$previous = {};
-  }
 }
 
 async function executeInstruct<T extends Record<string, any>>(
@@ -179,7 +119,7 @@ async function executeInstruct<T extends Record<string, any>>(
         return null;
       }
 
-      const toolSpan = tracer?.startSpan(`tool:${tool.name}`, { type: "internal" });
+      const toolSpan = tracer?.startSpan(`tool:${tool.name}`, { type: "tool" });
       try {
         const result = await tool.execute(params);
         toolSpan?.end();

@@ -1,13 +1,12 @@
-import { WorkflowStep } from "../actions/types.js";
 import { getProvider } from "../ai/index.js";
 import { AIProvider, AIProviderConfig } from "../ai/types.js";
 import { AxleError } from "../errors/index.js";
+import type { Instruct } from "./Instruct.js";
 import { Tracer } from "../tracer/tracer.js";
 import type { TraceWriter } from "../tracer/types.js";
 import { Base64FileInfo, FileInfo, TextFileInfo, loadFileContent } from "../utils/file.js";
-import { dagWorkflow } from "../workflows/dag.js";
 import { serialWorkflow } from "../workflows/serial.js";
-import { DAGDefinition, DAGWorkflowOptions, WorkflowResult } from "../workflows/types.js";
+import { WorkflowResult } from "../workflows/types.js";
 
 export class Axle {
   provider: AIProvider;
@@ -45,7 +44,7 @@ export class Axle {
    * @param steps
    * @returns
    */
-  async execute(...steps: WorkflowStep[]): Promise<WorkflowResult> {
+  async execute(...steps: Instruct<any>[]): Promise<WorkflowResult> {
     const span = this.tracer.startSpan("execute", { type: "root" });
 
     try {
@@ -63,44 +62,6 @@ export class Axle {
         error instanceof AxleError
           ? error
           : new AxleError("Execution failed", {
-              cause: error instanceof Error ? error : new Error(String(error)),
-            });
-      span.error(axleError.message);
-      span.end("error");
-      return { response: null, error: axleError, success: false };
-    }
-  }
-
-  /**
-   * Execute a DAG workflow
-   * @param dagDefinition - The DAG definition object
-   * @param variables - Additional variables to pass to the workflow
-   * @param options - DAG execution options
-   * @returns Promise<WorkflowResult>
-   */
-  async executeDAG(
-    dagDefinition: DAGDefinition,
-    variables: Record<string, any> = {},
-    options?: DAGWorkflowOptions,
-  ): Promise<WorkflowResult> {
-    const span = this.tracer.startSpan("executeDAG", { type: "root" });
-
-    try {
-      const workflow = dagWorkflow(dagDefinition, options);
-      const result = await workflow.execute({
-        provider: this.provider,
-        variables: { ...this.variables, ...variables },
-        stats: this.stats,
-        tracer: span,
-      });
-
-      span.end();
-      return result;
-    } catch (error) {
-      const axleError =
-        error instanceof AxleError
-          ? error
-          : new AxleError("DAG execution failed", {
               cause: error instanceof Error ? error : new Error(String(error)),
             });
       span.error(axleError.message);

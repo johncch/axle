@@ -1,13 +1,6 @@
-# yaml-language-server: $schema=../../schemas/v1/job.yaml
-using:
-  engine: openai
-  # model: gpt-4o
-  # engine: google
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: openai
 
-jobs:
-  greeting:
-    steps:
-      - uses: chat
-        message: tell me a joke
-      - uses: chat
-        message: explain why this is funny.
+task: |
+  Tell me a joke.

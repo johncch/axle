@@ -1,14 +1,7 @@
-import type { WorkflowStep } from "../actions/types.js";
 import type { AIProvider } from "../ai/types.js";
 import type { AxleError } from "../errors/AxleError.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
-import type { Planner } from "./planners/types.js";
-
-export interface Run {
-  steps: WorkflowStep[];
-  variables: Record<string, any>;
-}
 
 export interface SerializedExecutionResponse {
   response: string;
@@ -35,42 +28,4 @@ export interface WorkflowExecutable {
     tracer?: TracingContext;
     name?: string;
   }) => Promise<WorkflowResult>;
-}
-
-/* DAG types */
-export interface DAGNodeDefinition {
-  step: WorkflowStep | WorkflowStep[];
-  dependsOn?: string | string[];
-}
-
-export interface DAGConcurrentNodeDefinition {
-  planner: Planner;
-  steps: WorkflowStep[];
-  dependsOn?: string | string[];
-}
-
-export interface DAGDefinition {
-  [nodeName: string]:
-    | WorkflowStep
-    | WorkflowStep[]
-    | DAGNodeDefinition
-    | DAGConcurrentNodeDefinition;
-}
-
-export interface DAGNode {
-  id: string;
-  steps: WorkflowStep[];
-  dependencies: string[];
-  planner?: Planner;
-  executionType: "serial" | "concurrent";
-}
-
-export interface DAGExecutionPlan {
-  stages: string[][];
-  nodes: Map<string, DAGNode>;
-}
-
-export interface DAGWorkflowOptions {
-  continueOnError?: boolean;
-  maxConcurrency?: number;
 }

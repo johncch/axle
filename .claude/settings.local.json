@@ -16,7 +16,11 @@
       "Bash(pnpm exec vitest:*)",
       "mcp__acp__Write",
       "mcp__acp__Bash",
-      "mcp__acp__Edit"
+      "mcp__acp__Edit",
+      "Bash(grep:*)",
+      "mcp__craft__documents_search",
+      "mcp__craft__blocks_get",
+      "Bash(pnpm add:*)"
     ]
   },
   "enableAllProjectMcpServers": false
