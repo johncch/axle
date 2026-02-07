@@ -5,7 +5,7 @@ export { ChainOfThought, Instruct } from "./core/index.js";
 // AI Providers
 export * as Anthropic from "./providers/anthropic/index.js";
 export * as Gemini from "./providers/gemini/index.js";
-export { generate, generateWithTools, stream } from "./providers/index.js";
+export { generate, generateTurn, stream } from "./providers/index.js";
 export * as Ollama from "./providers/ollama/index.js";
 export * as OpenAI from "./providers/openai/index.js";
 export { AxleStopReason } from "./providers/types.js";

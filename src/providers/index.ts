@@ -38,5 +38,5 @@ export function getProvider<K extends keyof AIProviderConfig>(
 }
 
 export { generate } from "./generate.js";
-export { generateWithTools } from "./generateWithTools.js";
-export { stream } from "./stream.js";
+export { generateTurn } from "./generateTurn.js";
+export { streamTurn as stream } from "./streamTurn.js";

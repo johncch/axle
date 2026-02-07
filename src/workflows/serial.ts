@@ -3,7 +3,7 @@ import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
 import { Conversation } from "../messages/conversation.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
-import { generateWithTools } from "../providers/generateWithTools.js";
+import { generate } from "../providers/generate.js";
 import type { AIProvider } from "../providers/types.js";
 import { AxleStopReason } from "../providers/types.js";
 import type { TracingContext } from "../tracer/types.js";
@@ -108,7 +108,7 @@ async function executeInstruct<T extends Record<string, any>>(
     schema: tool.schema,
   }));
 
-  const response = await generateWithTools({
+  const response = await generate({
     provider,
     messages: conversation.messages,
     tools: toolDefinitions,

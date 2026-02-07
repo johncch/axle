@@ -1,8 +1,8 @@
 import { AnyStreamChunk } from "../messages/streaming/types.js";
 import { AxleAssistantMessage, AxleMessage } from "../messages/types.js";
-import type { TracingContext } from "../tracer/types.js";
 import { ToolDefinition } from "../tools/types.js";
-import { GenerateOptions } from "./generate.js";
+import type { TracingContext } from "../tracer/types.js";
+import { GenerateOptions } from "./generateTurn.js";
 import { StreamParts } from "./streamparts.js";
 import { AIProvider, ModelResult } from "./types.js";
 
@@ -21,7 +21,7 @@ export interface StreamResult {
   [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
 }
 
-export function stream(props: StreamProps): StreamResult {
+export function streamTurn(props: StreamProps): StreamResult {
   const { provider, messages, system, tools, tracer, options } = props;
   const streamSource = provider.createStreamingRequest?.({
     messages,
