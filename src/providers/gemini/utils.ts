@@ -115,9 +115,9 @@ function convertUserMessage(msg: AxleMessage & { role: "user" }): Content {
 }
 
 function convertContentPart(item: ContentPart): any | null {
-  if (item.type === "text" || item.type === "instructions") {
+  if (item.type === "text") {
     return {
-      text: item.type === "text" ? item.text : item.instructions,
+      text: item.text,
     };
   }
 

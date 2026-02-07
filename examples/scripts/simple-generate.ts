@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import { z } from "zod";
-import { generate } from "../../src/index.js";
+import { generateTurn } from "../../src/index.js";
 import { AIProvider, ModelResult } from "../../src/providers/types.js";
 import { getAllAxles } from "./helper.js";
 config();
@@ -23,7 +23,7 @@ for (const axle of axles) {
     };
   }
 
-  const result = await generate({
+  const result = await generateTurn({
     provider: axle.provider,
     messages: [
       {

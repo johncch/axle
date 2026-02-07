@@ -3,7 +3,7 @@ import { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { AIProvider, ModelResult } from "./types.js";
 
-export interface GenerateOptions {
+export interface GenerateTurnOptions {
   temperature?: number;
   top_p?: number;
   max_tokens?: number;
@@ -13,16 +13,16 @@ export interface GenerateOptions {
   [key: string]: any; // Allow any additional provider-specific options
 }
 
-interface GenerateProps {
+interface GenerateTurnProps {
   provider: AIProvider;
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
   tracer?: TracingContext;
-  options?: GenerateOptions;
+  options?: GenerateTurnOptions;
 }
 
-export async function generateTurn(props: GenerateProps): Promise<ModelResult> {
+export async function generateTurn(props: GenerateTurnProps): Promise<ModelResult> {
   const { provider, messages, system, tools, tracer, options } = props;
   return provider.createGenerationRequest({
     messages,

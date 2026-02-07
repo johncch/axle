@@ -2,7 +2,7 @@ import { AnyStreamChunk } from "../messages/streaming/types.js";
 import { AxleAssistantMessage, AxleMessage } from "../messages/types.js";
 import { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
-import { GenerateOptions } from "./generateTurn.js";
+import { GenerateTurnOptions } from "./generateTurn.js";
 import { StreamParts } from "./streamparts.js";
 import { AIProvider, ModelResult } from "./types.js";
 
@@ -12,7 +12,7 @@ interface StreamProps {
   system?: string;
   tools?: Array<ToolDefinition>;
   tracer?: TracingContext;
-  options?: GenerateOptions;
+  options?: GenerateTurnOptions;
 }
 
 export interface StreamResult {
@@ -21,7 +21,7 @@ export interface StreamResult {
   [Symbol.asyncIterator](): AsyncIterator<AnyStreamChunk>;
 }
 
-export function streamTurn(props: StreamProps): StreamResult {
+export function streamTurn(props: StreamProps): StreamResult | undefined {
   const { provider, messages, system, tools, tracer, options } = props;
   const streamSource = provider.createStreamingRequest?.({
     messages,
@@ -31,7 +31,7 @@ export function streamTurn(props: StreamProps): StreamResult {
     options,
   });
 
-  console.log(streamSource);
+  if (!streamSource) return undefined;
   return new StreamResultImpl(streamSource);
 }
 
