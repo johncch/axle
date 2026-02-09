@@ -96,7 +96,7 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
   }
 
   return {
-    role: "assistant",
+    role: "model",
     parts,
   };
 }

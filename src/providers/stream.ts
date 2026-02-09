@@ -6,17 +6,15 @@ import type {
   ContentPartToolCall,
 } from "../messages/types.js";
 import type { ToolDefinition } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
+import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
-  appendUsage,
   executeToolCalls,
   type GenerateResult,
   type ToolCallCallback,
   type ToolCallResult,
 } from "./helpers.js";
-import { streamTurn } from "./streamTurn.js";
 import type { AIProvider } from "./types.js";
 import { AxleStopReason } from "./types.js";
 
@@ -145,9 +143,24 @@ async function run(
     newMessages.push(message);
   };
 
+  const endWithResult = (result: GenerateResult): GenerateResult => {
+    tracer?.setResult({
+      kind: "llm",
+      model,
+      request: { messages },
+      response: { content: result.result === "success" ? result.final?.content : null },
+      usage: result.usage
+        ? { inputTokens: result.usage.in, outputTokens: result.usage.out }
+        : undefined,
+      finishReason: result.result === "success" ? result.final?.finishReason : undefined,
+    });
+    tracer?.end(result.result === "error" ? "error" : "ok");
+    return result;
+  };
+
   while (true) {
     if (maxIterations !== undefined && iterations >= maxIterations) {
-      return {
+      return endWithResult({
         result: "error",
         messages: newMessages,
         error: {
@@ -161,22 +174,23 @@ async function run(
           },
         },
         usage,
-      };
+      });
     }
 
     iterations += 1;
+    const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
+    turnSpan?.startLLMStream();
 
-    const streamResult = streamTurn({
-      provider,
-      model,
+    const streamSource = provider.createStreamingRequest?.(model, {
       messages: workingMessages,
       system,
       tools,
-      tracer,
+      context: { tracer: turnSpan },
       options: genOptions,
     });
 
-    if (!streamResult) {
+    if (!streamSource) {
+      turnSpan?.end("error");
       throw new Error("Provider does not support streaming. Use generate() instead.");
     }
 
@@ -184,6 +198,7 @@ async function run(
     let turnId = "";
     let turnModel = "";
     let turnFinishReason: AxleStopReason = AxleStopReason.Stop;
+    let turnUsage: Stats = { in: 0, out: 0 };
 
     // Track the current "open" part for accumulation
     let openPartIndex = -1;
@@ -199,7 +214,7 @@ async function run(
       }
     };
 
-    for await (const chunk of streamResult) {
+    for await (const chunk of streamSource) {
       switch (chunk.type) {
         case "start":
           turnId = chunk.id;
@@ -220,6 +235,7 @@ async function run(
             part.text += chunk.data.text;
             openAccumulated = part.text;
           }
+          turnSpan?.appendLLMStream(chunk.data.text);
           emitPartUpdate(updateCbs, openPartIndex, "text", chunk.data.text, openAccumulated);
           break;
         }
@@ -264,6 +280,7 @@ async function run(
         case "complete": {
           closePart();
           turnFinishReason = chunk.data.finishReason;
+          turnUsage = chunk.data.usage;
           break;
         }
 
@@ -272,7 +289,8 @@ async function run(
           const errorUsage = chunk.data.usage ?? { in: 0, out: 0 };
           usage.in += errorUsage.in ?? 0;
           usage.out += errorUsage.out ?? 0;
-          return {
+          turnSpan?.end("error");
+          return endWithResult({
             result: "error",
             messages: newMessages,
             error: {
@@ -283,13 +301,24 @@ async function run(
               },
             },
             usage,
-          };
+          });
         }
       }
     }
 
-    const modelResult = await streamResult.final;
-    appendUsage(usage, modelResult);
+    usage.in += turnUsage.in ?? 0;
+    usage.out += turnUsage.out ?? 0;
+
+    const turnLLMResult: LLMResult = {
+      kind: "llm",
+      model: turnModel,
+      request: { messages: workingMessages },
+      response: { content: turnParts },
+      usage: { inputTokens: turnUsage.in, outputTokens: turnUsage.out },
+      finishReason: turnFinishReason,
+    };
+    turnSpan?.endLLMStream(turnLLMResult);
+    turnSpan?.end();
 
     // Build and add assistant message
     const assistantMessage: AxleAssistantMessage = {
@@ -303,23 +332,23 @@ async function run(
 
     // If not a function call, we're done
     if (turnFinishReason !== AxleStopReason.FunctionCall) {
-      return {
+      return endWithResult({
         result: "success",
         messages: newMessages,
         final: assistantMessage,
         usage,
-      };
+      });
     }
 
     // Extract tool calls from the turn's parts
     const toolCalls = turnParts.filter((p): p is ContentPartToolCall => p.type === "tool-call");
     if (toolCalls.length === 0) {
-      return {
+      return endWithResult({
         result: "success",
         messages: newMessages,
         final: assistantMessage,
         usage,
-      };
+      });
     }
 
     // Execute tool calls
@@ -329,6 +358,10 @@ async function run(
         }
       : async () => null as ToolCallResult | null;
 
+    for (const call of toolCalls) {
+      tracer?.info(`tool call: ${call.name}`, { parameters: call.parameters });
+    }
+
     const { results, missingTool } = await executeToolCalls(toolCalls, wrappedToolCall);
 
     if (results.length > 0) {
@@ -336,12 +369,12 @@ async function run(
     }
 
     if (missingTool) {
-      return {
+      return endWithResult({
         result: "error",
         messages: newMessages,
         error: { type: "tool", error: missingTool },
         usage,
-      };
+      });
     }
   }
 }

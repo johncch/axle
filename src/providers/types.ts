@@ -91,9 +91,9 @@ export interface ModelError {
 export type ModelResult = ModelResponse | ModelError;
 
 export enum AxleStopReason {
-  Stop,
-  Length,
-  FunctionCall,
-  Error,
-  Custom,
+  Stop = "stop",
+  Length = "length",
+  FunctionCall = "function_call",
+  Error = "error",
+  Custom = "custom",
 }
