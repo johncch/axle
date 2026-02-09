@@ -5,7 +5,7 @@ import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
 import { appendUsage, executeToolCalls, GenerateResult, ToolCallCallback } from "./helpers.js";
-import { AIProvider, AxleStopReason } from "./types.js";
+import { AIProvider, AxleStopReason, ModelResult } from "./types.js";
 
 export type { GenerateError, GenerateResult, ToolCallCallback, ToolCallResult } from "./helpers.js";
 
@@ -45,9 +45,42 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     newMessages.push(message);
   };
 
+  const endWithResult = (result: GenerateResult): GenerateResult => {
+    tracer?.setResult({
+      kind: "llm",
+      model,
+      request: { messages },
+      response: { content: result.result === "success" ? result.final?.content : null },
+      usage: result.usage
+        ? { inputTokens: result.usage.in, outputTokens: result.usage.out }
+        : undefined,
+      finishReason: result.result === "success" ? result.final?.finishReason : undefined,
+    });
+    tracer?.end(result.result === "error" ? "error" : "ok");
+    return result;
+  };
+
+  const setTurnResult = (turnSpan: TracingContext | undefined, response: ModelResult): void => {
+    if (!turnSpan || response.type === "error") {
+      turnSpan?.end("error");
+      return;
+    }
+    turnSpan.setResult({
+      kind: "llm",
+      model: response.model ?? model,
+      request: { messages: workingMessages },
+      response: { content: response.content },
+      usage: response.usage
+        ? { inputTokens: response.usage.in, outputTokens: response.usage.out }
+        : undefined,
+      finishReason: response.finishReason,
+    });
+    turnSpan.end();
+  };
+
   while (true) {
     if (maxIterations !== undefined && iterations >= maxIterations) {
-      return {
+      return endWithResult({
         result: "error",
         messages: newMessages,
         error: {
@@ -61,29 +94,32 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
           },
         },
         usage,
-      };
+      });
     }
 
     iterations += 1;
+    const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
+
     const response = await generateTurn({
       provider,
       model,
       messages: workingMessages,
       system,
       tools,
-      tracer,
+      tracer: turnSpan,
       options: generateOptions,
     });
 
     appendUsage(usage, response);
+    setTurnResult(turnSpan, response);
 
     if (response.type === "error") {
-      return {
+      return endWithResult({
         result: "error",
         messages: newMessages,
         error: { type: "model", error: response },
         usage,
-      };
+      });
     }
 
     const assistantMessage: AxleAssistantMessage = {
@@ -97,22 +133,26 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     finalMessage = assistantMessage;
 
     if (response.finishReason !== AxleStopReason.FunctionCall) {
-      return {
+      return endWithResult({
         result: "success",
         messages: newMessages,
         final: finalMessage,
         usage,
-      };
+      });
     }
 
     const toolCalls = getToolCalls(response.content);
     if (toolCalls.length === 0) {
-      return {
+      return endWithResult({
         result: "success",
         messages: newMessages,
         final: finalMessage,
         usage,
-      };
+      });
+    }
+
+    for (const call of toolCalls) {
+      tracer?.info(`tool call: ${call.name}`, { parameters: call.parameters });
     }
 
     const { results, missingTool } = await executeToolCalls(toolCalls, onToolCall);
@@ -121,12 +161,12 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     }
 
     if (missingTool) {
-      return {
+      return endWithResult({
         result: "error",
         messages: newMessages,
         error: { type: "tool", error: missingTool },
         usage,
-      };
+      });
     }
   }
 }

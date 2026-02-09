@@ -159,6 +159,7 @@ async function run(
   };
 
   while (true) {
+    console.log(JSON.stringify(workingMessages, null, 2));
     if (maxIterations !== undefined && iterations >= maxIterations) {
       return endWithResult({
         result: "error",
@@ -272,6 +273,7 @@ async function run(
 
         case "tool-call-complete": {
           const part = turnParts[chunk.data.index] as ContentPartToolCall;
+          if (chunk.data.id) part.id = chunk.data.id;
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
           break;

@@ -1,11 +1,8 @@
-import { config } from "dotenv";
-import { z } from "zod";
-import { generateTurn } from "../../src/index.js";
-import { AIProvider, ModelResult } from "../../src/providers/types.js";
-import { getAllAxles } from "./helper.js";
-config();
+import z from "zod";
+import { generate, SimpleWriter, Tracer } from "../../src/index.js";
+import { useCLIHelper } from "./helper.js";
 
-const axles = getAllAxles();
+const [provider, model] = useCLIHelper();
 
 const callNameTool = {
   name: "setName",
@@ -15,62 +12,49 @@ const callNameTool = {
   }),
 };
 
-for (const axle of axles) {
-  let options: any = {};
-  if (axle.provider.name === "OpenAI") {
-    options.reasoning = {
-      summary: "detailed",
-    };
-  }
+let options: any = {};
+// if (provider.name === "OpenAI") {
+//   options.reasoning = {
+//     summary: "detailed",
+//   };
+// }
 
-  const result = await generateTurn({
-    provider: axle.provider,
+console.log("[Starting...]");
+
+const tracer = new Tracer();
+const logWriter = new SimpleWriter({
+  minLevel: options.debug ? "debug" : "info",
+  showInternal: options.debug,
+  showTimestamp: true,
+});
+tracer.addWriter(logWriter);
+
+try {
+  const result = await generate({
+    provider: provider,
+    model,
     messages: [
       {
         role: "user",
-        content: "Please say hello and then call the setName function with your name",
+        content:
+          "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
       },
     ],
     tools: [callNameTool],
+    options,
+    onToolCall: async (name, parameters) => {
+      console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
+      return {
+        type: "success",
+        content: "success",
+      };
+    },
+    tracer: tracer.startSpan("generate"),
   });
 
-  printResults(axle.provider, result);
+  console.log(JSON.stringify(result.messages, null, 2));
+} catch (e) {
+  console.error(e);
 }
 
-function printResults(provider: AIProvider, result: ModelResult) {
-  console.log(`\n[RUN] ${provider.name} (${provider.model})`);
-  console.log("=".repeat(50));
-  console.log(`${spacer("Result")}: ${result.type}`);
-  if (result.type === "success") {
-    console.log(`${spacer("Text")}: ${result.text}`);
-
-    let toolIndex = 0;
-    console.log(`${spacer(`Content Parts`)}: `);
-    for (const part of result.content) {
-      if (part.type === "text" || part.type === "thinking") {
-        console.log(`${spacer(part.type)}: ${part.text}`);
-      } else {
-        toolIndex += 1;
-        console.log(`${spacer(`Tool Call ${toolIndex}`)}: ${part.id}`);
-        console.log(`${spacer("Name", { indent: 2 })}: ${part.name}`);
-        console.log(`${spacer("Arguments", { indent: 2 })}: ${stringify(part.parameters)}`);
-      }
-    }
-  } else {
-    console.log(result.error.message);
-  }
-}
-
-function stringify(input: any) {
-  if (typeof input === "string") {
-    return input;
-  }
-  return JSON.stringify(input);
-}
-
-function spacer(text: string, options: { length?: number; indent?: number } = {}) {
-  const { length = 12, indent = 0 } = options;
-  const indentation = " ".repeat(indent);
-  const paddedText = text.padEnd(length - indent, " ");
-  return indentation + paddedText;
-}
+console.log("[Complete]");
