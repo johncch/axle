@@ -1,12 +1,12 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, test } from "vitest";
-import { createResponsesAPIStreamingAdapter } from "../../../src/providers/openai/createResponsesAPIStreamingAdapter.js";
+import { createStreamingAdapter } from "../../../src/providers/openai/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
 describe("createResponsesAPIStreamingAdapter", () => {
   describe("basic streaming events", () => {
     test("should handle response.created event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.created",
         response: {
@@ -31,7 +31,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.output_text.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // First create the response
       adapter.handleEvent({
@@ -67,7 +67,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.completed event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.completed",
         response: {
@@ -97,7 +97,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.failed event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.failed",
         response: {
@@ -123,7 +123,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
   describe("reasoning events", () => {
     test("should handle response.output_item.added with reasoning type", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.output_item.added",
         sequence_number: 2,
@@ -146,7 +146,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.reasoning_text.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // First add the reasoning item
       adapter.handleEvent({
@@ -180,7 +180,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.output_item.done with reasoning type", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // First add the reasoning item
       adapter.handleEvent({
@@ -212,7 +212,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle multiple reasoning deltas", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // Add the reasoning item
       adapter.handleEvent({
@@ -269,7 +269,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.reasoning_summary_text.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // First add the reasoning item
       adapter.handleEvent({
@@ -306,7 +306,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
   describe("function call events", () => {
     test("should handle response.function_call_arguments.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.function_call_arguments.delta",
         delta: '{"query": "',
@@ -326,7 +326,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.function_call_arguments.done event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // Start the function call
       adapter.handleEvent({
@@ -360,7 +360,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
   describe("mixed events", () => {
     test("should emit FunctionCall finish reason when tool calls are present", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       adapter.handleEvent({
         type: "response.created",
@@ -414,7 +414,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should emit Stop finish reason when no tool calls", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       adapter.handleEvent({
         type: "response.created",
@@ -459,7 +459,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle reasoning followed by text output", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // Create response
       const chunks1 = adapter.handleEvent({

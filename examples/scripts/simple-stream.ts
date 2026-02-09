@@ -63,7 +63,12 @@ try {
     console.log(`\n[End] ${index} ${type}`);
   });
 
-  await result.final;
+  result.onError((error) => {
+    console.error(`[Error] ${JSON.stringify(error, null, 2)}`);
+  });
+
+  const final = await result.final;
+  console.log(JSON.stringify(final, null, 2));
 } catch (e) {
   console.error(e);
 }

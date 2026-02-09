@@ -3,8 +3,8 @@ import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
-import { createResponsesAPIStreamingAdapter } from "./createResponsesAPIStreamingAdapter.js";
-import { convertAxleMessageToResponseInput, prepareTools } from "./utils/responsesAPI.js";
+import { createStreamingAdapter } from "./createStreamingAdapter.js";
+import { convertAxleMessageToResponseInput, prepareTools } from "./utils.js";
 
 export async function* createStreamingRequest(params: {
   client: OpenAI;
@@ -38,7 +38,7 @@ export async function* createStreamingRequest(params: {
 
   tracer?.debug("OpenAI ResponsesAPI streaming request", { request });
 
-  const streamingAdapter = createResponsesAPIStreamingAdapter();
+  const streamingAdapter = createStreamingAdapter();
 
   try {
     const stream = client.responses.stream(request);

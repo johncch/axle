@@ -4,9 +4,9 @@ import { AxleMessage } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
 import { AIProvider, ModelResult } from "../types.js";
+import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { DEFAULT_MODEL as _DEFAULT_MODEL, Models as _Models } from "./models.js";
-import { createGenerationRequestWithResponsesAPI } from "./responsesAPI.js";
 
 export const NAME = "OpenAI" as const;
 
@@ -35,7 +35,7 @@ export function openai(apiKey: string): AIProvider {
         };
       },
     ): Promise<ModelResult> {
-      return await createGenerationRequestWithResponsesAPI({
+      return await createGenerationRequest({
         client,
         model,
         ...params,

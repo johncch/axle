@@ -2,7 +2,7 @@ import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleStopReason } from "../types.js";
 
-export function createResponsesAPIStreamingAdapter() {
+export function createStreamingAdapter() {
   let messageId = "";
   let model = "";
   let partIndex = 0;

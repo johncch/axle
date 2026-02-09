@@ -12,13 +12,13 @@ import {
   ContentPartToolCall,
 } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessageToResponseInput, prepareTools } from "./utils/responsesAPI.js";
+import { convertAxleMessageToResponseInput, prepareTools } from "./utils.js";
 
-export async function createGenerationRequestWithResponsesAPI(params: {
+export async function createGenerationRequest(params: {
   client: OpenAI;
   model: string;
   messages: Array<AxleMessage>;

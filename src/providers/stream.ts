@@ -11,6 +11,7 @@ import type { Stats } from "../types.js";
 import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
+  type GenerateError,
   type GenerateResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -33,6 +34,8 @@ export type PartUpdateCallback = (
 
 export type PartEndCallback = (index: number, type: StreamPartType, final: string) => void;
 
+export type ErrorCallback = (error: GenerateError) => void;
+
 export interface StreamOptions {
   provider: AIProvider;
   model: string;
@@ -49,6 +52,7 @@ export interface StreamHandle {
   onPartStart(callback: PartStartCallback): void;
   onPartUpdate(callback: PartUpdateCallback): void;
   onPartEnd(callback: PartEndCallback): void;
+  onError(callback: ErrorCallback): void;
   readonly final: Promise<GenerateResult>;
 }
 
@@ -58,6 +62,7 @@ export function stream(options: StreamOptions): StreamHandle {
   const partStartCallbacks: PartStartCallback[] = [];
   const partUpdateCallbacks: PartUpdateCallback[] = [];
   const partEndCallbacks: PartEndCallback[] = [];
+  const errorCallbacks: ErrorCallback[] = [];
 
   let resolveResult: (r: GenerateResult) => void;
   let rejectResult: (e: unknown) => void;
@@ -68,7 +73,7 @@ export function stream(options: StreamOptions): StreamHandle {
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
-    run(options, partStartCallbacks, partUpdateCallbacks, partEndCallbacks).then(
+    run(options, partStartCallbacks, partUpdateCallbacks, partEndCallbacks, errorCallbacks).then(
       resolveResult!,
       rejectResult!,
     ),
@@ -83,6 +88,9 @@ export function stream(options: StreamOptions): StreamHandle {
     },
     onPartEnd(cb) {
       partEndCallbacks.push(cb);
+    },
+    onError(cb) {
+      errorCallbacks.push(cb);
     },
     get final() {
       return finalPromise;
@@ -115,11 +123,16 @@ function emitPartEnd(
   for (const cb of callbacks) cb(index, type, final);
 }
 
+function emitError(callbacks: ErrorCallback[], error: GenerateError) {
+  for (const cb of callbacks) cb(error);
+}
+
 async function run(
   options: StreamOptions,
   startCbs: PartStartCallback[],
   updateCbs: PartUpdateCallback[],
   partEndCbs: PartEndCallback[],
+  errorCbs: ErrorCallback[],
 ): Promise<GenerateResult> {
   const {
     provider,
@@ -144,6 +157,9 @@ async function run(
   };
 
   const endWithResult = (result: GenerateResult): GenerateResult => {
+    if (result.result === "error") {
+      emitError(errorCbs, result.error);
+    }
     tracer?.setResult({
       kind: "llm",
       model,
@@ -198,7 +214,7 @@ async function run(
     const turnParts: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
     let turnId = "";
     let turnModel = "";
-    let turnFinishReason: AxleStopReason = AxleStopReason.Stop;
+    let turnFinishReason: AxleStopReason | null = null;
     let turnUsage: Stats = { in: 0, out: 0 };
 
     // Track the current "open" part for accumulation
@@ -306,6 +322,27 @@ async function run(
           });
         }
       }
+    }
+
+    // Stream ended without a complete chunk — connection dropped or provider bug
+    if (turnFinishReason === null) {
+      closePart();
+      turnSpan?.end("error");
+      return endWithResult({
+        result: "error",
+        messages: newMessages,
+        error: {
+          type: "model",
+          error: {
+            type: "error",
+            error: {
+              type: "IncompleteStream",
+              message: "Stream ended without a completion signal",
+            },
+          },
+        },
+        usage,
+      });
     }
 
     usage.in += turnUsage.in ?? 0;
