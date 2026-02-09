@@ -13,7 +13,7 @@ import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
   type GenerateError,
-  type GenerateResult,
+  type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
 } from "./helpers.js";
@@ -61,7 +61,8 @@ export interface StreamHandle {
   onPartEnd(callback: PartEndCallback): void;
   onInternalTool(callback: InternalToolCallback): void;
   onError(callback: ErrorCallback): void;
-  readonly final: Promise<GenerateResult>;
+  cancel(): void;
+  readonly final: Promise<StreamResult>;
 }
 
 // --- Implementation ---
@@ -73,17 +74,21 @@ export function stream(options: StreamOptions): StreamHandle {
   const internalToolCallbacks: InternalToolCallback[] = [];
   const errorCallbacks: ErrorCallback[] = [];
 
-  let resolveResult: (r: GenerateResult) => void;
+  const controller = new AbortController();
+  let settled = false;
+
+  let resolveResult: (r: StreamResult) => void;
   let rejectResult: (e: unknown) => void;
-  const finalPromise = new Promise<GenerateResult>((resolve, reject) => {
-    resolveResult = resolve;
-    rejectResult = reject;
+  const finalPromise = new Promise<StreamResult>((resolve, reject) => {
+    resolveResult = (r) => { settled = true; resolve(r); };
+    rejectResult = (e) => { settled = true; reject(e); };
   });
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
     run(
       options,
+      controller.signal,
       partStartCallbacks,
       partUpdateCallbacks,
       partEndCallbacks,
@@ -107,6 +112,9 @@ export function stream(options: StreamOptions): StreamHandle {
     },
     onError(cb) {
       errorCallbacks.push(cb);
+    },
+    cancel() {
+      if (!settled) controller.abort();
     },
     get final() {
       return finalPromise;
@@ -145,12 +153,13 @@ function emitError(callbacks: ErrorCallback[], error: GenerateError) {
 
 async function run(
   options: StreamOptions,
+  signal: AbortSignal,
   startCbs: PartStartCallback[],
   updateCbs: PartUpdateCallback[],
   partEndCbs: PartEndCallback[],
   internalToolCbs: InternalToolCallback[],
   errorCbs: ErrorCallback[],
-): Promise<GenerateResult> {
+): Promise<StreamResult> {
   const {
     provider,
     model,
@@ -173,25 +182,56 @@ async function run(
     newMessages.push(message);
   };
 
-  const endWithResult = (result: GenerateResult): GenerateResult => {
+  const endWithResult = (result: StreamResult): StreamResult => {
     if (result.result === "error") {
       emitError(errorCbs, result.error);
     }
+    const finalContent = result.result === "success"
+      ? result.final?.content
+      : result.result === "cancelled"
+        ? result.partial?.content
+        : null;
+    const finishReason = result.result === "success"
+      ? result.final?.finishReason
+      : result.result === "cancelled"
+        ? AxleStopReason.Cancelled
+        : undefined;
     tracer?.setResult({
       kind: "llm",
       model,
       request: { messages },
-      response: { content: result.result === "success" ? result.final?.content : null },
+      response: { content: finalContent ?? null },
       usage: result.usage
         ? { inputTokens: result.usage.in, outputTokens: result.usage.out }
         : undefined,
-      finishReason: result.result === "success" ? result.final?.finishReason : undefined,
+      finishReason,
     });
     tracer?.end(result.result === "error" ? "error" : "ok");
     return result;
   };
 
+  const buildCancelledResult = (
+    turnParts: Array<ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool>,
+    turnId: string,
+    turnModel: string,
+    closePart: () => void,
+  ): StreamResult => {
+    closePart();
+    const hasContent = turnParts.length > 0;
+    const partial: AxleAssistantMessage | undefined = hasContent
+      ? { role: "assistant", id: turnId, model: turnModel, content: turnParts, finishReason: AxleStopReason.Cancelled }
+      : undefined;
+    if (partial) addMessage(partial);
+    tracer?.end("ok");
+    return { result: "cancelled", messages: newMessages, partial, usage };
+  };
+
   while (true) {
+    // Check 1: before starting a new iteration
+    if (signal.aborted) {
+      return buildCancelledResult([], "", "", () => {});
+    }
+
     if (maxIterations !== undefined && iterations >= maxIterations) {
       return endWithResult({
         result: "error",
@@ -219,6 +259,7 @@ async function run(
       system,
       tools,
       context: { tracer: turnSpan },
+      signal,
       options: genOptions,
     });
 
@@ -388,6 +429,14 @@ async function run(
         default:
           console.warn(`[WARN] Unhandled chunk type. Should never happen`);
       }
+
+      // Check 2: after processing each chunk
+      if (signal.aborted) break;
+    }
+
+    if (signal.aborted) {
+      turnSpan?.end("ok");
+      return buildCancelledResult(turnParts, turnId, turnModel, closePart);
     }
 
     // Stream ended without a complete chunk — connection dropped or provider bug
@@ -454,6 +503,12 @@ async function run(
         final: assistantMessage,
         usage,
       });
+    }
+
+    // Check 3: before tool execution
+    if (signal.aborted) {
+      tracer?.end("ok");
+      return { result: "cancelled", messages: newMessages, usage };
     }
 
     // Execute tool calls

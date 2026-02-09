@@ -50,6 +50,7 @@ export function openai(apiKey: string): AIProvider {
         system?: string;
         tools?: Array<ToolDefinition>;
         context: { tracer?: TracingContext };
+        signal?: AbortSignal;
         options?: {
           temperature?: number;
           top_p?: number;
@@ -61,7 +62,7 @@ export function openai(apiKey: string): AIProvider {
         };
       },
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      const { messages, system, tools, context, options } = params;
+      const { messages, system, tools, context, signal, options } = params;
       return createStreamingRequest({
         client,
         model,
@@ -69,6 +70,7 @@ export function openai(apiKey: string): AIProvider {
         system,
         tools,
         runtime: context,
+        signal,
         options,
       });
     },

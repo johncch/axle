@@ -13,6 +13,7 @@ export async function* createStreamingRequest(params: {
   system?: string;
   tools?: Array<ToolDefinition>;
   runtime: { tracer?: TracingContext };
+  signal?: AbortSignal;
   options?: {
     temperature?: number;
     top_p?: number;
@@ -23,7 +24,7 @@ export async function* createStreamingRequest(params: {
     [key: string]: any;
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, runtime, options } = params;
+  const { client, model, messages, system, tools, runtime, signal, options } = params;
   const tracer = runtime?.tracer;
 
   // Convert stop to stop_sequences for Anthropic
@@ -51,7 +52,7 @@ export async function* createStreamingRequest(params: {
     const stream = await client.messages.create({
       ...request,
       stream: true as const,
-    });
+    }, { signal });
 
     for await (const messageStreamEvent of stream) {
       const chunks = streamingAdapter.handleEvent(messageStreamEvent);
@@ -61,6 +62,7 @@ export async function* createStreamingRequest(params: {
     }
     // testStream.end();
   } catch (error) {
+    if (signal?.aborted) return;
     yield {
       type: "error",
       data: {

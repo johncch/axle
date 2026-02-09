@@ -45,6 +45,7 @@ export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
         system?: string;
         tools?: Array<ToolDefinition>;
         context: { tracer?: TracingContext };
+        signal?: AbortSignal;
         options?: {
           temperature?: number;
           top_p?: number;

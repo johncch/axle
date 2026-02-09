@@ -27,9 +27,10 @@ import { AxleStopReason } from "../../src/providers/types.js";
 
 function makeProvider(opts: {
   streamChunks?: AnyStreamChunk[][];
+  streamFactory?: () => AsyncGenerator<AnyStreamChunk, void, unknown>;
   supportsStreaming?: boolean;
 }): AIProvider {
-  const { streamChunks, supportsStreaming = true } = opts;
+  const { streamChunks, streamFactory, supportsStreaming = true } = opts;
   let streamCallIndex = 0;
 
   const provider: AIProvider = {
@@ -41,7 +42,9 @@ function makeProvider(opts: {
     },
   };
 
-  if (supportsStreaming && streamChunks) {
+  if (supportsStreaming && streamFactory) {
+    provider.createStreamingRequest = (() => streamFactory()) as any;
+  } else if (supportsStreaming && streamChunks) {
     provider.createStreamingRequest = function* (_model: string) {
       const chunks = streamChunks[streamCallIndex++];
       if (!chunks) throw new Error("No stream chunks configured");
@@ -437,6 +440,230 @@ describe("stream()", () => {
       expect(final.usage).toBeDefined();
       expect(final.usage!.in).toBe(25);
       expect(final.usage!.out).toBe(15);
+    });
+  });
+
+  describe("cancellation", () => {
+    test("cancel before content — no partial", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          await gate;
+          yield startChunk();
+          yield textStartChunk(0);
+          yield textChunk(0, "Hello");
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      });
+
+      const handle = stream({ provider, model: "test-model", messages: [] });
+      handle.cancel();
+      yieldControl();
+
+      const final = await handle.final;
+      expect(final.result).toBe("cancelled");
+      if (final.result !== "cancelled") return;
+      expect(final.partial).toBeUndefined();
+      expect(final.messages).toHaveLength(0);
+    });
+
+    test("cancel mid-stream — partial with accumulated text", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          yield startChunk();
+          yield textStartChunk(0);
+          yield textChunk(0, "Hello");
+          yield textChunk(0, " world");
+          await gate;
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      });
+
+      const handle = stream({ provider, model: "test-model", messages: [] });
+
+      // Wait a tick so the generator processes chunks before the gate
+      await new Promise((r) => setTimeout(r, 10));
+      handle.cancel();
+      yieldControl();
+
+      const final = await handle.final;
+      expect(final.result).toBe("cancelled");
+      if (final.result !== "cancelled") return;
+      expect(final.partial).toBeDefined();
+      expect(final.partial!.content).toHaveLength(1);
+      expect((final.partial!.content[0] as any).text).toBe("Hello world");
+      expect(final.partial!.finishReason).toBe(AxleStopReason.Cancelled);
+      // Partial is also included in messages
+      expect(final.messages).toHaveLength(1);
+      expect(final.messages[0].role).toBe("assistant");
+    });
+
+    test("cancel between turns — completed messages, no partial", async () => {
+      let cancelHandle!: () => void;
+      let turn2Gate!: () => void;
+      const turn2Promise = new Promise<void>((resolve) => { turn2Gate = resolve; });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      let callIndex = 0;
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          if (callIndex === 0) {
+            callIndex++;
+            for (const chunk of turn1Chunks) yield chunk;
+          } else {
+            await turn2Promise;
+            yield startChunk("msg_2");
+            yield textStartChunk(0);
+            yield textChunk(0, "done");
+            yield textCompleteChunk(0);
+            yield completeChunk();
+          }
+        },
+      });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => {
+          // Cancel after tool execution completes but before turn 2 starts
+          setTimeout(() => { cancelHandle(); }, 5);
+          return { type: "success", content: "results" };
+        },
+      });
+      cancelHandle = () => handle.cancel();
+
+      // Let the turn 2 gate open after cancel is processed
+      await new Promise((r) => setTimeout(r, 20));
+      turn2Gate();
+
+      const final = await handle.final;
+      expect(final.result).toBe("cancelled");
+      if (final.result !== "cancelled") return;
+      // Turn 1 assistant + tool results should be in messages
+      expect(final.messages).toHaveLength(2);
+      expect(final.messages[0].role).toBe("assistant");
+      expect(final.messages[1].role).toBe("tool");
+      expect(final.partial).toBeUndefined();
+      // Usage should include turn 1 only
+      expect(final.usage.in).toBe(10);
+      expect(final.usage.out).toBe(5);
+    });
+
+    test("cancel after completion is a no-op", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const handle = stream({ provider, model: "test-model", messages: [] });
+
+      const final = await handle.final;
+      expect(final.result).toBe("success");
+
+      // Should not throw
+      handle.cancel();
+      handle.cancel();
+
+      // Result unchanged
+      const final2 = await handle.final;
+      expect(final2.result).toBe("success");
+    });
+
+    test("cancel is idempotent — multiple calls do not throw", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          await gate;
+          yield startChunk();
+          yield textStartChunk(0);
+          yield textChunk(0, "Hello");
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      });
+
+      const handle = stream({ provider, model: "test-model", messages: [] });
+
+      handle.cancel();
+      handle.cancel();
+      handle.cancel();
+      yieldControl();
+
+      const final = await handle.final;
+      expect(final.result).toBe("cancelled");
+    });
+
+    test("usage only includes completed turns", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      let callIndex = 0;
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          if (callIndex === 0) {
+            callIndex++;
+            for (const chunk of turn1Chunks) yield chunk;
+          } else {
+            yield startChunk("msg_2");
+            yield textStartChunk(0);
+            yield textChunk(0, "partial");
+            await gate;
+            yield textCompleteChunk(0);
+            yield completeChunk(AxleStopReason.Stop, { in: 20, out: 15 });
+          }
+        },
+      });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+
+      // Wait for turn 2 to start streaming
+      await new Promise((r) => setTimeout(r, 20));
+      handle.cancel();
+      yieldControl();
+
+      const final = await handle.final;
+      expect(final.result).toBe("cancelled");
+      if (final.result !== "cancelled") return;
+      // Messages: turn 1 assistant + tool results + partial turn 2 assistant
+      expect(final.messages).toHaveLength(3);
+      expect(final.messages[0].role).toBe("assistant");
+      expect(final.messages[1].role).toBe("tool");
+      expect(final.messages[2].role).toBe("assistant");
+      // Usage should only include turn 1 (completed)
+      expect(final.usage.in).toBe(10);
+      expect(final.usage.out).toBe(5);
     });
   });
 });

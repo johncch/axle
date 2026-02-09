@@ -54,6 +54,7 @@ export interface AIProvider {
     system?: string;
     tools?: Array<ToolDefinition>;
     context: { tracer?: TracingContext };
+    signal?: AbortSignal;
     options?: {
       temperature?: number;
       top_p?: number;
@@ -96,4 +97,5 @@ export enum AxleStopReason {
   FunctionCall = "function_call",
   Error = "error",
   Custom = "custom",
+  Cancelled = "cancelled",
 }

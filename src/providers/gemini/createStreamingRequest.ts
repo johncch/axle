@@ -13,6 +13,7 @@ export async function* createStreamingRequest(params: {
   system?: string;
   tools?: Array<ToolDefinition>;
   runtime: { tracer?: TracingContext };
+  signal?: AbortSignal;
   options?: {
     temperature?: number;
     top_p?: number;
@@ -23,7 +24,7 @@ export async function* createStreamingRequest(params: {
     [key: string]: any;
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, runtime, options } = params;
+  const { client, model, messages, system, tools, runtime, signal, options } = params;
   const tracer = runtime?.tracer;
 
   // Convert max_tokens to maxOutputTokens for Google AI
@@ -66,6 +67,7 @@ export async function* createStreamingRequest(params: {
       }
     }
   } catch (error) {
+    if (signal?.aborted) return;
     tracer?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",

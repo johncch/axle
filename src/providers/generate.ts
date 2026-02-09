@@ -7,7 +7,7 @@ import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
 import { appendUsage, executeToolCalls, GenerateResult, ToolCallCallback } from "./helpers.js";
 import { AIProvider, AxleStopReason, ModelResult } from "./types.js";
 
-export type { GenerateError, GenerateResult, ToolCallCallback, ToolCallResult } from "./helpers.js";
+export type { GenerateError, GenerateResult, StreamResult, ToolCallCallback, ToolCallResult } from "./helpers.js";
 
 export interface GenerateOptions {
   provider: AIProvider;

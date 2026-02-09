@@ -13,6 +13,7 @@ export async function* createStreamingRequest(params: {
   system?: string;
   tools?: Array<ToolDefinition>;
   context: { tracer?: TracingContext };
+  signal?: AbortSignal;
   apiKey?: string;
   options?: {
     temperature?: number;
@@ -24,7 +25,7 @@ export async function* createStreamingRequest(params: {
     [key: string]: any;
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { baseUrl, model, messages, system, tools, context, apiKey, options } = params;
+  const { baseUrl, model, messages, system, tools, context, signal, apiKey, options } = params;
   const tracer = context?.tracer;
 
   const chatMessages = convertAxleMessages(messages, system);
@@ -63,6 +64,7 @@ export async function* createStreamingRequest(params: {
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
+      signal,
     });
 
     if (!response.ok) {
@@ -110,6 +112,7 @@ export async function* createStreamingRequest(params: {
       }
     }
   } catch (error) {
+    if (signal?.aborted) return;
     tracer?.error("Error in ChatCompletions streaming request", {
       error: error instanceof Error ? error.message : String(error),
     });

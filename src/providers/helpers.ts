@@ -37,6 +37,15 @@ export type GenerateResult =
       usage?: Stats;
     };
 
+export type StreamResult =
+  | GenerateResult
+  | {
+      result: "cancelled";
+      messages: AxleMessage[];
+      partial?: AxleAssistantMessage;
+      usage: Stats;
+    };
+
 export function appendUsage(total: Stats, result: ModelResult): void {
   const usage = result.usage ?? { in: 0, out: 0 };
   total.in += usage.in ?? 0;
