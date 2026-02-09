@@ -6,8 +6,6 @@ import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { DEFAULT_MODEL as _DEFAULT_MODEL, Models as _Models } from "./models.js";
-
 export const NAME = "Gemini" as const;
 
 export function gemini(apiKey: string): AIProvider {
@@ -69,9 +67,4 @@ export function gemini(apiKey: string): AIProvider {
       });
     },
   };
-}
-
-export namespace gemini {
-  export const MODELS = _Models;
-  export const DEFAULT_MODEL = _DEFAULT_MODEL;
 }

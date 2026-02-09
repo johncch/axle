@@ -7,8 +7,6 @@ import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { DEFAULT_MODEL as _DEFAULT_MODEL, Models as _Models } from "./models.js";
-
 export const NAME = "anthropic" as const;
 
 export function anthropic(apiKey: string): AIProvider {
@@ -66,9 +64,4 @@ export function anthropic(apiKey: string): AIProvider {
       });
     },
   };
-}
-
-export namespace anthropic {
-  export const MODELS = _Models;
-  export const DEFAULT_MODEL = _DEFAULT_MODEL;
 }

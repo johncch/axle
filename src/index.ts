@@ -3,11 +3,11 @@ export { Axle } from "./core/Axle.js";
 export { ChainOfThought, Instruct } from "./core/index.js";
 
 // AI Providers
-export { anthropic } from "./providers/anthropic/index.js";
+export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
-export { gemini } from "./providers/gemini/index.js";
+export { Gemini, gemini } from "./providers/gemini/index.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
-export { openai } from "./providers/openai/index.js";
+export { OpenAI, openai } from "./providers/openai/index.js";
 export { AxleStopReason } from "./providers/types.js";
 export type { AIProvider } from "./providers/types.js";
 

@@ -1,6 +1,6 @@
 import { Command, Option } from "commander";
 import dotenv from "dotenv";
-import { anthropic, Axle, chatCompletions, gemini, openai } from "../../src/index.js";
+import { Anthropic, anthropic, Axle, chatCompletions, Gemini, gemini, OpenAI, openai } from "../../src/index.js";
 import { AIProvider } from "../../src/providers/types.js";
 dotenv.config();
 
@@ -97,11 +97,11 @@ function getProvider(provider: ProviderNames): AIProvider {
 function getModel(provider: ProviderNames) {
   switch (provider) {
     case "openai":
-      return openai.DEFAULT_MODEL;
+      return OpenAI.DefaultModel;
     case "gemini":
-      return gemini.DEFAULT_MODEL;
+      return Gemini.DefaultModel;
     case "anthropic":
-      return anthropic.DEFAULT_MODEL;
+      return Anthropic.DefaultModel;
     case "ollama":
       return "gemma3:12b";
   }
