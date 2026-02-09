@@ -15,6 +15,7 @@ export interface GenerateTurnOptions {
 
 interface GenerateTurnProps {
   provider: AIProvider;
+  model: string;
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
@@ -23,8 +24,8 @@ interface GenerateTurnProps {
 }
 
 export async function generateTurn(props: GenerateTurnProps): Promise<ModelResult> {
-  const { provider, messages, system, tools, tracer, options } = props;
-  return provider.createGenerationRequest({
+  const { provider, model, messages, system, tools, tracer, options } = props;
+  return provider.createGenerationRequest(model, {
     messages,
     system,
     tools,

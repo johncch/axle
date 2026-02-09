@@ -297,11 +297,11 @@ describe("createGeminiStreamingAdapter", () => {
       expect(thinkingDelta).toBeDefined();
 
       if (thinkingStart && thinkingStart.type === "thinking-start") {
-        expect(thinkingStart.data.index).toBe(1);
+        expect(thinkingStart.data.index).toBe(0);
       }
       if (thinkingDelta && thinkingDelta.type === "thinking-delta") {
         expect(thinkingDelta.data.text).toBe("Let me think about this...");
-        expect(thinkingDelta.data.index).toBe(1);
+        expect(thinkingDelta.data.index).toBe(0);
       }
     });
 
@@ -473,7 +473,7 @@ describe("createGeminiStreamingAdapter", () => {
 
       if (toolStart && toolStart.type === "tool-call-start") {
         expect(toolStart.data.name).toBe("search");
-        expect(toolStart.data.index).toBe(1);
+        expect(toolStart.data.index).toBe(0);
       }
       if (toolComplete && toolComplete.type === "tool-call-complete") {
         expect(toolComplete.data.name).toBe("search");

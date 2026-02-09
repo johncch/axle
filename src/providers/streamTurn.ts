@@ -8,6 +8,7 @@ import { AIProvider, ModelResult } from "./types.js";
 
 interface StreamProps {
   provider: AIProvider;
+  model: string;
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
@@ -22,8 +23,8 @@ export interface StreamResult {
 }
 
 export function streamTurn(props: StreamProps): StreamResult | undefined {
-  const { provider, messages, system, tools, tracer, options } = props;
-  const streamSource = provider.createStreamingRequest?.({
+  const { provider, model, messages, system, tools, tracer, options } = props;
+  const streamSource = provider.createStreamingRequest?.(model, {
     messages,
     system,
     tools,

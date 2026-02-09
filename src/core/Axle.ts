@@ -10,6 +10,7 @@ import type { Instruct } from "./Instruct.js";
 
 export class Axle {
   provider: AIProvider;
+  model: string;
   private stats = { in: 0, out: 0 };
   private variables: Record<string, any> = {};
   tracer = new Tracer();
@@ -20,9 +21,11 @@ export class Axle {
     }
 
     try {
-      const provider = Object.keys(config)[0] as keyof AIProviderConfig;
-      const providerConfig = config[provider];
-      this.provider = getProvider(provider, providerConfig);
+      const providerName = Object.keys(config)[0] as keyof AIProviderConfig;
+      const providerConfig = config[providerName];
+      const { provider, model } = getProvider(providerName, providerConfig);
+      this.provider = provider;
+      this.model = model;
     } catch (error) {
       const axleError =
         error instanceof AxleError
@@ -50,6 +53,7 @@ export class Axle {
     try {
       const result = await serialWorkflow(...steps).execute({
         provider: this.provider,
+        model: this.model,
         variables: this.variables,
         stats: this.stats,
         tracer: span,

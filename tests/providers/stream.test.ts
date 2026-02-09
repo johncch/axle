@@ -13,6 +13,7 @@ import type {
 import {
   stream,
   type PartEndCallback,
+  type PartStartCallback,
   type PartUpdateCallback,
   type StreamPartType,
 } from "../../src/providers/stream.js";
@@ -32,16 +33,13 @@ function makeProvider(opts: {
     get name() {
       return "test";
     },
-    get model() {
-      return "test-model";
-    },
-    async createGenerationRequest() {
+    async createGenerationRequest(_model: string) {
       throw new Error("Not implemented");
     },
   };
 
   if (supportsStreaming && streamChunks) {
-    provider.createStreamingRequest = function* () {
+    provider.createStreamingRequest = function* (_model: string) {
       const chunks = streamChunks[streamCallIndex++];
       if (!chunks) throw new Error("No stream chunks configured");
       for (const chunk of chunks) {
@@ -98,6 +96,10 @@ type EventLog = { event: string; index: number; type: StreamPartType; data: unkn
 function collectEvents() {
   const events: EventLog[] = [];
 
+  const onPartStart: PartStartCallback = (index, type) => {
+    events.push({ event: "partStart", index, type, data: null });
+  };
+
   const onPartUpdate: PartUpdateCallback = (index, type, delta, accumulated) => {
     events.push({ event: "partUpdate", index, type, data: { delta, accumulated } });
   };
@@ -106,7 +108,7 @@ function collectEvents() {
     events.push({ event: "partEnd", index, type, data: final });
   };
 
-  return { events, onPartUpdate, onPartEnd };
+  return { events, onPartStart, onPartUpdate, onPartEnd };
 }
 
 // --- Tests ---
@@ -122,9 +124,10 @@ describe("stream()", () => {
       ];
 
       const provider = makeProvider({ streamChunks: [chunks] });
-      const { events, onPartUpdate, onPartEnd } = collectEvents();
+      const { events, onPartStart, onPartUpdate, onPartEnd } = collectEvents();
 
-      const result = stream({ provider, messages: [] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.onPartStart(onPartStart);
       result.onPartUpdate(onPartUpdate);
       result.onPartEnd(onPartEnd);
 
@@ -135,6 +138,11 @@ describe("stream()", () => {
 
       expect(final.messages).toHaveLength(1);
       expect(final.messages[0].role).toBe("assistant");
+
+      const starts = events.filter((e) => e.event === "partStart");
+      expect(starts).toHaveLength(1);
+      expect(starts[0].index).toBe(0);
+      expect(starts[0].type).toBe("text");
 
       const updates = events.filter((e) => e.event === "partUpdate");
       expect(updates).toHaveLength(2);
@@ -162,14 +170,22 @@ describe("stream()", () => {
       ];
 
       const provider = makeProvider({ streamChunks: [chunks] });
-      const { events, onPartUpdate, onPartEnd } = collectEvents();
+      const { events, onPartStart, onPartUpdate, onPartEnd } = collectEvents();
 
-      const result = stream({ provider, messages: [] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.onPartStart(onPartStart);
       result.onPartUpdate(onPartUpdate);
       result.onPartEnd(onPartEnd);
 
       const final = await result.final;
       expect(final.result).toBe("success");
+
+      const starts = events.filter((e) => e.event === "partStart");
+      expect(starts).toHaveLength(2);
+      expect(starts[0].type).toBe("thinking");
+      expect(starts[0].index).toBe(0);
+      expect(starts[1].type).toBe("text");
+      expect(starts[1].index).toBe(1);
 
       const partEnds = events.filter((e) => e.event === "partEnd");
       expect(partEnds).toHaveLength(2);
@@ -181,7 +197,7 @@ describe("stream()", () => {
   });
 
   describe("with tool calls", () => {
-    test("full tool call cycle with correct indices and message grouping", async () => {
+    test("full tool call cycle with correct messages", async () => {
       // First LLM turn: thinking + tool call
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),
@@ -200,10 +216,11 @@ describe("stream()", () => {
       ];
 
       const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
-      const { events, onPartUpdate, onPartEnd } = collectEvents();
+      const { events, onPartStart, onPartUpdate, onPartEnd } = collectEvents();
 
       const result = stream({
         provider,
+        model: "test-model",
         messages: [],
         onToolCall: async (name, parameters) => {
           expect(name).toBe("web_search");
@@ -211,6 +228,7 @@ describe("stream()", () => {
           return { type: "success", content: "search results here" };
         },
       });
+      result.onPartStart(onPartStart);
       result.onPartUpdate(onPartUpdate);
       result.onPartEnd(onPartEnd);
 
@@ -225,11 +243,12 @@ describe("stream()", () => {
       expect(final.messages[1].role).toBe("tool");
       expect(final.messages[2].role).toBe("assistant");
 
-      // Check global index progression
+      // Only text/thinking parts fire callbacks (not tool-call or tool-result)
+      const starts = events.filter((e) => e.event === "partStart");
+      expect(starts.map((e) => e.type)).toEqual(["thinking", "text"]);
+
       const partEnds = events.filter((e) => e.event === "partEnd");
-      // thinking(0), tool-call(1), tool-result(2), text(3)
-      expect(partEnds.map((e) => e.index)).toEqual([0, 1, 2, 3]);
-      expect(partEnds.map((e) => e.type)).toEqual(["thinking", "tool-call", "tool-result", "text"]);
+      expect(partEnds.map((e) => e.type)).toEqual(["thinking", "text"]);
     });
   });
 
@@ -244,7 +263,7 @@ describe("stream()", () => {
 
       const provider = makeProvider({ streamChunks: [chunks] });
 
-      const result = stream({ provider, messages: [], onToolCall: async () => null });
+      const result = stream({ provider, model: "test-model", messages: [], onToolCall: async () => null });
 
       const final = await result.final;
 
@@ -261,7 +280,7 @@ describe("stream()", () => {
     test("returns error when maxIterations is reached", async () => {
       const provider = makeProvider({ streamChunks: [] });
 
-      const result = stream({ provider, messages: [], maxIterations: 0 });
+      const result = stream({ provider, model: "test-model", messages: [], maxIterations: 0 });
 
       const final = await result.final;
 
@@ -280,7 +299,7 @@ describe("stream()", () => {
 
       const provider = makeProvider({ streamChunks: [chunks] });
 
-      const result = stream({ provider, messages: [] });
+      const result = stream({ provider, model: "test-model", messages: [] });
 
       const final = await result.final;
 
@@ -294,20 +313,23 @@ describe("stream()", () => {
     test("throws when provider has no createStreamingRequest", async () => {
       const provider = makeProvider({ supportsStreaming: false });
 
-      const result = stream({ provider, messages: [] });
+      const result = stream({ provider, model: "test-model", messages: [] });
 
       await expect(result.final).rejects.toThrow("Provider does not support streaming");
     });
   });
 
   describe("callback ordering", () => {
-    test("onPartUpdate fires before onPartEnd for each part", async () => {
+    test("onPartStart fires before onPartUpdate, onPartUpdate fires before onPartEnd", async () => {
       const chunks: AnyStreamChunk[] = [startChunk(), textChunk(0, "Hello"), completeChunk()];
 
       const provider = makeProvider({ streamChunks: [chunks] });
       const order: string[] = [];
 
-      const result = stream({ provider, messages: [] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.onPartStart((index, type) => {
+        order.push(`partStart:${index}:${type}`);
+      });
       result.onPartUpdate((index, type) => {
         order.push(`partUpdate:${index}:${type}`);
       });
@@ -317,13 +339,13 @@ describe("stream()", () => {
 
       await result.final;
 
-      expect(order).toEqual(["partUpdate:0:text", "partEnd:0:text"]);
+      expect(order).toEqual(["partStart:0:text", "partUpdate:0:text", "partEnd:0:text"]);
     });
   });
 
   describe("global index", () => {
-    test("index increments across LLM turns and tool results", async () => {
-      // Turn 1: text(0) + tool-call(1) → tool-result(2) → Turn 2: text(3)
+    test("index increments across LLM turns including tool calls", async () => {
+      // Turn 1: text(0) + tool-call(1, silent) → Turn 2: text(2)
       const turn1: AnyStreamChunk[] = [
         startChunk("msg_1"),
         textChunk(0, "thinking..."),
@@ -335,20 +357,27 @@ describe("stream()", () => {
       const turn2: AnyStreamChunk[] = [startChunk("msg_2"), textChunk(0, "done"), completeChunk()];
 
       const provider = makeProvider({ streamChunks: [turn1, turn2] });
-      const indices: number[] = [];
+      const startIndices: number[] = [];
+      const endIndices: number[] = [];
 
       const result = stream({
         provider,
+        model: "test-model",
         messages: [],
         onToolCall: async () => ({ type: "success", content: "ok" }),
       });
+      result.onPartStart((index) => {
+        startIndices.push(index);
+      });
       result.onPartEnd((index) => {
-        indices.push(index);
+        endIndices.push(index);
       });
 
       await result.final;
 
-      expect(indices).toEqual([0, 1, 2, 3]);
+      // text(0), tool-call increments to 1 silently, turn 2 text starts at 2
+      expect(startIndices).toEqual([0, 2]);
+      expect(endIndices).toEqual([0, 2]);
     });
   });
 
@@ -371,6 +400,7 @@ describe("stream()", () => {
 
       const result = stream({
         provider,
+        model: "test-model",
         messages: [],
         onToolCall: async () => ({ type: "success", content: "ok" }),
       });

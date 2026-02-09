@@ -1,21 +1,17 @@
 import { AxleError } from "../errors/AxleError.js";
-import { AnthropicProvider } from "./anthropic/provider.js";
-import { GeminiProvider } from "./gemini/provider.js";
-import { OllamaProvider } from "./ollama/provider.js";
-import { OpenAIProvider } from "./openai/provider.js";
-import { AIProviderConfig, OllamaProviderConfig } from "./types.js";
-
-type ProviderMap = {
-  ollama: OllamaProvider;
-  anthropic: AnthropicProvider;
-  openai: OpenAIProvider;
-  gemini: GeminiProvider;
-};
+import { DEFAULT_MODEL as ANTHROPIC_DEFAULT_MODEL } from "./anthropic/models.js";
+import { anthropic } from "./anthropic/provider.js";
+import { chatCompletions } from "./chatcompletions/provider.js";
+import { DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from "./gemini/models.js";
+import { gemini } from "./gemini/provider.js";
+import { DEFAULT_MODEL as OPENAI_DEFAULT_MODEL } from "./openai/models.js";
+import { openai } from "./openai/provider.js";
+import { AIProvider, AIProviderConfig, ChatCompletionsProviderConfig } from "./types.js";
 
 export function getProvider<K extends keyof AIProviderConfig>(
   provider: K,
   config: AIProviderConfig[K],
-): ProviderMap[K] {
+): { provider: AIProvider; model: string } {
   if (!config || Object.keys(config).length === 0) {
     throw new AxleError(
       `The provider ${provider} is not configured. Please check your configuration.`,
@@ -23,14 +19,26 @@ export function getProvider<K extends keyof AIProviderConfig>(
   }
   switch (provider) {
     case "openai":
-      return new OpenAIProvider(config["api-key"], config.model) as ProviderMap[K];
+      return {
+        provider: openai(config["api-key"]),
+        model: config.model || OPENAI_DEFAULT_MODEL,
+      };
     case "anthropic":
-      return new AnthropicProvider(config["api-key"], config.model) as ProviderMap[K];
+      return {
+        provider: anthropic(config["api-key"]),
+        model: config.model || ANTHROPIC_DEFAULT_MODEL,
+      };
     case "gemini":
-      return new GeminiProvider(config["api-key"], config.model) as ProviderMap[K];
-    case "ollama": {
-      const ollamaConfig = config as OllamaProviderConfig;
-      return new OllamaProvider(ollamaConfig.model, ollamaConfig.url) as ProviderMap[K];
+      return {
+        provider: gemini(config["api-key"]),
+        model: config.model || GEMINI_DEFAULT_MODEL,
+      };
+    case "chatcompletions": {
+      const cc = config as ChatCompletionsProviderConfig;
+      return {
+        provider: chatCompletions(cc["base-url"], cc["api-key"]),
+        model: cc.model,
+      };
     }
     default:
       throw new AxleError("The provider is unsupported");

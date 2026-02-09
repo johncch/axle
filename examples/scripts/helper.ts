@@ -1,6 +1,7 @@
 import { Command, Option } from "commander";
 import dotenv from "dotenv";
-import { Axle } from "../../src/index.js";
+import { anthropic, Axle, chatCompletions, gemini, openai } from "../../src/index.js";
+import { AIProvider } from "../../src/providers/types.js";
 dotenv.config();
 
 const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
@@ -21,6 +22,7 @@ program
       .default("ollama"),
   )
   .option("-m, --model <model>", "LLM model to use")
+  .option("-u, --url <url>", "URL for the provider if necessary")
   .addOption(
     new Option("-t, --type <type>", "Instruct subclass to use")
       .choices(INSTRUCT_TYPES)
@@ -29,12 +31,13 @@ program
   .parse(process.argv);
 const options = program.opts() as CommandOptions;
 
-export function getAxle(): Axle {
-  const providers = getProviderOption();
-  const provider = providers[0];
-  const axle = getProvider(provider);
-  console.log(`Using ${axle.provider.name} with model ${axle.provider.model}`);
-  return axle;
+export function useCLIHelper(): [AIProvider, string] {
+  const providerOptions = getProviderOption();
+  const firstProviderOption = providerOptions[0];
+  const provider = getProvider(firstProviderOption);
+  const model = options.model ?? getModel(firstProviderOption);
+  console.log(`Using ${provider.name} with model ${model}`);
+  return [provider, model];
 }
 
 export function getAxles(): Array<Axle> {
@@ -58,21 +61,14 @@ export function getAllAxles(): Array<Axle> {
   return axles;
 }
 
-function getProvider(provider: ProviderNames): Axle {
-  let axle: Axle;
+function getProvider(provider: ProviderNames): AIProvider {
   switch (provider) {
     case "openai": {
       if (!process.env.OPENAI_API_KEY) {
         console.error("OPENAI_API_KEY not found. Check your .env file");
         process.exit(1);
       }
-      axle = new Axle({
-        openai: {
-          "api-key": process.env.OPENAI_API_KEY,
-          model: options.model,
-        },
-      });
-      break;
+      return openai(process.env.OPENAI_API_KEY);
     }
 
     case "gemini": {
@@ -80,13 +76,7 @@ function getProvider(provider: ProviderNames): Axle {
         console.error("GEMINI_API_KEY not found. Check your .env file");
         process.exit(1);
       }
-      axle = new Axle({
-        gemini: {
-          "api-key": process.env.GEMINI_API_KEY,
-          model: options.model,
-        },
-      });
-      break;
+      return gemini(process.env.GEMINI_API_KEY);
     }
 
     case "anthropic": {
@@ -94,23 +84,27 @@ function getProvider(provider: ProviderNames): Axle {
         console.error("ANTHROPIC_API_KEY not found. Check your .env file");
         process.exit(1);
       }
-      axle = new Axle({
-        anthropic: {
-          "api-key": process.env.ANTHROPIC_API_KEY,
-          model: options.model,
-        },
-      });
-      break;
+      return anthropic(process.env.ANTHROPIC_API_KEY);
     }
 
     case "ollama":
     default: {
-      axle = new Axle({
-        ollama: { model: options.model ?? "gpt-oss:20b" },
-      });
+      return chatCompletions("http://localhost:11434");
     }
   }
-  return axle;
+}
+
+function getModel(provider: ProviderNames) {
+  switch (provider) {
+    case "openai":
+      return openai.DEFAULT_MODEL;
+    case "gemini":
+      return gemini.DEFAULT_MODEL;
+    case "anthropic":
+      return anthropic.DEFAULT_MODEL;
+    case "ollama":
+      return "gemma3:12b";
+  }
 }
 
 function getProviderOption(): ProviderNames[] {

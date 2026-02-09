@@ -48,46 +48,23 @@ function convertToolMessage(msg: AxleMessage & { role: "tool" }) {
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): ResponseInput {
   const result: ResponseInput = [];
 
-  const thinkingParts = msg.content.filter((c) => c.type === "thinking") as Array<
-    ContentPart & { type: "thinking" }
-  >;
-  if (thinkingParts.length > 0) {
-    for (const thinking of thinkingParts) {
-      result.push({
-        type: "reasoning",
-        id: `reasoning_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        summary: [
-          {
-            type: "summary_text" as const,
-            text: thinking.text,
-          },
-        ],
-      });
-    }
-  }
-
   const textContent = getTextContent(msg.content);
-  const toolCallParts = msg.content.filter((c) => c.type === "tool-call") as Array<
-    ContentPart & { type: "tool-call" }
-  >;
-
-  const toolCalls =
-    toolCallParts.length > 0
-      ? toolCallParts.map((call: any) => ({
-          type: "function",
-          id: call.id,
-          function: {
-            name: call.name,
-            arguments: JSON.stringify(call.parameters),
-          },
-        }))
-      : undefined;
-
-  if (textContent || toolCalls) {
+  if (textContent) {
     result.push({
       role: msg.role,
       content: textContent,
-      ...(toolCalls && { toolCalls }),
+    });
+  }
+
+  const toolCallParts = msg.content.filter((c) => c.type === "tool-call") as Array<
+    ContentPart & { type: "tool-call" }
+  >;
+  for (const call of toolCallParts) {
+    result.push({
+      type: "function_call" as const,
+      call_id: call.id,
+      name: call.name,
+      arguments: JSON.stringify(call.parameters),
     });
   }
 

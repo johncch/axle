@@ -15,13 +15,14 @@ import type { WorkflowExecutable, WorkflowResult } from "./types.js";
 export function serialWorkflow(...steps: Instruct<any>[]): WorkflowExecutable {
   const execute = async (context: {
     provider: AIProvider;
+    model: string;
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
     tracer?: TracingContext;
     name?: string;
   }): Promise<WorkflowResult> => {
-    const { provider, variables, options, stats, tracer, name } = context;
+    const { provider, model, variables, options, stats, tracer, name } = context;
 
     const workflowSpan = tracer?.startSpan(name ?? "serial", { type: "workflow" });
 
@@ -35,6 +36,7 @@ export function serialWorkflow(...steps: Instruct<any>[]): WorkflowExecutable {
           await executeInstruct(step, {
             conversation,
             provider,
+            model,
             stats,
             variables,
             options,
@@ -81,13 +83,14 @@ async function executeInstruct<T extends Record<string, any>>(
   context: {
     conversation: Conversation;
     provider: AIProvider;
+    model: string;
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;
     tracer?: TracingContext;
   },
 ): Promise<void> {
-  const { conversation, provider, variables, options, stats, tracer } = context;
+  const { conversation, provider, model, variables, options, stats, tracer } = context;
 
   if (instruct.system) {
     conversation.addSystem(instruct.system);
@@ -110,6 +113,7 @@ async function executeInstruct<T extends Record<string, any>>(
 
   const response = await generate({
     provider,
+    model,
     messages: conversation.messages,
     tools: toolDefinitions,
     tracer,

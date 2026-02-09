@@ -44,7 +44,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should convert assistant message with thinking content", () => {
+    test("should skip thinking content in assistant messages", () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -60,20 +60,10 @@ describe("responsesAPI utils", () => {
 
       const result = convertAxleMessageToResponseInput(messages);
 
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({
-        type: "reasoning",
-        summary: [
-          {
-            type: "summary_text",
-            text: "Let me think about this problem step by step...",
-          },
-        ],
-      });
-      expect(result[0]).toHaveProperty("id");
+      expect(result).toHaveLength(0);
     });
 
-    test("should convert assistant message with both thinking and text content", () => {
+    test("should convert assistant message with both thinking and text content, skipping thinking", () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -93,27 +83,14 @@ describe("responsesAPI utils", () => {
 
       const result = convertAxleMessageToResponseInput(messages);
 
-      expect(result).toHaveLength(2);
-
-      // First item should be the reasoning
-      expect(result[0]).toMatchObject({
-        type: "reasoning",
-        summary: [
-          {
-            type: "summary_text",
-            text: "First, I need to analyze the question...",
-          },
-        ],
-      });
-
-      // Second item should be the assistant message
-      expect(result[1]).toEqual({
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
         role: "assistant",
         content: "Based on my analysis, here's the answer.",
       });
     });
 
-    test("should convert assistant message with multiple thinking blocks", () => {
+    test("should skip multiple thinking blocks, keep text", () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -137,31 +114,8 @@ describe("responsesAPI utils", () => {
 
       const result = convertAxleMessageToResponseInput(messages);
 
-      expect(result).toHaveLength(3);
-
-      // First two should be reasoning
-      expect(result[0]).toMatchObject({
-        type: "reasoning",
-        summary: [
-          {
-            type: "summary_text",
-            text: "First thought...",
-          },
-        ],
-      });
-
-      expect(result[1]).toMatchObject({
-        type: "reasoning",
-        summary: [
-          {
-            type: "summary_text",
-            text: "Second thought...",
-          },
-        ],
-      });
-
-      // Third should be the message
-      expect(result[2]).toEqual({
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
         role: "assistant",
         content: "Final answer.",
       });
@@ -189,20 +143,16 @@ describe("responsesAPI utils", () => {
 
       const result = convertAxleMessageToResponseInput(messages);
 
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
         role: "assistant",
         content: "Let me search for that.",
-        toolCalls: [
-          {
-            type: "function",
-            id: "call_123",
-            function: {
-              name: "search",
-              arguments: '{"query":"test"}',
-            },
-          },
-        ],
+      });
+      expect(result[1]).toMatchObject({
+        type: "function_call",
+        call_id: "call_123",
+        name: "search",
+        arguments: '{"query":"test"}',
       });
     });
 
@@ -274,7 +224,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should handle mixed conversation with thinking", () => {
+    test("should handle mixed conversation with thinking (thinking skipped)", () => {
       const messages = [
         {
           role: "user" as const,
@@ -298,24 +248,14 @@ describe("responsesAPI utils", () => {
 
       const result = convertAxleMessageToResponseInput(messages);
 
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(2);
 
       expect(result[0]).toEqual({
         role: "user",
         content: "Solve this problem: 2 + 2",
       });
 
-      expect(result[1]).toMatchObject({
-        type: "reasoning",
-        summary: [
-          {
-            type: "summary_text",
-            text: "This is a simple addition problem...",
-          },
-        ],
-      });
-
-      expect(result[2]).toEqual({
+      expect(result[1]).toEqual({
         role: "assistant",
         content: "The answer is 4.",
       });

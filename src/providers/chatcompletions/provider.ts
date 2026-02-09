@@ -1,20 +1,14 @@
-import OpenAISDK from "openai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleMessage } from "../../messages/types.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
 import { AIProvider, ModelResult } from "../types.js";
+import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { DEFAULT_MODEL as _DEFAULT_MODEL, Models as _Models } from "./models.js";
-import { createGenerationRequestWithResponsesAPI } from "./responsesAPI.js";
 
-export const NAME = "OpenAI" as const;
-
-export function openai(apiKey: string): AIProvider {
-  const client = new OpenAISDK({ apiKey });
-
+export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
   return {
-    name: NAME,
+    name: "ChatCompletions",
 
     /** @internal */
     async createGenerationRequest(
@@ -35,9 +29,10 @@ export function openai(apiKey: string): AIProvider {
         };
       },
     ): Promise<ModelResult> {
-      return await createGenerationRequestWithResponsesAPI({
-        client,
+      return await createGenerationRequest({
+        baseUrl,
         model,
+        apiKey,
         ...params,
       });
     },
@@ -61,21 +56,12 @@ export function openai(apiKey: string): AIProvider {
         };
       },
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      const { messages, system, tools, context, options } = params;
       return createStreamingRequest({
-        client,
+        baseUrl,
         model,
-        messages,
-        system,
-        tools,
-        runtime: context,
-        options,
+        apiKey,
+        ...params,
       });
     },
   };
-}
-
-export namespace openai {
-  export const MODELS = _Models;
-  export const DEFAULT_MODEL = _DEFAULT_MODEL;
 }

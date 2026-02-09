@@ -14,6 +14,7 @@ import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
 export async function runSingle(
   jobConfig: JobConfig,
   provider: AIProvider,
+  model: string,
   tools: Tool[],
   variables: Record<string, any>,
   options: ProgramOptions,
@@ -36,6 +37,7 @@ export async function runSingle(
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
   const response = await serialWorkflow(instruct).execute({
     provider,
+    model,
     variables,
     options,
     stats,
@@ -51,6 +53,7 @@ export async function runSingle(
 export async function runBatch(
   jobConfig: JobConfig,
   provider: AIProvider,
+  model: string,
   tools: Tool[],
   variables: Record<string, any>,
   options: ProgramOptions,
@@ -119,6 +122,7 @@ export async function runBatch(
 
       await serialWorkflow(instruct).execute({
         provider,
+        model,
         variables: itemVars,
         options,
         stats,

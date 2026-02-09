@@ -1,15 +1,14 @@
 import { config } from "dotenv";
 import { ResultType } from "../../src/core/types.js";
 import { ConsoleWriter, Instruct, LogLevel } from "../../src/index.js";
-import { getAxle } from "./helper.js";
+import { useCLIHelper } from "./helper.js";
 
 config();
 
-const axle = getAxle();
-const instruct = Instruct.with(
-  "Please generate 5 {{ items }} and their descriptions.",
-  { results: [{ item: ResultType.String, description: ResultType.String }] },
-);
+const axle = useCLIHelper();
+const instruct = Instruct.with("Please generate 5 {{ items }} and their descriptions.", {
+  results: [{ item: ResultType.String, description: ResultType.String }],
+});
 instruct.addInput("items", "flowers");
 // instruct.addReference("Very nice to meet you, Doe!");
 instruct.addInstructions("Please include colors in the description");

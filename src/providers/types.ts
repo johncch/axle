@@ -12,13 +12,13 @@ import { Stats } from "../types.js";
 /*
  Vendor specific configuration
  */
-export type OllamaProviderConfig = { url?: string; model: string };
 export type AnthropicProviderConfig = { "api-key": string; model?: string };
 export type OpenAIProviderConfig = { "api-key": string; model?: string };
 export type GeminiProviderConfig = { "api-key": string; model?: string };
+export type ChatCompletionsProviderConfig = { "base-url": string; model: string; "api-key"?: string };
 
 export interface AIProviderConfig {
-  ollama: OllamaProviderConfig;
+  chatcompletions: ChatCompletionsProviderConfig;
   anthropic: AnthropicProviderConfig;
   openai: OpenAIProviderConfig;
   gemini: GeminiProviderConfig;
@@ -30,9 +30,9 @@ export interface AIProviderConfig {
 
 export interface AIProvider {
   get name(): string;
-  get model(): string;
 
-  createGenerationRequest(params: {
+  /** @internal */
+  createGenerationRequest(model: string, params: {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;
@@ -48,7 +48,8 @@ export interface AIProvider {
     };
   }): Promise<ModelResult>;
 
-  createStreamingRequest?(params: {
+  /** @internal */
+  createStreamingRequest?(model: string, params: {
     messages: Array<AxleMessage>;
     system?: string;
     tools?: Array<ToolDefinition>;

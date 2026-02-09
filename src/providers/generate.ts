@@ -11,6 +11,7 @@ export type { GenerateError, GenerateResult, ToolCallCallback, ToolCallResult } 
 
 export interface GenerateOptions {
   provider: AIProvider;
+  model: string;
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
@@ -20,9 +21,10 @@ export interface GenerateOptions {
   options?: GenerateTurnOptions;
 }
 
-export async function generate(options: GenerateTurnOptions): Promise<GenerateResult> {
+export async function generate(options: GenerateOptions): Promise<GenerateResult> {
   const {
     provider,
+    model,
     messages,
     system,
     tools,
@@ -65,6 +67,7 @@ export async function generate(options: GenerateTurnOptions): Promise<GenerateRe
     iterations += 1;
     const response = await generateTurn({
       provider,
+      model,
       messages: workingMessages,
       system,
       tools,

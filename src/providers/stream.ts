@@ -22,35 +22,22 @@ import { AxleStopReason } from "./types.js";
 
 // --- Public types ---
 
-export type StreamPartType = "thinking" | "text" | "tool-call" | "tool-result";
+export type StreamPartType = "text" | "thinking";
 
-export interface ToolCallInfo {
-  name: string;
-  parameters: Record<string, unknown>;
-}
+export type PartStartCallback = (index: number, type: StreamPartType) => void;
 
-export type StreamPartDataMap = {
-  text: string;
-  thinking: string;
-  "tool-call": ToolCallInfo;
-  "tool-result": string;
-};
-
-export type PartUpdateCallback = <T extends StreamPartType>(
+export type PartUpdateCallback = (
   index: number,
-  type: T,
-  delta: StreamPartDataMap[T],
-  accumulated: StreamPartDataMap[T],
+  type: StreamPartType,
+  delta: string,
+  accumulated: string,
 ) => void;
 
-export type PartEndCallback = <T extends StreamPartType>(
-  index: number,
-  type: T,
-  final: StreamPartDataMap[T],
-) => void;
+export type PartEndCallback = (index: number, type: StreamPartType, final: string) => void;
 
 export interface StreamOptions {
   provider: AIProvider;
+  model: string;
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
@@ -61,6 +48,7 @@ export interface StreamOptions {
 }
 
 export interface StreamHandle {
+  onPartStart(callback: PartStartCallback): void;
   onPartUpdate(callback: PartUpdateCallback): void;
   onPartEnd(callback: PartEndCallback): void;
   readonly final: Promise<GenerateResult>;
@@ -69,6 +57,7 @@ export interface StreamHandle {
 // --- Implementation ---
 
 export function stream(options: StreamOptions): StreamHandle {
+  const partStartCallbacks: PartStartCallback[] = [];
   const partUpdateCallbacks: PartUpdateCallback[] = [];
   const partEndCallbacks: PartEndCallback[] = [];
 
@@ -81,10 +70,16 @@ export function stream(options: StreamOptions): StreamHandle {
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
-    run(options, partUpdateCallbacks, partEndCallbacks).then(resolveResult!, rejectResult!),
+    run(options, partStartCallbacks, partUpdateCallbacks, partEndCallbacks).then(
+      resolveResult!,
+      rejectResult!,
+    ),
   );
 
   return {
+    onPartStart(cb) {
+      partStartCallbacks.push(cb);
+    },
     onPartUpdate(cb) {
       partUpdateCallbacks.push(cb);
     },
@@ -99,32 +94,38 @@ export function stream(options: StreamOptions): StreamHandle {
 
 // --- Core loop ---
 
-function emitPartUpdate<T extends StreamPartType>(
+function emitPartStart(callbacks: PartStartCallback[], index: number, type: StreamPartType) {
+  for (const cb of callbacks) cb(index, type);
+}
+
+function emitPartUpdate(
   callbacks: PartUpdateCallback[],
   index: number,
-  type: T,
-  delta: StreamPartDataMap[T],
-  accumulated: StreamPartDataMap[T],
+  type: StreamPartType,
+  delta: string,
+  accumulated: string,
 ) {
   for (const cb of callbacks) cb(index, type, delta, accumulated);
 }
 
-function emitPartEnd<T extends StreamPartType>(
+function emitPartEnd(
   callbacks: PartEndCallback[],
   index: number,
-  type: T,
-  final: StreamPartDataMap[T],
+  type: StreamPartType,
+  final: string,
 ) {
   for (const cb of callbacks) cb(index, type, final);
 }
 
 async function run(
   options: StreamOptions,
+  startCbs: PartStartCallback[],
   updateCbs: PartUpdateCallback[],
   partEndCbs: PartEndCallback[],
 ): Promise<GenerateResult> {
   const {
     provider,
+    model,
     messages,
     system,
     tools,
@@ -167,6 +168,7 @@ async function run(
 
     const streamResult = streamTurn({
       provider,
+      model,
       messages: workingMessages,
       system,
       tools,
@@ -190,12 +192,7 @@ async function run(
 
     const closePart = () => {
       if (openPartType !== null && openPartIndex >= 0) {
-        emitPartEnd(
-          partEndCbs,
-          openPartIndex,
-          openPartType as "text" | "thinking",
-          openAccumulated,
-        );
+        emitPartEnd(partEndCbs, openPartIndex, openPartType, openAccumulated);
         openPartType = null;
         openAccumulated = "";
         openPartIndex = -1;
@@ -217,6 +214,7 @@ async function run(
             openPartIndex = globalIndex++;
             openPartType = "text";
             openAccumulated = chunk.data.text;
+            emitPartStart(startCbs, openPartIndex, "text");
           } else {
             const part = turnParts[chunk.data.index] as ContentPartText;
             part.text += chunk.data.text;
@@ -232,6 +230,7 @@ async function run(
           openPartIndex = globalIndex++;
           openPartType = "thinking";
           openAccumulated = "";
+          emitPartStart(startCbs, openPartIndex, "thinking");
           break;
         }
 
@@ -251,19 +250,14 @@ async function run(
             name: chunk.data.name,
             parameters: {},
           });
-          openPartIndex = globalIndex++;
-          openPartType = "tool-call";
+          globalIndex++;
           break;
         }
 
         case "tool-call-complete": {
           const part = turnParts[chunk.data.index] as ContentPartToolCall;
+          if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
-          const toolCallFinal: ToolCallInfo = { name: part.name, parameters: part.parameters };
-          emitPartUpdate(updateCbs, openPartIndex, "tool-call", toolCallFinal, toolCallFinal);
-          emitPartEnd(partEndCbs, openPartIndex, "tool-call", toolCallFinal);
-          openPartType = null;
-          openPartIndex = -1;
           break;
         }
 
@@ -336,13 +330,6 @@ async function run(
       : async () => null as ToolCallResult | null;
 
     const { results, missingTool } = await executeToolCalls(toolCalls, wrappedToolCall);
-
-    // Emit tool-result events
-    for (const r of results) {
-      const idx = globalIndex++;
-      emitPartUpdate(updateCbs, idx, "tool-result", r.content, r.content);
-      emitPartEnd(partEndCbs, idx, "tool-result", r.content);
-    }
 
     if (results.length > 0) {
       addMessage({ role: "tool", content: results });

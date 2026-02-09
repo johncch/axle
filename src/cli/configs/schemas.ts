@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
   AnthropicProviderConfig as AnthropicConfig,
+  ChatCompletionsProviderConfig as ChatCompletionsConfig,
   GeminiProviderConfig as GeminiConfig,
-  OllamaProviderConfig as OllamaConfig,
   OpenAIProviderConfig as OpenAIConfig,
 } from "../../providers/types.js";
 
@@ -38,9 +38,9 @@ export const ExecProviderConfigSchema = z.object({
 export type ExecProviderConfig = z.infer<typeof ExecProviderConfigSchema>;
 
 // AI Provider Use - Discriminated by 'type'
-const OllamaProviderUseSchema = z
+const ChatCompletionsProviderUseSchema = z
   .object({
-    type: z.literal("ollama"),
+    type: z.literal("chatcompletions"),
   })
   .loose();
 
@@ -63,7 +63,7 @@ const GeminiProviderUseSchema = z
   .loose();
 
 export const AIProviderUseSchema = z.discriminatedUnion("type", [
-  OllamaProviderUseSchema,
+  ChatCompletionsProviderUseSchema,
   AnthropicProviderUseSchema,
   OpenAIProviderUseSchema,
   GeminiProviderUseSchema,
@@ -74,7 +74,7 @@ export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 // Service Config
 export const ServiceConfigSchema = z
   .object({
-    ollama: z.custom<OllamaConfig>().optional(),
+    chatcompletions: z.custom<ChatCompletionsConfig>().optional(),
     anthropic: z.custom<AnthropicConfig>().optional(),
     openai: z.custom<OpenAIConfig>().optional(),
     gemini: z.custom<GeminiConfig>().optional(),

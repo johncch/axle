@@ -1,10 +1,13 @@
 import { GenerateContentResponse } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
+import { AxleStopReason } from "../types.js";
 import { convertStopReason } from "./utils.js";
 
 export function createGeminiStreamingAdapter() {
-  let currentContentIndex = 0;
+  let partIndex = 0;
+  let currentTextIndex = -1;
   let currentThinkingIndex = -1;
+  let hasFunctionCalls = false;
   let messageId = "";
   let model = "";
   let inputTokens = 0;
@@ -43,8 +46,7 @@ export function createGeminiStreamingAdapter() {
       // Handle thinking content
       if (isThought && part.text) {
         if (currentThinkingIndex === -1) {
-          // First thinking chunk - emit thinking-start
-          currentThinkingIndex = currentContentIndex + 1;
+          currentThinkingIndex = partIndex++;
           chunks.push({
             type: "thinking-start",
             data: {
@@ -53,7 +55,6 @@ export function createGeminiStreamingAdapter() {
           });
         }
 
-        // Emit thinking delta
         chunks.push({
           type: "thinking-delta",
           data: {
@@ -64,21 +65,25 @@ export function createGeminiStreamingAdapter() {
       }
       // Handle regular text content
       else if (part.text && !isThought) {
+        if (currentTextIndex === -1) {
+          currentTextIndex = partIndex++;
+        }
         chunks.push({
           type: "text",
-          data: { text: part.text, index: currentContentIndex },
+          data: { text: part.text, index: currentTextIndex },
         });
       }
 
       // Handle function calls (buffered by Google AI, not streamed incrementally)
       if (part.functionCall) {
-        currentContentIndex++;
-        const toolCallId = `tool-${currentContentIndex}`;
+        hasFunctionCalls = true;
+        const toolIdx = partIndex++;
+        const toolCallId = `tool-${toolIdx}`;
 
         chunks.push({
           type: "tool-call-start",
           data: {
-            index: currentContentIndex,
+            index: toolIdx,
             id: toolCallId,
             name: part.functionCall.name,
           },
@@ -87,7 +92,7 @@ export function createGeminiStreamingAdapter() {
         chunks.push({
           type: "tool-call-complete",
           data: {
-            index: currentContentIndex,
+            index: toolIdx,
             id: toolCallId,
             name: part.functionCall.name,
             arguments: part.functionCall.args,
@@ -98,9 +103,10 @@ export function createGeminiStreamingAdapter() {
 
     // Check for completion
     if (candidate.finishReason) {
-      const [success, stopReason] = convertStopReason(candidate.finishReason);
+      const [success, baseStopReason] = convertStopReason(candidate.finishReason);
+      const stopReason = hasFunctionCalls ? AxleStopReason.FunctionCall : baseStopReason;
 
-      if (!success) {
+      if (!success && !hasFunctionCalls) {
         chunks.push({
           type: "error",
           data: {

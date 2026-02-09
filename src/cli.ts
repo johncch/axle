@@ -115,13 +115,14 @@ try {
  * Execute the job
  */
 let provider: AIProvider;
+let model: string;
 try {
   const { type, ...otherConfig } = jobConfig.provider;
   const providerConfig = {
     ...serviceConfig[type],
     ...otherConfig,
   };
-  provider = getProvider(type, providerConfig);
+  ({ provider, model } = getProvider(type, providerConfig));
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
   rootSpan.error(error.message);
@@ -143,9 +144,9 @@ const stats: Stats = { in: 0, out: 0 };
 const startTime = performance.now();
 
 if (jobConfig.batch) {
-  await runBatch(jobConfig, provider, sharedTools, variables, options, stats, rootSpan);
+  await runBatch(jobConfig, provider, model, sharedTools, variables, options, stats, rootSpan);
 } else {
-  await runSingle(jobConfig, provider, sharedTools, variables, options, stats, rootSpan);
+  await runSingle(jobConfig, provider, model, sharedTools, variables, options, stats, rootSpan);
 }
 
 const duration = performance.now() - startTime;

@@ -5,18 +5,21 @@ import { AxleStopReason } from "../types.js";
 export function createResponsesAPIStreamingAdapter() {
   let messageId = "";
   let model = "";
-  let contentIndex = 0;
-  let toolCallIndex = 0;
-  let thinkingIndex = 0;
+  let partIndex = 0;
+  let currentTextIndex = -1;
+  let currentThinkingIndex = -1;
+  let hasFunctionCalls = false;
+  const functionInfo = new Map<string, { name: string; callId: string }>();
   const toolCallBuffers = new Map<
     string,
     {
       id: string;
+      callId: string;
       name: string;
       argumentsBuffer: string;
+      partIdx: number;
     }
   >();
-  const thinkingItems = new Set<string>();
 
   function handleEvent(event: ResponseStreamEvent): Array<AnyStreamChunk> {
     const chunks: Array<AnyStreamChunk> = [];
@@ -33,9 +36,12 @@ export function createResponsesAPIStreamingAdapter() {
       }
 
       case "response.output_text.delta": {
+        if (currentTextIndex === -1) {
+          currentTextIndex = partIndex++;
+        }
         chunks.push({
           type: "text",
-          data: { text: event.delta, index: contentIndex },
+          data: { text: event.delta, index: currentTextIndex },
         });
         break;
       }
@@ -44,19 +50,24 @@ export function createResponsesAPIStreamingAdapter() {
         const itemId = event.item_id;
 
         if (!toolCallBuffers.has(itemId)) {
-          toolCallIndex++;
+          const info = functionInfo.get(itemId);
+          const name = info?.name || "";
+          const callId = info?.callId || itemId;
+          const idx = partIndex++;
           toolCallBuffers.set(itemId, {
             id: itemId,
-            name: "",
+            callId,
+            name,
             argumentsBuffer: "",
+            partIdx: idx,
           });
 
           chunks.push({
             type: "tool-call-start",
             data: {
-              index: toolCallIndex,
-              id: itemId,
-              name: "",
+              index: idx,
+              id: callId,
+              name,
             },
           });
         }
@@ -67,8 +78,10 @@ export function createResponsesAPIStreamingAdapter() {
       }
 
       case "response.function_call_arguments.done": {
+        hasFunctionCalls = true;
         const itemId = event.item_id;
         const buffer = toolCallBuffers.get(itemId);
+        const name = (event as any).name || buffer?.name || "";
 
         if (buffer) {
           try {
@@ -76,15 +89,15 @@ export function createResponsesAPIStreamingAdapter() {
             chunks.push({
               type: "tool-call-complete",
               data: {
-                index: toolCallIndex,
-                id: itemId,
-                name: event.name,
+                index: buffer.partIdx,
+                id: buffer.callId,
+                name,
                 arguments: parsedArgs,
               },
             });
           } catch (e) {
             throw new Error(
-              `Failed to parse function call arguments for ${event.name}: ${e instanceof Error ? e.message : String(e)}`,
+              `Failed to parse function call arguments for ${name}: ${e instanceof Error ? e.message : String(e)}`,
             );
           }
           toolCallBuffers.delete(itemId);
@@ -99,7 +112,9 @@ export function createResponsesAPIStreamingAdapter() {
           data: {
             finishReason: event.response.incomplete_details
               ? AxleStopReason.Error
-              : AxleStopReason.Stop,
+              : hasFunctionCalls
+                ? AxleStopReason.FunctionCall
+                : AxleStopReason.Stop,
             usage: {
               in: usage?.input_tokens || 0,
               out: usage?.output_tokens || 0,
@@ -123,16 +138,22 @@ export function createResponsesAPIStreamingAdapter() {
 
       case "response.output_item.added": {
         if (event.item?.type === "reasoning") {
-          const itemId = event.item.id;
-          thinkingItems.add(itemId);
-          thinkingIndex++;
-
+          currentThinkingIndex = partIndex++;
           chunks.push({
             type: "thinking-start",
             data: {
-              index: thinkingIndex,
+              index: currentThinkingIndex,
             },
           });
+        } else if (event.item?.type === "function_call") {
+          const item = event.item as { id?: string; name: string; call_id: string };
+          const itemId = item.id || item.call_id;
+          if (itemId) {
+            functionInfo.set(itemId, {
+              name: item.name || "",
+              callId: item.call_id || itemId,
+            });
+          }
         }
         break;
       }
@@ -142,7 +163,7 @@ export function createResponsesAPIStreamingAdapter() {
           chunks.push({
             type: "thinking-delta",
             data: {
-              index: thinkingIndex,
+              index: currentThinkingIndex,
               text: event.delta,
             },
           });
@@ -155,18 +176,10 @@ export function createResponsesAPIStreamingAdapter() {
           chunks.push({
             type: "thinking-delta",
             data: {
-              index: thinkingIndex,
+              index: currentThinkingIndex,
               text: event.delta,
             },
           });
-        }
-        break;
-      }
-
-      case "response.output_item.done": {
-        if (event.item?.type === "reasoning") {
-          const itemId = event.item.id;
-          thinkingItems.delete(itemId);
         }
         break;
       }

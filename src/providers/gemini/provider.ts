@@ -6,66 +6,70 @@ import { ToolDefinition } from "../../tools/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { DEFAULT_MODEL } from "./models.js";
+import { DEFAULT_MODEL as _DEFAULT_MODEL, Models as _Models } from "./models.js";
 
 export const NAME = "Gemini" as const;
 
-export class GeminiProvider implements AIProvider {
-  name = NAME;
-  client: GoogleGenAI;
-  model: string;
+export function gemini(apiKey: string): AIProvider {
+  const client = new GoogleGenAI({ apiKey });
 
-  constructor(apiKey: string, model?: string) {
-    this.model = model ?? DEFAULT_MODEL;
-    this.client = new GoogleGenAI({ apiKey: apiKey });
-  }
+  return {
+    name: NAME,
 
-  async createGenerationRequest(params: {
-    messages: Array<AxleMessage>;
-    system?: string;
-    tools?: Array<ToolDefinition>;
-    context: { tracer?: TracingContext };
-    options?: {
-      temperature?: number;
-      top_p?: number;
-      max_tokens?: number;
-      frequency_penalty?: number;
-      presence_penalty?: number;
-      stop?: string | string[];
-      [key: string]: any;
-    };
-  }): Promise<ModelResult> {
-    return await createGenerationRequest({
-      client: this.client,
-      model: this.model,
-      ...params,
-    });
-  }
+    /** @internal */
+    async createGenerationRequest(model: string, params: {
+      messages: Array<AxleMessage>;
+      system?: string;
+      tools?: Array<ToolDefinition>;
+      context: { tracer?: TracingContext };
+      options?: {
+        temperature?: number;
+        top_p?: number;
+        max_tokens?: number;
+        frequency_penalty?: number;
+        presence_penalty?: number;
+        stop?: string | string[];
+        [key: string]: any;
+      };
+    }): Promise<ModelResult> {
+      return await createGenerationRequest({
+        client,
+        model,
+        ...params,
+      });
+    },
 
-  createStreamingRequest(params: {
-    messages: Array<AxleMessage>;
-    system?: string;
-    tools?: Array<ToolDefinition>;
-    context: { tracer?: TracingContext };
-    options?: {
-      temperature?: number;
-      top_p?: number;
-      max_tokens?: number;
-      frequency_penalty?: number;
-      presence_penalty?: number;
-      stop?: string | string[];
-      [key: string]: any;
-    };
-  }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-    const { messages, system, tools, context, options } = params;
-    return createStreamingRequest({
-      client: this.client,
-      model: this.model,
-      messages,
-      system,
-      tools,
-      runtime: context,
-      options,
-    });
-  }
+    /** @internal */
+    createStreamingRequest(model: string, params: {
+      messages: Array<AxleMessage>;
+      system?: string;
+      tools?: Array<ToolDefinition>;
+      context: { tracer?: TracingContext };
+      options?: {
+        temperature?: number;
+        top_p?: number;
+        max_tokens?: number;
+        frequency_penalty?: number;
+        presence_penalty?: number;
+        stop?: string | string[];
+        [key: string]: any;
+      };
+    }): AsyncGenerator<AnyStreamChunk, void, unknown> {
+      const { messages, system, tools, context, options } = params;
+      return createStreamingRequest({
+        client,
+        model,
+        messages,
+        system,
+        tools,
+        runtime: context,
+        options,
+      });
+    },
+  };
+}
+
+export namespace gemini {
+  export const MODELS = _Models;
+  export const DEFAULT_MODEL = _DEFAULT_MODEL;
 }

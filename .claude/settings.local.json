@@ -23,7 +23,11 @@
       "Bash(pnpm add:*)",
       "Bash(git mv:*)",
       "Bash(git rm:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebSearch",
+      "WebFetch(domain:platform.moonshot.ai)",
+      "WebFetch(domain:api-docs.deepseek.com)",
+      "WebFetch(domain:docs.vllm.ai)"
     ]
   },
   "enableAllProjectMcpServers": false

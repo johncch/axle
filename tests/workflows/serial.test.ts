@@ -10,8 +10,7 @@ function createMockProvider(responses: string[]): AIProvider {
 
   return {
     name: "mock",
-    model: "mock-model",
-    async createGenerationRequest() {
+    async createGenerationRequest(_model: string) {
       const response = responses[callIndex] || "default response";
       callIndex++;
 
@@ -39,6 +38,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
       });
 
@@ -54,6 +54,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct1, instruct2);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
       });
 
@@ -69,6 +70,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: { name: "Alice" },
       });
 
@@ -84,6 +86,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct1, instruct2);
       await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
         stats,
       });
@@ -102,6 +105,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
       });
 
@@ -115,6 +119,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
       });
 
@@ -130,6 +135,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
         stats,
       });
@@ -148,6 +154,7 @@ describe("serialWorkflow", () => {
       const workflow = serialWorkflow(instruct);
       const result = await workflow.execute({
         provider,
+        model: "mock-model",
         variables: {},
         options: { dryRun: true },
       });

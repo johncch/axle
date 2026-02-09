@@ -1,6 +1,7 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, test } from "vitest";
 import { createResponsesAPIStreamingAdapter } from "../../../src/providers/openai/createResponsesAPIStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/providers/types.js";
 
 describe("createResponsesAPIStreamingAdapter", () => {
   describe("basic streaming events", () => {
@@ -139,7 +140,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks).toHaveLength(1);
       expect(chunks[0].type).toBe("thinking-start");
       if (chunks[0].type === "thinking-start") {
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
         expect(chunks[0].data.redacted).toBeUndefined();
       }
     });
@@ -174,7 +175,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("thinking-delta");
       if (chunks[0].type === "thinking-delta") {
         expect(chunks[0].data.text).toBe("Let me think about this...");
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
       }
     });
 
@@ -255,15 +256,15 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
       if (chunks1[0].type === "thinking-delta") {
         expect(chunks1[0].data.text).toBe("First, ");
-        expect(chunks1[0].data.index).toBe(1);
+        expect(chunks1[0].data.index).toBe(0);
       }
       if (chunks2[0].type === "thinking-delta") {
         expect(chunks2[0].data.text).toBe("I need to analyze ");
-        expect(chunks2[0].data.index).toBe(1);
+        expect(chunks2[0].data.index).toBe(0);
       }
       if (chunks3[0].type === "thinking-delta") {
         expect(chunks3[0].data.text).toBe("the problem.");
-        expect(chunks3[0].data.index).toBe(1);
+        expect(chunks3[0].data.index).toBe(0);
       }
     });
 
@@ -298,7 +299,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("thinking-delta");
       if (chunks[0].type === "thinking-delta") {
         expect(chunks[0].data.text).toBe("This is the summary reasoning...");
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
       }
     });
   });
@@ -320,7 +321,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("tool-call-start");
       if (chunks[0].type === "tool-call-start") {
         expect(chunks[0].data.id).toBe("call_123");
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
       }
     });
 
@@ -358,6 +359,105 @@ describe("createResponsesAPIStreamingAdapter", () => {
   });
 
   describe("mixed events", () => {
+    test("should emit FunctionCall finish reason when tool calls are present", () => {
+      const adapter = createResponsesAPIStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "search",
+        arguments: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.finishReason).toBe(AxleStopReason.FunctionCall);
+      }
+    });
+
+    test("should emit Stop finish reason when no tool calls", () => {
+      const adapter = createResponsesAPIStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Hello",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.finishReason).toBe(AxleStopReason.Stop);
+      }
+    });
+
     test("should handle reasoning followed by text output", () => {
       const adapter = createResponsesAPIStreamingAdapter();
 

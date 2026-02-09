@@ -1,8 +1,8 @@
 import z from "zod";
-import { stream } from "../../src/index.js";
-import { getAxle } from "./helper.js";
+import { SimpleWriter, stream, Tracer } from "../../src/index.js";
+import { useCLIHelper } from "./helper.js";
 
-const axle = getAxle();
+const [provider, model] = useCLIHelper();
 
 const callNameTool = {
   name: "setName",
@@ -13,33 +13,55 @@ const callNameTool = {
 };
 
 let options: any = {};
-if (axle.provider.name === "OpenAI") {
-  options.reasoning = {
-    summary: "detailed",
-  };
-}
+// if (provider.name === "OpenAI") {
+//   options.reasoning = {
+//     summary: "detailed",
+//   };
+// }
+
+console.log("[Starting...]");
+
+const tracer = new Tracer();
+const logWriter = new SimpleWriter({
+  minLevel: options.debug ? "debug" : "info",
+  showInternal: options.debug,
+  showTimestamp: true,
+});
+// tracer.addWriter(logWriter);
 
 const result = stream({
-  provider: axle.provider,
+  provider: provider,
+  model,
   messages: [
     {
       role: "user",
-      content: "Can you tell me a 300 word story about AI",
-      // "Can you tell me a 300 word story with your name and then call the setName function with your name",
+      content:
+        "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
     },
   ],
   tools: [callNameTool],
   options,
   onToolCall: async (name, parameters) => {
+    console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
     return {
       type: "success",
       content: "success",
     };
   },
+  tracer: tracer.startSpan("stream"),
+});
+
+result.onPartStart((index, type) => {
+  console.log(`[Start] ${index} ${type}`);
 });
 
 result.onPartUpdate((index, type, delta, acc) => {
-  console.log(`${index} ${type}: ${delta}`);
+  process.stdout.write(`${delta}`);
+});
+
+result.onPartEnd((index, type, final) => {
+  console.log(`\n[End] ${index} ${type}`);
 });
 
 await result.final;
+console.log("[Complete]");

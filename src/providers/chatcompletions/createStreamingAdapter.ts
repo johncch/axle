@@ -1,26 +1,32 @@
-import OpenAI from "openai";
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
 import { AxleStopReason } from "../types.js";
+import { ChatCompletionChunk } from "./types.js";
+import { convertFinishReason } from "./utils.js";
 
-export function createChatCompletionStreamingAdapter() {
+export function createStreamingAdapter() {
   const toolCallBuffers = new Map<
     number,
     {
       id: string;
       name: string;
       argumentsBuffer: string;
+      partIdx: number;
     }
   >();
-  let contentIndex = 0;
+  let partIndex = 0;
+  let currentTextIndex = -1;
   let messageId = "";
   let model = "";
+  let currentThinkingIndex = -1;
 
-  function handleChunk(chunk: OpenAI.Chat.Completions.ChatCompletionChunk): Array<AnyStreamChunk> {
+  function handleChunk(chunk: ChatCompletionChunk): Array<AnyStreamChunk> {
     const chunks: Array<AnyStreamChunk> = [];
     const choice = chunk.choices[0];
-    if (!choice) return chunks;
+    if (!choice) {
+      // Usage-only chunk at the end of stream (no choices)
+      return chunks;
+    }
 
-    // First chunk
     if (!messageId) {
       messageId = chunk.id;
       model = chunk.model;
@@ -33,11 +39,31 @@ export function createChatCompletionStreamingAdapter() {
 
     const delta = choice.delta;
 
+    // Reasoning content (DeepSeek, vLLM, Kimi)
+    if (delta.reasoning_content) {
+      if (currentThinkingIndex === -1) {
+        currentThinkingIndex = partIndex++;
+        chunks.push({
+          type: "thinking-start",
+          data: { index: currentThinkingIndex },
+        });
+      }
+
+      chunks.push({
+        type: "thinking-delta",
+        data: { index: currentThinkingIndex, text: delta.reasoning_content },
+      });
+    }
+
     // Text content
     if (delta.content) {
+      if (currentTextIndex === -1) {
+        currentTextIndex = partIndex++;
+      }
+
       chunks.push({
         type: "text",
-        data: { text: delta.content, index: contentIndex },
+        data: { text: delta.content, index: currentTextIndex },
       });
     }
 
@@ -46,27 +72,26 @@ export function createChatCompletionStreamingAdapter() {
       for (const toolCallDelta of delta.tool_calls) {
         const index = toolCallDelta.index;
 
-        // Start new tool call
         if (!toolCallBuffers.has(index)) {
-          const toolCallIndex = contentIndex + index + 1;
-          const toolId = toolCallDelta.id || `tool-${toolCallIndex}`;
+          const idx = partIndex++;
+          const toolId = toolCallDelta.id || `tool-${idx}`;
           toolCallBuffers.set(index, {
             id: toolId,
             name: toolCallDelta.function?.name || "",
             argumentsBuffer: "",
+            partIdx: idx,
           });
 
           chunks.push({
             type: "tool-call-start",
             data: {
-              index: toolCallIndex,
+              index: idx,
               id: toolId,
               name: toolCallDelta.function?.name || "",
             },
           });
         }
 
-        // Accumulate arguments
         const buffer = toolCallBuffers.get(index)!;
         if (toolCallDelta.id) buffer.id = toolCallDelta.id;
         if (toolCallDelta.function?.name) buffer.name = toolCallDelta.function.name;
@@ -78,15 +103,14 @@ export function createChatCompletionStreamingAdapter() {
 
     // Completion
     if (choice.finish_reason) {
-      // Complete any pending tool calls
-      for (const [index, buffer] of toolCallBuffers) {
-        const toolCallIndex = contentIndex + index + 1;
+      // Flush pending tool calls
+      for (const [, buffer] of toolCallBuffers) {
         try {
           const parsedArgs = JSON.parse(buffer.argumentsBuffer);
           chunks.push({
             type: "tool-call-complete",
             data: {
-              index: toolCallIndex,
+              index: buffer.partIdx,
               id: buffer.id,
               name: buffer.name,
               arguments: parsedArgs,
@@ -105,10 +129,7 @@ export function createChatCompletionStreamingAdapter() {
         data: {
           finishReason,
           usage: chunk.usage
-            ? {
-                in: chunk.usage.prompt_tokens,
-                out: chunk.usage.completion_tokens,
-              }
+            ? { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens }
             : { in: 0, out: 0 },
         },
       });
@@ -118,20 +139,4 @@ export function createChatCompletionStreamingAdapter() {
   }
 
   return { handleChunk };
-}
-
-function convertFinishReason(finishReason: string | null): AxleStopReason {
-  switch (finishReason) {
-    case "stop":
-      return AxleStopReason.Stop;
-    case "length":
-      return AxleStopReason.Length;
-    case "tool_calls":
-    case "function_call":
-      return AxleStopReason.FunctionCall;
-    case "content_filter":
-      return AxleStopReason.Error;
-    default:
-      return AxleStopReason.Stop;
-  }
 }

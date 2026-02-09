@@ -22,6 +22,7 @@ export interface WorkflowResult<T = any> {
 export interface WorkflowExecutable {
   execute: (context: {
     provider: AIProvider;
+    model: string;
     variables: Record<string, any>;
     options?: ProgramOptions;
     stats?: Stats;

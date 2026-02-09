@@ -1,11 +1,11 @@
 import { config } from "dotenv";
 import { z } from "zod";
 import { streamTurn } from "../../src/index.js";
-import { getAxle } from "./helper.js";
+import { useCLIHelper } from "./helper.js";
 config();
 
 function setupAndStream() {
-  const axle = getAxle();
+  const [provider, model] = useCLIHelper();
 
   const callNameTool = {
     name: "setName",
@@ -16,19 +16,20 @@ function setupAndStream() {
   };
 
   let options: any = {};
-  if (axle.provider.name === "OpenAI") {
-    options.reasoning = {
-      summary: "detailed",
-    };
-  }
+  // if (provider.name === "OpenAI") {
+  //   options.reasoning = {
+  //     summary: "detailed",
+  //   };
+  // }
 
   return streamTurn({
-    provider: axle.provider,
+    provider: provider,
+    model,
     messages: [
       {
         role: "user",
-        content: "Can you tell me a 300 word story about AI",
-        // "Can you tell me a 300 word story with your name and then call the setName function with your name",
+        content:
+          "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
       },
     ],
     tools: [callNameTool],
