@@ -93,7 +93,7 @@ export function createAnthropicStreamingAdapter() {
       case "content_block_delta":
         if (event.delta.type === "text_delta") {
           chunks.push({
-            type: "text",
+            type: "text-delta",
             data: {
               text: event.delta.text,
               index: event.index,

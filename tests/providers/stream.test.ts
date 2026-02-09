@@ -4,7 +4,7 @@ import type {
   StreamCompleteChunk,
   StreamErrorChunk,
   StreamStartChunk,
-  StreamTextChunk,
+  StreamTextDeltaChunk,
   StreamThinkingDeltaChunk,
   StreamThinkingStartChunk,
   StreamToolCallCompleteChunk,
@@ -55,8 +55,8 @@ function startChunk(id = "msg_1", model = "test-model"): StreamStartChunk {
   return { type: "start", id, data: { model, timestamp: Date.now() } };
 }
 
-function textChunk(index: number, text: string): StreamTextChunk {
-  return { type: "text", data: { index, text } };
+function textChunk(index: number, text: string): StreamTextDeltaChunk {
+  return { type: "text-delta", data: { index, text } };
 }
 
 function thinkingStartChunk(index: number): StreamThinkingStartChunk {

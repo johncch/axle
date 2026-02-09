@@ -117,7 +117,7 @@ class StreamResultImpl implements StreamResult {
             this.streamParts.start(chunk.id, chunk.data.model);
             break;
 
-          case "text":
+          case "text-delta":
             const textIndex = chunk.data.index;
             if (textIndex >= this.streamParts.partsLength) {
               this.streamParts.createText(textIndex, chunk.data.text);

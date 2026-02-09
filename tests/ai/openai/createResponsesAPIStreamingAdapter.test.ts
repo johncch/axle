@@ -59,8 +59,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
       const chunks = adapter.handleEvent(event);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("text");
-      if (chunks[0].type === "text") {
+      expect(chunks[0].type).toBe("text-delta");
+      if (chunks[0].type === "text-delta") {
         expect(chunks[0].data.text).toBe("Hello");
         expect(chunks[0].data.index).toBe(0);
       }
@@ -526,8 +526,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
         expect(chunks3[0].data.text).toBe("Thinking...");
       }
       expect(chunks4).toHaveLength(0);
-      expect(chunks5[0].type).toBe("text");
-      if (chunks5[0].type === "text") {
+      expect(chunks5[0].type).toBe("text-delta");
+      if (chunks5[0].type === "text-delta") {
         expect(chunks5[0].data.text).toBe("Here is my response");
       }
     });

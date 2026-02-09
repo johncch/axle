@@ -40,7 +40,7 @@ export function createResponsesAPIStreamingAdapter() {
           currentTextIndex = partIndex++;
         }
         chunks.push({
-          type: "text",
+          type: "text-delta",
           data: { text: event.delta, index: currentTextIndex },
         });
         break;

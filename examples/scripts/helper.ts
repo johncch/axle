@@ -89,7 +89,7 @@ function getProvider(provider: ProviderNames): AIProvider {
 
     case "ollama":
     default: {
-      return chatCompletions("http://localhost:11434");
+      return chatCompletions("http://localhost:11434/v1");
     }
   }
 }

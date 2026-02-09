@@ -73,9 +73,9 @@ describe("createGeminiStreamingAdapter", () => {
 
       const chunks = adapter.handleChunk(chunk as any);
 
-      const textChunk = chunks.find((c) => c.type === "text");
+      const textChunk = chunks.find((c) => c.type === "text-delta");
       expect(textChunk).toBeDefined();
-      if (textChunk && textChunk.type === "text") {
+      if (textChunk && textChunk.type === "text-delta") {
         expect(textChunk.data.text).toBe("Hello, world!");
         expect(textChunk.data.index).toBe(0);
       }
@@ -123,12 +123,12 @@ describe("createGeminiStreamingAdapter", () => {
         ],
       } as any);
 
-      const text1 = chunks1.find((c) => c.type === "text");
-      const text2 = chunks2.find((c) => c.type === "text");
+      const text1 = chunks1.find((c) => c.type === "text-delta");
+      const text2 = chunks2.find((c) => c.type === "text-delta");
 
       expect(text1).toBeDefined();
       expect(text2).toBeDefined();
-      if (text1 && text1.type === "text" && text2 && text2.type === "text") {
+      if (text1 && text1.type === "text-delta" && text2 && text2.type === "text-delta") {
         expect(text1.data.text).toBe("Hello");
         expect(text2.data.text).toBe(", world!");
       }
@@ -408,7 +408,7 @@ describe("createGeminiStreamingAdapter", () => {
       } as any);
 
       const thinkingDelta = chunks1.find((c) => c.type === "thinking-delta");
-      const textChunk = chunks2.find((c) => c.type === "text");
+      const textChunk = chunks2.find((c) => c.type === "text-delta");
 
       expect(thinkingDelta).toBeDefined();
       expect(textChunk).toBeDefined();
@@ -416,7 +416,7 @@ describe("createGeminiStreamingAdapter", () => {
       if (thinkingDelta && thinkingDelta.type === "thinking-delta") {
         expect(thinkingDelta.data.text).toBe("Thinking...");
       }
-      if (textChunk && textChunk.type === "text") {
+      if (textChunk && textChunk.type === "text-delta") {
         expect(textChunk.data.text).toBe("Here's my answer.");
       }
     });
@@ -587,7 +587,7 @@ describe("createGeminiStreamingAdapter", () => {
         ],
       } as any);
 
-      const textChunk = chunks1.find((c) => c.type === "text");
+      const textChunk = chunks1.find((c) => c.type === "text-delta");
       const toolStart = chunks2.find((c) => c.type === "tool-call-start");
       const toolComplete = chunks2.find((c) => c.type === "tool-call-complete");
 

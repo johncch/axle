@@ -13,7 +13,9 @@ export interface AxleAssistantMessage {
   role: "assistant";
   id: string;
   model?: string;
-  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
+  content: Array<
+    ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+  >;
   finishReason?: AxleStopReason;
 }
 
@@ -32,7 +34,8 @@ export type ContentPart =
   | ContentPartText
   | ContentPartFile
   | ContentPartToolCall
-  | ContentPartThinking;
+  | ContentPartThinking
+  | ContentPartInternalTool;
 
 export interface ContentPartText {
   type: "text";
@@ -46,7 +49,9 @@ export interface ContentPartFile {
 
 export interface ContentPartThinking {
   type: "thinking";
+  id?: string;
   text: string;
+  summary?: string;
   redacted?: boolean;
   encrypted?: string;
   signature?: string;
@@ -57,4 +62,12 @@ export interface ContentPartToolCall {
   id: string;
   name: string;
   parameters: Record<string, unknown>;
+}
+
+export interface ContentPartInternalTool {
+  type: "internal-tool";
+  id: string;
+  name: string;
+  input?: unknown;
+  output?: unknown;
 }

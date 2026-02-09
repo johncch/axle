@@ -30,7 +30,7 @@ describe("createStreamingAdapter", () => {
       adapter.handleChunk(makeChunk({ content: "Hello" }));
       const chunks = adapter.handleChunk(makeChunk({ content: " world" }));
 
-      const textChunks = chunks.filter((c) => c.type === "text");
+      const textChunks = chunks.filter((c) => c.type === "text-delta");
       expect(textChunks).toHaveLength(1);
       expect((textChunks[0] as any).data.text).toBe(" world");
     });
@@ -79,10 +79,10 @@ describe("createStreamingAdapter", () => {
       expect(types).toContain("start");
       expect(types).toContain("thinking-start");
       expect(types).toContain("thinking-delta");
-      expect(types).toContain("text");
+      expect(types).toContain("text-delta");
 
       const thinkingStartIdx = types.indexOf("thinking-start");
-      const textIdx = types.indexOf("text");
+      const textIdx = types.indexOf("text-delta");
       expect(thinkingStartIdx).toBeLessThan(textIdx);
     });
   });

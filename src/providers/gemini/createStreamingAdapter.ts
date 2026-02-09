@@ -69,7 +69,7 @@ export function createGeminiStreamingAdapter() {
           currentTextIndex = partIndex++;
         }
         chunks.push({
-          type: "text",
+          type: "text-delta",
           data: { text: part.text, index: currentTextIndex },
         });
       }

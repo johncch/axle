@@ -62,7 +62,7 @@ export function createStreamingAdapter() {
       }
 
       chunks.push({
-        type: "text",
+        type: "text-delta",
         data: { text: delta.content, index: currentTextIndex },
       });
     }

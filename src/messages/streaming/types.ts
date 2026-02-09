@@ -4,17 +4,26 @@ import { Stats } from "../../types.js";
 export interface StreamChunk {
   type:
     | "start"
-    | "text"
+    | "text-start"
+    | "text-delta"
+    | "text-complete"
     | "tool-call-start"
-    | "tool-call-delta"
     | "tool-call-complete"
     | "thinking-start"
     | "thinking-delta"
+    | "thinking-summary-delta"
+    | "thinking-complete"
+    | "internal-tool-start"
+    | "internal-tool-complete"
     | "complete"
     | "error";
   id?: string;
   data?: any;
 }
+
+// ---------------------------------------------------------------------------
+// Stream lifecycle
+// ---------------------------------------------------------------------------
 
 export interface StreamStartChunk extends StreamChunk {
   type: "start";
@@ -33,19 +42,53 @@ export interface StreamCompleteChunk extends StreamChunk {
   };
 }
 
-export interface StreamTextChunk extends StreamChunk {
-  type: "text";
+export interface StreamErrorChunk extends StreamChunk {
+  type: "error";
   data: {
-    text: string;
+    type: string;
+    message: string;
+    usage?: Stats;
+    raw?: any;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Text
+// ---------------------------------------------------------------------------
+
+export interface StreamTextStartChunk extends StreamChunk {
+  type: "text-start";
+  data: {
     index: number;
   };
 }
+
+export interface StreamTextDeltaChunk extends StreamChunk {
+  type: "text-delta";
+  data: {
+    index: number;
+    text: string;
+  };
+}
+
+export interface StreamTextCompleteChunk extends StreamChunk {
+  type: "text-complete";
+  data: {
+    index: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Thinking / Reasoning
+// ---------------------------------------------------------------------------
 
 export interface StreamThinkingStartChunk extends StreamChunk {
   type: "thinking-start";
   data: {
     index: number;
+    id?: string;
     redacted?: boolean;
+    signature?: string;
   };
 }
 
@@ -57,6 +100,25 @@ export interface StreamThinkingDeltaChunk extends StreamChunk {
   };
 }
 
+export interface StreamThinkingSummaryDeltaChunk extends StreamChunk {
+  type: "thinking-summary-delta";
+  data: {
+    index: number;
+    text: string;
+  };
+}
+
+export interface StreamThinkingCompleteChunk extends StreamChunk {
+  type: "thinking-complete";
+  data: {
+    index: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tool calls (user-defined functions)
+// ---------------------------------------------------------------------------
+
 export interface StreamToolCallStartChunk extends StreamChunk {
   type: "tool-call-start";
   data: {
@@ -65,15 +127,6 @@ export interface StreamToolCallStartChunk extends StreamChunk {
     name: string;
   };
 }
-
-// export interface StreamToolCallDeltaChunk extends StreamChunk {
-//   type: "tool-call-delta";
-//   data: {
-//     index: number;
-//     id: string;
-//     argumentsDelta: string;
-//   };
-// }
 
 export interface StreamToolCallCompleteChunk extends StreamChunk {
   type: "tool-call-complete";
@@ -85,23 +138,45 @@ export interface StreamToolCallCompleteChunk extends StreamChunk {
   };
 }
 
-export interface StreamErrorChunk extends StreamChunk {
-  type: "error";
+// ---------------------------------------------------------------------------
+// Internal tools (web search, file search, code interpreter)
+// ---------------------------------------------------------------------------
+
+export interface StreamInternalToolStartChunk extends StreamChunk {
+  type: "internal-tool-start";
   data: {
-    type: string;
-    message: string;
-    usage?: Stats;
-    raw?: any;
+    index: number;
+    id: string;
+    name: string;
   };
 }
+
+export interface StreamInternalToolCompleteChunk extends StreamChunk {
+  type: "internal-tool-complete";
+  data: {
+    index: number;
+    id: string;
+    name: string;
+    output?: unknown;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Union
+// ---------------------------------------------------------------------------
 
 export type AnyStreamChunk =
   | StreamStartChunk
   | StreamCompleteChunk
-  | StreamTextChunk
-  | StreamToolCallStartChunk
-  // | StreamToolCallDeltaChunk
-  | StreamToolCallCompleteChunk
+  | StreamErrorChunk
+  | StreamTextStartChunk
+  | StreamTextDeltaChunk
+  | StreamTextCompleteChunk
   | StreamThinkingStartChunk
   | StreamThinkingDeltaChunk
-  | StreamErrorChunk;
+  | StreamThinkingSummaryDeltaChunk
+  | StreamThinkingCompleteChunk
+  | StreamToolCallStartChunk
+  | StreamToolCallCompleteChunk
+  | StreamInternalToolStartChunk
+  | StreamInternalToolCompleteChunk;

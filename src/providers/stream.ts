@@ -206,7 +206,7 @@ async function run(
           turnModel = chunk.data.model;
           break;
 
-        case "text": {
+        case "text-delta": {
           const isNew = chunk.data.index >= turnParts.length;
           if (isNew) {
             closePart();

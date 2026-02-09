@@ -27,41 +27,45 @@ const logWriter = new SimpleWriter({
   showInternal: options.debug,
   showTimestamp: true,
 });
-// tracer.addWriter(logWriter);
+tracer.addWriter(logWriter);
 
-const result = stream({
-  provider: provider,
-  model,
-  messages: [
-    {
-      role: "user",
-      content:
-        "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
+try {
+  const result = stream({
+    provider: provider,
+    model,
+    messages: [
+      {
+        role: "user",
+        content:
+          "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
+      },
+    ],
+    tools: [callNameTool],
+    options,
+    onToolCall: async (name, parameters) => {
+      console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
+      return {
+        type: "success",
+        content: "success",
+      };
     },
-  ],
-  tools: [callNameTool],
-  options,
-  onToolCall: async (name, parameters) => {
-    console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
-    return {
-      type: "success",
-      content: "success",
-    };
-  },
-  tracer: tracer.startSpan("stream"),
-});
+    tracer: tracer.startSpan("stream"),
+  });
+  result.onPartStart((index, type) => {
+    console.log(`[Start] ${index} ${type}`);
+  });
 
-result.onPartStart((index, type) => {
-  console.log(`[Start] ${index} ${type}`);
-});
+  result.onPartUpdate((index, type, delta, acc) => {
+    process.stdout.write(`${delta}`);
+  });
 
-result.onPartUpdate((index, type, delta, acc) => {
-  process.stdout.write(`${delta}`);
-});
+  result.onPartEnd((index, type, final) => {
+    console.log(`\n[End] ${index} ${type}`);
+  });
 
-result.onPartEnd((index, type, final) => {
-  console.log(`\n[End] ${index} ${type}`);
-});
+  await result.final;
+} catch (e) {
+  console.error(e);
+}
 
-await result.final;
 console.log("[Complete]");

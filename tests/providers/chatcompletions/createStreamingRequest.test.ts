@@ -38,10 +38,10 @@ describe("createStreamingRequest", () => {
 
     const types = chunks.map((c) => c.type);
     expect(types).toContain("start");
-    expect(types).toContain("text");
+    expect(types).toContain("text-delta");
     expect(types).toContain("complete");
 
-    const textChunks = chunks.filter((c) => c.type === "text");
+    const textChunks = chunks.filter((c) => c.type === "text-delta");
     expect(textChunks).toHaveLength(2);
     expect((textChunks[0] as any).data.text).toBe("Hello");
     expect((textChunks[1] as any).data.text).toBe(" world");
