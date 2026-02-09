@@ -31,34 +31,36 @@ describe("createAnthropicStreamingAdapter", () => {
       }
     });
 
-    test("should handle text content_block_start and content_block_delta", () => {
+    test("should emit text-start on content_block_start for text", () => {
       const adapter = createAnthropicStreamingAdapter();
 
-      // Start text block
-      const startEvent: MessageStreamEvent = {
+      const startChunks = adapter.handleEvent({
         type: "content_block_start",
         index: 0,
-        content_block: {
-          type: "text",
-          text: "",
-        } as any,
-      };
+        content_block: { type: "text", text: "" } as any,
+      });
 
-      const startChunks = adapter.handleEvent(startEvent as any);
-      expect(startChunks).toHaveLength(0); // No chunk emitted on text start
+      expect(startChunks).toHaveLength(1);
+      expect(startChunks[0].type).toBe("text-start");
+      if (startChunks[0].type === "text-start") {
+        expect(startChunks[0].data.index).toBe(0);
+      }
+    });
 
-      // Text delta
+    test("should handle text content_block_delta", () => {
+      const adapter = createAnthropicStreamingAdapter();
 
-      const deltaEvent: MessageStreamEvent = {
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" } as any,
+      });
+
+      const deltaChunks = adapter.handleEvent({
         type: "content_block_delta",
         index: 0,
-        delta: {
-          type: "text_delta",
-          text: "Hello, world!",
-        },
-      };
-
-      const deltaChunks = adapter.handleEvent(deltaEvent as any);
+        delta: { type: "text_delta", text: "Hello, world!" },
+      });
 
       expect(deltaChunks).toHaveLength(1);
       expect(deltaChunks[0].type).toBe("text-delta");
@@ -449,37 +451,32 @@ describe("createAnthropicStreamingAdapter", () => {
   });
 
   describe("mixed content", () => {
-    test("should handle thinking followed by text", () => {
+    test("should handle thinking followed by text with full lifecycle", () => {
       const adapter = createAnthropicStreamingAdapter();
 
-      // Start thinking
       const thinkStart = adapter.handleEvent({
         type: "content_block_start",
         index: 0,
         content_block: { type: "thinking", thinking: "" } as any,
       });
 
-      // Thinking delta
       const thinkDelta = adapter.handleEvent({
         type: "content_block_delta",
         index: 0,
         delta: { type: "thinking_delta", thinking: "Let me think..." },
       });
 
-      // Stop thinking block
       const thinkStop = adapter.handleEvent({
         type: "content_block_stop",
         index: 0,
       });
 
-      // Start text block
       const textStart = adapter.handleEvent({
         type: "content_block_start",
         index: 1,
         content_block: { type: "text", text: "" } as any,
       });
 
-      // Text delta
       const textDelta = adapter.handleEvent({
         type: "content_block_delta",
         index: 1,
@@ -488,15 +485,16 @@ describe("createAnthropicStreamingAdapter", () => {
 
       expect(thinkStart[0].type).toBe("thinking-start");
       expect(thinkDelta[0].type).toBe("thinking-delta");
-      expect(thinkStop).toHaveLength(0);
-      expect(textStart).toHaveLength(0);
+      expect(thinkStop).toHaveLength(1);
+      expect(thinkStop[0].type).toBe("thinking-complete");
+      expect(textStart).toHaveLength(1);
+      expect(textStart[0].type).toBe("text-start");
       expect(textDelta[0].type).toBe("text-delta");
     });
 
-    test("should handle text followed by tool call", () => {
+    test("should handle text followed by tool call with lifecycle events", () => {
       const adapter = createAnthropicStreamingAdapter();
 
-      // Text
       adapter.handleEvent({
         type: "content_block_start",
         index: 0,
@@ -509,12 +507,11 @@ describe("createAnthropicStreamingAdapter", () => {
         delta: { type: "text_delta", text: "Let me search for that." },
       });
 
-      adapter.handleEvent({
+      const textStop = adapter.handleEvent({
         type: "content_block_stop",
         index: 0,
       });
 
-      // Tool call
       const toolStart = adapter.handleEvent({
         type: "content_block_start",
         index: 1,
@@ -538,8 +535,69 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(textChunk[0].type).toBe("text-delta");
+      expect(textStop).toHaveLength(1);
+      expect(textStop[0].type).toBe("text-complete");
       expect(toolStart[0].type).toBe("tool-call-start");
       expect(toolComplete[0].type).toBe("tool-call-complete");
+    });
+  });
+
+  describe("internal tools", () => {
+    test("should emit internal-tool-start for server_tool_use", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "server_tool_use",
+          id: "srvtoolu_123",
+          name: "web_search",
+          input: { query: "test" },
+        } as any,
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("internal-tool-start");
+      if (chunks[0].type === "internal-tool-start") {
+        expect(chunks[0].data.id).toBe("srvtoolu_123");
+        expect(chunks[0].data.name).toBe("web_search");
+      }
+    });
+
+    test("should emit internal-tool-complete for web_search_tool_result", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      // Start the server tool
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "server_tool_use",
+          id: "srvtoolu_123",
+          name: "web_search",
+          input: { query: "test" },
+        } as any,
+      });
+
+      // Result arrives as a separate content block
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 1,
+        content_block: {
+          type: "web_search_tool_result",
+          tool_use_id: "srvtoolu_123",
+          content: [{ type: "web_search_result", url: "https://example.com", title: "Example" }],
+        } as any,
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("internal-tool-complete");
+      if (chunks[0].type === "internal-tool-complete") {
+        expect(chunks[0].data.id).toBe("srvtoolu_123");
+        expect(chunks[0].data.name).toBe("web_search");
+        expect(chunks[0].data.output).toBeDefined();
+      }
     });
   });
 });

@@ -6,10 +6,11 @@ export function createStreamingAdapter() {
   let messageId = "";
   let model = "";
   let partIndex = 0;
-  let currentTextIndex = -1;
-  let currentThinkingIndex = -1;
+  let currentPartIndex = -1;
   let hasFunctionCalls = false;
   const functionInfo = new Map<string, { name: string; callId: string }>();
+  const internalToolIndices = new Map<string, number>();
+  const INTERNAL_TOOL_TYPES = new Set(["web_search_call", "file_search_call", "code_interpreter_call"]);
   const toolCallBuffers = new Map<
     string,
     {
@@ -36,13 +37,28 @@ export function createStreamingAdapter() {
       }
 
       case "response.output_text.delta": {
-        if (currentTextIndex === -1) {
-          currentTextIndex = partIndex++;
+        if (currentPartIndex === -1) {
+          currentPartIndex = partIndex++;
+          chunks.push({
+            type: "text-start",
+            data: { index: currentPartIndex },
+          });
         }
         chunks.push({
           type: "text-delta",
-          data: { text: event.delta, index: currentTextIndex },
+          data: { text: event.delta, index: currentPartIndex },
         });
+        break;
+      }
+
+      case "response.output_text.done": {
+        if (currentPartIndex >= 0) {
+          chunks.push({
+            type: "text-complete",
+            data: { index: currentPartIndex },
+          });
+          currentPartIndex = -1;
+        }
         break;
       }
 
@@ -138,11 +154,11 @@ export function createStreamingAdapter() {
 
       case "response.output_item.added": {
         if (event.item?.type === "reasoning") {
-          currentThinkingIndex = partIndex++;
+          currentPartIndex = partIndex++;
           chunks.push({
             type: "thinking-start",
             data: {
-              index: currentThinkingIndex,
+              index: currentPartIndex,
             },
           });
         } else if (event.item?.type === "function_call") {
@@ -154,6 +170,44 @@ export function createStreamingAdapter() {
               callId: item.call_id || itemId,
             });
           }
+        } else if (event.item && INTERNAL_TOOL_TYPES.has(event.item.type)) {
+          const item = event.item as { id: string; type: string };
+          const idx = partIndex++;
+          internalToolIndices.set(item.id, idx);
+          chunks.push({
+            type: "internal-tool-start",
+            data: {
+              index: idx,
+              id: item.id,
+              name: item.type,
+            },
+          });
+        }
+        break;
+      }
+
+      case "response.output_item.done": {
+        if (event.item?.type === "reasoning" && currentPartIndex >= 0) {
+          chunks.push({
+            type: "thinking-complete",
+            data: { index: currentPartIndex },
+          });
+          currentPartIndex = -1;
+        } else if (event.item && INTERNAL_TOOL_TYPES.has(event.item.type)) {
+          const item = event.item as { id: string; type: string };
+          const idx = internalToolIndices.get(item.id);
+          if (idx !== undefined) {
+            chunks.push({
+              type: "internal-tool-complete",
+              data: {
+                index: idx,
+                id: item.id,
+                name: item.type,
+                output: event.item,
+              },
+            });
+            internalToolIndices.delete(item.id);
+          }
         }
         break;
       }
@@ -163,7 +217,7 @@ export function createStreamingAdapter() {
           chunks.push({
             type: "thinking-delta",
             data: {
-              index: currentThinkingIndex,
+              index: currentPartIndex,
               text: event.delta,
             },
           });
@@ -174,15 +228,18 @@ export function createStreamingAdapter() {
       case "response.reasoning_summary_text.delta": {
         if (event.delta) {
           chunks.push({
-            type: "thinking-delta",
+            type: "thinking-summary-delta",
             data: {
-              index: currentThinkingIndex,
+              index: currentPartIndex,
               text: event.delta,
             },
           });
         }
         break;
       }
+
+      default:
+        console.log(`[OpenAI] unhandled stream event: ${event.type}`);
     }
 
     return chunks;

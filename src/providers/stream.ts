@@ -1,6 +1,7 @@
 import type {
   AxleAssistantMessage,
   AxleMessage,
+  ContentPartInternalTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -34,6 +35,12 @@ export type PartUpdateCallback = (
 
 export type PartEndCallback = (index: number, type: StreamPartType, final: string) => void;
 
+export type InternalToolEvent =
+  | { type: "start"; index: number; id: string; name: string }
+  | { type: "complete"; index: number; id: string; name: string; output?: unknown };
+
+export type InternalToolCallback = (event: InternalToolEvent) => void;
+
 export type ErrorCallback = (error: GenerateError) => void;
 
 export interface StreamOptions {
@@ -52,6 +59,7 @@ export interface StreamHandle {
   onPartStart(callback: PartStartCallback): void;
   onPartUpdate(callback: PartUpdateCallback): void;
   onPartEnd(callback: PartEndCallback): void;
+  onInternalTool(callback: InternalToolCallback): void;
   onError(callback: ErrorCallback): void;
   readonly final: Promise<GenerateResult>;
 }
@@ -62,6 +70,7 @@ export function stream(options: StreamOptions): StreamHandle {
   const partStartCallbacks: PartStartCallback[] = [];
   const partUpdateCallbacks: PartUpdateCallback[] = [];
   const partEndCallbacks: PartEndCallback[] = [];
+  const internalToolCallbacks: InternalToolCallback[] = [];
   const errorCallbacks: ErrorCallback[] = [];
 
   let resolveResult: (r: GenerateResult) => void;
@@ -73,10 +82,14 @@ export function stream(options: StreamOptions): StreamHandle {
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
-    run(options, partStartCallbacks, partUpdateCallbacks, partEndCallbacks, errorCallbacks).then(
-      resolveResult!,
-      rejectResult!,
-    ),
+    run(
+      options,
+      partStartCallbacks,
+      partUpdateCallbacks,
+      partEndCallbacks,
+      internalToolCallbacks,
+      errorCallbacks,
+    ).then(resolveResult!, rejectResult!),
   );
 
   return {
@@ -88,6 +101,9 @@ export function stream(options: StreamOptions): StreamHandle {
     },
     onPartEnd(cb) {
       partEndCallbacks.push(cb);
+    },
+    onInternalTool(cb) {
+      internalToolCallbacks.push(cb);
     },
     onError(cb) {
       errorCallbacks.push(cb);
@@ -132,6 +148,7 @@ async function run(
   startCbs: PartStartCallback[],
   updateCbs: PartUpdateCallback[],
   partEndCbs: PartEndCallback[],
+  internalToolCbs: InternalToolCallback[],
   errorCbs: ErrorCallback[],
 ): Promise<GenerateResult> {
   const {
@@ -175,7 +192,6 @@ async function run(
   };
 
   while (true) {
-    console.log(JSON.stringify(workingMessages, null, 2));
     if (maxIterations !== undefined && iterations >= maxIterations) {
       return endWithResult({
         result: "error",
@@ -211,7 +227,9 @@ async function run(
       throw new Error("Provider does not support streaming. Use generate() instead.");
     }
 
-    const turnParts: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
+    const turnParts: Array<
+      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+    > = [];
     let turnId = "";
     let turnModel = "";
     let turnFinishReason: AxleStopReason | null = null;
@@ -238,22 +256,27 @@ async function run(
           turnModel = chunk.data.model;
           break;
 
+        case "text-start": {
+          closePart();
+          turnParts.push({ type: "text", text: "" });
+          openPartIndex = globalIndex++;
+          openPartType = "text";
+          openAccumulated = "";
+          emitPartStart(startCbs, openPartIndex, "text");
+          break;
+        }
+
         case "text-delta": {
-          const isNew = chunk.data.index >= turnParts.length;
-          if (isNew) {
-            closePart();
-            turnParts.push({ type: "text", text: chunk.data.text });
-            openPartIndex = globalIndex++;
-            openPartType = "text";
-            openAccumulated = chunk.data.text;
-            emitPartStart(startCbs, openPartIndex, "text");
-          } else {
-            const part = turnParts[chunk.data.index] as ContentPartText;
-            part.text += chunk.data.text;
-            openAccumulated = part.text;
-          }
+          const part = turnParts[chunk.data.index] as ContentPartText;
+          part.text += chunk.data.text;
+          openAccumulated = part.text;
           turnSpan?.appendLLMStream(chunk.data.text);
           emitPartUpdate(updateCbs, openPartIndex, "text", chunk.data.text, openAccumulated);
+          break;
+        }
+
+        case "text-complete": {
+          closePart();
           break;
         }
 
@@ -275,6 +298,19 @@ async function run(
           break;
         }
 
+        case "thinking-summary-delta": {
+          const part = turnParts[chunk.data.index] as ContentPartThinking;
+          part.text += chunk.data.text;
+          openAccumulated = part.text;
+          emitPartUpdate(updateCbs, openPartIndex, "thinking", chunk.data.text, openAccumulated);
+          break;
+        }
+
+        case "thinking-complete": {
+          closePart();
+          break;
+        }
+
         case "tool-call-start": {
           closePart();
           turnParts.push({
@@ -292,6 +328,33 @@ async function run(
           if (chunk.data.id) part.id = chunk.data.id;
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
+          break;
+        }
+
+        case "internal-tool-start": {
+          closePart();
+          const idx = globalIndex++;
+          turnParts.push({
+            type: "internal-tool",
+            id: chunk.data.id,
+            name: chunk.data.name,
+          });
+          for (const cb of internalToolCbs)
+            cb({ type: "start", index: idx, id: chunk.data.id, name: chunk.data.name });
+          break;
+        }
+
+        case "internal-tool-complete": {
+          const part = turnParts[chunk.data.index] as ContentPartInternalTool;
+          if (chunk.data.output != null) part.output = chunk.data.output;
+          for (const cb of internalToolCbs)
+            cb({
+              type: "complete",
+              index: chunk.data.index,
+              id: chunk.data.id,
+              name: chunk.data.name,
+              output: chunk.data.output,
+            });
           break;
         }
 
@@ -321,6 +384,9 @@ async function run(
             usage,
           });
         }
+
+        default:
+          console.warn(`[WARN] Unhandled chunk type. Should never happen`);
       }
     }
 

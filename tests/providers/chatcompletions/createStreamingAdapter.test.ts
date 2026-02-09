@@ -25,14 +25,35 @@ describe("createStreamingAdapter", () => {
   });
 
   describe("text content", () => {
-    test("emits text events for delta.content", () => {
+    test("emits text-start before first text-delta", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(makeChunk({ content: "Hello" }));
+
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("text-start");
+      expect(types).toContain("text-delta");
+      expect(types.indexOf("text-start")).toBeLessThan(types.indexOf("text-delta"));
+    });
+
+    test("emits text-delta without text-start on subsequent chunks", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hello" }));
       const chunks = adapter.handleChunk(makeChunk({ content: " world" }));
 
-      const textChunks = chunks.filter((c) => c.type === "text-delta");
-      expect(textChunks).toHaveLength(1);
-      expect((textChunks[0] as any).data.text).toBe(" world");
+      const types = chunks.map((c) => c.type);
+      expect(types).not.toContain("text-start");
+      expect(types).toContain("text-delta");
+      expect((chunks.find((c) => c.type === "text-delta") as any).data.text).toBe(" world");
+    });
+
+    test("emits text-complete on finish", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "Hi" }));
+      const chunks = adapter.handleChunk(makeChunk({}, "stop"));
+
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("text-complete");
+      expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("complete"));
     });
   });
 
@@ -67,7 +88,7 @@ describe("createStreamingAdapter", () => {
       expect((thinkingDeltas[0] as any).data.text).toBe(" Step 2");
     });
 
-    test("reasoning followed by text produces correct event sequence", () => {
+    test("reasoning followed by text produces correct lifecycle", () => {
       const adapter = createStreamingAdapter();
 
       const chunk1 = adapter.handleChunk(makeChunk({ reasoning_content: "Thinking..." }));
@@ -76,14 +97,26 @@ describe("createStreamingAdapter", () => {
       const allChunks = [...chunk1, ...chunk2];
       const types = allChunks.map((c) => c.type);
 
-      expect(types).toContain("start");
+      // Should have: start, thinking-start, thinking-delta, thinking-complete, text-start, text-delta
       expect(types).toContain("thinking-start");
       expect(types).toContain("thinking-delta");
+      expect(types).toContain("thinking-complete");
+      expect(types).toContain("text-start");
       expect(types).toContain("text-delta");
 
-      const thinkingStartIdx = types.indexOf("thinking-start");
-      const textIdx = types.indexOf("text-delta");
-      expect(thinkingStartIdx).toBeLessThan(textIdx);
+      const thinkingCompleteIdx = types.indexOf("thinking-complete");
+      const textStartIdx = types.indexOf("text-start");
+      expect(thinkingCompleteIdx).toBeLessThan(textStartIdx);
+    });
+
+    test("emits thinking-complete on finish without text", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ reasoning_content: "Thinking..." }));
+      const chunks = adapter.handleChunk(makeChunk({}, "stop"));
+
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("thinking-complete");
+      expect(types.indexOf("thinking-complete")).toBeLessThan(types.indexOf("complete"));
     });
   });
 
@@ -98,6 +131,18 @@ describe("createStreamingAdapter", () => {
       expect(toolStarts).toHaveLength(1);
       expect((toolStarts[0] as any).data.name).toBe("search");
       expect((toolStarts[0] as any).data.id).toBe("call_1");
+    });
+
+    test("closes active text before tool calls", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "Let me search" }));
+      const chunks = adapter.handleChunk(makeChunk({
+        tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: "{}" } }],
+      }));
+
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("text-complete");
+      expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("tool-call-start"));
     });
 
     test("buffers tool call arguments across multiple chunks", () => {

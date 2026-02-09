@@ -4,7 +4,10 @@ import type {
   StreamCompleteChunk,
   StreamErrorChunk,
   StreamStartChunk,
+  StreamTextCompleteChunk,
   StreamTextDeltaChunk,
+  StreamTextStartChunk,
+  StreamThinkingCompleteChunk,
   StreamThinkingDeltaChunk,
   StreamThinkingStartChunk,
   StreamToolCallCompleteChunk,
@@ -55,8 +58,16 @@ function startChunk(id = "msg_1", model = "test-model"): StreamStartChunk {
   return { type: "start", id, data: { model, timestamp: Date.now() } };
 }
 
+function textStartChunk(index: number): StreamTextStartChunk {
+  return { type: "text-start", data: { index } };
+}
+
 function textChunk(index: number, text: string): StreamTextDeltaChunk {
   return { type: "text-delta", data: { index, text } };
+}
+
+function textCompleteChunk(index: number): StreamTextCompleteChunk {
+  return { type: "text-complete", data: { index } };
 }
 
 function thinkingStartChunk(index: number): StreamThinkingStartChunk {
@@ -65,6 +76,10 @@ function thinkingStartChunk(index: number): StreamThinkingStartChunk {
 
 function thinkingDeltaChunk(index: number, text: string): StreamThinkingDeltaChunk {
   return { type: "thinking-delta", data: { index, text } };
+}
+
+function thinkingCompleteChunk(index: number): StreamThinkingCompleteChunk {
+  return { type: "thinking-complete", data: { index } };
 }
 
 function toolCallStartChunk(index: number, id: string, name: string): StreamToolCallStartChunk {
@@ -118,8 +133,10 @@ describe("stream()", () => {
     test("forwards text chunks and returns success", async () => {
       const chunks: AnyStreamChunk[] = [
         startChunk(),
+        textStartChunk(0),
         textChunk(0, "Hello"),
         textChunk(0, " world"),
+        textCompleteChunk(0),
         completeChunk(),
       ];
 
@@ -165,7 +182,10 @@ describe("stream()", () => {
         startChunk(),
         thinkingStartChunk(0),
         thinkingDeltaChunk(0, "Let me think"),
+        thinkingCompleteChunk(0),
+        textStartChunk(1),
         textChunk(1, "Answer"),
+        textCompleteChunk(1),
         completeChunk(),
       ];
 
@@ -203,6 +223,7 @@ describe("stream()", () => {
         startChunk("msg_1"),
         thinkingStartChunk(0),
         thinkingDeltaChunk(0, "I need to search"),
+        thinkingCompleteChunk(0),
         toolCallStartChunk(1, "call_1", "web_search"),
         toolCallCompleteChunk(1, "call_1", "web_search", { q: "test" }),
         completeChunk(AxleStopReason.FunctionCall),
@@ -211,7 +232,9 @@ describe("stream()", () => {
       // Second LLM turn: text response
       const turn2Chunks: AnyStreamChunk[] = [
         startChunk("msg_2"),
+        textStartChunk(0),
         textChunk(0, "Here are the results"),
+        textCompleteChunk(0),
         completeChunk(),
       ];
 
@@ -321,7 +344,7 @@ describe("stream()", () => {
 
   describe("callback ordering", () => {
     test("onPartStart fires before onPartUpdate, onPartUpdate fires before onPartEnd", async () => {
-      const chunks: AnyStreamChunk[] = [startChunk(), textChunk(0, "Hello"), completeChunk()];
+      const chunks: AnyStreamChunk[] = [startChunk(), textStartChunk(0), textChunk(0, "Hello"), textCompleteChunk(0), completeChunk()];
 
       const provider = makeProvider({ streamChunks: [chunks] });
       const order: string[] = [];
@@ -348,13 +371,15 @@ describe("stream()", () => {
       // Turn 1: text(0) + tool-call(1, silent) → Turn 2: text(2)
       const turn1: AnyStreamChunk[] = [
         startChunk("msg_1"),
+        textStartChunk(0),
         textChunk(0, "thinking..."),
+        textCompleteChunk(0),
         toolCallStartChunk(1, "call_1", "search"),
         toolCallCompleteChunk(1, "call_1", "search", { q: "x" }),
         completeChunk(AxleStopReason.FunctionCall),
       ];
 
-      const turn2: AnyStreamChunk[] = [startChunk("msg_2"), textChunk(0, "done"), completeChunk()];
+      const turn2: AnyStreamChunk[] = [startChunk("msg_2"), textStartChunk(0), textChunk(0, "done"), textCompleteChunk(0), completeChunk()];
 
       const provider = makeProvider({ streamChunks: [turn1, turn2] });
       const startIndices: number[] = [];
@@ -392,7 +417,9 @@ describe("stream()", () => {
 
       const turn2: AnyStreamChunk[] = [
         startChunk("msg_2"),
+        textStartChunk(0),
         textChunk(0, "done"),
+        textCompleteChunk(0),
         completeChunk(AxleStopReason.Stop, { in: 15, out: 10 }),
       ];
 

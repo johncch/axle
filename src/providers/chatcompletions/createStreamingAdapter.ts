@@ -1,5 +1,4 @@
 import { AnyStreamChunk } from "../../messages/streaming/types.js";
-import { AxleStopReason } from "../types.js";
 import { ChatCompletionChunk } from "./types.js";
 import { convertFinishReason } from "./utils.js";
 
@@ -14,16 +13,27 @@ export function createStreamingAdapter() {
     }
   >();
   let partIndex = 0;
-  let currentTextIndex = -1;
+  let currentPartIndex = -1;
   let messageId = "";
   let model = "";
-  let currentThinkingIndex = -1;
+
+  let activePart: "text" | "thinking" | null = null;
+
+  function closeActivePart(chunks: Array<AnyStreamChunk>) {
+    if (currentPartIndex < 0) return;
+    if (activePart === "text") {
+      chunks.push({ type: "text-complete", data: { index: currentPartIndex } });
+    } else if (activePart === "thinking") {
+      chunks.push({ type: "thinking-complete", data: { index: currentPartIndex } });
+    }
+    activePart = null;
+    currentPartIndex = -1;
+  }
 
   function handleChunk(chunk: ChatCompletionChunk): Array<AnyStreamChunk> {
     const chunks: Array<AnyStreamChunk> = [];
     const choice = chunk.choices[0];
     if (!choice) {
-      // Usage-only chunk at the end of stream (no choices)
       return chunks;
     }
 
@@ -41,34 +51,44 @@ export function createStreamingAdapter() {
 
     // Reasoning content (DeepSeek, vLLM, Kimi)
     if (delta.reasoning_content) {
-      if (currentThinkingIndex === -1) {
-        currentThinkingIndex = partIndex++;
+      if (activePart !== "thinking") {
+        closeActivePart(chunks);
+        currentPartIndex = partIndex++;
+        activePart = "thinking";
         chunks.push({
           type: "thinking-start",
-          data: { index: currentThinkingIndex },
+          data: { index: currentPartIndex },
         });
       }
 
       chunks.push({
         type: "thinking-delta",
-        data: { index: currentThinkingIndex, text: delta.reasoning_content },
+        data: { index: currentPartIndex, text: delta.reasoning_content },
       });
     }
 
     // Text content
     if (delta.content) {
-      if (currentTextIndex === -1) {
-        currentTextIndex = partIndex++;
+      if (activePart !== "text") {
+        closeActivePart(chunks);
+        currentPartIndex = partIndex++;
+        activePart = "text";
+        chunks.push({
+          type: "text-start",
+          data: { index: currentPartIndex },
+        });
       }
 
       chunks.push({
         type: "text-delta",
-        data: { text: delta.content, index: currentTextIndex },
+        data: { text: delta.content, index: currentPartIndex },
       });
     }
 
     // Tool calls
     if (delta.tool_calls) {
+      closeActivePart(chunks);
+
       for (const toolCallDelta of delta.tool_calls) {
         const index = toolCallDelta.index;
 
@@ -103,6 +123,8 @@ export function createStreamingAdapter() {
 
     // Completion
     if (choice.finish_reason) {
+      closeActivePart(chunks);
+
       // Flush pending tool calls
       for (const [, buffer] of toolCallBuffers) {
         try {
