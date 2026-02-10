@@ -52,7 +52,12 @@ try {
     tracer: tracer.startSpan("generate"),
   });
 
-  console.log(JSON.stringify(result.messages, null, 2));
+  console.log(result.result);
+  if (result.result === "error") {
+    console.log(JSON.stringify(result.error, null, 2));
+  } else {
+    console.log(JSON.stringify(result.messages, null, 2));
+  }
 } catch (e) {
   console.error(e);
 }

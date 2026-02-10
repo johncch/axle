@@ -3,6 +3,7 @@ import { AxleMessage } from "../../messages/types.js";
 import { getTextContent } from "../../messages/utils.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { arrayify } from "../../utils/utils.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
@@ -32,22 +33,16 @@ export async function createGenerationRequest(params: {
   const { client, model, messages, system, tools, context, options } = params;
   const tracer = context?.tracer;
 
-  // Convert stop to stop_sequences for Anthropic
-  const anthropicOptions = options ? { ...options } : {};
-  if (anthropicOptions.stop) {
-    anthropicOptions.stop_sequences = Array.isArray(anthropicOptions.stop)
-      ? anthropicOptions.stop
-      : [anthropicOptions.stop];
-    delete anthropicOptions.stop;
-  }
+  const { stop, max_tokens, ...restOptions } = options ?? {};
 
   const request = {
     model: model,
-    max_tokens: options?.max_tokens ?? 10000,
+    max_tokens: max_tokens ?? 16000,
     messages: convertToProviderMessages(messages),
     ...(system && { system }),
+    ...(stop && { stop_sequences: arrayify(stop) }),
     ...(tools && { tools: convertToProviderTools(tools) }),
-    ...anthropicOptions,
+    ...restOptions,
   };
   tracer?.debug("Anthropic request", { request });
 
