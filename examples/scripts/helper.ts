@@ -1,8 +1,20 @@
 import { Command, Option } from "commander";
 import dotenv from "dotenv";
-import { Anthropic, anthropic, Axle, chatCompletions, Gemini, gemini, OpenAI, openai } from "../../src/index.js";
+import {
+  Anthropic,
+  anthropic,
+  chatCompletions,
+  Gemini,
+  gemini,
+  OpenAI,
+  openai,
+} from "../../src/index.js";
 import { AIProvider } from "../../src/providers/types.js";
 dotenv.config();
+
+/**
+ * This file contains a bunch of helpers to parse provider and model names.
+ */
 
 const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
 type ProviderNames = (typeof PROVIDERS)[number];
@@ -31,6 +43,10 @@ program
   .parse(process.argv);
 const options = program.opts() as CommandOptions;
 
+/**
+ * The helper for scripts to parse command line options and get a model
+ * @returns
+ */
 export function useCLIHelper(): [AIProvider, string] {
   const providerOptions = getProviderOption();
   const firstProviderOption = providerOptions[0];
@@ -40,25 +56,16 @@ export function useCLIHelper(): [AIProvider, string] {
   return [provider, model];
 }
 
-export function getAxles(): Array<Axle> {
-  const axles = [];
-  const providers = getProviderOption();
-  for (const provider of providers) {
-    axles.push(getProvider(provider));
-  }
-  return axles;
-}
-
 /**
  *
  * @returns Every provider the library supports with the "default" model
  */
-export function getAllAxles(): Array<Axle> {
-  const axles = [];
+export function useAllProviders(): Array<[AIProvider, string]> {
+  const providers: Array<[AIProvider, string]> = [];
   for (const provider of PROVIDERS) {
-    axles.push(getProvider(provider));
+    providers.push([getProvider(provider), getModel(provider)]);
   }
-  return axles;
+  return providers;
 }
 
 function getProvider(provider: ProviderNames): AIProvider {
@@ -113,8 +120,4 @@ function getProviderOption(): ProviderNames[] {
   } else {
     return [options.provider];
   }
-}
-
-export function getOptions(): CommandOptions {
-  return options;
 }

@@ -1,6 +1,0 @@
-# yaml-language-server: $schema=../../schemas/v2/job.yaml
-provider:
-  type: openai
-
-task: |
-  Tell me a joke.
