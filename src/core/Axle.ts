@@ -47,7 +47,7 @@ export class Axle {
    * @param steps
    * @returns
    */
-  async execute(...steps: Instruct<any>[]): Promise<WorkflowResult> {
+  async execute(...steps: Instruct[]): Promise<WorkflowResult> {
     const span = this.tracer.startSpan("execute", { type: "root" });
 
     try {

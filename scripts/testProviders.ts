@@ -2,6 +2,7 @@
 
 import chalk from "chalk";
 import dotenv from "dotenv";
+import * as z from "zod";
 import { Axle, Instruct } from "../src/index.js";
 
 dotenv.config();
@@ -43,17 +44,18 @@ async function testProvider(providerConfig: ProviderConfig): Promise<TestResult>
     const axle = new Axle(config);
 
     // Create a simple instruction
-    const instruct = Instruct.with(TEST_MESSAGE, { response: "string" });
+    const instruct = new Instruct(TEST_MESSAGE, { response: z.string() });
 
     // Execute the instruction
     const result = await axle.execute(instruct);
     const executionTime = Date.now() - startTime;
 
     if (result.success) {
+      const response = result.response;
       return {
         provider: name,
         success: true,
-        response: (instruct.result as any)?.response || instruct.rawResponse,
+        response: typeof response === "string" ? response : (response as any)?.response,
         model: config[name]?.model || "default",
         executionTime,
       };

@@ -5,8 +5,7 @@ import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
-import type { FileInfo } from "../utils/file.js";
-import { isBase64FileInfo, isTextFileInfo, loadFileContent } from "../utils/file.js";
+import { loadFileContent } from "../utils/file.js";
 import { serialWorkflow } from "../workflows/serial.js";
 import type { JobConfig } from "./configs/schemas.js";
 import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
@@ -21,16 +20,11 @@ export async function runSingle(
   stats: Stats,
   parentSpan: TracingContext,
 ) {
-  const instruct = Instruct.with(jobConfig.task);
+  const instruct = new Instruct(jobConfig.task);
   if (tools.length > 0) instruct.addTools(tools);
   if (jobConfig.files) {
     for (const filePath of jobConfig.files) {
-      const fileInfo = await loadFileContent(filePath);
-      if (isTextFileInfo(fileInfo)) {
-        instruct.addReference(fileInfo);
-      } else if (isBase64FileInfo(fileInfo)) {
-        instruct.addFile(fileInfo);
-      }
+      instruct.addFile(await loadFileContent(filePath));
     }
   }
 
@@ -72,12 +66,9 @@ export async function runBatch(
 
   const ledger = batchConfig.resume ? await loadLedger() : new Map();
 
-  const sharedFileInfos: FileInfo[] = [];
-  if (jobConfig.files) {
-    for (const fp of jobConfig.files) {
-      sharedFileInfos.push(await loadFileContent(fp));
-    }
-  }
+  const sharedFiles = jobConfig.files
+    ? await Promise.all(jobConfig.files.map((fp) => loadFileContent(fp)))
+    : [];
 
   let completed = 0;
   let skipped = 0;
@@ -100,23 +91,14 @@ export async function runBatch(
         return;
       }
 
-      const instruct = Instruct.with(jobConfig.task);
+      const instruct = new Instruct(jobConfig.task);
       if (tools.length > 0) instruct.addTools(tools);
 
-      for (const fi of sharedFileInfos) {
-        if (isTextFileInfo(fi)) {
-          instruct.addReference(fi);
-        } else if (isBase64FileInfo(fi)) {
-          instruct.addFile(fi);
-        }
+      for (const fi of sharedFiles) {
+        instruct.addFile(fi);
       }
 
-      const batchFileInfo = await loadFileContent(batchFilePath);
-      if (isTextFileInfo(batchFileInfo)) {
-        instruct.addReference(batchFileInfo);
-      } else if (isBase64FileInfo(batchFileInfo)) {
-        instruct.addFile(batchFileInfo);
-      }
+      instruct.addFile(await loadFileContent(batchFilePath));
 
       const itemVars = { ...variables, file: batchFilePath };
 

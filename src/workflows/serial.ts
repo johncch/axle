@@ -1,4 +1,5 @@
 import { Instruct } from "../core/Instruct.js";
+import { parseResponse } from "../core/parse.js";
 import { AxleError } from "../errors/AxleError.js";
 import { TaskError } from "../errors/TaskError.js";
 import { Conversation } from "../messages/conversation.js";
@@ -12,7 +13,7 @@ import { createErrorResult, createResult } from "../utils/result.js";
 import { setResultsIntoVariables } from "../utils/variables.js";
 import type { WorkflowExecutable, WorkflowResult } from "./types.js";
 
-export function serialWorkflow(...steps: Instruct<any>[]): WorkflowExecutable {
+export function serialWorkflow(...steps: Instruct[]): WorkflowExecutable {
   const execute = async (context: {
     provider: AIProvider;
     model: string;
@@ -78,8 +79,8 @@ export function serialWorkflow(...steps: Instruct<any>[]): WorkflowExecutable {
   return { execute };
 }
 
-async function executeInstruct<T extends Record<string, any>>(
-  instruct: Instruct<T>,
+async function executeInstruct(
+  instruct: Instruct,
   context: {
     conversation: Conversation;
     provider: AIProvider;
@@ -166,7 +167,7 @@ async function executeInstruct<T extends Record<string, any>>(
   switch (finalMessage.finishReason) {
     case AxleStopReason.Stop: {
       const textContent = getTextContent(finalMessage.content);
-      const finalResult = instruct.finalize(textContent, { tracer });
+      const finalResult = parseResponse(textContent, instruct.schema, { tracer });
 
       setResultsIntoVariables(finalResult as Record<string, unknown>, variables, {
         options,

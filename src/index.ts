@@ -1,6 +1,7 @@
 // Core
 export { Axle } from "./core/Axle.js";
-export { ChainOfThought, Instruct } from "./core/index.js";
+export { Instruct } from "./core/index.js";
+export { parseResponse } from "./core/parse.js";
 
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
