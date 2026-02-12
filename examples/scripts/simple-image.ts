@@ -1,22 +1,21 @@
-import { config } from "dotenv";
 import * as z from "zod";
-import { Axle, Instruct } from "../../src/index.js";
+import { Agent, Instruct, loadFileContent } from "../../src/index.js";
 import { useCLIHelper } from "./helper.js";
-config();
+
+const [provider, model] = useCLIHelper();
 
 async function analyzeImage() {
-  const imageFile = await Axle.loadFileContent("./examples/data/economist-brainy-imports.png");
+  const imageFile = await loadFileContent("./examples/data/economist-brainy-imports.png");
 
   const instruct = new Instruct("What are the data that is shown in the image.", {
     description: z.string(),
   });
   instruct.addFile(imageFile);
 
-  const axle = useCLIHelper();
+  const agent = new Agent(instruct, { provider, model });
+  const result = await agent.start().final;
 
-  const result = await axle.execute(instruct);
-  console.log(result);
-  console.log(result.response?.description);
+  console.log(result.response);
 }
 
 analyzeImage();

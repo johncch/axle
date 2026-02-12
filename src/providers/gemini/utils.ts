@@ -1,6 +1,6 @@
 import { Content, FinishReason, GenerateContentConfig } from "@google/genai";
 import z from "zod";
-import { AxleMessage, ContentPart } from "../../messages/types.js";
+import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/index.js";
 import { AxleStopReason } from "../types.js";
 

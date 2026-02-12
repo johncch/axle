@@ -4,10 +4,10 @@ import {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "../../messages/types.js";
+} from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
