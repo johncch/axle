@@ -1,7 +1,7 @@
 import { AxleStopReason } from "../providers/types.js";
 import { AxleAssistantMessage, AxleMessage, AxleToolCallResult, AxleUserMessage } from "./types.js";
 
-export class Conversation {
+export class History {
   system: string;
   private _messages: AxleMessage[] = [];
 

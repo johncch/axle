@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import * as z from "zod";
+import { compileInstruct } from "../../src/core/compile.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { FileInfo, loadFileContent } from "../../src/utils/file.js";
 
@@ -137,11 +138,11 @@ describe("Instruct", () => {
       const instruct = new Instruct("Summarize the text");
       instruct.addFile(textFile, { name: "arxiv paper" });
 
-      const compiled = instruct.compile({});
+      const compiled = compileInstruct(instruct);
 
-      expect(compiled.message).toContain("Summarize the text");
-      expect(compiled.message).toContain("## Reference 1: arxiv paper");
-      expect(compiled.message).toContain(textContent);
+      expect(compiled).toContain("Summarize the text");
+      expect(compiled).toContain("## Reference 1: arxiv paper");
+      expect(compiled).toContain(textContent);
     });
 
     it("should use filename as default reference name", async () => {
@@ -153,11 +154,11 @@ describe("Instruct", () => {
       const instruct = new Instruct("What does this document say?");
       instruct.addFile(textFile);
 
-      const compiled = instruct.compile({});
+      const compiled = compileInstruct(instruct);
 
-      expect(compiled.message).toContain("What does this document say?");
-      expect(compiled.message).toContain("## Reference 1: document.md");
-      expect(compiled.message).toContain(textContent);
+      expect(compiled).toContain("What does this document say?");
+      expect(compiled).toContain("## Reference 1: document.md");
+      expect(compiled).toContain(textContent);
     });
 
     it("should handle multiple text references", async () => {
@@ -177,13 +178,13 @@ describe("Instruct", () => {
       instruct.addFile(textFile1, { name: "Paper A" });
       instruct.addFile(textFile2, { name: "Paper B" });
 
-      const compiled = instruct.compile({});
+      const compiled = compileInstruct(instruct);
 
-      expect(compiled.message).toContain("Compare these papers");
-      expect(compiled.message).toContain("## Reference 1: Paper A");
-      expect(compiled.message).toContain(paper1Content);
-      expect(compiled.message).toContain("## Reference 2: Paper B");
-      expect(compiled.message).toContain(paper2Content);
+      expect(compiled).toContain("Compare these papers");
+      expect(compiled).toContain("## Reference 1: Paper A");
+      expect(compiled).toContain(paper1Content);
+      expect(compiled).toContain("## Reference 2: Paper B");
+      expect(compiled).toContain(paper2Content);
     });
 
     it("should work with variable replacement in main prompt", async () => {
@@ -195,14 +196,14 @@ describe("Instruct", () => {
       const instruct = new Instruct("Analyze the {{analysis_type}} in this document");
       instruct.addFile(textFile, { name: "Reference Doc" });
 
-      const compiled = instruct.compile({
+      const compiled = compileInstruct(instruct, {
         topic: "artificial intelligence",
         analysis_type: "methodology",
       });
 
-      expect(compiled.message).toContain("Analyze the methodology in this document");
-      expect(compiled.message).toContain("## Reference 1: Reference Doc");
-      expect(compiled.message).toContain("Document about {{topic}}.");
+      expect(compiled).toContain("Analyze the methodology in this document");
+      expect(compiled).toContain("## Reference 1: Reference Doc");
+      expect(compiled).toContain("Document about {{topic}}.");
     });
 
     it("should preserve markdown formatting in references", async () => {
@@ -225,12 +226,12 @@ console.log("code block");
       const instruct = new Instruct("Process this markdown");
       instruct.addFile(textFile, { name: "Markdown Doc" });
 
-      const compiled = instruct.compile({});
+      const compiled = compileInstruct(instruct);
 
-      expect(compiled.message).toContain("## Reference 1: Markdown Doc");
-      expect(compiled.message).toContain("# Title");
-      expect(compiled.message).toContain("**Bold text**");
-      expect(compiled.message).toContain("```javascript");
+      expect(compiled).toContain("## Reference 1: Markdown Doc");
+      expect(compiled).toContain("# Title");
+      expect(compiled).toContain("**Bold text**");
+      expect(compiled).toContain("```javascript");
     });
 
     it("should handle empty text files", async () => {
@@ -241,11 +242,11 @@ console.log("code block");
       const instruct = new Instruct("What is in this file?");
       instruct.addFile(textFile, { name: "Empty File" });
 
-      const compiled = instruct.compile({});
+      const compiled = compileInstruct(instruct);
 
-      expect(compiled.message).toContain("What is in this file?");
-      expect(compiled.message).toContain("## Reference 1: Empty File");
-      expect(compiled.message).toMatch(/## Reference 1: Empty File\s*\n\s*\n/);
+      expect(compiled).toContain("What is in this file?");
+      expect(compiled).toContain("## Reference 1: Empty File");
+      expect(compiled).toMatch(/## Reference 1: Empty File\s*\n\s*\n/);
     });
 
     it("should work with structured output format", async () => {
@@ -260,13 +261,13 @@ console.log("code block");
       });
       instruct.addFile(textFile, { name: "Score Data" });
 
-      const compiled = instruct.compile({});
+      const compiled = compileInstruct(instruct);
 
-      expect(compiled.message).toContain("Extract information");
-      expect(compiled.message).toContain("## Reference 1: Score Data");
-      expect(compiled.message).toContain(textContent);
-      expect(compiled.instructions).toContain("<score></score>");
-      expect(compiled.instructions).toContain("<summary></summary>");
+      expect(compiled).toContain("Extract information");
+      expect(compiled).toContain("## Reference 1: Score Data");
+      expect(compiled).toContain(textContent);
+      expect(compiled).toContain("<score></score>");
+      expect(compiled).toContain("<summary></summary>");
     });
   });
 
@@ -278,15 +279,15 @@ console.log("code block");
 
     it("should skip output format instructions when no schema", () => {
       const instruct = new Instruct("Hello world");
-      const compiled = instruct.compile({});
-      expect(compiled.instructions).not.toContain("Output Format Instructions");
+      const compiled = compileInstruct(instruct);
+      expect(compiled).not.toContain("Output Format Instructions");
     });
 
     it("should include output format instructions when schema provided", () => {
       const instruct = new Instruct("Hello world", { answer: z.string() });
-      const compiled = instruct.compile({});
-      expect(compiled.instructions).toContain("Output Format Instructions");
-      expect(compiled.instructions).toContain("<answer></answer>");
+      const compiled = compileInstruct(instruct);
+      expect(compiled).toContain("Output Format Instructions");
+      expect(compiled).toContain("<answer></answer>");
     });
   });
 });

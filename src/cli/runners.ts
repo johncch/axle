@@ -1,12 +1,12 @@
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
+import { Agent } from "../core/Agent.js";
 import { Instruct } from "../core/Instruct.js";
 import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import { loadFileContent } from "../utils/file.js";
-import { serialWorkflow } from "../workflows/serial.js";
 import type { JobConfig } from "./configs/schemas.js";
 import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
 
@@ -29,18 +29,15 @@ export async function runSingle(
   }
 
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
-  const response = await serialWorkflow(instruct).execute({
-    provider,
-    model,
-    variables,
-    options,
-    stats,
-    tracer: jobSpan,
-  });
+  const agent = new Agent(instruct, { provider, model });
+  const result = await agent.start(variables).final;
   jobSpan.end();
 
-  if (response) {
-    parentSpan.info("Response: " + JSON.stringify(response, null, 2));
+  stats.in += result.usage.in;
+  stats.out += result.usage.out;
+
+  if (result.response) {
+    parentSpan.info("Response: " + JSON.stringify(result.response, null, 2));
   }
 }
 
@@ -102,14 +99,11 @@ export async function runBatch(
 
       const itemVars = { ...variables, file: batchFilePath };
 
-      await serialWorkflow(instruct).execute({
-        provider,
-        model,
-        variables: itemVars,
-        options,
-        stats,
-        tracer: itemSpan,
-      });
+      const agent = new Agent(instruct, { provider, model });
+      const result = await agent.start(itemVars).final;
+
+      stats.in += result.usage.in;
+      stats.out += result.usage.out;
 
       await appendLedgerEntry({ file: batchFilePath, hash, timestamp: Date.now() });
       itemSpan.end();

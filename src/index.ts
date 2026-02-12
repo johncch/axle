@@ -1,5 +1,7 @@
 // Core
-export { Axle } from "./core/Axle.js";
+export { Agent } from "./core/Agent.js";
+export type { AgentConfig, AgentHandle, AgentResult } from "./core/Agent.js";
+export { compileInstruct } from "./core/compile.js";
 export { Instruct } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
 
@@ -16,12 +18,8 @@ export type { AIProvider } from "./providers/types.js";
 export { braveSearchTool, calculatorTool } from "./tools/index.js";
 export type { Tool, ToolDefinition } from "./tools/types.js";
 
-// Workflows
-export { serialWorkflow } from "./workflows/serial.js";
-export type { SerializedExecutionResponse } from "./workflows/types.js";
-
 // Messages
-export { Conversation } from "./messages/conversation.js";
+export { History } from "./messages/history.js";
 export type {
   AxleAssistantMessage,
   AxleMessage,
@@ -48,4 +46,5 @@ export type {
 } from "./tracer/index.js";
 
 // Utils
+export { loadFileContent } from "./utils/file.js";
 export type { FileInfo } from "./utils/file.js";

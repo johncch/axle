@@ -27,7 +27,8 @@
       "WebSearch",
       "WebFetch(domain:platform.moonshot.ai)",
       "WebFetch(domain:api-docs.deepseek.com)",
-      "WebFetch(domain:docs.vllm.ai)"
+      "WebFetch(domain:docs.vllm.ai)",
+      "Bash(python3:*)"
     ]
   },
   "enableAllProjectMcpServers": false
