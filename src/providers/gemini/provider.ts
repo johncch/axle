@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
-import { AxleMessage } from "../../messages/types.js";
-import type { TracingContext } from "../../tracer/types.js";
+import { AxleMessage } from "../../messages/message.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
@@ -15,21 +15,24 @@ export function gemini(apiKey: string): AIProvider {
     name: NAME,
 
     /** @internal */
-    async createGenerationRequest(model: string, params: {
-      messages: Array<AxleMessage>;
-      system?: string;
-      tools?: Array<ToolDefinition>;
-      context: { tracer?: TracingContext };
-      options?: {
-        temperature?: number;
-        top_p?: number;
-        max_tokens?: number;
-        frequency_penalty?: number;
-        presence_penalty?: number;
-        stop?: string | string[];
-        [key: string]: any;
-      };
-    }): Promise<ModelResult> {
+    async createGenerationRequest(
+      model: string,
+      params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: { tracer?: TracingContext };
+        options?: {
+          temperature?: number;
+          top_p?: number;
+          max_tokens?: number;
+          frequency_penalty?: number;
+          presence_penalty?: number;
+          stop?: string | string[];
+          [key: string]: any;
+        };
+      },
+    ): Promise<ModelResult> {
       return await createGenerationRequest({
         client,
         model,
@@ -38,22 +41,25 @@ export function gemini(apiKey: string): AIProvider {
     },
 
     /** @internal */
-    createStreamingRequest(model: string, params: {
-      messages: Array<AxleMessage>;
-      system?: string;
-      tools?: Array<ToolDefinition>;
-      context: { tracer?: TracingContext };
-      signal?: AbortSignal;
-      options?: {
-        temperature?: number;
-        top_p?: number;
-        max_tokens?: number;
-        frequency_penalty?: number;
-        presence_penalty?: number;
-        stop?: string | string[];
-        [key: string]: any;
-      };
-    }): AsyncGenerator<AnyStreamChunk, void, unknown> {
+    createStreamingRequest(
+      model: string,
+      params: {
+        messages: Array<AxleMessage>;
+        system?: string;
+        tools?: Array<ToolDefinition>;
+        context: { tracer?: TracingContext };
+        signal?: AbortSignal;
+        options?: {
+          temperature?: number;
+          top_p?: number;
+          max_tokens?: number;
+          frequency_penalty?: number;
+          presence_penalty?: number;
+          stop?: string | string[];
+          [key: string]: any;
+        };
+      },
+    ): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const { messages, system, tools, context, signal, options } = params;
       return createStreamingRequest({
         client,

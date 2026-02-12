@@ -12,7 +12,7 @@ import type {
   StreamThinkingStartChunk,
   StreamToolCallCompleteChunk,
   StreamToolCallStartChunk,
-} from "../../src/messages/streaming/types.js";
+} from "../../src/messages/stream.js";
 import {
   stream,
   type PartEndCallback,
@@ -289,7 +289,12 @@ describe("stream()", () => {
 
       const provider = makeProvider({ streamChunks: [chunks] });
 
-      const result = stream({ provider, model: "test-model", messages: [], onToolCall: async () => null });
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => null,
+      });
 
       const final = await result.final;
 
@@ -347,7 +352,13 @@ describe("stream()", () => {
 
   describe("callback ordering", () => {
     test("onPartStart fires before onPartUpdate, onPartUpdate fires before onPartEnd", async () => {
-      const chunks: AnyStreamChunk[] = [startChunk(), textStartChunk(0), textChunk(0, "Hello"), textCompleteChunk(0), completeChunk()];
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
 
       const provider = makeProvider({ streamChunks: [chunks] });
       const order: string[] = [];
@@ -382,7 +393,13 @@ describe("stream()", () => {
         completeChunk(AxleStopReason.FunctionCall),
       ];
 
-      const turn2: AnyStreamChunk[] = [startChunk("msg_2"), textStartChunk(0), textChunk(0, "done"), textCompleteChunk(0), completeChunk()];
+      const turn2: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
 
       const provider = makeProvider({ streamChunks: [turn1, turn2] });
       const startIndices: number[] = [];
@@ -446,7 +463,9 @@ describe("stream()", () => {
   describe("cancellation", () => {
     test("cancel before content — no partial", async () => {
       let yieldControl!: () => void;
-      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
 
       const provider = makeProvider({
         streamFactory: async function* () {
@@ -472,7 +491,9 @@ describe("stream()", () => {
 
     test("cancel mid-stream — partial with accumulated text", async () => {
       let yieldControl!: () => void;
-      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
 
       const provider = makeProvider({
         streamFactory: async function* () {
@@ -508,7 +529,9 @@ describe("stream()", () => {
     test("cancel between turns — completed messages, no partial", async () => {
       let cancelHandle!: () => void;
       let turn2Gate!: () => void;
-      const turn2Promise = new Promise<void>((resolve) => { turn2Gate = resolve; });
+      const turn2Promise = new Promise<void>((resolve) => {
+        turn2Gate = resolve;
+      });
 
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),
@@ -540,7 +563,9 @@ describe("stream()", () => {
         messages: [],
         onToolCall: async () => {
           // Cancel after tool execution completes but before turn 2 starts
-          setTimeout(() => { cancelHandle(); }, 5);
+          setTimeout(() => {
+            cancelHandle();
+          }, 5);
           return { type: "success", content: "results" };
         },
       });
@@ -589,7 +614,9 @@ describe("stream()", () => {
 
     test("cancel is idempotent — multiple calls do not throw", async () => {
       let yieldControl!: () => void;
-      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
 
       const provider = makeProvider({
         streamFactory: async function* () {
@@ -615,7 +642,9 @@ describe("stream()", () => {
 
     test("usage only includes completed turns", async () => {
       let yieldControl!: () => void;
-      const gate = new Promise<void>((resolve) => { yieldControl = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
 
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),

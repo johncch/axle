@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/chatcompletions/createStreamingRequest.js";
-import { AnyStreamChunk } from "../../../src/messages/streaming/types.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
 const BASE_URL = "http://localhost:11434/v1";
@@ -29,12 +29,14 @@ describe("createStreamingRequest", () => {
 
     (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
 
-    const chunks = await collectChunks(createStreamingRequest({
-      baseUrl: BASE_URL,
-      model: MODEL,
-      messages: [{ role: "user", content: "Hi" }],
-      context: {},
-    }));
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      }),
+    );
 
     const types = chunks.map((c) => c.type);
     expect(types).toContain("start");
@@ -63,12 +65,14 @@ describe("createStreamingRequest", () => {
 
     (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
 
-    const chunks = await collectChunks(createStreamingRequest({
-      baseUrl: BASE_URL,
-      model: MODEL,
-      messages: [{ role: "user", content: "Hi" }],
-      context: {},
-    }));
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      }),
+    );
 
     // Should not throw or emit errors
     const errors = chunks.filter((c) => c.type === "error");
@@ -88,12 +92,14 @@ describe("createStreamingRequest", () => {
 
     (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
 
-    const chunks = await collectChunks(createStreamingRequest({
-      baseUrl: BASE_URL,
-      model: MODEL,
-      messages: [{ role: "user", content: "Hi" }],
-      context: {},
-    }));
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      }),
+    );
 
     const errors = chunks.filter((c) => c.type === "error");
     expect(errors).toHaveLength(0);
@@ -106,12 +112,14 @@ describe("createStreamingRequest", () => {
       text: () => Promise.resolve("Server error"),
     });
 
-    const chunks = await collectChunks(createStreamingRequest({
-      baseUrl: BASE_URL,
-      model: MODEL,
-      messages: [{ role: "user", content: "Hi" }],
-      context: {},
-    }));
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      }),
+    );
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].type).toBe("error");
@@ -121,12 +129,14 @@ describe("createStreamingRequest", () => {
   test("yields error chunk on network failure", async () => {
     (fetch as any).mockRejectedValue(new Error("Connection refused"));
 
-    const chunks = await collectChunks(createStreamingRequest({
-      baseUrl: BASE_URL,
-      model: MODEL,
-      messages: [{ role: "user", content: "Hi" }],
-      context: {},
-    }));
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      }),
+    );
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].type).toBe("error");
@@ -144,12 +154,14 @@ describe("createStreamingRequest", () => {
     ];
     (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
 
-    await collectChunks(createStreamingRequest({
-      baseUrl: BASE_URL,
-      model: MODEL,
-      messages: [{ role: "user", content: "Hi" }],
-      context: {},
-    }));
+    await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      }),
+    );
 
     const body = JSON.parse((fetch as any).mock.calls[0][1].body);
     expect(body.stream).toBe(true);

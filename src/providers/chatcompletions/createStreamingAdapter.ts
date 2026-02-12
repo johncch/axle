@@ -1,4 +1,4 @@
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { ChatCompletionChunk } from "./types.js";
 import { convertFinishReason } from "./utils.js";
 

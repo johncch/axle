@@ -1,5 +1,5 @@
-import { AxleStopReason } from "../../providers/types.js";
-import { Stats } from "../../types.js";
+import { AxleStopReason } from "../providers/types.js";
+import { Stats } from "../types.js";
 
 export interface StreamChunk {
   type:

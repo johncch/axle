@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { Agent } from "../../src/core/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
-import type { AnyStreamChunk } from "../../src/messages/streaming/types.js";
+import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 
@@ -14,11 +14,18 @@ function createMockStreamProvider(responses: string[]): AIProvider {
     },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const text = responses[callIndex++] ?? "default";
-      yield { type: "start", id: `mock-${callIndex}`, data: { model: "mock", timestamp: Date.now() } };
+      yield {
+        type: "start",
+        id: `mock-${callIndex}`,
+        data: { model: "mock", timestamp: Date.now() },
+      };
       yield { type: "text-start", data: { index: 0 } };
       yield { type: "text-delta", data: { index: 0, text } };
       yield { type: "text-complete", data: { index: 0 } };
-      yield { type: "complete", data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20 } } };
+      yield {
+        type: "complete",
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20 } },
+      };
     },
   };
 }

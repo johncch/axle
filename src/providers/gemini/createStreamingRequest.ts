@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
-import { AxleMessage } from "../../messages/types.js";
-import type { TracingContext } from "../../tracer/types.js";
+import { AxleMessage } from "../../messages/message.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { History } from "../../src/messages/history.js";
-import { ContentPartFile, ContentPartText } from "../../src/messages/types.js";
+import { ContentPartFile, ContentPartText } from "../../src/messages/message.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";
 import { FileInfo } from "../../src/utils/file.js";
 

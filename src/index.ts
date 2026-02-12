@@ -31,7 +31,7 @@ export type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "./messages/types.js";
+} from "./messages/message.js";
 
 // Tracer
 export { SimpleWriter, Tracer } from "./tracer/index.js";

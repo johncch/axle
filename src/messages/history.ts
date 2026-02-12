@@ -1,5 +1,10 @@
 import { AxleStopReason } from "../providers/types.js";
-import { AxleAssistantMessage, AxleMessage, AxleToolCallResult, AxleUserMessage } from "./types.js";
+import {
+  AxleAssistantMessage,
+  AxleMessage,
+  AxleToolCallResult,
+  AxleUserMessage,
+} from "./message.js";
 
 export class History {
   system: string;

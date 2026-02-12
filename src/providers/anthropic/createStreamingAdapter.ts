@@ -1,5 +1,5 @@
 import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { convertStopReason } from "./utils.js";
 
 export function createAnthropicStreamingAdapter() {
@@ -185,7 +185,6 @@ export function createAnthropicStreamingAdapter() {
         blockTypes.delete(event.index);
         break;
       }
-
     }
 
     return chunks;

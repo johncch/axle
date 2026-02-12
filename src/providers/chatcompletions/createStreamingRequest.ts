@@ -1,7 +1,7 @@
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
-import { AxleMessage } from "../../messages/types.js";
-import type { TracingContext } from "../../tracer/types.js";
+import { AxleMessage } from "../../messages/message.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { ChatCompletionChunk } from "./types.js";
 import { convertAxleMessages, convertTools } from "./utils.js";
@@ -43,8 +43,10 @@ export async function* createStreamingRequest(params: {
     if (options.temperature !== undefined) requestBody.temperature = options.temperature;
     if (options.top_p !== undefined) requestBody.top_p = options.top_p;
     if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
-    if (options.frequency_penalty !== undefined) requestBody.frequency_penalty = options.frequency_penalty;
-    if (options.presence_penalty !== undefined) requestBody.presence_penalty = options.presence_penalty;
+    if (options.frequency_penalty !== undefined)
+      requestBody.frequency_penalty = options.frequency_penalty;
+    if (options.presence_penalty !== undefined)
+      requestBody.presence_penalty = options.presence_penalty;
     if (options.stop !== undefined) requestBody.stop = options.stop;
   }
 
@@ -69,7 +71,9 @@ export async function* createStreamingRequest(params: {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      throw new Error(`HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`);
+      throw new Error(
+        `HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`,
+      );
     }
 
     if (!response.body) {

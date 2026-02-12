@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ContentPartText, ContentPartThinking } from "../../../../src/messages/types.js";
+import { ContentPartText, ContentPartThinking } from "../../../../src/messages/message.js";
 import { convertAxleMessageToResponseInput } from "../../../../src/providers/openai/utils.js";
 
 describe("responsesAPI utils", () => {

@@ -1,5 +1,5 @@
 import { History } from "../messages/history.js";
-import type { AxleAssistantMessage, AxleMessage } from "../messages/types.js";
+import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { StreamResult } from "../providers/helpers.js";
 import { stream, type StreamHandle } from "../providers/stream.js";

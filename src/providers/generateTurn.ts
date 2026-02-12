@@ -1,4 +1,4 @@
-import { AxleMessage } from "../messages/types.js";
+import { AxleMessage } from "../messages/message.js";
 import { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { AIProvider, ModelResult } from "./types.js";

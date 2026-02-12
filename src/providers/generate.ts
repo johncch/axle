@@ -1,4 +1,4 @@
-import type { AxleAssistantMessage, AxleMessage } from "../messages/types.js";
+import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getToolCalls } from "../messages/utils.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
@@ -7,7 +7,13 @@ import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
 import { appendUsage, executeToolCalls, GenerateResult, ToolCallCallback } from "./helpers.js";
 import { AIProvider, AxleStopReason, ModelResult } from "./types.js";
 
-export type { GenerateError, GenerateResult, StreamResult, ToolCallCallback, ToolCallResult } from "./helpers.js";
+export type {
+  GenerateError,
+  GenerateResult,
+  StreamResult,
+  ToolCallCallback,
+  ToolCallResult,
+} from "./helpers.js";
 
 export interface GenerateOptions {
   provider: AIProvider;

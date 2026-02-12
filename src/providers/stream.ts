@@ -5,7 +5,7 @@ import type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "../messages/types.js";
+} from "../messages/message.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
@@ -80,8 +80,14 @@ export function stream(options: StreamOptions): StreamHandle {
   let resolveResult: (r: StreamResult) => void;
   let rejectResult: (e: unknown) => void;
   const finalPromise = new Promise<StreamResult>((resolve, reject) => {
-    resolveResult = (r) => { settled = true; resolve(r); };
-    rejectResult = (e) => { settled = true; reject(e); };
+    resolveResult = (r) => {
+      settled = true;
+      resolve(r);
+    };
+    rejectResult = (e) => {
+      settled = true;
+      reject(e);
+    };
   });
 
   // Kick off processing on next microtask so callers can register callbacks first
@@ -186,16 +192,18 @@ async function run(
     if (result.result === "error") {
       emitError(errorCbs, result.error);
     }
-    const finalContent = result.result === "success"
-      ? result.final?.content
-      : result.result === "cancelled"
-        ? result.partial?.content
-        : null;
-    const finishReason = result.result === "success"
-      ? result.final?.finishReason
-      : result.result === "cancelled"
-        ? AxleStopReason.Cancelled
-        : undefined;
+    const finalContent =
+      result.result === "success"
+        ? result.final?.content
+        : result.result === "cancelled"
+          ? result.partial?.content
+          : null;
+    const finishReason =
+      result.result === "success"
+        ? result.final?.finishReason
+        : result.result === "cancelled"
+          ? AxleStopReason.Cancelled
+          : undefined;
     tracer?.setResult({
       kind: "llm",
       model,
@@ -211,7 +219,9 @@ async function run(
   };
 
   const buildCancelledResult = (
-    turnParts: Array<ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool>,
+    turnParts: Array<
+      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+    >,
     turnId: string,
     turnModel: string,
     closePart: () => void,
@@ -219,7 +229,13 @@ async function run(
     closePart();
     const hasContent = turnParts.length > 0;
     const partial: AxleAssistantMessage | undefined = hasContent
-      ? { role: "assistant", id: turnId, model: turnModel, content: turnParts, finishReason: AxleStopReason.Cancelled }
+      ? {
+          role: "assistant",
+          id: turnId,
+          model: turnModel,
+          content: turnParts,
+          finishReason: AxleStopReason.Cancelled,
+        }
       : undefined;
     if (partial) addMessage(partial);
     tracer?.end("ok");

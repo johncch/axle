@@ -1,6 +1,6 @@
 import OpenAI from "openai";
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
-import { AxleMessage } from "../../messages/types.js";
+import { AxleMessage } from "../../messages/message.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";

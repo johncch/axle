@@ -1,5 +1,5 @@
 import { FinishReason, GenerateContentResponse } from "@google/genai";
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { AxleStopReason } from "../types.js";
 import { convertStopReason } from "./utils.js";
 

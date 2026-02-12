@@ -5,7 +5,7 @@ import {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "./types.js";
+} from "./message.js";
 
 export function toContentParts(params: {
   text?: string;

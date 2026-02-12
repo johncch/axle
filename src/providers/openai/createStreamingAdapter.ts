@@ -1,5 +1,5 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
-import { AnyStreamChunk } from "../../messages/streaming/types.js";
+import { AnyStreamChunk } from "../../messages/stream.js";
 import { AxleStopReason } from "../types.js";
 
 export function createStreamingAdapter() {
@@ -10,7 +10,11 @@ export function createStreamingAdapter() {
   let hasFunctionCalls = false;
   const functionInfo = new Map<string, { name: string; callId: string }>();
   const internalToolIndices = new Map<string, number>();
-  const INTERNAL_TOOL_TYPES = new Set(["web_search_call", "file_search_call", "code_interpreter_call"]);
+  const INTERNAL_TOOL_TYPES = new Set([
+    "web_search_call",
+    "file_search_call",
+    "code_interpreter_call",
+  ]);
   const toolCallBuffers = new Map<
     string,
     {

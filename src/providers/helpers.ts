@@ -3,7 +3,7 @@ import type {
   AxleMessage,
   AxleToolCallResult,
   ContentPartToolCall,
-} from "../messages/types.js";
+} from "../messages/message.js";
 import type { Stats } from "../types.js";
 import type { ModelError, ModelResult } from "./types.js";
 
