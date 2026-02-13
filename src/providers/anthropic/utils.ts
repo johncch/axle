@@ -5,7 +5,7 @@ import {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "../../messages/types.js";
+} from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason } from "../types.js";
 

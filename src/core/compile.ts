@@ -4,7 +4,7 @@ import type { Instruct } from "./Instruct.js";
 import { zodToExample } from "./parse.js";
 
 export function compileInstruct(
-  instruct: Instruct,
+  instruct: Instruct<any>,
   variables: Record<string, string> = {},
 ): string {
   const allVars = { ...variables, ...instruct.inputs };

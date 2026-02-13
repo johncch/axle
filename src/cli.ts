@@ -33,7 +33,12 @@ const program = new Command()
 program.parse(process.argv);
 const options = program.opts();
 
-const variables: Record<string, string> = {};
+const variables: Record<string, string> = {
+  date: new Date().toISOString().split("T")[0],
+  datetime: new Date().toISOString(),
+  cwd: process.cwd(),
+};
+
 if (options.args) {
   options.args.forEach((arg: string) => {
     const [key, value] = arg.split("=");

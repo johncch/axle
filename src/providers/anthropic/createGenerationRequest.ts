@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AxleMessage } from "../../messages/types.js";
+import { AxleMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";

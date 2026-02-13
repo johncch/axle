@@ -2,7 +2,7 @@ import type { Tool } from "../tools/types.js";
 import { Base64FileInfo, FileInfo, isBase64FileInfo, isTextFileInfo } from "../utils/file.js";
 import type { OutputSchema } from "./parse.js";
 
-export class Instruct {
+export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   readonly name = "instruct";
 
   prompt: string;
@@ -13,11 +13,11 @@ export class Instruct {
   textReferences: Array<{ content: string; name?: string }> = [];
   instructions: string[] = [];
 
-  schema: OutputSchema | undefined;
+  schema: TSchema;
 
-  constructor(prompt: string, schema?: OutputSchema) {
+  constructor(prompt: string, schema?: TSchema) {
     this.prompt = prompt;
-    this.schema = schema;
+    this.schema = schema as TSchema;
   }
 
   setInputs(inputs: Record<string, string>) {

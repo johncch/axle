@@ -1,5 +1,5 @@
 import z from "zod";
-import { AxleMessage, ContentPart } from "../../messages/types.js";
+import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason } from "../types.js";
 import { ChatCompletionContentPart, ChatCompletionMessage, ChatCompletionTool } from "./types.js";

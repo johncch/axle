@@ -29,7 +29,7 @@ export async function runSingle(
   }
 
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
-  const agent = new Agent(instruct, { provider, model });
+  const agent = new Agent(instruct, { provider, model, tracer: jobSpan });
   const result = await agent.start(variables).final;
   jobSpan.end();
 
@@ -99,7 +99,7 @@ export async function runBatch(
 
       const itemVars = { ...variables, file: batchFilePath };
 
-      const agent = new Agent(instruct, { provider, model });
+      const agent = new Agent(instruct, { provider, model, tracer: itemSpan });
       const result = await agent.start(itemVars).final;
 
       stats.in += result.usage.in;

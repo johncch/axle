@@ -1,6 +1,6 @@
 import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
-import { AxleMessage, ContentPart } from "../../messages/types.js";
+import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { ToolDefinition } from "../../tools/types.js";
 

@@ -2,11 +2,11 @@ import {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "../../messages/types.js";
+} from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AxleMessage } from "../../messages/types.js";
+import { AxleMessage } from "../../messages/message.js";
 import { ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { ChatCompletionResponse } from "./types.js";
