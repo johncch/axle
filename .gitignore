@@ -2,7 +2,7 @@
 node_modules
 output
 input
-ax.config.yml
+axle.config.yml
 logs
 dist
 package-lock.json

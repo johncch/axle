@@ -24,30 +24,32 @@ instruct.addTool(setNameTool);
 
 const agent = new Agent(instruct, { provider, model });
 
+agent.onPartStart((index, type) => {
+  console.log(`[Start] ${index} ${type}`);
+});
+
+agent.onPartUpdate((index, type, delta) => {
+  process.stdout.write(`${delta}`);
+});
+
+agent.onPartEnd((index, type) => {
+  console.log(`\n[End] ${index} ${type}`);
+});
+
+agent.onError((error) => {
+  console.error(`[Error] ${JSON.stringify(error, null, 2)}`);
+});
+
 console.log("[Starting...]");
 
 try {
-  const handle = agent.start();
-
-  handle.onPartStart((index, type) => {
-    console.log(`[Start] ${index} ${type}`);
-  });
-
-  handle.onPartUpdate((index, type, delta) => {
-    process.stdout.write(`${delta}`);
-  });
-
-  handle.onPartEnd((index, type) => {
-    console.log(`\n[End] ${index} ${type}`);
-  });
-
-  handle.onError((error) => {
-    console.error(`[Error] ${JSON.stringify(error, null, 2)}`);
-  });
-
-  const result = await handle.final;
+  const result = await agent.start().final;
   console.log(`\n[Response] ${result.response}`);
   console.log(`[Usage] in: ${result.usage.in}, out: ${result.usage.out}`);
+
+  // Follow-up turn — same callbacks, no re-wiring
+  const result2 = await agent.send("What was the character's name again?").final;
+  console.log(`\n[Response 2] ${result2.response}`);
 } catch (e) {
   console.error(e);
 }

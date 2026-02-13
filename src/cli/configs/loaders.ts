@@ -4,7 +4,7 @@ import type { TracingContext } from "../../tracer/types.js";
 import { searchAndLoadFile } from "../../utils/file.js";
 import { JobConfig, JobConfigSchema, ServiceConfig, ServiceConfigSchema } from "./schemas.js";
 
-const DEFAULT_JOB_NAME = "ax.job";
+const DEFAULT_JOB_NAME = "axle.job";
 const DEFAULT_JOB_FORMATS = ["yaml", "yml", "json"];
 
 export async function getJobConfig(
@@ -39,7 +39,7 @@ export async function getJobConfig(
   return parsed.data;
 }
 
-const DEFAULT_CONFIG_NAME = "ax.config";
+const DEFAULT_CONFIG_NAME = "axle.config";
 const DEFAULT_CONFIG_FORMATS = ["yaml", "yml", "json"];
 
 export async function getServiceConfig(

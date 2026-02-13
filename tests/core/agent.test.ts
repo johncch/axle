@@ -98,12 +98,11 @@ describe("Agent", () => {
     const agent = new Agent(instruct, { provider, model: "mock" });
 
     const updates: string[] = [];
-    const handle = agent.start();
-    handle.onPartUpdate((_index, _type, delta) => {
+    agent.onPartUpdate((_index, _type, delta) => {
       updates.push(delta);
     });
 
-    await handle.final;
+    await agent.start().final;
 
     expect(updates).toContain("streamed text");
   });

@@ -2,7 +2,14 @@ import { History } from "../messages/history.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { StreamResult } from "../providers/helpers.js";
-import { stream, type StreamHandle } from "../providers/stream.js";
+import {
+  stream,
+  type ErrorCallback,
+  type InternalToolCallback,
+  type PartEndCallback,
+  type PartStartCallback,
+  type PartUpdateCallback,
+} from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
@@ -25,12 +32,7 @@ export interface AgentResult<T = string> {
 }
 
 export interface AgentHandle<T = string> {
-  onPartStart: StreamHandle["onPartStart"];
-  onPartUpdate: StreamHandle["onPartUpdate"];
-  onPartEnd: StreamHandle["onPartEnd"];
-  onInternalTool: StreamHandle["onInternalTool"];
-  onError: StreamHandle["onError"];
-  cancel: StreamHandle["cancel"];
+  cancel(): void;
   readonly final: Promise<AgentResult<T>>;
 }
 
@@ -41,12 +43,38 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
   readonly history: History;
   readonly tracer?: TracingContext;
 
+  private partStartCallback?: PartStartCallback;
+  private partUpdateCallback?: PartUpdateCallback;
+  private partEndCallback?: PartEndCallback;
+  private internalToolCallback?: InternalToolCallback;
+  private errorCallback?: ErrorCallback;
+
   constructor(instruct: Instruct<TSchema>, config: AgentConfig) {
     this.instruct = instruct;
     this.provider = config.provider;
     this.model = config.model;
     this.history = new History();
     this.tracer = config.tracer;
+  }
+
+  onPartStart(callback: PartStartCallback) {
+    this.partStartCallback = callback;
+  }
+
+  onPartUpdate(callback: PartUpdateCallback) {
+    this.partUpdateCallback = callback;
+  }
+
+  onPartEnd(callback: PartEndCallback) {
+    this.partEndCallback = callback;
+  }
+
+  onInternalTool(callback: InternalToolCallback) {
+    this.internalToolCallback = callback;
+  }
+
+  onError(callback: ErrorCallback) {
+    this.errorCallback = callback;
   }
 
   start(variables?: Record<string, string>): AgentHandle<InferedOutputSchema<TSchema>> {
@@ -92,6 +120,12 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
       },
     });
 
+    if (this.partStartCallback) handle.onPartStart(this.partStartCallback);
+    if (this.partUpdateCallback) handle.onPartUpdate(this.partUpdateCallback);
+    if (this.partEndCallback) handle.onPartEnd(this.partEndCallback);
+    if (this.internalToolCallback) handle.onInternalTool(this.internalToolCallback);
+    if (this.errorCallback) handle.onError(this.errorCallback);
+
     const finalPromise = handle.final.then(
       (streamResult: StreamResult): AgentResult<InferedOutputSchema<TSchema>> => {
         if (streamResult.messages.length > 0) {
@@ -117,15 +151,10 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
     );
 
     return {
-      onPartStart: (cb) => handle.onPartStart(cb),
-      onPartUpdate: (cb) => handle.onPartUpdate(cb),
-      onPartEnd: (cb) => handle.onPartEnd(cb),
-      onInternalTool: (cb) => handle.onInternalTool(cb),
-      onError: (cb) => handle.onError(cb),
       cancel: () => handle.cancel(),
       get final() {
         return finalPromise;
       },
-    } satisfies AgentHandle<InferedOutputSchema<TSchema>>;
+    };
   }
 }
