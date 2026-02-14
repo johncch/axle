@@ -20,9 +20,8 @@ const setNameTool: Tool = {
 const instruct = new Instruct(
   "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
 );
-instruct.addTool(setNameTool);
 
-const agent = new Agent(instruct, { provider, model });
+const agent = new Agent({ provider, model, tools: [setNameTool] });
 
 agent.onPartStart((index, type) => {
   console.log(`[Start] ${index} ${type}`);
@@ -43,7 +42,7 @@ agent.onError((error) => {
 console.log("[Starting...]");
 
 try {
-  const result = await agent.start().final;
+  const result = await agent.send(instruct).final;
   console.log(`\n[Response] ${result.response}`);
   console.log(`[Usage] in: ${result.usage.in}, out: ${result.usage.out}`);
 

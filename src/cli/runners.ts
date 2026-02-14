@@ -21,7 +21,6 @@ export async function runSingle(
   parentSpan: TracingContext,
 ) {
   const instruct = new Instruct(jobConfig.task);
-  if (tools.length > 0) instruct.addTools(tools);
   if (jobConfig.files) {
     for (const filePath of jobConfig.files) {
       instruct.addFile(await loadFileContent(filePath));
@@ -29,8 +28,8 @@ export async function runSingle(
   }
 
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
-  const agent = new Agent(instruct, { provider, model, tracer: jobSpan });
-  const result = await agent.start(variables).final;
+  const agent = new Agent({ provider, model, tools, tracer: jobSpan });
+  const result = await agent.send(instruct, variables).final;
   jobSpan.end();
 
   stats.in += result.usage.in;
@@ -89,7 +88,6 @@ export async function runBatch(
       }
 
       const instruct = new Instruct(jobConfig.task);
-      if (tools.length > 0) instruct.addTools(tools);
 
       for (const fi of sharedFiles) {
         instruct.addFile(fi);
@@ -99,8 +97,8 @@ export async function runBatch(
 
       const itemVars = { ...variables, file: batchFilePath };
 
-      const agent = new Agent(instruct, { provider, model, tracer: itemSpan });
-      const result = await agent.start(itemVars).final;
+      const agent = new Agent({ provider, model, tools, tracer: itemSpan });
+      const result = await agent.send(instruct, itemVars).final;
 
       stats.in += result.usage.in;
       stats.out += result.usage.out;

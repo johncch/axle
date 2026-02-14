@@ -11,16 +11,19 @@ import {
   type PartUpdateCallback,
 } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
+import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import { compileInstruct } from "./compile.js";
 import { Instruct } from "./Instruct.js";
-import type { InferedOutputSchema, OutputSchema } from "./parse.js";
+import type { OutputSchema, ParsedSchema } from "./parse.js";
 import { parseResponse } from "./parse.js";
 
 export interface AgentConfig {
   provider: AIProvider;
   model: string;
+  system?: string;
+  tools?: Tool[];
   tracer?: TracingContext;
 }
 
@@ -36,12 +39,14 @@ export interface AgentHandle<T = string> {
   readonly final: Promise<AgentResult<T>>;
 }
 
-export class Agent<TSchema extends OutputSchema | undefined = undefined> {
-  readonly instruct: Instruct<TSchema>;
+export class Agent {
   readonly provider: AIProvider;
   readonly model: string;
   readonly history: History;
   readonly tracer?: TracingContext;
+
+  system: string | undefined;
+  tools: Record<string, Tool> = {};
 
   private partStartCallback?: PartStartCallback;
   private partUpdateCallback?: PartUpdateCallback;
@@ -49,12 +54,29 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
   private internalToolCallback?: InternalToolCallback;
   private errorCallback?: ErrorCallback;
 
-  constructor(instruct: Instruct<TSchema>, config: AgentConfig) {
-    this.instruct = instruct;
+  constructor(config: AgentConfig) {
     this.provider = config.provider;
     this.model = config.model;
     this.history = new History();
     this.tracer = config.tracer;
+    this.system = config.system;
+    if (config.tools) {
+      this.addTools(config.tools);
+    }
+  }
+
+  addTool(tool: Tool) {
+    this.tools[tool.name] = tool;
+  }
+
+  addTools(tools: Tool[]) {
+    for (const tool of tools) {
+      this.tools[tool.name] = tool;
+    }
+  }
+
+  hasTools(): boolean {
+    return Object.keys(this.tools).length > 0;
   }
 
   onPartStart(callback: PartStartCallback) {
@@ -77,23 +99,32 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
     this.errorCallback = callback;
   }
 
-  start(variables?: Record<string, string>): AgentHandle<InferedOutputSchema<TSchema>> {
-    const text = compileInstruct(this.instruct, variables);
-    const files = this.instruct.files;
+  send(message: string): AgentHandle<string>;
+  send(instruct: Instruct<undefined>, variables?: Record<string, string>): AgentHandle<string>;
+  send<TSchema extends OutputSchema>(
+    instruct: Instruct<TSchema>,
+    variables?: Record<string, string>,
+  ): AgentHandle<ParsedSchema<TSchema>>;
+  send(
+    messageOrInstruct: string | Instruct<any>,
+    variables?: Record<string, string>,
+  ): AgentHandle<any> {
+    let schema: OutputSchema | undefined;
 
-    this.history.addUser(toContentParts({ text, files }));
+    if (typeof messageOrInstruct === "string") {
+      this.history.addUser(messageOrInstruct);
+    } else {
+      const text = compileInstruct(messageOrInstruct, variables);
+      const files = messageOrInstruct.files;
+      this.history.addUser(toContentParts({ text, files }));
+      schema = messageOrInstruct.schema;
+    }
 
-    return this.execute();
+    return this.execute(schema);
   }
 
-  send(message: string): AgentHandle<InferedOutputSchema<TSchema>> {
-    this.history.addUser(message);
-
-    return this.execute();
-  }
-
-  private execute(): AgentHandle<InferedOutputSchema<TSchema>> {
-    const tools = this.instruct.tools;
+  private execute(schema?: OutputSchema): AgentHandle<any> {
+    const tools = this.tools;
     const toolDefinitions = Object.values(tools).map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -104,7 +135,7 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
       provider: this.provider,
       model: this.model,
       messages: this.history.messages,
-      system: this.instruct.system ?? undefined,
+      system: this.system,
       tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
       tracer: this.tracer,
       onToolCall: async (name, params) => {
@@ -126,29 +157,27 @@ export class Agent<TSchema extends OutputSchema | undefined = undefined> {
     if (this.internalToolCallback) handle.onInternalTool(this.internalToolCallback);
     if (this.errorCallback) handle.onError(this.errorCallback);
 
-    const finalPromise = handle.final.then(
-      (streamResult: StreamResult): AgentResult<InferedOutputSchema<TSchema>> => {
-        if (streamResult.messages.length > 0) {
-          this.history.add(streamResult.messages);
+    const finalPromise = handle.final.then((streamResult: StreamResult): AgentResult<any> => {
+      if (streamResult.messages.length > 0) {
+        this.history.add(streamResult.messages);
+      }
+
+      let response: any | null = null;
+      let final: AxleAssistantMessage | undefined;
+
+      if (streamResult.result === "success") {
+        final = streamResult.final;
+        if (final) {
+          const textContent = getTextContent(final.content);
+          response = parseResponse(textContent, schema);
         }
+      } else if (streamResult.result === "cancelled") {
+        final = streamResult.partial;
+      }
 
-        let response: InferedOutputSchema<TSchema> | null = null;
-        let final: AxleAssistantMessage | undefined;
-
-        if (streamResult.result === "success") {
-          final = streamResult.final;
-          if (final) {
-            const textContent = getTextContent(final.content);
-            response = parseResponse(textContent, this.instruct.schema);
-          }
-        } else if (streamResult.result === "cancelled") {
-          final = streamResult.partial;
-        }
-
-        const usage = streamResult.usage ?? { in: 0, out: 0 };
-        return { response, messages: streamResult.messages, final, usage };
-      },
-    );
+      const usage = streamResult.usage ?? { in: 0, out: 0 };
+      return { response, messages: streamResult.messages, final, usage };
+    });
 
     return {
       cancel: () => handle.cancel(),

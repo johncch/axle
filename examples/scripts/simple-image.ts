@@ -9,8 +9,8 @@ async function analyzeImage() {
   const instruct = new Instruct("What are the data that is shown in the image.");
   instruct.addFile(imageFile);
 
-  const agent = new Agent(instruct, { provider, model });
-  const result = await agent.start().final;
+  const agent = new Agent({ provider, model });
+  const result = await agent.send(instruct).final;
 
   console.log(result.response);
 }

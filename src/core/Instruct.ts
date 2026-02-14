@@ -1,14 +1,9 @@
-import type { Tool } from "../tools/types.js";
 import { Base64FileInfo, FileInfo, isBase64FileInfo, isTextFileInfo } from "../utils/file.js";
 import type { OutputSchema } from "./parse.js";
 
 export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
-  readonly name = "instruct";
-
   prompt: string;
-  system: string | null = null;
   inputs: Record<string, string> = {};
-  tools: Record<string, Tool> = {};
   files: Base64FileInfo[] = [];
   textReferences: Array<{ content: string; name?: string }> = [];
   instructions: string[] = [];
@@ -26,20 +21,6 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
 
   addInput(name: string, value: string) {
     this.inputs[name] = value;
-  }
-
-  addTools(tools: Tool[]) {
-    for (const tool of tools) {
-      this.tools[tool.name] = tool;
-    }
-  }
-
-  addTool(tool: Tool) {
-    this.tools[tool.name] = tool;
-  }
-
-  hasTools(): boolean {
-    return Object.keys(this.tools).length > 0;
   }
 
   addFile(file: FileInfo | string, options?: { name?: string }) {

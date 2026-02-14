@@ -1,11 +1,8 @@
 import * as z from "zod";
-import type { TracingContext } from "../tracer/types.js";
 
 export type OutputSchema = Record<string, z.ZodTypeAny>;
 
-export type InferedOutputSchema<T extends OutputSchema | undefined> = T extends undefined
-  ? string
-  : { [K in keyof T]: z.output<T[K]> };
+export type ParsedSchema<T extends OutputSchema> = { [K in keyof T]: z.output<T[K]> };
 
 export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
   if (schema instanceof z.ZodString) {
@@ -47,21 +44,18 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
   }
 }
 
-export function parseResponse<T extends OutputSchema | undefined = undefined>(
+export function parseResponse<T extends OutputSchema>(
   rawValue: string,
   schema?: T,
-  runtime?: { tracer?: TracingContext },
-): InferedOutputSchema<T> {
-  type Out = InferedOutputSchema<T>;
-
+): ParsedSchema<T> | string {
   if (!schema) {
-    return rawValue as Out;
+    return rawValue;
   }
 
   const schemaKeys = Object.keys(schema);
   if (schemaKeys.length === 0) {
     if (rawValue.trim() === "{}" || rawValue.trim() === "") {
-      return {} as Out;
+      return {} as ParsedSchema<T>;
     }
     throw new Error(
       "Schema is empty, but rawValue is not an empty object representation or empty string.",
@@ -88,7 +82,7 @@ export function parseResponse<T extends OutputSchema | undefined = undefined>(
       }
     }
 
-    return validatedResult as Out;
+    return validatedResult;
   } catch (error) {
     if (error && typeof error === "object" && "issues" in error) {
       const formattedErrors = (error as any).issues

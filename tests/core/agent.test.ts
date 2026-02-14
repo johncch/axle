@@ -31,36 +31,36 @@ function createMockStreamProvider(responses: string[]): AIProvider {
 }
 
 describe("Agent", () => {
-  test("start() resolves with raw text response", async () => {
+  test("send(instruct) resolves with raw text response", async () => {
     const provider = createMockStreamProvider(["Hello world"]);
     const instruct = new Instruct("Hi");
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
-    const result = await agent.start().final;
+    const result = await agent.send(instruct).final;
 
     expect(result.response).toBe("Hello world");
     expect(result.usage).toEqual({ in: 10, out: 20 });
   });
 
-  test("start() with variables substitutes into prompt", async () => {
+  test("send(instruct, variables) substitutes into prompt", async () => {
     const provider = createMockStreamProvider(["Greeting sent"]);
     const instruct = new Instruct("Say hello to {{name}}");
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
-    const result = await agent.start({ name: "Alice" }).final;
+    const result = await agent.send(instruct, { name: "Alice" }).final;
 
     expect(result.response).toBe("Greeting sent");
   });
 
-  test("start() with schema parses response via tags", async () => {
+  test("send(instruct) with schema parses response via tags", async () => {
     const provider = createMockStreamProvider(["<answer>42</answer>"]);
     const { z } = await import("zod");
     const instruct = new Instruct("What is the answer?", {
       answer: z.number(),
     });
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
-    const result = await agent.start().final;
+    const result = await agent.send(instruct).final;
 
     expect(result.response).toEqual({ answer: 42 });
   });
@@ -68,9 +68,9 @@ describe("Agent", () => {
   test("send() follow-on accumulates history", async () => {
     const provider = createMockStreamProvider(["Response 1", "Response 2"]);
     const instruct = new Instruct("Initial message");
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
-    await agent.start().final;
+    await agent.send(instruct).final;
     await agent.send("Follow up").final;
 
     // 2 user + 2 assistant = 4 messages
@@ -83,26 +83,24 @@ describe("Agent", () => {
 
   test("AgentResult.usage has correct token stats", async () => {
     const provider = createMockStreamProvider(["test"]);
-    const instruct = new Instruct("Hi");
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
-    const result = await agent.start().final;
+    const result = await agent.send("Hi").final;
 
     expect(result.usage.in).toBe(10);
     expect(result.usage.out).toBe(20);
   });
 
-  test("streaming callbacks fire during start", async () => {
+  test("streaming callbacks fire during send", async () => {
     const provider = createMockStreamProvider(["streamed text"]);
-    const instruct = new Instruct("Hi");
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
     const updates: string[] = [];
     agent.onPartUpdate((_index, _type, delta) => {
       updates.push(delta);
     });
 
-    await agent.start().final;
+    await agent.send("Hi").final;
 
     expect(updates).toContain("streamed text");
   });
@@ -110,9 +108,9 @@ describe("Agent", () => {
   test("AgentResult.messages contains only new messages from this turn", async () => {
     const provider = createMockStreamProvider(["First", "Second"]);
     const instruct = new Instruct("msg1");
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock" });
 
-    await agent.start().final;
+    await agent.send(instruct).final;
     const result2 = await agent.send("msg2").final;
 
     for (const msg of result2.messages) {
@@ -125,21 +123,18 @@ describe("Agent", () => {
     }
   });
 
-  test("system message is read from instruct", async () => {
+  test("system message is set on Agent", async () => {
     const provider = createMockStreamProvider(["ok"]);
-    const instruct = new Instruct("Hi");
-    instruct.system = "You are helpful";
-    const agent = new Agent(instruct, { provider, model: "mock" });
+    const agent = new Agent({ provider, model: "mock", system: "You are helpful" });
 
-    await agent.start().final;
-    // system is on instruct, not history
-    expect(agent.instruct.system).toBe("You are helpful");
+    await agent.send("Hi").final;
+
+    expect(agent.system).toBe("You are helpful");
   });
 
-  test("tools on instruct are used for tool calls", async () => {
+  test("tools on Agent are used for tool calls", async () => {
     const { z } = await import("zod");
     const provider = createMockStreamProvider(["ok"]);
-    const instruct = new Instruct("Hi");
 
     const mockTool = {
       name: "test-tool",
@@ -147,11 +142,10 @@ describe("Agent", () => {
       schema: z.object({ input: z.string() }),
       execute: vi.fn().mockResolvedValue("result"),
     };
-    instruct.addTool(mockTool);
 
-    const agent = new Agent(instruct, { provider, model: "mock" });
-    await agent.start().final;
+    const agent = new Agent({ provider, model: "mock", tools: [mockTool] });
+    await agent.send("Hi").final;
 
-    expect(instruct.hasTools()).toBe(true);
+    expect(agent.hasTools()).toBe(true);
   });
 });
