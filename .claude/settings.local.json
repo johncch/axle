@@ -28,7 +28,10 @@
       "WebFetch(domain:platform.moonshot.ai)",
       "WebFetch(domain:api-docs.deepseek.com)",
       "WebFetch(domain:docs.vllm.ai)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git -C /Users/johncch/Projects/ai/axle log main..HEAD --oneline)",
+      "Bash(git -C /Users/johncch/Projects/ai/axle diff main..HEAD --stat)",
+      "Bash(git -C /Users/johncch/Projects/ai/axle show main:README.md)"
     ]
   },
   "enableAllProjectMcpServers": false
