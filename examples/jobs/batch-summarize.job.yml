@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: anthropic
+  model: claude-sonnet-4-5-20250929
+
+batch:
+  files: "input/*.txt"
+  # resume: true
+  concurrency: 3
+
+task: |
+  Summarize the following document. The file path is {{file}}.
+  Provide a concise summary with key points and write it into "output/summary-{name}.txt"
+
+tools:
+  - write-file

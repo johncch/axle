@@ -1,13 +1,10 @@
-# yaml-language-server: $schema=../../schemas/v1/job.yaml
-using:
-  engine: ollama
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: ollama
   model: gemma3
 
-jobs:
-  image:
-    steps:
-      - uses: chat
-        message: |
-          What are the data that is shown in the image.
-        images:
-          - file: examples/data/economist-brainy-imports.png
+task: |
+  What are the data that is shown in the image.
+
+files:
+  - examples/data/economist-brainy-imports.png

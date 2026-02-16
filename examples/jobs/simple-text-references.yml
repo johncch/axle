@@ -1,17 +1,12 @@
-# yaml-language-server: $schema=../../schemas/v1/job.yaml
-using:
-  engine: gemini
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: gemini
 
-jobs:
-  text-references:
-    steps:
-      - uses: chat
-        message: |
-          Based on the provided documents, create a comprehensive summary that identifies the main ethical concerns about AI and suggests concrete action items for addressing them.
-        output:
-          summary: "string"
-          concerns: "string[]"
-          actionItems: "string[]"
-        references:
-          - file: examples/data/meeting_notes.md
-          - file: examples/data/research_paper.md
+task: |
+  Based on the provided documents, create a comprehensive summary that
+  identifies the main ethical concerns about AI and suggests concrete
+  action items for addressing them.
+
+files:
+  - examples/data/meeting_notes.md
+  - examples/data/research_paper.md

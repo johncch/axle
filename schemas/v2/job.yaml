@@ -1,0 +1,88 @@
+$schema: http://json-schema.org/draft-07/schema#
+title: JobConfig
+type: object
+properties:
+  provider:
+    $ref: "#/definitions/AIProviderUse"
+  task:
+    type: string
+  tools:
+    type: array
+    items:
+      type: string
+  files:
+    type: array
+    items:
+      type: string
+  batch:
+    $ref: "#/definitions/BatchConfig"
+required:
+  - provider
+  - task
+definitions:
+  BatchConfig:
+    type: object
+    properties:
+      files:
+        type: string
+      resume:
+        type: boolean
+        default: false
+      concurrency:
+        type: integer
+        minimum: 1
+        default: 3
+    required:
+      - files
+    additionalProperties: false
+  AIProviderUse:
+    type: object
+    oneOf:
+      - type: object
+        properties:
+          type:
+            type: string
+            const: "ollama"
+          url:
+            type: string
+          model:
+            type: string
+        required:
+          - type
+        additionalProperties: false
+      - type: object
+        properties:
+          type:
+            type: string
+            const: "anthropic"
+          "api-key":
+            type: string
+          model:
+            type: string
+        required:
+          - type
+        additionalProperties: false
+      - type: object
+        properties:
+          type:
+            type: string
+            const: "openai"
+          "api-key":
+            type: string
+          model:
+            type: string
+        required:
+          - type
+        additionalProperties: false
+      - type: object
+        properties:
+          type:
+            type: string
+            const: "gemini"
+          "api-key":
+            type: string
+          model:
+            type: string
+        required:
+          - type
+        additionalProperties: false

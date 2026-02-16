@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { Conversation } from "../../src/messages/conversation.js";
-import { ContentPartFile, ContentPartText } from "../../src/messages/types.js";
+import { History } from "../../src/messages/history.js";
+import { ContentPartFile, ContentPartText } from "../../src/messages/message.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";
 import { FileInfo } from "../../src/utils/file.js";
 
-describe("Conversation", () => {
+describe("History", () => {
   describe("basic functionality", () => {
     test("addUser with string content", () => {
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       expect(chat.messages).toHaveLength(1);
@@ -21,7 +21,7 @@ describe("Conversation", () => {
     });
 
     test("addUser with ContentPart array", () => {
-      const chat = new Conversation();
+      const chat = new History();
       const content: ContentPartText[] = [
         { type: "text", text: "Hello" },
         { type: "text", text: "World" },
@@ -35,7 +35,7 @@ describe("Conversation", () => {
     });
 
     test("addSystem sets system message", () => {
-      const chat = new Conversation();
+      const chat = new History();
       chat.addSystem("You are a helpful assistant");
 
       expect(chat.system).toBe("You are a helpful assistant");
@@ -62,7 +62,7 @@ describe("Conversation", () => {
     };
 
     test("addUser with text and files", () => {
-      const chat = new Conversation();
+      const chat = new History();
       const content: Array<ContentPartText | ContentPartFile> = [
         { type: "text", text: "Analyze this image" },
         { type: "file", file: mockImageFile },
@@ -82,7 +82,7 @@ describe("Conversation", () => {
     });
 
     test("addUser with multiple files", () => {
-      const chat = new Conversation();
+      const chat = new History();
       const content: Array<ContentPartText | ContentPartFile> = [
         { type: "text", text: "Analyze these files" },
         { type: "file", file: mockImageFile },
@@ -158,7 +158,7 @@ describe("Conversation", () => {
 
   describe("toString", () => {
     test("serializes conversation to JSON string", () => {
-      const chat = new Conversation();
+      const chat = new History();
       chat.addSystem("System message");
       chat.addUser("User message");
 

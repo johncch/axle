@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { WriteToDisk } from "../../src/actions/writeToDisk.js";
-import {
-  availableTools,
-  createTool,
-  createTools,
-  createWriteToDiskAction,
-} from "../../src/cli/factories.js";
+import type { ToolProviderConfig } from "../../src/cli/configs/schemas.js";
+import { availableTools, createTool, createTools } from "../../src/cli/tools.js";
 
 describe("CLI Factories", () => {
   describe("createTool", () => {
@@ -20,6 +15,13 @@ describe("CLI Factories", () => {
       const tool = createTool("calculator");
       expect(tool.name).toBe("calculator");
       expect(tool.description).toContain("arithmetic");
+      expect(tool.schema).toBeDefined();
+    });
+
+    it("should create exec tool", () => {
+      const tool = createTool("exec");
+      expect(tool.name).toBe("exec");
+      expect(tool.description).toContain("shell command");
       expect(tool.schema).toBeDefined();
     });
 
@@ -38,6 +40,17 @@ describe("CLI Factories", () => {
       const tool = createTool("brave", config);
       expect(tool.name).toBe("brave");
       // Tool should be configured (we can't easily test internal state)
+    });
+
+    it("should configure exec tool with config", () => {
+      const config: ToolProviderConfig = {
+        exec: {
+          timeout: 5000,
+        },
+      };
+
+      const tool = createTool("exec", config);
+      expect(tool.name).toBe("exec");
     });
 
     it("should handle missing config gracefully", () => {
@@ -88,35 +101,19 @@ describe("CLI Factories", () => {
     });
   });
 
-  describe("createWriteToDiskAction", () => {
-    it("should create WriteToDisk action with path only", () => {
-      const action = createWriteToDiskAction("./output/test.txt");
-      expect(action).toBeInstanceOf(WriteToDisk);
-      expect(action.name).toBe("write-to-disk");
-    });
-
-    it("should create WriteToDisk action with custom content template", () => {
-      const action = createWriteToDiskAction("./output/test.txt", "{{customField}}");
-      expect(action).toBeInstanceOf(WriteToDisk);
-      expect(action.name).toBe("write-to-disk");
-    });
-
-    it("should use default content template when not specified", () => {
-      const action = createWriteToDiskAction("./output/test.txt");
-      expect(action).toBeInstanceOf(WriteToDisk);
-      // Default template is {{response}}
-    });
-  });
-
   describe("availableTools", () => {
-    it("should contain brave and calculator", () => {
+    it("should contain all available tools", () => {
       expect(availableTools).toContain("brave");
       expect(availableTools).toContain("calculator");
+      expect(availableTools).toContain("exec");
+      expect(availableTools).toContain("patch-file");
+      expect(availableTools).toContain("read-file");
+      expect(availableTools).toContain("write-file");
     });
 
     it("should be a readonly array", () => {
       expect(Array.isArray(availableTools)).toBe(true);
-      expect(availableTools).toHaveLength(2);
+      expect(availableTools).toHaveLength(6);
     });
   });
 });

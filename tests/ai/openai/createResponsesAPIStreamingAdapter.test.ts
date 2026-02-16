@@ -1,11 +1,12 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, test } from "vitest";
-import { createResponsesAPIStreamingAdapter } from "../../../src/ai/openai/createResponsesAPIStreamingAdapter.js";
+import { createStreamingAdapter } from "../../../src/providers/openai/createStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/providers/types.js";
 
 describe("createResponsesAPIStreamingAdapter", () => {
   describe("basic streaming events", () => {
     test("should handle response.created event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.created",
         response: {
@@ -29,10 +30,9 @@ describe("createResponsesAPIStreamingAdapter", () => {
       }
     });
 
-    test("should handle response.output_text.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+    test("should emit text-start before first text-delta", () => {
+      const adapter = createStreamingAdapter();
 
-      // First create the response
       adapter.handleEvent({
         type: "response.created",
         response: {
@@ -46,27 +46,51 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      const event: ResponseStreamEvent = {
+      const chunks = adapter.handleEvent({
         type: "response.output_text.delta",
         delta: "Hello",
         item_id: "item_123",
         output_index: 0,
         content_index: 0,
         sequence_number: 1,
-      } as ResponseStreamEvent;
+      } as ResponseStreamEvent);
 
-      const chunks = adapter.handleEvent(event);
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("text");
-      if (chunks[0].type === "text") {
-        expect(chunks[0].data.text).toBe("Hello");
-        expect(chunks[0].data.index).toBe(0);
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0].type).toBe("text-start");
+      expect(chunks[1].type).toBe("text-delta");
+      if (chunks[1].type === "text-delta") {
+        expect(chunks[1].data.text).toBe("Hello");
+        expect(chunks[1].data.index).toBe(0);
       }
     });
 
+    test("should not emit text-start on subsequent text deltas", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Hello",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: " world",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("text-delta");
+    });
+
     test("should handle response.completed event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.completed",
         response: {
@@ -96,7 +120,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
 
     test("should handle response.failed event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.failed",
         response: {
@@ -122,7 +146,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
   describe("reasoning events", () => {
     test("should handle response.output_item.added with reasoning type", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.output_item.added",
         sequence_number: 2,
@@ -139,13 +163,13 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks).toHaveLength(1);
       expect(chunks[0].type).toBe("thinking-start");
       if (chunks[0].type === "thinking-start") {
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
         expect(chunks[0].data.redacted).toBeUndefined();
       }
     });
 
     test("should handle response.reasoning_text.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // First add the reasoning item
       adapter.handleEvent({
@@ -174,14 +198,13 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("thinking-delta");
       if (chunks[0].type === "thinking-delta") {
         expect(chunks[0].data.text).toBe("Let me think about this...");
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
       }
     });
 
-    test("should handle response.output_item.done with reasoning type", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+    test("should emit thinking-complete on response.output_item.done for reasoning", () => {
+      const adapter = createStreamingAdapter();
 
-      // First add the reasoning item
       adapter.handleEvent({
         type: "response.output_item.added",
         sequence_number: 2,
@@ -193,7 +216,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      const event: ResponseStreamEvent = {
+      const chunks = adapter.handleEvent({
         type: "response.output_item.done",
         sequence_number: 4,
         output_index: 0,
@@ -202,16 +225,17 @@ describe("createResponsesAPIStreamingAdapter", () => {
           type: "reasoning",
           summary: [],
         },
-      } as ResponseStreamEvent;
+      } as ResponseStreamEvent);
 
-      const chunks = adapter.handleEvent(event);
-
-      // This event doesn't produce any chunks, just cleanup
-      expect(chunks).toHaveLength(0);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-complete");
+      if (chunks[0].type === "thinking-complete") {
+        expect(chunks[0].data.index).toBe(0);
+      }
     });
 
     test("should handle multiple reasoning deltas", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // Add the reasoning item
       adapter.handleEvent({
@@ -255,22 +279,21 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
       if (chunks1[0].type === "thinking-delta") {
         expect(chunks1[0].data.text).toBe("First, ");
-        expect(chunks1[0].data.index).toBe(1);
+        expect(chunks1[0].data.index).toBe(0);
       }
       if (chunks2[0].type === "thinking-delta") {
         expect(chunks2[0].data.text).toBe("I need to analyze ");
-        expect(chunks2[0].data.index).toBe(1);
+        expect(chunks2[0].data.index).toBe(0);
       }
       if (chunks3[0].type === "thinking-delta") {
         expect(chunks3[0].data.text).toBe("the problem.");
-        expect(chunks3[0].data.index).toBe(1);
+        expect(chunks3[0].data.index).toBe(0);
       }
     });
 
-    test("should handle response.reasoning_summary_text.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+    test("should emit thinking-summary-delta for reasoning_summary_text.delta", () => {
+      const adapter = createStreamingAdapter();
 
-      // First add the reasoning item
       adapter.handleEvent({
         type: "response.output_item.added",
         sequence_number: 2,
@@ -282,7 +305,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      const event: ResponseStreamEvent = {
+      const chunks = adapter.handleEvent({
         type: "response.reasoning_summary_text.delta",
         delta: "This is the summary reasoning...",
         item_id: "rs_123",
@@ -290,22 +313,20 @@ describe("createResponsesAPIStreamingAdapter", () => {
         content_index: 0,
         summary_index: 0,
         sequence_number: 3,
-      } as ResponseStreamEvent;
-
-      const chunks = adapter.handleEvent(event);
+      } as ResponseStreamEvent);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("thinking-delta");
-      if (chunks[0].type === "thinking-delta") {
+      expect(chunks[0].type).toBe("thinking-summary-delta");
+      if (chunks[0].type === "thinking-summary-delta") {
         expect(chunks[0].data.text).toBe("This is the summary reasoning...");
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
       }
     });
   });
 
   describe("function call events", () => {
     test("should handle response.function_call_arguments.delta event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
         type: "response.function_call_arguments.delta",
         delta: '{"query": "',
@@ -320,12 +341,12 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("tool-call-start");
       if (chunks[0].type === "tool-call-start") {
         expect(chunks[0].data.id).toBe("call_123");
-        expect(chunks[0].data.index).toBe(1);
+        expect(chunks[0].data.index).toBe(0);
       }
     });
 
     test("should handle response.function_call_arguments.done event", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+      const adapter = createStreamingAdapter();
 
       // Start the function call
       adapter.handleEvent({
@@ -358,10 +379,108 @@ describe("createResponsesAPIStreamingAdapter", () => {
   });
 
   describe("mixed events", () => {
-    test("should handle reasoning followed by text output", () => {
-      const adapter = createResponsesAPIStreamingAdapter();
+    test("should emit FunctionCall finish reason when tool calls are present", () => {
+      const adapter = createStreamingAdapter();
 
-      // Create response
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "search",
+        arguments: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.finishReason).toBe(AxleStopReason.FunctionCall);
+      }
+    });
+
+    test("should emit Stop finish reason when no tool calls", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Hello",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.finishReason).toBe(AxleStopReason.Stop);
+      }
+    });
+
+    test("should handle reasoning followed by text with full lifecycle", () => {
+      const adapter = createStreamingAdapter();
+
       const chunks1 = adapter.handleEvent({
         type: "response.created",
         response: {
@@ -375,7 +494,6 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      // Add reasoning item
       const chunks2 = adapter.handleEvent({
         type: "response.output_item.added",
         sequence_number: 2,
@@ -387,7 +505,6 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      // Reasoning delta
       const chunks3 = adapter.handleEvent({
         type: "response.reasoning_text.delta",
         delta: "Thinking...",
@@ -397,7 +514,6 @@ describe("createResponsesAPIStreamingAdapter", () => {
         sequence_number: 3,
       } as ResponseStreamEvent);
 
-      // Reasoning done
       const chunks4 = adapter.handleEvent({
         type: "response.output_item.done",
         sequence_number: 4,
@@ -409,7 +525,6 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      // Text output
       const chunks5 = adapter.handleEvent({
         type: "response.output_text.delta",
         delta: "Here is my response",
@@ -425,10 +540,70 @@ describe("createResponsesAPIStreamingAdapter", () => {
       if (chunks3[0].type === "thinking-delta") {
         expect(chunks3[0].data.text).toBe("Thinking...");
       }
-      expect(chunks4).toHaveLength(0);
-      expect(chunks5[0].type).toBe("text");
-      if (chunks5[0].type === "text") {
-        expect(chunks5[0].data.text).toBe("Here is my response");
+      expect(chunks4).toHaveLength(1);
+      expect(chunks4[0].type).toBe("thinking-complete");
+      expect(chunks5).toHaveLength(2);
+      expect(chunks5[0].type).toBe("text-start");
+      expect(chunks5[1].type).toBe("text-delta");
+      if (chunks5[1].type === "text-delta") {
+        expect(chunks5[1].data.text).toBe("Here is my response");
+      }
+    });
+  });
+
+  describe("internal tools", () => {
+    test("should emit internal-tool-start for web_search_call", () => {
+      const adapter = createStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: {
+          id: "ws_123",
+          type: "web_search_call",
+          status: "in_progress",
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("internal-tool-start");
+      if (chunks[0].type === "internal-tool-start") {
+        expect(chunks[0].data.id).toBe("ws_123");
+        expect(chunks[0].data.name).toBe("web_search_call");
+      }
+    });
+
+    test("should emit internal-tool-complete on output_item.done", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: {
+          id: "ws_123",
+          type: "web_search_call",
+          status: "in_progress",
+        },
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "ws_123",
+          type: "web_search_call",
+          status: "completed",
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("internal-tool-complete");
+      if (chunks[0].type === "internal-tool-complete") {
+        expect(chunks[0].data.id).toBe("ws_123");
+        expect(chunks[0].data.name).toBe("web_search_call");
       }
     });
   });

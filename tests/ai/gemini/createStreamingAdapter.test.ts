@@ -1,34 +1,13 @@
 import { FinishReason } from "@google/genai";
 import { describe, expect, test } from "vitest";
-import { createGeminiStreamingAdapter } from "../../../src/ai/gemini/createStreamingAdapter.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
+import { createGeminiStreamingAdapter } from "../../../src/providers/gemini/createStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/providers/types.js";
 
 describe("createGeminiStreamingAdapter", () => {
   describe("basic streaming events", () => {
     test("should handle first chunk and emit start event", () => {
       const adapter = createGeminiStreamingAdapter();
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-        usageMetadata: {
-          promptTokenCount: 10,
-          candidatesTokenCount: 0,
-          totalTokenCount: 10,
-        },
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
+      const chunks = adapter.handleChunk(makeChunk({ parts: [] }));
 
       expect(chunks.length).toBeGreaterThanOrEqual(1);
       expect(chunks[0].type).toBe("start");
@@ -38,141 +17,51 @@ describe("createGeminiStreamingAdapter", () => {
       }
     });
 
-    test("should handle text content", () => {
+    test("should emit text-start before first text-delta", () => {
       const adapter = createGeminiStreamingAdapter();
+      const chunks = adapter.handleChunk(makeChunk({ parts: [{ text: "Hello, world!" }] }));
 
-      // First chunk to initialize
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("text-start");
+      expect(types).toContain("text-delta");
+      expect(types.indexOf("text-start")).toBeLessThan(types.indexOf("text-delta"));
 
-      // Text chunk
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [{ text: "Hello, world!" }],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
-
-      const textChunk = chunks.find((c) => c.type === "text");
-      expect(textChunk).toBeDefined();
-      if (textChunk && textChunk.type === "text") {
-        expect(textChunk.data.text).toBe("Hello, world!");
-        expect(textChunk.data.index).toBe(0);
+      const textDelta = chunks.find((c) => c.type === "text-delta");
+      if (textDelta && textDelta.type === "text-delta") {
+        expect(textDelta.data.text).toBe("Hello, world!");
+        expect(textDelta.data.index).toBe(0);
       }
     });
 
-    test("should handle multiple text chunks", () => {
+    test("should not emit text-start on subsequent text chunks", () => {
       const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Hello" }] }));
+      const chunks = adapter.handleChunk(makeChunk({ parts: [{ text: ", world!" }] }));
 
-      // Initialize
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const types = chunks.map((c) => c.type);
+      expect(types).not.toContain("text-start");
+      expect(types).toContain("text-delta");
 
-      // First text
-      const chunks1 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: "Hello" }] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      // Second text
-      const chunks2 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: ", world!" }] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      const text1 = chunks1.find((c) => c.type === "text");
-      const text2 = chunks2.find((c) => c.type === "text");
-
-      expect(text1).toBeDefined();
-      expect(text2).toBeDefined();
-      if (text1 && text1.type === "text" && text2 && text2.type === "text") {
-        expect(text1.data.text).toBe("Hello");
-        expect(text2.data.text).toBe(", world!");
+      const textDelta = chunks.find((c) => c.type === "text-delta");
+      if (textDelta && textDelta.type === "text-delta") {
+        expect(textDelta.data.text).toBe(", world!");
       }
     });
 
-    test("should handle completion with STOP finish reason", () => {
+    test("should emit text-complete before complete on finish", () => {
       const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Hi" }] }));
 
-      // Initialize
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "Done" }], finishReason: FinishReason.STOP, usage: { promptTokenCount: 10, totalTokenCount: 30 } }),
+      );
 
-      // Completion chunk
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: "Done" }] },
-            finishReason: FinishReason.STOP,
-            index: 0,
-          },
-        ],
-        usageMetadata: {
-          promptTokenCount: 10,
-          candidatesTokenCount: 20,
-          totalTokenCount: 30,
-        },
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("text-complete");
+      expect(types).toContain("complete");
+      expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("complete"));
 
       const completeChunk = chunks.find((c) => c.type === "complete");
-      expect(completeChunk).toBeDefined();
       if (completeChunk && completeChunk.type === "complete") {
         expect(completeChunk.data.finishReason).toBe(AxleStopReason.Stop);
         expect(completeChunk.data.usage.in).toBe(10);
@@ -182,32 +71,11 @@ describe("createGeminiStreamingAdapter", () => {
 
     test("should handle completion with MAX_TOKENS finish reason", () => {
       const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Hi" }] }));
 
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.MAX_TOKENS,
-            index: 0,
-          },
-        ],
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: FinishReason.MAX_TOKENS }),
+      );
 
       const completeChunk = chunks.find((c) => c.type === "complete");
       expect(completeChunk).toBeDefined();
@@ -218,32 +86,11 @@ describe("createGeminiStreamingAdapter", () => {
 
     test("should handle error finish reasons", () => {
       const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [] }));
 
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.SAFETY,
-            index: 0,
-          },
-        ],
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: FinishReason.SAFETY }),
+      );
 
       const errorChunk = chunks.find((c) => c.type === "error");
       expect(errorChunk).toBeDefined();
@@ -255,215 +102,85 @@ describe("createGeminiStreamingAdapter", () => {
   });
 
   describe("thinking content", () => {
-    test("should handle thinking content (Gemini 2.5+)", () => {
+    test("should emit thinking-start before first thinking-delta", () => {
       const adapter = createGeminiStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "Let me think about this...", thought: true }] }),
+      );
 
-      // Initialize
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("thinking-start");
+      expect(types).toContain("thinking-delta");
+      expect(types.indexOf("thinking-start")).toBeLessThan(types.indexOf("thinking-delta"));
 
-      // Thinking chunk
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [{ text: "Let me think about this...", thought: true } as any],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
-
-      const thinkingStart = chunks.find((c) => c.type === "thinking-start");
       const thinkingDelta = chunks.find((c) => c.type === "thinking-delta");
-
-      expect(thinkingStart).toBeDefined();
-      expect(thinkingDelta).toBeDefined();
-
-      if (thinkingStart && thinkingStart.type === "thinking-start") {
-        expect(thinkingStart.data.index).toBe(1);
-      }
       if (thinkingDelta && thinkingDelta.type === "thinking-delta") {
         expect(thinkingDelta.data.text).toBe("Let me think about this...");
-        expect(thinkingDelta.data.index).toBe(1);
+        expect(thinkingDelta.data.index).toBe(0);
       }
     });
 
-    test("should handle multiple thinking deltas", () => {
+    test("should not emit thinking-start on subsequent thinking chunks", () => {
       const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "First, ", thought: true }] }));
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "I need to consider...", thought: true }] }),
+      );
 
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const types = chunks.map((c) => c.type);
+      expect(types).not.toContain("thinking-start");
+      expect(types).toContain("thinking-delta");
 
-      // First thinking chunk
-      const chunks1 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: "First, ", thought: true } as any] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      // Second thinking chunk
-      const chunks2 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [{ text: "I need to consider...", thought: true } as any],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      const delta1 = chunks1.find((c) => c.type === "thinking-delta");
-      const delta2 = chunks2.find((c) => c.type === "thinking-delta");
-
-      expect(delta1).toBeDefined();
-      expect(delta2).toBeDefined();
-
-      if (
-        delta1 &&
-        delta1.type === "thinking-delta" &&
-        delta2 &&
-        delta2.type === "thinking-delta"
-      ) {
-        expect(delta1.data.text).toBe("First, ");
-        expect(delta2.data.text).toBe("I need to consider...");
+      const delta = chunks.find((c) => c.type === "thinking-delta");
+      if (delta && delta.type === "thinking-delta") {
+        expect(delta.data.text).toBe("I need to consider...");
       }
     });
 
-    test("should distinguish between thinking and regular text", () => {
+    test("thinking followed by text produces correct lifecycle", () => {
       const adapter = createGeminiStreamingAdapter();
+      const chunk1 = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "Thinking...", thought: true }] }),
+      );
+      const chunk2 = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "Here's my answer." }] }),
+      );
 
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const allChunks = [...chunk1, ...chunk2];
+      const types = allChunks.map((c) => c.type);
 
-      // Thinking
-      const chunks1 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: "Thinking...", thought: true } as any] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      expect(types).toContain("thinking-start");
+      expect(types).toContain("thinking-delta");
+      expect(types).toContain("thinking-complete");
+      expect(types).toContain("text-start");
+      expect(types).toContain("text-delta");
 
-      // Regular text
-      const chunks2 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.5-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: "Here's my answer." }] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const thinkingCompleteIdx = types.indexOf("thinking-complete");
+      const textStartIdx = types.indexOf("text-start");
+      expect(thinkingCompleteIdx).toBeLessThan(textStartIdx);
+    });
 
-      const thinkingDelta = chunks1.find((c) => c.type === "thinking-delta");
-      const textChunk = chunks2.find((c) => c.type === "text");
+    test("should emit thinking-complete on finish without text", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Thinking...", thought: true }] }));
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: FinishReason.STOP }),
+      );
 
-      expect(thinkingDelta).toBeDefined();
-      expect(textChunk).toBeDefined();
-
-      if (thinkingDelta && thinkingDelta.type === "thinking-delta") {
-        expect(thinkingDelta.data.text).toBe("Thinking...");
-      }
-      if (textChunk && textChunk.type === "text") {
-        expect(textChunk.data.text).toBe("Here's my answer.");
-      }
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("thinking-complete");
+      expect(types.indexOf("thinking-complete")).toBeLessThan(types.indexOf("complete"));
     });
   });
 
   describe("function call events", () => {
     test("should handle function call (buffered, not streamed)", () => {
       const adapter = createGeminiStreamingAdapter();
-
-      // Initialize
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      // Function call chunk
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [
-                {
-                  functionCall: {
-                    name: "search",
-                    args: { query: "test" },
-                  },
-                },
-              ],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ functionCall: { name: "search", args: { query: "test" } } }],
+        }),
+      );
 
       const toolStart = chunks.find((c) => c.type === "tool-call-start");
       const toolComplete = chunks.find((c) => c.type === "tool-call-complete");
@@ -473,7 +190,7 @@ describe("createGeminiStreamingAdapter", () => {
 
       if (toolStart && toolStart.type === "tool-call-start") {
         expect(toolStart.data.name).toBe("search");
-        expect(toolStart.data.index).toBe(1);
+        expect(toolStart.data.index).toBe(0);
       }
       if (toolComplete && toolComplete.type === "tool-call-complete") {
         expect(toolComplete.data.name).toBe("search");
@@ -483,50 +200,14 @@ describe("createGeminiStreamingAdapter", () => {
 
     test("should handle multiple function calls", () => {
       const adapter = createGeminiStreamingAdapter();
-
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
-
-      // Chunk with multiple function calls
-
-      const chunk = {
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [
-                {
-                  functionCall: {
-                    name: "search",
-                    args: { query: "test1" },
-                  },
-                },
-                {
-                  functionCall: {
-                    name: "calculate",
-                    args: { a: 1, b: 2 },
-                  },
-                },
-              ],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      };
-
-      const chunks = adapter.handleChunk(chunk as any);
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [
+            { functionCall: { name: "search", args: { query: "test1" } } },
+            { functionCall: { name: "calculate", args: { a: 1, b: 2 } } },
+          ],
+        }),
+      );
 
       const toolCompletes = chunks.filter((c) => c.type === "tool-call-complete");
       expect(toolCompletes).toHaveLength(2);
@@ -540,60 +221,92 @@ describe("createGeminiStreamingAdapter", () => {
         expect(toolCompletes[1].data.arguments).toEqual({ a: 1, b: 2 });
       }
     });
+
+    test("should close active text before function calls", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Let me search" }] }));
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ functionCall: { name: "search", args: { query: "test" } } }],
+        }),
+      );
+
+      const types = chunks.map((c) => c.type);
+      expect(types).toContain("text-complete");
+      expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("tool-call-start"));
+    });
+
+    test("should use functionCall.id when available", () => {
+      const adapter = createGeminiStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ functionCall: { id: "fc_abc", name: "search", args: {} } }],
+        }),
+      );
+
+      const toolStart = chunks.find((c) => c.type === "tool-call-start");
+      if (toolStart && toolStart.type === "tool-call-start") {
+        expect(toolStart.data.id).toBe("fc_abc");
+      }
+    });
   });
 
   describe("mixed content", () => {
-    test("should handle text followed by function call", () => {
+    test("should handle text followed by function call with correct lifecycle", () => {
       const adapter = createGeminiStreamingAdapter();
+      const chunk1 = adapter.handleChunk(makeChunk({ parts: [{ text: "Let me search for that." }] }));
+      const chunk2 = adapter.handleChunk(
+        makeChunk({
+          parts: [{ functionCall: { name: "search", args: { query: "test" } } }],
+        }),
+      );
 
-      adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      const allChunks = [...chunk1, ...chunk2];
+      const types = allChunks.map((c) => c.type);
 
-      // Text
-      const chunks1 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: { role: "model", parts: [{ text: "Let me search for that." }] },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      expect(types).toContain("text-start");
+      expect(types).toContain("text-delta");
+      expect(types).toContain("text-complete");
+      expect(types).toContain("tool-call-start");
+      expect(types).toContain("tool-call-complete");
 
-      // Function call
-      const chunks2 = adapter.handleChunk({
-        responseId: "resp_123",
-        modelVersion: "gemini-2.0-flash",
-        candidates: [
-          {
-            content: {
-              role: "model",
-              parts: [{ functionCall: { name: "search", args: { query: "test" } } }],
-            },
-            finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
-            index: 0,
-          },
-        ],
-      } as any);
+      expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("tool-call-start"));
+    });
 
-      const textChunk = chunks1.find((c) => c.type === "text");
-      const toolStart = chunks2.find((c) => c.type === "tool-call-start");
-      const toolComplete = chunks2.find((c) => c.type === "tool-call-complete");
+    test("function call with STOP sets finishReason to FunctionCall", () => {
+      const adapter = createGeminiStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ functionCall: { name: "search", args: {} } }],
+          finishReason: FinishReason.STOP,
+        }),
+      );
 
-      expect(textChunk).toBeDefined();
-      expect(toolStart).toBeDefined();
-      expect(toolComplete).toBeDefined();
+      const complete = chunks.find((c) => c.type === "complete");
+      if (complete && complete.type === "complete") {
+        expect(complete.data.finishReason).toBe(AxleStopReason.FunctionCall);
+      }
     });
   });
 });
+
+// Helpers
+
+function makeChunk(options: {
+  parts: any[];
+  finishReason?: FinishReason;
+  usage?: { promptTokenCount?: number; totalTokenCount?: number };
+}) {
+  return {
+    responseId: "resp_123",
+    modelVersion: "gemini-2.0-flash",
+    candidates: [
+      {
+        content: { role: "model", parts: options.parts },
+        finishReason: options.finishReason ?? FinishReason.FINISH_REASON_UNSPECIFIED,
+        index: 0,
+      },
+    ],
+    ...(options.usage && { usageMetadata: options.usage }),
+  } as any;
+}

@@ -1,3 +1,4 @@
+export * from "./Agent.js";
+export * from "./compile.js";
 export * from "./Instruct.js";
-export * from "./ChainOfThought.js";
-export * from "./types.js";
+export * from "./parse.js";

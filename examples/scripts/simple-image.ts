@@ -1,24 +1,18 @@
-import { config } from "dotenv";
-import { Axle, Instruct } from "../../src/index.js";
-import { getAxle } from "./helper.js";
-config();
+import { Agent, Instruct, loadFileContent } from "../../src/index.js";
+import { useCLIHelper } from "./helper.js";
+
+const [provider, model] = useCLIHelper();
 
 async function analyzeImage() {
-  const imageFile = await Axle.loadFileContent(
-    "./examples/data/economist-brainy-imports.png",
-  );
+  const imageFile = await loadFileContent("./examples/data/economist-brainy-imports.png");
 
-  const instruct = Instruct.with(
-    "What are the data that is shown in the image.",
-    { description: "string" },
-  );
-  instruct.addImage(imageFile);
+  const instruct = new Instruct("What are the data that is shown in the image.");
+  instruct.addFile(imageFile);
 
-  const axle = getAxle();
+  const agent = new Agent({ provider, model });
+  const result = await agent.send(instruct).final;
 
-  const result = await axle.execute(instruct);
-  console.log(result);
-  console.log((instruct.result as any)?.description);
+  console.log(result.response);
 }
 
 analyzeImage();

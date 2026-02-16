@@ -1,16 +1,9 @@
-# yaml-language-server: $schema=../../schemas/v1/job.yaml
-using:
-  # engine: openai
-  # engine: google
-  engine: anthropic
-  # engine: ollama
-  # model: qwen3:32b
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: anthropic
 
-jobs:
-  calculate:
-    steps:
-      - uses: chat
-        message: |
-          Use the calculator tool to add 2 and 2 together.
-        tools:
-          - calculator
+task: |
+  Use the calculator tool to add 2 and 2 together.
+
+tools:
+  - calculator

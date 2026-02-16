@@ -1,32 +1,48 @@
-import * as z from "zod";
-import { AbstractInstruct } from "./AbstractInstruct.js";
-import { declarativeToOutputSchema, isOutputSchema } from "./typecheck.js";
-import { DeclarativeSchema, OutputSchema } from "./types.js";
+import { Base64FileInfo, FileInfo, isBase64FileInfo, isTextFileInfo } from "../utils/file.js";
+import type { OutputSchema } from "./parse.js";
 
-export class Instruct<T extends OutputSchema> extends AbstractInstruct<T> {
-  constructor(prompt: string, schema: T) {
-    super(prompt, schema);
+export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
+  prompt: string;
+  inputs: Record<string, string> = {};
+  files: Base64FileInfo[] = [];
+  textReferences: Array<{ content: string; name?: string }> = [];
+  instructions: string[] = [];
+
+  schema: TSchema;
+
+  constructor(prompt: string, schema?: TSchema) {
+    this.prompt = prompt;
+    this.schema = schema as TSchema;
   }
 
-  static with<T extends OutputSchema>(prompt: string, schema: T): Instruct<T>;
-  static with<T extends DeclarativeSchema>(
-    prompt: string,
-    schema: T,
-  ): Instruct<OutputSchema>;
-  static with(prompt: string): Instruct<{ response: z.ZodString }>;
-  static with<T extends OutputSchema | DeclarativeSchema>(
-    prompt: string,
-    schema?: T,
-  ): any {
-    if (!schema) {
-      return new Instruct(prompt, { response: z.string() });
-    }
+  setInputs(inputs: Record<string, string>) {
+    this.inputs = inputs;
+  }
 
-    if (isOutputSchema(schema)) {
-      return new Instruct(prompt, schema);
-    } else {
-      const schemaRecord = declarativeToOutputSchema(schema);
-      return new Instruct(prompt, schemaRecord);
+  addInput(name: string, value: string) {
+    this.inputs[name] = value;
+  }
+
+  addFile(file: FileInfo | string, options?: { name?: string }) {
+    if (typeof file === "string") {
+      this.textReferences.push({ content: file, name: options?.name });
+      return;
     }
+    if (isBase64FileInfo(file)) {
+      this.files.push(file);
+    } else if (isTextFileInfo(file)) {
+      this.textReferences.push({ content: file.content, name: options?.name ?? file.name });
+    }
+  }
+
+  addInstructions(instruction: string) {
+    if (typeof instruction !== "string" || instruction.trim() === "") {
+      throw new Error("Instruction must be a non-empty string");
+    }
+    this.instructions.push(instruction);
+  }
+
+  hasFiles(): boolean {
+    return this.files.length > 0;
   }
 }

@@ -1,10 +1,10 @@
 import { z } from "zod";
 import {
   AnthropicProviderConfig as AnthropicConfig,
+  ChatCompletionsProviderConfig as ChatCompletionsConfig,
   GeminiProviderConfig as GeminiConfig,
-  OllamaProviderConfig as OllamaConfig,
   OpenAIProviderConfig as OpenAIConfig,
-} from "../../ai/types.js";
+} from "../../providers/types.js";
 
 /* ============================================================================
  * Validation Error Type
@@ -28,33 +28,42 @@ export const BraveProviderConfigSchema = z.object({
 
 export type BraveProviderConfig = z.infer<typeof BraveProviderConfigSchema>;
 
-// AI Provider Use - Discriminated by 'engine'
-const OllamaProviderUseSchema = z
+// Exec Provider
+export const ExecProviderConfigSchema = z.object({
+  timeout: z.number().optional(),
+  maxBuffer: z.number().optional(),
+  cwd: z.string().optional(),
+});
+
+export type ExecProviderConfig = z.infer<typeof ExecProviderConfigSchema>;
+
+// AI Provider Use - Discriminated by 'type'
+const ChatCompletionsProviderUseSchema = z
   .object({
-    engine: z.literal("ollama"),
+    type: z.literal("chatcompletions"),
   })
   .loose();
 
 const AnthropicProviderUseSchema = z
   .object({
-    engine: z.literal("anthropic"),
+    type: z.literal("anthropic"),
   })
   .loose();
 
 const OpenAIProviderUseSchema = z
   .object({
-    engine: z.literal("openai"),
+    type: z.literal("openai"),
   })
   .loose();
 
 const GeminiProviderUseSchema = z
   .object({
-    engine: z.literal("gemini"),
+    type: z.literal("gemini"),
   })
   .loose();
 
-export const AIProviderUseSchema = z.discriminatedUnion("engine", [
-  OllamaProviderUseSchema,
+export const AIProviderUseSchema = z.discriminatedUnion("type", [
+  ChatCompletionsProviderUseSchema,
   AnthropicProviderUseSchema,
   OpenAIProviderUseSchema,
   GeminiProviderUseSchema,
@@ -65,7 +74,7 @@ export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 // Service Config
 export const ServiceConfigSchema = z
   .object({
-    ollama: z.custom<OllamaConfig>().optional(),
+    chatcompletions: z.custom<ChatCompletionsConfig>().optional(),
     anthropic: z.custom<AnthropicConfig>().optional(),
     openai: z.custom<OpenAIConfig>().optional(),
     gemini: z.custom<GeminiConfig>().optional(),
@@ -77,169 +86,31 @@ export type ServiceConfig = z.infer<typeof ServiceConfigSchema>;
 
 export type ToolProviderConfig = {
   brave?: BraveProviderConfig;
+  exec?: ExecProviderConfig;
 };
 
 /* ============================================================================
- * Reference Schemas
+ * Batch Config Schema
  * ========================================================================== */
 
-export const ImageReferenceSchema = z.object({
-  file: z.string(),
+export const BatchConfigSchema = z.object({
+  files: z.string(),
+  resume: z.boolean().default(false),
+  concurrency: z.number().int().positive().default(3),
 });
 
-export const DocumentReferenceSchema = z.object({
-  file: z.string(),
-});
-
-export const TextFileReferenceSchema = z.object({
-  file: z.string(),
-});
-
-export type ImageReference = z.infer<typeof ImageReferenceSchema>;
-export type DocumentReference = z.infer<typeof DocumentReferenceSchema>;
-export type TextFileReference = z.infer<typeof TextFileReferenceSchema>;
-
-/* ============================================================================
- * Replace Schema
- * ========================================================================== */
-
-export const ReplaceSchema = z.object({
-  source: z.literal("file"),
-  pattern: z.string(),
-  files: z.union([z.string(), z.array(z.string())]),
-});
-
-export type Replace = z.infer<typeof ReplaceSchema>;
-
-/* ============================================================================
- * Skip Options Schema
- * ========================================================================== */
-
-export const SkipOptionsSchema = z.object({
-  type: z.literal("file-exist"),
-  pattern: z.string(),
-});
-
-export type SkipOptions = z.infer<typeof SkipOptionsSchema>;
-
-/* ============================================================================
- * Batch Options Schema
- * ========================================================================== */
-
-export const BatchOptionsSchema = z.object({
-  type: z.literal("files"),
-  source: z.string(),
-  bind: z.string(),
-  "skip-if": z.array(SkipOptionsSchema).optional(),
-});
-
-export type BatchOptions = z.infer<typeof BatchOptionsSchema>;
-
-/* ============================================================================
- * Step Schemas - Discriminated by 'uses'
- * ========================================================================== */
-
-export const ChatStepSchema = z.object({
-  uses: z.literal("chat"),
-  system: z.string().optional(),
-  message: z.string(),
-  output: z.record(z.string(), z.any()).optional(),
-  replace: z.array(ReplaceSchema).optional(),
-  tools: z.array(z.string()).optional(),
-  images: z.array(ImageReferenceSchema).optional(),
-  documents: z.array(DocumentReferenceSchema).optional(),
-  references: z.array(TextFileReferenceSchema).optional(),
-});
-
-export const WriteToDiskStepSchema = z.object({
-  uses: z.literal("write-to-disk"),
-  output: z.string(),
-  keys: z.union([z.string(), z.array(z.string())]).optional(),
-});
-
-export const StepSchema = z.discriminatedUnion("uses", [ChatStepSchema, WriteToDiskStepSchema]);
-
-export type ChatStep = z.infer<typeof ChatStepSchema>;
-export type WriteToDiskStep = z.infer<typeof WriteToDiskStepSchema>;
-export type Step = z.infer<typeof StepSchema>;
-
-/* ============================================================================
- * Job Schemas - Discriminator added via preprocess
- * ========================================================================== */
-
-// Output schemas (with discriminator)
-const SerialJobSchema = z.object({
-  type: z.literal("serial"),
-  tools: z.array(z.string()).optional(),
-  steps: z.array(StepSchema),
-});
-
-const BatchJobSchema = z.object({
-  type: z.literal("batch"),
-  tools: z.array(z.string()).optional(),
-  batch: z.array(BatchOptionsSchema),
-  steps: z.array(StepSchema),
-});
-
-// Preprocess to add discriminator, then validate with discriminated union
-export const JobSchema = z.preprocess(
-  (data: any) => {
-    // Add the type discriminator based on presence of batch
-    if (data.batch && data.batch.length > 0) {
-      return { ...data, type: "batch" };
-    }
-    return { ...data, type: "serial" };
-  },
-  z.discriminatedUnion("type", [SerialJobSchema, BatchJobSchema]),
-);
-
-export type Job = z.infer<typeof JobSchema>;
-export type SerialJob = Extract<Job, { type: "serial" }>;
-export type BatchJob = Extract<Job, { type: "batch" }>;
-
-/* ============================================================================
- * DAG Job Schema
- * ========================================================================== */
-
-// Output schemas (SerialJob/BatchJob with optional dependsOn)
-const SerialDAGJobValueSchema = z.object({
-  type: z.literal("serial"),
-  tools: z.array(z.string()).optional(),
-  steps: z.array(StepSchema),
-  dependsOn: z.union([z.string(), z.array(z.string())]).optional(),
-});
-
-const BatchDAGJobValueSchema = z.object({
-  type: z.literal("batch"),
-  tools: z.array(z.string()).optional(),
-  batch: z.array(BatchOptionsSchema),
-  steps: z.array(StepSchema),
-  dependsOn: z.union([z.string(), z.array(z.string())]).optional(),
-});
-
-// Preprocess to add discriminator, then validate with discriminated union
-const DAGJobValueSchema = z.preprocess(
-  (data: any) => {
-    // Add the type discriminator based on presence of batch
-    if (data.batch && data.batch.length > 0) {
-      return { ...data, type: "batch" };
-    }
-    return { ...data, type: "serial" };
-  },
-  z.discriminatedUnion("type", [SerialDAGJobValueSchema, BatchDAGJobValueSchema]),
-);
-
-export const DAGJobSchema = z.record(z.string(), DAGJobValueSchema);
-
-export type DAGJob = z.infer<typeof DAGJobSchema>;
+export type BatchConfig = z.infer<typeof BatchConfigSchema>;
 
 /* ============================================================================
  * Job Config Schema
  * ========================================================================== */
 
 export const JobConfigSchema = z.object({
-  using: AIProviderUseSchema,
-  jobs: DAGJobSchema,
+  provider: AIProviderUseSchema,
+  task: z.string(),
+  tools: z.array(z.string()).optional(),
+  files: z.array(z.string()).optional(),
+  batch: BatchConfigSchema.optional(),
 });
 
 export type JobConfig = z.infer<typeof JobConfigSchema>;

@@ -1,24 +1,298 @@
-# Axle: AI eXecution and Logic Engine
+# Axle
 
-Axle is a CLI tool and library for building composable LLM workflows. Inspired by [DSPy](https://dspy.ai), it began as a command-line utility and has since evolved into a general-purpose workflow library.
+Axle is a TypeScript library for building multi-turn LLM agents. It provides a
+small, focused API for building agentic applications.
 
-The project is evolving quickly and the API is still unstable, so this README will remain minimal for now.
+## Quick Start
 
-To get started, see the [examples](https://github.com/johncch/axle/tree/main/examples) directory.
+```typescript
+import { Agent, Instruct, anthropic } from "@fifthrevision/axle";
 
-## Configuration
-For CLI use, you will need to provide a `ax.config.yml` where you're running the tool.
+const provider = anthropic(process.env.ANTHROPIC_API_KEY);
+const agent = new Agent({ provider, model: "claude-sonnet-4-5-20250929" });
 
-Here's what it looks like. Every field is optional depending on the provider you want to use.
+const r1 = await agent.send("What is the capital of France?").final;
+console.log(r1.response); // "Paris is the capital of France."
 
+// Multi-turn — history is managed automatically
+const r2 = await agent.send("And what about Germany?").final;
 ```
+
+## Philosophy
+
+Axle has two big goals
+
+1. A small, focused, and ergonomic interface for building agents. The Agent,
+   Instruct, and other APIs are the entire surface, and there is a lot of thought
+   to make them distinct and composable.
+2. Systematic prompt improvement. Log what was sent, validate what came back, feed
+   learnings into the next run. (This is where the roadmap is headed.)
+
+Axle started as a DSPy-inspired workflow tool. As models got better with reasoning
+and tool use, rigid workflow graphs felt unnecessary — but the goals behind them
+(structured output, verification, multi-step reasoning) didn't go away. The project
+shifted toward making those capabilities composable primitives rather than
+fixed pipelines.
+
+### Roadmap
+
+- **Memory:** Ways to remember previous runs to retrieve them and add them back
+  into the prompt for future runs.
+- **Verification:** Automatic and manual ways to verify the output hits goals
+
+## Core Concepts
+
+### Agent
+
+Agent is the primary interface. It owns the provider, model, system prompt,
+tools, and conversation history. `send()` is the only verb — it accepts either a
+plain string or an Instruct.
+
+```typescript
+const agent = new Agent({
+  provider: anthropic(apiKey),
+  model: "claude-sonnet-4-5-20250929",
+  system: "You are a helpful assistant.",
+  tools: [calculatorTool],
+});
+```
+
+### Instruct
+
+Instruct is a rich message. Use it when you need structured output, file
+attachments, variable substitution, or additional instructions.
+
+```typescript
+import * as z from "zod";
+
+const instruct = new Instruct("Summarize the following document.", {
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+});
+instruct.addFile(await loadFileContent("./report.pdf"));
+
+const result = await agent.send(instruct).final;
+// result.response is { summary: string, keyPoints: string[] }
+```
+
+For plain text interactions, pass a string directly to `send()` instead.
+
+### Providers
+
+Axle ships with first-party support for Anthropic, OpenAI, and Gemini, plus a
+generic ChatCompletions provider for any OpenAI-compatible API.
+
+```typescript
+import { anthropic, openai, gemini, chatCompletions } from "@fifthrevision/axle";
+
+const a = anthropic(process.env.ANTHROPIC_API_KEY);
+const o = openai(process.env.OPENAI_API_KEY);
+const g = gemini(process.env.GEMINI_API_KEY);
+const local = chatCompletions("http://localhost:11434/v1");
+```
+
+### `stream()` and `generate()`
+
+Agent is built on two lower-level primitives that can be used directly when you
+want full control without conversation management.
+
+`stream()` runs a tool loop over a streaming request and returns a handle with
+callbacks for real-time output:
+
+```typescript
+import { stream } from "@fifthrevision/axle";
+
+const handle = stream({
+  provider,
+  model,
+  messages: [{ role: "user", content: "Hello" }],
+  tools: [myTool],
+  onToolCall: async (name, params) => ({ type: "success", content: "result" }),
+});
+
+handle.onPartUpdate((index, type, delta) => process.stdout.write(delta));
+const result = await handle.final;
+```
+
+`generate()` does the same but without streaming — it returns the final result
+directly as a promise:
+
+```typescript
+import { generate } from "@fifthrevision/axle";
+
+const result = await generate({
+  provider,
+  model,
+  messages: [{ role: "user", content: "Hello" }],
+  tools: [myTool],
+  onToolCall: async (name, params) => ({ type: "success", content: "result" }),
+});
+```
+
+Both handle the full tool-call loop automatically. Agent uses `stream()`
+internally and adds history management, system prompt, and callback wiring on
+top.
+
+## Details
+
+### Structured Output
+
+Pass a Zod schema as the second argument to Instruct. Axle compiles the schema
+into output format instructions, then parses the response back into typed
+objects.
+
+```typescript
+import * as z from "zod";
+
+const instruct = new Instruct("Tell me about Mars.", {
+  name: z.string(),
+  distanceFromSun: z.number(),
+  moons: z.array(z.string()),
+});
+
+const agent = new Agent({ provider, model });
+const result = await agent.send(instruct).final;
+
+result.response.name; // string
+result.response.distanceFromSun; // number
+result.response.moons; // string[]
+```
+
+### Tools
+
+A tool is an object with a name, description, Zod schema, and an `execute`
+function. Pass tools to the Agent constructor.
+
+```typescript
+import { z } from "zod";
+
+const weatherTool = {
+  name: "getWeather",
+  description: "Get current weather for a city",
+  schema: z.object({ city: z.string() }),
+  async execute(input) {
+    return JSON.stringify({ temp: 72, condition: "sunny" });
+  },
+};
+
+const agent = new Agent({
+  provider,
+  model,
+  tools: [weatherTool],
+});
+```
+
+Axle includes several built-in tools: `braveSearchTool`, `calculatorTool`,
+`execTool`, `readFileTool`, `writeFileTool`, and `patchFileTool`.
+
+### Streaming
+
+Agent exposes callbacks for streaming output as it arrives.
+
+```typescript
+const agent = new Agent({ provider, model });
+
+agent.onPartStart((index, type) => {
+  /* text, tool-call, thinking */
+});
+agent.onPartUpdate((index, type, delta) => process.stdout.write(delta));
+agent.onPartEnd((index, type) => {
+  /* part finished */
+});
+agent.onError((error) => console.error(error));
+
+const handle = agent.send("Write me a poem.");
+// handle.cancel() to abort mid-stream
+const result = await handle.final;
+```
+
+Callbacks are registered once and fire on every subsequent `send()`.
+
+## Known Limitations
+
+1. Axle does not support multi-modal output right now.
+
+## CLI
+
+In accordance to Axle's lineage of a workflow tool, Axle exposes a command
+line interface that accepts a declarative config file.
+
+### Installation
+
+```bash
+npm install -g @fifthrevision/axle
+```
+
+### Usage
+
+The CLI looks for `axle.job.yaml` and `axle.config.yaml` in the current
+directory by default. You can also specify them using the `-j` and `-c` flags
+
+```bash
+axle
+axle -j path/to/job.yaml -c path/to/config.yaml
+axle --args key=value other=thing
+axle --debug
+```
+
+A job file specifies the provider, task prompt, and optional tools/files:
+
+```yaml
+# axle.job.yaml
+provider:
+  type: anthropic
+  model: claude-sonnet-4-5-20250929
+
+task: |
+  Summarize the attached document.
+
+tools:
+  - calculator
+
+files:
+  - ./data/report.txt
+```
+
+### Batch
+
+Add a `batch` key to the job file to run the same task across multiple files.
+Each matched file is attached to the instruct automatically.
+
+```yaml
+# axle.job.yaml
+provider:
+  type: openai
+
+task: |
+  Summarize this file.
+
+batch:
+  files: "./data/*.txt"
+  concurrency: 3
+  resume: true
+```
+
+- `files` — glob pattern for input files
+- `concurrency` — max parallel runs (default 3)
+- `resume` — skip files already processed in a previous run
+
+### Configuration
+
+For CLI use, create an `axle.config.yaml` in your working directory with API
+keys:
+
+```yaml
+# axle.config.yaml
 openai:
   api-key: "<api-key>"
 anthropic:
   api-key: "<api-key>"
-ollama:
-  url: "<url>"
-brave:
+gemini:
   api-key: "<api-key>"
-  rateLimit: 1
+chatcompletions:
+  base-url: "http://localhost:11434/v1"
+  model: "llama3"
+  api-key: "<api-key>" # optional
 ```
+
+Provider-level keys in the job file override the config file.

@@ -6,6 +6,7 @@ export interface Tool<TSchema extends ZodObject<any> = ZodObject<any>> {
   schema: TSchema;
   execute(input: z.infer<TSchema>): Promise<string>;
   configure?(config: Record<string, any>): void;
+  summarize?(input: z.infer<TSchema>): string;
 }
 
 export type ToolDefinition = Pick<Tool, "name" | "description" | "schema">;

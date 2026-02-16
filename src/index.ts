@@ -1,36 +1,25 @@
 // Core
-export { Axle } from "./core/Axle.js";
-export { ChainOfThought, Instruct } from "./core/index.js";
+export { Agent } from "./core/Agent.js";
+export type { AgentConfig, AgentHandle, AgentResult } from "./core/Agent.js";
+export { compileInstruct } from "./core/compile.js";
+export { Instruct } from "./core/index.js";
+export { parseResponse } from "./core/parse.js";
 
 // AI Providers
-export * as Anthropic from "./ai/anthropic/index.js";
-export * as Gemini from "./ai/gemini/index.js";
-export { generate, generateWithTools, stream } from "./ai/index.js";
-export * as Ollama from "./ai/ollama/index.js";
-export * as OpenAI from "./ai/openai/index.js";
-export { AxleStopReason } from "./ai/types.js";
-export type { AIProvider } from "./ai/types.js";
+export { Anthropic, anthropic } from "./providers/anthropic/index.js";
+export { chatCompletions } from "./providers/chatcompletions/index.js";
+export { Gemini, gemini } from "./providers/gemini/index.js";
+export { generate, generateTurn, stream } from "./providers/index.js";
+export { OpenAI, openai } from "./providers/openai/index.js";
+export { AxleStopReason } from "./providers/types.js";
+export type { AIProvider } from "./providers/types.js";
 
 // Tools
 export { braveSearchTool, calculatorTool } from "./tools/index.js";
 export type { Tool, ToolDefinition } from "./tools/types.js";
 
-// Actions
-export type { Action, ActionContext, WorkflowStep } from "./actions/types.js";
-export { WriteToDisk } from "./actions/writeToDisk.js";
-
-// Workflows
-export { concurrentWorkflow } from "./workflows/concurrent.js";
-export { dagWorkflow } from "./workflows/dag.js";
-export { serialWorkflow } from "./workflows/serial.js";
-export type {
-  DAGDefinition,
-  DAGWorkflowOptions,
-  SerializedExecutionResponse,
-} from "./workflows/types.js";
-
 // Messages
-export { Conversation } from "./messages/conversation.js";
+export { History } from "./messages/history.js";
 export type {
   AxleAssistantMessage,
   AxleMessage,
@@ -42,9 +31,20 @@ export type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-} from "./messages/types.js";
+} from "./messages/message.js";
+
+// Tracer
+export { SimpleWriter, Tracer } from "./tracer/index.js";
+export type {
+  EventLevel,
+  SimpleWriterOptions,
+  SpanData,
+  SpanOptions,
+  SpanType,
+  TraceWriter,
+  TracingContext,
+} from "./tracer/index.js";
 
 // Utils
-export { ConsoleWriter } from "./recorder/consoleWriter.js";
-export { LogLevel } from "./recorder/types.js";
+export { loadFileContent } from "./utils/file.js";
 export type { FileInfo } from "./utils/file.js";

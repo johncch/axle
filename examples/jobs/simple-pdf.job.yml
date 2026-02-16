@@ -1,12 +1,9 @@
-# yaml-language-server: $schema=../../schemas/v1/job.yaml
-using:
-  engine: gemini
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: gemini
 
-jobs:
-  pdf:
-    steps:
-      - uses: chat
-        message: |
-          Get me the first paragraph of the document.
-        documents:
-          - file: examples/data/designing-a-new-foundation.pdf
+task: |
+  Get me the first paragraph of the document.
+
+files:
+  - examples/data/designing-a-new-foundation.pdf

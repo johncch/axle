@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
-import { createGenerationRequest } from "../../../src/ai/anthropic/createGenerationRequest.js";
-import { AxleStopReason } from "../../../src/ai/types.js";
-import { Conversation } from "../../../src/messages/conversation.js";
+import { History } from "../../../src/messages/history.js";
+import { createGenerationRequest } from "../../../src/providers/anthropic/createGenerationRequest.js";
+import { AxleStopReason } from "../../../src/providers/types.js";
 
 describe("createGenerationRequest (Anthropic)", () => {
   let mockClient: Anthropic;
@@ -29,7 +29,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -59,7 +59,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -88,7 +88,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -123,7 +123,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       await createGenerationRequest({
@@ -154,7 +154,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -195,7 +195,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Search for test");
 
       const result = await createGenerationRequest({
@@ -236,7 +236,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 30 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Question");
 
       const result = await createGenerationRequest({
@@ -265,7 +265,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 100 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Write a long essay");
 
       const result = await createGenerationRequest({
@@ -286,7 +286,7 @@ describe("createGenerationRequest (Anthropic)", () => {
     test("should handle network errors", async () => {
       (mockCreate.mockRejectedValue as any)(new Error("Network error"));
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -307,7 +307,7 @@ describe("createGenerationRequest (Anthropic)", () => {
       (apiError as any).status = 429;
       (mockCreate.mockRejectedValue as any)(apiError);
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -331,7 +331,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -360,7 +360,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -384,7 +384,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 0 },
       });
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({
@@ -414,7 +414,7 @@ describe("createGenerationRequest (Anthropic)", () => {
 
       (mockCreate.mockResolvedValue as any)(mockResponse);
 
-      const chat = new Conversation();
+      const chat = new History();
       chat.addUser("Hello");
 
       const result = await createGenerationRequest({

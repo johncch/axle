@@ -1,5 +1,20 @@
 import { Command, Option } from "commander";
-import { Axle } from "../../src/index.js";
+import dotenv from "dotenv";
+import {
+  Anthropic,
+  anthropic,
+  chatCompletions,
+  Gemini,
+  gemini,
+  OpenAI,
+  openai,
+} from "../../src/index.js";
+import { AIProvider } from "../../src/providers/types.js";
+dotenv.config();
+
+/**
+ * This file contains a bunch of helpers to parse provider and model names.
+ */
 
 const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
 type ProviderNames = (typeof PROVIDERS)[number];
@@ -19,6 +34,7 @@ program
       .default("ollama"),
   )
   .option("-m, --model <model>", "LLM model to use")
+  .option("-u, --url <url>", "URL for the provider if necessary")
   .addOption(
     new Option("-t, --type <type>", "Instruct subclass to use")
       .choices(INSTRUCT_TYPES)
@@ -27,50 +43,39 @@ program
   .parse(process.argv);
 const options = program.opts() as CommandOptions;
 
-export function getAxle(): Axle {
-  const providers = getProviderOption();
-  const provider = providers[0];
-  const axle = getProvider(provider);
-  console.log(`Using ${axle.provider.name} with model ${axle.provider.model}`);
-  return axle;
-}
-
-export function getAxles(): Array<Axle> {
-  const axles = [];
-  const providers = getProviderOption();
-  for (const provider of providers) {
-    axles.push(getProvider(provider));
-  }
-  return axles;
+/**
+ * The helper for scripts to parse command line options and get a model
+ * @returns
+ */
+export function useCLIHelper(): [AIProvider, string] {
+  const providerOptions = getProviderOption();
+  const firstProviderOption = providerOptions[0];
+  const provider = getProvider(firstProviderOption);
+  const model = options.model ?? getModel(firstProviderOption);
+  console.log(`[Helper] Using ${provider.name} with model ${model}`);
+  return [provider, model];
 }
 
 /**
  *
  * @returns Every provider the library supports with the "default" model
  */
-export function getAllAxles(): Array<Axle> {
-  const axles = [];
+export function useAllProviders(): Array<[AIProvider, string]> {
+  const providers: Array<[AIProvider, string]> = [];
   for (const provider of PROVIDERS) {
-    axles.push(getProvider(provider));
+    providers.push([getProvider(provider), getModel(provider)]);
   }
-  return axles;
+  return providers;
 }
 
-function getProvider(provider: ProviderNames): Axle {
-  let axle: Axle;
+function getProvider(provider: ProviderNames): AIProvider {
   switch (provider) {
     case "openai": {
       if (!process.env.OPENAI_API_KEY) {
         console.error("OPENAI_API_KEY not found. Check your .env file");
         process.exit(1);
       }
-      axle = new Axle({
-        openai: {
-          "api-key": process.env.OPENAI_API_KEY,
-          model: options.model,
-        },
-      });
-      break;
+      return openai(process.env.OPENAI_API_KEY);
     }
 
     case "gemini": {
@@ -78,13 +83,7 @@ function getProvider(provider: ProviderNames): Axle {
         console.error("GEMINI_API_KEY not found. Check your .env file");
         process.exit(1);
       }
-      axle = new Axle({
-        gemini: {
-          "api-key": process.env.GEMINI_API_KEY,
-          model: options.model,
-        },
-      });
-      break;
+      return gemini(process.env.GEMINI_API_KEY);
     }
 
     case "anthropic": {
@@ -92,23 +91,27 @@ function getProvider(provider: ProviderNames): Axle {
         console.error("ANTHROPIC_API_KEY not found. Check your .env file");
         process.exit(1);
       }
-      axle = new Axle({
-        anthropic: {
-          "api-key": process.env.ANTHROPIC_API_KEY,
-          model: options.model,
-        },
-      });
-      break;
+      return anthropic(process.env.ANTHROPIC_API_KEY);
     }
 
     case "ollama":
     default: {
-      axle = new Axle({
-        ollama: { model: options.model ?? "gpt-oss:20b" },
-      });
+      return chatCompletions("http://localhost:11434/v1");
     }
   }
-  return axle;
+}
+
+function getModel(provider: ProviderNames) {
+  switch (provider) {
+    case "openai":
+      return OpenAI.DefaultModel;
+    case "gemini":
+      return Gemini.DefaultModel;
+    case "anthropic":
+      return Anthropic.DefaultModel;
+    case "ollama":
+      return "gemma3:12b";
+  }
 }
 
 function getProviderOption(): ProviderNames[] {
@@ -117,8 +120,4 @@ function getProviderOption(): ProviderNames[] {
   } else {
     return [options.provider];
   }
-}
-
-export function getOptions(): CommandOptions {
-  return options;
 }

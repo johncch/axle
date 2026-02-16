@@ -20,6 +20,7 @@
 
 # Code Style Guidelines
 
+- **Functional style**: Prefer functions returning objects over classes. This is a functional library — use closures, not `this`.
 - **Imports**: ES modules, use node: prefix for Node.js modules
 - **Formatting**: 2-space indentation, Prettier with organize-imports plugin
 - **Types**: Strong TypeScript typing, explicit function parameters and returns

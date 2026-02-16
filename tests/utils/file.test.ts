@@ -142,41 +142,28 @@ describe("file module", () => {
       });
     });
 
+    describe("mime-based file type detection", () => {
+      it("should detect text-like files as utf-8", () => {
+        expect(getEncodingForFile("script.js")).toBe("utf-8");
+        expect(getEncodingForFile("style.css")).toBe("utf-8");
+        expect(getEncodingForFile("data.json")).toBe("utf-8");
+        expect(getEncodingForFile("config.yml")).toBe("utf-8");
+        expect(getEncodingForFile("data.csv")).toBe("utf-8");
+      });
+
+      it("should detect svg as image (base64)", () => {
+        expect(getEncodingForFile("./src/components/icons/arrow.svg")).toBe("base64");
+      });
+
+      it("should throw for unsupported binary types", () => {
+        expect(() => getEncodingForFile("video.mp4")).toThrow("Unsupported file type");
+        expect(() => getEncodingForFile("audio.mp3")).toThrow("Unsupported file type");
+        expect(() => getEncodingForFile("archive.zip")).toThrow("Unsupported file type");
+      });
+    });
+
     describe("unsupported file types", () => {
-      it("should throw error for unsupported extensions", () => {
-        const unsupportedFiles = [
-          "script.js",
-          "style.css",
-          "data.json",
-          "config.yml",
-          "archive.zip",
-          "video.mp4",
-          "audio.mp3",
-          "document.docx",
-          "spreadsheet.xlsx",
-          "presentation.pptx",
-        ];
-
-        unsupportedFiles.forEach((file) => {
-          expect(() => getEncodingForFile(file)).toThrow();
-        });
-      });
-
-      it("should provide helpful error message with supported types", () => {
-        try {
-          getEncodingForFile("script.js");
-          expect.fail("Expected error to be thrown");
-        } catch (error) {
-          expect(error.message).toContain("Unsupported file type:");
-          expect(error.message).toContain("Supported types:");
-          expect(error.message).toContain(".txt");
-          expect(error.message).toContain(".md");
-          expect(error.message).toContain(".png");
-          expect(error.message).toContain(".pdf");
-        }
-      });
-
-      it("should handle files without extensions", () => {
+      it("should throw error for files without extensions", () => {
         expect(() => getEncodingForFile("README")).toThrow();
         expect(() => getEncodingForFile("/path/to/file")).toThrow();
       });
@@ -201,11 +188,6 @@ describe("file module", () => {
       it("should handle relative paths", () => {
         expect(getEncodingForFile("../docs/guide.txt")).toBe("utf-8");
         expect(getEncodingForFile("../../assets/logo.png")).toBe("base64");
-      });
-
-      it("should handle complex paths", () => {
-        expect(() => getEncodingForFile("./src/components/icons/arrow.svg")).toThrow();
-        expect(() => getEncodingForFile("../../../backup/data/export.csv")).toThrow();
       });
 
       it("should handle Windows-style paths", () => {
@@ -282,13 +264,14 @@ describe("file module", () => {
       );
     });
 
-    it("should throw error for unsupported file type", async () => {
+    it("should load .js files as text with mime detection", async () => {
       const filePath = join(TEST_DIR, "test.js");
       await writeFile(filePath, "console.log('test');");
 
-      await expect(loadFileContent(filePath, "utf-8")).rejects.toThrow(
-        "Unsupported text file type: .js. Supported types: .txt, .md, .markdown",
-      );
+      const result = await loadFileContent(filePath, "utf-8");
+      expect(result.content).toBe("console.log('test');");
+      expect(result.type).toBe("text");
+      expect(result.mimeType).toBe("text/javascript");
     });
 
     it("should throw error for file too large", async () => {
@@ -338,21 +321,19 @@ describe("file module", () => {
       expect(result.content).toBeUndefined();
     });
 
-    it("should enforce extension validation for different encodings", async () => {
-      // Try to load an image as text
+    it("should enforce encoding validation for mismatched types", async () => {
       const imagePath = join(TEST_DIR, "test.png");
       await writeFile(imagePath, Buffer.from("fake png", "utf-8"));
 
       await expect(loadFileContent(imagePath, "utf-8")).rejects.toThrow(
-        "Unsupported text file type: .png",
+        "Cannot read image file as text",
       );
 
-      // Try to load a text file as base64
       const textPath = join(TEST_DIR, "test.txt");
       await writeFile(textPath, "text content");
 
       await expect(loadFileContent(textPath, "base64")).rejects.toThrow(
-        "Unsupported file type: .txt",
+        "Cannot read text file as binary",
       );
     });
 
