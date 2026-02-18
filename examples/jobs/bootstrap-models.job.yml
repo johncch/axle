@@ -20,6 +20,8 @@ task: |
   (OpenAI, Gemini, and Anthropic). If you run the script, it will return all models available in the API.
 
   Now I need you to filter the models to only include modern, recommended models.
+  Todays date is {{ date }} and modern means models released in the last 24 months
+  or so.
 
   Filter criteria:
   - Skip deprecated models (anything with "deprecated" in the name)
@@ -31,10 +33,13 @@ task: |
   - For versioned models, prefer the latest stable version
 
   For each provider, output TypeScript code with:
-  1. A `Models` const object mapping CONSTANT_NAMES to model IDs
-  2. Inside the Models const, have aliases for latest model family names, i.e., CLAUDE_SONNET_4_5_LATEST mirrors to the latest CLAUDE_SONNET_4_5 if model names are date specific.
-  3. Prefer the cheap models (Haiku, OpenAI 5 mini, Gemini Flash equivalent) as the default model
-  4. You must not rename exported constants because other files refer to them.
+  1. The current model files are in src/providers/<provider>/models.ts
+  2. Use the current models files as an example of what to produce, since the
+     constants are used by other parts of the codebase.
+  2. If the model names are dated, e.g., claude-opus-4-5-20251101, please also
+     create aliases for the model names, i.e. CLAUDE_SONNET_4_5.
+  3. Use the cheap models (Haiku, OpenAI 5 mini, Gemini Flash equivalent) as
+     the default model
 
   Format the output as a single TypeScript file that can be used to replace
   the existing model definitions.
