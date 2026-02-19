@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/v2/job.yaml
 provider:
   type: anthropic
-  model: claude-sonnet-4-5-20250929
+  model: claude-sonnet-4-6
 
 batch:
   files: "input/*.txt"

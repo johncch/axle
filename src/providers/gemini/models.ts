@@ -1,4 +1,8 @@
 export const Models = {
+  // Gemini 3.1 family (preview - 2025)
+  GEMINI_3_1_PRO_PREVIEW: "gemini-3.1-pro-preview",
+  GEMINI_3_1_PRO_PREVIEW_CUSTOMTOOLS: "gemini-3.1-pro-preview-customtools",
+
   // Gemini 3 family (preview - 2025)
   GEMINI_3_PRO_PREVIEW: "gemini-3-pro-preview",
   GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview",
@@ -11,6 +15,7 @@ export const Models = {
   GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image",
   GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite",
   GEMINI_2_5_FLASH_LITE_PREVIEW_09_2025: "gemini-2.5-flash-lite-preview-09-2025",
+  GEMINI_2_5_FLASH_NATIVE_AUDIO_LATEST: "gemini-2.5-flash-native-audio-latest",
   GEMINI_2_5_FLASH_NATIVE_AUDIO_PREVIEW_09_2025: "gemini-2.5-flash-native-audio-preview-09-2025",
   GEMINI_2_5_FLASH_NATIVE_AUDIO_PREVIEW_12_2025: "gemini-2.5-flash-native-audio-preview-12-2025",
   GEMINI_2_5_COMPUTER_USE_PREVIEW_10_2025: "gemini-2.5-computer-use-preview-10-2025",
@@ -18,7 +23,6 @@ export const Models = {
   // Gemini 2.0 family (December 2024)
   GEMINI_2_0_FLASH: "gemini-2.0-flash",
   GEMINI_2_0_FLASH_001: "gemini-2.0-flash-001",
-  GEMINI_2_0_FLASH_EXP_IMAGE_GENERATION: "gemini-2.0-flash-exp-image-generation",
   GEMINI_2_0_FLASH_LITE: "gemini-2.0-flash-lite",
   GEMINI_2_0_FLASH_LITE_001: "gemini-2.0-flash-lite-001",
   GEMINI_EXP_1206: "gemini-exp-1206",
@@ -46,6 +50,10 @@ export const Models = {
 } as const;
 
 export const MULTIMODAL_MODELS = [
+  // Gemini 3.1 family
+  Models.GEMINI_3_1_PRO_PREVIEW,
+  Models.GEMINI_3_1_PRO_PREVIEW_CUSTOMTOOLS,
+
   // Gemini 3 family
   Models.GEMINI_3_PRO_PREVIEW,
   Models.GEMINI_3_FLASH_PREVIEW,
@@ -58,6 +66,7 @@ export const MULTIMODAL_MODELS = [
   Models.GEMINI_2_5_FLASH_IMAGE,
   Models.GEMINI_2_5_FLASH_LITE,
   Models.GEMINI_2_5_FLASH_LITE_PREVIEW_09_2025,
+  Models.GEMINI_2_5_FLASH_NATIVE_AUDIO_LATEST,
   Models.GEMINI_2_5_FLASH_NATIVE_AUDIO_PREVIEW_09_2025,
   Models.GEMINI_2_5_FLASH_NATIVE_AUDIO_PREVIEW_12_2025,
   Models.GEMINI_2_5_COMPUTER_USE_PREVIEW_10_2025,
@@ -65,7 +74,6 @@ export const MULTIMODAL_MODELS = [
   // Gemini 2.0 family
   Models.GEMINI_2_0_FLASH,
   Models.GEMINI_2_0_FLASH_001,
-  Models.GEMINI_2_0_FLASH_EXP_IMAGE_GENERATION,
   Models.GEMINI_2_0_FLASH_LITE,
   Models.GEMINI_2_0_FLASH_LITE_001,
   Models.GEMINI_EXP_1206,
@@ -89,5 +97,5 @@ export const MULTIMODAL_MODELS = [
   Models.NANO_BANANA_PRO_PREVIEW,
 ] as const;
 
-// Default to the cheapest modern model (Gemini 3 Flash Preview)
-export const DEFAULT_MODEL = Models.GEMINI_3_FLASH_PREVIEW;
+// Default to the cheapest modern model (Gemini 2.5 Flash Lite)
+export const DEFAULT_MODEL = Models.GEMINI_2_5_FLASH_LITE;
