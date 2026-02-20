@@ -57,15 +57,31 @@ function convertMessage(msg: AxleMessage): Content | undefined {
 function convertToolMessage(msg: AxleMessage & { role: "tool" }): Content {
   return {
     role: "user",
-    parts: msg.content.map((item) => ({
-      functionResponse: {
-        id: item.id ?? undefined,
-        name: item.name,
-        response: {
-          output: item.content,
+    parts: msg.content.flatMap((item) => {
+      const responsePart = {
+        functionResponse: {
+          id: item.id ?? undefined,
+          name: item.name,
+          response: {
+            output:
+              typeof item.content === "string"
+                ? item.content
+                : item.content
+                    .filter((p) => p.type === "text")
+                    .map((p) => p.text)
+                    .join("\n"),
+          },
         },
-      },
-    })),
+      };
+
+      if (typeof item.content === "string") return [responsePart];
+
+      const imageParts = item.content
+        .filter((p) => p.type === "image")
+        .map((p) => ({ inlineData: { mimeType: p.mimeType, data: p.data } }));
+
+      return [responsePart, ...imageParts];
+    }),
   };
 }
 

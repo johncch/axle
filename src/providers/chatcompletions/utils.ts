@@ -61,7 +61,13 @@ function convertMessage(msg: AxleMessage): ChatCompletionMessage | ChatCompletio
 function convertToolMessage(msg: AxleMessage & { role: "tool" }): ChatCompletionMessage[] {
   return msg.content.map((r) => ({
     role: "tool" as const,
-    content: r.content,
+    content:
+      typeof r.content === "string"
+        ? r.content
+        : r.content
+            .filter((p) => p.type === "text")
+            .map((p) => p.text)
+            .join("\n"),
     tool_call_id: r.id,
   }));
 }

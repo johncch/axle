@@ -5,6 +5,7 @@ import {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  type ToolResultPart,
 } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
 import { AxleStopReason } from "../types.js";
@@ -55,7 +56,9 @@ export function convertToProviderMessages(
         content: msg.content.map((r) => ({
           type: "tool_result",
           tool_use_id: r.id,
-          content: r.content,
+          content: typeof r.content === "string"
+            ? r.content
+            : convertToolResultParts(r.content),
         })) satisfies Array<Anthropic.ToolResultBlockParam>,
       } satisfies Anthropic.MessageParam;
     }
@@ -188,4 +191,22 @@ export function convertStopReason(reason: string) {
 
 function isObjectSchema(schema: any): schema is { type: "object"; [key: string]: any } {
   return schema && typeof schema === "object" && schema.type === "object";
+}
+
+function convertToolResultParts(
+  parts: ToolResultPart[],
+): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
+  return parts.map((part) => {
+    if (part.type === "text") {
+      return { type: "text" as const, text: part.text };
+    }
+    return {
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: part.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+        data: part.data,
+      },
+    };
+  });
 }

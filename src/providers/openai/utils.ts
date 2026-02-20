@@ -41,7 +41,16 @@ function convertToolMessage(msg: AxleMessage & { role: "tool" }) {
   return msg.content.map((r) => ({
     type: "function_call_output" as const,
     call_id: r.id,
-    output: r.content,
+    output: typeof r.content === "string"
+      ? r.content
+      : r.content.map((part) =>
+          part.type === "text"
+            ? { type: "input_text" as const, text: part.text }
+            : {
+                type: "input_image" as const,
+                image_url: `data:${part.mimeType};base64,${part.data}`,
+              },
+        ),
   }));
 }
 

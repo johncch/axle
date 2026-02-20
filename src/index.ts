@@ -18,6 +18,10 @@ export type { AIProvider } from "./providers/types.js";
 export { braveSearchTool, calculatorTool } from "./tools/index.js";
 export type { Tool, ToolDefinition } from "./tools/types.js";
 
+// MCP
+export { MCP } from "./mcp/index.js";
+export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";
+
 // Messages
 export { History } from "./messages/history.js";
 export type {
@@ -31,6 +35,7 @@ export type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  ToolResultPart,
 } from "./messages/message.js";
 
 // Tracer

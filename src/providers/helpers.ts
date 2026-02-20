@@ -3,12 +3,13 @@ import type {
   AxleMessage,
   AxleToolCallResult,
   ContentPartToolCall,
+  ToolResultPart,
 } from "../messages/message.js";
 import type { Stats } from "../types.js";
 import type { ModelError, ModelResult } from "./types.js";
 
 export type ToolCallResult =
-  | { type: "success"; content: string }
+  | { type: "success"; content: string | ToolResultPart[] }
   | {
       type: "error";
       error: { type: string; message: string; fatal?: boolean; retryable?: boolean };
