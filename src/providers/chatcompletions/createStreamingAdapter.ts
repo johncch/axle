@@ -38,13 +38,15 @@ export function createStreamingAdapter() {
 
   function handleChunk(chunk: ChatCompletionChunk): Array<AnyStreamChunk> {
     const chunks: Array<AnyStreamChunk> = [];
-    const choice = chunk.choices?.[0];
 
-    // Usage-only chunk (empty choices) — sent by providers that support stream_options
+    // Capture usage whenever present — some providers (e.g. OpenRouter) send it
+    // on every chunk, others only on a final usage-only chunk.
+    if (chunk.usage) {
+      pendingUsage = { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens };
+    }
+
+    const choice = chunk.choices?.[0];
     if (!choice) {
-      if (chunk.usage) {
-        pendingUsage = { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens };
-      }
       return chunks;
     }
 
@@ -157,10 +159,6 @@ export function createStreamingAdapter() {
       }
 
       pendingFinishReason = convertFinishReason(choice.finish_reason);
-      // Some providers include usage inline with finish_reason
-      if (chunk.usage) {
-        pendingUsage = { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens };
-      }
     }
 
     return chunks;

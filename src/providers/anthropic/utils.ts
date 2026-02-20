@@ -59,6 +59,7 @@ export function convertToProviderMessages(
           content: typeof r.content === "string"
             ? r.content
             : convertToolResultParts(r.content),
+          ...(r.isError ? { is_error: true } : {}),
         })) satisfies Array<Anthropic.ToolResultBlockParam>,
       } satisfies Anthropic.MessageParam;
     }

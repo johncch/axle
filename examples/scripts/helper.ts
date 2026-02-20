@@ -16,14 +16,30 @@ dotenv.config();
  * This file contains a bunch of helpers to parse provider and model names.
  */
 
-const PROVIDERS = ["openai", "anthropic", "ollama", "gemini"] as const;
-type ProviderNames = (typeof PROVIDERS)[number];
-const INSTRUCT_TYPES = ["instruct", "cot"] as const;
+const CHAT_COMPLETIONS_PRESETS: Record<
+  string,
+  { url: string; envVar: string; defaultModel: string }
+> = {
+  ollama: {
+    url: "http://localhost:11434/v1",
+    envVar: "",
+    defaultModel: "qwen3:32b",
+  },
+  openrouter: {
+    url: "https://openrouter.ai/api/v1",
+    envVar: "OPENROUTER_API_KEY",
+    defaultModel: "deepseek/deepseek-v3.2",
+  },
+};
+
+const NATIVE_PROVIDERS = ["openai", "anthropic", "gemini"] as const;
+const PROVIDERS = [...NATIVE_PROVIDERS, ...Object.keys(CHAT_COMPLETIONS_PRESETS)] as const;
+type ProviderName = (typeof PROVIDERS)[number];
 
 interface CommandOptions {
-  provider: ProviderNames | Array<ProviderNames>;
+  provider: ProviderName | Array<ProviderName>;
   model?: string;
-  type: (typeof INSTRUCT_TYPES)[number];
+  url?: string;
 }
 
 const program = new Command();
@@ -34,42 +50,35 @@ program
       .default("ollama"),
   )
   .option("-m, --model <model>", "LLM model to use")
-  .option("-u, --url <url>", "URL for the provider if necessary")
-  .addOption(
-    new Option("-t, --type <type>", "Instruct subclass to use")
-      .choices(INSTRUCT_TYPES)
-      .default("instruct"),
-  )
+  .option("-u, --url <url>", "Override base URL for ChatCompletions providers")
   .parse(process.argv);
 const options = program.opts() as CommandOptions;
 
 /**
  * The helper for scripts to parse command line options and get a model
- * @returns
  */
 export function useCLIHelper(): [AIProvider, string] {
   const providerOptions = getProviderOption();
   const firstProviderOption = providerOptions[0];
   const provider = getProvider(firstProviderOption);
-  const model = options.model ?? getModel(firstProviderOption);
+  const model = options.model ?? getDefaultModel(firstProviderOption);
   console.log(`[Helper] Using ${provider.name} with model ${model}`);
   return [provider, model];
 }
 
 /**
- *
  * @returns Every provider the library supports with the "default" model
  */
 export function useAllProviders(): Array<[AIProvider, string]> {
   const providers: Array<[AIProvider, string]> = [];
   for (const provider of PROVIDERS) {
-    providers.push([getProvider(provider), getModel(provider)]);
+    providers.push([getProvider(provider), getDefaultModel(provider)]);
   }
   return providers;
 }
 
-function getProvider(provider: ProviderNames): AIProvider {
-  switch (provider) {
+function getProvider(name: ProviderName): AIProvider {
+  switch (name) {
     case "openai": {
       if (!process.env.OPENAI_API_KEY) {
         console.error("OPENAI_API_KEY not found. Check your .env file");
@@ -94,27 +103,39 @@ function getProvider(provider: ProviderNames): AIProvider {
       return anthropic(process.env.ANTHROPIC_API_KEY);
     }
 
-    case "ollama":
     default: {
-      return chatCompletions("http://localhost:11434/v1");
+      const preset = CHAT_COMPLETIONS_PRESETS[name];
+      if (!preset) {
+        console.error(`Unknown provider: ${name}`);
+        process.exit(1);
+      }
+      const url = options.url ?? preset.url;
+      const key = preset.envVar ? (process.env[preset.envVar] ?? "") : "";
+      if (preset.envVar && !key) {
+        console.error(`${preset.envVar} not found. Check your .env file`);
+        process.exit(1);
+      }
+      return chatCompletions(url, key);
     }
   }
 }
 
-function getModel(provider: ProviderNames) {
-  switch (provider) {
+function getDefaultModel(name: ProviderName): string {
+  switch (name) {
     case "openai":
       return OpenAI.DefaultModel;
     case "gemini":
       return Gemini.DefaultModel;
     case "anthropic":
       return Anthropic.DefaultModel;
-    case "ollama":
-      return "gemma3:12b";
+    default: {
+      const preset = CHAT_COMPLETIONS_PRESETS[name];
+      return preset?.defaultModel ?? "unknown";
+    }
   }
 }
 
-function getProviderOption(): ProviderNames[] {
+function getProviderOption(): ProviderName[] {
   if (Array.isArray(options.provider)) {
     return options.provider;
   } else {

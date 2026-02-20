@@ -96,6 +96,7 @@ export async function executeToolCalls(
         id: call.id,
         name: call.name,
         content: serializeToolError({ type: "not-found", message: missingTool.message }),
+        isError: true,
       });
       break;
     }
@@ -125,6 +126,7 @@ export async function executeToolCalls(
         id: call.id,
         name: call.name,
         content: serializeToolError(resolved.error),
+        isError: true,
       });
     }
   }

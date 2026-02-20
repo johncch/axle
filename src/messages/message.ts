@@ -32,6 +32,7 @@ export interface AxleToolCallResult {
   id: string;
   name: string;
   content: string | ToolResultPart[];
+  isError?: boolean;
 }
 
 export type ContentPart =
