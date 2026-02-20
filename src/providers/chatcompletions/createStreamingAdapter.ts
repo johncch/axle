@@ -1,4 +1,5 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { AxleStopReason } from "../types.js";
 import { ChatCompletionChunk } from "./types.js";
 import { convertFinishReason } from "./utils.js";
 
@@ -19,6 +20,11 @@ export function createStreamingAdapter() {
 
   let activePart: "text" | "thinking" | null = null;
 
+  // Deferred completion: finish_reason arrives before the usage-only chunk,
+  // so we hold the complete event until finalize() is called.
+  let pendingFinishReason: AxleStopReason | undefined;
+  let pendingUsage: { in: number; out: number } | undefined;
+
   function closeActivePart(chunks: Array<AnyStreamChunk>) {
     if (currentPartIndex < 0) return;
     if (activePart === "text") {
@@ -32,8 +38,13 @@ export function createStreamingAdapter() {
 
   function handleChunk(chunk: ChatCompletionChunk): Array<AnyStreamChunk> {
     const chunks: Array<AnyStreamChunk> = [];
-    const choice = chunk.choices[0];
+    const choice = chunk.choices?.[0];
+
+    // Usage-only chunk (empty choices) — sent by providers that support stream_options
     if (!choice) {
+      if (chunk.usage) {
+        pendingUsage = { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens };
+      }
       return chunks;
     }
 
@@ -121,7 +132,7 @@ export function createStreamingAdapter() {
       }
     }
 
-    // Completion
+    // Completion — defer emitting until finalize() so usage-only chunk can arrive
     if (choice.finish_reason) {
       closeActivePart(chunks);
 
@@ -145,20 +156,28 @@ export function createStreamingAdapter() {
         }
       }
 
-      const finishReason = convertFinishReason(choice.finish_reason);
-      chunks.push({
-        type: "complete",
-        data: {
-          finishReason,
-          usage: chunk.usage
-            ? { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens }
-            : { in: 0, out: 0 },
-        },
-      });
+      pendingFinishReason = convertFinishReason(choice.finish_reason);
+      // Some providers include usage inline with finish_reason
+      if (chunk.usage) {
+        pendingUsage = { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens };
+      }
     }
 
     return chunks;
   }
 
-  return { handleChunk };
+  function finalize(): Array<AnyStreamChunk> {
+    if (pendingFinishReason === undefined) return [];
+    return [
+      {
+        type: "complete",
+        data: {
+          finishReason: pendingFinishReason,
+          usage: pendingUsage ?? { in: 0, out: 0 },
+        },
+      },
+    ];
+  }
+
+  return { handleChunk, finalize };
 }

@@ -115,6 +115,11 @@ export async function* createStreamingRequest(params: {
         }
       }
     }
+
+    // Emit deferred complete event (waits for usage-only chunk after finish_reason)
+    for (const streamChunk of adapter.finalize()) {
+      yield streamChunk;
+    }
   } catch (error) {
     if (signal?.aborted) return;
     tracer?.error("Error in ChatCompletions streaming request", {

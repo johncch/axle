@@ -3,14 +3,7 @@ import { History } from "../messages/history.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { StreamResult } from "../providers/helpers.js";
-import {
-  stream,
-  type ErrorCallback,
-  type InternalToolCallback,
-  type PartEndCallback,
-  type PartStartCallback,
-  type PartUpdateCallback,
-} from "../providers/stream.js";
+import { stream, type StreamEventCallback } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
@@ -53,11 +46,7 @@ export class Agent {
   private mcps: MCP[] = [];
   private mcpToolsResolved = false;
 
-  private partStartCallback?: PartStartCallback;
-  private partUpdateCallback?: PartUpdateCallback;
-  private partEndCallback?: PartEndCallback;
-  private internalToolCallback?: InternalToolCallback;
-  private errorCallback?: ErrorCallback;
+  private eventCallbacks: StreamEventCallback[] = [];
 
   constructor(config: AgentConfig) {
     this.provider = config.provider;
@@ -97,24 +86,8 @@ export class Agent {
     return Object.keys(this.tools).length > 0 || this.mcps.length > 0;
   }
 
-  onPartStart(callback: PartStartCallback) {
-    this.partStartCallback = callback;
-  }
-
-  onPartUpdate(callback: PartUpdateCallback) {
-    this.partUpdateCallback = callback;
-  }
-
-  onPartEnd(callback: PartEndCallback) {
-    this.partEndCallback = callback;
-  }
-
-  onInternalTool(callback: InternalToolCallback) {
-    this.internalToolCallback = callback;
-  }
-
-  onError(callback: ErrorCallback) {
-    this.errorCallback = callback;
+  on(callback: StreamEventCallback) {
+    this.eventCallbacks.push(callback);
   }
 
   send(message: string): AgentHandle<string>;
@@ -189,11 +162,7 @@ export class Agent {
         },
       });
 
-      if (this.partStartCallback) streamHandle.onPartStart(this.partStartCallback);
-      if (this.partUpdateCallback) streamHandle.onPartUpdate(this.partUpdateCallback);
-      if (this.partEndCallback) streamHandle.onPartEnd(this.partEndCallback);
-      if (this.internalToolCallback) streamHandle.onInternalTool(this.internalToolCallback);
-      if (this.errorCallback) streamHandle.onError(this.errorCallback);
+      for (const cb of this.eventCallbacks) streamHandle.on(cb);
 
       const streamResult: StreamResult = await streamHandle.final;
 

@@ -242,6 +242,16 @@ export function createStreamingAdapter() {
         break;
       }
 
+      case "response.in_progress":
+      case "response.content_part.added":
+      case "response.content_part.done":
+      case "response.reasoning_summary_part.added":
+      case "response.reasoning_summary_part.done":
+      case "response.reasoning_summary_text.done":
+      case "response.reasoning_text.done":
+        // No-op
+        break;
+
       default:
         console.log(`[OpenAI] unhandled stream event: ${event.type}`);
     }

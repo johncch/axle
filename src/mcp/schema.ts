@@ -12,7 +12,10 @@ export function jsonSchemaToZod(jsonSchema: Record<string, unknown>): ZodObject<
     const schema = z.fromJSONSchema(jsonSchema);
     // z.fromJSONSchema may return non-object schemas; wrap if needed
     if (schema instanceof z.ZodObject) {
-      return schema as ZodObject<any>;
+      // z.fromJSONSchema() produces a permissive schema (additionalProperties: {})
+      // but providers like OpenAI require additionalProperties: false. Using .strict()
+      // ensures the round-trip through toJSONSchema() emits the correct form.
+      return schema.strict() as ZodObject<any>;
     }
     // If it's not an object schema, fall back to passthrough
     return z.object({}).passthrough();

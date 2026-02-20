@@ -66,6 +66,7 @@ export interface ContentPartToolCall {
   id: string;
   name: string;
   parameters: Record<string, unknown>;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface ContentPartInternalTool {

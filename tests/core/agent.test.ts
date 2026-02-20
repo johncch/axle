@@ -96,8 +96,10 @@ describe("Agent", () => {
     const agent = new Agent({ provider, model: "mock" });
 
     const updates: string[] = [];
-    agent.onPartUpdate((_index, _type, delta) => {
-      updates.push(delta);
+    agent.on((event) => {
+      if (event.type === "text:delta") {
+        updates.push(event.delta);
+      }
     });
 
     await agent.send("Hi").final;

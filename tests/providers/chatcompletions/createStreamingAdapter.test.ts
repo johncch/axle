@@ -50,8 +50,10 @@ describe("createStreamingAdapter", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hi" }));
       const chunks = adapter.handleChunk(makeChunk({}, "stop"));
+      const final = adapter.finalize();
+      const all = [...chunks, ...final];
 
-      const types = chunks.map((c) => c.type);
+      const types = all.map((c) => c.type);
       expect(types).toContain("text-complete");
       expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("complete"));
     });
@@ -113,8 +115,10 @@ describe("createStreamingAdapter", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ reasoning_content: "Thinking..." }));
       const chunks = adapter.handleChunk(makeChunk({}, "stop"));
+      const final = adapter.finalize();
+      const all = [...chunks, ...final];
 
-      const types = chunks.map((c) => c.type);
+      const types = all.map((c) => c.type);
       expect(types).toContain("thinking-complete");
       expect(types.indexOf("thinking-complete")).toBeLessThan(types.indexOf("complete"));
     });
@@ -175,17 +179,18 @@ describe("createStreamingAdapter", () => {
   });
 
   describe("completion", () => {
-    test("emits complete with stop reason", () => {
+    test("emits complete with stop reason via finalize", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hi" }));
-      const chunks = adapter.handleChunk(makeChunk({}, "stop"));
+      adapter.handleChunk(makeChunk({}, "stop"));
+      const final = adapter.finalize();
 
-      const complete = chunks.filter((c) => c.type === "complete");
+      const complete = final.filter((c) => c.type === "complete");
       expect(complete).toHaveLength(1);
       expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.Stop);
     });
 
-    test("extracts usage from completion chunk", () => {
+    test("extracts usage from inline finish_reason chunk", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hi" }));
 
@@ -195,18 +200,20 @@ describe("createStreamingAdapter", () => {
         choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
         usage: { prompt_tokens: 42, completion_tokens: 17 },
       };
-      const chunks = adapter.handleChunk(chunk);
+      adapter.handleChunk(chunk);
+      const final = adapter.finalize();
 
-      const complete = chunks.filter((c) => c.type === "complete");
+      const complete = final.filter((c) => c.type === "complete");
       expect((complete[0] as any).data.usage).toEqual({ in: 42, out: 17 });
     });
 
     test("converts length finish reason", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hi" }));
-      const chunks = adapter.handleChunk(makeChunk({}, "length"));
+      adapter.handleChunk(makeChunk({}, "length"));
+      const final = adapter.finalize();
 
-      const complete = chunks.filter((c) => c.type === "complete");
+      const complete = final.filter((c) => c.type === "complete");
       expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.Length);
     });
 
@@ -215,28 +222,49 @@ describe("createStreamingAdapter", () => {
       adapter.handleChunk(makeChunk({
         tool_calls: [{ index: 0, id: "call_1", function: { name: "fn", arguments: "{}" } }],
       }));
-      const chunks = adapter.handleChunk(makeChunk({}, "tool_calls"));
+      adapter.handleChunk(makeChunk({}, "tool_calls"));
+      const final = adapter.finalize();
 
-      const complete = chunks.filter((c) => c.type === "complete");
+      const complete = final.filter((c) => c.type === "complete");
       expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.FunctionCall);
     });
   });
 
   describe("usage-only chunks", () => {
-    test("handles chunks with no choices (usage-only tail)", () => {
+    test("picks up usage from separate tail chunk via finalize", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hi" }));
       adapter.handleChunk(makeChunk({}, "stop"));
 
-      const chunk: ChatCompletionChunk = {
+      // Separate usage-only chunk (empty choices)
+      adapter.handleChunk({
         id: "chatcmpl-1",
         model: "test-model",
         choices: [],
         usage: { prompt_tokens: 10, completion_tokens: 20 },
-      };
+      });
 
-      const chunks = adapter.handleChunk(chunk);
-      expect(chunks).toHaveLength(0);
+      const final = adapter.finalize();
+      const complete = final.filter((c) => c.type === "complete");
+      expect(complete).toHaveLength(1);
+      expect((complete[0] as any).data.usage).toEqual({ in: 10, out: 20 });
+    });
+
+    test("defaults to zero usage when no usage is provided", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "Hi" }));
+      adapter.handleChunk(makeChunk({}, "stop"));
+      const final = adapter.finalize();
+
+      const complete = final.filter((c) => c.type === "complete");
+      expect((complete[0] as any).data.usage).toEqual({ in: 0, out: 0 });
+    });
+
+    test("finalize returns empty when no finish_reason was seen", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "Hi" }));
+      const final = adapter.finalize();
+      expect(final).toHaveLength(0);
     });
   });
 });

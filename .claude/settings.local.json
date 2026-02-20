@@ -35,7 +35,12 @@
       "Bash(npx tsx:*)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(xargs cat:*)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(/Users/johncch/Projects/ai/axle/scripts/schema-debug.ts:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   },
   "enableAllProjectMcpServers": false

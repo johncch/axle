@@ -100,13 +100,17 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
   if (toolCallParts.length > 0) {
     parts.push(
       ...toolCallParts.map((item: any) => {
-        return {
+        const part: Record<string, unknown> = {
           functionCall: {
             id: item.id ?? undefined,
             name: item.name,
             args: item.parameters,
           },
         };
+        if (item.providerMetadata?.thoughtSignature) {
+          part.thoughtSignature = item.providerMetadata.thoughtSignature;
+        }
+        return part;
       }),
     );
   }
