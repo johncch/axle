@@ -2,8 +2,10 @@ import { Command } from "@commander-js/extra-typings";
 import pkg from "../package.json";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
+import { connectMcps, closeMcps } from "./cli/mcp.js";
 import { runBatch, runSingle } from "./cli/runners.js";
 import { createTools } from "./cli/tools.js";
+import type { MCP } from "./mcp/index.js";
 import { getProvider } from "./providers/index.js";
 import type { AIProvider } from "./providers/types.js";
 import { Tool } from "./tools/index.js";
@@ -145,13 +147,32 @@ if (options.dryRun) {
 
 const sharedTools: Tool[] = jobConfig.tools?.length ? createTools(jobConfig.tools) : [];
 
+let mcps: MCP[] = [];
+if (jobConfig.mcps?.length) {
+  try {
+    mcps = await connectMcps(jobConfig.mcps, rootSpan);
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    rootSpan.error("Failed to connect MCP servers: " + error.message);
+    rootSpan.end("error");
+    await tracer.flush();
+    process.exit(1);
+  }
+}
+
 const stats: Stats = { in: 0, out: 0 };
 const startTime = performance.now();
 
-if (jobConfig.batch) {
-  await runBatch(jobConfig, provider, model, sharedTools, variables, options, stats, rootSpan);
-} else {
-  await runSingle(jobConfig, provider, model, sharedTools, variables, options, stats, rootSpan);
+try {
+  if (jobConfig.batch) {
+    await runBatch(jobConfig, provider, model, sharedTools, mcps, variables, options, stats, rootSpan);
+  } else {
+    await runSingle(jobConfig, provider, model, sharedTools, mcps, variables, options, stats, rootSpan);
+  }
+} finally {
+  if (mcps.length > 0) {
+    await closeMcps(mcps, rootSpan);
+  }
 }
 
 const duration = performance.now() - startTime;

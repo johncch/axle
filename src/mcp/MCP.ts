@@ -7,6 +7,7 @@ import { createMcpToolDefinitions, createMcpTools } from "./tools.js";
 
 export interface MCPStdioConfig {
   transport: "stdio";
+  name?: string;
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -14,6 +15,7 @@ export interface MCPStdioConfig {
 
 export interface MCPHttpConfig {
   transport: "http";
+  name?: string;
   url: string;
   headers?: Record<string, string>;
 }
@@ -35,6 +37,10 @@ export class MCP {
 
   constructor(config: MCPConfig) {
     this.config = config;
+  }
+
+  get name(): string | undefined {
+    return this.config.name ?? this.client?.getServerVersion()?.name;
   }
 
   get connected(): boolean {

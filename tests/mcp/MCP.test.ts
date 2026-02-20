@@ -5,6 +5,7 @@ import { MCP } from "../../src/mcp/MCP.js";
 const mockClient = {
   connect: vi.fn().mockResolvedValue(undefined),
   close: vi.fn().mockResolvedValue(undefined),
+  getServerVersion: vi.fn().mockReturnValue({ name: "mock-server", version: "1.0" }),
   listTools: vi.fn().mockResolvedValue({
     tools: [
       {
@@ -36,6 +37,7 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => {
   class MockClient {
     connect = mockClient.connect;
     close = mockClient.close;
+    getServerVersion = mockClient.getServerVersion;
     listTools = mockClient.listTools;
     callTool = mockClient.callTool;
   }
@@ -76,6 +78,44 @@ describe("MCP", () => {
         url: "http://localhost:3000/mcp",
       });
       expect(mcp.connected).toBe(false);
+    });
+  });
+
+  describe("name", () => {
+    test("returns config name when provided", () => {
+      const mcp = new MCP({
+        transport: "stdio",
+        name: "my-server",
+        command: "node",
+      });
+      expect(mcp.name).toBe("my-server");
+    });
+
+    test("returns undefined before connect when no config name", () => {
+      const mcp = new MCP({
+        transport: "stdio",
+        command: "node",
+      });
+      expect(mcp.name).toBeUndefined();
+    });
+
+    test("returns server-reported name after connect when no config name", async () => {
+      const mcp = new MCP({
+        transport: "stdio",
+        command: "node",
+      });
+      await mcp.connect();
+      expect(mcp.name).toBe("mock-server");
+    });
+
+    test("config name takes precedence over server name", async () => {
+      const mcp = new MCP({
+        transport: "stdio",
+        name: "custom",
+        command: "node",
+      });
+      await mcp.connect();
+      expect(mcp.name).toBe("custom");
     });
   });
 

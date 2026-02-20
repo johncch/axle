@@ -1,0 +1,11 @@
+# Start server first: pnpm tsx examples/mcps/wordcount-server.ts --http --port 3100
+provider:
+  type: anthropic
+
+mcps:
+  - transport: http
+    url: http://localhost:3100/mcp
+
+task: |
+  Can you tell me a 3 sentence story with a character's name
+  and then tell me the number of words and characters in the story

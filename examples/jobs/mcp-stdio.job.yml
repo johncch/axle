@@ -1,0 +1,11 @@
+provider:
+  type: anthropic
+
+mcps:
+  - transport: stdio
+    command: npx
+    args: ["tsx", "examples/mcps/wordcount-server.ts"]
+
+task: |
+  Can you tell me a 3 sentence story with a character's name
+  and then tell me the number of words and characters in the story

@@ -118,7 +118,7 @@ export class Agent {
     if (this.mcpToolsResolved) return;
     this.tracer?.info("resolving MCP tools", { count: this.mcps.length });
     for (const mcp of this.mcps) {
-      const tools = await mcp.listTools({ tracer: this.tracer });
+      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer });
       this.addTools(tools);
     }
     this.mcpToolsResolved = true;
