@@ -450,7 +450,7 @@ function convertToolMessage(msg) {
 |----------|------|
 | **Anthropic** | Yes — `image` content blocks with base64 source |
 | **OpenAI (Responses API)** | Yes — `input_image` with data URL or `file_id` |
-| **Gemini** | Yes — `inlineData` parts nested alongside `functionResponse` |
+| **Gemini** | Yes (3.x only) — `inlineData` parts nested alongside `functionResponse`. Gemini 2.x does not support multimodal function responses and will return a 400 error. |
 | **ChatCompletions (generic)** | No — spec restricts tool messages to text only |
 
 ---
