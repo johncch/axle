@@ -146,22 +146,25 @@ tool registry alongside local tools, and caches the result. No manual
 
 ### Using with stream()/generate() directly
 
-For lower-level usage without Agent, callers resolve tools manually:
+For lower-level usage without Agent, use `listToolDefinitions()` to get
+`ToolDefinition[]` (schema-only, no execute) and `listTools()` for execution:
 
 ```ts
 import { MCP, stream } from "@fifthrevision/axle";
 
 const mcp = new MCP({ transport: "stdio", command: "...", args: [...] });
 await mcp.connect();
-const mcpTools = await mcp.listTools();
+
+const toolDefs = await mcp.listToolDefinitions();
+const tools = await mcp.listTools();
 
 const handle = stream({
   provider,
   model,
   messages,
-  tools: mcpTools.map(t => ({ name: t.name, description: t.description, schema: t.schema })),
+  tools: toolDefs,
   onToolCall: async (name, params) => {
-    const tool = mcpTools.find(t => t.name === name);
+    const tool = tools.find(t => t.name === name);
     if (!tool) return null;
     const result = await tool.execute(params);
     return { type: "success", content: result };
@@ -180,8 +183,11 @@ class MCP {
   /** Connect to the MCP server. Must be called before any other method. */
   connect(): Promise<void>;
 
-  /** List tools, converting to Axle Tool objects. Cached after first call. */
+  /** List tools with execute(), for Agent or manual execution. Cached after first call. */
   listTools(options?: { prefix?: string }): Promise<Tool[]>;
+
+  /** List tool definitions (name + description + schema) for stream()/generate(). */
+  listToolDefinitions(options?: { prefix?: string }): Promise<ToolDefinition[]>;
 
   /** Force re-fetch tools from the server. */
   refreshTools(): Promise<Tool[]>;
