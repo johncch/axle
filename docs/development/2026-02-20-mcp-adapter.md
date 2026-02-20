@@ -375,51 +375,61 @@ if (msg.role === "tool") {
 
 **OpenAI** (`providers/openai/utils.ts`):
 ```ts
-// OpenAI Responses API — output is a string, serialize rich content
+// OpenAI Responses API — natively supports images in function_call_output
+// output accepts: string | Array<ResponseInputText | ResponseInputImage | ResponseInputFile>
 function convertToolMessage(msg) {
   return msg.content.map((r) => ({
     type: "function_call_output",
     call_id: r.id,
     output: typeof r.content === "string"
       ? r.content
-      : r.content
-          .filter((p) => p.type === "text")
-          .map((p) => p.text)
-          .join("\n"),
-    // Note: OpenAI Responses API doesn't support images in tool output.
-    // Image parts are dropped with text-only fallback.
+      : r.content.map((part) =>
+          part.type === "text"
+            ? { type: "input_text", text: part.text }
+            : { type: "input_image", image_url: `data:${part.mimeType};base64,${part.data}` }
+        ),
   }));
 }
 ```
 
 **Gemini** (`providers/gemini/utils.ts`):
 ```ts
-// Gemini — supports inline data
+// Gemini — supports inlineData parts nested in functionResponse
 function convertToolMessage(msg) {
   return {
     role: "user",
-    parts: msg.content.map((item) => ({
-      functionResponse: {
-        id: item.id,
-        name: item.name,
-        response: typeof item.content === "string"
-          ? { output: item.content }
-          : {
-              output: item.content
-                .filter((p) => p.type === "text")
-                .map((p) => p.text)
-                .join("\n"),
-              // Gemini may support richer formats here in the future
-            },
-      },
-    })),
+    parts: msg.content.flatMap((item) => {
+      const responsePart = {
+        functionResponse: {
+          id: item.id,
+          name: item.name,
+          response: typeof item.content === "string"
+            ? { output: item.content }
+            : {
+                output: item.content
+                  .filter((p) => p.type === "text")
+                  .map((p) => p.text)
+                  .join("\n"),
+              },
+        },
+      };
+
+      if (typeof item.content === "string") return [responsePart];
+
+      // Append image parts as inlineData siblings to the functionResponse part
+      const imageParts = item.content
+        .filter((p) => p.type === "image")
+        .map((p) => ({ inlineData: { mimeType: p.mimeType, data: p.data } }));
+
+      return [responsePart, ...imageParts];
+    }),
   };
 }
 ```
 
 **ChatCompletions** (`providers/chatcompletions/utils.ts`):
 ```ts
-// Generic chat completions — text only
+// Generic chat completions — text only (spec restricts tool messages to text)
 function convertToolMessage(msg) {
   return msg.content.map((r) => ({
     role: "tool",
@@ -434,9 +444,14 @@ function convertToolMessage(msg) {
 }
 ```
 
-**Summary:** Anthropic gets full rich content support. Other providers fall back
-to text-only extraction. This is pragmatic — Anthropic is the primary provider
-and the one most likely used with image-producing MCP servers like Figma.
+**Summary:** Three out of four providers support images natively:
+
+| Provider | Image support in tool results |
+|----------|------|
+| **Anthropic** | Yes — `image` content blocks with base64 source |
+| **OpenAI (Responses API)** | Yes — `input_image` with data URL or `file_id` |
+| **Gemini** | Yes — `inlineData` parts nested alongside `functionResponse` |
+| **ChatCompletions (generic)** | No — spec restricts tool messages to text only |
 
 ---
 
@@ -613,10 +628,10 @@ export type { ToolResultPart } from "./messages/message.js";
 | `src/tools/types.ts` | Update `Tool.execute()` return type |
 | `src/providers/helpers.ts` | Update `ToolCallResult.content` type |
 | `src/core/Agent.ts` | Add `mcps` config, `addMcp()`, lazy MCP tool resolution |
-| `src/providers/anthropic/utils.ts` | Handle rich content in tool result conversion |
-| `src/providers/openai/utils.ts` | Text-only fallback for tool results |
-| `src/providers/gemini/utils.ts` | Text-only fallback for tool results |
-| `src/providers/chatcompletions/utils.ts` | Text-only fallback for tool results |
+| `src/providers/anthropic/utils.ts` | Handle rich content in tool result conversion (image blocks) |
+| `src/providers/openai/utils.ts` | Handle rich content in tool result conversion (input_image) |
+| `src/providers/gemini/utils.ts` | Handle rich content in tool result conversion (inlineData) |
+| `src/providers/chatcompletions/utils.ts` | Text-only fallback for tool results (spec limitation) |
 | `src/index.ts` | Export `MCP`, `MCPConfig`, `ToolResultPart` |
 
 ---
