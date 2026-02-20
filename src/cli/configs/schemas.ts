@@ -90,6 +90,32 @@ export type ToolProviderConfig = {
 };
 
 /* ============================================================================
+ * MCP Config Schemas
+ * ========================================================================== */
+
+const MCPStdioConfigSchema = z.object({
+  transport: z.literal("stdio"),
+  name: z.string().optional(),
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+const MCPHttpConfigSchema = z.object({
+  transport: z.literal("http"),
+  name: z.string().optional(),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
+
+export const MCPConfigSchema = z.discriminatedUnion("transport", [
+  MCPStdioConfigSchema,
+  MCPHttpConfigSchema,
+]);
+
+export type MCPConfigUse = z.infer<typeof MCPConfigSchema>;
+
+/* ============================================================================
  * Batch Config Schema
  * ========================================================================== */
 
@@ -110,6 +136,7 @@ export const JobConfigSchema = z.object({
   task: z.string(),
   tools: z.array(z.string()).optional(),
   files: z.array(z.string()).optional(),
+  mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),
 });
 

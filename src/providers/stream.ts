@@ -22,26 +22,26 @@ import { AxleStopReason } from "./types.js";
 
 // --- Public types ---
 
-export type StreamPartType = "text" | "thinking";
+export type StreamEvent =
+  // Text streaming
+  | { type: "text:start"; index: number }
+  | { type: "text:delta"; index: number; delta: string; accumulated: string }
+  | { type: "text:end"; index: number; final: string }
+  // Thinking streaming
+  | { type: "thinking:start"; index: number }
+  | { type: "thinking:delta"; index: number; delta: string; accumulated: string }
+  | { type: "thinking:end"; index: number; final: string }
+  // Tool calls
+  | { type: "tool:start"; index: number; id: string; name: string }
+  | { type: "tool:execute"; index: number; id: string; name: string; parameters: Record<string, unknown> }
+  | { type: "tool:complete"; index: number; id: string; name: string; result: ToolCallResult | null }
+  // Internal tools (provider-managed: web search, code interpreter, etc.)
+  | { type: "internal-tool:start"; index: number; id: string; name: string }
+  | { type: "internal-tool:complete"; index: number; id: string; name: string; output?: unknown }
+  // Error
+  | { type: "error"; error: GenerateError };
 
-export type PartStartCallback = (index: number, type: StreamPartType) => void;
-
-export type PartUpdateCallback = (
-  index: number,
-  type: StreamPartType,
-  delta: string,
-  accumulated: string,
-) => void;
-
-export type PartEndCallback = (index: number, type: StreamPartType, final: string) => void;
-
-export type InternalToolEvent =
-  | { type: "start"; index: number; id: string; name: string }
-  | { type: "complete"; index: number; id: string; name: string; output?: unknown };
-
-export type InternalToolCallback = (event: InternalToolEvent) => void;
-
-export type ErrorCallback = (error: GenerateError) => void;
+export type StreamEventCallback = (event: StreamEvent) => void;
 
 export interface StreamOptions {
   provider: AIProvider;
@@ -56,23 +56,19 @@ export interface StreamOptions {
 }
 
 export interface StreamHandle {
-  onPartStart(callback: PartStartCallback): void;
-  onPartUpdate(callback: PartUpdateCallback): void;
-  onPartEnd(callback: PartEndCallback): void;
-  onInternalTool(callback: InternalToolCallback): void;
-  onError(callback: ErrorCallback): void;
+  on(callback: StreamEventCallback): void;
   cancel(): void;
   readonly final: Promise<StreamResult>;
 }
 
 // --- Implementation ---
 
+function emit(callbacks: StreamEventCallback[], event: StreamEvent) {
+  for (const cb of callbacks) cb(event);
+}
+
 export function stream(options: StreamOptions): StreamHandle {
-  const partStartCallbacks: PartStartCallback[] = [];
-  const partUpdateCallbacks: PartUpdateCallback[] = [];
-  const partEndCallbacks: PartEndCallback[] = [];
-  const internalToolCallbacks: InternalToolCallback[] = [];
-  const errorCallbacks: ErrorCallback[] = [];
+  const callbacks: StreamEventCallback[] = [];
 
   const controller = new AbortController();
   let settled = false;
@@ -92,32 +88,12 @@ export function stream(options: StreamOptions): StreamHandle {
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
-    run(
-      options,
-      controller.signal,
-      partStartCallbacks,
-      partUpdateCallbacks,
-      partEndCallbacks,
-      internalToolCallbacks,
-      errorCallbacks,
-    ).then(resolveResult!, rejectResult!),
+    run(options, controller.signal, callbacks).then(resolveResult!, rejectResult!),
   );
 
   return {
-    onPartStart(cb) {
-      partStartCallbacks.push(cb);
-    },
-    onPartUpdate(cb) {
-      partUpdateCallbacks.push(cb);
-    },
-    onPartEnd(cb) {
-      partEndCallbacks.push(cb);
-    },
-    onInternalTool(cb) {
-      internalToolCallbacks.push(cb);
-    },
-    onError(cb) {
-      errorCallbacks.push(cb);
+    on(cb) {
+      callbacks.push(cb);
     },
     cancel() {
       if (!settled) controller.abort();
@@ -130,41 +106,10 @@ export function stream(options: StreamOptions): StreamHandle {
 
 // --- Core loop ---
 
-function emitPartStart(callbacks: PartStartCallback[], index: number, type: StreamPartType) {
-  for (const cb of callbacks) cb(index, type);
-}
-
-function emitPartUpdate(
-  callbacks: PartUpdateCallback[],
-  index: number,
-  type: StreamPartType,
-  delta: string,
-  accumulated: string,
-) {
-  for (const cb of callbacks) cb(index, type, delta, accumulated);
-}
-
-function emitPartEnd(
-  callbacks: PartEndCallback[],
-  index: number,
-  type: StreamPartType,
-  final: string,
-) {
-  for (const cb of callbacks) cb(index, type, final);
-}
-
-function emitError(callbacks: ErrorCallback[], error: GenerateError) {
-  for (const cb of callbacks) cb(error);
-}
-
 async function run(
   options: StreamOptions,
   signal: AbortSignal,
-  startCbs: PartStartCallback[],
-  updateCbs: PartUpdateCallback[],
-  partEndCbs: PartEndCallback[],
-  internalToolCbs: InternalToolCallback[],
-  errorCbs: ErrorCallback[],
+  cbs: StreamEventCallback[],
 ): Promise<StreamResult> {
   const {
     provider,
@@ -190,7 +135,7 @@ async function run(
 
   const endWithResult = (result: StreamResult): StreamResult => {
     if (result.result === "error") {
-      emitError(errorCbs, result.error);
+      emit(cbs, { type: "error", error: result.error });
     }
     const finalContent =
       result.result === "success"
@@ -294,12 +239,16 @@ async function run(
 
     // Track the current "open" part for accumulation
     let openPartIndex = -1;
-    let openPartType: StreamPartType | null = null;
+    let openPartType: "text" | "thinking" | null = null;
     let openAccumulated: string = "";
+
+    // Track tool call id → globalIndex for tool execution events
+    const toolCallIndexMap = new Map<string, number>();
 
     const closePart = () => {
       if (openPartType !== null && openPartIndex >= 0) {
-        emitPartEnd(partEndCbs, openPartIndex, openPartType, openAccumulated);
+        const endType = openPartType === "text" ? ("text:end" as const) : ("thinking:end" as const);
+        emit(cbs, { type: endType, index: openPartIndex, final: openAccumulated });
         openPartType = null;
         openAccumulated = "";
         openPartIndex = -1;
@@ -319,7 +268,7 @@ async function run(
           openPartIndex = globalIndex++;
           openPartType = "text";
           openAccumulated = "";
-          emitPartStart(startCbs, openPartIndex, "text");
+          emit(cbs, { type: "text:start", index: openPartIndex });
           break;
         }
 
@@ -328,7 +277,12 @@ async function run(
           part.text += chunk.data.text;
           openAccumulated = part.text;
           turnSpan?.appendLLMStream(chunk.data.text);
-          emitPartUpdate(updateCbs, openPartIndex, "text", chunk.data.text, openAccumulated);
+          emit(cbs, {
+            type: "text:delta",
+            index: openPartIndex,
+            delta: chunk.data.text,
+            accumulated: openAccumulated,
+          });
           break;
         }
 
@@ -343,7 +297,7 @@ async function run(
           openPartIndex = globalIndex++;
           openPartType = "thinking";
           openAccumulated = "";
-          emitPartStart(startCbs, openPartIndex, "thinking");
+          emit(cbs, { type: "thinking:start", index: openPartIndex });
           break;
         }
 
@@ -351,7 +305,12 @@ async function run(
           const part = turnParts[chunk.data.index] as ContentPartThinking;
           part.text += chunk.data.text;
           openAccumulated = part.text;
-          emitPartUpdate(updateCbs, openPartIndex, "thinking", chunk.data.text, openAccumulated);
+          emit(cbs, {
+            type: "thinking:delta",
+            index: openPartIndex,
+            delta: chunk.data.text,
+            accumulated: openAccumulated,
+          });
           break;
         }
 
@@ -359,7 +318,12 @@ async function run(
           const part = turnParts[chunk.data.index] as ContentPartThinking;
           part.text += chunk.data.text;
           openAccumulated = part.text;
-          emitPartUpdate(updateCbs, openPartIndex, "thinking", chunk.data.text, openAccumulated);
+          emit(cbs, {
+            type: "thinking:delta",
+            index: openPartIndex,
+            delta: chunk.data.text,
+            accumulated: openAccumulated,
+          });
           break;
         }
 
@@ -370,13 +334,15 @@ async function run(
 
         case "tool-call-start": {
           closePart();
+          const idx = globalIndex++;
           turnParts.push({
             type: "tool-call",
             id: chunk.data.id,
             name: chunk.data.name,
             parameters: {},
           });
-          globalIndex++;
+          toolCallIndexMap.set(chunk.data.id, idx);
+          emit(cbs, { type: "tool:start", index: idx, id: chunk.data.id, name: chunk.data.name });
           break;
         }
 
@@ -385,6 +351,7 @@ async function run(
           if (chunk.data.id) part.id = chunk.data.id;
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
+          if (chunk.data.providerMetadata) part.providerMetadata = chunk.data.providerMetadata;
           break;
         }
 
@@ -396,22 +363,25 @@ async function run(
             id: chunk.data.id,
             name: chunk.data.name,
           });
-          for (const cb of internalToolCbs)
-            cb({ type: "start", index: idx, id: chunk.data.id, name: chunk.data.name });
+          emit(cbs, {
+            type: "internal-tool:start",
+            index: idx,
+            id: chunk.data.id,
+            name: chunk.data.name,
+          });
           break;
         }
 
         case "internal-tool-complete": {
           const part = turnParts[chunk.data.index] as ContentPartInternalTool;
           if (chunk.data.output != null) part.output = chunk.data.output;
-          for (const cb of internalToolCbs)
-            cb({
-              type: "complete",
-              index: chunk.data.index,
-              id: chunk.data.id,
-              name: chunk.data.name,
-              output: chunk.data.output,
-            });
+          emit(cbs, {
+            type: "internal-tool:complete",
+            index: chunk.data.index,
+            id: chunk.data.id,
+            name: chunk.data.name,
+            output: chunk.data.output,
+          });
           break;
         }
 
@@ -527,18 +497,23 @@ async function run(
       return { result: "cancelled", messages: newMessages, usage };
     }
 
-    // Execute tool calls
     const wrappedToolCall = onToolCall
       ? async (name: string, parameters: Record<string, unknown>) => {
           return onToolCall(name, parameters);
         }
       : async () => null as ToolCallResult | null;
 
-    for (const call of toolCalls) {
-      tracer?.info(`tool call: ${call.name}`, { parameters: call.parameters });
-    }
+    let toolExecIndex = 0;
+    const emittingToolCall: ToolCallCallback = async (name, parameters) => {
+      const call = toolCalls[toolExecIndex++];
+      const idx = toolCallIndexMap.get(call.id) ?? -1;
+      emit(cbs, { type: "tool:execute", index: idx, id: call.id, name, parameters });
+      const result = await wrappedToolCall(name, parameters);
+      emit(cbs, { type: "tool:complete", index: idx, id: call.id, name, result: result ?? null });
+      return result;
+    };
 
-    const { results, missingTool } = await executeToolCalls(toolCalls, wrappedToolCall);
+    const { results, missingTool } = await executeToolCalls(toolCalls, emittingToolCall, tracer);
 
     if (results.length > 0) {
       addMessage({ role: "tool", content: results });

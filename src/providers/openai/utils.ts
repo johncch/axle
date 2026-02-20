@@ -8,16 +8,13 @@ import { ToolDefinition } from "../../tools/types.js";
 
 export function prepareTools(tools?: Array<ToolDefinition>) {
   if (tools && tools.length > 0) {
-    return tools.map((tool) => {
-      const jsonSchema = z.toJSONSchema(tool.schema);
-      return {
-        type: "function" as const,
-        strict: true,
-        name: tool.name,
-        description: tool.description,
-        parameters: jsonSchema,
-      };
-    });
+    return tools.map((tool) => ({
+      type: "function" as const,
+      strict: true,
+      name: tool.name,
+      description: tool.description,
+      parameters: z.toJSONSchema(tool.schema),
+    }));
   }
   return undefined;
 }
@@ -41,7 +38,17 @@ function convertToolMessage(msg: AxleMessage & { role: "tool" }) {
   return msg.content.map((r) => ({
     type: "function_call_output" as const,
     call_id: r.id,
-    output: r.content,
+    output:
+      typeof r.content === "string"
+        ? r.content
+        : r.content.map((part) =>
+            part.type === "text"
+              ? { type: "input_text" as const, text: part.text }
+              : {
+                  type: "input_image" as const,
+                  image_url: `data:${part.mimeType};base64,${part.data}`,
+                },
+          ),
   }));
 }
 

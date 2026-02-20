@@ -6,8 +6,6 @@
 
 # Build, Test & Lint Commands
 
-**Note:** This project uses `pnpm` for development. All commands below use `pnpm`.
-
 - Build: `pnpm run build` (pkgroll with clean-dist and minify)
 - Build (dev): `pnpm run build-dev` (pkgroll with clean-dist, no minify)
 - Build (watch): `pnpm run build:watch` (for npm link development scenarios)
@@ -15,54 +13,40 @@
 - Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
-- Get models: `pnpm run get-models`
-- Run prompt scenarios: `pnpm run prompt-scenarios`
+- Release: `pnpm run release` (runs tests, builds, then npm version)
 
 # Code Style Guidelines
 
-- **Functional style**: Prefer functions returning objects over classes. This is a functional library — use closures, not `this`.
-- **Imports**: ES modules, use node: prefix for Node.js modules
+- **Imports**: ES modules, use `node:` prefix for Node.js modules
 - **Formatting**: 2-space indentation, Prettier with organize-imports plugin
-- **Types**: Strong TypeScript typing, explicit function parameters and returns
-- **Naming**: 
-  - PascalCase for classes and interfaces (e.g., `FilePathInfo`, `Instruct`, `Axle`)
+- **Types**: Strong TypeScript typing, explicit function parameters and returns. This project uses **Zod v4** (not v3).
+- **Naming**:
+  - PascalCase for classes and interfaces (e.g., `Agent`, `Instruct`, `MCP`)
   - camelCase for functions and variables
-- **Error Handling**: Use descriptive error messages in try/catch blocks, utilize custom error classes
+- **Error Handling**: Use descriptive error messages, utilize custom error classes in `src/errors/`
 - **Testing**: Vitest with descriptive test names, organize with nested describe blocks
 
 # Repository Structure
 
 - `src/`: Source code
-  - `actions/`: Workflow actions (WriteToDisk) - executed between LLM calls
-  - `ai/`: LLM provider integrations (Anthropic, OpenAI, Ollama, Gemini)
+  - `core/`: Agent, Instruct, compile, parse
+  - `providers/`: LLM provider integrations
+    - `anthropic/`, `openai/`, `gemini/`, `chatcompletions/`
+    - `stream.ts`, `generate.ts`, `generateTurn.ts` — lower-level primitives
+  - `mcp/`: Model Context Protocol adapter
+  - `messages/`: Conversation history and message types
+  - `tools/`: LLM-callable tools (brave, calculator, exec, read-file, write-file, patch-file)
+  - `tracer/`: Tracing/logging with pluggable writers
+  - `errors/`: Custom error classes
+  - `utils/`: Helper functions
   - `cli/`: CLI implementation
     - `configs/`: Configuration handling
-    - `converters/`: Data format converters
-    - `factories.ts`: Tool and action factory functions
-  - `core/`: Core functionality (Axle, Instruct, ChainOfThought)
-  - `errors/`: Custom error classes
-  - `messages/`: Conversation and message handling
-  - `recorder/`: Logging and recording functionality
-  - `tools/`: LLM-callable tools (Brave, Calculator)
-  - `utils/`: Helper functions
-  - `workflows/`: Workflow implementations (Serial, Concurrent, DAG)
+    - `runners.ts`, `tools.ts`, `ledger.ts`
 - `tests/`: Test files (mirrors src/ structure)
-  - `actions/`: Action tests
-  - `ai/`: AI provider tests
-    - `anthropic/`: Anthropic provider tests
-    - `gemini/`: Gemini provider tests
-    - `ollama/`: Ollama provider tests
-    - `openai/`: OpenAI provider tests
-  - `cli/`: CLI tests (factories, converters)
-  - `core/`: Core functionality tests
-  - `messages/`: Message handling tests
-  - `recorder/`: Recorder tests
-  - `utils/`: Utility function tests
-  - `workflows/`: Workflow tests
 - `examples/`: Sample job definitions and scripts
 - `scripts/`: Utility scripts
 - `docs/`: Documentation
-  - `development/`: Development decision documents (dated design docs)
+  - `development/`: Dated design decision documents
 - `dist/`: Build output (generated, not checked in)
 
 # Build Notes
@@ -73,8 +57,14 @@
 
 # Key Concepts
 
-- **Instruct**: LLM-callable steps that send prompts and receive structured responses
-- **Action**: Workflow-callable steps executed between LLM calls (e.g., WriteToDisk)
-- **WorkflowStep**: Union type `Instruct | Action` - building blocks of workflows
-- **Tool**: LLM-callable functions with Zod schemas (e.g., brave, calculator)
-- **$previous**: Variable containing the output from the previous workflow step
+- **Agent**: Primary interface. Owns provider, model, system prompt, tools, and conversation history. `send()` accepts a string or Instruct.
+- **Instruct**: Rich message with structured output (Zod schema), file attachments, and variable substitution.
+- **Providers**: `anthropic()`, `openai()`, `gemini()`, `chatCompletions()` — factory functions that create provider instances.
+- **`stream()` / `generate()`**: Lower-level primitives for tool-loop execution without conversation management. Agent uses `stream()` internally.
+- **Tool**: Object with name, description, Zod schema, and `execute` function. Built-in tools: `braveSearchTool`, `calculatorTool`, `execTool`, `readFileTool`, `writeFileTool`, `patchFileTool`.
+- **MCP**: Adapter for connecting to Model Context Protocol servers (stdio and HTTP transports).
+- **Tracer**: First-class concept. All functions that do work must accept and use the tracer interface. Structured tracing with span-based logging and pluggable writers.
+
+# Documentation
+
+- When changing public API signatures (Agent, Instruct, MCP, providers, tools, streaming events, CLI/YAML schema), update `README.md` to match.

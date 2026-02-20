@@ -2,6 +2,7 @@ import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import { Agent } from "../core/Agent.js";
 import { Instruct } from "../core/Instruct.js";
+import type { MCP } from "../mcp/index.js";
 import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
@@ -15,6 +16,7 @@ export async function runSingle(
   provider: AIProvider,
   model: string,
   tools: Tool[],
+  mcps: MCP[],
   variables: Record<string, any>,
   options: ProgramOptions,
   stats: Stats,
@@ -28,7 +30,7 @@ export async function runSingle(
   }
 
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
-  const agent = new Agent({ provider, model, tools, tracer: jobSpan });
+  const agent = new Agent({ provider, model, tools, mcps, tracer: jobSpan });
   const result = await agent.send(instruct, variables).final;
   jobSpan.end();
 
@@ -45,6 +47,7 @@ export async function runBatch(
   provider: AIProvider,
   model: string,
   tools: Tool[],
+  mcps: MCP[],
   variables: Record<string, any>,
   options: ProgramOptions,
   stats: Stats,
@@ -97,7 +100,7 @@ export async function runBatch(
 
       const itemVars = { ...variables, file: batchFilePath };
 
-      const agent = new Agent({ provider, model, tools, tracer: itemSpan });
+      const agent = new Agent({ provider, model, tools, mcps, tracer: itemSpan });
       const result = await agent.send(instruct, itemVars).final;
 
       stats.in += result.usage.in;

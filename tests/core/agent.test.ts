@@ -96,8 +96,10 @@ describe("Agent", () => {
     const agent = new Agent({ provider, model: "mock" });
 
     const updates: string[] = [];
-    agent.onPartUpdate((_index, _type, delta) => {
-      updates.push(delta);
+    agent.on((event) => {
+      if (event.type === "text:delta") {
+        updates.push(event.delta);
+      }
     });
 
     await agent.send("Hi").final;
@@ -130,6 +132,53 @@ describe("Agent", () => {
     await agent.send("Hi").final;
 
     expect(agent.system).toBe("You are helpful");
+  });
+
+  test("resolveMcpTools passes mcp.name as prefix", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const agent = new Agent({ provider, model: "mock" });
+
+    const mockListTools = vi.fn().mockResolvedValue([
+      {
+        name: "prefixed_tool",
+        description: "A tool",
+        schema: {},
+        execute: vi.fn(),
+      },
+    ]);
+
+    const mockMcp = {
+      name: "myprefix",
+      listTools: mockListTools,
+      connected: true,
+    };
+
+    agent.addMcp(mockMcp as any);
+    await agent.send("Hi").final;
+
+    expect(mockListTools).toHaveBeenCalledWith(
+      expect.objectContaining({ prefix: "myprefix" }),
+    );
+  });
+
+  test("resolveMcpTools passes undefined prefix when mcp.name is undefined", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const agent = new Agent({ provider, model: "mock" });
+
+    const mockListTools = vi.fn().mockResolvedValue([]);
+
+    const mockMcp = {
+      name: undefined,
+      listTools: mockListTools,
+      connected: true,
+    };
+
+    agent.addMcp(mockMcp as any);
+    await agent.send("Hi").final;
+
+    expect(mockListTools).toHaveBeenCalledWith(
+      expect.objectContaining({ prefix: undefined }),
+    );
   });
 
   test("tools on Agent are used for tool calls", async () => {

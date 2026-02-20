@@ -24,10 +24,14 @@ export interface AxleToolCallMessage {
   content: Array<AxleToolCallResult>;
 }
 
+export type ToolResultPart =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
 export interface AxleToolCallResult {
   id: string;
   name: string;
-  content: string;
+  content: string | ToolResultPart[];
 }
 
 export type ContentPart =
@@ -62,6 +66,7 @@ export interface ContentPartToolCall {
   id: string;
   name: string;
   parameters: Record<string, unknown>;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface ContentPartInternalTool {

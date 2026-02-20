@@ -14,12 +14,57 @@ properties:
     type: array
     items:
       type: string
+  mcps:
+    type: array
+    items:
+      $ref: "#/definitions/MCPConfig"
   batch:
     $ref: "#/definitions/BatchConfig"
 required:
   - provider
   - task
 definitions:
+  MCPConfig:
+    type: object
+    oneOf:
+      - type: object
+        properties:
+          transport:
+            type: string
+            const: "stdio"
+          name:
+            type: string
+          command:
+            type: string
+          args:
+            type: array
+            items:
+              type: string
+          env:
+            type: object
+            additionalProperties:
+              type: string
+        required:
+          - transport
+          - command
+        additionalProperties: false
+      - type: object
+        properties:
+          transport:
+            type: string
+            const: "http"
+          name:
+            type: string
+          url:
+            type: string
+          headers:
+            type: object
+            additionalProperties:
+              type: string
+        required:
+          - transport
+          - url
+        additionalProperties: false
   BatchConfig:
     type: object
     properties:

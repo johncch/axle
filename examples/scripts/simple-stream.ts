@@ -51,20 +51,28 @@ try {
     },
     tracer: tracer.startSpan("stream"),
   });
-  result.onPartStart((index, type) => {
-    console.log(`[Start] ${index} ${type}`);
-  });
 
-  result.onPartUpdate((index, type, delta, acc) => {
-    process.stdout.write(`${delta}`);
-  });
-
-  result.onPartEnd((index, type, final) => {
-    console.log(`\n[End] ${index} ${type}`);
-  });
-
-  result.onError((error) => {
-    console.error(`[Error] ${JSON.stringify(error, null, 2)}`);
+  result.on((event) => {
+    switch (event.type) {
+      case "text:start":
+        console.log(`[Start] ${event.index} text`);
+        break;
+      case "thinking:start":
+        console.log(`[Start] ${event.index} thinking`);
+        break;
+      case "text:delta":
+        process.stdout.write(`${event.delta}`);
+        break;
+      case "text:end":
+        console.log(`\n[End] ${event.index} text`);
+        break;
+      case "thinking:end":
+        console.log(`\n[End] ${event.index} thinking`);
+        break;
+      case "error":
+        console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);
+        break;
+    }
   });
 
   const final = await result.final;

@@ -31,7 +31,16 @@
       "Bash(python3:*)",
       "Bash(git -C /Users/johncch/Projects/ai/axle log main..HEAD --oneline)",
       "Bash(git -C /Users/johncch/Projects/ai/axle diff main..HEAD --stat)",
-      "Bash(git -C /Users/johncch/Projects/ai/axle show main:README.md)"
+      "Bash(git -C /Users/johncch/Projects/ai/axle show main:README.md)",
+      "Bash(npx tsx:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(curl:*)",
+      "Bash(xargs cat:*)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(/Users/johncch/Projects/ai/axle/scripts/schema-debug.ts:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   },
   "enableAllProjectMcpServers": false

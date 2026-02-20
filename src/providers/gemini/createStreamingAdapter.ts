@@ -109,14 +109,20 @@ export function createGeminiStreamingAdapter() {
           },
         });
 
+        const completeData: any = {
+          index: toolIdx,
+          id: toolCallId,
+          name: part.functionCall.name,
+          arguments: part.functionCall.args,
+        };
+        const rawPart = part as Record<string, unknown>;
+        if (rawPart.thoughtSignature) {
+          completeData.providerMetadata = { thoughtSignature: rawPart.thoughtSignature };
+        }
+
         chunks.push({
           type: "tool-call-complete",
-          data: {
-            index: toolIdx,
-            id: toolCallId,
-            name: part.functionCall.name,
-            arguments: part.functionCall.args,
-          },
+          data: completeData,
         });
       }
     }

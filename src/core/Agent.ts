@@ -1,15 +1,9 @@
+import type { MCP } from "../mcp/index.js";
 import { History } from "../messages/history.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { StreamResult } from "../providers/helpers.js";
-import {
-  stream,
-  type ErrorCallback,
-  type InternalToolCallback,
-  type PartEndCallback,
-  type PartStartCallback,
-  type PartUpdateCallback,
-} from "../providers/stream.js";
+import { stream, type StreamEventCallback } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
@@ -24,6 +18,7 @@ export interface AgentConfig {
   model: string;
   system?: string;
   tools?: Tool[];
+  mcps?: MCP[];
   tracer?: TracingContext;
 }
 
@@ -48,11 +43,10 @@ export class Agent {
   system: string | undefined;
   tools: Record<string, Tool> = {};
 
-  private partStartCallback?: PartStartCallback;
-  private partUpdateCallback?: PartUpdateCallback;
-  private partEndCallback?: PartEndCallback;
-  private internalToolCallback?: InternalToolCallback;
-  private errorCallback?: ErrorCallback;
+  private mcps: MCP[] = [];
+  private mcpToolsResolved = false;
+
+  private eventCallbacks: StreamEventCallback[] = [];
 
   constructor(config: AgentConfig) {
     this.provider = config.provider;
@@ -62,6 +56,9 @@ export class Agent {
     this.system = config.system;
     if (config.tools) {
       this.addTools(config.tools);
+    }
+    if (config.mcps) {
+      this.mcps = [...config.mcps];
     }
   }
 
@@ -75,28 +72,22 @@ export class Agent {
     }
   }
 
+  addMcp(mcp: MCP) {
+    this.mcps.push(mcp);
+    this.mcpToolsResolved = false;
+  }
+
+  addMcps(mcps: MCP[]) {
+    this.mcps.push(...mcps);
+    this.mcpToolsResolved = false;
+  }
+
   hasTools(): boolean {
-    return Object.keys(this.tools).length > 0;
+    return Object.keys(this.tools).length > 0 || this.mcps.length > 0;
   }
 
-  onPartStart(callback: PartStartCallback) {
-    this.partStartCallback = callback;
-  }
-
-  onPartUpdate(callback: PartUpdateCallback) {
-    this.partUpdateCallback = callback;
-  }
-
-  onPartEnd(callback: PartEndCallback) {
-    this.partEndCallback = callback;
-  }
-
-  onInternalTool(callback: InternalToolCallback) {
-    this.internalToolCallback = callback;
-  }
-
-  onError(callback: ErrorCallback) {
-    this.errorCallback = callback;
+  on(callback: StreamEventCallback) {
+    this.eventCallbacks.push(callback);
   }
 
   send(message: string): AgentHandle<string>;
@@ -123,41 +114,58 @@ export class Agent {
     return this.execute(schema);
   }
 
+  private async resolveMcpTools(): Promise<void> {
+    if (this.mcpToolsResolved) return;
+    this.tracer?.info("resolving MCP tools", { count: this.mcps.length });
+    for (const mcp of this.mcps) {
+      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer });
+      this.addTools(tools);
+    }
+    this.mcpToolsResolved = true;
+  }
+
   private execute(schema?: OutputSchema): AgentHandle<any> {
-    const tools = this.tools;
-    const toolDefinitions = Object.values(tools).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      schema: tool.schema,
-    }));
+    let cancelled = false;
+    let streamHandle: ReturnType<typeof stream> | undefined;
 
-    const handle = stream({
-      provider: this.provider,
-      model: this.model,
-      messages: this.history.messages,
-      system: this.system,
-      tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
-      tracer: this.tracer,
-      onToolCall: async (name, params) => {
-        const tool = tools[name];
-        if (!tool) return null;
-        try {
-          const result = await tool.execute(params);
-          return { type: "success", content: JSON.stringify(result) };
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return { type: "error", error: { type: "execution", message: msg } };
-        }
-      },
-    });
+    const finalPromise = (async (): Promise<AgentResult<any>> => {
+      await this.resolveMcpTools();
 
-    if (this.partStartCallback) handle.onPartStart(this.partStartCallback);
-    if (this.partUpdateCallback) handle.onPartUpdate(this.partUpdateCallback);
-    if (this.partEndCallback) handle.onPartEnd(this.partEndCallback);
-    if (this.internalToolCallback) handle.onInternalTool(this.internalToolCallback);
-    if (this.errorCallback) handle.onError(this.errorCallback);
+      if (cancelled) {
+        return { response: null, messages: [], final: undefined, usage: { in: 0, out: 0 } };
+      }
 
-    const finalPromise = handle.final.then((streamResult: StreamResult): AgentResult<any> => {
+      const tools = this.tools;
+      const toolDefinitions = Object.values(tools).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        schema: tool.schema,
+      }));
+
+      streamHandle = stream({
+        provider: this.provider,
+        model: this.model,
+        messages: this.history.messages,
+        system: this.system,
+        tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
+        tracer: this.tracer,
+        onToolCall: async (name, params) => {
+          const tool = tools[name];
+          if (!tool) return null;
+          try {
+            const result = await tool.execute(params);
+            return { type: "success", content: result };
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            return { type: "error", error: { type: "execution", message: msg } };
+          }
+        },
+      });
+
+      for (const cb of this.eventCallbacks) streamHandle.on(cb);
+
+      const streamResult: StreamResult = await streamHandle.final;
+
       if (streamResult.messages.length > 0) {
         this.history.add(streamResult.messages);
       }
@@ -177,10 +185,13 @@ export class Agent {
 
       const usage = streamResult.usage ?? { in: 0, out: 0 };
       return { response, messages: streamResult.messages, final, usage };
-    });
+    })();
 
     return {
-      cancel: () => handle.cancel(),
+      cancel: () => {
+        cancelled = true;
+        streamHandle?.cancel();
+      },
       get final() {
         return finalPromise;
       },

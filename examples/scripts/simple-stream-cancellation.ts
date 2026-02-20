@@ -17,16 +17,25 @@ const result = stream({
   ],
 });
 
-result.onPartStart((index, type) => {
-  console.log(`[Start] part ${index} (${type})`);
-});
-
-result.onPartUpdate((_index, _type, delta) => {
-  process.stdout.write(delta);
-});
-
-result.onPartEnd((index, type) => {
-  console.log(`\n[End] part ${index} (${type})`);
+result.on((event) => {
+  switch (event.type) {
+    case "text:start":
+      console.log(`[Start] part ${event.index} (text)`);
+      break;
+    case "thinking:start":
+      console.log(`[Start] part ${event.index} (thinking)`);
+      break;
+    case "text:delta":
+    case "thinking:delta":
+      process.stdout.write(event.delta);
+      break;
+    case "text:end":
+      console.log(`\n[End] part ${event.index} (text)`);
+      break;
+    case "thinking:end":
+      console.log(`\n[End] part ${event.index} (thinking)`);
+      break;
+  }
 });
 
 // Cancel after 2 seconds

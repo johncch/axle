@@ -11,12 +11,17 @@ export { chatCompletions } from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
+export type { StreamEvent, StreamEventCallback } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type { AIProvider } from "./providers/types.js";
 
 // Tools
 export { braveSearchTool, calculatorTool } from "./tools/index.js";
 export type { Tool, ToolDefinition } from "./tools/types.js";
+
+// MCP
+export { MCP } from "./mcp/index.js";
+export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";
 
 // Messages
 export { History } from "./messages/history.js";
@@ -31,6 +36,7 @@ export type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  ToolResultPart,
 } from "./messages/message.js";
 
 // Tracer

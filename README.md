@@ -185,26 +185,70 @@ const agent = new Agent({
 Axle includes several built-in tools: `braveSearchTool`, `calculatorTool`,
 `execTool`, `readFileTool`, `writeFileTool`, and `patchFileTool`.
 
+### MCP (Model Context Protocol)
+
+Axle supports connecting to MCP servers via stdio or HTTP transport. Create an
+MCP instance, connect it, and pass it to Agent.
+
+```typescript
+import { Agent, MCP } from "@fifthrevision/axle";
+
+const mcp = new MCP({
+  transport: "stdio",
+  name: "wc",
+  command: "npx",
+  args: ["tsx", "path/to/wordcount-server.ts"],
+});
+await mcp.connect();
+
+const agent = new Agent({ provider, model, mcps: [mcp] });
+const result = await agent.send("Count the words in 'hello world'").final;
+
+await mcp.close();
+```
+
+The optional `name` field prefixes all tool names from that server (e.g.
+`wc_word_count`) to avoid collisions when using multiple MCPs. When omitted,
+the server's self-reported name is used as the prefix if available.
+
+HTTP transport works the same way:
+
+```typescript
+const mcp = new MCP({
+  transport: "http",
+  url: "http://localhost:3100/mcp",
+});
+```
+
 ### Streaming
 
-Agent exposes callbacks for streaming output as it arrives.
+Agent exposes a single `on()` method for streaming events as they arrive.
 
 ```typescript
 const agent = new Agent({ provider, model });
 
-agent.onPartStart((index, type) => {
-  /* text, tool-call, thinking */
+agent.on((event) => {
+  switch (event.type) {
+    case "text:delta":
+      process.stdout.write(event.delta);
+      break;
+    case "tool:execute":
+      console.log(`Running tool: ${event.name}`);
+      break;
+    case "error":
+      console.error(event.error);
+      break;
+  }
 });
-agent.onPartUpdate((index, type, delta) => process.stdout.write(delta));
-agent.onPartEnd((index, type) => {
-  /* part finished */
-});
-agent.onError((error) => console.error(error));
 
 const handle = agent.send("Write me a poem.");
 // handle.cancel() to abort mid-stream
 const result = await handle.final;
 ```
+
+Event types include `text:start`, `text:delta`, `text:end`, `thinking:start`,
+`thinking:delta`, `thinking:end`, `tool:start`, `tool:execute`,
+`tool:complete`, and `error`.
 
 Callbacks are registered once and fire on every subsequent `send()`.
 
@@ -275,6 +319,34 @@ batch:
 - `files` — glob pattern for input files
 - `concurrency` — max parallel runs (default 3)
 - `resume` — skip files already processed in a previous run
+
+### MCP Servers
+
+Add an `mcps` key to connect to MCP servers. Both stdio and HTTP transports
+are supported.
+
+```yaml
+# axle.job.yaml
+provider:
+  type: anthropic
+
+mcps:
+  - name: wc
+    transport: stdio
+    command: npx
+    args: ["tsx", "examples/mcps/wordcount-server.ts"]
+  - transport: http
+    url: http://localhost:3100/mcp
+
+task: |
+  Count the words in "hello world"
+```
+
+Each entry supports:
+- `transport` — `"stdio"` or `"http"` (required)
+- `name` — prefix for tool names from this server (optional)
+- `command` / `args` / `env` — for stdio transport
+- `url` / `headers` — for HTTP transport
 
 ### Configuration
 

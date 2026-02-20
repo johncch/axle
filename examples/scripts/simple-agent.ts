@@ -23,20 +23,33 @@ const instruct = new Instruct(
 
 const agent = new Agent({ provider, model, tools: [setNameTool] });
 
-agent.onPartStart((index, type) => {
-  console.log(`[Start] ${index} ${type}`);
-});
-
-agent.onPartUpdate((index, type, delta) => {
-  process.stdout.write(`${delta}`);
-});
-
-agent.onPartEnd((index, type) => {
-  console.log(`\n[End] ${index} ${type}`);
-});
-
-agent.onError((error) => {
-  console.error(`[Error] ${JSON.stringify(error, null, 2)}`);
+agent.on((event) => {
+  switch (event.type) {
+    case "text:start":
+      console.log(`[Start] ${event.index} text`);
+      break;
+    case "thinking:start":
+      console.log(`[Start] ${event.index} thinking`);
+      break;
+    case "text:delta":
+      process.stdout.write(`${event.delta}`);
+      break;
+    case "text:end":
+      console.log(`\n[End] ${event.index} text`);
+      break;
+    case "thinking:end":
+      console.log(`\n[End] ${event.index} thinking`);
+      break;
+    case "tool:execute":
+      console.log(`[Tool Execute] ${event.name} ${JSON.stringify(event.parameters)}`);
+      break;
+    case "tool:complete":
+      console.log(`[Tool Complete] ${event.name} ${JSON.stringify(event.result)}`);
+      break;
+    case "error":
+      console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);
+      break;
+  }
 });
 
 console.log("[Starting...]");
