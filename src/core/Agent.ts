@@ -1,7 +1,7 @@
+import type { MCP } from "../mcp/index.js";
 import { History } from "../messages/history.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
-import type { MCP } from "../mcp/index.js";
 import type { StreamResult } from "../providers/helpers.js";
 import {
   stream,
@@ -143,8 +143,9 @@ export class Agent {
 
   private async resolveMcpTools(): Promise<void> {
     if (this.mcpToolsResolved) return;
+    this.tracer?.info("resolving MCP tools", { count: this.mcps.length });
     for (const mcp of this.mcps) {
-      const tools = await mcp.listTools();
+      const tools = await mcp.listTools({ tracer: this.tracer });
       this.addTools(tools);
     }
     this.mcpToolsResolved = true;

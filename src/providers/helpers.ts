@@ -5,6 +5,7 @@ import type {
   ContentPartToolCall,
   ToolResultPart,
 } from "../messages/message.js";
+import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { ModelError, ModelResult } from "./types.js";
 
@@ -60,6 +61,7 @@ export function serializeToolError(error: { type: string; message: string }): st
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
   onToolCall: ToolCallCallback,
+  tracer?: TracingContext,
 ): Promise<{
   results: AxleToolCallResult[];
   missingTool?: { name: string; message: string };
@@ -68,6 +70,7 @@ export async function executeToolCalls(
   let missingTool: { name: string; message: string } | undefined;
 
   for (const call of toolCalls) {
+    const span = tracer?.startSpan(call.name, { type: "tool" });
     let resolved: ToolCallResult | null | undefined;
 
     try {
@@ -87,6 +90,8 @@ export async function executeToolCalls(
         name: call.name,
         message: `Tool not found: ${call.name}`,
       };
+      span?.setResult({ kind: "tool", name: call.name, input: call.parameters, output: null });
+      span?.end("error");
       results.push({
         id: call.id,
         name: call.name,
@@ -96,12 +101,26 @@ export async function executeToolCalls(
     }
 
     if (resolved.type === "success") {
+      span?.setResult({
+        kind: "tool",
+        name: call.name,
+        input: call.parameters,
+        output: resolved.content,
+      });
+      span?.end("ok");
       results.push({
         id: call.id,
         name: call.name,
         content: resolved.content,
       });
     } else {
+      span?.setResult({
+        kind: "tool",
+        name: call.name,
+        input: call.parameters,
+        output: resolved.error,
+      });
+      span?.end("error");
       results.push({
         id: call.id,
         name: call.name,

@@ -157,11 +157,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       });
     }
 
-    for (const call of toolCalls) {
-      tracer?.info(`tool call: ${call.name}`, { parameters: call.parameters });
-    }
-
-    const { results, missingTool } = await executeToolCalls(toolCalls, onToolCall);
+    const { results, missingTool } = await executeToolCalls(toolCalls, onToolCall, tracer);
     if (results.length > 0) {
       addMessage({ role: "tool", content: results });
     }

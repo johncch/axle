@@ -534,11 +534,7 @@ async function run(
         }
       : async () => null as ToolCallResult | null;
 
-    for (const call of toolCalls) {
-      tracer?.info(`tool call: ${call.name}`, { parameters: call.parameters });
-    }
-
-    const { results, missingTool } = await executeToolCalls(toolCalls, wrappedToolCall);
+    const { results, missingTool } = await executeToolCalls(toolCalls, wrappedToolCall, tracer);
 
     if (results.length > 0) {
       addMessage({ role: "tool", content: results });
