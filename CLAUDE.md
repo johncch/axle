@@ -64,3 +64,7 @@
 - **Tool**: Object with name, description, Zod schema, and `execute` function. Built-in tools: `braveSearchTool`, `calculatorTool`, `execTool`, `readFileTool`, `writeFileTool`, `patchFileTool`.
 - **MCP**: Adapter for connecting to Model Context Protocol servers (stdio and HTTP transports).
 - **Tracer**: First-class concept. All functions that do work must accept and use the tracer interface. Structured tracing with span-based logging and pluggable writers.
+
+# Documentation
+
+- When changing public API signatures (Agent, Instruct, MCP, providers, tools, streaming events, CLI/YAML schema), update `README.md` to match.
