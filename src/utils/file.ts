@@ -53,6 +53,7 @@ export async function searchAndLoadFile(
   return {
     content: fileContents,
     format: filePath.split(".").pop() ?? "",
+    path: filePath,
   };
 }
 

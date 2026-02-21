@@ -1,3 +1,4 @@
+import { basename, extname } from "node:path";
 import YAML from "yaml";
 import * as z from "zod";
 import type { TracingContext } from "../../tracer/types.js";
@@ -14,7 +15,7 @@ export async function getJobConfig(
   },
 ): Promise<JobConfig> {
   const { tracer } = context;
-  const { content, format } = await searchAndLoadFile(path, {
+  const { content, format, path: filePath } = await searchAndLoadFile(path, {
     defaults: {
       name: DEFAULT_JOB_NAME,
       formats: DEFAULT_JOB_FORMATS,
@@ -36,6 +37,11 @@ export async function getJobConfig(
   if (!parsed.success) {
     throw new Error(`The job file is not valid:\n${formatZodError(parsed.error)}`);
   }
+
+  if (!parsed.data.name) {
+    parsed.data.name = basename(filePath, extname(filePath));
+  }
+
   return parsed.data;
 }
 

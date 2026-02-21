@@ -1,6 +1,7 @@
 export interface LoadFileResults {
   content: string;
   format: string;
+  path: string;
 }
 
 export interface FilePathInfo {

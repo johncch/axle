@@ -2,6 +2,9 @@ $schema: http://json-schema.org/draft-07/schema#
 title: JobConfig
 type: object
 properties:
+  name:
+    type: string
+    description: Optional name for the job. Defaults to the job file name (without extension) if not provided.
   provider:
     $ref: "#/definitions/AIProviderUse"
   task:

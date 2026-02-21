@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import { Agent } from "../core/Agent.js";
 import { Instruct } from "../core/Instruct.js";
 import type { MCP } from "../mcp/index.js";
+import type { AgentMemory } from "../memory/types.js";
 import type { AIProvider } from "../providers/types.js";
 import type { AxleTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
@@ -22,6 +23,7 @@ export async function runSingle(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: TracingContext,
+  memory: AgentMemory,
 ) {
   const instruct = new Instruct(jobConfig.task);
   if (jobConfig.files) {
@@ -31,7 +33,15 @@ export async function runSingle(
   }
 
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
-  const agent = new Agent({ provider, model, tools, mcps, tracer: jobSpan });
+  const agent = new Agent({
+    provider,
+    model,
+    tools,
+    mcps,
+    tracer: jobSpan,
+    name: jobConfig.name,
+    memory,
+  });
 
   try {
     const result = await agent.send(instruct, variables).final;
@@ -118,6 +128,7 @@ export async function runBatch(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: TracingContext,
+  memory: AgentMemory,
 ) {
   const batchConfig = jobConfig.batch!;
   const filePaths = await glob(batchConfig.files);
@@ -166,7 +177,15 @@ export async function runBatch(
 
       const itemVars = { ...variables, file: batchFilePath };
 
-      const agent = new Agent({ provider, model, tools, mcps, tracer: itemSpan });
+      const agent = new Agent({
+        provider,
+        model,
+        tools,
+        mcps,
+        tracer: itemSpan,
+        name: jobConfig.name,
+        memory,
+      });
       const result = await agent.send(instruct, itemVars).final;
 
       stats.in += result.usage.in;

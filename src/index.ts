@@ -51,6 +51,19 @@ export type {
   TracingContext,
 } from "./tracer/index.js";
 
+// Memory
+export { ProceduralMemory } from "./memory/index.js";
+export type {
+  AgentMemory,
+  MemoryContext,
+  ProceduralMemoryConfig,
+  RecallResult,
+} from "./memory/index.js";
+
+// Store
+export { LocalFileStore } from "./store/index.js";
+export type { FileStore } from "./store/index.js";
+
 // Utils
 export { loadFileContent } from "./utils/file.js";
 export type { FileInfo } from "./utils/file.js";
