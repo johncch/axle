@@ -17,20 +17,11 @@ const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
   .version(pkg.version)
-  .option("--dry-run", "Run the application without executing against the AI providers")
   .option("-c, --config <path>", "Path to the config file")
   .option("-j, --job <path>", "Path to the job file")
   .option("--no-log", "Do not write the output to a log file")
-  .option("--no-warn-unused", "Do not warn about unused variables")
-  .option("--no-inline", "Do not inline the console output")
   .option("-d, --debug", "Print additional debug information")
   .option("-i, --interactive", "Continue the conversation interactively after the initial task")
-  .option(
-    "--truncate <num>",
-    "Truncate printed strings to a certain number of characters, 0 to disable",
-    parseInt,
-    100,
-  )
   .option("--args <args...>", "Additional arguments in the form key=value");
 
 program.parse(process.argv);
@@ -143,9 +134,6 @@ try {
 }
 
 rootSpan.info("All systems operational. Running job...");
-if (options.dryRun) {
-  rootSpan.info("Dry run mode enabled. No API calls will be made.");
-}
 
 const sharedTools: Tool[] = jobConfig.tools?.length ? createTools(jobConfig.tools) : [];
 
