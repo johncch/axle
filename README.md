@@ -185,6 +185,42 @@ const agent = new Agent({
 Axle includes several built-in tools: `braveSearchTool`, `calculatorTool`,
 `execTool`, `readFileTool`, `writeFileTool`, and `patchFileTool`.
 
+### Server Tools
+
+Server tools are provider-managed tools that execute on the provider's side
+(e.g. web search, code interpreter). Pass them alongside regular tools using
+`{ type: "server", name: "..." }`.
+
+```typescript
+import { Agent } from "@fifthrevision/axle";
+import type { ServerTool } from "@fifthrevision/axle";
+
+const agent = new Agent({
+  provider,
+  model,
+  tools: [
+    { type: "server", name: "web_search" },
+    calculatorTool, // regular tools work alongside server tools
+  ],
+});
+```
+
+Axle maps common names to provider-specific identifiers automatically:
+
+| Name             | Anthropic                | OpenAI               | Gemini           |
+| ---------------- | ------------------------ | -------------------- | ---------------- |
+| `web_search`     | `web_search_20250305`    | `web_search_preview` | `googleSearch`   |
+| `code_execution` | —                        | `code_interpreter`   | `codeExecution`  |
+
+You can also pass provider-specific names directly. Use the optional `config`
+field for provider-specific options:
+
+```typescript
+{ type: "server", name: "web_search", config: { max_results: 5 } }
+```
+
+Server tool events stream as `internal-tool:start` and `internal-tool:complete`.
+
 ### MCP (Model Context Protocol)
 
 Axle supports connecting to MCP servers via stdio or HTTP transport. Create an
@@ -248,7 +284,7 @@ const result = await handle.final;
 
 Event types include `text:start`, `text:delta`, `text:end`, `thinking:start`,
 `thinking:delta`, `thinking:end`, `tool:start`, `tool:execute`,
-`tool:complete`, and `error`.
+`tool:complete`, `internal-tool:start`, `internal-tool:complete`, and `error`.
 
 Callbacks are registered once and fire on every subsequent `send()`.
 
@@ -292,6 +328,9 @@ task: |
 
 tools:
   - calculator
+
+server_tools:
+  - web_search
 
 files:
   - ./data/report.txt
