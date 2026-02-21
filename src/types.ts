@@ -7,6 +7,7 @@ export type ProgramOptions = {
   job?: string;
   log?: boolean;
   debug?: boolean;
+  interactive?: boolean;
   args?: string[];
 };
 

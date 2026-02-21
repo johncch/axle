@@ -1,3 +1,5 @@
+import { marked } from "marked";
+import { markedTerminal } from "marked-terminal";
 import type { EventLevel, LLMResult, SpanData, SpanEvent, TraceWriter } from "../types.js";
 
 const levelOrder: Record<EventLevel, number> = {
@@ -6,6 +8,13 @@ const levelOrder: Record<EventLevel, number> = {
   warn: 2,
   error: 3,
 };
+
+let markedInitialized = false;
+function ensureMarkedInit() {
+  if (markedInitialized) return;
+  marked.use(markedTerminal() as any);
+  markedInitialized = true;
+}
 
 export interface SimpleWriterOptions {
   /** Minimum event level to display (default: "info") */
@@ -16,6 +25,8 @@ export interface SimpleWriterOptions {
   showTimestamp?: boolean;
   /** Show duration on span end (default: true) */
   showDuration?: boolean;
+  /** Render markdown in event messages that have markdown: true attribute (default: false) */
+  markdown?: boolean;
   /** Custom output function (default: console.log) */
   output?: (line: string) => void;
 }
@@ -25,6 +36,7 @@ export class SimpleWriter implements TraceWriter {
   private showInternal: boolean;
   private showTimestamp: boolean;
   private showDuration: boolean;
+  private markdown: boolean;
   private output: (line: string) => void;
 
   // Track span hierarchy for depth calculation and event bubbling
@@ -36,6 +48,7 @@ export class SimpleWriter implements TraceWriter {
     this.showInternal = options.showInternal ?? false;
     this.showTimestamp = options.showTimestamp ?? true;
     this.showDuration = options.showDuration ?? true;
+    this.markdown = options.markdown ?? false;
     this.output = options.output ?? console.log;
   }
 
@@ -115,6 +128,11 @@ export class SimpleWriter implements TraceWriter {
     return span.name;
   }
 
+  private renderMarkdown(text: string): string {
+    ensureMarkedInit();
+    return (marked.parse(text) as string).trimEnd();
+  }
+
   onSpanStart(span: SpanData): void {
     // Always track the span for hierarchy
     this.spans.set(span.spanId, span);
@@ -183,13 +201,21 @@ export class SimpleWriter implements TraceWriter {
     const timestamp = this.formatTimestamp();
     const level = event.level.toUpperCase().padEnd(5);
 
-    let line = `${timestamp}${indent}${level} ${event.name}`;
+    const useMarkdown = this.markdown && event.attributes?.markdown === true;
+    const attrs = event.attributes
+      ? Object.entries(event.attributes).filter(([k]) => k !== "markdown")
+      : [];
 
-    if (event.attributes && Object.keys(event.attributes).length > 0) {
-      const attrs = Object.entries(event.attributes)
-        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-        .join(" ");
-      line += ` ${attrs}`;
+    let message = event.name;
+    if (useMarkdown) {
+      message = this.renderMarkdown(message);
+    }
+
+    let line = `${timestamp}${indent}${level} ${message}`;
+
+    if (attrs.length > 0) {
+      const attrStr = attrs.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+      line += ` ${attrStr}`;
     }
 
     this.output(line);

@@ -1,5 +1,6 @@
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { Agent } from "../core/Agent.js";
 import { Instruct } from "../core/Instruct.js";
 import type { MCP } from "../mcp/index.js";
@@ -39,7 +40,15 @@ export async function runSingle(
     stats.out += result.usage.out;
 
     if (result.response) {
-      parentSpan.info("Response: " + JSON.stringify(result.response, null, 2));
+      const text =
+        typeof result.response === "string"
+          ? result.response
+          : JSON.stringify(result.response, null, 2);
+      parentSpan.info(text, { markdown: true });
+    }
+
+    if (options.interactive) {
+      await runInteractiveLoop(agent, stats, parentSpan);
     }
 
     jobSpan.end();
@@ -48,6 +57,54 @@ export async function runSingle(
     jobSpan.error(msg);
     jobSpan.end("error");
     throw e;
+  }
+}
+
+async function runInteractiveLoop(
+  agent: Agent,
+  stats: Stats,
+  tracer: TracingContext,
+): Promise<void> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  rl.on("SIGINT", () => {
+    rl.close();
+  });
+
+  const prompt = (query: string): Promise<string | null> =>
+    new Promise((resolve) => {
+      rl.question(query, resolve);
+      rl.once("close", () => resolve(null));
+    });
+
+  try {
+    while (true) {
+      const input = await prompt("\n> ");
+      if (input === null || input.trim() === "") break;
+
+      try {
+        const result = await agent.send(input.trim()).final;
+
+        stats.in += result.usage.in;
+        stats.out += result.usage.out;
+
+        if (result.response) {
+          const text =
+            typeof result.response === "string"
+              ? result.response
+              : JSON.stringify(result.response, null, 2);
+          tracer.info(text, { markdown: true });
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        tracer.error(msg);
+      }
+    }
+  } finally {
+    rl.close();
   }
 }
 

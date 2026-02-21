@@ -24,6 +24,7 @@ const program = new Command()
   .option("--no-warn-unused", "Do not warn about unused variables")
   .option("--no-inline", "Do not inline the console output")
   .option("-d, --debug", "Print additional debug information")
+  .option("-i, --interactive", "Continue the conversation interactively after the initial task")
   .option(
     "--truncate <num>",
     "Truncate printed strings to a certain number of characters, 0 to disable",
@@ -59,6 +60,7 @@ const logWriter = new SimpleWriter({
   minLevel: options.debug ? "debug" : "info",
   showInternal: options.debug,
   showTimestamp: true,
+  markdown: true,
 });
 tracer.addWriter(logWriter);
 
