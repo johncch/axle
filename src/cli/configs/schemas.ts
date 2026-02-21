@@ -132,6 +132,7 @@ export type BatchConfig = z.infer<typeof BatchConfigSchema>;
  * ========================================================================== */
 
 export const JobConfigSchema = z.object({
+  name: z.string().optional(),
   provider: AIProviderUseSchema,
   task: z.string(),
   tools: z.array(z.string()).optional(),

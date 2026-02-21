@@ -6,6 +6,7 @@ import { closeMcps, connectMcps } from "./cli/mcp.js";
 import { runBatch, runSingle } from "./cli/runners.js";
 import { createTools } from "./cli/tools.js";
 import type { MCP } from "./mcp/index.js";
+import { ProceduralMemory } from "./memory/ProceduralMemory.js";
 import { getProvider } from "./providers/index.js";
 import type { AIProvider } from "./providers/types.js";
 import type { AxleTool, ServerTool } from "./tools/types.js";
@@ -135,6 +136,8 @@ try {
 
 rootSpan.info("All systems operational. Running job...");
 
+const memory = new ProceduralMemory({ provider, model });
+
 const serverTools: ServerTool[] = (jobConfig.server_tools ?? []).map((name) => ({
   type: "server",
   name,
@@ -172,6 +175,7 @@ try {
       options,
       stats,
       rootSpan,
+      memory,
     );
   } else {
     await runSingle(
@@ -184,6 +188,7 @@ try {
       options,
       stats,
       rootSpan,
+      memory,
     );
   }
 } catch (e) {
