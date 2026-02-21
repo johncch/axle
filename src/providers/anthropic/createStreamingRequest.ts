@@ -29,7 +29,19 @@ export async function* createStreamingRequest(params: {
   const { client, model, messages, system, tools, runtime, signal, options } = params;
   const tracer = runtime?.tracer;
 
-  const { stop, max_tokens, ...restOptions } = options ?? {};
+  const { stop, max_tokens, serverTools, ...restOptions } = options ?? {};
+
+  const providerTools: any[] = tools ? convertToProviderTools(tools) : [];
+
+  if (serverTools) {
+    const ANTHROPIC_SERVER_TOOL_MAP: Record<string, string> = {
+      web_search: "web_search_20250305",
+    };
+    for (const st of serverTools) {
+      const mappedType = ANTHROPIC_SERVER_TOOL_MAP[st.name] ?? st.name;
+      providerTools.push({ type: mappedType, name: st.name, ...st.config });
+    }
+  }
 
   const request = {
     model: model,
@@ -37,7 +49,7 @@ export async function* createStreamingRequest(params: {
     messages: convertToProviderMessages(messages),
     ...(system && { system }),
     ...(stop && { stop_sequences: arrayify(stop) }),
-    ...(tools && { tools: convertToProviderTools(tools) }),
+    ...(providerTools.length > 0 && { tools: providerTools }),
     ...restOptions,
   };
   tracer?.debug("Anthropic streaming request", { request });
@@ -81,12 +93,9 @@ const MAX_OUTPUT_TOKENS: Record<string, number> = {
   [Models.CLAUDE_HAIKU_4_5_20251001]: 64000,
   [Models.CLAUDE_SONNET_4_5_20250929]: 64000,
   [Models.CLAUDE_SONNET_4_20250514]: 64000,
-  [Models.CLAUDE_3_7_SONNET_20250219]: 64000,
   // 32K
   [Models.CLAUDE_OPUS_4_1_20250805]: 32000,
   [Models.CLAUDE_OPUS_4_20250514]: 32000,
-  // 8K
-  [Models.CLAUDE_3_5_HAIKU_20241022]: 8192,
   // 4K
   [Models.CLAUDE_3_HAIKU_20240307]: 4096,
 };

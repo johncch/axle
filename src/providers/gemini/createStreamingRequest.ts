@@ -27,8 +27,11 @@ export async function* createStreamingRequest(params: {
   const { client, model, messages, system, tools, runtime, signal, options } = params;
   const tracer = runtime?.tracer;
 
+  // Extract serverTools before option conversion
+  const { serverTools, ...rawOptions } = options ?? {};
+
   // Convert max_tokens to maxOutputTokens for Google AI
-  const googleOptions = options ? { ...options } : {};
+  const googleOptions = rawOptions ? { ...rawOptions } : {};
   if (googleOptions.max_tokens) {
     googleOptions.maxOutputTokens = googleOptions.max_tokens;
     delete googleOptions.max_tokens;
@@ -46,9 +49,23 @@ export async function* createStreamingRequest(params: {
     delete googleOptions.top_p;
   }
 
+  const config = prepareConfig(tools, system, googleOptions);
+
+  if (serverTools) {
+    const GEMINI_SERVER_TOOL_MAP: Record<string, string> = {
+      web_search: "googleSearch",
+      code_execution: "codeExecution",
+    };
+    if (!config.tools) config.tools = [];
+    for (const st of serverTools) {
+      const key = GEMINI_SERVER_TOOL_MAP[st.name] ?? st.name;
+      config.tools.push({ [key]: st.config ?? {} } as any);
+    }
+  }
+
   const request = {
     contents: convertAxleMessagesToGemini(messages),
-    config: prepareConfig(tools, system, googleOptions),
+    config,
   };
   tracer?.debug("Gemini streaming request", { request });
 

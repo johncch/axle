@@ -42,6 +42,20 @@ export function convertToProviderMessages(
             name: part.name,
             input: part.parameters,
           } satisfies Anthropic.ToolUseBlockParam);
+        } else if (part.type === "internal-tool") {
+          content.push({
+            type: "server_tool_use",
+            id: part.id,
+            name: part.name,
+            input: part.input ?? {},
+          } as any);
+          if (part.output != null) {
+            content.push({
+              type: "web_search_tool_result",
+              tool_use_id: part.id,
+              content: part.output,
+            } as any);
+          }
         }
       }
       return {

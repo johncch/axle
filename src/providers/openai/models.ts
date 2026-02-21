@@ -56,8 +56,6 @@ export const Models = {
   // o-series reasoning models (o4 - April 2025)
   O4_MINI: "o4-mini",
   O4_MINI_2025_04_16: "o4-mini-2025-04-16",
-  O4_MINI_DEEP_RESEARCH: "o4-mini-deep-research",
-  O4_MINI_DEEP_RESEARCH_2025_06_26: "o4-mini-deep-research-2025-06-26",
 
   // o-series reasoning models (o3 - January-June 2025)
   O3: "o3",
@@ -66,21 +64,12 @@ export const Models = {
   O3_PRO_2025_06_10: "o3-pro-2025-06-10",
   O3_MINI: "o3-mini",
   O3_MINI_2025_01_31: "o3-mini-2025-01-31",
-  O3_DEEP_RESEARCH: "o3-deep-research",
-  O3_DEEP_RESEARCH_2025_06_26: "o3-deep-research-2025-06-26",
 
   // o-series reasoning models (o1 - December 2024)
   O1: "o1",
   O1_2024_12_17: "o1-2024-12-17",
   O1_PRO: "o1-pro",
   O1_PRO_2025_03_19: "o1-pro-2025-03-19",
-
-  // Computer use models
-  COMPUTER_USE_PREVIEW: "computer-use-preview",
-  COMPUTER_USE_PREVIEW_2025_03_11: "computer-use-preview-2025-03-11",
-
-  // ChatGPT vision
-  CHATGPT_IMAGE_LATEST: "chatgpt-image-latest",
 } as const;
 
 // Default to the cheapest modern model (GPT-5 Mini)

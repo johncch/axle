@@ -6,7 +6,7 @@ import type {
   ContentPartThinking,
   ContentPartToolCall,
 } from "../messages/message.js";
-import type { ToolDefinition } from "../tools/types.js";
+import type { ServerTool, ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { GenerateTurnOptions } from "./generateTurn.js";
@@ -49,6 +49,7 @@ export interface StreamOptions {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
+  serverTools?: Array<ServerTool>;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
@@ -117,6 +118,7 @@ async function run(
     messages,
     system,
     tools,
+    serverTools,
     onToolCall,
     maxIterations,
     tracer,
@@ -215,13 +217,17 @@ async function run(
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
     turnSpan?.startLLMStream();
 
+    const mergedOptions = serverTools
+      ? { ...genOptions, serverTools }
+      : genOptions;
+
     const streamSource = provider.createStreamingRequest?.(model, {
       messages: workingMessages,
       system,
       tools,
       context: { tracer: turnSpan },
       signal,
-      options: genOptions,
+      options: mergedOptions,
     });
 
     if (!streamSource) {
@@ -245,6 +251,11 @@ async function run(
     // Track tool call id → globalIndex for tool execution events
     const toolCallIndexMap = new Map<string, number>();
 
+    // Index of the most recently pushed turnParts entry.
+    // Provider block indices can have gaps (e.g. web_search_tool_result), but
+    // blocks stream sequentially so the current part is always the last pushed.
+    let currentPartIndex = -1;
+
     const closePart = () => {
       if (openPartType !== null && openPartIndex >= 0) {
         const endType = openPartType === "text" ? ("text:end" as const) : ("thinking:end" as const);
@@ -265,6 +276,7 @@ async function run(
         case "text-start": {
           closePart();
           turnParts.push({ type: "text", text: "" });
+          currentPartIndex = turnParts.length - 1;
           openPartIndex = globalIndex++;
           openPartType = "text";
           openAccumulated = "";
@@ -273,7 +285,7 @@ async function run(
         }
 
         case "text-delta": {
-          const part = turnParts[chunk.data.index] as ContentPartText;
+          const part = turnParts[currentPartIndex] as ContentPartText;
           part.text += chunk.data.text;
           openAccumulated = part.text;
           turnSpan?.appendLLMStream(chunk.data.text);
@@ -294,6 +306,7 @@ async function run(
         case "thinking-start": {
           closePart();
           turnParts.push({ type: "thinking", text: "" });
+          currentPartIndex = turnParts.length - 1;
           openPartIndex = globalIndex++;
           openPartType = "thinking";
           openAccumulated = "";
@@ -302,7 +315,7 @@ async function run(
         }
 
         case "thinking-delta": {
-          const part = turnParts[chunk.data.index] as ContentPartThinking;
+          const part = turnParts[currentPartIndex] as ContentPartThinking;
           part.text += chunk.data.text;
           openAccumulated = part.text;
           emit(cbs, {
@@ -315,7 +328,7 @@ async function run(
         }
 
         case "thinking-summary-delta": {
-          const part = turnParts[chunk.data.index] as ContentPartThinking;
+          const part = turnParts[currentPartIndex] as ContentPartThinking;
           part.text += chunk.data.text;
           openAccumulated = part.text;
           emit(cbs, {
@@ -341,13 +354,14 @@ async function run(
             name: chunk.data.name,
             parameters: {},
           });
+          currentPartIndex = turnParts.length - 1;
           toolCallIndexMap.set(chunk.data.id, idx);
           emit(cbs, { type: "tool:start", index: idx, id: chunk.data.id, name: chunk.data.name });
           break;
         }
 
         case "tool-call-complete": {
-          const part = turnParts[chunk.data.index] as ContentPartToolCall;
+          const part = turnParts[currentPartIndex] as ContentPartToolCall;
           if (chunk.data.id) part.id = chunk.data.id;
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
@@ -363,6 +377,7 @@ async function run(
             id: chunk.data.id,
             name: chunk.data.name,
           });
+          currentPartIndex = turnParts.length - 1;
           emit(cbs, {
             type: "internal-tool:start",
             index: idx,
@@ -373,7 +388,7 @@ async function run(
         }
 
         case "internal-tool-complete": {
-          const part = turnParts[chunk.data.index] as ContentPartInternalTool;
+          const part = turnParts[currentPartIndex] as ContentPartInternalTool;
           if (chunk.data.output != null) part.output = chunk.data.output;
           emit(cbs, {
             type: "internal-tool:complete",

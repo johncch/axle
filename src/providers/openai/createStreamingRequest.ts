@@ -27,14 +27,28 @@ export async function* createStreamingRequest(params: {
   const { client, model, messages, system, tools, runtime, signal, options } = params;
   const tracer = runtime?.tracer;
 
-  const modelTools = prepareTools(tools);
+  const { serverTools, ...restOptions } = options ?? {};
+
+  const modelTools: any[] = prepareTools(tools) ?? [];
+
+  if (serverTools) {
+    const OPENAI_SERVER_TOOL_MAP: Record<string, string> = {
+      web_search: "web_search_preview",
+      code_execution: "code_interpreter",
+    };
+    for (const st of serverTools) {
+      const mappedType = OPENAI_SERVER_TOOL_MAP[st.name] ?? st.name;
+      modelTools.push({ type: mappedType, ...st.config });
+    }
+  }
+
   const request = {
     model,
     input: convertAxleMessageToResponseInput(messages),
     ...(system && { instructions: system }),
     stream: true as const,
-    ...(modelTools ? { tools: modelTools } : {}),
-    ...options,
+    ...(modelTools.length > 0 ? { tools: modelTools } : {}),
+    ...restOptions,
   };
 
   tracer?.debug("OpenAI ResponsesAPI streaming request", { request });

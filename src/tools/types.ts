@@ -1,7 +1,8 @@
 import type { z, ZodObject } from "zod";
 import type { ToolResultPart } from "../messages/message.js";
 
-export interface Tool<TSchema extends ZodObject<any> = ZodObject<any>> {
+export interface ExecutableTool<TSchema extends ZodObject<any> = ZodObject<any>> {
+  type?: "function";
   name: string;
   description: string;
   schema: TSchema;
@@ -10,4 +11,12 @@ export interface Tool<TSchema extends ZodObject<any> = ZodObject<any>> {
   summarize?(input: z.infer<TSchema>): string;
 }
 
-export type ToolDefinition = Pick<Tool, "name" | "description" | "schema">;
+export interface ServerTool {
+  type: "server";
+  name: string;
+  config?: Record<string, unknown>;
+}
+
+export type AxleTool = ExecutableTool | ServerTool;
+
+export type ToolDefinition = Pick<ExecutableTool, "name" | "description" | "schema">;

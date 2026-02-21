@@ -135,6 +135,7 @@ export const JobConfigSchema = z.object({
   provider: AIProviderUseSchema,
   task: z.string(),
   tools: z.array(z.string()).optional(),
+  server_tools: z.array(z.string()).optional(),
   files: z.array(z.string()).optional(),
   mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),

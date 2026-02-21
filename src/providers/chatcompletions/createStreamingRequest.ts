@@ -28,6 +28,10 @@ export async function* createStreamingRequest(params: {
   const { baseUrl, model, messages, system, tools, context, signal, apiKey, options } = params;
   const tracer = context?.tracer;
 
+  if (options?.serverTools) {
+    tracer?.warn("serverTools not supported by ChatCompletions provider");
+  }
+
   const chatMessages = convertAxleMessages(messages, system);
   const chatTools = convertTools(tools);
 

@@ -17,7 +17,7 @@ export type { AIProvider } from "./providers/types.js";
 
 // Tools
 export { braveSearchTool, calculatorTool } from "./tools/index.js";
-export type { Tool, ToolDefinition } from "./tools/types.js";
+export type { AxleTool, ExecutableTool, ServerTool, ToolDefinition } from "./tools/types.js";
 
 // MCP
 export { MCP } from "./mcp/index.js";

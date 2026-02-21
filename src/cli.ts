@@ -8,7 +8,7 @@ import { createTools } from "./cli/tools.js";
 import type { MCP } from "./mcp/index.js";
 import { getProvider } from "./providers/index.js";
 import type { AIProvider } from "./providers/types.js";
-import { Tool } from "./tools/index.js";
+import type { AxleTool, ServerTool } from "./tools/types.js";
 import { Tracer } from "./tracer/tracer.js";
 import { SimpleWriter } from "./tracer/writers/simple.js";
 import type { Stats } from "./types.js";
@@ -135,7 +135,14 @@ try {
 
 rootSpan.info("All systems operational. Running job...");
 
-const sharedTools: Tool[] = jobConfig.tools?.length ? createTools(jobConfig.tools) : [];
+const serverTools: ServerTool[] = (jobConfig.server_tools ?? []).map((name) => ({
+  type: "server",
+  name,
+}));
+const sharedTools: AxleTool[] = [
+  ...(jobConfig.tools?.length ? createTools(jobConfig.tools) : []),
+  ...serverTools,
+];
 
 let mcps: MCP[] = [];
 if (jobConfig.mcps?.length) {

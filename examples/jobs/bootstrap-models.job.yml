@@ -10,7 +10,7 @@
 
 provider:
   type: anthropic
-  model: claude-sonnet-4-5-20250929
+  model: claude-sonnet-4-6
 
 task: |
   Your task is to update the provider files in ./src/ai/<provider>/models.ts
@@ -19,7 +19,7 @@ task: |
   This file contains a script that runs against all the different APIs in this repository
   (OpenAI, Gemini, and Anthropic). If you run the script, it will return all models available in the API.
 
-  Now I need you to filter the models to only include modern, recommended models.
+  Now I need you to filter the models to only include modern, recommended text-first multi-modal models like ChatGPT 5, Sonnet or Gemini 3.5 Pro .
   Todays date is {{ date }} and modern means models released in the last 24 months
   or so.
 

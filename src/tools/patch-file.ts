@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import type { Tool } from "./types.js";
+import type { ExecutableTool } from "./types.js";
 
 const patchFileSchema = z.object({
   path: z.string().describe("The file path to patch"),
@@ -10,7 +10,7 @@ const patchFileSchema = z.object({
   end_line: z.number().int().positive().describe("1-indexed end line (inclusive) of the region to match within"),
 });
 
-const patchFileTool: Tool<typeof patchFileSchema> = {
+const patchFileTool: ExecutableTool<typeof patchFileSchema> = {
   name: "patch-file",
   description: "Patch a file by replacing an exact string match within a specified line range",
   schema: patchFileSchema,

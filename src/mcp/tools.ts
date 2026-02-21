@@ -1,6 +1,6 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { ToolResultPart } from "../messages/message.js";
-import type { Tool } from "../tools/types.js";
+import type { ExecutableTool } from "../tools/types.js";
 import type { ToolDefinition } from "../tools/types.js";
 import { jsonSchemaToZod } from "./schema.js";
 
@@ -17,7 +17,7 @@ export function createMcpTools(
   mcpTools: McpToolInfo[],
   client: Client,
   prefix?: string,
-): Tool[] {
+): ExecutableTool[] {
   return mcpTools.map((mcpTool) => createMcpTool(mcpTool, client, prefix));
 }
 
@@ -35,7 +35,7 @@ export function createMcpToolDefinitions(
   });
 }
 
-function createMcpTool(mcpTool: McpToolInfo, client: Client, prefix?: string): Tool {
+function createMcpTool(mcpTool: McpToolInfo, client: Client, prefix?: string): ExecutableTool {
   const name = prefix ? `${prefix}_${mcpTool.name}` : mcpTool.name;
   const schema = jsonSchemaToZod(mcpTool.inputSchema);
 

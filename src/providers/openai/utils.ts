@@ -75,6 +75,13 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
     });
   }
 
+  const internalToolParts = msg.content.filter((c) => c.type === "internal-tool");
+  for (const part of internalToolParts) {
+    if (part.output != null) {
+      result.push(part.output as any);
+    }
+  }
+
   return result;
 }
 

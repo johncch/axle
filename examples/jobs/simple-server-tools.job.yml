@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../schemas/v2/job.yaml
+provider:
+  type: anthropic
+
+server_tools:
+  - web_search
+
+task: |
+  What are today's top news headlines? Give me a brief summary.

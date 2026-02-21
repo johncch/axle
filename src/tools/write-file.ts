@@ -1,14 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
-import type { Tool } from "./types.js";
+import type { ExecutableTool } from "./types.js";
 
 const writeFileSchema = z.object({
   path: z.string().describe("The file path to write to"),
   content: z.string().describe("The content to write to the file"),
 });
 
-const writeFileTool: Tool<typeof writeFileSchema> = {
+const writeFileTool: ExecutableTool<typeof writeFileSchema> = {
   name: "write-file",
   description: "Write content to a file on disk, creating directories if needed",
   schema: writeFileSchema,

@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Tool, ToolDefinition } from "../tools/types.js";
+import type { ExecutableTool, ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { createMcpToolDefinitions, createMcpTools } from "./tools.js";
 
@@ -76,7 +76,7 @@ export class MCP {
     }
   }
 
-  async listTools(options?: { prefix?: string; tracer?: TracingContext }): Promise<Tool[]> {
+  async listTools(options?: { prefix?: string; tracer?: TracingContext }): Promise<ExecutableTool[]> {
     const client = this.assertConnected();
     const mcpTools = await this.fetchTools(client, options?.tracer);
     return createMcpTools(mcpTools, client, options?.prefix);
@@ -91,7 +91,7 @@ export class MCP {
     return createMcpToolDefinitions(mcpTools, options?.prefix);
   }
 
-  async refreshTools(): Promise<Tool[]> {
+  async refreshTools(): Promise<ExecutableTool[]> {
     this.assertConnected();
     this.cachedMcpTools = undefined;
     return this.listTools();

@@ -1,11 +1,11 @@
 import z from "zod";
 import { Agent, Instruct } from "../../src/index.js";
-import type { Tool } from "../../src/tools/types.js";
+import type { ExecutableTool } from "../../src/tools/types.js";
 import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
 
-const setNameTool: Tool = {
+const setNameTool: ExecutableTool = {
   name: "setName",
   description: "Set your name in the app",
   schema: z.object({

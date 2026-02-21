@@ -1,13 +1,13 @@
 import * as z from "zod";
 import type { ExecProviderConfig } from "../../cli/configs/schemas.js";
-import type { Tool } from "../types.js";
+import type { ExecutableTool } from "../types.js";
 import { formatExecError, formatOutput, runCommand } from "./helpers.js";
 
 const execSchema = z.object({
   command: z.string().describe("The shell command to execute"),
 });
 
-class ExecTool implements Tool<typeof execSchema> {
+class ExecTool implements ExecutableTool<typeof execSchema> {
   name = "exec";
   description = "Execute a shell command and return the output.";
   schema = execSchema;

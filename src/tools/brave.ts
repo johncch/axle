@@ -1,13 +1,13 @@
 import * as z from "zod";
 import { BraveProviderConfig } from "../cli/configs/schemas.js";
 import { delay } from "../utils/utils.js";
-import type { Tool } from "./types.js";
+import type { ExecutableTool } from "./types.js";
 
 const braveSearchSchema = z.object({
   searchTerm: z.string().describe("The search term to query"),
 });
 
-class BraveSearchTool implements Tool<typeof braveSearchSchema> {
+class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
   name = "brave";
   description = "Perform a search using the Brave search engine";
   schema = braveSearchSchema;

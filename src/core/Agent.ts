@@ -6,7 +6,7 @@ import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream, type StreamEventCallback } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
-import type { Tool } from "../tools/types.js";
+import type { AxleTool, ExecutableTool, ServerTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import { compileInstruct } from "./compile.js";
@@ -18,7 +18,7 @@ export interface AgentConfig {
   provider: AIProvider;
   model: string;
   system?: string;
-  tools?: Tool[];
+  tools?: AxleTool[];
   mcps?: MCP[];
   tracer?: TracingContext;
 }
@@ -35,6 +35,10 @@ export interface AgentHandle<T = string> {
   readonly final: Promise<AgentResult<T>>;
 }
 
+function isServerTool(t: AxleTool): t is ServerTool {
+  return t.type === "server";
+}
+
 export class Agent {
   readonly provider: AIProvider;
   readonly model: string;
@@ -42,7 +46,8 @@ export class Agent {
   readonly tracer?: TracingContext;
 
   system: string | undefined;
-  tools: Record<string, Tool> = {};
+  tools: Record<string, ExecutableTool> = {};
+  serverTools: ServerTool[] = [];
 
   private mcps: MCP[] = [];
   private mcpToolsResolved = false;
@@ -63,13 +68,17 @@ export class Agent {
     }
   }
 
-  addTool(tool: Tool) {
-    this.tools[tool.name] = tool;
+  addTool(tool: AxleTool) {
+    if (isServerTool(tool)) {
+      this.serverTools.push(tool);
+    } else {
+      this.tools[tool.name] = tool;
+    }
   }
 
-  addTools(tools: Tool[]) {
+  addTools(tools: AxleTool[]) {
     for (const tool of tools) {
-      this.tools[tool.name] = tool;
+      this.addTool(tool);
     }
   }
 
@@ -84,7 +93,9 @@ export class Agent {
   }
 
   hasTools(): boolean {
-    return Object.keys(this.tools).length > 0 || this.mcps.length > 0;
+    return (
+      Object.keys(this.tools).length > 0 || this.serverTools.length > 0 || this.mcps.length > 0
+    );
   }
 
   on(callback: StreamEventCallback) {
@@ -117,7 +128,7 @@ export class Agent {
 
   private async resolveMcpTools(): Promise<void> {
     if (this.mcpToolsResolved) return;
-    this.tracer?.info("resolving MCP tools", { count: this.mcps.length });
+    this.tracer?.debug("resolving MCP tools", { count: this.mcps.length });
     for (const mcp of this.mcps) {
       const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer });
       this.addTools(tools);
@@ -149,6 +160,7 @@ export class Agent {
         messages: this.history.messages,
         system: this.system,
         tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
+        serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
         tracer: this.tracer,
         onToolCall: async (name, params) => {
           const tool = tools[name];
