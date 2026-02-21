@@ -43,7 +43,15 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(pnpm info:*)",
       "Bash(npm info:*)",
-      "Bash(pnpm remove:*)"
+      "Bash(pnpm remove:*)",
+      "WebFetch(domain:langchain-ai.github.io)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.letta.com)",
+      "WebFetch(domain:arxiv.org)",
+      "mcp__claude_ai_Craft_MCP_Connector__documents_search",
+      "mcp__claude_ai_Craft_MCP_Connector__blocks_get",
+      "mcp__claude_ai_Craft_MCP_Connector__blocks_add",
+      "mcp__claude_ai_Craft_MCP_Connector__markdown_add"
     ]
   },
   "enableAllProjectMcpServers": false

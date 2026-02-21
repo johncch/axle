@@ -1,11 +1,14 @@
 import { AxleError } from "../errors/AxleError.js";
 import type { MCP } from "../mcp/index.js";
+import type { AgentMemory } from "../memory/types.js";
 import { History } from "../messages/history.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream, type StreamEventCallback } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
+import { LocalFileStore } from "../store/LocalFileStore.js";
+import type { FileStore } from "../store/types.js";
 import type { AxleTool, ExecutableTool, ServerTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
@@ -18,8 +21,11 @@ export interface AgentConfig {
   provider: AIProvider;
   model: string;
   system?: string;
+  name?: string;
+  scope?: Record<string, string>;
   tools?: AxleTool[];
   mcps?: MCP[];
+  memory?: AgentMemory;
   tracer?: TracingContext;
 }
 
@@ -44,6 +50,9 @@ export class Agent {
   readonly model: string;
   readonly history: History;
   readonly tracer?: TracingContext;
+  readonly name?: string;
+  readonly scope?: Record<string, string>;
+  readonly store: FileStore;
 
   system: string | undefined;
   tools: Record<string, ExecutableTool> = {};
@@ -51,6 +60,7 @@ export class Agent {
 
   private mcps: MCP[] = [];
   private mcpToolsResolved = false;
+  private memory?: AgentMemory;
 
   private eventCallbacks: StreamEventCallback[] = [];
 
@@ -60,11 +70,24 @@ export class Agent {
     this.history = new History();
     this.tracer = config.tracer;
     this.system = config.system;
+    this.name = config.name;
+    this.scope = config.scope;
+    this.store = new LocalFileStore(".axle");
     if (config.tools) {
       this.addTools(config.tools);
     }
     if (config.mcps) {
       this.mcps = [...config.mcps];
+    }
+    if (config.memory) {
+      if (!config.name) {
+        throw new AxleError(
+          "Agent requires a 'name' when memory is provided. The name is used to partition memory storage.",
+        );
+      }
+      this.memory = config.memory;
+      const memoryTools = config.memory.tools?.();
+      if (memoryTools) this.addTools(memoryTools);
     }
   }
 
@@ -147,6 +170,21 @@ export class Agent {
         return { response: null, messages: [], final: undefined, usage: { in: 0, out: 0 } };
       }
 
+      let effectiveSystem = this.system;
+      if (this.memory) {
+        const recallResult = await this.memory.recall({
+          name: this.name,
+          scope: this.scope,
+          system: this.system,
+          messages: this.history.messages,
+          store: this.store,
+          tracer: this.tracer,
+        });
+        if (recallResult.systemSuffix) {
+          effectiveSystem = (effectiveSystem ?? "") + "\n\n" + recallResult.systemSuffix;
+        }
+      }
+
       const tools = this.tools;
       const toolDefinitions = Object.values(tools).map((tool) => ({
         name: tool.name,
@@ -158,7 +196,7 @@ export class Agent {
         provider: this.provider,
         model: this.model,
         messages: this.history.messages,
-        system: this.system,
+        system: effectiveSystem,
         tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
         serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
         tracer: this.tracer,
@@ -199,6 +237,24 @@ export class Agent {
         }
       } else if (streamResult.result === "cancelled") {
         final = streamResult.partial;
+      }
+
+      if (this.memory && streamResult.result === "success") {
+        try {
+          await this.memory.record({
+            name: this.name,
+            scope: this.scope,
+            system: this.system,
+            messages: this.history.messages,
+            newMessages: streamResult.messages,
+            store: this.store,
+            tracer: this.tracer,
+          });
+        } catch (e) {
+          this.tracer?.warn("memory record failed", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
       }
 
       const usage = streamResult.usage ?? { in: 0, out: 0 };

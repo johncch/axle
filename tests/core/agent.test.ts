@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { Agent } from "../../src/core/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
+import type { AgentMemory, MemoryContext, RecallResult } from "../../src/memory/types.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
@@ -196,5 +197,191 @@ describe("Agent", () => {
     await agent.send("Hi").final;
 
     expect(agent.hasTools()).toBe(true);
+  });
+
+  describe("memory integration", () => {
+    function createMockMemory(overrides?: Partial<AgentMemory>): AgentMemory {
+      return {
+        recall: vi.fn().mockResolvedValue({}),
+        record: vi.fn().mockResolvedValue(undefined),
+        ...overrides,
+      };
+    }
+
+    test("recall() augments system prompt before execution", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const memory = createMockMemory({
+        recall: vi.fn().mockResolvedValue({
+          systemSuffix: "## Learned Instructions\n\n1. Be concise",
+        }),
+      });
+
+      const agent = new Agent({
+        provider,
+        model: "mock",
+        name: "test-agent",
+        system: "You are helpful.",
+        memory,
+      });
+
+      await agent.send("Hi").final;
+
+      expect(memory.recall).toHaveBeenCalledOnce();
+      // agent.system should NOT be mutated
+      expect(agent.system).toBe("You are helpful.");
+    });
+
+    test("recall() works when agent has no system prompt", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const memory = createMockMemory({
+        recall: vi.fn().mockResolvedValue({
+          systemSuffix: "## Learned Instructions\n\n1. Be concise",
+        }),
+      });
+
+      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
+
+      await agent.send("Hi").final;
+
+      expect(memory.recall).toHaveBeenCalledOnce();
+      expect(agent.system).toBeUndefined();
+    });
+
+    test("name and scope are passed through to memory context", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const memory = createMockMemory();
+
+      const agent = new Agent({
+        provider,
+        model: "mock",
+        name: "test-agent",
+        scope: { user: "john" },
+        memory,
+      });
+
+      await agent.send("Hi").final;
+
+      expect(memory.recall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "test-agent",
+          scope: { user: "john" },
+        }),
+      );
+      expect(memory.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "test-agent",
+          scope: { user: "john" },
+        }),
+      );
+    });
+
+    test("record() receives newMessages from the turn", async () => {
+      const provider = createMockStreamProvider(["response text"]);
+      const memory = createMockMemory();
+
+      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
+      await agent.send("Hi").final;
+
+      expect(memory.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          newMessages: expect.arrayContaining([
+            expect.objectContaining({ role: "assistant" }),
+          ]),
+        }),
+      );
+    });
+
+    test("memory tools are registered on agent", async () => {
+      const { z } = await import("zod");
+      const mockTool = {
+        name: "add_instruction",
+        description: "Add instruction",
+        schema: z.object({ instruction: z.string() }),
+        execute: vi.fn().mockResolvedValue("ok"),
+      };
+
+      const memory = createMockMemory({
+        tools: () => [mockTool],
+      });
+
+      const provider = createMockStreamProvider(["ok"]);
+      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
+
+      expect(agent.tools["add_instruction"]).toBeDefined();
+      expect(agent.hasTools()).toBe(true);
+    });
+
+    test("record() failure does not prevent result from being returned", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const memory = createMockMemory({
+        record: vi.fn().mockRejectedValue(new Error("disk full")),
+      });
+
+      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
+      const result = await agent.send("Hi").final;
+
+      expect(result.response).toBe("ok");
+    });
+
+    test("record() failure is logged via tracer", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const memory = createMockMemory({
+        record: vi.fn().mockRejectedValue(new Error("disk full")),
+      });
+
+      const tracer = {
+        warn: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        error: vi.fn(),
+        startSpan: vi.fn().mockReturnValue(null),
+        end: vi.fn(),
+        setAttribute: vi.fn(),
+        setAttributes: vi.fn(),
+        setResult: vi.fn(),
+        startLLMStream: vi.fn(),
+        appendLLMStream: vi.fn(),
+        endLLMStream: vi.fn(),
+      };
+
+      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory, tracer });
+      await agent.send("Hi").final;
+
+      expect(tracer.warn).toHaveBeenCalledWith(
+        "memory record failed",
+        expect.objectContaining({ error: "disk full" }),
+      );
+    });
+
+    test("record() is not called on error", async () => {
+      // Provider that returns an error
+      const errorProvider: AIProvider = {
+        name: "mock-error",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          yield {
+            type: "error",
+            data: { type: "server_error", message: "Something broke" },
+          };
+        },
+      };
+
+      const memory = createMockMemory();
+      const agent = new Agent({ provider: errorProvider, model: "mock", name: "test-agent", memory });
+
+      await expect(agent.send("Hi").final).rejects.toThrow();
+      expect(memory.record).not.toHaveBeenCalled();
+    });
+
+    test("throws if memory is provided without name", () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const memory = createMockMemory();
+
+      expect(() => new Agent({ provider, model: "mock", memory })).toThrow(
+        /requires a 'name'/,
+      );
+    });
   });
 });
