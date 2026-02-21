@@ -115,7 +115,7 @@ export function fromModelResponse(response: Response): ModelResult {
         });
       } catch (e) {
         throw new Error(
-          `Failed to parse tool call arguments for ${toolCall.name}: ${e instanceof Error ? e.message : String(e)}`,
+          `Failed to parse tool call arguments for ${toolCall.name}: ${e instanceof Error ? e.message : String(e)}\nRaw value: ${toolCall.arguments}`,
         );
       }
     }

@@ -163,7 +163,9 @@ export function createAnthropicStreamingAdapter() {
           const buffer = toolCallBuffers.get(event.index);
           if (buffer) {
             try {
-              const parsedArgs = JSON.parse(buffer.argumentsBuffer);
+              const parsedArgs = buffer.argumentsBuffer
+                ? JSON.parse(buffer.argumentsBuffer)
+                : {};
               chunks.push({
                 type: "tool-call-complete",
                 data: {
@@ -175,7 +177,7 @@ export function createAnthropicStreamingAdapter() {
               });
             } catch (e) {
               throw new Error(
-                `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}`,
+                `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${buffer.argumentsBuffer}`,
               );
             }
             toolCallBuffers.delete(event.index);

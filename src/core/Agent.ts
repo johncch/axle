@@ -1,8 +1,9 @@
+import { AxleError } from "../errors/AxleError.js";
 import type { MCP } from "../mcp/index.js";
 import { History } from "../messages/history.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
-import type { StreamResult } from "../providers/helpers.js";
+import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream, type StreamEventCallback } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import type { Tool } from "../tools/types.js";
@@ -173,7 +174,12 @@ export class Agent {
       let response: any | null = null;
       let final: AxleAssistantMessage | undefined;
 
-      if (streamResult.result === "success") {
+      if (streamResult.result === "error") {
+        throw new AxleError(formatGenerateError(streamResult.error), {
+          code: streamResult.error.type === "model" ? "MODEL_ERROR" : "TOOL_ERROR",
+          details: { error: streamResult.error },
+        });
+      } else if (streamResult.result === "success") {
         final = streamResult.final;
         if (final) {
           const textContent = getTextContent(final.content);
@@ -197,4 +203,11 @@ export class Agent {
       },
     };
   }
+}
+
+function formatGenerateError(error: GenerateError): string {
+  if (error.type === "model") {
+    return `Model error: ${error.error.error.message}`;
+  }
+  return `Tool error (${error.error.name}): ${error.error.message}`;
 }

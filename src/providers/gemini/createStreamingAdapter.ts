@@ -113,7 +113,7 @@ export function createGeminiStreamingAdapter() {
           index: toolIdx,
           id: toolCallId,
           name: part.functionCall.name,
-          arguments: part.functionCall.args,
+          arguments: part.functionCall.args ?? {},
         };
         const rawPart = part as Record<string, unknown>;
         if (rawPart.thoughtSignature) {

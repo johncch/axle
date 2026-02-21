@@ -140,17 +140,25 @@ function fromModelResponse(
 
     if (response.functionCalls) {
       for (const call of response.functionCalls) {
-        if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
+        if (call.args == null) {
+          content.push({
+            type: "tool-call" as const,
+            id: call.id,
+            name: call.name,
+            parameters: {},
+          });
+        } else if (typeof call.args !== "object" || Array.isArray(call.args)) {
           throw new Error(
             `Invalid tool call arguments for ${call.name}: expected object, got ${typeof call.args}`,
           );
+        } else {
+          content.push({
+            type: "tool-call" as const,
+            id: call.id,
+            name: call.name,
+            parameters: call.args as Record<string, unknown>,
+          });
         }
-        content.push({
-          type: "tool-call" as const,
-          id: call.id,
-          name: call.name,
-          parameters: call.args as Record<string, unknown>,
-        });
       }
     }
 

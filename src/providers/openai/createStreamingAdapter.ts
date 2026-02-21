@@ -105,7 +105,9 @@ export function createStreamingAdapter() {
 
         if (buffer) {
           try {
-            const parsedArgs = JSON.parse(event.arguments);
+            const parsedArgs = event.arguments
+              ? JSON.parse(event.arguments)
+              : {};
             chunks.push({
               type: "tool-call-complete",
               data: {
@@ -117,7 +119,7 @@ export function createStreamingAdapter() {
             });
           } catch (e) {
             throw new Error(
-              `Failed to parse function call arguments for ${name}: ${e instanceof Error ? e.message : String(e)}`,
+              `Failed to parse function call arguments for ${name}: ${e instanceof Error ? e.message : String(e)}\nRaw value: ${event.arguments}`,
             );
           }
           toolCallBuffers.delete(itemId);

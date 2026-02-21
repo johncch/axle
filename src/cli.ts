@@ -2,7 +2,7 @@ import { Command } from "@commander-js/extra-typings";
 import pkg from "../package.json";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
-import { connectMcps, closeMcps } from "./cli/mcp.js";
+import { closeMcps, connectMcps } from "./cli/mcp.js";
 import { runBatch, runSingle } from "./cli/runners.js";
 import { createTools } from "./cli/tools.js";
 import type { MCP } from "./mcp/index.js";
@@ -165,10 +165,34 @@ const startTime = performance.now();
 
 try {
   if (jobConfig.batch) {
-    await runBatch(jobConfig, provider, model, sharedTools, mcps, variables, options, stats, rootSpan);
+    await runBatch(
+      jobConfig,
+      provider,
+      model,
+      sharedTools,
+      mcps,
+      variables,
+      options,
+      stats,
+      rootSpan,
+    );
   } else {
-    await runSingle(jobConfig, provider, model, sharedTools, mcps, variables, options, stats, rootSpan);
+    await runSingle(
+      jobConfig,
+      provider,
+      model,
+      sharedTools,
+      mcps,
+      variables,
+      options,
+      stats,
+      rootSpan,
+    );
   }
+} catch (e) {
+  const error = e instanceof Error ? e : new Error(String(e));
+  rootSpan.error(error.message);
+  rootSpan.debug(error.stack ?? "");
 } finally {
   if (mcps.length > 0) {
     await closeMcps(mcps, rootSpan);

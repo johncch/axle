@@ -31,14 +31,23 @@ export async function runSingle(
 
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
   const agent = new Agent({ provider, model, tools, mcps, tracer: jobSpan });
-  const result = await agent.send(instruct, variables).final;
-  jobSpan.end();
 
-  stats.in += result.usage.in;
-  stats.out += result.usage.out;
+  try {
+    const result = await agent.send(instruct, variables).final;
 
-  if (result.response) {
-    parentSpan.info("Response: " + JSON.stringify(result.response, null, 2));
+    stats.in += result.usage.in;
+    stats.out += result.usage.out;
+
+    if (result.response) {
+      parentSpan.info("Response: " + JSON.stringify(result.response, null, 2));
+    }
+
+    jobSpan.end();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    jobSpan.error(msg);
+    jobSpan.end("error");
+    throw e;
   }
 }
 

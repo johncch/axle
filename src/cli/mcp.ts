@@ -2,10 +2,7 @@ import { MCP } from "../mcp/index.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { MCPConfigUse } from "./configs/schemas.js";
 
-export async function connectMcps(
-  configs: MCPConfigUse[],
-  tracer: TracingContext,
-): Promise<MCP[]> {
+export async function connectMcps(configs: MCPConfigUse[], tracer: TracingContext): Promise<MCP[]> {
   const instances: MCP[] = [];
   for (const config of configs) {
     const mcp = new MCP(config);
