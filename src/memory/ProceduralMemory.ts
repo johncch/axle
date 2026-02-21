@@ -66,9 +66,7 @@ export class ProceduralMemory implements AgentMemory {
 
     span?.info("loaded instructions", { count: store.instructions.length });
 
-    const numbered = store.instructions
-      .map((inst, i) => `${i + 1}. ${inst}`)
-      .join("\n");
+    const numbered = store.instructions.map((inst, i) => `${i + 1}. ${inst}`).join("\n");
 
     span?.end();
     return {
@@ -96,7 +94,6 @@ export class ProceduralMemory implements AgentMemory {
       model: this.model,
       messages: [{ role: "user", content: conversationText }],
       system: EXTRACTION_SYSTEM,
-      onToolCall: async () => null,
       tracer: extractSpan,
     });
 
@@ -136,7 +133,8 @@ export class ProceduralMemory implements AgentMemory {
     });
     const addInstruction: ExecutableTool<typeof schema> = {
       name: "add_instruction",
-      description: "Save a learned instruction for future runs. Use this when the user explicitly asks you to remember something.",
+      description:
+        "Save a learned instruction for future runs. Use this when the user explicitly asks you to remember something.",
       schema,
       async execute(input) {
         if (!self.lastStore) {
@@ -156,9 +154,7 @@ export class ProceduralMemory implements AgentMemory {
     const parts: string[] = [];
     for (const msg of messages) {
       if (msg.role === "user") {
-        const text = typeof msg.content === "string"
-          ? msg.content
-          : getTextContent(msg.content);
+        const text = typeof msg.content === "string" ? msg.content : getTextContent(msg.content);
         if (text) parts.push(`User: ${text}`);
       } else if (msg.role === "assistant") {
         const text = getTextContent(msg.content);

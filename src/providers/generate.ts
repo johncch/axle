@@ -21,7 +21,7 @@ export interface GenerateOptions {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  onToolCall: ToolCallCallback;
+  onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
   options?: GenerateTurnOptions;
@@ -157,18 +157,9 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       });
     }
 
-    const { results, missingTool } = await executeToolCalls(toolCalls, onToolCall, tracer);
+    const { results } = await executeToolCalls(toolCalls, onToolCall, tracer);
     if (results.length > 0) {
       addMessage({ role: "tool", content: results });
-    }
-
-    if (missingTool) {
-      return endWithResult({
-        result: "error",
-        messages: newMessages,
-        error: { type: "tool", error: missingTool },
-        usage,
-      });
     }
   }
 }

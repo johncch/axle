@@ -300,30 +300,41 @@ describe("stream()", () => {
   });
 
   describe("tool not found", () => {
-    test("returns error when onToolCall returns null", async () => {
-      const chunks: AnyStreamChunk[] = [
+    test("reports not-found as tool error result and continues loop", async () => {
+      const toolCallChunks: AnyStreamChunk[] = [
         startChunk(),
         toolCallStartChunk(0, "call_1", "unknown_tool"),
         toolCallCompleteChunk(0, "call_1", "unknown_tool", {}),
         completeChunk(AxleStopReason.FunctionCall),
       ];
 
-      const provider = makeProvider({ streamChunks: [chunks] });
+      // After the tool error, the LLM responds with text
+      const followUpChunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Sorry, that tool doesn't exist."),
+        textCompleteChunk(0),
+        completeChunk(AxleStopReason.Stop),
+      ];
 
-      const result = stream({
+      const provider = makeProvider({ streamChunks: [toolCallChunks, followUpChunks] });
+
+      const handle = stream({
         provider,
         model: "test-model",
         messages: [],
         onToolCall: async () => null,
       });
 
-      const final = await result.final;
+      const final = await handle.final;
 
-      expect(final.result).toBe("error");
-      if (final.result !== "error") return;
-      expect(final.error.type).toBe("tool");
-      if (final.error.type === "tool") {
-        expect(final.error.error.name).toBe("unknown_tool");
+      expect(final.result).toBe("success");
+      // Messages should include: assistant (tool call), tool (error result), assistant (follow-up)
+      const toolMessage = final.messages.find((m) => m.role === "tool");
+      expect(toolMessage).toBeDefined();
+      if (toolMessage?.role === "tool") {
+        expect(toolMessage.content[0].isError).toBe(true);
+        expect(toolMessage.content[0].content).toContain("not-found");
       }
     });
   });

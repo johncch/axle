@@ -528,19 +528,10 @@ async function run(
       return result;
     };
 
-    const { results, missingTool } = await executeToolCalls(toolCalls, emittingToolCall, tracer);
+    const { results } = await executeToolCalls(toolCalls, emittingToolCall, tracer);
 
     if (results.length > 0) {
       addMessage({ role: "tool", content: results });
-    }
-
-    if (missingTool) {
-      return endWithResult({
-        result: "error",
-        messages: newMessages,
-        error: { type: "tool", error: missingTool },
-        usage,
-      });
     }
   }
 }

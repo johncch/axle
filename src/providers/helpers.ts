@@ -60,14 +60,10 @@ export function serializeToolError(error: { type: string; message: string }): st
 
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
-  onToolCall: ToolCallCallback,
+  onToolCall: ToolCallCallback = async () => null,
   tracer?: TracingContext,
-): Promise<{
-  results: AxleToolCallResult[];
-  missingTool?: { name: string; message: string };
-}> {
+): Promise<{ results: AxleToolCallResult[] }> {
   const results: AxleToolCallResult[] = [];
-  let missingTool: { name: string; message: string } | undefined;
 
   for (const call of toolCalls) {
     const span = tracer?.startSpan(call.name, { type: "tool" });
@@ -86,19 +82,16 @@ export async function executeToolCalls(
     }
 
     if (resolved == null) {
-      missingTool = {
-        name: call.name,
-        message: `Tool not found: ${call.name}`,
-      };
+      const message = `Tool not found: ${call.name}`;
       span?.setResult({ kind: "tool", name: call.name, input: call.parameters, output: null });
       span?.end("error");
       results.push({
         id: call.id,
         name: call.name,
-        content: serializeToolError({ type: "not-found", message: missingTool.message }),
+        content: serializeToolError({ type: "not-found", message }),
         isError: true,
       });
-      break;
+      continue;
     }
 
     if (resolved.type === "success") {
@@ -131,5 +124,5 @@ export async function executeToolCalls(
     }
   }
 
-  return { results, missingTool };
+  return { results };
 }
