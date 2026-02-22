@@ -163,9 +163,7 @@ export function createAnthropicStreamingAdapter() {
           const buffer = toolCallBuffers.get(event.index);
           if (buffer) {
             try {
-              const parsedArgs = buffer.argumentsBuffer
-                ? JSON.parse(buffer.argumentsBuffer)
-                : {};
+              const parsedArgs = buffer.argumentsBuffer ? JSON.parse(buffer.argumentsBuffer) : {};
               chunks.push({
                 type: "tool-call-complete",
                 data: {

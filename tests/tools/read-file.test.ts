@@ -28,8 +28,6 @@ describe("readFileTool", () => {
 
   it("should throw on missing file", async () => {
     const filePath = join(TEST_DIR, "nonexistent.txt");
-    await expect(readFileTool.execute({ path: filePath })).rejects.toThrow(
-      /Failed to read file/,
-    );
+    await expect(readFileTool.execute({ path: filePath })).rejects.toThrow(/Failed to read file/);
   });
 });

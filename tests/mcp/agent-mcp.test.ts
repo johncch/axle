@@ -35,9 +35,11 @@ function createMockMcp(tools: any[]): MCP {
     connected: true,
     connect: vi.fn().mockResolvedValue(undefined),
     listTools: vi.fn().mockResolvedValue(tools),
-    listToolDefinitions: vi.fn().mockResolvedValue(
-      tools.map((t: any) => ({ name: t.name, description: t.description, schema: t.schema })),
-    ),
+    listToolDefinitions: vi
+      .fn()
+      .mockResolvedValue(
+        tools.map((t: any) => ({ name: t.name, description: t.description, schema: t.schema })),
+      ),
     refreshTools: vi.fn().mockResolvedValue(tools),
     close: vi.fn().mockResolvedValue(undefined),
   } as unknown as MCP;

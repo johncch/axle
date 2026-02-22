@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, appendFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const LEDGER_PATH = ".axle/batch.jsonl";
@@ -44,10 +44,7 @@ export async function loadLedger(path = LEDGER_PATH): Promise<Map<string, Ledger
   return entries;
 }
 
-export async function appendLedgerEntry(
-  entry: LedgerEntry,
-  path = LEDGER_PATH,
-): Promise<void> {
+export async function appendLedgerEntry(entry: LedgerEntry, path = LEDGER_PATH): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await appendFile(path, JSON.stringify(entry) + "\n", "utf-8");
 }

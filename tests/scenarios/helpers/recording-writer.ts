@@ -1,5 +1,5 @@
-import type { SpanData, SpanStatus, TraceWriter } from "../../../src/tracer/types.js";
 import { Tracer } from "../../../src/tracer/tracer.js";
+import type { SpanData, SpanStatus, TraceWriter } from "../../../src/tracer/types.js";
 
 export type LifecycleEvent =
   | { type: "span:start"; name: string; spanId: string; parentSpanId?: string; spanType?: string }
@@ -37,7 +37,6 @@ export class RecordingWriter implements TraceWriter {
       spanId: span.spanId,
     });
   }
-
 }
 
 export function eventIndex(timeline: LifecycleEvent[], type: string, name: string): number {

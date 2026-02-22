@@ -6,5 +6,5 @@ axle.config.yml
 logs
 dist
 package-lock.json
-.claude
+.claude/settings.local.json
 .axle

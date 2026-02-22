@@ -191,5 +191,4 @@ class Span implements TracingContext {
     this.data.result = result;
     this.tracer._notifySpanUpdate(this.data);
   }
-
 }

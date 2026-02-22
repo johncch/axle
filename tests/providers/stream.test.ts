@@ -287,7 +287,9 @@ describe("stream()", () => {
       const toolExecute = events.filter((e) => e.type === "tool:execute");
       expect(toolExecute).toHaveLength(1);
       expect(toolExecute[0].type === "tool:execute" && toolExecute[0].name).toBe("web_search");
-      expect(toolExecute[0].type === "tool:execute" && toolExecute[0].parameters).toEqual({ q: "test" });
+      expect(toolExecute[0].type === "tool:execute" && toolExecute[0].parameters).toEqual({
+        q: "test",
+      });
       expect(toolExecute[0].type === "tool:execute" && toolExecute[0].index).toBe(0);
 
       const toolComplete = events.filter((e) => e.type === "tool:complete");

@@ -1,7 +1,6 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { ToolResultPart } from "../messages/message.js";
-import type { ExecutableTool } from "../tools/types.js";
-import type { ToolDefinition } from "../tools/types.js";
+import type { ExecutableTool, ToolDefinition } from "../tools/types.js";
 import { jsonSchemaToZod } from "./schema.js";
 
 interface McpToolInfo {

@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { Agent } from "../../src/core/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
-import type { AgentMemory, MemoryContext, RecallResult } from "../../src/memory/types.js";
+import type { AgentMemory } from "../../src/memory/types.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
@@ -157,9 +157,7 @@ describe("Agent", () => {
     agent.addMcp(mockMcp as any);
     await agent.send("Hi").final;
 
-    expect(mockListTools).toHaveBeenCalledWith(
-      expect.objectContaining({ prefix: "myprefix" }),
-    );
+    expect(mockListTools).toHaveBeenCalledWith(expect.objectContaining({ prefix: "myprefix" }));
   });
 
   test("resolveMcpTools passes undefined prefix when mcp.name is undefined", async () => {
@@ -177,9 +175,7 @@ describe("Agent", () => {
     agent.addMcp(mockMcp as any);
     await agent.send("Hi").final;
 
-    expect(mockListTools).toHaveBeenCalledWith(
-      expect.objectContaining({ prefix: undefined }),
-    );
+    expect(mockListTools).toHaveBeenCalledWith(expect.objectContaining({ prefix: undefined }));
   });
 
   test("tools on Agent are used for tool calls", async () => {
@@ -284,9 +280,7 @@ describe("Agent", () => {
 
       expect(memory.record).toHaveBeenCalledWith(
         expect.objectContaining({
-          newMessages: expect.arrayContaining([
-            expect.objectContaining({ role: "assistant" }),
-          ]),
+          newMessages: expect.arrayContaining([expect.objectContaining({ role: "assistant" })]),
         }),
       );
     });
@@ -366,7 +360,12 @@ describe("Agent", () => {
       };
 
       const memory = createMockMemory();
-      const agent = new Agent({ provider: errorProvider, model: "mock", name: "test-agent", memory });
+      const agent = new Agent({
+        provider: errorProvider,
+        model: "mock",
+        name: "test-agent",
+        memory,
+      });
 
       await expect(agent.send("Hi").final).rejects.toThrow();
       expect(memory.record).not.toHaveBeenCalled();
@@ -376,9 +375,7 @@ describe("Agent", () => {
       const provider = createMockStreamProvider(["ok"]);
       const memory = createMockMemory();
 
-      expect(() => new Agent({ provider, model: "mock", memory })).toThrow(
-        /requires a 'name'/,
-      );
+      expect(() => new Agent({ provider, model: "mock", memory })).toThrow(/requires a 'name'/);
     });
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { MCP } from "../../src/mcp/MCP.js";
 
 // Shared mock state

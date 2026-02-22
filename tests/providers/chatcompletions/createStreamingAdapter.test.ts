@@ -127,9 +127,11 @@ describe("createStreamingAdapter", () => {
   describe("tool calls", () => {
     test("emits tool-call-start when tool_calls appear in delta", () => {
       const adapter = createStreamingAdapter();
-      const chunks = adapter.handleChunk(makeChunk({
-        tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: "" } }],
-      }));
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: "" } }],
+        }),
+      );
 
       const toolStarts = chunks.filter((c) => c.type === "tool-call-start");
       expect(toolStarts).toHaveLength(1);
@@ -140,9 +142,11 @@ describe("createStreamingAdapter", () => {
     test("closes active text before tool calls", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Let me search" }));
-      const chunks = adapter.handleChunk(makeChunk({
-        tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: "{}" } }],
-      }));
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: "{}" } }],
+        }),
+      );
 
       const types = chunks.map((c) => c.type);
       expect(types).toContain("text-complete");
@@ -151,12 +155,16 @@ describe("createStreamingAdapter", () => {
 
     test("buffers tool call arguments across multiple chunks", () => {
       const adapter = createStreamingAdapter();
-      adapter.handleChunk(makeChunk({
-        tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: '{"q' } }],
-      }));
-      adapter.handleChunk(makeChunk({
-        tool_calls: [{ index: 0, function: { arguments: 'uery":"test"}' } }],
-      }));
+      adapter.handleChunk(
+        makeChunk({
+          tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: '{"q' } }],
+        }),
+      );
+      adapter.handleChunk(
+        makeChunk({
+          tool_calls: [{ index: 0, function: { arguments: 'uery":"test"}' } }],
+        }),
+      );
       const chunks = adapter.handleChunk(makeChunk({}, "tool_calls"));
 
       const completeChunks = chunks.filter((c) => c.type === "tool-call-complete");
@@ -166,9 +174,13 @@ describe("createStreamingAdapter", () => {
 
     test("flushes tool calls on completion", () => {
       const adapter = createStreamingAdapter();
-      adapter.handleChunk(makeChunk({
-        tool_calls: [{ index: 0, id: "call_1", function: { name: "search", arguments: '{"q":"test"}' } }],
-      }));
+      adapter.handleChunk(
+        makeChunk({
+          tool_calls: [
+            { index: 0, id: "call_1", function: { name: "search", arguments: '{"q":"test"}' } },
+          ],
+        }),
+      );
 
       const chunks = adapter.handleChunk(makeChunk({}, "tool_calls"));
 
@@ -219,9 +231,11 @@ describe("createStreamingAdapter", () => {
 
     test("converts tool_calls finish reason", () => {
       const adapter = createStreamingAdapter();
-      adapter.handleChunk(makeChunk({
-        tool_calls: [{ index: 0, id: "call_1", function: { name: "fn", arguments: "{}" } }],
-      }));
+      adapter.handleChunk(
+        makeChunk({
+          tool_calls: [{ index: 0, id: "call_1", function: { name: "fn", arguments: "{}" } }],
+        }),
+      );
       adapter.handleChunk(makeChunk({}, "tool_calls"));
       const final = adapter.finalize();
 
@@ -282,10 +296,12 @@ function makeChunk(
   return {
     id: "chatcmpl-1",
     model: "test-model",
-    choices: [{
-      index: 0,
-      delta,
-      finish_reason: finishReason ?? null,
-    }],
+    choices: [
+      {
+        index: 0,
+        delta,
+        finish_reason: finishReason ?? null,
+      },
+    ],
   };
 }

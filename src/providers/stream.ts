@@ -33,8 +33,20 @@ export type StreamEvent =
   | { type: "thinking:end"; index: number; final: string }
   // Tool calls
   | { type: "tool:start"; index: number; id: string; name: string }
-  | { type: "tool:execute"; index: number; id: string; name: string; parameters: Record<string, unknown> }
-  | { type: "tool:complete"; index: number; id: string; name: string; result: ToolCallResult | null }
+  | {
+      type: "tool:execute";
+      index: number;
+      id: string;
+      name: string;
+      parameters: Record<string, unknown>;
+    }
+  | {
+      type: "tool:complete";
+      index: number;
+      id: string;
+      name: string;
+      result: ToolCallResult | null;
+    }
   // Internal tools (provider-managed: web search, code interpreter, etc.)
   | { type: "internal-tool:start"; index: number; id: string; name: string }
   | { type: "internal-tool:complete"; index: number; id: string; name: string; output?: unknown }
@@ -216,9 +228,7 @@ async function run(
     iterations += 1;
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
 
-    const mergedOptions = serverTools
-      ? { ...genOptions, serverTools }
-      : genOptions;
+    const mergedOptions = serverTools ? { ...genOptions, serverTools } : genOptions;
 
     const streamSource = provider.createStreamingRequest?.(model, {
       messages: workingMessages,

@@ -214,9 +214,7 @@ export class SimpleWriter implements TraceWriter {
     } else {
       // Bubble up to visible ancestor
       const visibleAncestor = this.findVisibleAncestor(span);
-      depth = visibleAncestor
-        ? this.visibleDepths.get(visibleAncestor.spanId) ?? 0
-        : 0;
+      depth = visibleAncestor ? (this.visibleDepths.get(visibleAncestor.spanId) ?? 0) : 0;
     }
 
     const indent = this.formatIndent(depth + 1);

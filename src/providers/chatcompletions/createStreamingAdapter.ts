@@ -141,9 +141,7 @@ export function createStreamingAdapter() {
       // Flush pending tool calls
       for (const [, buffer] of toolCallBuffers) {
         try {
-          const parsedArgs = buffer.argumentsBuffer
-            ? JSON.parse(buffer.argumentsBuffer)
-            : {};
+          const parsedArgs = buffer.argumentsBuffer ? JSON.parse(buffer.argumentsBuffer) : {};
           chunks.push({
             type: "tool-call-complete",
             data: {

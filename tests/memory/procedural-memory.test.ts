@@ -102,9 +102,7 @@ describe("ProceduralMemory", () => {
     });
 
     test("calls generate and saves extracted instructions", async () => {
-      const provider = createMockProvider([
-        '["Always use markdown", "Prefer short answers"]',
-      ]);
+      const provider = createMockProvider(['["Always use markdown", "Prefer short answers"]']);
       const memory = new ProceduralMemory({ provider, model: "mock" });
 
       const store = createMemoryStore();
@@ -130,9 +128,7 @@ describe("ProceduralMemory", () => {
     });
 
     test("handles code-fenced JSON response", async () => {
-      const provider = createMockProvider([
-        '```json\n["Use tables for data"]\n```',
-      ]);
+      const provider = createMockProvider(['```json\n["Use tables for data"]\n```']);
       const memory = new ProceduralMemory({ provider, model: "mock" });
 
       const store = createMemoryStore();

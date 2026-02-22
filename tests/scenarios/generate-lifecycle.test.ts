@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest";
 import { generate } from "../../src/providers/generate.js";
 import type { AIProvider, ModelError, ModelResponse } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import { createTracerAndWriter, eventIndex } from "./helpers/recording-writer.js";
 import { makeGenerateProvider } from "./helpers/providers.js";
+import { createTracerAndWriter, eventIndex } from "./helpers/recording-writer.js";
 
 // ─── 5. Happy paths ─────────────────────────────────────────────────────────
 
@@ -43,9 +43,7 @@ describe("generate() happy paths", () => {
     expect(spanStarts[1].name).toBe("turn-1");
 
     // turn-1 has at least one span:update (setResult)
-    const turn1Updates = timeline.filter(
-      (e) => e.type === "span:update" && e.name === "turn-1",
-    );
+    const turn1Updates = timeline.filter((e) => e.type === "span:update" && e.name === "turn-1");
     expect(turn1Updates.length).toBeGreaterThanOrEqual(1);
 
     // Final span states

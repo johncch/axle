@@ -1,12 +1,12 @@
 import {
+  AxleMessage,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { TracingContext } from "../../tracer/types.js";
 import { ToolDefinition } from "../../tools/types.js";
-import { AxleMessage } from "../../messages/message.js";
+import type { TracingContext } from "../../tracer/types.js";
 import { ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { ChatCompletionResponse } from "./types.js";
@@ -46,8 +46,10 @@ export async function createGenerationRequest(params: {
     if (options.temperature !== undefined) requestBody.temperature = options.temperature;
     if (options.top_p !== undefined) requestBody.top_p = options.top_p;
     if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
-    if (options.frequency_penalty !== undefined) requestBody.frequency_penalty = options.frequency_penalty;
-    if (options.presence_penalty !== undefined) requestBody.presence_penalty = options.presence_penalty;
+    if (options.frequency_penalty !== undefined)
+      requestBody.frequency_penalty = options.frequency_penalty;
+    if (options.presence_penalty !== undefined)
+      requestBody.presence_penalty = options.presence_penalty;
     if (options.stop !== undefined) requestBody.stop = options.stop;
   }
 
@@ -70,7 +72,9 @@ export async function createGenerationRequest(params: {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      throw new Error(`HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`);
+      throw new Error(
+        `HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`,
+      );
     }
 
     const data: ChatCompletionResponse = await response.json();

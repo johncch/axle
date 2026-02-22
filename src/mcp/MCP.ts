@@ -76,7 +76,10 @@ export class MCP {
     }
   }
 
-  async listTools(options?: { prefix?: string; tracer?: TracingContext }): Promise<ExecutableTool[]> {
+  async listTools(options?: {
+    prefix?: string;
+    tracer?: TracingContext;
+  }): Promise<ExecutableTool[]> {
     const client = this.assertConnected();
     const mcpTools = await this.fetchTools(client, options?.tracer);
     return createMcpTools(mcpTools, client, options?.prefix);

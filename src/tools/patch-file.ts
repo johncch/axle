@@ -6,8 +6,16 @@ const patchFileSchema = z.object({
   path: z.string().describe("The file path to patch"),
   old_string: z.string().describe("The exact text to find and replace"),
   new_string: z.string().describe("The replacement text"),
-  start_line: z.number().int().positive().describe("1-indexed start line of the region to match within"),
-  end_line: z.number().int().positive().describe("1-indexed end line (inclusive) of the region to match within"),
+  start_line: z
+    .number()
+    .int()
+    .positive()
+    .describe("1-indexed start line of the region to match within"),
+  end_line: z
+    .number()
+    .int()
+    .positive()
+    .describe("1-indexed end line (inclusive) of the region to match within"),
 });
 
 const patchFileTool: ExecutableTool<typeof patchFileSchema> = {
@@ -32,14 +40,10 @@ const patchFileTool: ExecutableTool<typeof patchFileSchema> = {
 
     const lines = content.split("\n");
     if (start_line > lines.length) {
-      throw new Error(
-        `start_line (${start_line}) exceeds file length (${lines.length} lines)`,
-      );
+      throw new Error(`start_line (${start_line}) exceeds file length (${lines.length} lines)`);
     }
     if (end_line > lines.length) {
-      throw new Error(
-        `end_line (${end_line}) exceeds file length (${lines.length} lines)`,
-      );
+      throw new Error(`end_line (${end_line}) exceeds file length (${lines.length} lines)`);
     }
 
     const regionLines = lines.slice(start_line - 1, end_line);
@@ -47,9 +51,7 @@ const patchFileTool: ExecutableTool<typeof patchFileSchema> = {
 
     const firstIndex = region.indexOf(old_string);
     if (firstIndex === -1) {
-      throw new Error(
-        `old_string not found within lines ${start_line}-${end_line} of "${path}"`,
-      );
+      throw new Error(`old_string not found within lines ${start_line}-${end_line} of "${path}"`);
     }
 
     const secondIndex = region.indexOf(old_string, firstIndex + 1);

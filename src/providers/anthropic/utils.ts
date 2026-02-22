@@ -70,9 +70,7 @@ export function convertToProviderMessages(
         content: msg.content.map((r) => ({
           type: "tool_result",
           tool_use_id: r.id,
-          content: typeof r.content === "string"
-            ? r.content
-            : convertToolResultParts(r.content),
+          content: typeof r.content === "string" ? r.content : convertToolResultParts(r.content),
           ...(r.isError ? { is_error: true } : {}),
         })) satisfies Array<Anthropic.ToolResultBlockParam>,
       } satisfies Anthropic.MessageParam;

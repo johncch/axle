@@ -135,10 +135,7 @@ describe("createMcpTools", () => {
 
   test("handles tools with empty description", () => {
     const client = createMockClient();
-    const tools = createMcpTools(
-      [{ name: "test", inputSchema: { type: "object" } }],
-      client,
-    );
+    const tools = createMcpTools([{ name: "test", inputSchema: { type: "object" } }], client);
 
     expect(tools[0].description).toBe("");
   });

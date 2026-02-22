@@ -15,7 +15,11 @@ export async function getJobConfig(
   },
 ): Promise<JobConfig> {
   const { tracer } = context;
-  const { content, format, path: filePath } = await searchAndLoadFile(path, {
+  const {
+    content,
+    format,
+    path: filePath,
+  } = await searchAndLoadFile(path, {
     defaults: {
       name: DEFAULT_JOB_NAME,
       formats: DEFAULT_JOB_FORMATS,

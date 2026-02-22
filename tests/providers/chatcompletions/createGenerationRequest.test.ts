@@ -117,15 +117,17 @@ describe("createGenerationRequest", () => {
       const response = {
         id: "chatcmpl-123",
         model: MODEL,
-        choices: [{
-          index: 0,
-          message: {
-            role: "assistant",
-            content: "The answer is 42.",
-            reasoning_content: "Let me think step by step...",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "The answer is 42.",
+              reasoning_content: "Let me think step by step...",
+            },
+            finish_reason: "stop",
           },
-          finish_reason: "stop",
-        }],
+        ],
         usage: { prompt_tokens: 10, completion_tokens: 20 },
       };
       (fetch as any).mockResolvedValue(makeOkResponse(response));
@@ -148,22 +150,26 @@ describe("createGenerationRequest", () => {
       const response = {
         id: "chatcmpl-456",
         model: MODEL,
-        choices: [{
-          index: 0,
-          message: {
-            role: "assistant",
-            content: null,
-            tool_calls: [{
-              id: "call_abc",
-              type: "function",
-              function: {
-                name: "search",
-                arguments: '{"query":"test"}',
-              },
-            }],
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_abc",
+                  type: "function",
+                  function: {
+                    name: "search",
+                    arguments: '{"query":"test"}',
+                  },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
           },
-          finish_reason: "tool_calls",
-        }],
+        ],
         usage: { prompt_tokens: 5, completion_tokens: 15 },
       };
       (fetch as any).mockResolvedValue(makeOkResponse(response));
@@ -238,22 +244,26 @@ describe("createGenerationRequest", () => {
       const response = {
         id: "chatcmpl-789",
         model: MODEL,
-        choices: [{
-          index: 0,
-          message: {
-            role: "assistant",
-            content: null,
-            tool_calls: [{
-              id: "call_bad",
-              type: "function",
-              function: {
-                name: "search",
-                arguments: "not valid json{",
-              },
-            }],
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_bad",
+                  type: "function",
+                  function: {
+                    name: "search",
+                    arguments: "not valid json{",
+                  },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
           },
-          finish_reason: "tool_calls",
-        }],
+        ],
       };
       (fetch as any).mockResolvedValue(makeOkResponse(response));
 
@@ -290,11 +300,13 @@ function makeTextResponse(text: string) {
   return {
     id: "chatcmpl-123",
     model: MODEL,
-    choices: [{
-      index: 0,
-      message: { role: "assistant", content: text },
-      finish_reason: "stop",
-    }],
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: text },
+        finish_reason: "stop",
+      },
+    ],
     usage: { prompt_tokens: 10, completion_tokens: 20 },
   };
 }

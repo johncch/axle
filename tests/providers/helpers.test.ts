@@ -19,10 +19,7 @@ describe("executeToolCalls", () => {
         content: "result",
       });
 
-      const { results } = await executeToolCalls(
-        [makeToolCall("my-tool")],
-        onToolCall,
-      );
+      const { results } = await executeToolCalls([makeToolCall("my-tool")], onToolCall);
 
       expect(onToolCall).toHaveBeenCalledWith("my-tool", { input: "test" });
       expect(results).toHaveLength(1);
@@ -36,10 +33,7 @@ describe("executeToolCalls", () => {
         error: { type: "execution", message: "something broke" },
       });
 
-      const { results } = await executeToolCalls(
-        [makeToolCall("bad-tool")],
-        onToolCall,
-      );
+      const { results } = await executeToolCalls([makeToolCall("bad-tool")], onToolCall);
 
       expect(results).toHaveLength(1);
       expect(results[0].isError).toBe(true);
@@ -48,10 +42,7 @@ describe("executeToolCalls", () => {
     test("returns not-found error when onToolCall returns null", async () => {
       const onToolCall = vi.fn().mockResolvedValue(null);
 
-      const { results } = await executeToolCalls(
-        [makeToolCall("unknown")],
-        onToolCall,
-      );
+      const { results } = await executeToolCalls([makeToolCall("unknown")], onToolCall);
 
       expect(results).toHaveLength(1);
       expect(results[0].isError).toBe(true);
@@ -59,7 +50,8 @@ describe("executeToolCalls", () => {
     });
 
     test("continues processing after a missing tool", async () => {
-      const onToolCall = vi.fn()
+      const onToolCall = vi
+        .fn()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ type: "success", content: "ok" });
 
@@ -76,10 +68,7 @@ describe("executeToolCalls", () => {
     test("catches exceptions from onToolCall", async () => {
       const onToolCall = vi.fn().mockRejectedValue(new Error("crash"));
 
-      const { results } = await executeToolCalls(
-        [makeToolCall("crasher")],
-        onToolCall,
-      );
+      const { results } = await executeToolCalls([makeToolCall("crasher")], onToolCall);
 
       expect(results).toHaveLength(1);
       expect(results[0].isError).toBe(true);
@@ -89,10 +78,7 @@ describe("executeToolCalls", () => {
 
   describe("without onToolCall", () => {
     test("returns not-found errors for all tool calls", async () => {
-      const { results } = await executeToolCalls([
-        makeToolCall("tool-a"),
-        makeToolCall("tool-b"),
-      ]);
+      const { results } = await executeToolCalls([makeToolCall("tool-a"), makeToolCall("tool-b")]);
 
       expect(results).toHaveLength(2);
       expect(results[0].isError).toBe(true);

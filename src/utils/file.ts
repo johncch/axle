@@ -193,7 +193,10 @@ function isTextLikeMimeType(mimeType: string): boolean {
   return mimeType.startsWith("text/") || TEXT_LIKE_MIME_TYPES.has(mimeType);
 }
 
-function getFileCategory(filePath: string): { type: "image" | "document" | "text"; mimeType: string } {
+function getFileCategory(filePath: string): {
+  type: "image" | "document" | "text";
+  mimeType: string;
+} {
   const mimeType = mime.getType(filePath);
   if (!mimeType) {
     const ext = extname(filePath).toLowerCase();

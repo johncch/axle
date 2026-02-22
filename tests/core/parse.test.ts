@@ -1,5 +1,5 @@
-import * as z from "zod";
 import { describe, expect, it } from "vitest";
+import * as z from "zod";
 import { parseResponse, parseTaggedSections } from "../../src/core/parse.js";
 
 describe("parseResponse", () => {

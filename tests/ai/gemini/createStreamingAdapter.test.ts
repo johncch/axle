@@ -53,7 +53,11 @@ describe("createGeminiStreamingAdapter", () => {
       adapter.handleChunk(makeChunk({ parts: [{ text: "Hi" }] }));
 
       const chunks = adapter.handleChunk(
-        makeChunk({ parts: [{ text: "Done" }], finishReason: FinishReason.STOP, usage: { promptTokenCount: 10, totalTokenCount: 30 } }),
+        makeChunk({
+          parts: [{ text: "Done" }],
+          finishReason: FinishReason.STOP,
+          usage: { promptTokenCount: 10, totalTokenCount: 30 },
+        }),
       );
 
       const types = chunks.map((c) => c.type);
@@ -142,9 +146,7 @@ describe("createGeminiStreamingAdapter", () => {
       const chunk1 = adapter.handleChunk(
         makeChunk({ parts: [{ text: "Thinking...", thought: true }] }),
       );
-      const chunk2 = adapter.handleChunk(
-        makeChunk({ parts: [{ text: "Here's my answer." }] }),
-      );
+      const chunk2 = adapter.handleChunk(makeChunk({ parts: [{ text: "Here's my answer." }] }));
 
       const allChunks = [...chunk1, ...chunk2];
       const types = allChunks.map((c) => c.type);
@@ -163,9 +165,7 @@ describe("createGeminiStreamingAdapter", () => {
     test("should emit thinking-complete on finish without text", () => {
       const adapter = createGeminiStreamingAdapter();
       adapter.handleChunk(makeChunk({ parts: [{ text: "Thinking...", thought: true }] }));
-      const chunks = adapter.handleChunk(
-        makeChunk({ parts: [], finishReason: FinishReason.STOP }),
-      );
+      const chunks = adapter.handleChunk(makeChunk({ parts: [], finishReason: FinishReason.STOP }));
 
       const types = chunks.map((c) => c.type);
       expect(types).toContain("thinking-complete");
@@ -254,7 +254,9 @@ describe("createGeminiStreamingAdapter", () => {
   describe("mixed content", () => {
     test("should handle text followed by function call with correct lifecycle", () => {
       const adapter = createGeminiStreamingAdapter();
-      const chunk1 = adapter.handleChunk(makeChunk({ parts: [{ text: "Let me search for that." }] }));
+      const chunk1 = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "Let me search for that." }] }),
+      );
       const chunk2 = adapter.handleChunk(
         makeChunk({
           parts: [{ functionCall: { name: "search", args: { query: "test" } } }],
