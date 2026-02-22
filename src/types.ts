@@ -7,6 +7,7 @@ export type ProgramOptions = {
   debug?: boolean;
   interactive?: boolean;
   args?: string[];
+  allowMissingVars?: boolean;
 };
 
 export interface Stats {

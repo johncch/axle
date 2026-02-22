@@ -3,12 +3,17 @@ import { replaceVariables } from "../utils/replace.js";
 import type { Instruct } from "./Instruct.js";
 import { zodToExample } from "./parse.js";
 
+export interface CompileOptions {
+  strictVariables?: boolean;
+}
+
 export function compileInstruct(
   instruct: Instruct<any>,
   variables: Record<string, string> = {},
+  options: CompileOptions = {},
 ): string {
   const allVars = { ...variables, ...instruct.inputs };
-  let message = replaceVariables(instruct.prompt, allVars);
+  let message = replaceVariables(instruct.prompt, allVars, { strict: options.strictVariables });
 
   if (instruct.textReferences.length > 0) {
     for (const [index, ref] of instruct.textReferences.entries()) {

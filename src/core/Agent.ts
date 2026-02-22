@@ -17,6 +17,10 @@ import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
 import { parseResponse } from "./parse.js";
 
+export interface AgentOptions {
+  strictVariables?: boolean;
+}
+
 export interface AgentConfig {
   provider: AIProvider;
   model: string;
@@ -27,6 +31,7 @@ export interface AgentConfig {
   mcps?: MCP[];
   memory?: AgentMemory;
   tracer?: TracingContext;
+  options?: AgentOptions;
 }
 
 export interface AgentResult<T = string> {
@@ -62,6 +67,7 @@ export class Agent {
   private mcpToolsResolved = false;
   private memory?: AgentMemory;
 
+  private options: AgentOptions;
   private eventCallbacks: StreamEventCallback[] = [];
 
   constructor(config: AgentConfig) {
@@ -73,6 +79,7 @@ export class Agent {
     this.name = config.name;
     this.scope = config.scope;
     this.store = new LocalFileStore(".axle");
+    this.options = config.options ?? {};
     if (config.tools) {
       this.addTools(config.tools);
     }
@@ -140,7 +147,9 @@ export class Agent {
     if (typeof messageOrInstruct === "string") {
       this.history.addUser(messageOrInstruct);
     } else {
-      const text = compileInstruct(messageOrInstruct, variables);
+      const text = compileInstruct(messageOrInstruct, variables, {
+        strictVariables: this.options.strictVariables,
+      });
       const files = messageOrInstruct.files;
       this.history.addUser(toContentParts({ text, files }));
       schema = messageOrInstruct.schema;

@@ -23,7 +23,8 @@ const program = new Command()
   .option("--no-log", "Do not write the output to a log file")
   .option("-d, --debug", "Print additional debug information")
   .option("-i, --interactive", "Continue the conversation interactively after the initial task")
-  .option("--args <args...>", "Additional arguments in the form key=value");
+  .option("--args <args...>", "Additional arguments in the form key=value")
+  .option("--ignore-warn-unused", "Don't error on unresolved {{variables}} in task templates");
 
 program.parse(process.argv);
 const options = program.opts();
