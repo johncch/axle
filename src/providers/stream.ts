@@ -215,7 +215,6 @@ async function run(
 
     iterations += 1;
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
-    turnSpan?.startLLMStream();
 
     const mergedOptions = serverTools
       ? { ...genOptions, serverTools }
@@ -288,7 +287,6 @@ async function run(
           const part = turnParts[currentPartIndex] as ContentPartText;
           part.text += chunk.data.text;
           openAccumulated = part.text;
-          turnSpan?.appendLLMStream(chunk.data.text);
           emit(cbs, {
             type: "text:delta",
             index: openPartIndex,
@@ -472,7 +470,7 @@ async function run(
       usage: { inputTokens: turnUsage.in, outputTokens: turnUsage.out },
       finishReason: turnFinishReason,
     };
-    turnSpan?.endLLMStream(turnLLMResult);
+    turnSpan?.setResult(turnLLMResult);
     turnSpan?.end();
 
     // Build and add assistant message

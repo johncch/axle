@@ -1,6 +1,5 @@
 import type {
   EventLevel,
-  LLMResult,
   SpanData,
   SpanEvent,
   SpanOptions,
@@ -95,21 +94,6 @@ export class Tracer {
   }
 
   /** @internal */
-  _notifyLLMStreamStart(spanData: SpanData): void {
-    this.writers.forEach((w) => w.onLLMStreamStart?.(spanData));
-  }
-
-  /** @internal */
-  _notifyLLMStreamChunk(spanData: SpanData, chunk: string): void {
-    this.writers.forEach((w) => w.onLLMStreamChunk?.(spanData, chunk));
-  }
-
-  /** @internal */
-  _notifyLLMStreamEnd(spanData: SpanData, result: LLMResult): void {
-    this.writers.forEach((w) => w.onLLMStreamEnd?.(spanData, result));
-  }
-
-  /** @internal */
   _shouldLog(level: EventLevel): boolean {
     return levelOrder[level] >= levelOrder[this._minLevel];
   }
@@ -123,8 +107,6 @@ class Span implements TracingContext {
   private data: SpanData;
   private tracer: Tracer;
   private ended = false;
-  private llmStreamBuffer: string = "";
-  private llmStreamActive = false;
 
   constructor(data: SpanData, tracer: Tracer) {
     this.data = data;
@@ -210,36 +192,4 @@ class Span implements TracingContext {
     this.tracer._notifySpanUpdate(this.data);
   }
 
-  startLLMStream(): void {
-    if (this.ended) return;
-
-    this.llmStreamActive = true;
-    this.llmStreamBuffer = "";
-    this.tracer._notifyLLMStreamStart(this.data);
-  }
-
-  appendLLMStream(chunk: string): void {
-    if (this.ended || !this.llmStreamActive) return;
-
-    this.llmStreamBuffer += chunk;
-    this.tracer._notifyLLMStreamChunk(this.data, chunk);
-  }
-
-  endLLMStream(result: LLMResult): void {
-    if (this.ended || !this.llmStreamActive) return;
-
-    this.llmStreamActive = false;
-
-    // Merge buffered content into the result if response content is not already set
-    const finalResult: LLMResult = {
-      ...result,
-      response: {
-        ...result.response,
-        content: result.response.content ?? this.llmStreamBuffer,
-      },
-    };
-
-    this.data.result = finalResult;
-    this.tracer._notifyLLMStreamEnd(this.data, finalResult);
-  }
 }

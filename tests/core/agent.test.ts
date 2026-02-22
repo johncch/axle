@@ -339,9 +339,6 @@ describe("Agent", () => {
         setAttribute: vi.fn(),
         setAttributes: vi.fn(),
         setResult: vi.fn(),
-        startLLMStream: vi.fn(),
-        appendLLMStream: vi.fn(),
-        endLLMStream: vi.fn(),
       };
 
       const agent = new Agent({ provider, model: "mock", name: "test-agent", memory, tracer });

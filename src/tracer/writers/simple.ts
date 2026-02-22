@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
-import type { EventLevel, LLMResult, SpanData, SpanEvent, TraceWriter } from "../types.js";
+import type { EventLevel, SpanData, SpanEvent, TraceWriter } from "../types.js";
 
 const levelOrder: Record<EventLevel, number> = {
   debug: 0,
@@ -163,6 +163,35 @@ export class SimpleWriter implements TraceWriter {
     const name = this.formatSpanName(span);
     const status = span.status === "error" ? " [ERROR]" : "";
     this.output(`${timestamp}${indent}END   ${name}${duration}${status}`);
+
+    if (span.result?.kind === "llm") {
+      const result = span.result;
+      const parts: string[] = [`model=${result.model}`];
+      if (result.finishReason) {
+        parts.push(`finishReason=${result.finishReason}`);
+      }
+      if (result.usage) {
+        if (result.usage.inputTokens !== undefined) {
+          parts.push(`inputTokens=${result.usage.inputTokens}`);
+        }
+        if (result.usage.outputTokens !== undefined) {
+          parts.push(`outputTokens=${result.usage.outputTokens}`);
+        }
+      }
+      this.output(`${timestamp}${indent}  INFO  LLM complete ${parts.join(" ")}`);
+
+      if (this.shouldShowEvent("debug") && result.response.content) {
+        const content =
+          typeof result.response.content === "string"
+            ? result.response.content
+            : JSON.stringify(result.response.content, null, 2);
+
+        const contentLines = content.split("\n");
+        for (const line of contentLines) {
+          this.output(`${timestamp}${indent}  DEBUG   ${line}`);
+        }
+      }
+    }
   }
 
   onSpanUpdate(span: SpanData): void {
@@ -177,24 +206,17 @@ export class SimpleWriter implements TraceWriter {
     // Update stored span
     this.spans.set(span.spanId, span);
 
-    // Find where to render this event
-    let targetSpan: SpanData;
+    // Find the visible depth for rendering this event
     let depth: number;
 
     if (this.isSpanVisible(span)) {
-      targetSpan = span;
       depth = this.visibleDepths.get(span.spanId) ?? 0;
     } else {
       // Bubble up to visible ancestor
       const visibleAncestor = this.findVisibleAncestor(span);
-      if (!visibleAncestor) {
-        // No visible ancestor - render at root level
-        depth = 0;
-        targetSpan = span;
-      } else {
-        targetSpan = visibleAncestor;
-        depth = this.visibleDepths.get(visibleAncestor.spanId) ?? 0;
-      }
+      depth = visibleAncestor
+        ? this.visibleDepths.get(visibleAncestor.spanId) ?? 0
+        : 0;
     }
 
     const indent = this.formatIndent(depth + 1);
@@ -219,59 +241,5 @@ export class SimpleWriter implements TraceWriter {
     }
 
     this.output(line);
-  }
-
-  onLLMStreamStart(span: SpanData): void {
-    this.spans.set(span.spanId, span);
-
-    if (!this.isSpanVisible(span)) return;
-
-    const depth = this.visibleDepths.get(span.spanId) ?? 0;
-    const indent = this.formatIndent(depth + 1);
-    const timestamp = this.formatTimestamp();
-    this.output(`${timestamp}${indent}INFO  LLM streaming started`);
-  }
-
-  onLLMStreamChunk(_span: SpanData, _chunk: string): void {
-    // SimpleWriter doesn't render streaming chunks (no live rewriting)
-  }
-
-  onLLMStreamEnd(span: SpanData, result: LLMResult): void {
-    this.spans.set(span.spanId, span);
-
-    if (!this.isSpanVisible(span)) return;
-
-    const depth = this.visibleDepths.get(span.spanId) ?? 0;
-    const indent = this.formatIndent(depth + 1);
-    const timestamp = this.formatTimestamp();
-
-    // Always show metadata
-    const parts: string[] = [`model=${result.model}`];
-    if (result.finishReason) {
-      parts.push(`finishReason=${result.finishReason}`);
-    }
-    if (result.usage) {
-      if (result.usage.inputTokens !== undefined) {
-        parts.push(`inputTokens=${result.usage.inputTokens}`);
-      }
-      if (result.usage.outputTokens !== undefined) {
-        parts.push(`outputTokens=${result.usage.outputTokens}`);
-      }
-    }
-
-    this.output(`${timestamp}${indent}INFO  LLM complete ${parts.join(" ")}`);
-
-    // Show content at debug level
-    if (this.shouldShowEvent("debug") && result.response.content) {
-      const content =
-        typeof result.response.content === "string"
-          ? result.response.content
-          : JSON.stringify(result.response.content, null, 2);
-
-      const contentLines = content.split("\n");
-      for (const line of contentLines) {
-        this.output(`${timestamp}${indent}DEBUG   ${line}`);
-      }
-    }
   }
 }

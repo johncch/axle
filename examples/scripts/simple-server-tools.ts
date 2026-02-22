@@ -10,6 +10,9 @@ const agent = new Agent({ provider, model, tools: [webSearch] });
 
 agent.on((event) => {
   switch (event.type) {
+    case "text:start":
+      console.log(`\n[Text] ${event.index} started`);
+      break;
     case "text:delta":
       process.stdout.write(event.delta);
       break;

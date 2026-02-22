@@ -72,11 +72,6 @@ export interface TraceWriter {
   onSpanEnd(span: SpanData): void;
   onEvent?(span: SpanData, event: SpanEvent): void;
 
-  // LLM streaming support
-  onLLMStreamStart?(span: SpanData): void;
-  onLLMStreamChunk?(span: SpanData, chunk: string): void;
-  onLLMStreamEnd?(span: SpanData, result: LLMResult): void;
-
   flush?(): Promise<void>;
 }
 
@@ -98,9 +93,4 @@ export interface TracingContext {
 
   // Typed result for the span
   setResult(result: SpanResult): void;
-
-  // LLM streaming helpers - span buffers content internally
-  startLLMStream(): void;
-  appendLLMStream(chunk: string): void;
-  endLLMStream(result: LLMResult): void;
 }
