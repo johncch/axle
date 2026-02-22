@@ -1,6 +1,6 @@
 {
   "name": "@fifthrevision/axle",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/johncch/axle.git"
@@ -22,19 +22,16 @@
     "dist"
   ],
   "scripts": {
-    "prepare": "npm run build",
+    "prepare": "pnpm run build",
     "start": "tsx ./src/cli.ts",
     "build": "pkgroll --clean-dist --minify",
     "build:watch": "pkgroll --watch",
     "build-dev": "pkgroll --clean-dist",
     "test": "vitest run",
-    "get-models": "npx tsx scripts/getModels.ts",
-    "prompt-scenarios": "npx tsx ./scripts/prompt.scenarios.ts",
-    "test-providers": "npx tsx ./scripts/testProviders.ts",
-    "sanity-check": "npx tsx ./scripts/sanity-check.ts",
-    "release": "npm test && npm run build && npm version"
+    "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
+    "release": "pnpm test && pnpm run build && npm version"
   },
-  "author": "",
+  "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
