@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../schemas/v2/job.yaml
+provider:
+  type: anthropic
+  model: claude-sonnet-4-6
+
+task: |
+  Generate a changelog entry for version {{version}}.
+
+  1. Run `git describe --tags --abbrev=0` to find the last release tag.
+  2. Run `git log <tag>..HEAD --format="%s%n%n%b"` to get commit messages since that tag.
+  3. Read the current CHANGELOG.md file (if it exists).
+  4. Write a new changelog entry and prepend it to CHANGELOG.md.
+
+  Rules for the changelog entry:
+  - Use {{version}} as the version number
+  - Use {{date}} as the date
+  - Group changes under a ## heading: `## [version] - date`
+  - Write concise, user-facing bullet points — focus on what changed, not implementation details
+  - Skip chore/cleanup commits that don't affect users
+  - If CHANGELOG.md already exists, prepend the new entry after the `# Changelog` heading
+  - If it doesn't exist, create it with a `# Changelog` heading followed by the entry
+
+tools:
+  - exec
+  - read-file
+  - write-file
