@@ -6,6 +6,7 @@ import { convertAxleMessageToResponseInput } from "../../src/providers/openai/ut
 describe("Provider rich tool result conversion", () => {
   const textOnlyToolMsg: AxleToolCallMessage = {
     role: "tool",
+    id: "tool-msg-1",
     content: [
       {
         id: "call_1",
@@ -17,6 +18,7 @@ describe("Provider rich tool result conversion", () => {
 
   const richToolMsg: AxleToolCallMessage = {
     role: "tool",
+    id: "tool-msg-2",
     content: [
       {
         id: "call_1",

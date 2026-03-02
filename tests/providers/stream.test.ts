@@ -249,7 +249,7 @@ describe("stream()", () => {
       expect(events.filter((e) => e.type === "text:end")).toHaveLength(1);
     });
 
-    test("emits tool:start, tool:execute, tool:complete events", async () => {
+    test("emits tool:request, tool:exec-start, tool:exec-complete events", async () => {
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),
         toolCallStartChunk(0, "call_1", "web_search"),
@@ -278,26 +278,234 @@ describe("stream()", () => {
 
       await result.final;
 
-      const toolStarts = events.filter((e) => e.type === "tool:start");
-      expect(toolStarts).toHaveLength(1);
-      expect(toolStarts[0].type === "tool:start" && toolStarts[0].id).toBe("call_1");
-      expect(toolStarts[0].type === "tool:start" && toolStarts[0].name).toBe("web_search");
-      expect(toolStarts[0].type === "tool:start" && toolStarts[0].index).toBe(0);
+      const toolRequests = events.filter((e) => e.type === "tool:request");
+      expect(toolRequests).toHaveLength(1);
+      expect(toolRequests[0].type === "tool:request" && toolRequests[0].id).toBe("call_1");
+      expect(toolRequests[0].type === "tool:request" && toolRequests[0].name).toBe("web_search");
+      expect(toolRequests[0].type === "tool:request" && toolRequests[0].index).toBe(0);
 
-      const toolExecute = events.filter((e) => e.type === "tool:execute");
-      expect(toolExecute).toHaveLength(1);
-      expect(toolExecute[0].type === "tool:execute" && toolExecute[0].name).toBe("web_search");
-      expect(toolExecute[0].type === "tool:execute" && toolExecute[0].parameters).toEqual({
+      const toolExecStarts = events.filter((e) => e.type === "tool:exec-start");
+      expect(toolExecStarts).toHaveLength(1);
+      expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].name).toBe(
+        "web_search",
+      );
+      expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].parameters).toEqual({
         q: "test",
       });
-      expect(toolExecute[0].type === "tool:execute" && toolExecute[0].index).toBe(0);
+      expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].index).toBe(0);
 
-      const toolComplete = events.filter((e) => e.type === "tool:complete");
-      expect(toolComplete).toHaveLength(1);
-      expect(toolComplete[0].type === "tool:complete" && toolComplete[0].result).toEqual({
+      const toolExecCompletes = events.filter((e) => e.type === "tool:exec-complete");
+      expect(toolExecCompletes).toHaveLength(1);
+      expect(
+        toolExecCompletes[0].type === "tool:exec-complete" && toolExecCompletes[0].result,
+      ).toEqual({
         type: "success",
         content: "ok",
       });
+    });
+  });
+
+  describe("message boundary events", () => {
+    test("emits turn:start and turn:complete for simple text response", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk("msg_1", "test-model"),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.result).toBe("success");
+
+      const turnStarts = events.filter((e) => e.type === "turn:start");
+      expect(turnStarts).toHaveLength(1);
+      expect(turnStarts[0].type === "turn:start" && turnStarts[0].id).toBe("msg_1");
+      expect(turnStarts[0].type === "turn:start" && turnStarts[0].model).toBe("test-model");
+
+      const turnCompletes = events.filter((e) => e.type === "turn:complete");
+      expect(turnCompletes).toHaveLength(1);
+      if (turnCompletes[0].type === "turn:complete") {
+        expect(turnCompletes[0].message.role).toBe("assistant");
+        expect(turnCompletes[0].message.id).toBe("msg_1");
+      }
+    });
+
+    test("emits all boundary events for tool call cycle", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const turnStarts = events.filter((e) => e.type === "turn:start");
+      expect(turnStarts).toHaveLength(2);
+
+      const turnCompletes = events.filter((e) => e.type === "turn:complete");
+      expect(turnCompletes).toHaveLength(2);
+
+      const toolResultsStarts = events.filter((e) => e.type === "tool-results:start");
+      expect(toolResultsStarts).toHaveLength(1);
+
+      const toolResultsCompletes = events.filter((e) => e.type === "tool-results:complete");
+      expect(toolResultsCompletes).toHaveLength(1);
+    });
+
+    test("tool-results:complete message has an id field", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const toolResultsComplete = events.find((e) => e.type === "tool-results:complete");
+      expect(toolResultsComplete).toBeDefined();
+      if (toolResultsComplete?.type === "tool-results:complete") {
+        expect(toolResultsComplete.message.id).toBeDefined();
+        expect(typeof toolResultsComplete.message.id).toBe("string");
+        expect(toolResultsComplete.message.id.length).toBeGreaterThan(0);
+        expect(toolResultsComplete.message.role).toBe("tool");
+        expect(toolResultsComplete.message.content).toHaveLength(1);
+      }
+    });
+
+    test("tool-results:start id matches tool-results:complete message id", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const trStart = events.find((e) => e.type === "tool-results:start");
+      const trComplete = events.find((e) => e.type === "tool-results:complete");
+      expect(trStart).toBeDefined();
+      expect(trComplete).toBeDefined();
+      if (trStart?.type === "tool-results:start" && trComplete?.type === "tool-results:complete") {
+        expect(trStart.id).toBe(trComplete.message.id);
+      }
+    });
+
+    test("boundary events order: turn:start → content → turn:complete → tool-results → turn:start", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        textStartChunk(0),
+        textChunk(0, "thinking"),
+        textCompleteChunk(0),
+        toolCallStartChunk(1, "call_1", "search"),
+        toolCallCompleteChunk(1, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const boundaryOrder: string[] = [];
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on((event) => {
+        if (
+          event.type === "turn:start" ||
+          event.type === "turn:complete" ||
+          event.type === "tool-results:start" ||
+          event.type === "tool-results:complete"
+        ) {
+          boundaryOrder.push(event.type);
+        }
+      });
+
+      await result.final;
+
+      expect(boundaryOrder).toEqual([
+        "turn:start",
+        "turn:complete",
+        "tool-results:start",
+        "tool-results:complete",
+        "turn:start",
+        "turn:complete",
+      ]);
     });
   });
 

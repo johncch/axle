@@ -21,6 +21,7 @@ export interface AxleAssistantMessage {
 
 export interface AxleToolCallMessage {
   role: "tool";
+  id: string;
   content: Array<AxleToolCallResult>;
 }
 

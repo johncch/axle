@@ -35,13 +35,13 @@ agent.on((event) => {
     case "thinking:end":
       console.log(`[End] ${event.index} thinking`);
       break;
-    case "tool:start":
+    case "tool:request":
       console.log(`[Tool] Starting ${event.name} tool`);
       break;
-    case "tool:execute":
+    case "tool:exec-start":
       console.log(`[Tool] Running ${event.name} tool`);
       break;
-    case "tool:complete":
+    case "tool:exec-complete":
       console.log(`[Tool] Tool ${event.name} complete`);
       break;
     case "error":

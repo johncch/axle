@@ -1,6 +1,7 @@
 import type {
   AxleAssistantMessage,
   AxleMessage,
+  AxleToolCallMessage,
   ContentPartInternalTool,
   ContentPartText,
   ContentPartThinking,
@@ -23,6 +24,11 @@ import { AxleStopReason } from "./types.js";
 // --- Public types ---
 
 export type StreamEvent =
+  // Message boundaries
+  | { type: "turn:start"; id: string; model: string }
+  | { type: "turn:complete"; message: AxleAssistantMessage }
+  | { type: "tool-results:start"; id: string }
+  | { type: "tool-results:complete"; message: AxleToolCallMessage }
   // Text streaming
   | { type: "text:start"; index: number }
   | { type: "text:delta"; index: number; delta: string; accumulated: string }
@@ -32,16 +38,16 @@ export type StreamEvent =
   | { type: "thinking:delta"; index: number; delta: string; accumulated: string }
   | { type: "thinking:end"; index: number; final: string }
   // Tool calls
-  | { type: "tool:start"; index: number; id: string; name: string }
+  | { type: "tool:request"; index: number; id: string; name: string }
   | {
-      type: "tool:execute";
+      type: "tool:exec-start";
       index: number;
       id: string;
       name: string;
       parameters: Record<string, unknown>;
     }
   | {
-      type: "tool:complete";
+      type: "tool:exec-complete";
       index: number;
       id: string;
       name: string;
@@ -280,6 +286,7 @@ async function run(
         case "start":
           turnId = chunk.id;
           turnModel = chunk.data.model;
+          emit(cbs, { type: "turn:start", id: turnId, model: turnModel });
           break;
 
         case "text-start": {
@@ -364,7 +371,7 @@ async function run(
           });
           currentPartIndex = turnParts.length - 1;
           toolCallIndexMap.set(chunk.data.id, idx);
-          emit(cbs, { type: "tool:start", index: idx, id: chunk.data.id, name: chunk.data.name });
+          emit(cbs, { type: "tool:request", index: idx, id: chunk.data.id, name: chunk.data.name });
           break;
         }
 
@@ -492,6 +499,7 @@ async function run(
       finishReason: turnFinishReason,
     };
     addMessage(assistantMessage);
+    emit(cbs, { type: "turn:complete", message: assistantMessage });
 
     // If not a function call, we're done
     if (turnFinishReason !== AxleStopReason.FunctionCall) {
@@ -520,6 +528,9 @@ async function run(
       return { result: "cancelled", messages: newMessages, usage };
     }
 
+    const toolResultsId = crypto.randomUUID();
+    emit(cbs, { type: "tool-results:start", id: toolResultsId });
+
     const wrappedToolCall = onToolCall
       ? async (name: string, parameters: Record<string, unknown>) => {
           return onToolCall(name, parameters);
@@ -530,16 +541,28 @@ async function run(
     const emittingToolCall: ToolCallCallback = async (name, parameters) => {
       const call = toolCalls[toolExecIndex++];
       const idx = toolCallIndexMap.get(call.id) ?? -1;
-      emit(cbs, { type: "tool:execute", index: idx, id: call.id, name, parameters });
+      emit(cbs, { type: "tool:exec-start", index: idx, id: call.id, name, parameters });
       const result = await wrappedToolCall(name, parameters);
-      emit(cbs, { type: "tool:complete", index: idx, id: call.id, name, result: result ?? null });
+      emit(cbs, {
+        type: "tool:exec-complete",
+        index: idx,
+        id: call.id,
+        name,
+        result: result ?? null,
+      });
       return result;
     };
 
     const { results } = await executeToolCalls(toolCalls, emittingToolCall, tracer);
 
     if (results.length > 0) {
-      addMessage({ role: "tool", content: results });
+      const toolResultsMessage: AxleToolCallMessage = {
+        role: "tool",
+        id: toolResultsId,
+        content: results,
+      };
+      addMessage(toolResultsMessage);
+      emit(cbs, { type: "tool-results:complete", message: toolResultsMessage });
     }
   }
 }

@@ -160,6 +160,7 @@ describe("responsesAPI utils", () => {
       const messages = [
         {
           role: "tool" as const,
+          id: "tool-msg-1",
           content: [
             {
               id: "call_123",

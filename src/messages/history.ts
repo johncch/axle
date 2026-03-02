@@ -65,6 +65,7 @@ export class History {
   addToolResults(input: Array<AxleToolCallResult>) {
     this._messages.push({
       role: "tool",
+      id: crypto.randomUUID(),
       content: input,
     });
   }

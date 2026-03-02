@@ -40,10 +40,10 @@ agent.on((event) => {
     case "thinking:end":
       console.log(`\n[End] ${event.index} thinking`);
       break;
-    case "tool:execute":
+    case "tool:exec-start":
       console.log(`[Tool Execute] ${event.name} ${JSON.stringify(event.parameters)}`);
       break;
-    case "tool:complete":
+    case "tool:exec-complete":
       console.log(`[Tool Complete] ${event.name} ${JSON.stringify(event.result)}`);
       break;
     case "error":

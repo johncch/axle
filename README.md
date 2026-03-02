@@ -207,10 +207,10 @@ const agent = new Agent({
 
 Axle maps common names to provider-specific identifiers automatically:
 
-| Name             | Anthropic                | OpenAI               | Gemini           |
-| ---------------- | ------------------------ | -------------------- | ---------------- |
-| `web_search`     | `web_search_20250305`    | `web_search_preview` | `googleSearch`   |
-| `code_execution` | —                        | `code_interpreter`   | `codeExecution`  |
+| Name             | Anthropic             | OpenAI               | Gemini          |
+| ---------------- | --------------------- | -------------------- | --------------- |
+| `web_search`     | `web_search_20250305` | `web_search_preview` | `googleSearch`  |
+| `code_execution` | —                     | `code_interpreter`   | `codeExecution` |
 
 You can also pass provider-specific names directly. Use the optional `config`
 field for provider-specific options:
@@ -268,7 +268,10 @@ agent.on((event) => {
     case "text:delta":
       process.stdout.write(event.delta);
       break;
-    case "tool:execute":
+    case "turn:complete":
+      console.log(`Turn done: ${event.message.id}`);
+      break;
+    case "tool:exec-start":
       console.log(`Running tool: ${event.name}`);
       break;
     case "error":
@@ -282,9 +285,13 @@ const handle = agent.send("Write me a poem.");
 const result = await handle.final;
 ```
 
-Event types include `text:start`, `text:delta`, `text:end`, `thinking:start`,
-`thinking:delta`, `thinking:end`, `tool:start`, `tool:execute`,
-`tool:complete`, `internal-tool:start`, `internal-tool:complete`, and `error`.
+Event types include `turn:start`, `turn:complete`, `tool-results:start`,
+`tool-results:complete`, `text:start`, `text:delta`, `text:end`,
+`thinking:start`, `thinking:delta`, `thinking:end`, `tool:request`,
+`tool:exec-start`, `tool:exec-complete`, `internal-tool:start`,
+`internal-tool:complete`, and `error`. The `turn:*` and `tool-results:*`
+events carry complete `AxleAssistantMessage` and `AxleToolCallMessage` objects
+for client-server architectures that need authoritative message boundaries.
 
 Callbacks are registered once and fire on every subsequent `send()`.
 
@@ -382,6 +389,7 @@ task: |
 ```
 
 Each entry supports:
+
 - `transport` — `"stdio"` or `"http"` (required)
 - `name` — prefix for tool names from this server (optional)
 - `command` / `args` / `env` — for stdio transport
