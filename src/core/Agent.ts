@@ -2,10 +2,10 @@ import { AxleError } from "../errors/AxleError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
 import { History } from "../messages/history.js";
-import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
+import type { AxleAssistantMessage, AxleMessage, AxleUserMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
-import { stream, type StreamEventCallback } from "../providers/stream.js";
+import { stream, type StreamEvent } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
@@ -46,6 +46,10 @@ export interface AgentHandle<T = string> {
   readonly final: Promise<AgentResult<T>>;
 }
 
+export type AgentStreamEvent = StreamEvent | { type: "message:user"; message: AxleUserMessage };
+
+export type AgentStreamEventCallback = (event: AgentStreamEvent) => void;
+
 function isServerTool(t: AxleTool): t is ServerTool {
   return t.type === "server";
 }
@@ -68,7 +72,7 @@ export class Agent {
   private memory?: AgentMemory;
 
   private options: AgentOptions;
-  private eventCallbacks: StreamEventCallback[] = [];
+  private eventCallbacks: AgentStreamEventCallback[] = [];
 
   constructor(config: AgentConfig) {
     this.provider = config.provider;
@@ -128,7 +132,7 @@ export class Agent {
     );
   }
 
-  on(callback: StreamEventCallback) {
+  on(callback: AgentStreamEventCallback) {
     this.eventCallbacks.push(callback);
   }
 
@@ -143,17 +147,29 @@ export class Agent {
     variables?: Record<string, string>,
   ): AgentHandle<any> {
     let schema: OutputSchema | undefined;
+    let userMessage: AxleUserMessage;
 
     if (typeof messageOrInstruct === "string") {
-      this.history.addUser(messageOrInstruct);
+      userMessage = {
+        role: "user",
+        id: crypto.randomUUID(),
+        content: [{ type: "text", text: messageOrInstruct }],
+      };
     } else {
       const text = compileInstruct(messageOrInstruct, variables, {
         strictVariables: this.options.strictVariables,
       });
       const files = messageOrInstruct.files;
-      this.history.addUser(toContentParts({ text, files }));
+      userMessage = {
+        role: "user",
+        id: crypto.randomUUID(),
+        content: toContentParts({ text, files }),
+      };
       schema = messageOrInstruct.schema;
     }
+
+    this.history.add(userMessage);
+    for (const cb of this.eventCallbacks) cb({ type: "message:user", message: userMessage });
 
     return this.execute(schema);
   }

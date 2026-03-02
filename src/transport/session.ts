@@ -1,5 +1,5 @@
 import type { StreamResult } from "../providers/helpers.js";
-import type { StreamHandle } from "../providers/stream.js";
+import type { StreamEvent, StreamHandle } from "../providers/stream.js";
 import { Channel } from "./channel.js";
 import type { SeqEvent, SessionStore } from "./store.js";
 import { MemorySessionStore } from "./store.js";
@@ -10,7 +10,6 @@ export class StreamSession {
   readonly id: string;
   private _status: SessionStatus = "idle";
   private seq = 0;
-  private attached = false;
   private store: SessionStore;
   private channels = new Set<Channel<SeqEvent>>();
   private resolveResult!: (result: StreamResult) => void;
@@ -30,11 +29,29 @@ export class StreamSession {
     return this._status;
   }
 
+  push(event: StreamEvent): void {
+    if (this._status === "completed" || this._status === "error") return;
+    if (this._status === "idle") this._status = "running";
+    const entry: SeqEvent = { seq: ++this.seq, event };
+    this.store.append(this.id, entry);
+    for (const ch of this.channels) ch.push(entry);
+  }
+
+  close(): void {
+    if (this._status === "completed" || this._status === "error") return;
+    this._status = "completed";
+    for (const ch of this.channels) ch.close();
+    this.resolveResult({
+      result: "success",
+      messages: [],
+      usage: { in: 0, out: 0 },
+    });
+  }
+
   attach(handle: StreamHandle): void {
-    if (this.attached) {
-      throw new Error("StreamSession can only be attached once");
+    if (this._status !== "idle") {
+      throw new Error("StreamSession can only be attached when idle");
     }
-    this.attached = true;
     this._status = "running";
 
     handle.on((event) => {

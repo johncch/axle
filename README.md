@@ -301,48 +301,42 @@ Callbacks are registered once and fire on every subsequent `send()`.
 enabling resumable SSE streaming. A client can disconnect mid-stream, reconnect
 with a cursor, and pick up where it left off.
 
-**Basic usage — create session, attach to stream, subscribe:**
+**Agent + SSE server — long-lived conversations over SSE:**
 
 ```typescript
-import { stream } from "@fifthrevision/axle";
-import { StreamSession, MemorySessionStore } from "@fifthrevision/axle/transport";
+import { Agent, anthropic, MemorySessionStore, StreamSession } from "@fifthrevision/axle";
+import { createSSEStream } from "@fifthrevision/axle/transport";
 
 const store = new MemorySessionStore();
+const conversations = new Map<string, { agent: Agent; session: StreamSession }>();
 
-// Server: start a stream and wrap it in a session
-const handle = stream({ provider, model, messages, onToolCall });
-const session = new StreamSession(store);
-session.attach(handle);
-
-// session.id can be returned to the client
-console.log(session.id);
-
-// Subscribe to events (replay + live)
-for await (const { seq, event } of session.subscribe()) {
-  console.log(seq, event.type);
-}
-```
-
-**SSE endpoint — Hono example:**
-
-```typescript
-import { stream } from "@fifthrevision/axle";
-import { StreamSession, createSSEStream } from "@fifthrevision/axle/transport";
-
-// POST /chat — start a session
-app.post("/chat", async (c) => {
-  const handle = stream({ provider, model, messages: [...] });
+// POST /conversations — create a new conversation
+app.post("/conversations", (c) => {
+  const agent = new Agent({
+    provider: anthropic(),
+    model: "claude-sonnet-4-20250514",
+    system: "You are a helpful assistant.",
+  });
   const session = new StreamSession(store);
-  session.attach(handle);
-  sessions.set(session.id, session);
-  return c.json({ sessionId: session.id });
+  agent.on((event) => session.push(event));
+
+  conversations.set(session.id, { agent, session });
+  return c.json({ conversationId: session.id });
 });
 
-// GET /stream/:id — SSE endpoint (supports reconnection)
-app.get("/stream/:id", (c) => {
-  const session = sessions.get(c.req.param("id"));
+// POST /conversations/:id/messages — send a message
+app.post("/conversations/:id/messages", async (c) => {
+  const conv = conversations.get(c.req.param("id"));
+  const { message } = await c.req.json();
+  conv.agent.send(message); // events flow over SSE
+  return c.json({ status: "accepted" }, 202);
+});
+
+// GET /conversations/:id/stream — SSE endpoint (reconnectable)
+app.get("/conversations/:id/stream", (c) => {
+  const conv = conversations.get(c.req.param("id"));
   const lastSeq = parseInt(c.req.header("Last-Event-ID") ?? "0");
-  return new Response(createSSEStream(session, lastSeq), {
+  return new Response(createSSEStream(conv.session, lastSeq), {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -351,19 +345,33 @@ app.get("/stream/:id", (c) => {
 });
 ```
 
-**Resumable client — EventSource with reconnection:**
+**Low-level usage — single stream (no Agent):**
 
 ```typescript
-const es = new EventSource(`/stream/${sessionId}`);
-// Browser automatically sends Last-Event-ID on reconnect
-es.addEventListener("text:delta", (e) => {
+import { stream } from "@fifthrevision/axle";
+import { StreamSession, MemorySessionStore } from "@fifthrevision/axle/transport";
+
+const handle = stream({ provider, model, messages, onToolCall });
+const session = new StreamSession(store);
+session.attach(handle);
+```
+
+**Client — EventSource with reconnection:**
+
+```typescript
+const es = new EventSource(`/conversations/${id}/stream`);
+es.addEventListener("message:user", (e) => {
   const event = JSON.parse(e.data);
-  process.stdout.write(event.delta);
+  appendMessage(event.message); // AxleUserMessage
 });
 es.addEventListener("turn:complete", (e) => {
   const event = JSON.parse(e.data);
-  console.log("Turn done:", event.message.id);
-  es.close(); // stop reconnecting — stream is done
+  appendMessage(event.message); // AxleAssistantMessage
+  if (event.message.finishReason !== "function_call") es.close();
+});
+es.addEventListener("text:delta", (e) => {
+  const event = JSON.parse(e.data);
+  updateStreamingText(event.delta);
 });
 ```
 

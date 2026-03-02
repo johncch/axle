@@ -378,4 +378,93 @@ describe("Agent", () => {
       expect(() => new Agent({ provider, model: "mock", memory })).toThrow(/requires a 'name'/);
     });
   });
+
+  describe("agent stream events", () => {
+    test("on() receives message:user event when send(string) is called", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const agent = new Agent({ provider, model: "mock" });
+
+      const events: { type: string }[] = [];
+      agent.on((event) => events.push(event));
+
+      await agent.send("Hello").final;
+
+      const userEvents = events.filter((e) => e.type === "message:user");
+      expect(userEvents).toHaveLength(1);
+      const userEvent = userEvents[0] as {
+        type: "message:user";
+        message: { role: string; id: string; content: unknown };
+      };
+      expect(userEvent.message.role).toBe("user");
+      expect(userEvent.message.id).toBeDefined();
+      expect(typeof userEvent.message.id).toBe("string");
+    });
+
+    test("on() receives message:user event when send(instruct) is called", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const agent = new Agent({ provider, model: "mock" });
+      const instruct = new Instruct("Tell me about {{topic}}");
+
+      const events: { type: string }[] = [];
+      agent.on((event) => events.push(event));
+
+      await agent.send(instruct, { topic: "cats" }).final;
+
+      const userEvents = events.filter((e) => e.type === "message:user");
+      expect(userEvents).toHaveLength(1);
+      const userEvent = userEvents[0] as {
+        type: "message:user";
+        message: { content: Array<{ type: string; text?: string }> };
+      };
+      const textPart = userEvent.message.content.find(
+        (c: { type: string }) => c.type === "text",
+      ) as { text: string } | undefined;
+      expect(textPart?.text).toContain("cats");
+    });
+
+    test("message:user arrives before turn:start", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const agent = new Agent({ provider, model: "mock" });
+
+      const eventTypes: string[] = [];
+      agent.on((event) => eventTypes.push(event.type));
+
+      await agent.send("Hi").final;
+
+      const userIdx = eventTypes.indexOf("message:user");
+      const turnIdx = eventTypes.indexOf("turn:start");
+      expect(userIdx).toBeGreaterThanOrEqual(0);
+      expect(turnIdx).toBeGreaterThanOrEqual(0);
+      expect(userIdx).toBeLessThan(turnIdx);
+    });
+
+    test("event callback receives both agent events and stream events", async () => {
+      const provider = createMockStreamProvider(["streamed"]);
+      const agent = new Agent({ provider, model: "mock" });
+
+      const eventTypes = new Set<string>();
+      agent.on((event) => eventTypes.add(event.type));
+
+      await agent.send("Hi").final;
+
+      expect(eventTypes.has("message:user")).toBe(true);
+      expect(eventTypes.has("turn:start")).toBe(true);
+      expect(eventTypes.has("text:delta")).toBe(true);
+      expect(eventTypes.has("turn:complete")).toBe(true);
+    });
+
+    test("user message has UUID id in history", async () => {
+      const provider = createMockStreamProvider(["ok"]);
+      const agent = new Agent({ provider, model: "mock" });
+
+      await agent.send("Hi").final;
+
+      const userMsg = agent.history.messages[0];
+      expect(userMsg.role).toBe("user");
+      if (userMsg.role === "user") {
+        expect(userMsg.id).toBeDefined();
+        expect(typeof userMsg.id).toBe("string");
+      }
+    });
+  });
 });

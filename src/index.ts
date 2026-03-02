@@ -1,6 +1,12 @@
 // Core
 export { Agent } from "./core/Agent.js";
-export type { AgentConfig, AgentHandle, AgentResult } from "./core/Agent.js";
+export type {
+  AgentConfig,
+  AgentHandle,
+  AgentResult,
+  AgentStreamEvent,
+  AgentStreamEventCallback,
+} from "./core/Agent.js";
 export { compileInstruct } from "./core/compile.js";
 export { Instruct } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
@@ -64,6 +70,10 @@ export type {
 // Store
 export { LocalFileStore } from "./store/index.js";
 export type { FileStore } from "./store/index.js";
+
+// Transport (session management for server use cases)
+export { MemorySessionStore, StreamSession } from "./transport/index.js";
+export type { SessionStatus, SessionStore } from "./transport/index.js";
 
 // Utils
 export { loadFileContent } from "./utils/file.js";

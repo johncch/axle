@@ -85,7 +85,7 @@ describe("StreamSession", () => {
     const mock2 = createMockStreamHandle();
     const session = new StreamSession();
     session.attach(handle);
-    expect(() => session.attach(mock2.handle)).toThrow("only be attached once");
+    expect(() => session.attach(mock2.handle)).toThrow("only be attached when idle");
   });
 
   test("final resolves with the stream result", async () => {
@@ -251,5 +251,112 @@ describe("StreamSession", () => {
 
     await consumer;
     expect(collected).toEqual([1]);
+  });
+
+  describe("push() and close()", () => {
+    test("push() assigns incrementing seq and delivers to subscribers", async () => {
+      const session = new StreamSession();
+
+      const collected: number[] = [];
+      const consumer = (async () => {
+        for await (const { seq } of session.subscribe()) collected.push(seq);
+      })();
+
+      await Promise.resolve();
+      session.push({ type: "text:start", index: 0 });
+      session.push({ type: "text:delta", index: 0, delta: "hi", accumulated: "hi" });
+      session.push({ type: "text:end", index: 0, final: "hi" });
+      session.close();
+
+      await consumer;
+      expect(collected).toEqual([1, 2, 3]);
+    });
+
+    test("push() sets status to running on first call", () => {
+      const session = new StreamSession();
+      expect(session.status).toBe("idle");
+
+      session.push({ type: "text:start", index: 0 });
+      expect(session.status).toBe("running");
+    });
+
+    test("close() sets status to completed and closes all subscriber channels", async () => {
+      const session = new StreamSession();
+
+      const a: number[] = [];
+      const b: number[] = [];
+      const consumerA = (async () => {
+        for await (const { seq } of session.subscribe()) a.push(seq);
+      })();
+      const consumerB = (async () => {
+        for await (const { seq } of session.subscribe()) b.push(seq);
+      })();
+
+      await Promise.resolve();
+      session.push({ type: "text:start", index: 0 });
+      session.close();
+
+      await Promise.all([consumerA, consumerB]);
+      expect(session.status).toBe("completed");
+      expect(a).toEqual([1]);
+      expect(b).toEqual([1]);
+    });
+
+    test("close() resolves final promise", async () => {
+      const session = new StreamSession();
+      session.push({ type: "text:start", index: 0 });
+      session.close();
+
+      const result = await session.final;
+      expect(result.result).toBe("success");
+    });
+
+    test("push() after close() is a no-op", async () => {
+      const store = new MemorySessionStore();
+      const session = new StreamSession(store);
+
+      session.push({ type: "text:start", index: 0 });
+      session.close();
+
+      session.push({ type: "text:end", index: 0, final: "late" });
+
+      const events: number[] = [];
+      for await (const { seq } of session.subscribe()) events.push(seq);
+      expect(events).toEqual([1]);
+    });
+
+    test("multiple pushes then close — subscriber receives all then exits", async () => {
+      const session = new StreamSession();
+
+      const collected: number[] = [];
+      const consumer = (async () => {
+        for await (const { seq } of session.subscribe()) collected.push(seq);
+      })();
+
+      await Promise.resolve();
+      session.push({ type: "turn:start", id: "t1", model: "m" });
+      session.push({ type: "text:start", index: 0 });
+      session.push({ type: "text:delta", index: 0, delta: "hello", accumulated: "hello" });
+      session.push({ type: "text:end", index: 0, final: "hello" });
+      session.push({
+        type: "turn:complete",
+        message: {
+          role: "assistant",
+          id: "a1",
+          content: [{ type: "text", text: "hello" }],
+        },
+      });
+      session.close();
+
+      await consumer;
+      expect(collected).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    test("attach() throws if session is not idle (already pushed)", () => {
+      const { handle } = createMockStreamHandle();
+      const session = new StreamSession();
+      session.push({ type: "text:start", index: 0 });
+      expect(() => session.attach(handle)).toThrow("only be attached when idle");
+    });
   });
 });
