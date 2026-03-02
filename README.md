@@ -295,6 +295,78 @@ for client-server architectures that need authoritative message boundaries.
 
 Callbacks are registered once and fire on every subsequent `send()`.
 
+### Transport / Sessions
+
+`StreamSession` decouples agent execution from client connection lifetime,
+enabling resumable SSE streaming. A client can disconnect mid-stream, reconnect
+with a cursor, and pick up where it left off.
+
+**Basic usage — create session, attach to stream, subscribe:**
+
+```typescript
+import { stream } from "@fifthrevision/axle";
+import { StreamSession, MemorySessionStore } from "@fifthrevision/axle/transport";
+
+const store = new MemorySessionStore();
+
+// Server: start a stream and wrap it in a session
+const handle = stream({ provider, model, messages, onToolCall });
+const session = new StreamSession(store);
+session.attach(handle);
+
+// session.id can be returned to the client
+console.log(session.id);
+
+// Subscribe to events (replay + live)
+for await (const { seq, event } of session.subscribe()) {
+  console.log(seq, event.type);
+}
+```
+
+**SSE endpoint — Hono example:**
+
+```typescript
+import { stream } from "@fifthrevision/axle";
+import { StreamSession, createSSEStream } from "@fifthrevision/axle/transport";
+
+// POST /chat — start a session
+app.post("/chat", async (c) => {
+  const handle = stream({ provider, model, messages: [...] });
+  const session = new StreamSession(store);
+  session.attach(handle);
+  sessions.set(session.id, session);
+  return c.json({ sessionId: session.id });
+});
+
+// GET /stream/:id — SSE endpoint (supports reconnection)
+app.get("/stream/:id", (c) => {
+  const session = sessions.get(c.req.param("id"));
+  const lastSeq = parseInt(c.req.header("Last-Event-ID") ?? "0");
+  return new Response(createSSEStream(session, lastSeq), {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+    },
+  });
+});
+```
+
+**Resumable client — EventSource with reconnection:**
+
+```typescript
+const es = new EventSource(`/stream/${sessionId}`);
+// Browser automatically sends Last-Event-ID on reconnect
+es.addEventListener("text:delta", (e) => {
+  const event = JSON.parse(e.data);
+  process.stdout.write(event.delta);
+});
+es.addEventListener("turn:complete", (e) => {
+  const event = JSON.parse(e.data);
+  console.log("Turn done:", event.message.id);
+  es.close(); // stop reconnecting — stream is done
+});
+```
+
 ## Known Limitations
 
 1. Axle does not support multi-modal output right now.

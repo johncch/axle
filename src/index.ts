@@ -9,9 +9,10 @@ export { parseResponse } from "./core/parse.js";
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
+export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
-export type { StreamEvent, StreamEventCallback } from "./providers/stream.js";
+export type { StreamEvent, StreamEventCallback, StreamHandle } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type { AIProvider } from "./providers/types.js";
 
