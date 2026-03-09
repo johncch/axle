@@ -73,6 +73,7 @@ export class Agent {
 
   private options: AgentOptions;
   private eventCallbacks: AgentStreamEventCallback[] = [];
+  private sendQueue: Promise<void> = Promise.resolve();
 
   constructor(config: AgentConfig) {
     this.provider = config.provider;
@@ -168,10 +169,7 @@ export class Agent {
       schema = messageOrInstruct.schema;
     }
 
-    this.history.add(userMessage);
-    for (const cb of this.eventCallbacks) cb({ type: "message:user", message: userMessage });
-
-    return this.execute(schema);
+    return this.execute(userMessage, schema);
   }
 
   private async resolveMcpTools(): Promise<void> {
@@ -184,11 +182,17 @@ export class Agent {
     this.mcpToolsResolved = true;
   }
 
-  private execute(schema?: OutputSchema): AgentHandle<any> {
+  private execute(userMessage: AxleUserMessage, schema?: OutputSchema): AgentHandle<any> {
     let cancelled = false;
     let streamHandle: ReturnType<typeof stream> | undefined;
 
     const finalPromise = (async (): Promise<AgentResult<any>> => {
+      // Wait for any prior send to finish before starting this turn
+      await this.sendQueue;
+
+      this.history.add(userMessage);
+      for (const cb of this.eventCallbacks) cb({ type: "message:user", message: userMessage });
+
       await this.resolveMcpTools();
 
       if (cancelled) {
@@ -285,6 +289,13 @@ export class Agent {
       const usage = streamResult.usage ?? { in: 0, out: 0 };
       return { response, messages: streamResult.messages, final, usage };
     })();
+
+    // Chain on sendQueue so subsequent sends wait for this one.
+    // Swallow errors — they're surfaced via finalPromise, not the queue.
+    this.sendQueue = finalPromise.then(
+      () => {},
+      () => {},
+    );
 
     return {
       cancel: () => {

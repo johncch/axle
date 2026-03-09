@@ -303,40 +303,38 @@ with a cursor, and pick up where it left off.
 
 **Agent + SSE server — long-lived conversations over SSE:**
 
+`useAgentSession` sends `POST {url}` with `{ message, sessionId }`. The server returns an SSE stream response. The `sessionId` is generated client-side (via `crypto.randomUUID()`) and sent with every request. The server uses it to look up or create the corresponding agent and session. The client cancels by aborting the fetch request.
+
+Example with Hono:
+
 ```typescript
 import { Agent, anthropic, MemorySessionStore, StreamSession } from "@fifthrevision/axle";
 import { createSSEStream } from "@fifthrevision/axle/transport";
 
+const sessions = new Map<string, { agent: Agent; session: StreamSession }>();
 const store = new MemorySessionStore();
-const conversations = new Map<string, { agent: Agent; session: StreamSession }>();
 
-// POST /conversations — create a new conversation
-app.post("/conversations", (c) => {
-  const agent = new Agent({
-    provider: anthropic(),
-    model: "claude-sonnet-4-20250514",
-    system: "You are a helpful assistant.",
-  });
-  const session = new StreamSession(store);
-  agent.on((event) => session.push(event));
+// POST /agents/my-agent — send a message, returns SSE stream
+app.post("/agents/my-agent", async (c) => {
+  const { message, sessionId } = await c.req.json();
 
-  conversations.set(session.id, { agent, session });
-  return c.json({ conversationId: session.id });
-});
+  let entry = sessions.get(sessionId);
 
-// POST /conversations/:id/messages — send a message
-app.post("/conversations/:id/messages", async (c) => {
-  const conv = conversations.get(c.req.param("id"));
-  const { message } = await c.req.json();
-  conv.agent.send(message); // events flow over SSE
-  return c.json({ status: "accepted" }, 202);
-});
+  if (!entry) {
+    const agent = new Agent({
+      provider: anthropic(),
+      model: "claude-sonnet-4-20250514",
+      system: "You are a helpful assistant.",
+    });
+    const session = new StreamSession(store);
+    agent.on((event) => session.push(event));
+    entry = { agent, session };
+    sessions.set(sessionId, entry);
+  }
 
-// GET /conversations/:id/stream — SSE endpoint (reconnectable)
-app.get("/conversations/:id/stream", (c) => {
-  const conv = conversations.get(c.req.param("id"));
-  const lastSeq = parseInt(c.req.header("Last-Event-ID") ?? "0");
-  return new Response(createSSEStream(conv.session, lastSeq), {
+  entry.agent.send(message);
+
+  return new Response(createSSEStream(entry.session), {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -356,24 +354,66 @@ const session = new StreamSession(store);
 session.attach(handle);
 ```
 
-**Client — EventSource with reconnection:**
+### React Hook
+
+`useAgentSession` manages agent session state via fetch + ReadableStream, matching the server pattern above:
 
 ```typescript
-const es = new EventSource(`/conversations/${id}/stream`);
-es.addEventListener("message:user", (e) => {
-  const event = JSON.parse(e.data);
-  appendMessage(event.message); // AxleUserMessage
-});
-es.addEventListener("turn:complete", (e) => {
-  const event = JSON.parse(e.data);
-  appendMessage(event.message); // AxleAssistantMessage
-  if (event.message.finishReason !== "function_call") es.close();
-});
-es.addEventListener("text:delta", (e) => {
-  const event = JSON.parse(e.data);
-  updateStreamingText(event.delta);
-});
+import { useAgentSession } from "@fifthrevision/axle/react";
+
+function Chat() {
+  const { messages, status, sessionId, send, cancel } = useAgentSession(
+    "http://localhost:3000/agents/my-agent"
+  );
+
+  return (
+    <div>
+      {messages.map((msg) => {
+        if (msg.role === "user") return <UserMessage key={msg.id} message={msg} />;
+        if (msg.role === "assistant") {
+          return (
+            <AssistantMessage key={msg.id} message={msg}>
+              {msg.content.map((part) => {
+                if (part.type === "text") return <p>{part.text}</p>;
+                if (part.type === "tool-call") return <ToolCall status={part.status} name={part.name} />;
+              })}
+            </AssistantMessage>
+          );
+        }
+      })}
+      <input
+        onKeyDown={(e) => {
+          if (e.key === "Enter") send(e.currentTarget.value);
+        }}
+        disabled={status === "streaming"}
+      />
+      <button onClick={cancel} disabled={status !== "streaming"}>Cancel</button>
+    </div>
+  );
+}
 ```
+
+The URL identifies the agent — the server maps it to the agent's configuration (system prompt, model, tools). The session is managed by the hook internally.
+
+To resume a previous session, pass the `sessionId` from a prior interaction:
+
+```typescript
+const saved = localStorage.getItem("session-id") ?? undefined;
+const { messages, status, sessionId, send, cancel } = useAgentSession(
+  "http://localhost:3000/agents/my-agent",
+  { sessionId: saved },
+);
+
+useEffect(() => {
+  if (sessionId) localStorage.setItem("session-id", sessionId);
+}, [sessionId]);
+```
+
+- `messages` — `ClientMessage[]` with in-progress assistant messages during streaming. Tool calls include a `status` field (`"pending"` | `"running"` | `"complete"` | `"error"`).
+- `status` — `"idle"` | `"ready"` | `"streaming"` | `"error"`
+- `sessionId` — the session ID, available immediately. Generated client-side via `crypto.randomUUID()` or provided via options. Persist this to resume later.
+- `send(message)` — POSTs `{ message, sessionId }` to the URL and reads the SSE stream response. Messages are queued so only one request runs at a time.
+- `cancel()` — aborts the active fetch request, which closes the connection and signals the server to stop
 
 ## Known Limitations
 

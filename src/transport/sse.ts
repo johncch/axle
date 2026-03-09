@@ -10,6 +10,15 @@ export function serializeSSE(entry: SeqEvent): string {
   return `id: ${entry.seq}\nevent: ${entry.event.type}\n${dataLines}\n\n`;
 }
 
+export function createSSEResponse(session: StreamSession, afterSeq?: number): Response {
+  return new Response(createSSEStream(session, afterSeq), {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+
 export function createSSEStream(session: StreamSession, afterSeq?: number): ReadableStream<string> {
   let generator: AsyncGenerator<SeqEvent, void, undefined>;
 
@@ -18,12 +27,12 @@ export function createSSEStream(session: StreamSession, afterSeq?: number): Read
       generator = session.subscribe(afterSeq);
     },
     async pull(controller) {
-      const { value, done } = await generator.next();
-      if (done) {
+      const result = await generator.next();
+      if (result.done) {
         controller.close();
         return;
       }
-      controller.enqueue(serializeSSE(value));
+      controller.enqueue(serializeSSE(result.value as SeqEvent));
     },
     cancel() {
       generator.return(undefined);

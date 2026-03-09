@@ -1,5 +1,6 @@
+import type { AgentStreamEvent } from "../core/Agent.js";
 import type { StreamResult } from "../providers/helpers.js";
-import type { StreamEvent, StreamHandle } from "../providers/stream.js";
+import type { StreamHandle } from "../providers/stream.js";
 import { Channel } from "./channel.js";
 import type { SeqEvent, SessionStore } from "./store.js";
 import { MemorySessionStore } from "./store.js";
@@ -29,7 +30,7 @@ export class StreamSession {
     return this._status;
   }
 
-  push(event: StreamEvent): void {
+  push(event: AgentStreamEvent): void {
     if (this._status === "completed" || this._status === "error") return;
     if (this._status === "idle") this._status = "running";
     const entry: SeqEvent = { seq: ++this.seq, event };

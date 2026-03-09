@@ -1,9 +1,9 @@
+import type { AgentStreamEvent } from "../core/Agent.js";
 import type { StreamResult } from "../providers/helpers.js";
-import type { StreamEvent } from "../providers/stream.js";
 
 export interface SeqEvent {
   seq: number;
-  event: StreamEvent;
+  event: AgentStreamEvent;
 }
 
 export interface SessionStore {
