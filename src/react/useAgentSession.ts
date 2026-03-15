@@ -16,6 +16,8 @@ export function useAgentSession(
 
   const sessionId = useMemo(() => options?.sessionId ?? crypto.randomUUID(), [options?.sessionId]);
 
+  const configRef = useRef(options?.config);
+  const configSentRef = useRef(false);
   const subscriptionRef = useRef<AbortController | null>(null);
   const lastSeqRef = useRef(0);
   const hadErrorRef = useRef(false);
@@ -88,10 +90,15 @@ export function useAgentSession(
 
   const send = useCallback(
     (message: string) => {
+      const payload: Record<string, unknown> = { message, sessionId };
+      if (!configSentRef.current && configRef.current) {
+        payload.config = configRef.current;
+        configSentRef.current = true;
+      }
       fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, sessionId }),
+        body: JSON.stringify(payload),
       }).catch(() => {
         setStatus("error");
       });

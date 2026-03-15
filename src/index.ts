@@ -40,6 +40,7 @@ export type {
   AxleUserMessage,
   ContentPart,
   ContentPartFile,
+  ContentPartInternalTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,

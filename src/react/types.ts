@@ -35,6 +35,7 @@ export type AgentStatus = "idle" | "ready" | "streaming" | "error";
 
 export interface UseAgentSessionOptions {
   sessionId?: string;
+  config?: Record<string, unknown>;
 }
 
 export interface UseAgentSessionReturn {
