@@ -1,11 +1,14 @@
 import { describe, expect, test } from "vitest";
 import type { StreamResult } from "../../src/providers/helpers.js";
-import type { StreamEvent } from "../../src/providers/stream.js";
+import type { AgentEvent } from "../../src/turns/events.js";
 import type { SeqEvent } from "../../src/transport/store.js";
 import { MemorySessionStore } from "../../src/transport/store.js";
 
-function makeEvent(seq: number, type: string = "text:start"): SeqEvent {
-  return { seq, event: { type: "text:start", index: seq } as StreamEvent };
+function makeEvent(seq: number): SeqEvent {
+  return {
+    seq,
+    event: { type: "part:start", turnId: "t1", part: { id: `p${seq}`, type: "text", text: "" } } as AgentEvent,
+  };
 }
 
 function makeResult(): StreamResult {

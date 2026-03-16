@@ -1,6 +1,6 @@
 import { FinishReason, GoogleGenAI } from "@google/genai";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
-import { History } from "../../../src/messages/history.js";
+import type { AxleMessage } from "../../../src/messages/message.js";
 import { createGenerationRequest } from "../../../src/providers/gemini/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -32,13 +32,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { max_tokens: 1000 },
       });
@@ -67,13 +66,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { stop: "STOP" },
       });
@@ -101,13 +99,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { stop: ["STOP1", "STOP2"] },
       });
@@ -135,13 +132,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { top_p: 0.9 },
       });
@@ -170,13 +166,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { temperature: 0.7 },
       });
@@ -206,13 +201,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -249,13 +243,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 25 },
       });
 
-      const chat = new History();
-      chat.addUser("Search for test");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Search for test" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -287,13 +280,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 110 },
       });
 
-      const chat = new History();
-      chat.addUser("Write a long essay");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Write a long essay" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -320,13 +312,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 25 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -341,13 +332,12 @@ describe("createGenerationRequest (Google AI)", () => {
     test("should handle network errors", async () => {
       (mockGenerateContent.mockRejectedValue as any)(new Error("Network error"));
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -368,13 +358,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new History();
-      chat.addUser("Dangerous content");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Dangerous content" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -393,13 +382,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -423,13 +411,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new History();
-      chat.addUser("Content");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Content" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -460,13 +447,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 25 },
       });
 
-      const chat = new History();
-      chat.addUser("Search");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Search" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -492,13 +478,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -519,13 +504,12 @@ describe("createGenerationRequest (Google AI)", () => {
         usageMetadata: { promptTokenCount: 10, totalTokenCount: 10 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -551,13 +535,12 @@ describe("createGenerationRequest (Google AI)", () => {
 
       (mockGenerateContent.mockResolvedValue as any)(mockResponse);
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "gemini-2.0-flash",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 

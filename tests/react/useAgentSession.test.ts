@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AxleStopReason } from "../../src/providers/types.js";
-import type {
-  AgentStatus,
-  ClientAssistantMessage,
-  ClientContentPartToolCall,
-} from "../../src/react/types.js";
+import type { AgentStatus } from "../../src/react/types.js";
+import type { Turn } from "../../src/turns/types.js";
 
 // --- Minimal React mock ---
 
@@ -94,10 +90,6 @@ function createMockStreamResponse(chunks: string[]): Response {
 
 // --- Test helpers ---
 
-/**
- * The hook now does a GET subscription on mount via useEffect.
- * We set up the GET mock before calling the hook so the effect picks it up.
- */
 function callHook(url: string, options?: { sessionId?: string }) {
   stateIndex = 0;
   refIndex = 0;
@@ -105,7 +97,7 @@ function callHook(url: string, options?: { sessionId?: string }) {
   return useAgentSession(url, options);
 }
 
-function getMessages() {
+function getTurns(): Turn[] {
   return stateSlots[0].value;
 }
 
@@ -130,13 +122,12 @@ describe("useAgentSession", () => {
     vi.restoreAllMocks();
   });
 
-  test("initial state is idle with empty messages", () => {
-    // GET subscription returns a stream that stays open
+  test("initial state is idle with empty turns", () => {
     fetchMock.mockImplementation(() => Promise.resolve(createMockStreamResponse([])));
 
     const result = callHook(BASE_URL);
     expect(result.status).toBe("idle");
-    expect(result.messages).toEqual([]);
+    expect(result.turns).toEqual([]);
   });
 
   test("generates a sessionId when none provided", () => {
@@ -199,12 +190,10 @@ describe("useAgentSession", () => {
 
   describe("send()", () => {
     test("posts to url with message and sessionId", async () => {
-      // GET subscription
-      fetchMock.mockImplementation((url: string, opts?: RequestInit) => {
+      fetchMock.mockImplementation((_url: string, opts?: RequestInit) => {
         if (!opts?.method || opts.method === "GET") {
           return Promise.resolve(createMockStreamResponse([]));
         }
-        // POST send
         return Promise.resolve(Response.json({ ok: true }));
       });
 
@@ -249,24 +238,17 @@ describe("useAgentSession", () => {
   });
 
   describe("SSE events via GET subscription", () => {
-    test("message:user appends user message", async () => {
-      const userMsg = { role: "user", id: "u1", content: "Hello" };
+    test("turn:user appends user turn", async () => {
+      const userTurn: Turn = {
+        id: "u1",
+        owner: "user",
+        parts: [{ id: "p1", type: "text", text: "Hello" }],
+      };
 
       fetchMock.mockImplementation(() =>
         Promise.resolve(
           createMockStreamResponse([
-            sseBlock("message:user", { type: "message:user", message: userMsg }),
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a1",
-                model: "m",
-                content: [{ type: "text", text: "Hi" }],
-                finishReason: AxleStopReason.Stop,
-              },
-            }),
+            sseBlock("turn:user", { type: "turn:user", turn: userTurn }),
           ]),
         ),
       );
@@ -274,40 +256,36 @@ describe("useAgentSession", () => {
       callHook(BASE_URL);
 
       await vi.waitFor(() => {
-        expect(getStatus()).toBe("ready");
+        const turns = getTurns();
+        expect(turns).toHaveLength(1);
+        expect(turns[0].owner).toBe("user");
       });
-
-      const msgs = getMessages();
-      expect(msgs[0]).toEqual(userMsg);
     });
 
-    test("text:delta updates assistant message content progressively", async () => {
+    test("turn:start creates agent turn, text:delta accumulates", async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
           createMockStreamResponse([
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
+            sseBlock("turn:start", { type: "turn:start", turnId: "a1" }),
+            sseBlock("part:start", {
+              type: "part:start",
+              turnId: "a1",
+              part: { id: "p1", type: "text", text: "" },
+            }),
             sseBlock("text:delta", {
               type: "text:delta",
-              index: 0,
+              turnId: "a1",
+              partId: "p1",
               delta: "Hello",
-              accumulated: "Hello",
             }),
             sseBlock("text:delta", {
               type: "text:delta",
-              index: 0,
+              turnId: "a1",
+              partId: "p1",
               delta: " world",
-              accumulated: "Hello world",
             }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a1",
-                model: "m",
-                content: [{ type: "text", text: "Hello world" }],
-                finishReason: AxleStopReason.Stop,
-              },
-            }),
+            sseBlock("part:end", { type: "part:end", turnId: "a1", partId: "p1" }),
+            sseBlock("turn:end", { type: "turn:end", turnId: "a1", usage: { in: 10, out: 20 } }),
           ]),
         ),
       );
@@ -318,32 +296,35 @@ describe("useAgentSession", () => {
         expect(getStatus()).toBe("ready");
       });
 
-      const msgs = getMessages();
-      const assistant = msgs[msgs.length - 1] as ClientAssistantMessage;
-      expect(assistant.content).toEqual([{ type: "text", text: "Hello world" }]);
+      const turns = getTurns();
+      expect(turns).toHaveLength(1);
+      const agentTurn = turns[0];
+      expect(agentTurn.owner).toBe("agent");
+      const textPart = agentTurn.parts[0];
+      expect(textPart.type).toBe("text");
+      if (textPart.type === "text") {
+        expect(textPart.text).toBe("Hello world");
+      }
     });
 
-    test("thinking:delta updates assistant thinking content", async () => {
+    test("thinking:delta accumulates thinking content", async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
           createMockStreamResponse([
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
+            sseBlock("turn:start", { type: "turn:start", turnId: "a1" }),
+            sseBlock("part:start", {
+              type: "part:start",
+              turnId: "a1",
+              part: { id: "p1", type: "thinking", text: "" },
+            }),
             sseBlock("thinking:delta", {
               type: "thinking:delta",
-              index: 0,
+              turnId: "a1",
+              partId: "p1",
               delta: "Let me think",
-              accumulated: "Let me think",
             }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a1",
-                model: "m",
-                content: [{ type: "thinking", text: "Let me think" }],
-                finishReason: AxleStopReason.Stop,
-              },
-            }),
+            sseBlock("part:end", { type: "part:end", turnId: "a1", partId: "p1" }),
+            sseBlock("turn:end", { type: "turn:end", turnId: "a1", usage: { in: 10, out: 20 } }),
           ]),
         ),
       );
@@ -354,53 +335,42 @@ describe("useAgentSession", () => {
         expect(getStatus()).toBe("ready");
       });
 
-      const msgs = getMessages();
-      const assistant = msgs[msgs.length - 1] as ClientAssistantMessage;
-      expect(assistant.content[0]).toEqual({ type: "thinking", text: "Let me think" });
+      const turns = getTurns();
+      const part = turns[0].parts[0];
+      expect(part.type).toBe("thinking");
+      if (part.type === "thinking") {
+        expect(part.text).toBe("Let me think");
+      }
     });
 
-    test("tool lifecycle: request → exec-start → exec-complete", async () => {
+    test("tool action lifecycle: part:start → action:running → action:complete", async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
           createMockStreamResponse([
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
-            sseBlock("tool:request", {
-              type: "tool:request",
-              index: 0,
-              id: "tc1",
-              name: "calculator",
-            }),
-            sseBlock("tool:exec-start", {
-              type: "tool:exec-start",
-              index: 0,
-              id: "tc1",
-              name: "calculator",
-              parameters: { expression: "2+2" },
-            }),
-            sseBlock("tool:exec-complete", {
-              type: "tool:exec-complete",
-              index: 0,
-              id: "tc1",
-              name: "calculator",
-              result: { type: "success", content: "4" },
-            }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a1",
-                model: "m",
-                content: [
-                  {
-                    type: "tool-call",
-                    id: "tc1",
-                    name: "calculator",
-                    parameters: { expression: "2+2" },
-                  },
-                ],
-                finishReason: AxleStopReason.FunctionCall,
+            sseBlock("turn:start", { type: "turn:start", turnId: "a1" }),
+            sseBlock("part:start", {
+              type: "part:start",
+              turnId: "a1",
+              part: {
+                id: "tc1",
+                type: "action",
+                kind: "tool",
+                status: "pending",
+                detail: { name: "calculator", parameters: {} },
               },
             }),
+            sseBlock("action:running", {
+              type: "action:running",
+              turnId: "a1",
+              partId: "tc1",
+            }),
+            sseBlock("action:complete", {
+              type: "action:complete",
+              turnId: "a1",
+              partId: "tc1",
+              result: { type: "success", content: "4" },
+            }),
+            sseBlock("turn:end", { type: "turn:end", turnId: "a1", usage: { in: 10, out: 20 } }),
           ]),
         ),
       );
@@ -408,17 +378,20 @@ describe("useAgentSession", () => {
       callHook(BASE_URL);
 
       await vi.waitFor(() => {
-        expect(getMessages()).toHaveLength(1);
+        expect(getStatus()).toBe("ready");
       });
 
-      const msgs = getMessages();
-      const assistant = msgs[0] as ClientAssistantMessage;
-      const toolCall = assistant.content[0] as ClientContentPartToolCall;
-      expect(toolCall.status).toBe("complete");
-      expect(toolCall.name).toBe("calculator");
+      const turns = getTurns();
+      const part = turns[0].parts[0];
+      expect(part.type).toBe("action");
+      if (part.type === "action" && part.kind === "tool") {
+        expect(part.status).toBe("complete");
+        expect(part.detail.name).toBe("calculator");
+        expect(part.detail.result).toEqual({ type: "success", content: "4" });
+      }
     });
 
-    test("tool:exec-complete with error sets tool call status to error", async () => {
+    test("action:error sets tool call status to error", async () => {
       let controllerRef: ReadableStreamDefaultController<Uint8Array>;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -426,19 +399,23 @@ describe("useAgentSession", () => {
           const encoder = new TextEncoder();
           controller.enqueue(
             encoder.encode(
-              sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }) +
-                sseBlock("tool:request", {
-                  type: "tool:request",
-                  index: 0,
-                  id: "tc1",
-                  name: "calculator",
+              sseBlock("turn:start", { type: "turn:start", turnId: "a1" }) +
+                sseBlock("part:start", {
+                  type: "part:start",
+                  turnId: "a1",
+                  part: {
+                    id: "tc1",
+                    type: "action",
+                    kind: "tool",
+                    status: "pending",
+                    detail: { name: "calculator", parameters: {} },
+                  },
                 }) +
-                sseBlock("tool:exec-complete", {
-                  type: "tool:exec-complete",
-                  index: 0,
-                  id: "tc1",
-                  name: "calculator",
-                  result: { type: "error", error: { type: "runtime", message: "fail" } },
+                sseBlock("action:error", {
+                  type: "action:error",
+                  turnId: "a1",
+                  partId: "tc1",
+                  error: { type: "runtime", message: "fail" },
                 }),
             ),
           );
@@ -454,120 +431,26 @@ describe("useAgentSession", () => {
       callHook(BASE_URL);
 
       await vi.waitFor(() => {
-        expect(getMessages()).toHaveLength(1);
+        const turns = getTurns();
+        expect(turns).toHaveLength(1);
+        expect(turns[0].parts).toHaveLength(1);
       });
 
-      const msgs = getMessages();
-      const assistant = msgs[0] as ClientAssistantMessage;
-      const toolCall = assistant.content[0] as ClientContentPartToolCall;
-      expect(toolCall.status).toBe("error");
+      const turns = getTurns();
+      const part = turns[0].parts[0];
+      expect(part.type).toBe("action");
+      if (part.type === "action") {
+        expect(part.status).toBe("error");
+      }
 
       controllerRef!.close();
-    });
-
-    test("turn:complete with function_call keeps status streaming", async () => {
-      fetchMock.mockImplementation(() =>
-        Promise.resolve(
-          createMockStreamResponse([
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a1",
-                model: "m",
-                content: [{ type: "tool-call", id: "tc1", name: "calc", parameters: { x: 1 } }],
-                finishReason: AxleStopReason.FunctionCall,
-              },
-            }),
-            sseBlock("tool-results:complete", {
-              type: "tool-results:complete",
-              message: {
-                role: "tool",
-                id: "tr1",
-                content: [{ id: "tc1", name: "calc", content: "4", isError: false }],
-              },
-            }),
-            sseBlock("turn:start", { type: "turn:start", id: "a2", model: "m" }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a2",
-                model: "m",
-                content: [{ type: "text", text: "The answer is 4" }],
-                finishReason: AxleStopReason.Stop,
-              },
-            }),
-          ]),
-        ),
-      );
-
-      callHook(BASE_URL);
-
-      await vi.waitFor(() => {
-        expect(getStatus()).toBe("ready");
-      });
-
-      const msgs = getMessages();
-      expect(msgs).toHaveLength(3);
-    });
-
-    test("tool-results:complete appends tool message", async () => {
-      const toolMsg = {
-        role: "tool" as const,
-        id: "tr1",
-        content: [{ id: "tc1", name: "calc", content: "4", isError: false }],
-      };
-
-      fetchMock.mockImplementation(() =>
-        Promise.resolve(
-          createMockStreamResponse([
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a1",
-                model: "m",
-                content: [{ type: "tool-call", id: "tc1", name: "calc", parameters: {} }],
-                finishReason: AxleStopReason.FunctionCall,
-              },
-            }),
-            sseBlock("tool-results:complete", {
-              type: "tool-results:complete",
-              message: toolMsg,
-            }),
-            sseBlock("turn:start", { type: "turn:start", id: "a2", model: "m" }),
-            sseBlock("turn:complete", {
-              type: "turn:complete",
-              message: {
-                role: "assistant",
-                id: "a2",
-                model: "m",
-                content: [{ type: "text", text: "Done" }],
-                finishReason: AxleStopReason.Stop,
-              },
-            }),
-          ]),
-        ),
-      );
-
-      callHook(BASE_URL);
-
-      await vi.waitFor(() => {
-        expect(getStatus()).toBe("ready");
-      });
-
-      const msgs = getMessages();
-      expect(msgs[1]).toEqual(toolMsg);
     });
 
     test("error event sets status to error", async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
           createMockStreamResponse([
-            sseBlock("error", { type: "error", message: "something went wrong" }),
+            sseBlock("error", { type: "error", error: { type: "model", message: "something went wrong" } }),
           ]),
         ),
       );
@@ -583,21 +466,8 @@ describe("useAgentSession", () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
           createMockStreamResponse([
-            sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }, 1),
-            sseBlock(
-              "turn:complete",
-              {
-                type: "turn:complete",
-                message: {
-                  role: "assistant",
-                  id: "a1",
-                  model: "m",
-                  content: [{ type: "text", text: "Hi" }],
-                  finishReason: AxleStopReason.Stop,
-                },
-              },
-              2,
-            ),
+            sseBlock("turn:start", { type: "turn:start", turnId: "a1" }, 1),
+            sseBlock("turn:end", { type: "turn:end", turnId: "a1", usage: { in: 10, out: 20 } }, 2),
           ]),
         ),
       );
@@ -608,8 +478,34 @@ describe("useAgentSession", () => {
         expect(getStatus()).toBe("ready");
       });
 
-      // lastSeqRef is refSlots[1] (subscriptionRef=0, lastSeqRef=1)
-      expect(refSlots[1].current).toBe(2);
+      // lastSeqRef is refSlots[3] (configRef=0, configSentRef=1, subscriptionRef=2, lastSeqRef=3)
+      expect(refSlots[3].current).toBe(2);
+    });
+
+    test("session:restore sets turns from snapshot", async () => {
+      const existingTurns: Turn[] = [
+        { id: "t1", owner: "user", parts: [{ id: "p1", type: "text", text: "Hi" }] },
+        { id: "t2", owner: "agent", parts: [{ id: "p2", type: "text", text: "Hello" }] },
+      ];
+
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          createMockStreamResponse([
+            sseBlock("session:restore", { type: "session:restore", turns: existingTurns }),
+          ]),
+        ),
+      );
+
+      callHook(BASE_URL);
+
+      await vi.waitFor(() => {
+        expect(getStatus()).toBe("ready");
+      });
+
+      const turns = getTurns();
+      expect(turns).toHaveLength(2);
+      expect(turns[0].owner).toBe("user");
+      expect(turns[1].owner).toBe("agent");
     });
   });
 
@@ -645,7 +541,7 @@ describe("useAgentSession", () => {
           controllerRef = controller;
           controller.enqueue(
             new TextEncoder().encode(
-              sseBlock("turn:start", { type: "turn:start", id: "a1", model: "m" }),
+              sseBlock("turn:start", { type: "turn:start", turnId: "a1" }),
             ),
           );
         },
@@ -660,15 +556,14 @@ describe("useAgentSession", () => {
       callHook(BASE_URL);
 
       await vi.waitFor(() => {
-        expect(getMessages()).toHaveLength(1);
+        expect(getTurns()).toHaveLength(1);
       });
 
-      // Run cleanup (simulates unmount)
       for (const fn of cleanupFns) fn();
       cleanupFns = [];
 
-      // subscriptionRef should be null after cleanup
-      expect(refSlots[0].current).toBeNull();
+      // subscriptionRef is refSlots[2] (configRef=0, configSentRef=1, subscriptionRef=2)
+      expect(refSlots[2].current).toBeNull();
 
       controllerRef!.close();
     });

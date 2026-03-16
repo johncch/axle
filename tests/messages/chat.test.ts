@@ -3,102 +3,89 @@ import { History } from "../../src/messages/history.js";
 import { ContentPartFile, ContentPartText } from "../../src/messages/message.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";
 import { FileInfo } from "../../src/utils/file.js";
+import type { Turn } from "../../src/turns/types.js";
 
 describe("History", () => {
-  describe("basic functionality", () => {
-    test("addUser with string content", () => {
-      const chat = new History();
-      chat.addUser("Hello");
+  describe("turn management", () => {
+    test("addTurn adds a user turn", () => {
+      const history = new History();
+      const turn: Turn = {
+        id: "t1",
+        owner: "user",
+        parts: [{ id: "p1", type: "text", text: "Hello" }],
+      };
+      history.addTurn(turn);
 
-      expect(chat.messages).toHaveLength(1);
-      expect(chat.messages[0].role).toBe("user");
-      expect(Array.isArray(chat.messages[0].content)).toBe(true);
-
-      const content = chat.messages[0].content as ContentPartText[];
-      expect(content).toHaveLength(1);
-      expect(content[0].type).toBe("text");
-      expect(content[0].text).toBe("Hello");
+      expect(history.turns).toHaveLength(1);
+      expect(history.turns[0].owner).toBe("user");
     });
 
-    test("addUser with ContentPart array", () => {
-      const chat = new History();
-      const content: ContentPartText[] = [
-        { type: "text", text: "Hello" },
-        { type: "text", text: "World" },
-      ];
+    test("addTurn adds an agent turn", () => {
+      const history = new History();
+      const turn: Turn = {
+        id: "t1",
+        owner: "agent",
+        parts: [{ id: "p1", type: "text", text: "Hi there" }],
+      };
+      history.addTurn(turn);
 
-      chat.addUser(content);
-
-      expect(chat.messages).toHaveLength(1);
-      expect(chat.messages[0].role).toBe("user");
-      expect(chat.messages[0].content).toEqual(content);
+      expect(history.turns).toHaveLength(1);
+      expect(history.turns[0].owner).toBe("agent");
     });
 
-    test("addSystem sets system message", () => {
-      const chat = new History();
-      chat.addSystem("You are a helpful assistant");
+    test("latestTurn returns the most recent turn", () => {
+      const history = new History();
+      history.addTurn({ id: "t1", owner: "user", parts: [{ id: "p1", type: "text", text: "Hello" }] });
+      history.addTurn({ id: "t2", owner: "agent", parts: [{ id: "p2", type: "text", text: "Hi" }] });
 
-      expect(chat.system).toBe("You are a helpful assistant");
+      expect(history.latestTurn()?.id).toBe("t2");
+    });
+
+    test("updateTurn modifies a turn in place", () => {
+      const history = new History();
+      history.addTurn({ id: "t1", owner: "agent", parts: [] });
+
+      history.updateTurn("t1", (turn) => ({
+        ...turn,
+        parts: [{ id: "p1", type: "text", text: "Updated" }],
+      }));
+
+      expect(history.turns[0].parts).toHaveLength(1);
+    });
+
+    test("system property can be set", () => {
+      const history = new History();
+      history.system = "You are a helpful assistant";
+
+      expect(history.system).toBe("You are a helpful assistant");
     });
   });
 
-  describe("multimodal functionality", () => {
-    const mockImageFile: FileInfo = {
-      path: "/test/image.jpg",
-      base64: "base64data",
-      mimeType: "image/jpeg",
-      size: 1000,
-      name: "image.jpg",
-      type: "image",
-    };
+  describe("toMessages", () => {
+    test("compiles user turn to AxleUserMessage", () => {
+      const history = new History();
+      history.addTurn({
+        id: "t1",
+        owner: "user",
+        parts: [{ id: "p1", type: "text", text: "Hello" }],
+      });
 
-    const mockPdfFile: FileInfo = {
-      path: "/test/document.pdf",
-      base64: "base64data",
-      mimeType: "application/pdf",
-      size: 2000,
-      name: "document.pdf",
-      type: "document",
-    };
-
-    test("addUser with text and files", () => {
-      const chat = new History();
-      const content: Array<ContentPartText | ContentPartFile> = [
-        { type: "text", text: "Analyze this image" },
-        { type: "file", file: mockImageFile },
-      ];
-
-      chat.addUser(content);
-
-      expect(chat.messages).toHaveLength(1);
-      expect(chat.messages[0].role).toBe("user");
-
-      const msgContent = chat.messages[0].content as Array<ContentPartText | ContentPartFile>;
-      expect(msgContent).toHaveLength(2);
-      expect(msgContent[0].type).toBe("text");
-      expect((msgContent[0] as ContentPartText).text).toBe("Analyze this image");
-      expect(msgContent[1].type).toBe("file");
-      expect((msgContent[1] as ContentPartFile).file).toBe(mockImageFile);
+      const messages = history.toMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe("user");
     });
 
-    test("addUser with multiple files", () => {
-      const chat = new History();
-      const content: Array<ContentPartText | ContentPartFile> = [
-        { type: "text", text: "Analyze these files" },
-        { type: "file", file: mockImageFile },
-        { type: "file", file: mockPdfFile },
-      ];
+    test("compiles agent turn with text to AxleAssistantMessage", () => {
+      const history = new History();
+      history.addTurn({
+        id: "t1",
+        owner: "agent",
+        parts: [{ id: "p1", type: "text", text: "Hi there" }],
+      });
 
-      chat.addUser(content);
-
-      expect(chat.messages).toHaveLength(1);
-      const msgContent = chat.messages[0].content as Array<ContentPartText | ContentPartFile>;
-      expect(msgContent).toHaveLength(3);
-      expect(msgContent[0].type).toBe("text");
-      expect(msgContent[1].type).toBe("file");
-      expect((msgContent[1] as ContentPartFile).file).toBe(mockImageFile);
-      expect(msgContent[2].type).toBe("file");
-      expect((msgContent[2] as ContentPartFile).file).toBe(mockPdfFile);
+      const messages = history.toMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe("assistant");
     });
   });
 
@@ -158,15 +145,15 @@ describe("History", () => {
 
   describe("toString", () => {
     test("serializes conversation to JSON string", () => {
-      const chat = new History();
-      chat.addSystem("System message");
-      chat.addUser("User message");
+      const history = new History();
+      history.system = "System message";
+      history.addTurn({ id: "t1", owner: "user", parts: [{ id: "p1", type: "text", text: "User message" }] });
 
-      const result = chat.toString();
+      const result = history.toString();
       const parsed = JSON.parse(result);
 
       expect(parsed.system).toBe("System message");
-      expect(parsed.messages).toHaveLength(1);
+      expect(parsed.turns).toHaveLength(1);
     });
   });
 });

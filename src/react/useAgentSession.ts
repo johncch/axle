@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Turn } from "../turns/types.js";
 import { handleSSEEvent, parseSSEEvents } from "./events.js";
 import type {
   AgentStatus,
-  ClientMessage,
   UseAgentSessionOptions,
   UseAgentSessionReturn,
 } from "./types.js";
@@ -11,7 +11,7 @@ export function useAgentSession(
   url: string,
   options?: UseAgentSessionOptions,
 ): UseAgentSessionReturn {
-  const [messages, setMessages] = useState<ClientMessage[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [status, setStatus] = useState<AgentStatus>("idle");
 
   const sessionId = useMemo(() => options?.sessionId ?? crypto.randomUUID(), [options?.sessionId]);
@@ -22,12 +22,11 @@ export function useAgentSession(
   const lastSeqRef = useRef(0);
   const hadErrorRef = useRef(false);
 
-  // Subscribe to the SSE stream on mount, reconnect on remount
   useEffect(() => {
     const controller = new AbortController();
     subscriptionRef.current = controller;
 
-    const ctx = { setMessages, setStatus, hadErrorRef };
+    const ctx = { setTurns, setStatus, hadErrorRef };
 
     (async () => {
       try {
@@ -114,5 +113,5 @@ export function useAgentSession(
     }).catch(() => {});
   }, [url, sessionId]);
 
-  return { messages, status, sessionId, send, cancel };
+  return { turns, status, sessionId, send, cancel };
 }

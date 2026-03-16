@@ -1,17 +1,14 @@
+import type { AgentEvent } from "../turns/events.js";
 import type {
-  AxleAssistantMessage,
-  AxleToolCallMessage,
-  AxleUserMessage,
-  ContentPartThinking,
-} from "../messages/message.js";
-import type { ToolCallResult } from "../providers/helpers.js";
-import { AxleStopReason } from "../providers/types.js";
-import type {
-  AgentStatus,
-  ClientAssistantMessage,
-  ClientContentPartToolCall,
-  ClientMessage,
-} from "./types.js";
+  Turn,
+  TurnPart,
+  TextPart,
+  ThinkingPart,
+  ActionPart,
+  ToolAction,
+  InternalToolAction,
+} from "../turns/types.js";
+import type { AgentStatus } from "./types.js";
 
 export interface SSEEvent {
   id?: string;
@@ -20,43 +17,34 @@ export interface SSEEvent {
 }
 
 interface EventHandlerContext {
-  setMessages: React.Dispatch<React.SetStateAction<ClientMessage[]>>;
+  setTurns: React.Dispatch<React.SetStateAction<Turn[]>>;
   setStatus: React.Dispatch<React.SetStateAction<AgentStatus>>;
   hadErrorRef: React.RefObject<boolean>;
 }
 
-function updateLastAssistant(
-  messages: ClientMessage[],
-  updater: (msg: ClientAssistantMessage) => ClientAssistantMessage,
-): ClientMessage[] {
-  const next = [...messages];
+function updateTurn(
+  turns: Turn[],
+  turnId: string,
+  updater: (turn: Turn) => Turn,
+): Turn[] {
+  const next = [...turns];
   for (let i = next.length - 1; i >= 0; i--) {
-    if (next[i].role === "assistant") {
-      next[i] = updater(next[i] as ClientAssistantMessage);
+    if (next[i].id === turnId) {
+      next[i] = updater(next[i]);
       return next;
     }
   }
   return next;
 }
 
-function mapToClientAssistant(msg: AxleAssistantMessage): ClientAssistantMessage {
+function updatePart(
+  turn: Turn,
+  partId: string,
+  updater: (part: TurnPart) => TurnPart,
+): Turn {
   return {
-    role: "assistant",
-    id: msg.id,
-    model: msg.model,
-    content: msg.content.map((part) => {
-      if (part.type === "tool-call") {
-        return {
-          type: "tool-call" as const,
-          id: part.id,
-          name: part.name,
-          parameters: part.parameters,
-          status: "complete" as const,
-        };
-      }
-      return part;
-    }),
-    finishReason: msg.finishReason,
+    ...turn,
+    parts: turn.parts.map((p) => (p.id === partId ? updater(p) : p)),
   };
 }
 
@@ -92,171 +80,129 @@ export function parseSSEEvents(
 }
 
 export function handleSSEEvent(event: SSEEvent, ctx: EventHandlerContext): void {
-  const parsed = JSON.parse(event.data);
-  const { setMessages, setStatus, hadErrorRef } = ctx;
+  const parsed: AgentEvent = JSON.parse(event.data);
+  const { setTurns, setStatus, hadErrorRef } = ctx;
 
-  switch (event.event) {
-    case "message:user": {
-      const e = parsed as { type: "message:user"; message: AxleUserMessage };
-      setMessages((prev) => [...prev, e.message]);
+  switch (parsed.type) {
+    case "session:restore": {
+      setTurns(parsed.turns);
+      setStatus("ready");
       break;
     }
+
+    case "turn:user": {
+      setTurns((prev) => [...prev, parsed.turn]);
+      break;
+    }
+
     case "turn:start": {
-      const e = parsed as { type: "turn:start"; id: string; model: string };
       setStatus("streaming");
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", id: e.id, model: e.model, content: [] },
-      ]);
+      const newTurn: Turn = { id: parsed.turnId, owner: "agent", parts: [] };
+      setTurns((prev) => [...prev, newTurn]);
       break;
     }
+
+    case "part:start": {
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) => ({
+          ...turn,
+          parts: [...turn.parts, parsed.part],
+        })),
+      );
+      break;
+    }
+
     case "text:delta": {
-      const e = parsed as { type: "text:delta"; accumulated: string };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => {
-          const content = [...msg.content];
-          const lastPart = content[content.length - 1];
-          if (lastPart && lastPart.type === "text") {
-            content[content.length - 1] = { ...lastPart, text: e.accumulated };
-          } else {
-            content.push({ type: "text", text: e.accumulated });
-          }
-          return { ...msg, content };
-        }),
-      );
-      break;
-    }
-    case "thinking:delta": {
-      const e = parsed as { type: "thinking:delta"; accumulated: string };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => {
-          const content = [...msg.content];
-          const lastPart = content[content.length - 1];
-          if (lastPart && lastPart.type === "thinking") {
-            content[content.length - 1] = {
-              ...(lastPart as ContentPartThinking),
-              text: e.accumulated,
-            };
-          } else {
-            content.push({ type: "thinking", text: e.accumulated });
-          }
-          return { ...msg, content };
-        }),
-      );
-      break;
-    }
-    case "tool:request": {
-      const e = parsed as { type: "tool:request"; id: string; name: string };
-      const toolCall: ClientContentPartToolCall = {
-        type: "tool-call",
-        id: e.id,
-        name: e.name,
-        parameters: {},
-        status: "pending",
-      };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => ({
-          ...msg,
-          content: [...msg.content, toolCall],
-        })),
-      );
-      break;
-    }
-    case "tool:exec-start": {
-      const e = parsed as {
-        type: "tool:exec-start";
-        id: string;
-        parameters: Record<string, unknown>;
-      };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => ({
-          ...msg,
-          content: msg.content.map((part) =>
-            part.type === "tool-call" && part.id === e.id
-              ? { ...part, status: "running" as const, parameters: e.parameters }
-              : part,
-          ),
-        })),
-      );
-      break;
-    }
-    case "tool:exec-complete": {
-      const e = parsed as {
-        type: "tool:exec-complete";
-        id: string;
-        result: ToolCallResult | null;
-      };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => ({
-          ...msg,
-          content: msg.content.map((part) => {
-            if (part.type !== "tool-call" || part.id !== e.id) return part;
-            const isError = e.result?.type === "error";
-            return {
-              ...part,
-              status: isError ? ("error" as const) : ("complete" as const),
-              result: e.result,
-            };
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) =>
+          updatePart(turn, parsed.partId, (part) => {
+            const p = part as TextPart;
+            return { ...p, text: p.text + parsed.delta };
           }),
-        })),
+        ),
       );
       break;
     }
-    case "internal-tool:start": {
-      const e = parsed as { type: "internal-tool:start"; id: string; name: string };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => ({
-          ...msg,
-          content: [...msg.content, { type: "internal-tool" as const, id: e.id, name: e.name }],
-        })),
+
+    case "thinking:delta": {
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) =>
+          updatePart(turn, parsed.partId, (part) => {
+            const p = part as ThinkingPart;
+            return { ...p, text: p.text + parsed.delta };
+          }),
+        ),
       );
       break;
     }
-    case "internal-tool:complete": {
-      const e = parsed as {
-        type: "internal-tool:complete";
-        id: string;
-        name: string;
-        output?: unknown;
-      };
-      setMessages((prev) =>
-        updateLastAssistant(prev, (msg) => ({
-          ...msg,
-          content: msg.content.map((part) =>
-            part.type === "internal-tool" && part.id === e.id
-              ? { ...part, output: e.output }
-              : part,
-          ),
-        })),
+
+    case "part:end": {
+      // No state change needed — part is already accumulated
+      break;
+    }
+
+    case "action:running": {
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) =>
+          updatePart(turn, parsed.partId, (part) => {
+            const p = part as ActionPart;
+            if (parsed.parameters && p.kind === "tool") {
+              return { ...p, status: "running", detail: { ...p.detail, parameters: parsed.parameters } } as ActionPart;
+            }
+            return { ...p, status: "running" } as ActionPart;
+          }),
+        ),
       );
       break;
     }
-    case "turn:complete": {
-      const e = parsed as { type: "turn:complete"; message: AxleAssistantMessage };
-      const clientMsg = mapToClientAssistant(e.message);
-      setMessages((prev) => {
-        const next = [...prev];
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (next[i].role === "assistant") {
-            next[i] = clientMsg;
-            break;
-          }
-        }
-        return next;
-      });
-      if (e.message.finishReason !== AxleStopReason.FunctionCall) {
-        setStatus("ready");
-      }
+
+    case "action:complete": {
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) =>
+          updatePart(turn, parsed.partId, (part) => {
+            const p = part as ActionPart;
+            return { ...p, status: "complete", detail: { ...p.detail, result: parsed.result } } as ActionPart;
+          }),
+        ),
+      );
       break;
     }
-    case "tool-results:complete": {
-      const e = parsed as { type: "tool-results:complete"; message: AxleToolCallMessage };
-      setMessages((prev) => [...prev, e.message]);
+
+    case "action:error": {
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) =>
+          updatePart(turn, parsed.partId, (part) => {
+            const p = part as ActionPart;
+            return {
+              ...p,
+              status: "error",
+              detail: { ...p.detail, result: { type: "error" as const, error: parsed.error } },
+            } as ActionPart;
+          }),
+        ),
+      );
       break;
     }
+
+    case "turn:end": {
+      setTurns((prev) =>
+        updateTurn(prev, parsed.turnId, (turn) => ({
+          ...turn,
+          usage: parsed.usage,
+        })),
+      );
+      setStatus("ready");
+      break;
+    }
+
     case "error": {
       hadErrorRef.current = true;
       setStatus("error");
+      break;
+    }
+
+    case "action:child-event": {
+      // Not handled in flat rendering — could be extended
       break;
     }
   }

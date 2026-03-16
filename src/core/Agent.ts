@@ -2,15 +2,18 @@ import { AxleError } from "../errors/AxleError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
 import { History } from "../messages/history.js";
-import type { AxleAssistantMessage, AxleMessage, AxleUserMessage } from "../messages/message.js";
+import type { AxleAssistantMessage, AxleUserMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
-import { stream, type StreamEvent } from "../providers/stream.js";
+import { stream } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
 import type { AxleTool, ExecutableTool, ServerTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
+import { TurnBuilder } from "../turns/builder.js";
+import type { AgentEvent } from "../turns/events.js";
+import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
 import { compileInstruct } from "./compile.js";
 import { Instruct } from "./Instruct.js";
@@ -36,7 +39,7 @@ export interface AgentConfig {
 
 export interface AgentResult<T = string> {
   response: T | null;
-  messages: AxleMessage[];
+  turn: Turn | undefined;
   final: AxleAssistantMessage | undefined;
   usage: Stats;
 }
@@ -46,9 +49,12 @@ export interface AgentHandle<T = string> {
   readonly final: Promise<AgentResult<T>>;
 }
 
-export type AgentStreamEvent = StreamEvent | { type: "message:user"; message: AxleUserMessage };
+export interface AgentSnapshot {
+  turns: Turn[];
+  system?: string;
+}
 
-export type AgentStreamEventCallback = (event: AgentStreamEvent) => void;
+export type AgentEventCallback = (event: AgentEvent) => void;
 
 function isServerTool(t: AxleTool): t is ServerTool {
   return t.type === "server";
@@ -72,7 +78,7 @@ export class Agent {
   private memory?: AgentMemory;
 
   private options: AgentOptions;
-  private eventCallbacks: AgentStreamEventCallback[] = [];
+  private eventCallbacks: AgentEventCallback[] = [];
   private sendQueue: Promise<void> = Promise.resolve();
 
   constructor(config: AgentConfig) {
@@ -133,7 +139,7 @@ export class Agent {
     );
   }
 
-  on(callback: AgentStreamEventCallback) {
+  on(callback: AgentEventCallback) {
     this.eventCallbacks.push(callback);
   }
 
@@ -172,6 +178,22 @@ export class Agent {
     return this.execute(userMessage, schema);
   }
 
+  serialize(): AgentSnapshot {
+    return {
+      turns: this.history.turns,
+      system: this.system,
+    };
+  }
+
+  static from(snapshot: AgentSnapshot, config: AgentConfig): Agent {
+    const agent = new Agent(config);
+    agent.system = snapshot.system;
+    for (const turn of snapshot.turns) {
+      agent.history.addTurn(turn);
+    }
+    return agent;
+  }
+
   private async resolveMcpTools(): Promise<void> {
     if (this.mcpToolsResolved) return;
     this.tracer?.debug("resolving MCP tools", { count: this.mcps.length });
@@ -182,21 +204,28 @@ export class Agent {
     this.mcpToolsResolved = true;
   }
 
+  private emitEvent(event: AgentEvent): void {
+    for (const cb of this.eventCallbacks) cb(event);
+  }
+
   private execute(userMessage: AxleUserMessage, schema?: OutputSchema): AgentHandle<any> {
     let cancelled = false;
     let streamHandle: ReturnType<typeof stream> | undefined;
 
     const finalPromise = (async (): Promise<AgentResult<any>> => {
-      // Wait for any prior send to finish before starting this turn
       await this.sendQueue;
 
-      this.history.add(userMessage);
-      for (const cb of this.eventCallbacks) cb({ type: "message:user", message: userMessage });
+      const builder = new TurnBuilder();
+
+      // Create user turn
+      const { turn: userTurn, events: userEvents } = builder.createUserTurn(userMessage);
+      this.history.addTurn(userTurn);
+      for (const evt of userEvents) this.emitEvent(evt);
 
       await this.resolveMcpTools();
 
       if (cancelled) {
-        return { response: null, messages: [], final: undefined, usage: { in: 0, out: 0 } };
+        return { response: null, turn: undefined, final: undefined, usage: { in: 0, out: 0 } };
       }
 
       let effectiveSystem = this.system;
@@ -205,7 +234,7 @@ export class Agent {
           name: this.name,
           scope: this.scope,
           system: this.system,
-          messages: this.history.messages,
+          messages: this.history.toMessages(),
           store: this.store,
           tracer: this.tracer,
         });
@@ -221,10 +250,15 @@ export class Agent {
         schema: tool.schema,
       }));
 
+      // Start agent turn
+      const { turn: agentTurn, events: startEvents } = builder.startAgentTurn();
+      this.history.addTurn(agentTurn);
+      for (const evt of startEvents) this.emitEvent(evt);
+
       streamHandle = stream({
         provider: this.provider,
         model: this.model,
-        messages: this.history.messages,
+        messages: this.history.toMessages(),
         system: effectiveSystem,
         tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
         serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
@@ -242,13 +276,17 @@ export class Agent {
         },
       });
 
-      for (const cb of this.eventCallbacks) streamHandle.on(cb);
+      // Translate StreamEvents → AgentEvents
+      streamHandle.on((streamEvent) => {
+        const agentEvents = builder.handleStreamEvent(streamEvent);
+        for (const evt of agentEvents) this.emitEvent(evt);
+      });
 
       const streamResult: StreamResult = await streamHandle.final;
 
-      if (streamResult.messages.length > 0) {
-        this.history.add(streamResult.messages);
-      }
+      // Finalize the agent turn
+      const finalizeEvents = builder.finalizeTurn();
+      for (const evt of finalizeEvents) this.emitEvent(evt);
 
       let response: any | null = null;
       let final: AxleAssistantMessage | undefined;
@@ -274,7 +312,7 @@ export class Agent {
             name: this.name,
             scope: this.scope,
             system: this.system,
-            messages: this.history.messages,
+            messages: this.history.toMessages(),
             newMessages: streamResult.messages,
             store: this.store,
             tracer: this.tracer,
@@ -287,11 +325,9 @@ export class Agent {
       }
 
       const usage = streamResult.usage ?? { in: 0, out: 0 };
-      return { response, messages: streamResult.messages, final, usage };
+      return { response, turn: agentTurn, final, usage };
     })();
 
-    // Chain on sendQueue so subsequent sends wait for this one.
-    // Swallow errors — they're surfaced via finalPromise, not the queue.
     this.sendQueue = finalPromise.then(
       () => {},
       () => {},

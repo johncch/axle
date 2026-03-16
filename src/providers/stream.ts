@@ -26,7 +26,7 @@ import { AxleStopReason } from "./types.js";
 export type StreamEvent =
   // Message boundaries
   | { type: "turn:start"; id: string; model: string }
-  | { type: "turn:complete"; message: AxleAssistantMessage }
+  | { type: "turn:complete"; message: AxleAssistantMessage; usage?: Stats }
   | { type: "tool-results:start"; id: string }
   | { type: "tool-results:complete"; message: AxleToolCallMessage }
   // Text streaming
@@ -499,7 +499,7 @@ async function run(
       finishReason: turnFinishReason,
     };
     addMessage(assistantMessage);
-    emit(cbs, { type: "turn:complete", message: assistantMessage });
+    emit(cbs, { type: "turn:complete", message: assistantMessage, usage: turnUsage });
 
     // If not a function call, we're done
     if (turnFinishReason !== AxleStopReason.FunctionCall) {

@@ -25,26 +25,26 @@ const agent = new Agent({ provider, model, tools: [setNameTool] });
 
 agent.on((event) => {
   switch (event.type) {
-    case "text:start":
-      console.log(`[Start] ${event.index} text`);
-      break;
-    case "thinking:start":
-      console.log(`[Start] ${event.index} thinking`);
+    case "part:start":
+      if (event.part.type === "text") {
+        console.log(`[Start] text`);
+      } else if (event.part.type === "thinking") {
+        console.log(`[Start] thinking`);
+      } else if (event.part.type === "action") {
+        console.log(`[Tool Request] ${event.part.detail.name}`);
+      }
       break;
     case "text:delta":
       process.stdout.write(`${event.delta}`);
       break;
-    case "text:end":
-      console.log(`\n[End] ${event.index} text`);
+    case "part:end":
+      console.log(`\n[End] part ${event.partId}`);
       break;
-    case "thinking:end":
-      console.log(`\n[End] ${event.index} thinking`);
+    case "action:running":
+      console.log(`[Tool Execute] ${event.partId}`);
       break;
-    case "tool:exec-start":
-      console.log(`[Tool Execute] ${event.name} ${JSON.stringify(event.parameters)}`);
-      break;
-    case "tool:exec-complete":
-      console.log(`[Tool Complete] ${event.name} ${JSON.stringify(event.result)}`);
+    case "action:complete":
+      console.log(`[Tool Complete] ${JSON.stringify(event.result)}`);
       break;
     case "error":
       console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);

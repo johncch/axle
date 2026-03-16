@@ -74,12 +74,12 @@ describe("Agent", () => {
     await agent.send(instruct).final;
     await agent.send("Follow up").final;
 
-    // 2 user + 2 assistant = 4 messages
-    expect(agent.history.messages).toHaveLength(4);
-    expect(agent.history.messages[0].role).toBe("user");
-    expect(agent.history.messages[1].role).toBe("assistant");
-    expect(agent.history.messages[2].role).toBe("user");
-    expect(agent.history.messages[3].role).toBe("assistant");
+    // 2 user + 2 agent = 4 turns
+    expect(agent.history.turns).toHaveLength(4);
+    expect(agent.history.turns[0].owner).toBe("user");
+    expect(agent.history.turns[1].owner).toBe("agent");
+    expect(agent.history.turns[2].owner).toBe("user");
+    expect(agent.history.turns[3].owner).toBe("agent");
   });
 
   test("AgentResult.usage has correct token stats", async () => {
@@ -108,7 +108,7 @@ describe("Agent", () => {
     expect(updates).toContain("streamed text");
   });
 
-  test("AgentResult.messages contains only new messages from this turn", async () => {
+  test("AgentResult.turn contains the completed agent turn", async () => {
     const provider = createMockStreamProvider(["First", "Second"]);
     const instruct = new Instruct("msg1");
     const agent = new Agent({ provider, model: "mock" });
@@ -116,13 +116,12 @@ describe("Agent", () => {
     await agent.send(instruct).final;
     const result2 = await agent.send("msg2").final;
 
-    for (const msg of result2.messages) {
-      if (msg.role === "assistant") {
-        const textPart = msg.content.find((c) => c.type === "text");
-        if (textPart && textPart.type === "text") {
-          expect(textPart.text).toBe("Second");
-        }
-      }
+    expect(result2.turn).toBeDefined();
+    expect(result2.turn!.owner).toBe("agent");
+    const textPart = result2.turn!.parts.find((p) => p.type === "text");
+    expect(textPart).toBeDefined();
+    if (textPart && textPart.type === "text") {
+      expect(textPart.text).toBe("Second");
     }
   });
 
@@ -223,7 +222,6 @@ describe("Agent", () => {
       await agent.send("Hi").final;
 
       expect(memory.recall).toHaveBeenCalledOnce();
-      // agent.system should NOT be mutated
       expect(agent.system).toBe("You are helpful.");
     });
 
@@ -345,7 +343,6 @@ describe("Agent", () => {
     });
 
     test("record() is not called on error", async () => {
-      // Provider that returns an error
       const errorProvider: AIProvider = {
         name: "mock-error",
         async createGenerationRequest() {
@@ -379,8 +376,8 @@ describe("Agent", () => {
     });
   });
 
-  describe("agent stream events", () => {
-    test("on() receives message:user event when send(string) is called", async () => {
+  describe("agent events", () => {
+    test("on() receives turn:user event when send(string) is called", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
 
@@ -389,18 +386,18 @@ describe("Agent", () => {
 
       await agent.send("Hello").final;
 
-      const userEvents = events.filter((e) => e.type === "message:user");
+      const userEvents = events.filter((e) => e.type === "turn:user");
       expect(userEvents).toHaveLength(1);
       const userEvent = userEvents[0] as {
-        type: "message:user";
-        message: { role: string; id: string; content: unknown };
+        type: "turn:user";
+        turn: { id: string; owner: string; parts: unknown[] };
       };
-      expect(userEvent.message.role).toBe("user");
-      expect(userEvent.message.id).toBeDefined();
-      expect(typeof userEvent.message.id).toBe("string");
+      expect(userEvent.turn.owner).toBe("user");
+      expect(userEvent.turn.id).toBeDefined();
+      expect(typeof userEvent.turn.id).toBe("string");
     });
 
-    test("on() receives message:user event when send(instruct) is called", async () => {
+    test("on() receives turn:user event when send(instruct) is called", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
       const instruct = new Instruct("Tell me about {{topic}}");
@@ -410,19 +407,19 @@ describe("Agent", () => {
 
       await agent.send(instruct, { topic: "cats" }).final;
 
-      const userEvents = events.filter((e) => e.type === "message:user");
+      const userEvents = events.filter((e) => e.type === "turn:user");
       expect(userEvents).toHaveLength(1);
       const userEvent = userEvents[0] as {
-        type: "message:user";
-        message: { content: Array<{ type: string; text?: string }> };
+        type: "turn:user";
+        turn: { parts: Array<{ type: string; text?: string }> };
       };
-      const textPart = userEvent.message.content.find(
-        (c: { type: string }) => c.type === "text",
+      const textPart = userEvent.turn.parts.find(
+        (p: { type: string }) => p.type === "text",
       ) as { text: string } | undefined;
       expect(textPart?.text).toContain("cats");
     });
 
-    test("message:user arrives before turn:start", async () => {
+    test("turn:user arrives before turn:start", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
 
@@ -431,7 +428,7 @@ describe("Agent", () => {
 
       await agent.send("Hi").final;
 
-      const userIdx = eventTypes.indexOf("message:user");
+      const userIdx = eventTypes.indexOf("turn:user");
       const turnIdx = eventTypes.indexOf("turn:start");
       expect(userIdx).toBeGreaterThanOrEqual(0);
       expect(turnIdx).toBeGreaterThanOrEqual(0);
@@ -447,24 +444,22 @@ describe("Agent", () => {
 
       await agent.send("Hi").final;
 
-      expect(eventTypes.has("message:user")).toBe(true);
+      expect(eventTypes.has("turn:user")).toBe(true);
       expect(eventTypes.has("turn:start")).toBe(true);
       expect(eventTypes.has("text:delta")).toBe(true);
-      expect(eventTypes.has("turn:complete")).toBe(true);
+      expect(eventTypes.has("turn:end")).toBe(true);
     });
 
-    test("user message has UUID id in history", async () => {
+    test("user turn has UUID id in history", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
 
       await agent.send("Hi").final;
 
-      const userMsg = agent.history.messages[0];
-      expect(userMsg.role).toBe("user");
-      if (userMsg.role === "user") {
-        expect(userMsg.id).toBeDefined();
-        expect(typeof userMsg.id).toBe("string");
-      }
+      const userTurn = agent.history.turns[0];
+      expect(userTurn.owner).toBe("user");
+      expect(userTurn.id).toBeDefined();
+      expect(typeof userTurn.id).toBe("string");
     });
   });
 });

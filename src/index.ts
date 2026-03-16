@@ -2,10 +2,10 @@
 export { Agent } from "./core/Agent.js";
 export type {
   AgentConfig,
+  AgentEventCallback,
   AgentHandle,
   AgentResult,
-  AgentStreamEvent,
-  AgentStreamEventCallback,
+  AgentSnapshot,
 } from "./core/Agent.js";
 export { compileInstruct } from "./core/compile.js";
 export { Instruct } from "./core/index.js";
@@ -30,7 +30,7 @@ export type { AxleTool, ExecutableTool, ServerTool, ToolDefinition } from "./too
 export { MCP } from "./mcp/index.js";
 export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";
 
-// Messages
+// Messages (internal — kept for advanced/direct stream() users)
 export { History } from "./messages/history.js";
 export type {
   AxleAssistantMessage,
@@ -46,6 +46,23 @@ export type {
   ContentPartToolCall,
   ToolResultPart,
 } from "./messages/message.js";
+
+// Turns (public format)
+export type {
+  ActionResult,
+  ActionPart,
+  FilePart,
+  InternalToolAction,
+  SubagentAction,
+  TextPart,
+  ThinkingPart,
+  ToolAction,
+  Turn,
+  TurnPart,
+} from "./turns/types.js";
+export type { AgentEvent } from "./turns/events.js";
+export { compileTurns } from "./turns/compiler.js";
+export { TurnBuilder } from "./turns/builder.js";
 
 // Tracer
 export { SimpleWriter, Tracer } from "./tracer/index.js";

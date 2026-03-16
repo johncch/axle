@@ -1,91 +1,44 @@
-import { AxleStopReason } from "../providers/types.js";
-import {
-  AxleAssistantMessage,
-  AxleMessage,
-  AxleToolCallResult,
-  AxleUserMessage,
-} from "./message.js";
+import type { AxleMessage } from "./message.js";
+import type { Turn } from "../turns/types.js";
+import { compileTurns } from "../turns/compiler.js";
 
 export class History {
   system: string;
-  private _messages: AxleMessage[] = [];
+  private _turns: Turn[] = [];
 
-  constructor(messages?: AxleMessage[]) {
-    if (messages) {
-      this._messages = messages;
+  constructor(turns?: Turn[]) {
+    if (turns) {
+      this._turns = turns;
     }
   }
 
-  get messages() {
-    return [...this._messages];
+  get turns(): Turn[] {
+    return [...this._turns];
   }
 
-  addSystem(message: string) {
-    this.system = message;
+  addTurn(turn: Turn): void {
+    this._turns.push(turn);
   }
 
-  addUser(message: string): void;
-  addUser(parts: AxleUserMessage["content"]): void;
-  addUser(args: string | AxleUserMessage["content"]) {
-    if (typeof args === "string") {
-      this._messages.push({
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: args,
-          },
-        ],
-      });
-    } else {
-      this._messages.push({ role: "user", content: args });
+  updateTurn(turnId: string, updater: (turn: Turn) => Turn): void {
+    const index = this._turns.findIndex((t) => t.id === turnId);
+    if (index >= 0) {
+      this._turns[index] = updater(this._turns[index]);
     }
   }
 
-  addAssistant(message: string): void;
-  addAssistant(params: Omit<AxleAssistantMessage, "role">): void;
-  addAssistant(obj: string | Omit<AxleAssistantMessage, "role">): void {
-    if (typeof obj === "string") {
-      const text = obj as string;
-      this._messages.push({
-        role: "assistant",
-        id: crypto.randomUUID(),
-        content: [{ type: "text", text }],
-        model: "user",
-        finishReason: AxleStopReason.Custom,
-      });
-    } else {
-      this._messages.push({
-        role: "assistant",
-        ...obj,
-      });
-    }
+  latestTurn(): Turn | undefined {
+    return this._turns[this._turns.length - 1];
   }
 
-  addToolResults(input: Array<AxleToolCallResult>) {
-    this._messages.push({
-      role: "tool",
-      id: crypto.randomUUID(),
-      content: input,
-    });
+  toMessages(): AxleMessage[] {
+    return compileTurns(this._turns);
   }
 
-  add(messages: AxleMessage | AxleMessage[]) {
-    if (Array.isArray(messages)) {
-      this._messages.push(...messages);
-    } else {
-      this._messages.push(messages);
-    }
-  }
-
-  latest(): AxleMessage | undefined {
-    return this._messages[this._messages.length - 1];
-  }
-
-  toString() {
+  toString(): string {
     return JSON.stringify({
       system: this.system,
-      messages: this._messages,
+      turns: this._turns,
     });
   }
 }

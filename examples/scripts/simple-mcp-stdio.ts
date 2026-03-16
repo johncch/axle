@@ -18,30 +18,27 @@ const agent = new Agent({ provider, model, mcps: [wordCountMCP] });
 
 agent.on((event) => {
   switch (event.type) {
-    case "text:start":
-      console.log(`[Start] ${event.index} text`);
-      break;
-    case "thinking:start":
-      console.log(`[Start] ${event.index} thinking`);
+    case "part:start":
+      if (event.part.type === "text") {
+        console.log(`[Start] text`);
+      } else if (event.part.type === "thinking") {
+        console.log(`[Start] thinking`);
+      } else if (event.part.type === "action") {
+        console.log(`[Tool] Starting ${event.part.detail.name} tool`);
+      }
       break;
     case "thinking:delta":
     case "text:delta":
       process.stdout.write(`${event.delta}`);
       break;
-    case "text:end":
-      console.log(`\n[End] ${event.index} text`);
+    case "part:end":
+      console.log(`\n[End] part ${event.partId}`);
       break;
-    case "thinking:end":
-      console.log(`[End] ${event.index} thinking`);
+    case "action:running":
+      console.log(`[Tool] Running tool ${event.partId}`);
       break;
-    case "tool:request":
-      console.log(`[Tool] Starting ${event.name} tool`);
-      break;
-    case "tool:exec-start":
-      console.log(`[Tool] Running ${event.name} tool`);
-      break;
-    case "tool:exec-complete":
-      console.log(`[Tool] Tool ${event.name} complete`);
+    case "action:complete":
+      console.log(`[Tool] Tool complete ${JSON.stringify(event.result)}`);
       break;
     case "error":
       console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);
