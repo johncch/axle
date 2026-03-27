@@ -15,6 +15,7 @@ import { TurnBuilder } from "../turns/builder.js";
 import type { AgentEvent } from "../turns/events.js";
 import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
+import { settleWhen } from "../utils/utils.js";
 import { compileInstruct } from "./compile.js";
 import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
@@ -55,6 +56,13 @@ export interface AgentSnapshot {
 }
 
 export type AgentEventCallback = (event: AgentEvent) => void;
+export interface SendMessageOptions {
+  signal?: AbortSignal;
+}
+
+export interface SendInstructOptions extends SendMessageOptions {
+  variables?: Record<string, string>;
+}
 
 function isServerTool(t: AxleTool): t is ServerTool {
   return t.type === "server";
@@ -143,16 +151,13 @@ export class Agent {
     this.eventCallbacks.push(callback);
   }
 
-  send(message: string): AgentHandle<string>;
-  send(instruct: Instruct<undefined>, variables?: Record<string, string>): AgentHandle<string>;
+  send(message: string, options?: SendMessageOptions): AgentHandle<string>;
+  send(instruct: Instruct<undefined>, options?: SendInstructOptions): AgentHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
-    variables?: Record<string, string>,
+    options?: SendInstructOptions,
   ): AgentHandle<ParsedSchema<TSchema>>;
-  send(
-    messageOrInstruct: string | Instruct<any>,
-    variables?: Record<string, string>,
-  ): AgentHandle<any> {
+  send(messageOrInstruct: string | Instruct<any>, options?: SendInstructOptions): AgentHandle<any> {
     let schema: OutputSchema | undefined;
     let userMessage: AxleUserMessage;
 
@@ -163,7 +168,7 @@ export class Agent {
         content: [{ type: "text", text: messageOrInstruct }],
       };
     } else {
-      const text = compileInstruct(messageOrInstruct, variables, {
+      const text = compileInstruct(messageOrInstruct, options?.variables, {
         strictVariables: this.options.strictVariables,
       });
       const files = messageOrInstruct.files;
@@ -175,7 +180,7 @@ export class Agent {
       schema = messageOrInstruct.schema;
     }
 
-    return this.execute(userMessage, schema);
+    return this.execute(userMessage, schema, options?.signal);
   }
 
   serialize(): AgentSnapshot {
@@ -208,8 +213,13 @@ export class Agent {
     for (const cb of this.eventCallbacks) cb(event);
   }
 
-  private execute(userMessage: AxleUserMessage, schema?: OutputSchema): AgentHandle<any> {
-    let cancelled = false;
+  private execute(
+    userMessage: AxleUserMessage,
+    schema?: OutputSchema,
+    signal?: AbortSignal,
+  ): AgentHandle<any> {
+    const abort = new AbortController();
+    const effectiveSignal = signal ? AbortSignal.any([signal, abort.signal]) : abort.signal;
     let streamHandle: ReturnType<typeof stream> | undefined;
 
     const finalPromise = (async (): Promise<AgentResult<any>> => {
@@ -224,7 +234,7 @@ export class Agent {
 
       await this.resolveMcpTools();
 
-      if (cancelled) {
+      if (effectiveSignal.aborted) {
         return { response: null, turn: undefined, final: undefined, usage: { in: 0, out: 0 } };
       }
 
@@ -274,6 +284,7 @@ export class Agent {
             return { type: "error", error: { type: "execution", message: msg } };
           }
         },
+        signal: effectiveSignal,
       });
 
       // Translate StreamEvents → AgentEvents
@@ -328,15 +339,11 @@ export class Agent {
       return { response, turn: agentTurn, final, usage };
     })();
 
-    this.sendQueue = finalPromise.then(
-      () => {},
-      () => {},
-    );
+    this.sendQueue = settleWhen(finalPromise);
 
     return {
       cancel: () => {
-        cancelled = true;
-        streamHandle?.cancel();
+        abort.abort();
       },
       get final() {
         return finalPromise;

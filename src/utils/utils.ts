@@ -16,3 +16,11 @@ export function friendly(id: string, name?: string): string {
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/** Await a promise for sequencing without propagating its result or rejection */
+export function settleWhen(promise: Promise<unknown>): Promise<void> {
+  return promise.then(
+    () => {},
+    () => {},
+  );
+}

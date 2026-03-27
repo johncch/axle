@@ -6,6 +6,8 @@ export type {
   AgentHandle,
   AgentResult,
   AgentSnapshot,
+  SendInstructOptions,
+  SendMessageOptions,
 } from "./core/Agent.js";
 export { compileInstruct } from "./core/compile.js";
 export { Instruct } from "./core/index.js";
@@ -48,9 +50,12 @@ export type {
 } from "./messages/message.js";
 
 // Turns (public format)
+export { TurnBuilder } from "./turns/builder.js";
+export { compileTurns } from "./turns/compiler.js";
+export type { AgentEvent } from "./turns/events.js";
 export type {
-  ActionResult,
   ActionPart,
+  ActionResult,
   FilePart,
   InternalToolAction,
   SubagentAction,
@@ -60,9 +65,6 @@ export type {
   Turn,
   TurnPart,
 } from "./turns/types.js";
-export type { AgentEvent } from "./turns/events.js";
-export { compileTurns } from "./turns/compiler.js";
-export { TurnBuilder } from "./turns/builder.js";
 
 // Tracer
 export { SimpleWriter, Tracer } from "./tracer/index.js";

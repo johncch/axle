@@ -72,6 +72,7 @@ export interface StreamOptions {
   maxIterations?: number;
   tracer?: TracingContext;
   options?: GenerateTurnOptions;
+  signal?: AbortSignal;
 }
 
 export interface StreamHandle {
@@ -90,32 +91,21 @@ export function stream(options: StreamOptions): StreamHandle {
   const callbacks: StreamEventCallback[] = [];
 
   const controller = new AbortController();
-  let settled = false;
+  const effectiveSignal = options.signal
+    ? AbortSignal.any([controller.signal, options.signal])
+    : controller.signal;
 
-  let resolveResult: (r: StreamResult) => void;
-  let rejectResult: (e: unknown) => void;
-  const finalPromise = new Promise<StreamResult>((resolve, reject) => {
-    resolveResult = (r) => {
-      settled = true;
-      resolve(r);
-    };
-    rejectResult = (e) => {
-      settled = true;
-      reject(e);
-    };
-  });
+  const { promise: finalPromise, resolve, reject } = Promise.withResolvers<StreamResult>();
 
   // Kick off processing on next microtask so callers can register callbacks first
-  Promise.resolve().then(() =>
-    run(options, controller.signal, callbacks).then(resolveResult!, rejectResult!),
-  );
+  Promise.resolve().then(() => run(options, effectiveSignal, callbacks).then(resolve, reject));
 
   return {
     on(cb) {
       callbacks.push(cb);
     },
     cancel() {
-      if (!settled) controller.abort();
+      controller.abort();
     },
     get final() {
       return finalPromise;

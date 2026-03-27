@@ -43,12 +43,12 @@ describe("Agent", () => {
     expect(result.usage).toEqual({ in: 10, out: 20 });
   });
 
-  test("send(instruct, variables) substitutes into prompt", async () => {
+  test("send(instruct, { variables }) substitutes into prompt", async () => {
     const provider = createMockStreamProvider(["Greeting sent"]);
     const instruct = new Instruct("Say hello to {{name}}");
     const agent = new Agent({ provider, model: "mock" });
 
-    const result = await agent.send(instruct, { name: "Alice" }).final;
+    const result = await agent.send(instruct, { variables: { name: "Alice" } }).final;
 
     expect(result.response).toBe("Greeting sent");
   });
@@ -90,6 +90,134 @@ describe("Agent", () => {
 
     expect(result.usage.in).toBe(10);
     expect(result.usage.out).toBe(20);
+  });
+
+  describe("abort signals", () => {
+    test("send(string, { signal }) passes an abort signal to the provider", async () => {
+      let providerSignal: AbortSignal | undefined;
+      const provider: AIProvider = {
+        name: "mock-stream",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          providerSignal = signal;
+          yield {
+            type: "start",
+            id: "mock-1",
+            data: { model: "mock", timestamp: Date.now() },
+          };
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "ok" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+
+      const controller = new AbortController();
+      const agent = new Agent({ provider, model: "mock" });
+
+      await agent.send("Hi", { signal: controller.signal }).final;
+
+      expect(providerSignal).toBeInstanceOf(AbortSignal);
+      expect(providerSignal?.aborted).toBe(false);
+    });
+
+    test("send(instruct, { signal }) supports omitting variables", async () => {
+      let providerSignal: AbortSignal | undefined;
+      let requestMessages: Array<{ role: string }> = [];
+      const provider: AIProvider = {
+        name: "mock-stream",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(
+          _model,
+          { messages, signal },
+        ): AsyncGenerator<AnyStreamChunk, void> {
+          providerSignal = signal;
+          requestMessages = messages.map((message) => ({ role: message.role }));
+          yield {
+            type: "start",
+            id: "mock-1",
+            data: { model: "mock", timestamp: Date.now() },
+          };
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "ok" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+
+      const controller = new AbortController();
+      const instruct = new Instruct("Say hi");
+      const agent = new Agent({ provider, model: "mock" });
+
+      await agent.send(instruct, { signal: controller.signal }).final;
+
+      expect(providerSignal).toBeInstanceOf(AbortSignal);
+      expect(requestMessages[0]?.role).toBe("user");
+    });
+
+    test("send(instruct, { variables, signal }) aborts the in-flight stream", async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let observedSignal: AbortSignal | undefined;
+
+      const provider: AIProvider = {
+        name: "mock-stream",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(
+          _model,
+          { signal },
+        ): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          observedSignal = signal;
+          yield {
+            type: "start",
+            id: "mock-1",
+            data: { model: "mock", timestamp: Date.now() },
+          };
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "Hello" } };
+          await gate;
+          if (signal?.aborted) return;
+          yield { type: "text-delta", data: { index: 0, text: " world" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+
+      const controller = new AbortController();
+      const instruct = new Instruct("Hello {{name}}");
+      const agent = new Agent({ provider, model: "mock" });
+
+      const handle = agent.send(instruct, {
+        variables: { name: "Alice" },
+        signal: controller.signal,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      controller.abort();
+      release();
+
+      const result = await handle.final;
+
+      expect(observedSignal?.aborted).toBe(true);
+      expect(result.response).toBeNull();
+      expect(result.final?.finishReason).toBe(AxleStopReason.Cancelled);
+    });
   });
 
   test("streaming callbacks fire during send", async () => {
@@ -405,7 +533,7 @@ describe("Agent", () => {
       const events: { type: string }[] = [];
       agent.on((event) => events.push(event));
 
-      await agent.send(instruct, { topic: "cats" }).final;
+      await agent.send(instruct, { variables: { topic: "cats" } }).final;
 
       const userEvents = events.filter((e) => e.type === "turn:user");
       expect(userEvents).toHaveLength(1);
@@ -413,9 +541,9 @@ describe("Agent", () => {
         type: "turn:user";
         turn: { parts: Array<{ type: string; text?: string }> };
       };
-      const textPart = userEvent.turn.parts.find(
-        (p: { type: string }) => p.type === "text",
-      ) as { text: string } | undefined;
+      const textPart = userEvent.turn.parts.find((p: { type: string }) => p.type === "text") as
+        | { text: string }
+        | undefined;
       expect(textPart?.text).toContain("cats");
     });
 

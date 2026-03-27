@@ -45,7 +45,7 @@ export async function runSingle(
   });
 
   try {
-    const result = await agent.send(instruct, variables).final;
+    const result = await agent.send(instruct, { variables }).final;
 
     stats.in += result.usage.in;
     stats.out += result.usage.out;
@@ -188,7 +188,7 @@ export async function runBatch(
         memory,
         options: { strictVariables: !options.allowMissingVars },
       });
-      const result = await agent.send(instruct, itemVars).final;
+      const result = await agent.send(instruct, { variables: itemVars }).final;
 
       stats.in += result.usage.in;
       stats.out += result.usage.out;
