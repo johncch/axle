@@ -64,6 +64,7 @@ export type {
   ToolAction,
   Turn,
   TurnPart,
+  TurnStepMeta,
 } from "./turns/types.js";
 
 // Tracer
@@ -90,10 +91,6 @@ export type {
 // Store
 export { LocalFileStore } from "./store/index.js";
 export type { FileStore } from "./store/index.js";
-
-// Transport (session management for server use cases)
-export { MemorySessionStore, StreamSession } from "./transport/index.js";
-export type { SessionStatus, SessionStore } from "./transport/index.js";
 
 // Utils
 export { loadFileContent } from "./utils/file.js";

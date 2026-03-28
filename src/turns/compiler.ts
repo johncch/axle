@@ -7,7 +7,7 @@ import type {
   ContentPart,
 } from "../messages/message.js";
 import { AxleStopReason } from "../providers/types.js";
-import type { Turn, ActionPart } from "./types.js";
+import type { ActionPart, Turn } from "./types.js";
 
 export function compileTurns(turns: Turn[]): AxleMessage[] {
   const messages: AxleMessage[] = [];
@@ -46,6 +46,7 @@ function compileUserTurn(turn: Turn): AxleUserMessage {
 
 function compileAgentTurn(turn: Turn): AxleMessage[] {
   const messages: AxleMessage[] = [];
+  const steps = turn.steps;
 
   let currentAssistantParts: AxleAssistantMessage["content"] = [];
   let pendingToolResults: AxleToolCallResult[] = [];
@@ -53,13 +54,13 @@ function compileAgentTurn(turn: Turn): AxleMessage[] {
 
   const flushAssistant = () => {
     if (currentAssistantParts.length === 0) return;
+    const stepMeta = steps?.[stepIndex];
     const msg: AxleAssistantMessage = {
       role: "assistant",
-      id: `${turn.id}-step-${stepIndex}`,
+      id: stepMeta?.assistantMessageId ?? `${turn.id}-step-${stepIndex}`,
       content: currentAssistantParts,
-      finishReason: pendingToolResults.length > 0
-        ? AxleStopReason.FunctionCall
-        : AxleStopReason.Stop,
+      finishReason:
+        pendingToolResults.length > 0 ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
     };
     messages.push(msg);
     currentAssistantParts = [];
@@ -67,9 +68,10 @@ function compileAgentTurn(turn: Turn): AxleMessage[] {
 
   const flushToolResults = () => {
     if (pendingToolResults.length === 0) return;
+    const stepMeta = steps?.[stepIndex];
     const msg: AxleToolCallMessage = {
       role: "tool",
-      id: `${turn.id}-tools-${stepIndex}`,
+      id: stepMeta?.toolResultsMessageId ?? `${turn.id}-tools-${stepIndex}`,
       content: pendingToolResults,
     };
     messages.push(msg);
@@ -117,7 +119,7 @@ function compileAction(
     case "tool": {
       assistantParts.push({
         type: "tool-call",
-        id: part.id,
+        id: part.detail.providerId,
         name: part.detail.name,
         parameters: part.detail.parameters,
       });
@@ -125,15 +127,14 @@ function compileAction(
         const result = part.detail.result;
         if (result.type === "success") {
           toolResults.push({
-            id: part.id,
+            id: part.detail.providerId,
             name: part.detail.name,
-            content: typeof result.content === "string"
-              ? result.content
-              : JSON.stringify(result.content),
+            content:
+              typeof result.content === "string" ? result.content : JSON.stringify(result.content),
           });
         } else {
           toolResults.push({
-            id: part.id,
+            id: part.detail.providerId,
             name: part.detail.name,
             content: JSON.stringify({ error: result.error }),
             isError: true,
@@ -146,7 +147,7 @@ function compileAction(
     case "internal-tool": {
       assistantParts.push({
         type: "internal-tool",
-        id: part.id,
+        id: part.detail.providerId,
         name: part.detail.name,
         input: part.detail.input,
         output: part.detail.result?.type === "success" ? part.detail.result.content : undefined,

@@ -3,12 +3,12 @@ import type { StreamEvent } from "../providers/stream.js";
 import type { Stats } from "../types.js";
 import type { AgentEvent } from "./events.js";
 import type {
-  Turn,
-  TurnPart,
+  InternalToolAction,
   TextPart,
   ThinkingPart,
   ToolAction,
-  InternalToolAction,
+  Turn,
+  TurnPart,
 } from "./types.js";
 
 export class TurnBuilder {
@@ -17,6 +17,7 @@ export class TurnBuilder {
   private currentThinkingPart: ThinkingPart | null = null;
   private toolIdMap = new Map<string, { partId: string; turnId: string }>();
   private accumulatedUsage: Stats = { in: 0, out: 0 };
+  private currentStep: Partial<TurnStepMeta> | null = null;
 
   createUserTurn(message: AxleUserMessage): { turn: Turn; events: AgentEvent[] } {
     const turnId = message.id ?? crypto.randomUUID();
@@ -46,6 +47,7 @@ export class TurnBuilder {
     this.currentThinkingPart = null;
     this.toolIdMap.clear();
     this.accumulatedUsage = { in: 0, out: 0 };
+    this.currentStep = null;
     return { turn, events: [{ type: "turn:start", turnId }] };
   }
 
@@ -72,7 +74,12 @@ export class TurnBuilder {
       case "text:delta": {
         if (this.currentTextPart) {
           this.currentTextPart.text = event.accumulated;
-          events.push({ type: "text:delta", turnId: turn.id, partId: this.currentTextPart.id, delta: event.delta });
+          events.push({
+            type: "text:delta",
+            turnId: turn.id,
+            partId: this.currentTextPart.id,
+            delta: event.delta,
+          });
         }
         break;
       }
@@ -99,7 +106,12 @@ export class TurnBuilder {
       case "thinking:delta": {
         if (this.currentThinkingPart) {
           this.currentThinkingPart.text = event.accumulated;
-          events.push({ type: "thinking:delta", turnId: turn.id, partId: this.currentThinkingPart.id, delta: event.delta });
+          events.push({
+            type: "thinking:delta",
+            turnId: turn.id,
+            partId: this.currentThinkingPart.id,
+            delta: event.delta,
+          });
         }
         break;
       }
@@ -121,11 +133,15 @@ export class TurnBuilder {
           type: "action",
           kind: "tool",
           status: "pending",
-          detail: { name: event.name, parameters: {} },
+          detail: { providerId: event.id, name: event.name, parameters: {} },
         };
         turn.parts.push(part);
         this.toolIdMap.set(event.id, { partId, turnId: turn.id });
-        events.push({ type: "part:start", turnId: turn.id, part: { ...part, detail: { ...part.detail } } });
+        events.push({
+          type: "part:start",
+          turnId: turn.id,
+          part: { ...part, detail: { ...part.detail } },
+        });
         break;
       }
 
@@ -136,7 +152,12 @@ export class TurnBuilder {
           if (part) {
             part.status = "running";
             part.detail.parameters = event.parameters;
-            events.push({ type: "action:running", turnId: turn.id, partId: mapping.partId, parameters: event.parameters });
+            events.push({
+              type: "action:running",
+              turnId: turn.id,
+              partId: mapping.partId,
+              parameters: event.parameters,
+            });
           }
         }
         break;
@@ -189,11 +210,15 @@ export class TurnBuilder {
           type: "action",
           kind: "internal-tool",
           status: "running",
-          detail: { name: event.name },
+          detail: { providerId: event.id, name: event.name },
         };
         turn.parts.push(part);
         this.toolIdMap.set(event.id, { partId, turnId: turn.id });
-        events.push({ type: "part:start", turnId: turn.id, part: { ...part, detail: { ...part.detail } } });
+        events.push({
+          type: "part:start",
+          turnId: turn.id,
+          part: { ...part, detail: { ...part.detail } },
+        });
         events.push({ type: "action:running", turnId: turn.id, partId });
         break;
       }
@@ -221,18 +246,29 @@ export class TurnBuilder {
         const stepUsage = event.usage ?? { in: 0, out: 0 };
         this.accumulatedUsage.in += stepUsage.in;
         this.accumulatedUsage.out += stepUsage.out;
+        this.currentStep = { assistantMessageId: event.message.id };
         break;
       }
 
       case "tool-results:start":
-      case "tool-results:complete":
         break;
+
+      case "tool-results:complete": {
+        if (this.currentStep) {
+          this.currentStep.toolResultsMessageId = event.message.id;
+          turn.steps ??= [];
+          turn.steps.push(this.currentStep as TurnStepMeta);
+          this.currentStep = null;
+        }
+        break;
+      }
 
       case "error": {
         const error = event.error;
-        const msg = error.type === "model"
-          ? error.error.error.message
-          : `Tool error (${error.error.name}): ${error.error.message}`;
+        const msg =
+          error.type === "model"
+            ? error.error.error.message
+            : `Tool error (${error.error.name}): ${error.error.message}`;
         events.push({
           type: "error",
           error: { type: error.type, message: msg },
@@ -249,6 +285,11 @@ export class TurnBuilder {
     if (!turn) return [];
     const events: AgentEvent[] = [];
     this.closeOpenParts(turn, events);
+    if (this.currentStep?.assistantMessageId) {
+      turn.steps ??= [];
+      turn.steps.push(this.currentStep as TurnStepMeta);
+      this.currentStep = null;
+    }
     turn.usage = { ...this.accumulatedUsage };
     events.push({ type: "turn:end", turnId: turn.id, usage: turn.usage });
     this.currentTurn = null;

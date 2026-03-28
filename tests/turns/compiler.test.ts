@@ -104,6 +104,7 @@ describe("compileTurns", () => {
             kind: "tool",
             status: "complete",
             detail: {
+              providerId: "call_abc123",
               name: "calculator",
               parameters: { expression: "2+2" },
               result: { type: "success", content: "4" },
@@ -114,14 +115,18 @@ describe("compileTurns", () => {
     ];
 
     const messages = compileTurns(turns);
-    // Should produce: assistant message with tool-call, then tool result message
     expect(messages).toHaveLength(2);
     expect(messages[0].role).toBe("assistant");
     expect(messages[1].role).toBe("tool");
     if (messages[0].role === "assistant") {
-      expect(messages[0].content[0].type).toBe("tool-call");
+      const toolCall = messages[0].content[0];
+      expect(toolCall.type).toBe("tool-call");
+      if (toolCall.type === "tool-call") {
+        expect(toolCall.id).toBe("call_abc123");
+      }
     }
     if (messages[1].role === "tool") {
+      expect(messages[1].content[0].id).toBe("call_abc123");
       expect(messages[1].content[0].content).toBe("4");
     }
   });
@@ -138,6 +143,7 @@ describe("compileTurns", () => {
             kind: "internal-tool",
             status: "complete",
             detail: {
+              providerId: "it_provider_1",
               name: "web_search",
               input: { query: "test" },
               result: { type: "success", content: "search results" },
@@ -150,7 +156,11 @@ describe("compileTurns", () => {
     const messages = compileTurns(turns);
     expect(messages).toHaveLength(1);
     if (messages[0].role === "assistant") {
-      expect(messages[0].content[0].type).toBe("internal-tool");
+      const part = messages[0].content[0];
+      expect(part.type).toBe("internal-tool");
+      if (part.type === "internal-tool") {
+        expect(part.id).toBe("it_provider_1");
+      }
     }
   });
 
@@ -166,7 +176,11 @@ describe("compileTurns", () => {
             type: "action",
             kind: "agent",
             status: "complete",
-            detail: { name: "sub-agent", children: [], result: { type: "success", content: "done" } },
+            detail: {
+              name: "sub-agent",
+              children: [],
+              result: { type: "success", content: "done" },
+            },
           },
         ],
       },
@@ -211,5 +225,59 @@ describe("compileTurns", () => {
     expect(messages[1].role).toBe("assistant");
     expect(messages[2].role).toBe("user");
     expect(messages[3].role).toBe("assistant");
+  });
+
+  test("step metadata provides original message IDs", () => {
+    const turns: Turn[] = [
+      {
+        id: "t1",
+        owner: "agent",
+        steps: [{ assistantMessageId: "msg_original_1", toolResultsMessageId: "msg_tools_1" }],
+        parts: [
+          { id: "p1", type: "text", text: "Let me check" },
+          {
+            id: "tc1",
+            type: "action",
+            kind: "tool",
+            status: "complete",
+            detail: {
+              providerId: "call_xyz",
+              name: "search",
+              parameters: { q: "test" },
+              result: { type: "success", content: "found" },
+            },
+          },
+        ],
+      },
+    ];
+
+    const messages = compileTurns(turns);
+    expect(messages).toHaveLength(2);
+
+    expect(messages[0].role).toBe("assistant");
+    if (messages[0].role === "assistant") {
+      expect(messages[0].id).toBe("msg_original_1");
+    }
+
+    expect(messages[1].role).toBe("tool");
+    if (messages[1].role === "tool") {
+      expect(messages[1].id).toBe("msg_tools_1");
+    }
+  });
+
+  test("missing step metadata falls back to synthesized IDs", () => {
+    const turns: Turn[] = [
+      {
+        id: "t1",
+        owner: "agent",
+        parts: [{ id: "p1", type: "text", text: "Hello" }],
+      },
+    ];
+
+    const messages = compileTurns(turns);
+    expect(messages).toHaveLength(1);
+    if (messages[0].role === "assistant") {
+      expect(messages[0].id).toBe("t1-step-0");
+    }
   });
 });
