@@ -11,4 +11,5 @@ export type {
   ToolAction,
   Turn,
   TurnPart,
+  TurnStatus,
 } from "./types.js";

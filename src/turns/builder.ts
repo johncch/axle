@@ -34,13 +34,13 @@ export class TurnBuilder {
       }
     }
 
-    const turn: Turn = { id: turnId, owner: "user", parts };
+    const turn: Turn = { id: turnId, owner: "user", parts, status: "complete" };
     return { turn, events: [{ type: "turn:user", turn }] };
   }
 
   startAgentTurn(): { turn: Turn; events: AgentEvent[] } {
     const turnId = crypto.randomUUID();
-    const turn: Turn = { id: turnId, owner: "agent", parts: [] };
+    const turn: Turn = { id: turnId, owner: "agent", parts: [], status: "streaming" };
     this.currentTurn = turn;
     this.currentTextPart = null;
     this.currentThinkingPart = null;
@@ -57,6 +57,8 @@ export class TurnBuilder {
 
     switch (event.type) {
       case "turn:start":
+        // stream emits turn:start per provider round-trip, but the
+        // builder treats the entire tool loop as one agent turn.
         break;
 
       case "text:start": {
@@ -268,13 +270,14 @@ export class TurnBuilder {
     return events;
   }
 
-  finalizeTurn(): AgentEvent[] {
+  finalizeTurn(outcome: "complete" | "cancelled" | "error" = "complete"): AgentEvent[] {
     const turn = this.currentTurn;
     if (!turn) return [];
     const events: AgentEvent[] = [];
     this.closeOpenParts(turn, events);
+    turn.status = outcome;
     turn.usage = { ...this.accumulatedUsage };
-    events.push({ type: "turn:end", turnId: turn.id, usage: turn.usage });
+    events.push({ type: "turn:end", turnId: turn.id, status: outcome, usage: turn.usage });
     this.currentTurn = null;
     return events;
   }

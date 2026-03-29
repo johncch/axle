@@ -1,10 +1,13 @@
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
 
+export type TurnStatus = "streaming" | "complete" | "cancelled" | "error";
+
 export interface Turn {
   id: string;
   owner: "user" | "agent";
   parts: TurnPart[];
+  status: TurnStatus;
   usage?: Stats;
 }
 
@@ -34,7 +37,7 @@ interface ActionPartBase {
   id: string;
   type: "action";
   kind: string;
-  status: "pending" | "running" | "complete" | "error";
+  status: "pending" | "running" | "complete" | "cancelled" | "error";
 }
 
 export interface ToolAction extends ActionPartBase {

@@ -13,6 +13,7 @@ describe("TurnBuilder", () => {
     });
 
     expect(turn.owner).toBe("user");
+    expect(turn.status).toBe("complete");
     expect(turn.parts).toHaveLength(1);
     expect(turn.parts[0].type).toBe("text");
     expect(events).toHaveLength(1);
@@ -24,6 +25,7 @@ describe("TurnBuilder", () => {
     const { turn, events } = builder.startAgentTurn();
 
     expect(turn.owner).toBe("agent");
+    expect(turn.status).toBe("streaming");
     expect(turn.parts).toEqual([]);
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("turn:start");
@@ -234,17 +236,46 @@ describe("TurnBuilder", () => {
     expect(endEvent).toBeDefined();
     if (endEvent?.type === "turn:end") {
       expect(endEvent.usage).toEqual({ in: 25, out: 45 });
+      expect(endEvent.status).toBe("complete");
     }
     expect(turn.usage).toEqual({ in: 25, out: 45 });
+    expect(turn.status).toBe("complete");
   });
 
-  test("finalizeTurn produces turn:end event", () => {
+  test("finalizeTurn produces turn:end event with complete status", () => {
     const builder = new TurnBuilder();
     builder.startAgentTurn();
 
     const events = builder.finalizeTurn();
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("turn:end");
+    if (events[0].type === "turn:end") {
+      expect(events[0].status).toBe("complete");
+    }
+  });
+
+  test("finalizeTurn('cancelled') sets cancelled status", () => {
+    const builder = new TurnBuilder();
+    const { turn } = builder.startAgentTurn();
+
+    const events = builder.finalizeTurn("cancelled");
+    expect(turn.status).toBe("cancelled");
+    const endEvent = events.find((e) => e.type === "turn:end");
+    if (endEvent?.type === "turn:end") {
+      expect(endEvent.status).toBe("cancelled");
+    }
+  });
+
+  test("finalizeTurn('error') sets error status", () => {
+    const builder = new TurnBuilder();
+    const { turn } = builder.startAgentTurn();
+
+    const events = builder.finalizeTurn("error");
+    expect(turn.status).toBe("error");
+    const endEvent = events.find((e) => e.type === "turn:end");
+    if (endEvent?.type === "turn:end") {
+      expect(endEvent.status).toBe("error");
+    }
   });
 
   test("finalizeTurn with no active turn returns empty", () => {

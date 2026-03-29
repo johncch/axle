@@ -40,6 +40,7 @@ describe("Agent", () => {
     const result = await agent.send(instruct).final;
 
     expect(result.response).toBe("Hello world");
+    expect(result.turn?.status).toBe("complete");
     expect(result.usage).toEqual({ in: 10, out: 20 });
   });
 
@@ -216,6 +217,7 @@ describe("Agent", () => {
 
       expect(observedSignal?.aborted).toBe(true);
       expect(result.response).toBeNull();
+      expect(result.turn?.status).toBe("cancelled");
     });
   });
 

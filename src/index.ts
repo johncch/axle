@@ -62,6 +62,7 @@ export type {
   ToolAction,
   Turn,
   TurnPart,
+  TurnStatus,
 } from "./turns/types.js";
 
 // Tracer
@@ -92,3 +93,5 @@ export type { FileStore } from "./store/index.js";
 // Utils
 export { loadFileContent } from "./utils/file.js";
 export type { FileInfo } from "./utils/file.js";
+export { createHandle } from "./utils/utils.js";
+export type { Handle } from "./utils/utils.js";

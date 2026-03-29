@@ -24,3 +24,36 @@ export function settleWhen(promise: Promise<unknown>): Promise<void> {
     () => {},
   );
 }
+
+export interface Handle<T> {
+  cancel(): void;
+  readonly final: Promise<T>;
+}
+
+/**
+ * Creates a cancellable, queued async handle.
+ * Waits for `queue` before running `work`, merges an optional external signal
+ * with an internal abort controller, and returns the handle + settled promise
+ * for queue chaining.
+ */
+export function createHandle<T>(
+  queue: Promise<void>,
+  work: (signal: AbortSignal) => Promise<T>,
+  externalSignal?: AbortSignal,
+): { handle: Handle<T>; settled: Promise<void> } {
+  const abort = new AbortController();
+  const signal = externalSignal ? AbortSignal.any([externalSignal, abort.signal]) : abort.signal;
+
+  const finalPromise = queue.then(() => work(signal));
+  const settled = settleWhen(finalPromise);
+
+  return {
+    handle: {
+      cancel: () => abort.abort(),
+      get final() {
+        return finalPromise;
+      },
+    },
+    settled,
+  };
+}
