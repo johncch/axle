@@ -17,7 +17,6 @@ export class TurnBuilder {
   private currentThinkingPart: ThinkingPart | null = null;
   private toolIdMap = new Map<string, { partId: string; turnId: string }>();
   private accumulatedUsage: Stats = { in: 0, out: 0 };
-  private currentStep: Partial<TurnStepMeta> | null = null;
 
   createUserTurn(message: AxleUserMessage): { turn: Turn; events: AgentEvent[] } {
     const turnId = message.id ?? crypto.randomUUID();
@@ -47,7 +46,6 @@ export class TurnBuilder {
     this.currentThinkingPart = null;
     this.toolIdMap.clear();
     this.accumulatedUsage = { in: 0, out: 0 };
-    this.currentStep = null;
     return { turn, events: [{ type: "turn:start", turnId }] };
   }
 
@@ -133,7 +131,7 @@ export class TurnBuilder {
           type: "action",
           kind: "tool",
           status: "pending",
-          detail: { providerId: event.id, name: event.name, parameters: {} },
+          detail: { name: event.name, parameters: {} },
         };
         turn.parts.push(part);
         this.toolIdMap.set(event.id, { partId, turnId: turn.id });
@@ -210,7 +208,7 @@ export class TurnBuilder {
           type: "action",
           kind: "internal-tool",
           status: "running",
-          detail: { providerId: event.id, name: event.name },
+          detail: { name: event.name },
         };
         turn.parts.push(part);
         this.toolIdMap.set(event.id, { partId, turnId: turn.id });
@@ -246,22 +244,12 @@ export class TurnBuilder {
         const stepUsage = event.usage ?? { in: 0, out: 0 };
         this.accumulatedUsage.in += stepUsage.in;
         this.accumulatedUsage.out += stepUsage.out;
-        this.currentStep = { assistantMessageId: event.message.id };
         break;
       }
 
       case "tool-results:start":
+      case "tool-results:complete":
         break;
-
-      case "tool-results:complete": {
-        if (this.currentStep) {
-          this.currentStep.toolResultsMessageId = event.message.id;
-          turn.steps ??= [];
-          turn.steps.push(this.currentStep as TurnStepMeta);
-          this.currentStep = null;
-        }
-        break;
-      }
 
       case "error": {
         const error = event.error;
@@ -285,11 +273,6 @@ export class TurnBuilder {
     if (!turn) return [];
     const events: AgentEvent[] = [];
     this.closeOpenParts(turn, events);
-    if (this.currentStep?.assistantMessageId) {
-      turn.steps ??= [];
-      turn.steps.push(this.currentStep as TurnStepMeta);
-      this.currentStep = null;
-    }
     turn.usage = { ...this.accumulatedUsage };
     events.push({ type: "turn:end", turnId: turn.id, usage: turn.usage });
     this.currentTurn = null;

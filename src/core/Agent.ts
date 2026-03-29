@@ -1,8 +1,7 @@
 import { AxleError } from "../errors/AxleError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
-import { History } from "../messages/history.js";
-import type { AxleAssistantMessage, AxleUserMessage } from "../messages/message.js";
+import type { AxleUserMessage } from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream } from "../providers/stream.js";
@@ -17,6 +16,7 @@ import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
 import { settleWhen } from "../utils/utils.js";
 import { compileInstruct } from "./compile.js";
+import { History } from "./history.js";
 import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
 import { parseResponse } from "./parse.js";
@@ -41,18 +41,12 @@ export interface AgentConfig {
 export interface AgentResult<T = string> {
   response: T | null;
   turn: Turn | undefined;
-  final: AxleAssistantMessage | undefined;
   usage: Stats;
 }
 
 export interface AgentHandle<T = string> {
   cancel(): void;
   readonly final: Promise<AgentResult<T>>;
-}
-
-export interface AgentSnapshot {
-  turns: Turn[];
-  system?: string;
 }
 
 export type AgentEventCallback = (event: AgentEvent) => void;
@@ -183,22 +177,6 @@ export class Agent {
     return this.execute(userMessage, schema, options?.signal);
   }
 
-  serialize(): AgentSnapshot {
-    return {
-      turns: this.history.turns,
-      system: this.system,
-    };
-  }
-
-  static from(snapshot: AgentSnapshot, config: AgentConfig): Agent {
-    const agent = new Agent(config);
-    agent.system = snapshot.system;
-    for (const turn of snapshot.turns) {
-      agent.history.addTurn(turn);
-    }
-    return agent;
-  }
-
   private async resolveMcpTools(): Promise<void> {
     if (this.mcpToolsResolved) return;
     this.tracer?.debug("resolving MCP tools", { count: this.mcps.length });
@@ -227,15 +205,16 @@ export class Agent {
 
       const builder = new TurnBuilder();
 
-      // Create user turn
+      // Create user turn and append user message to log
       const { turn: userTurn, events: userEvents } = builder.createUserTurn(userMessage);
       this.history.addTurn(userTurn);
+      this.history.appendToLog(userMessage);
       for (const evt of userEvents) this.emitEvent(evt);
 
       await this.resolveMcpTools();
 
       if (effectiveSignal.aborted) {
-        return { response: null, turn: undefined, final: undefined, usage: { in: 0, out: 0 } };
+        return { response: null, turn: undefined, usage: { in: 0, out: 0 } };
       }
 
       let effectiveSystem = this.system;
@@ -244,7 +223,7 @@ export class Agent {
           name: this.name,
           scope: this.scope,
           system: this.system,
-          messages: this.history.toMessages(),
+          messages: this.history.log,
           store: this.store,
           tracer: this.tracer,
         });
@@ -268,7 +247,7 @@ export class Agent {
       streamHandle = stream({
         provider: this.provider,
         model: this.model,
-        messages: this.history.toMessages(),
+        messages: this.history.log,
         system: effectiveSystem,
         tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
         serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
@@ -295,12 +274,16 @@ export class Agent {
 
       const streamResult: StreamResult = await streamHandle.final;
 
+      // Append stream-generated messages to log
+      if (streamResult.messages.length > 0) {
+        this.history.appendToLog(streamResult.messages);
+      }
+
       // Finalize the agent turn
       const finalizeEvents = builder.finalizeTurn();
       for (const evt of finalizeEvents) this.emitEvent(evt);
 
       let response: any | null = null;
-      let final: AxleAssistantMessage | undefined;
 
       if (streamResult.result === "error") {
         throw new AxleError(formatGenerateError(streamResult.error), {
@@ -308,13 +291,10 @@ export class Agent {
           details: { error: streamResult.error },
         });
       } else if (streamResult.result === "success") {
-        final = streamResult.final;
-        if (final) {
-          const textContent = getTextContent(final.content);
+        if (streamResult.final) {
+          const textContent = getTextContent(streamResult.final.content);
           response = parseResponse(textContent, schema);
         }
-      } else if (streamResult.result === "cancelled") {
-        final = streamResult.partial;
       }
 
       if (this.memory && streamResult.result === "success") {
@@ -323,7 +303,7 @@ export class Agent {
             name: this.name,
             scope: this.scope,
             system: this.system,
-            messages: this.history.toMessages(),
+            messages: this.history.log,
             newMessages: streamResult.messages,
             store: this.store,
             tracer: this.tracer,
@@ -336,7 +316,7 @@ export class Agent {
       }
 
       const usage = streamResult.usage ?? { in: 0, out: 0 };
-      return { response, turn: agentTurn, final, usage };
+      return { response, turn: agentTurn, usage };
     })();
 
     this.sendQueue = settleWhen(finalPromise);

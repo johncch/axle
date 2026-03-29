@@ -1,16 +1,10 @@
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
 
-export interface TurnStepMeta {
-  assistantMessageId: string;
-  toolResultsMessageId?: string;
-}
-
 export interface Turn {
   id: string;
   owner: "user" | "agent";
   parts: TurnPart[];
-  steps?: TurnStepMeta[];
   usage?: Stats;
 }
 
@@ -46,7 +40,6 @@ interface ActionPartBase {
 export interface ToolAction extends ActionPartBase {
   kind: "tool";
   detail: {
-    providerId: string;
     name: string;
     parameters: Record<string, unknown>;
     result?: ActionResult;
@@ -66,7 +59,6 @@ export interface SubagentAction extends ActionPartBase {
 export interface InternalToolAction extends ActionPartBase {
   kind: "internal-tool";
   detail: {
-    providerId: string;
     name: string;
     input?: unknown;
     result?: ActionResult;

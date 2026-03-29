@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { History } from "../../src/messages/history.js";
+import { History } from "../../src/core/history.js";
 import { ContentPartFile, ContentPartText } from "../../src/messages/message.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";
-import { FileInfo } from "../../src/utils/file.js";
 import type { Turn } from "../../src/turns/types.js";
+import { FileInfo } from "../../src/utils/file.js";
 
 describe("History", () => {
   describe("turn management", () => {
@@ -35,22 +35,18 @@ describe("History", () => {
 
     test("latestTurn returns the most recent turn", () => {
       const history = new History();
-      history.addTurn({ id: "t1", owner: "user", parts: [{ id: "p1", type: "text", text: "Hello" }] });
-      history.addTurn({ id: "t2", owner: "agent", parts: [{ id: "p2", type: "text", text: "Hi" }] });
+      history.addTurn({
+        id: "t1",
+        owner: "user",
+        parts: [{ id: "p1", type: "text", text: "Hello" }],
+      });
+      history.addTurn({
+        id: "t2",
+        owner: "agent",
+        parts: [{ id: "p2", type: "text", text: "Hi" }],
+      });
 
       expect(history.latestTurn()?.id).toBe("t2");
-    });
-
-    test("updateTurn modifies a turn in place", () => {
-      const history = new History();
-      history.addTurn({ id: "t1", owner: "agent", parts: [] });
-
-      history.updateTurn("t1", (turn) => ({
-        ...turn,
-        parts: [{ id: "p1", type: "text", text: "Updated" }],
-      }));
-
-      expect(history.turns[0].parts).toHaveLength(1);
     });
 
     test("system property can be set", () => {
@@ -61,31 +57,34 @@ describe("History", () => {
     });
   });
 
-  describe("toMessages", () => {
-    test("compiles user turn to AxleUserMessage", () => {
+  describe("log management", () => {
+    test("appendToLog adds a single message", () => {
       const history = new History();
-      history.addTurn({
-        id: "t1",
-        owner: "user",
-        parts: [{ id: "p1", type: "text", text: "Hello" }],
-      });
+      history.appendToLog({ role: "user", content: "Hello" });
 
-      const messages = history.toMessages();
-      expect(messages).toHaveLength(1);
-      expect(messages[0].role).toBe("user");
+      expect(history.log).toHaveLength(1);
+      expect(history.log[0].role).toBe("user");
     });
 
-    test("compiles agent turn with text to AxleAssistantMessage", () => {
+    test("appendToLog adds multiple messages", () => {
       const history = new History();
-      history.addTurn({
-        id: "t1",
-        owner: "agent",
-        parts: [{ id: "p1", type: "text", text: "Hi there" }],
-      });
+      history.appendToLog([
+        { role: "user", content: "Hello" },
+        { role: "assistant", id: "a1", content: [{ type: "text", text: "Hi" }] },
+      ]);
 
-      const messages = history.toMessages();
-      expect(messages).toHaveLength(1);
-      expect(messages[0].role).toBe("assistant");
+      expect(history.log).toHaveLength(2);
+      expect(history.log[0].role).toBe("user");
+      expect(history.log[1].role).toBe("assistant");
+    });
+
+    test("constructor accepts initial turns and log", () => {
+      const turns: Turn[] = [{ id: "t1", owner: "user", parts: [] }];
+      const log = [{ role: "user" as const, content: "Hello" }];
+      const history = new History({ turns, log });
+
+      expect(history.turns).toHaveLength(1);
+      expect(history.log).toHaveLength(1);
     });
   });
 
@@ -147,7 +146,11 @@ describe("History", () => {
     test("serializes conversation to JSON string", () => {
       const history = new History();
       history.system = "System message";
-      history.addTurn({ id: "t1", owner: "user", parts: [{ id: "p1", type: "text", text: "User message" }] });
+      history.addTurn({
+        id: "t1",
+        owner: "user",
+        parts: [{ id: "p1", type: "text", text: "User message" }],
+      });
 
       const result = history.toString();
       const parsed = JSON.parse(result);

@@ -5,7 +5,6 @@ export type {
   AgentEventCallback,
   AgentHandle,
   AgentResult,
-  AgentSnapshot,
   SendInstructOptions,
   SendMessageOptions,
 } from "./core/Agent.js";
@@ -33,7 +32,7 @@ export { MCP } from "./mcp/index.js";
 export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";
 
 // Messages (internal — kept for advanced/direct stream() users)
-export { History } from "./messages/history.js";
+export { History } from "./core/history.js";
 export type {
   AxleAssistantMessage,
   AxleMessage,
@@ -51,7 +50,6 @@ export type {
 
 // Turns (public format)
 export { TurnBuilder } from "./turns/builder.js";
-export { compileTurns } from "./turns/compiler.js";
 export type { AgentEvent } from "./turns/events.js";
 export type {
   ActionPart,
@@ -64,7 +62,6 @@ export type {
   ToolAction,
   Turn,
   TurnPart,
-  TurnStepMeta,
 } from "./turns/types.js";
 
 // Tracer

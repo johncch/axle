@@ -141,7 +141,6 @@ describe("TurnBuilder", () => {
     expect(part.type).toBe("action");
     if (part.type === "action" && part.kind === "tool") {
       expect(part.status).toBe("complete");
-      expect(part.detail.providerId).toBe("tc1");
       expect(part.detail.result).toEqual({ type: "success", content: "4" });
     }
   });
@@ -260,82 +259,5 @@ describe("TurnBuilder", () => {
       index: 0,
     });
     expect(events).toEqual([]);
-  });
-
-  test("step metadata is populated from turn:complete and tool-results:complete", () => {
-    const builder = new TurnBuilder();
-    const { turn } = builder.startAgentTurn();
-
-    builder.handleStreamEvent({ type: "text:start", index: 0 });
-    builder.handleStreamEvent({ type: "text:end", index: 0, final: "Checking..." });
-    builder.handleStreamEvent({ type: "tool:request", index: 1, id: "call_1", name: "search" });
-
-    builder.handleStreamEvent({
-      type: "turn:complete",
-      message: {
-        role: "assistant",
-        id: "msg_asst_1",
-        content: [
-          { type: "text", text: "Checking..." },
-          { type: "tool-call", id: "call_1", name: "search", parameters: {} },
-        ],
-        finishReason: AxleStopReason.FunctionCall,
-      },
-      usage: { in: 10, out: 5 },
-    });
-
-    builder.handleStreamEvent({
-      type: "tool-results:complete",
-      message: { role: "tool", id: "msg_tools_1", content: [] },
-    });
-
-    builder.handleStreamEvent({ type: "text:start", index: 2 });
-    builder.handleStreamEvent({ type: "text:end", index: 2, final: "Done" });
-
-    builder.handleStreamEvent({
-      type: "turn:complete",
-      message: {
-        role: "assistant",
-        id: "msg_asst_2",
-        content: [{ type: "text", text: "Done" }],
-        finishReason: AxleStopReason.Stop,
-      },
-      usage: { in: 5, out: 3 },
-    });
-
-    builder.finalizeTurn();
-
-    expect(turn.steps).toHaveLength(2);
-    expect(turn.steps![0]).toEqual({
-      assistantMessageId: "msg_asst_1",
-      toolResultsMessageId: "msg_tools_1",
-    });
-    expect(turn.steps![1]).toEqual({
-      assistantMessageId: "msg_asst_2",
-    });
-  });
-
-  test("finalizeTurn flushes last step without tool results", () => {
-    const builder = new TurnBuilder();
-    const { turn } = builder.startAgentTurn();
-
-    builder.handleStreamEvent({ type: "text:start", index: 0 });
-    builder.handleStreamEvent({ type: "text:end", index: 0, final: "Hello" });
-    builder.handleStreamEvent({
-      type: "turn:complete",
-      message: {
-        role: "assistant",
-        id: "msg_final",
-        content: [{ type: "text", text: "Hello" }],
-        finishReason: AxleStopReason.Stop,
-      },
-      usage: { in: 1, out: 1 },
-    });
-
-    builder.finalizeTurn();
-
-    expect(turn.steps).toHaveLength(1);
-    expect(turn.steps![0]).toEqual({ assistantMessageId: "msg_final" });
-    expect(turn.steps![0].toolResultsMessageId).toBeUndefined();
   });
 });

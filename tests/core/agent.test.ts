@@ -216,7 +216,6 @@ describe("Agent", () => {
 
       expect(observedSignal?.aborted).toBe(true);
       expect(result.response).toBeNull();
-      expect(result.final?.finishReason).toBe(AxleStopReason.Cancelled);
     });
   });
 
