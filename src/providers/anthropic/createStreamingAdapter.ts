@@ -35,12 +35,10 @@ export function createAnthropicStreamingAdapter() {
             type: "complete",
             data: {
               finishReason: convertStopReason(event.delta.stop_reason),
-              usage: event.usage
-                ? {
-                    in: event.usage.input_tokens || 0,
-                    out: event.usage.output_tokens || 0,
-                  }
-                : undefined,
+              usage: {
+                in: event.usage?.input_tokens || 0,
+                out: event.usage?.output_tokens || 0,
+              },
             },
           });
         }

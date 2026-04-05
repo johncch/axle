@@ -12,10 +12,9 @@ import type { ToolProviderConfig } from "./configs/schemas.js";
  * Tools are LLM-callable and require explicit input schemas.
  */
 export function createTool(name: string, config?: ToolProviderConfig): ExecutableTool {
-  const toolConfig = config?.[name];
-
   switch (name) {
     case "brave": {
+      const toolConfig = config?.brave;
       if (toolConfig) {
         braveSearchTool.configure(toolConfig);
       }
@@ -25,6 +24,7 @@ export function createTool(name: string, config?: ToolProviderConfig): Executabl
       return calculatorTool;
     }
     case "exec": {
+      const toolConfig = config?.exec;
       if (toolConfig) {
         execTool.configure(toolConfig);
       }

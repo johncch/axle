@@ -1,7 +1,8 @@
-import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
 import { describe, expect, test } from "vitest";
 import { createAnthropicStreamingAdapter } from "../../../src/providers/anthropic/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
+
+const directCaller = { type: "direct" } as const;
 
 describe("createAnthropicStreamingAdapter", () => {
   describe("basic streaming events", () => {
@@ -14,12 +15,14 @@ describe("createAnthropicStreamingAdapter", () => {
           type: "message",
           role: "assistant",
           content: [],
+          container: null,
           model: "claude-3-5-sonnet-20241022",
           stop_reason: null,
           stop_sequence: null,
+          stop_details: null,
           usage: { input_tokens: 10, output_tokens: 0 },
         },
-      } as MessageStreamEvent;
+      };
 
       const chunks = adapter.handleEvent(event as any);
 
@@ -256,6 +259,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_123",
           name: "search",
           input: {} as any,
+          caller: directCaller,
         },
       };
 
@@ -282,6 +286,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_123",
           name: "search",
           input: {} as any,
+          caller: directCaller,
         },
       });
 
@@ -322,6 +327,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_123",
           name: "search",
           input: {} as any,
+          caller: directCaller,
         },
       });
 
@@ -365,6 +371,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_123",
           name: "search",
           input: {} as any,
+          caller: directCaller,
         },
       });
 
@@ -399,6 +406,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_1",
           name: "search",
           input: {} as any,
+          caller: directCaller,
         },
       });
 
@@ -422,6 +430,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_2",
           name: "calculate",
           input: {} as any,
+          caller: directCaller,
         },
       });
 
@@ -520,6 +529,7 @@ describe("createAnthropicStreamingAdapter", () => {
           id: "toolu_123",
           name: "search",
           input: {} as any,
+          caller: directCaller,
         },
       });
 

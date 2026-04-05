@@ -84,7 +84,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       role: completion.role,
       finishReason: AxleStopReason.FunctionCall,
       content,
-      text: getTextContent(content) ?? "",
+      text: getTextContent(content),
       usage: {
         in: completion.usage.input_tokens,
         out: completion.usage.output_tokens,
@@ -102,7 +102,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       role: "assistant" as const,
       finishReason: stopReason,
       content,
-      text: getTextContent(content) ?? "",
+      text: getTextContent(content),
       usage: {
         in: completion.usage.input_tokens,
         out: completion.usage.output_tokens,
@@ -110,4 +110,17 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       raw: completion,
     };
   }
+
+  return {
+    type: "error",
+    error: {
+      type: "InvalidResponse",
+      message: `Unsupported completion type: ${completion.type}`,
+    },
+    usage: {
+      in: completion.usage.input_tokens,
+      out: completion.usage.output_tokens,
+    },
+    raw: completion,
+  };
 }

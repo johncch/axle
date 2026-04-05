@@ -1,40 +1,62 @@
 export const Models = {
-  // Claude 4.6 family (February 2025 - newest)
+  // ---------------------------------------------------------------------------
+  // Claude 4.6 family (February 2026 - newest)
+  // ---------------------------------------------------------------------------
   CLAUDE_SONNET_4_6: "claude-sonnet-4-6",
   CLAUDE_OPUS_4_6: "claude-opus-4-6",
 
-  // Claude 4.5 family (September-November 2024)
+  // ---------------------------------------------------------------------------
+  // Claude 4.5 family (September–November 2025)
+  // ---------------------------------------------------------------------------
   CLAUDE_OPUS_4_5_20251101: "claude-opus-4-5-20251101",
-  CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101", // Alias for latest 4.5 Opus
-  CLAUDE_HAIKU_4_5_20251001: "claude-haiku-4-5-20251001",
-  CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001", // Alias for latest 4.5 Haiku
+  CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101", // Alias → latest 4.5 Opus
+
   CLAUDE_SONNET_4_5_20250929: "claude-sonnet-4-5-20250929",
-  CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929", // Alias for latest 4.5 Sonnet
+  CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929", // Alias → latest 4.5 Sonnet
 
-  // Claude 4.1 family (August 2024)
+  CLAUDE_HAIKU_4_5_20251001: "claude-haiku-4-5-20251001",
+  CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001", // Alias → latest 4.5 Haiku
+
+  // ---------------------------------------------------------------------------
+  // Claude 4.1 family (August 2025)
+  // ---------------------------------------------------------------------------
   CLAUDE_OPUS_4_1_20250805: "claude-opus-4-1-20250805",
-  CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805", // Alias for latest 4.1
+  CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805", // Alias → latest 4.1 Opus
 
-  // Claude 4 family (May 2024)
+  // ---------------------------------------------------------------------------
+  // Claude 4 family (May 2025)
+  // ---------------------------------------------------------------------------
   CLAUDE_OPUS_4_20250514: "claude-opus-4-20250514",
-  CLAUDE_OPUS_4: "claude-opus-4-20250514", // Alias for latest 4.0 Opus
-  CLAUDE_SONNET_4_20250514: "claude-sonnet-4-20250514",
-  CLAUDE_SONNET_4: "claude-sonnet-4-20250514", // Alias for latest 4.0 Sonnet
+  CLAUDE_OPUS_4: "claude-opus-4-20250514", // Alias → latest 4.0 Opus
 
-  // Claude 3 family (March 2024)
+  CLAUDE_SONNET_4_20250514: "claude-sonnet-4-20250514",
+  CLAUDE_SONNET_4: "claude-sonnet-4-20250514", // Alias → latest 4.0 Sonnet
+
+  // ---------------------------------------------------------------------------
+  // Claude 3 family (March 2024 — oldest still in API)
+  // ---------------------------------------------------------------------------
   CLAUDE_3_HAIKU_20240307: "claude-3-haiku-20240307",
-  CLAUDE_3_HAIKU: "claude-3-haiku-20240307", // Alias for latest 3 Haiku
+  CLAUDE_3_HAIKU: "claude-3-haiku-20240307", // Alias → latest 3 Haiku
 } as const;
 
 export const MULTIMODAL_MODELS = [
+  // Claude 4.6 family
   Models.CLAUDE_SONNET_4_6,
   Models.CLAUDE_OPUS_4_6,
+
+  // Claude 4.5 family
   Models.CLAUDE_OPUS_4_5_20251101,
-  Models.CLAUDE_HAIKU_4_5_20251001,
   Models.CLAUDE_SONNET_4_5_20250929,
+  Models.CLAUDE_HAIKU_4_5_20251001,
+
+  // Claude 4.1 family
   Models.CLAUDE_OPUS_4_1_20250805,
+
+  // Claude 4.0 family
   Models.CLAUDE_OPUS_4_20250514,
   Models.CLAUDE_SONNET_4_20250514,
+
+  // Claude 3 family
   Models.CLAUDE_3_HAIKU_20240307,
 ] as const;
 

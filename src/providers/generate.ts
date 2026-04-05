@@ -159,7 +159,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
 
     const { results } = await executeToolCalls(toolCalls, onToolCall, tracer);
     if (results.length > 0) {
-      addMessage({ role: "tool", content: results });
+      addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
     }
   }
 }

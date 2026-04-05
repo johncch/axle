@@ -1,6 +1,13 @@
 // Core
 export { Agent } from "./core/Agent.js";
-export type { AgentConfig, AgentHandle, AgentResult } from "./core/Agent.js";
+export type {
+  AgentConfig,
+  AgentEventCallback,
+  AgentHandle,
+  AgentResult,
+  SendInstructOptions,
+  SendMessageOptions,
+} from "./core/Agent.js";
 export { compileInstruct } from "./core/compile.js";
 export { Instruct } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
@@ -9,9 +16,10 @@ export { parseResponse } from "./core/parse.js";
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
+export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
-export type { StreamEvent, StreamEventCallback } from "./providers/stream.js";
+export type { StreamEvent, StreamEventCallback, StreamHandle } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type { AIProvider } from "./providers/types.js";
 
@@ -23,8 +31,8 @@ export type { AxleTool, ExecutableTool, ServerTool, ToolDefinition } from "./too
 export { MCP } from "./mcp/index.js";
 export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";
 
-// Messages
-export { History } from "./messages/history.js";
+// Messages (internal — kept for advanced/direct stream() users)
+export { History } from "./core/history.js";
 export type {
   AxleAssistantMessage,
   AxleMessage,
@@ -33,11 +41,29 @@ export type {
   AxleUserMessage,
   ContentPart,
   ContentPartFile,
+  ContentPartInternalTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
   ToolResultPart,
 } from "./messages/message.js";
+
+// Turns (public format)
+export { TurnBuilder } from "./turns/builder.js";
+export type { AgentEvent } from "./turns/events.js";
+export type {
+  ActionPart,
+  ActionResult,
+  FilePart,
+  InternalToolAction,
+  SubagentAction,
+  TextPart,
+  ThinkingPart,
+  ToolAction,
+  Turn,
+  TurnPart,
+  TurnStatus,
+} from "./turns/types.js";
 
 // Tracer
 export { SimpleWriter, Tracer } from "./tracer/index.js";
@@ -67,3 +93,5 @@ export type { FileStore } from "./store/index.js";
 // Utils
 export { loadFileContent } from "./utils/file.js";
 export type { FileInfo } from "./utils/file.js";
+export { createHandle } from "./utils/utils.js";
+export type { Handle } from "./utils/utils.js";

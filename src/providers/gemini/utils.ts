@@ -158,7 +158,7 @@ function convertContentPart(item: ContentPart): any | null {
 
 /* To Response */
 
-export function convertStopReason(reason: FinishReason): [boolean, AxleStopReason] {
+export function convertStopReason(reason: FinishReason | undefined): [boolean, AxleStopReason] {
   switch (reason) {
     case FinishReason.STOP:
       return [true, AxleStopReason.Stop];
@@ -176,4 +176,6 @@ export function convertStopReason(reason: FinishReason): [boolean, AxleStopReaso
     case FinishReason.IMAGE_SAFETY:
       return [false, AxleStopReason.Error];
   }
+
+  return [false, AxleStopReason.Error];
 }

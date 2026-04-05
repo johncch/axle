@@ -39,7 +39,7 @@ async function getAnthropicModels(): Promise<ModelInfo> {
       })) || [];
     return { provider: "Anthropic", models };
   } catch (error) {
-    return { provider: "Anthropic", models: [], error: error.message };
+    return { provider: "Anthropic", models: [], error: getErrorMessage(error) };
   }
 }
 
@@ -67,10 +67,10 @@ async function getOpenAIModels(): Promise<ModelInfo> {
         ?.map((model: any) => ({
           id: model.id,
         }))
-        .sort((a, b) => a.id.localeCompare(b.id)) || [];
+        .sort((a: any, b: any) => a.id.localeCompare(b.id)) || [];
     return { provider: "OpenAI", models };
   } catch (error) {
-    return { provider: "OpenAI", models: [], error: error.message };
+    return { provider: "OpenAI", models: [], error: getErrorMessage(error) };
   }
 }
 
@@ -105,7 +105,7 @@ async function getGeminiModels(): Promise<ModelInfo> {
       })) || [];
     return { provider: "Gemini", models };
   } catch (error) {
-    return { provider: "Gemini", models: [], error: error.message };
+    return { provider: "Gemini", models: [], error: getErrorMessage(error) };
   }
 }
 
@@ -134,7 +134,7 @@ async function getOllamaModels(): Promise<ModelInfo> {
       })) || [];
     return { provider: "Ollama", models };
   } catch (error) {
-    return { provider: "Ollama", models: [], error: error.message };
+    return { provider: "Ollama", models: [], error: getErrorMessage(error) };
   }
 }
 
@@ -226,6 +226,11 @@ async function generateModelFile(results: ModelInfo[]): Promise<void> {
   for (const provider of commercialProviders) {
     await generateProviderFile(provider, outputDir);
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

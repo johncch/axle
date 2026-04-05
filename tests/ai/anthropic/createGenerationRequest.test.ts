@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
-import { History } from "../../../src/messages/history.js";
+import type { AxleMessage } from "../../../src/messages/message.js";
 import { createGenerationRequest } from "../../../src/providers/anthropic/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -29,13 +29,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { stop: "STOP" },
       });
@@ -59,13 +58,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
         options: { stop: ["STOP1", "STOP2"] },
       });
@@ -88,13 +86,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
         options: {
           temperature: 0.7,
@@ -123,13 +120,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         system: "You are a helpful assistant",
         context: {},
       });
@@ -154,13 +150,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -195,13 +190,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Search for test");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Search for test" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -236,13 +230,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 30 },
       });
 
-      const chat = new History();
-      chat.addUser("Question");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Question" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -265,13 +258,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 100 },
       });
 
-      const chat = new History();
-      chat.addUser("Write a long essay");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Write a long essay" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -286,13 +278,12 @@ describe("createGenerationRequest (Anthropic)", () => {
     test("should handle network errors", async () => {
       (mockCreate.mockRejectedValue as any)(new Error("Network error"));
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -307,13 +298,12 @@ describe("createGenerationRequest (Anthropic)", () => {
       (apiError as any).status = 429;
       (mockCreate.mockRejectedValue as any)(apiError);
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -331,13 +321,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -360,13 +349,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -384,13 +372,12 @@ describe("createGenerationRequest (Anthropic)", () => {
         usage: { input_tokens: 10, output_tokens: 0 },
       });
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 
@@ -414,13 +401,12 @@ describe("createGenerationRequest (Anthropic)", () => {
 
       (mockCreate.mockResolvedValue as any)(mockResponse);
 
-      const chat = new History();
-      chat.addUser("Hello");
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
 
       const result = await createGenerationRequest({
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
-        messages: chat.messages,
+        messages,
         context: {},
       });
 

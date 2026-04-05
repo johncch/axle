@@ -5,6 +5,7 @@ export type AxleMessage = AxleUserMessage | AxleAssistantMessage | AxleToolCallM
 
 export interface AxleUserMessage {
   role: "user";
+  id?: string;
   name?: string;
   content: string | Array<ContentPart>;
 }
@@ -21,6 +22,7 @@ export interface AxleAssistantMessage {
 
 export interface AxleToolCallMessage {
   role: "tool";
+  id: string;
   content: Array<AxleToolCallResult>;
 }
 

@@ -12,7 +12,7 @@ class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
   description = "Perform a search using the Brave search engine";
   schema = braveSearchSchema;
 
-  apiKey: string;
+  apiKey: string | undefined;
   throttle: number | undefined;
   lastExecTime: number = 0;
 
@@ -50,7 +50,7 @@ class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
         method: "GET",
         headers: {
           Accept: "application/json",
-          "X-Subscription-Token": apiKey,
+          "X-Subscription-Token": apiKey ?? "",
         },
       });
 

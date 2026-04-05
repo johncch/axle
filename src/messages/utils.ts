@@ -27,11 +27,7 @@ export function toContentParts(params: {
   return parts;
 }
 
-export function getTextContent(content: ContentPart[]): string | null {
-  if (typeof content === "string") {
-    return content;
-  }
-
+export function getTextContent(content: ContentPart[]): string {
   return content
     .filter((item) => item.type === "text")
     .map((item) => (item as ContentPartText).text)

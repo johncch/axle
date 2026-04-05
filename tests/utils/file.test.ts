@@ -7,8 +7,18 @@ import {
   pathToComponents,
   replaceFilePattern,
 } from "../../src/utils/file.js";
+import type { FilePathInfo } from "../../src/utils/types.js";
 
 const TEST_DIR = join(process.cwd(), "test-temp", "file-test");
+
+function getPathComponentsOrThrow(path: string): FilePathInfo {
+  const pathComponents = pathToComponents(path);
+  expect(pathComponents).not.toBeNull();
+  if (!pathComponents) {
+    throw new Error(`Expected path components for ${path}`);
+  }
+  return pathComponents;
+}
 
 describe("file module", () => {
   describe("path to components", () => {
@@ -28,49 +38,49 @@ describe("file module", () => {
   describe("replace file pattern", () => {
     test("replaces ** with file path", () => {
       const input = "output/**";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/input/file.json");
     });
 
     test("replaces **.txt with file path", () => {
       const input = "output/**.txt";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/input/file.txt");
     });
 
     test("replaces **/* with file path", () => {
       const input = "output/**/*";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/input/file.json");
     });
 
     test("replaces **/*.txt with file path", () => {
       const input = "output/**/*.txt";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/input/file.txt");
     });
 
     test("replaces * with file path", () => {
       const input = "output/*";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/file.json");
     });
 
     test("replaces *.txt with file path", () => {
       const input = "output/*.txt";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/file.txt");
     });
 
     test("does not replace if no * provided", () => {
       const input = "output/test.txt";
-      const pathComponents = pathToComponents("input/file.json");
+      const pathComponents = getPathComponentsOrThrow("input/file.json");
       const output = replaceFilePattern(input, pathComponents);
       expect(output).toBe("output/test.txt");
     });
@@ -392,7 +402,10 @@ describe("file module", () => {
       });
 
       it("should handle case-insensitive extensions", async () => {
-        const testCases = [
+        const testCases: Array<
+          | { file: string; content: string }
+          | { file: string; data: Buffer }
+        > = [
           { file: "test.TXT", content: "uppercase txt" },
           { file: "test.PNG", data: Buffer.from("fake png", "utf-8") },
           { file: "test.MD", content: "uppercase markdown" },

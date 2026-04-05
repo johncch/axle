@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { History } from "../../src/messages/history.js";
-import { ContentPartFile, ContentPartText } from "../../src/messages/message.js";
+import type { AxleUserMessage, ContentPartFile, ContentPartText } from "../../src/messages/message.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";
 import { FileInfo } from "../../src/utils/file.js";
 
@@ -27,17 +26,14 @@ describe("Multimodal Support", () => {
 
   describe("Conversation Integration", () => {
     test("multimodal content structure is preserved", () => {
-      const chat = new History();
       const content: Array<ContentPartText | ContentPartFile> = [
         { type: "text", text: "Analyze these files" },
         { type: "file", file: mockImageFile },
         { type: "file", file: mockPdfFile },
       ];
 
-      chat.addUser(content);
+      const message: AxleUserMessage = { role: "user", content };
 
-      expect(chat.messages).toHaveLength(1);
-      const message = chat.messages[0];
       expect(Array.isArray(message.content)).toBe(true);
 
       const msgContent = message.content as Array<ContentPartText | ContentPartFile>;
@@ -51,16 +47,14 @@ describe("Multimodal Support", () => {
     });
 
     test("helper methods work with multimodal content", () => {
-      const chat = new History();
       const content: Array<ContentPartText | ContentPartFile> = [
         { type: "text", text: "Look at this image and PDF" },
         { type: "file", file: mockImageFile },
         { type: "file", file: mockPdfFile },
       ];
 
-      chat.addUser(content);
+      const message: AxleUserMessage = { role: "user", content };
 
-      const message = chat.messages[0];
       expect(message.role).toBe("user");
       const text = getTextContent(message.content as any);
       const files = getFiles(message.content as any);

@@ -10,17 +10,18 @@ const agent = new Agent({ provider, model, tools: [webSearch] });
 
 agent.on((event) => {
   switch (event.type) {
-    case "text:start":
-      console.log(`\n[Text] ${event.index} started`);
+    case "part:start":
+      if (event.part.type === "text") {
+        console.log(`\n[Text] started`);
+      } else if (event.part.type === "action" && event.part.kind === "internal-tool") {
+        console.log(`\n[Server Tool] ${event.part.detail.name} started`);
+      }
       break;
     case "text:delta":
       process.stdout.write(event.delta);
       break;
-    case "internal-tool:start":
-      console.log(`\n[Server Tool] ${event.name} started`);
-      break;
-    case "internal-tool:complete":
-      console.log(`[Server Tool] ${event.name} complete`);
+    case "action:complete":
+      console.log(`[Server Tool] complete ${JSON.stringify(event.result)}`);
       break;
     case "error":
       console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);

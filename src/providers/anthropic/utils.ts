@@ -28,7 +28,7 @@ export function convertToProviderMessages(
               type: "redacted_thinking",
               data: part.text,
             });
-          } else {
+          } else if (part.signature) {
             content.push({
               type: "thinking",
               thinking: part.text,
@@ -94,19 +94,25 @@ export function convertToProviderMessages(
           } satisfies Anthropic.TextBlockParam);
         } else if (part.type === "file") {
           if (part.file.type === "image") {
-            content.push({
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: part.file.mimeType as
-                  | "image/jpeg"
-                  | "image/png"
-                  | "image/gif"
-                  | "image/webp",
-                data: part.file.base64,
-              },
-            } satisfies Anthropic.ImageBlockParam);
-          } else if (part.file.type === "document" && part.file.mimeType === "application/pdf") {
+            if (part.file.base64) {
+              content.push({
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: part.file.mimeType as
+                    | "image/jpeg"
+                    | "image/png"
+                    | "image/gif"
+                    | "image/webp",
+                  data: part.file.base64,
+                },
+              } satisfies Anthropic.ImageBlockParam);
+            }
+          } else if (
+            part.file.type === "document" &&
+            part.file.mimeType === "application/pdf" &&
+            part.file.base64
+          ) {
             content.push({
               type: "document",
               source: {
@@ -185,7 +191,7 @@ export function convertToAxleContentParts(
   return result;
 }
 
-export function convertStopReason(reason: string) {
+export function convertStopReason(reason: string | null | undefined) {
   switch (reason) {
     case "max_tokens":
       return AxleStopReason.Length;

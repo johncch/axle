@@ -23,7 +23,7 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
     } else if (elementSchema instanceof z.ZodBoolean) {
       return ["boolean array", [true, false, false]];
     } else if (elementSchema instanceof z.ZodObject) {
-      const [_, objectExample] = zodToExample(elementSchema);
+      const [, objectExample] = zodToExample(elementSchema);
       return ["object array", [objectExample, objectExample]];
     }
     return ["array", []];
@@ -32,7 +32,7 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
     const shape = schema.shape;
     const example: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(shape)) {
-      const [_, exampleValue] = zodToExample(value);
+      const [, exampleValue] = zodToExample(value);
       example[key] = exampleValue;
     }
     return ["JSON object", example];
@@ -42,6 +42,8 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
     const [innerType, exampleValue] = zodToExample(innerSchema as z.ZodTypeAny);
     return [`${innerType} | undefined`, exampleValue];
   }
+
+  throw new Error(`Unsupported Zod schema: ${schema.constructor.name}`);
 }
 
 export function parseResponse<T extends OutputSchema>(

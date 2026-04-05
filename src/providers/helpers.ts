@@ -83,7 +83,12 @@ export async function executeToolCalls(
 
     if (resolved == null) {
       const message = `Tool not found: ${call.name}`;
-      span?.setResult({ kind: "tool", name: call.name, input: call.parameters, output: null });
+      span?.setResult({
+        kind: "tool",
+        name: call.name,
+        input: call.parameters,
+        output: { type: "not-found", message },
+      });
       span?.end("error");
       results.push({
         id: call.id,

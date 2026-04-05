@@ -158,7 +158,7 @@ function fromModelResponse(data: ChatCompletionResponse): ModelResult {
     role: "assistant",
     finishReason,
     content,
-    text: getTextContent(content) ?? "",
+    text: getTextContent(content),
     usage: {
       in: data.usage?.prompt_tokens || 0,
       out: data.usage?.completion_tokens || 0,

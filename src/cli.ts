@@ -7,8 +7,20 @@ import { runBatch, runSingle } from "./cli/runners.js";
 import { createTools } from "./cli/tools.js";
 import type { MCP } from "./mcp/index.js";
 import { ProceduralMemory } from "./memory/ProceduralMemory.js";
-import { getProvider } from "./providers/index.js";
-import type { AIProvider } from "./providers/types.js";
+import { DEFAULT_MODEL as ANTHROPIC_DEFAULT_MODEL } from "./providers/anthropic/models.js";
+import { anthropic } from "./providers/anthropic/provider.js";
+import { chatCompletions } from "./providers/chatcompletions/provider.js";
+import { DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from "./providers/gemini/models.js";
+import { gemini } from "./providers/gemini/provider.js";
+import { DEFAULT_MODEL as OPENAI_DEFAULT_MODEL } from "./providers/openai/models.js";
+import { openai } from "./providers/openai/provider.js";
+import type {
+  AIProvider,
+  AnthropicProviderConfig,
+  ChatCompletionsProviderConfig,
+  GeminiProviderConfig,
+  OpenAIProviderConfig,
+} from "./providers/types.js";
 import type { AxleTool, ServerTool } from "./tools/types.js";
 import { Tracer } from "./tracer/tracer.js";
 import { SimpleWriter } from "./tracer/writers/simple.js";
@@ -120,11 +132,73 @@ let provider: AIProvider;
 let model: string;
 try {
   const { type, ...otherConfig } = jobConfig.provider;
-  const providerConfig = {
-    ...serviceConfig[type],
-    ...otherConfig,
-  };
-  ({ provider, model } = getProvider(type, providerConfig));
+  switch (type) {
+    case "openai": {
+      const config = { ...serviceConfig.openai, ...otherConfig };
+      const apiKey = config["api-key"];
+      if (!apiKey) {
+        throw new Error("The provider openai is not configured. Please check your configuration.");
+      }
+      const providerConfig: OpenAIProviderConfig = {
+        "api-key": apiKey,
+        model: config.model,
+      };
+      provider = openai(providerConfig["api-key"]);
+      model = providerConfig.model || OPENAI_DEFAULT_MODEL;
+      break;
+    }
+
+    case "anthropic": {
+      const config = { ...serviceConfig.anthropic, ...otherConfig };
+      const apiKey = config["api-key"];
+      if (!apiKey) {
+        throw new Error(
+          "The provider anthropic is not configured. Please check your configuration.",
+        );
+      }
+      const providerConfig: AnthropicProviderConfig = {
+        "api-key": apiKey,
+        model: config.model,
+      };
+      provider = anthropic(providerConfig["api-key"]);
+      model = providerConfig.model || ANTHROPIC_DEFAULT_MODEL;
+      break;
+    }
+
+    case "gemini": {
+      const config = { ...serviceConfig.gemini, ...otherConfig };
+      const apiKey = config["api-key"];
+      if (!apiKey) {
+        throw new Error("The provider gemini is not configured. Please check your configuration.");
+      }
+      const providerConfig: GeminiProviderConfig = {
+        "api-key": apiKey,
+        model: config.model,
+      };
+      provider = gemini(providerConfig["api-key"]);
+      model = providerConfig.model || GEMINI_DEFAULT_MODEL;
+      break;
+    }
+
+    case "chatcompletions": {
+      const config = { ...serviceConfig.chatcompletions, ...otherConfig };
+      const baseUrl = config["base-url"];
+      const providerModel = config.model;
+      if (!baseUrl || !providerModel) {
+        throw new Error(
+          "The provider chatcompletions is not configured. Please check your configuration.",
+        );
+      }
+      const providerConfig: ChatCompletionsProviderConfig = {
+        "base-url": baseUrl,
+        model: providerModel,
+        "api-key": config["api-key"],
+      };
+      provider = chatCompletions(providerConfig["base-url"], providerConfig["api-key"]);
+      model = providerConfig.model;
+      break;
+    }
+  }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
   rootSpan.error(error.message);

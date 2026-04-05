@@ -280,74 +280,64 @@ describe("zodToExample", () => {
   });
 
   describe("unsupported schema types", () => {
-    it("should return undefined for ZodDate", () => {
+    it("should throw for ZodDate", () => {
       const schema = z.date();
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodDate");
     });
 
-    it("should return undefined for ZodEnum", () => {
+    it("should throw for ZodEnum", () => {
       const schema = z.enum(["red", "green", "blue"]);
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodEnum");
     });
 
-    it("should return undefined for ZodLiteral", () => {
+    it("should throw for ZodLiteral", () => {
       const schema = z.literal("specific-value");
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodLiteral");
     });
 
-    it("should return undefined for ZodUnion", () => {
+    it("should throw for ZodUnion", () => {
       const schema = z.union([z.string(), z.number()]);
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodUnion");
     });
 
-    it("should return undefined for ZodRecord", () => {
+    it("should throw for ZodRecord", () => {
       const schema = z.record(z.string(), z.string());
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodRecord");
     });
 
-    it("should return undefined for ZodTuple", () => {
+    it("should throw for ZodTuple", () => {
       const schema = z.tuple([z.string(), z.number()]);
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodTuple");
     });
 
-    it("should return undefined for ZodNull", () => {
+    it("should throw for ZodNull", () => {
       const schema = z.null();
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodNull");
     });
 
-    it("should return undefined for ZodUndefined", () => {
+    it("should throw for ZodUndefined", () => {
       const schema = z.undefined();
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodUndefined");
     });
 
-    it("should return undefined for ZodAny", () => {
+    it("should throw for ZodAny", () => {
       const schema = z.any();
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodAny");
     });
 
-    it("should return undefined for ZodUnknown", () => {
+    it("should throw for ZodUnknown", () => {
       const schema = z.unknown();
-      const result = zodToExample(schema);
 
-      expect(result).toBeUndefined();
+      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodUnknown");
     });
   });
 

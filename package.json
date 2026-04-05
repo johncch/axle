@@ -24,38 +24,40 @@
   "scripts": {
     "prepare": "pnpm run build",
     "start": "tsx ./src/cli.ts",
-    "build": "pkgroll --clean-dist --minify",
-    "build:watch": "pkgroll --watch",
-    "build-dev": "pkgroll --clean-dist",
+    "build": "tsdown --clean --minify",
+    "build:watch": "tsdown --watch",
+    "build-dev": "tsdown",
     "test": "vitest run",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
+    "update-models": "pnpm start -j ./jobs/bootstrap-models.job.yml",
     "release": "pnpm test && pnpm run build && npm version"
   },
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
+    "@anthropic-ai/sdk": "^0.82.0",
     "@commander-js/extra-typings": "^14.0.0",
-    "@google/genai": "^1.42.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@google/genai": "^1.48.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "glob": "^13.0.6",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "mime": "^4.1.0",
-    "openai": "^6.22.0",
+    "openai": "^6.33.0",
     "serialize-error": "^13.0.1",
-    "yaml": "^2.8.2",
+    "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "dotenv": "^17.3.1",
-    "pkgroll": "^2.26.3",
+    "@types/marked-terminal": "^6.1.1",
+    "dotenv": "^17.4.0",
     "prettier": "^3.8.1",
     "prettier-plugin-organize-imports": "^4.3.0",
+    "tsdown": "^0.21.7",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
   }
 }

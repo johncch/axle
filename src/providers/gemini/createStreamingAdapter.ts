@@ -99,20 +99,21 @@ export function createGeminiStreamingAdapter() {
         hasFunctionCalls = true;
         const toolIdx = partIndex++;
         const toolCallId = part.functionCall.id || `tool-${toolIdx}`;
+        const toolName = part.functionCall.name ?? "";
 
         chunks.push({
           type: "tool-call-start",
           data: {
             index: toolIdx,
             id: toolCallId,
-            name: part.functionCall.name,
+            name: toolName,
           },
         });
 
         const completeData: any = {
           index: toolIdx,
           id: toolCallId,
-          name: part.functionCall.name,
+          name: toolName,
           arguments: part.functionCall.args ?? {},
         };
         const rawPart = part as Record<string, unknown>;

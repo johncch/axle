@@ -128,7 +128,7 @@ export function fromModelResponse(response: Response): ModelResult {
     role: "assistant" as const,
     finishReason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
     content,
-    text: getTextContent(content) ?? "",
+    text: getTextContent(content),
     usage: {
       in: response.usage?.input_tokens ?? 0,
       out: response.usage?.output_tokens ?? 0,

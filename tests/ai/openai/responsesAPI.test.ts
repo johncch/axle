@@ -2,6 +2,14 @@ import { Response } from "openai/resources/responses/responses.js";
 import { describe, expect, test } from "vitest";
 import { fromModelResponse } from "../../../src/providers/openai/createGenerationRequest.js";
 
+const responseDefaults = {
+  parallel_tool_calls: false,
+  temperature: null,
+  tool_choice: "auto" as const,
+  tools: [],
+  top_p: null,
+};
+
 describe("responsesAPI", () => {
   describe("fromModelResponse", () => {
     test("should convert basic response with text output", () => {
@@ -308,6 +316,7 @@ describe("responsesAPI", () => {
 
     test("should handle error responses", () => {
       const response = {
+        ...responseDefaults,
         id: "resp_error",
         created_at: 1234567890,
         output_text: "",
@@ -324,7 +333,13 @@ describe("responsesAPI", () => {
         status: "failed",
         usage: {
           input_tokens: 5,
+          input_tokens_details: {
+            cached_tokens: 0,
+          },
           output_tokens: 0,
+          output_tokens_details: {
+            reasoning_tokens: 0,
+          },
           total_tokens: 5,
         },
       } as Response;
@@ -335,8 +350,9 @@ describe("responsesAPI", () => {
       if (result.type === "error") {
         expect(result.error.type).toBe("server_error");
         expect(result.error.message).toBe("Invalid API key provided");
-        expect(result.usage.in).toBe(5);
-        expect(result.usage.out).toBe(0);
+        expect(result.usage).toBeDefined();
+        expect(result.usage!.in).toBe(5);
+        expect(result.usage!.out).toBe(0);
       }
     });
 

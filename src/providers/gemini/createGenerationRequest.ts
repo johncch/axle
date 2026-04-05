@@ -79,8 +79,9 @@ function fromModelResponse(
 ): ModelResult {
   const { tracer } = runtime;
 
-  const inTokens = response.usageMetadata.promptTokenCount;
-  const outTokens = response.usageMetadata.totalTokenCount - inTokens;
+  const inTokens = response.usageMetadata?.promptTokenCount ?? 0;
+  const totalTokens = response.usageMetadata?.totalTokenCount ?? inTokens;
+  const outTokens = totalTokens - inTokens;
   const usage = { in: inTokens, out: outTokens };
 
   if (!response) {
@@ -143,8 +144,8 @@ function fromModelResponse(
         if (call.args == null) {
           content.push({
             type: "tool-call" as const,
-            id: call.id,
-            name: call.name,
+            id: call.id ?? "",
+            name: call.name ?? "",
             parameters: {},
           });
         } else if (typeof call.args !== "object" || Array.isArray(call.args)) {
@@ -154,8 +155,8 @@ function fromModelResponse(
         } else {
           content.push({
             type: "tool-call" as const,
-            id: call.id,
-            name: call.name,
+            id: call.id ?? "",
+            name: call.name ?? "",
             parameters: call.args as Record<string, unknown>,
           });
         }
@@ -164,12 +165,12 @@ function fromModelResponse(
 
     return {
       type: "success",
-      id: response.responseId,
-      model: response.modelVersion,
+      id: response.responseId ?? "",
+      model: response.modelVersion ?? "",
       role: "assistant",
       finishReason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
       content,
-      text: getTextContent(content) ?? "",
+      text: getTextContent(content),
       usage,
       raw: response,
     };

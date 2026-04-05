@@ -587,7 +587,10 @@ describe("stream() tool span details", () => {
     expect(toolSpan.status).toBe("error");
     expect(toolSpan.result?.kind).toBe("tool");
     if (toolSpan.result?.kind === "tool") {
-      expect(toolSpan.result.output).toBeNull();
+      expect(toolSpan.result.output).toEqual({
+        type: "not-found",
+        message: "Tool not found: unknown_tool",
+      });
     }
   });
 
