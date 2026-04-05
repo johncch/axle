@@ -6,8 +6,8 @@
 
 # Build, Test & Lint Commands
 
-- Build: `pnpm run build` (pkgroll with clean-dist and minify)
-- Build (dev): `pnpm run build-dev` (pkgroll with clean-dist, no minify)
+- Build: `pnpm run build` (tsdown with clean-dist and minify)
+- Build (dev): `pnpm run build-dev` (tsdown without minify)
 - Build (watch): `pnpm run build:watch` (for npm link development scenarios)
 - Test all: `pnpm test`
 - Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
