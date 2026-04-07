@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.10.1] - 2026-04-07
+
+- Update distribution artifacts and config
+
 ## [0.10.0] - 2026-04-05
 
 - Agent now emits Turns, with an updated agent interface to match

@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { Command } from "@commander-js/extra-typings";
 import pkg from "../package.json";
 import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
