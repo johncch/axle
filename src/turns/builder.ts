@@ -4,12 +4,27 @@ import type { Stats } from "../types.js";
 import type { AgentEvent } from "./events.js";
 import type {
   InternalToolAction,
+  TimingInfo,
   TextPart,
   ThinkingPart,
   ToolAction,
   Turn,
   TurnPart,
 } from "./types.js";
+
+function startTiming(now = new Date()): TimingInfo {
+  return { start: now.toISOString() };
+}
+
+function completeTiming(timing: TimingInfo | undefined, now = new Date()): TimingInfo {
+  const end = now.toISOString();
+  if (!timing) return { start: end, end };
+
+  return {
+    ...timing,
+    end,
+  };
+}
 
 export class TurnBuilder {
   private currentTurn: Turn | null = null;
@@ -21,26 +36,50 @@ export class TurnBuilder {
   createUserTurn(message: AxleUserMessage): { turn: Turn; events: AgentEvent[] } {
     const turnId = message.id ?? crypto.randomUUID();
     const parts: TurnPart[] = [];
+    const now = new Date();
+    const timing = completeTiming(startTiming(now), now);
+    const instantTiming = () => ({ ...timing });
 
     if (typeof message.content === "string") {
-      parts.push({ id: crypto.randomUUID(), type: "text", text: message.content });
+      parts.push({
+        id: crypto.randomUUID(),
+        type: "text",
+        text: message.content,
+        timing: instantTiming(),
+      });
     } else {
       for (const part of message.content) {
         if (part.type === "text") {
-          parts.push({ id: crypto.randomUUID(), type: "text", text: part.text });
+          parts.push({
+            id: crypto.randomUUID(),
+            type: "text",
+            text: part.text,
+            timing: instantTiming(),
+          });
         } else if (part.type === "file") {
-          parts.push({ id: crypto.randomUUID(), type: "file", file: part.file });
+          parts.push({
+            id: crypto.randomUUID(),
+            type: "file",
+            file: part.file,
+            timing: instantTiming(),
+          });
         }
       }
     }
 
-    const turn: Turn = { id: turnId, owner: "user", parts, status: "complete" };
+    const turn: Turn = { id: turnId, owner: "user", parts, status: "complete", timing };
     return { turn, events: [{ type: "turn:user", turn }] };
   }
 
   startAgentTurn(): { turn: Turn; events: AgentEvent[] } {
     const turnId = crypto.randomUUID();
-    const turn: Turn = { id: turnId, owner: "agent", parts: [], status: "streaming" };
+    const turn: Turn = {
+      id: turnId,
+      owner: "agent",
+      parts: [],
+      status: "streaming",
+      timing: startTiming(),
+    };
     this.currentTurn = turn;
     this.currentTextPart = null;
     this.currentThinkingPart = null;
@@ -64,7 +103,7 @@ export class TurnBuilder {
       case "text:start": {
         this.closeOpenParts(turn, events);
         const partId = crypto.randomUUID();
-        const part: TextPart = { id: partId, type: "text", text: "" };
+        const part: TextPart = { id: partId, type: "text", text: "", timing: startTiming() };
         turn.parts.push(part);
         this.currentTextPart = part;
         events.push({ type: "part:start", turnId: turn.id, part: { ...part } });
@@ -87,7 +126,13 @@ export class TurnBuilder {
       case "text:end": {
         if (this.currentTextPart) {
           this.currentTextPart.text = event.final;
-          events.push({ type: "part:end", turnId: turn.id, partId: this.currentTextPart.id });
+          this.currentTextPart.timing = completeTiming(this.currentTextPart.timing);
+          events.push({
+            type: "part:end",
+            turnId: turn.id,
+            partId: this.currentTextPart.id,
+            timing: this.currentTextPart.timing,
+          });
           this.currentTextPart = null;
         }
         break;
@@ -96,7 +141,12 @@ export class TurnBuilder {
       case "thinking:start": {
         this.closeOpenParts(turn, events);
         const partId = crypto.randomUUID();
-        const part: ThinkingPart = { id: partId, type: "thinking", text: "" };
+        const part: ThinkingPart = {
+          id: partId,
+          type: "thinking",
+          text: "",
+          timing: startTiming(),
+        };
         turn.parts.push(part);
         this.currentThinkingPart = part;
         events.push({ type: "part:start", turnId: turn.id, part: { ...part } });
@@ -119,7 +169,13 @@ export class TurnBuilder {
       case "thinking:end": {
         if (this.currentThinkingPart) {
           this.currentThinkingPart.text = event.final;
-          events.push({ type: "part:end", turnId: turn.id, partId: this.currentThinkingPart.id });
+          this.currentThinkingPart.timing = completeTiming(this.currentThinkingPart.timing);
+          events.push({
+            type: "part:end",
+            turnId: turn.id,
+            partId: this.currentThinkingPart.id,
+            timing: this.currentThinkingPart.timing,
+          });
           this.currentThinkingPart = null;
         }
         break;
@@ -133,6 +189,7 @@ export class TurnBuilder {
           type: "action",
           kind: "tool",
           status: "pending",
+          timing: startTiming(),
           detail: { name: event.name, parameters: {} },
         };
         turn.parts.push(part);
@@ -170,6 +227,7 @@ export class TurnBuilder {
           if (part) {
             if (event.result.type === "success") {
               part.status = "complete";
+              part.timing = completeTiming(part.timing);
               part.detail.result = { type: "success", content: event.result.content };
               events.push({
                 type: "action:complete",
@@ -179,6 +237,7 @@ export class TurnBuilder {
               });
             } else {
               part.status = "error";
+              part.timing = completeTiming(part.timing);
               part.detail.result = { type: "error", error: event.result.error };
               events.push({
                 type: "action:error",
@@ -200,6 +259,7 @@ export class TurnBuilder {
           type: "action",
           kind: "internal-tool",
           status: "running",
+          timing: startTiming(),
           detail: { name: event.name },
         };
         turn.parts.push(part);
@@ -219,6 +279,7 @@ export class TurnBuilder {
           const part = this.findActionPart(turn, mapping.partId) as InternalToolAction | undefined;
           if (part) {
             part.status = "complete";
+            part.timing = completeTiming(part.timing);
             part.detail.result = { type: "success", content: event.output };
             events.push({
               type: "action:complete",
@@ -267,18 +328,37 @@ export class TurnBuilder {
     this.closeOpenParts(turn, events);
     turn.status = outcome;
     turn.usage = { ...this.accumulatedUsage };
-    events.push({ type: "turn:end", turnId: turn.id, status: outcome, usage: turn.usage });
+    turn.timing = completeTiming(turn.timing);
+    events.push({
+      type: "turn:end",
+      turnId: turn.id,
+      status: outcome,
+      usage: turn.usage,
+      timing: turn.timing,
+    });
     this.currentTurn = null;
     return events;
   }
 
   private closeOpenParts(turn: Turn, events: AgentEvent[]) {
     if (this.currentTextPart) {
-      events.push({ type: "part:end", turnId: turn.id, partId: this.currentTextPart.id });
+      this.currentTextPart.timing = completeTiming(this.currentTextPart.timing);
+      events.push({
+        type: "part:end",
+        turnId: turn.id,
+        partId: this.currentTextPart.id,
+        timing: this.currentTextPart.timing,
+      });
       this.currentTextPart = null;
     }
     if (this.currentThinkingPart) {
-      events.push({ type: "part:end", turnId: turn.id, partId: this.currentThinkingPart.id });
+      this.currentThinkingPart.timing = completeTiming(this.currentThinkingPart.timing);
+      events.push({
+        type: "part:end",
+        turnId: turn.id,
+        partId: this.currentThinkingPart.id,
+        timing: this.currentThinkingPart.timing,
+      });
       this.currentThinkingPart = null;
     }
   }

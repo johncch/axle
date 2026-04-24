@@ -1,5 +1,5 @@
 import type { Stats } from "../types.js";
-import type { ActionResult, Turn, TurnPart, TurnStatus } from "./types.js";
+import type { ActionResult, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
 
 export type AgentEvent =
   // Session
@@ -7,12 +7,12 @@ export type AgentEvent =
   // Turn lifecycle
   | { type: "turn:user"; turn: Turn }
   | { type: "turn:start"; turnId: string }
-  | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats }
+  | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats; timing?: TimingInfo }
   // Part streaming
   | { type: "part:start"; turnId: string; part: TurnPart }
   | { type: "text:delta"; turnId: string; partId: string; delta: string }
   | { type: "thinking:delta"; turnId: string; partId: string; delta: string }
-  | { type: "part:end"; turnId: string; partId: string }
+  | { type: "part:end"; turnId: string; partId: string; timing?: TimingInfo }
   // Action lifecycle
   | { type: "action:running"; turnId: string; partId: string; parameters?: Record<string, unknown> }
   | { type: "action:complete"; turnId: string; partId: string; result: ActionResult }

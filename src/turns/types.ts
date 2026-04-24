@@ -3,11 +3,17 @@ import type { FileInfo } from "../utils/file.js";
 
 export type TurnStatus = "streaming" | "complete" | "cancelled" | "error";
 
+export interface TimingInfo {
+  start: string;
+  end?: string;
+}
+
 export interface Turn {
   id: string;
   owner: "user" | "agent";
   parts: TurnPart[];
   status: TurnStatus;
+  timing?: TimingInfo;
   usage?: Stats;
 }
 
@@ -17,12 +23,14 @@ export interface TextPart {
   id: string;
   type: "text";
   text: string;
+  timing?: TimingInfo;
 }
 
 export interface FilePart {
   id: string;
   type: "file";
   file: FileInfo;
+  timing?: TimingInfo;
 }
 
 export interface ThinkingPart {
@@ -31,6 +39,7 @@ export interface ThinkingPart {
   text: string;
   summary?: string;
   redacted?: boolean;
+  timing?: TimingInfo;
 }
 
 interface ActionPartBase {
@@ -38,6 +47,7 @@ interface ActionPartBase {
   type: "action";
   kind: string;
   status: "pending" | "running" | "complete" | "cancelled" | "error";
+  timing?: TimingInfo;
 }
 
 export interface ToolAction extends ActionPartBase {

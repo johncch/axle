@@ -1,9 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { AxleStopReason } from "../../src/providers/types.js";
 import { TurnBuilder } from "../../src/turns/builder.js";
 import type { AgentEvent } from "../../src/turns/events.js";
 
 describe("TurnBuilder", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test("createUserTurn produces user turn and turn:user event", () => {
     const builder = new TurnBuilder();
     const { turn, events } = builder.createUserTurn({
@@ -20,6 +24,24 @@ describe("TurnBuilder", () => {
     expect(events[0].type).toBe("turn:user");
   });
 
+  test("createUserTurn records completed timing for turn and parts", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-23T12:00:00.000Z"));
+
+    const builder = new TurnBuilder();
+    const { turn } = builder.createUserTurn({
+      role: "user",
+      id: "u1",
+      content: [{ type: "text", text: "Hello" }],
+    });
+
+    expect(turn.timing).toEqual({
+      start: "2026-04-23T12:00:00.000Z",
+      end: "2026-04-23T12:00:00.000Z",
+    });
+    expect(turn.parts[0].timing).toEqual(turn.timing);
+  });
+
   test("startAgentTurn produces agent turn and turn:start event", () => {
     const builder = new TurnBuilder();
     const { turn, events } = builder.startAgentTurn();
@@ -29,6 +51,25 @@ describe("TurnBuilder", () => {
     expect(turn.parts).toEqual([]);
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("turn:start");
+  });
+
+  test("finalizeTurn records agent turn duration", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-23T12:00:00.000Z"));
+
+    const builder = new TurnBuilder();
+    const { turn } = builder.startAgentTurn();
+
+    expect(turn.timing).toEqual({ start: "2026-04-23T12:00:00.000Z" });
+
+    vi.advanceTimersByTime(123);
+    const events = builder.finalizeTurn();
+
+    expect(turn.timing).toEqual({
+      start: "2026-04-23T12:00:00.000Z",
+      end: "2026-04-23T12:00:00.123Z",
+    });
+    expect(events[0]).toMatchObject({ type: "turn:end", timing: turn.timing });
   });
 
   test("text streaming produces correct events and builds turn", () => {
@@ -70,6 +111,28 @@ describe("TurnBuilder", () => {
     expect(eventTypes).toContain("part:start");
     expect(eventTypes).toContain("text:delta");
     expect(eventTypes).toContain("part:end");
+  });
+
+  test("text streaming records part timing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-23T12:00:00.000Z"));
+
+    const builder = new TurnBuilder();
+    const { turn } = builder.startAgentTurn();
+
+    builder.handleStreamEvent({ type: "text:start", index: 0 });
+    vi.advanceTimersByTime(75);
+    const events = builder.handleStreamEvent({
+      type: "text:end",
+      index: 0,
+      final: "Hello",
+    });
+
+    expect(turn.parts[0].timing).toEqual({
+      start: "2026-04-23T12:00:00.000Z",
+      end: "2026-04-23T12:00:00.075Z",
+    });
+    expect(events[0]).toMatchObject({ type: "part:end", timing: turn.parts[0].timing });
   });
 
   test("thinking streaming produces correct events", () => {
@@ -145,6 +208,34 @@ describe("TurnBuilder", () => {
       expect(part.status).toBe("complete");
       expect(part.detail.result).toEqual({ type: "success", content: "4" });
     }
+  });
+
+  test("tool call lifecycle records action part timing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-23T12:00:00.000Z"));
+
+    const builder = new TurnBuilder();
+    const { turn } = builder.startAgentTurn();
+
+    builder.handleStreamEvent({
+      type: "tool:request",
+      index: 0,
+      id: "tc1",
+      name: "calculator",
+    });
+    vi.advanceTimersByTime(40);
+    builder.handleStreamEvent({
+      type: "tool:exec-complete",
+      index: 0,
+      id: "tc1",
+      name: "calculator",
+      result: { type: "success", content: "4" },
+    });
+
+    expect(turn.parts[0].timing).toEqual({
+      start: "2026-04-23T12:00:00.000Z",
+      end: "2026-04-23T12:00:00.040Z",
+    });
   });
 
   test("tool call error produces action:error event", () => {
