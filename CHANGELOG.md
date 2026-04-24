@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.11.0] - 2026-04-24
+
+- Added support for OpenAI models
+- Provider models are now exported from the package
+
 ## [0.10.2] - 2026-04-24
 
 - Added timing information to agent/generation output
