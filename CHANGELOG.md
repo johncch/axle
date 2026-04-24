@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.10.2] - 2026-04-24
+
+- Added timing information to agent/generation output
+- Added support for Claude Opus 4.7
+
 ## [0.10.1] - 2026-04-07
 
 - Update distribution artifacts and config
