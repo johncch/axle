@@ -27,25 +27,22 @@ export const MULTIMODAL_MODELS = [
   Models.CLAUDE_OPUS_4_7,
   Models.CLAUDE_SONNET_4_6,
   Models.CLAUDE_OPUS_4_6,
-  Models.CLAUDE_OPUS_4_5_20251101,
-  Models.CLAUDE_SONNET_4_5_20250929,
-  Models.CLAUDE_HAIKU_4_5_20251001,
-  Models.CLAUDE_OPUS_4_1_20250805,
-  Models.CLAUDE_OPUS_4_20250514,
-  Models.CLAUDE_SONNET_4_20250514,
+  Models.CLAUDE_OPUS_4_5,
+  Models.CLAUDE_SONNET_4_5,
+  Models.CLAUDE_HAIKU_4_5,
+  Models.CLAUDE_OPUS_4_1,
+  Models.CLAUDE_OPUS_4,
+  Models.CLAUDE_SONNET_4,
 ] as const;
 
 export const MAX_OUTPUT_TOKENS: Record<string, number> = {
-  // 128K
   [Models.CLAUDE_OPUS_4_7]: 128_000,
   [Models.CLAUDE_OPUS_4_6]: 128_000,
-  // 64K
   [Models.CLAUDE_SONNET_4_6]: 64_000,
   [Models.CLAUDE_OPUS_4_5]: 64_000,
   [Models.CLAUDE_SONNET_4_5]: 64_000,
   [Models.CLAUDE_HAIKU_4_5]: 64_000,
   [Models.CLAUDE_SONNET_4]: 64_000,
-  // 32K
   [Models.CLAUDE_OPUS_4_1]: 32_000,
   [Models.CLAUDE_OPUS_4]: 32_000,
 };
