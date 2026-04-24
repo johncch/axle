@@ -40,6 +40,7 @@ task: |
      create aliases for the model names, i.e. CLAUDE_SONNET_4_5.
   3. Use the cheap models (Haiku, OpenAI 5 mini, Gemini Flash equivalent) as
      the default model
+  4. Don't put comments into the files
 
   Format the output as a single TypeScript file that can be used to replace
   the existing model definitions.

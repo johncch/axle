@@ -5,7 +5,7 @@ import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
 import { arrayify } from "../../utils/utils.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
-import { Models } from "./models.js";
+import { MAX_OUTPUT_TOKENS } from "./models.js";
 import { convertToProviderMessages, convertToProviderTools } from "./utils.js";
 
 export async function* createStreamingRequest(params: {
@@ -84,21 +84,6 @@ export async function* createStreamingRequest(params: {
     };
   }
 }
-
-const MAX_OUTPUT_TOKENS: Record<string, number> = {
-  // 128K
-  [Models.CLAUDE_OPUS_4_6]: 128000,
-  // 64K
-  [Models.CLAUDE_OPUS_4_5_20251101]: 64000,
-  [Models.CLAUDE_HAIKU_4_5_20251001]: 64000,
-  [Models.CLAUDE_SONNET_4_5_20250929]: 64000,
-  [Models.CLAUDE_SONNET_4_20250514]: 64000,
-  // 32K
-  [Models.CLAUDE_OPUS_4_1_20250805]: 32000,
-  [Models.CLAUDE_OPUS_4_20250514]: 32000,
-  // 4K
-  [Models.CLAUDE_3_HAIKU_20240307]: 4096,
-};
 
 export function getMaxTokens(model: string): number {
   if (model in MAX_OUTPUT_TOKENS) return MAX_OUTPUT_TOKENS[model];
