@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./models": {
+      "types": "./dist/providers/models.d.ts",
+      "import": "./dist/providers/models.js"
     }
   },
   "bin": {
