@@ -271,16 +271,16 @@ console.log("code block");
       expect(instruct.schema).toBeUndefined();
     });
 
-    it("should skip output format instructions when no schema", () => {
+    it("emits message untouched when no schema is set", () => {
       const instruct = new Instruct("Hello world");
       const compiled = compileInstruct(instruct);
-      expect(compiled).not.toContain("Output Format Instructions");
+      expect(compiled).toBe("Hello world");
     });
 
     it("should include output format instructions when schema provided", () => {
       const instruct = new Instruct("Hello world", { answer: z.string() });
       const compiled = compileInstruct(instruct);
-      expect(compiled).toContain("Output Format Instructions");
+      expect(compiled).toContain("# Output Format Instructions");
       expect(compiled).toContain("<answer></answer>");
     });
   });

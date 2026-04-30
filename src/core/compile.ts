@@ -22,25 +22,14 @@ export function compileInstruct(
     }
   }
 
-  let instructions = "# Instructions\n\n";
-
   const schemaKeys = instruct.schema ? Object.keys(instruct.schema) : [];
-  if (schemaKeys.length > 0) {
-    instructions += "## Output Format Instructions\n";
-    instructions +=
-      "\nHere is how you should format your output. Follow the instructions strictly.\n";
+  if (schemaKeys.length === 0) return message;
 
-    for (const [key, fieldSchema] of Object.entries(instruct.schema!)) {
-      const [value, example] = zodToExample(fieldSchema as z.ZodTypeAny);
-      instructions += `\n- Use <${key}></${key}> tags to indicate the answer for ${key}. The answer must be a ${value}.\n  Example: <${key}>${JSON.stringify(example)}</${key}>\n`;
-    }
-  }
-
-  if (instruct.instructions.length > 0) {
-    instructions += "\n## Additional Instructions\n\n";
-    for (const instruction of instruct.instructions) {
-      instructions += `- ${instruction}\n`;
-    }
+  let instructions =
+    "# Output Format Instructions\n\nHere is how you should format your output. Follow the instructions strictly.\n";
+  for (const [key, fieldSchema] of Object.entries(instruct.schema!)) {
+    const [value, example] = zodToExample(fieldSchema as z.ZodTypeAny);
+    instructions += `\n- Use <${key}></${key}> tags to indicate the answer for ${key}. The answer must be a ${value}.\n  Example: <${key}>${JSON.stringify(example)}</${key}>\n`;
   }
 
   return instructions + message;
