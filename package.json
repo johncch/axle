@@ -32,7 +32,8 @@
     "test": "vitest run",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
     "update-models": "pnpm start -j ./jobs/bootstrap-models.job.yml",
-    "release": "pnpm test && pnpm run build && npm version"
+    "release": "pnpm test && pnpm run build && npm version",
+    "cut-release": "node scripts/cut-release.mjs"
   },
   "author": "Chong Han Chua",
   "license": "ISC",
