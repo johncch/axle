@@ -23,6 +23,9 @@ function createMockProvider(responses: string[]): AIProvider {
         raw: null,
       };
     },
+    async *createStreamingRequest() {
+      throw new Error("Not implemented");
+    },
   };
 }
 

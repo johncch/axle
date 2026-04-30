@@ -33,48 +33,43 @@ export interface AIProviderConfig {
  General AI Interfaces
  */
 
+export interface ProviderRequestContext {
+  tracer?: TracingContext;
+  fileResolver?: FileResolver;
+}
+
+export interface GenerateTurnOptions {
+  temperature?: number;
+  top_p?: number;
+  max_tokens?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop?: string | string[];
+  [key: string]: any;
+}
+
+export interface GenerationRequestParams {
+  messages: Array<AxleMessage>;
+  system?: string;
+  tools?: Array<ToolDefinition>;
+  context: ProviderRequestContext;
+  options?: GenerateTurnOptions;
+}
+
+export interface StreamingRequestParams extends GenerationRequestParams {
+  signal?: AbortSignal;
+}
+
 export interface AIProvider {
   get name(): string;
 
   /** @internal */
-  createGenerationRequest(
-    model: string,
-    params: {
-      messages: Array<AxleMessage>;
-      system?: string;
-      tools?: Array<ToolDefinition>;
-      context: { tracer?: TracingContext; fileResolver?: FileResolver };
-      options?: {
-        temperature?: number;
-        top_p?: number;
-        max_tokens?: number;
-        frequency_penalty?: number;
-        presence_penalty?: number;
-        stop?: string | string[];
-        [key: string]: any;
-      };
-    },
-  ): Promise<ModelResult>;
+  createGenerationRequest(model: string, params: GenerationRequestParams): Promise<ModelResult>;
 
   /** @internal */
-  createStreamingRequest?(
+  createStreamingRequest(
     model: string,
-    params: {
-      messages: Array<AxleMessage>;
-      system?: string;
-      tools?: Array<ToolDefinition>;
-      context: { tracer?: TracingContext; fileResolver?: FileResolver };
-      signal?: AbortSignal;
-      options?: {
-        temperature?: number;
-        top_p?: number;
-        max_tokens?: number;
-        frequency_penalty?: number;
-        presence_penalty?: number;
-        stop?: string | string[];
-        [key: string]: any;
-      };
-    },
+    params: StreamingRequestParams,
   ): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 

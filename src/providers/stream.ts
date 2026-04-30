@@ -239,7 +239,7 @@ async function run(
 
     const mergedOptions = serverTools ? { ...genOptions, serverTools } : genOptions;
 
-    const streamSource = provider.createStreamingRequest?.(model, {
+    const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
       system,
       tools,
@@ -247,11 +247,6 @@ async function run(
       signal,
       options: mergedOptions,
     });
-
-    if (!streamSource) {
-      turnSpan?.end("error");
-      throw new Error("Provider does not support streaming. Use generate() instead.");
-    }
 
     const turnParts: Array<
       ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool

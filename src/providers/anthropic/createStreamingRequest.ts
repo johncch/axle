@@ -1,32 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
-import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/file.js";
 import { arrayify } from "../../utils/utils.js";
+import { StreamingRequestParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import { MAX_OUTPUT_TOKENS } from "./models.js";
 import { convertToProviderMessages, convertToProviderTools } from "./utils.js";
 
-export async function* createStreamingRequest(params: {
-  client: Anthropic;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext; fileResolver?: FileResolver };
-  signal?: AbortSignal;
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): AsyncGenerator<AnyStreamChunk, void, unknown> {
+export async function* createStreamingRequest(
+  params: StreamingRequestParams & { client: Anthropic; model: string },
+): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, context, signal, options } = params;
   const tracer = context?.tracer;
 

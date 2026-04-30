@@ -27,6 +27,9 @@ export function makeGenerateProvider(responses: Array<ModelResult>): AIProvider 
     async createGenerationRequest(): Promise<ModelResult> {
       return responses[callIndex++];
     },
+    async *createStreamingRequest() {
+      throw new Error("Not implemented");
+    },
   };
 }
 

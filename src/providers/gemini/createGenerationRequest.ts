@@ -1,35 +1,19 @@
 import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
 import {
-  AxleMessage,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
-import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
-import { AxleStopReason, ModelResult } from "../types.js";
+import { redactResolvedFileValues } from "../../utils/file.js";
+import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
 
-export async function createGenerationRequest(params: {
-  client: GoogleGenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext; fileResolver?: FileResolver };
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): Promise<ModelResult> {
+export async function createGenerationRequest(
+  params: GenerationRequestParams & { client: GoogleGenAI; model: string },
+): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
   const tracer = context?.tracer;
 

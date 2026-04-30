@@ -1,32 +1,18 @@
-import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
-import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/file.js";
+import { StreamingRequestParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { type ChatCompletionsProviderOptions, ChatCompletionChunk } from "./types.js";
 import { convertAxleMessages, convertTools } from "./utils.js";
 
-export async function* createStreamingRequest(params: {
-  baseUrl: string;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext; fileResolver?: FileResolver };
-  signal?: AbortSignal;
-  apiKey?: string;
-  providerOptions?: ChatCompletionsProviderOptions;
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): AsyncGenerator<AnyStreamChunk, void, unknown> {
+export async function* createStreamingRequest(
+  params: StreamingRequestParams & {
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+    providerOptions?: ChatCompletionsProviderOptions;
+  },
+): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const {
     baseUrl,
     model,

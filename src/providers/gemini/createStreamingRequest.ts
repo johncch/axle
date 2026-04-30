@@ -1,30 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
-import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
-import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/file.js";
+import { StreamingRequestParams } from "../types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
 
-export async function* createStreamingRequest(params: {
-  client: GoogleGenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext; fileResolver?: FileResolver };
-  signal?: AbortSignal;
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): AsyncGenerator<AnyStreamChunk, void, unknown> {
+export async function* createStreamingRequest(
+  params: StreamingRequestParams & { client: GoogleGenAI; model: string },
+): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const { client, model, messages, system, tools, context, signal, options } = params;
   const tracer = context?.tracer;
 
