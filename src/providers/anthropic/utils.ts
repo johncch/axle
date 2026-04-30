@@ -200,6 +200,22 @@ async function convertFilePart(
   } satisfies Anthropic.DocumentBlockParam;
 }
 
+type AnthropicImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+function toAnthropicImageMediaType(mimeType: string): AnthropicImageMediaType {
+  if (
+    mimeType === "image/jpeg" ||
+    mimeType === "image/png" ||
+    mimeType === "image/gif" ||
+    mimeType === "image/webp"
+  ) {
+    return mimeType;
+  }
+  throw new Error(
+    `Anthropic does not support image MIME type: ${mimeType}. Supported types: image/jpeg, image/png, image/gif, image/webp.`,
+  );
+}
+
 function toAnthropicImageSource(
   resolved: ResolvedFileSource,
   file: FileInfo,
@@ -210,11 +226,7 @@ function toAnthropicImageSource(
   if (resolved.type === "base64") {
     return {
       type: "base64",
-      media_type: (resolved.mimeType ?? file.mimeType) as
-        | "image/jpeg"
-        | "image/png"
-        | "image/gif"
-        | "image/webp",
+      media_type: toAnthropicImageMediaType(resolved.mimeType ?? file.mimeType),
       data: resolved.data,
     };
   }
