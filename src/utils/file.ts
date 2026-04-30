@@ -150,33 +150,31 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 export type FileKind = "image" | "document" | "text";
 
-export type FileSource =
-  | { type: "base64"; data: string }
+type TextSource =
   | { type: "text"; content: string }
   | { type: "url"; url: string }
   | { type: "ref"; ref: unknown };
 
-export interface FileInfo {
-  kind: FileKind;
+type BinarySource =
+  | { type: "base64"; data: string }
+  | { type: "url"; url: string }
+  | { type: "ref"; ref: unknown };
+
+interface BaseFile {
   mimeType: string;
   name: string;
   size?: number;
-  source: FileSource;
 }
 
-export type Base64FileInfo = FileInfo & {
-  kind: "image" | "document";
-  source: { type: "base64"; data: string };
-};
+export type TextFileInfo = BaseFile & { kind: "text"; source: TextSource };
+export type BinaryFileInfo = BaseFile & { kind: "image" | "document"; source: BinarySource };
 
-export type TextFileInfo = FileInfo & {
-  kind: "text";
-  source: { type: "text"; content: string };
-};
+export type FileInfo = TextFileInfo | BinaryFileInfo;
 
-export type DeferredFileInfo = FileInfo & {
-  source: { type: "ref"; ref: unknown };
-};
+export type InlineTextFile = TextFileInfo & { source: { type: "text"; content: string } };
+export type InlineBinaryFile = BinaryFileInfo & { source: { type: "base64"; data: string } };
+
+export type DeferredFileInfo = FileInfo & { source: { type: "ref"; ref: unknown } };
 
 export type FileProviderId = "anthropic" | "openai" | "gemini" | "chatcompletions";
 export type FilePurpose = "user-message" | "tool-result";
@@ -209,20 +207,6 @@ export interface ResolveFileSourceOptions {
   resolver?: FileResolver;
   signal?: AbortSignal;
   memo?: FileResolutionMemo;
-}
-
-export function isTextFileInfo(fileInfo: FileInfo): fileInfo is TextFileInfo {
-  return fileInfo.kind === "text" && fileInfo.source.type === "text";
-}
-
-export function isBase64FileInfo(fileInfo: FileInfo): fileInfo is Base64FileInfo {
-  return (
-    (fileInfo.kind === "image" || fileInfo.kind === "document") && fileInfo.source.type === "base64"
-  );
-}
-
-export function isDeferredFileInfo(fileInfo: FileInfo): fileInfo is DeferredFileInfo {
-  return fileInfo.source.type === "ref";
 }
 
 export async function resolveFileSource(
@@ -383,11 +367,11 @@ export function getEncodingForFile(filePath: string): "utf-8" | "base64" {
  * @returns FileInfo object with appropriate content based on encoding
  */
 export async function loadFileContent(filePath: string): Promise<FileInfo>;
-export async function loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
+export async function loadFileContent(filePath: string, encoding: "utf-8"): Promise<InlineTextFile>;
 export async function loadFileContent(
   filePath: string,
   encoding: "base64",
-): Promise<Base64FileInfo>;
+): Promise<InlineBinaryFile>;
 export async function loadFileContent(
   filePath: string,
   encoding?: "utf-8" | "base64",

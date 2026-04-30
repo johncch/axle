@@ -1,4 +1,4 @@
-import { type FileInfo, isTextFileInfo } from "../utils/file.js";
+import type { FileInfo } from "../utils/file.js";
 import type { OutputSchema } from "./parse.js";
 
 export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
@@ -28,7 +28,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
       this.textReferences.push({ content: file, name: options?.name });
       return;
     }
-    if (isTextFileInfo(file)) {
+    if (file.kind === "text" && file.source.type === "text") {
       this.textReferences.push({ content: file.source.content, name: options?.name ?? file.name });
       return;
     }

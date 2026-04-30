@@ -104,7 +104,6 @@ export type {
   FileResolveFormat,
   FileResolveRequest,
   FileResolver,
-  FileSource,
   ResolvedFileSource,
 } from "./utils/file.js";
 export { createHandle } from "./utils/utils.js";
