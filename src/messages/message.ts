@@ -1,7 +1,11 @@
 import { AxleStopReason } from "../providers/types.js";
-import { FileInfo } from "../utils/file.js";
+import { ConcreteFileInfo, FileInfo } from "../utils/file.js";
 
 export type AxleMessage = AxleUserMessage | AxleAssistantMessage | AxleToolCallMessage;
+
+export type ToolResultPart =
+  | { type: "text"; text: string }
+  | { type: "file"; file: ConcreteFileInfo };
 
 export interface AxleUserMessage {
   role: "user";
@@ -25,8 +29,6 @@ export interface AxleToolCallMessage {
   id: string;
   content: Array<AxleToolCallResult>;
 }
-
-export type ToolResultPart = { type: "text"; text: string } | { type: "file"; file: FileInfo };
 
 export interface AxleToolCallResult {
   id: string;

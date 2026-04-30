@@ -161,6 +161,10 @@ export type InlineBinaryFile = BinaryFileInfo & { source: { type: "base64"; data
 
 export type DeferredFileInfo = FileInfo & { source: { type: "ref"; ref: unknown } };
 
+export type ConcreteFileInfo = FileInfo & {
+  source: { type: "text" } | { type: "base64" } | { type: "url" };
+};
+
 export type FileProviderId = "anthropic" | "openai" | "gemini" | "chatcompletions";
 export type FilePurpose = "user-message" | "tool-result";
 export type FileResolveFormat = "base64" | "url" | "text" | "gemini-file-uri";
@@ -177,7 +181,6 @@ export interface FileResolveRequest {
   provider: FileProviderId;
   model: string;
   accepted: FileResolveFormat[];
-  purpose: FilePurpose;
   signal?: AbortSignal;
 }
 
@@ -221,7 +224,6 @@ export async function resolveFileSource(
     provider: options.provider,
     model: options.model,
     accepted: options.accepted,
-    purpose: options.purpose,
     signal: options.signal,
   });
   return assertAccepted(resolved, file, options);
