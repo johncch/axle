@@ -4,7 +4,7 @@ import { convertAxleMessageToResponseInput } from "../../../../src/providers/ope
 
 describe("responsesAPI utils", () => {
   describe("convertAxleMessageToResponseInput", () => {
-    test("should convert simple user message", () => {
+    test("should convert simple user message", async () => {
       const messages = [
         {
           role: "user" as const,
@@ -12,7 +12,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
@@ -21,7 +21,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should convert assistant message with text content", () => {
+    test("should convert assistant message with text content", async () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -35,7 +35,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
@@ -44,7 +44,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should skip thinking content in assistant messages", () => {
+    test("should skip thinking content in assistant messages", async () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -58,12 +58,12 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(0);
     });
 
-    test("should convert assistant message with both thinking and text content, skipping thinking", () => {
+    test("should convert assistant message with both thinking and text content, skipping thinking", async () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -81,7 +81,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
@@ -90,7 +90,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should skip multiple thinking blocks, keep text", () => {
+    test("should skip multiple thinking blocks, keep text", async () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -112,7 +112,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
@@ -121,7 +121,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should convert assistant message with tool calls", () => {
+    test("should convert assistant message with tool calls", async () => {
       const messages = [
         {
           role: "assistant" as const,
@@ -141,7 +141,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
@@ -156,7 +156,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should convert tool message", () => {
+    test("should convert tool message", async () => {
       const messages = [
         {
           role: "tool" as const,
@@ -171,7 +171,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
@@ -181,7 +181,7 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should convert user message with file content", () => {
+    test("should convert user message with file content", async () => {
       const messages = [
         {
           role: "user" as const,
@@ -193,20 +193,21 @@ describe("responsesAPI utils", () => {
             {
               type: "file" as const,
               file: {
-                type: "image" as const,
-                path: "test.png",
+                kind: "image" as const,
                 name: "test.png",
                 mimeType: "image/png",
                 size: 100,
-                base64:
-                  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                source: {
+                  type: "base64" as const,
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                },
               },
             },
           ],
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
@@ -225,7 +226,84 @@ describe("responsesAPI utils", () => {
       });
     });
 
-    test("should handle mixed conversation with thinking (thinking skipped)", () => {
+    test("should convert user message with PDF document as data URL", async () => {
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "Summarize this.",
+            },
+            {
+              type: "file" as const,
+              file: {
+                kind: "document" as const,
+                name: "doc.pdf",
+                mimeType: "application/pdf",
+                size: 100,
+                source: {
+                  type: "base64" as const,
+                  data: "JVBERi0xLjQK",
+                },
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = await convertAxleMessageToResponseInput(messages);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        role: "user",
+        content: [
+          { type: "input_text", text: "Summarize this." },
+          {
+            type: "input_file",
+            filename: "doc.pdf",
+            file_data: "data:application/pdf;base64,JVBERi0xLjQK",
+          },
+        ],
+      });
+    });
+
+    test("should pass through PDF document URL", async () => {
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "file" as const,
+              file: {
+                kind: "document" as const,
+                name: "doc.pdf",
+                mimeType: "application/pdf",
+                source: {
+                  type: "url" as const,
+                  url: "https://example.com/doc.pdf",
+                },
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = await convertAxleMessageToResponseInput(messages);
+
+      expect(result[0]).toMatchObject({
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            filename: "doc.pdf",
+            file_url: "https://example.com/doc.pdf",
+          },
+        ],
+      });
+    });
+
+    test("should handle mixed conversation with thinking (thinking skipped)", async () => {
       const messages = [
         {
           role: "user" as const,
@@ -247,7 +325,7 @@ describe("responsesAPI utils", () => {
         },
       ];
 
-      const result = convertAxleMessageToResponseInput(messages);
+      const result = await convertAxleMessageToResponseInput(messages);
 
       expect(result).toHaveLength(2);
 

@@ -113,21 +113,6 @@ export function pathToComponents(fullpath: string): FilePathInfo | null {
   return null;
 }
 
-export async function fileExists({
-  baseName,
-  directory = ".",
-}: {
-  baseName: string;
-  directory?: string;
-}): Promise<boolean> {
-  try {
-    const files = await glob(`${directory}/${baseName}.*`);
-    return files.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 // Function to ensure the directory exists
 export async function ensureDirectoryExistence(filePath: string) {
   const dirName = dirname(filePath);
@@ -148,34 +133,118 @@ export async function writeFileWithDirectories({
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
-export interface FileInfo {
-  path: string;
-  base64?: string;
-  content?: string;
+export type FileKind = "image" | "document" | "text";
+
+type TextSource =
+  | { type: "text"; content: string }
+  | { type: "url"; url: string }
+  | { type: "ref"; ref: unknown };
+
+type BinarySource =
+  | { type: "base64"; data: string }
+  | { type: "url"; url: string }
+  | { type: "ref"; ref: unknown };
+
+interface BaseFile {
   mimeType: string;
-  size: number;
   name: string;
-  type: "image" | "document" | "text";
+  size?: number;
 }
 
-export type TextFileInfo = FileInfo & {
-  content: string;
-  base64?: never;
-  type: "text";
+export type TextFileInfo = BaseFile & { kind: "text"; source: TextSource };
+export type BinaryFileInfo = BaseFile & { kind: "image" | "document"; source: BinarySource };
+
+export type FileInfo = TextFileInfo | BinaryFileInfo;
+
+export type InlineTextFile = TextFileInfo & { source: { type: "text"; content: string } };
+export type InlineBinaryFile = BinaryFileInfo & { source: { type: "base64"; data: string } };
+
+export type DeferredFileInfo = FileInfo & { source: { type: "ref"; ref: unknown } };
+
+export type ConcreteFileInfo = FileInfo & {
+  source: { type: "text" } | { type: "base64" } | { type: "url" };
 };
 
-export type Base64FileInfo = FileInfo & {
-  base64: string;
-  content?: never;
-  type: "image" | "document";
-};
+export type FileProviderId = "anthropic" | "openai" | "gemini" | "chatcompletions";
+export type FilePurpose = "user-message" | "tool-result";
+export type FileResolveFormat = "base64" | "url" | "text" | "gemini-file-uri";
 
-export function isTextFileInfo(fileInfo: FileInfo): fileInfo is TextFileInfo {
-  return fileInfo.type === "text";
+export type ResolvedFileSource =
+  | { type: "base64"; data: string; mimeType?: string; name?: string }
+  | { type: "url"; url: string; mimeType?: string; name?: string }
+  | { type: "text"; content: string; mimeType?: string; name?: string }
+  | { type: "gemini-file-uri"; uri: string; mimeType?: string; name?: string };
+
+export interface FileResolveRequest {
+  file: DeferredFileInfo;
+  ref: unknown;
+  provider: FileProviderId;
+  model: string;
+  accepted: FileResolveFormat[];
+  signal?: AbortSignal;
 }
 
-export function isBase64FileInfo(fileInfo: FileInfo): fileInfo is Base64FileInfo {
-  return fileInfo.type === "image" || fileInfo.type === "document";
+export type FileResolver = (request: FileResolveRequest) => Promise<ResolvedFileSource>;
+
+export interface ResolveFileSourceOptions {
+  provider: FileProviderId;
+  model: string;
+  accepted: FileResolveFormat[];
+  purpose: FilePurpose;
+  resolver?: FileResolver;
+  signal?: AbortSignal;
+}
+
+export async function resolveFileSource(
+  file: FileInfo,
+  options: ResolveFileSourceOptions,
+): Promise<ResolvedFileSource> {
+  if (options.signal?.aborted) {
+    throw new DOMException("File resolution aborted", "AbortError");
+  }
+
+  const { source } = file;
+  if (source.type === "base64") {
+    return assertAccepted({ type: "base64", data: source.data }, file, options);
+  }
+  if (source.type === "text") {
+    return assertAccepted({ type: "text", content: source.content }, file, options);
+  }
+  if (source.type === "url") {
+    return assertAccepted({ type: "url", url: source.url }, file, options);
+  }
+
+  if (!options.resolver) {
+    throw new Error(`No fileResolver configured for deferred file: ${file.name}`);
+  }
+
+  const resolved = await options.resolver({
+    file: file as DeferredFileInfo,
+    ref: source.ref,
+    provider: options.provider,
+    model: options.model,
+    accepted: options.accepted,
+    signal: options.signal,
+  });
+  return assertAccepted(resolved, file, options);
+}
+
+function assertAccepted(
+  resolved: ResolvedFileSource,
+  file: FileInfo,
+  options: ResolveFileSourceOptions,
+): ResolvedFileSource {
+  if (options.accepted.includes(resolved.type)) {
+    return {
+      ...resolved,
+      mimeType: resolved.mimeType ?? file.mimeType,
+      name: resolved.name ?? file.name,
+    };
+  }
+
+  throw new Error(
+    `File source '${resolved.type}' is not supported for ${options.provider} ${file.kind} file '${file.name}'. Accepted: ${options.accepted.join(", ")}`,
+  );
 }
 
 /**
@@ -194,7 +263,7 @@ function isTextLikeMimeType(mimeType: string): boolean {
 }
 
 function getFileCategory(filePath: string): {
-  type: "image" | "document" | "text";
+  kind: FileKind;
   mimeType: string;
 } {
   const mimeType = mime.getType(filePath);
@@ -204,11 +273,11 @@ function getFileCategory(filePath: string): {
   }
 
   if (mimeType.startsWith("image/")) {
-    return { type: "image", mimeType };
+    return { kind: "image", mimeType };
   } else if (mimeType === "application/pdf") {
-    return { type: "document", mimeType };
+    return { kind: "document", mimeType };
   } else if (isTextLikeMimeType(mimeType)) {
-    return { type: "text", mimeType };
+    return { kind: "text", mimeType };
   } else {
     const ext = extname(filePath).toLowerCase();
     throw new Error(`Unsupported file type: ${ext} (${mimeType})`);
@@ -219,8 +288,8 @@ function getFileCategory(filePath: string): {
  * Detect the appropriate encoding for a file based on its mime type
  */
 export function getEncodingForFile(filePath: string): "utf-8" | "base64" {
-  const { type } = getFileCategory(filePath);
-  return type === "text" ? "utf-8" : "base64";
+  const { kind } = getFileCategory(filePath);
+  return kind === "text" ? "utf-8" : "base64";
 }
 
 /**
@@ -230,11 +299,11 @@ export function getEncodingForFile(filePath: string): "utf-8" | "base64" {
  * @returns FileInfo object with appropriate content based on encoding
  */
 export async function loadFileContent(filePath: string): Promise<FileInfo>;
-export async function loadFileContent(filePath: string, encoding: "utf-8"): Promise<TextFileInfo>;
+export async function loadFileContent(filePath: string, encoding: "utf-8"): Promise<InlineTextFile>;
 export async function loadFileContent(
   filePath: string,
   encoding: "base64",
-): Promise<Base64FileInfo>;
+): Promise<InlineBinaryFile>;
 export async function loadFileContent(
   filePath: string,
   encoding?: "utf-8" | "base64",
@@ -255,25 +324,24 @@ export async function loadFileContent(
 
   const fileName = resolvedPath.split("/").pop() || "";
   const category = getFileCategory(resolvedPath);
-  const actualEncoding = encoding || (category.type === "text" ? "utf-8" : "base64");
+  const actualEncoding = encoding || (category.kind === "text" ? "utf-8" : "base64");
 
   if (actualEncoding === "utf-8") {
-    if (category.type !== "text") {
-      throw new Error(`Cannot read ${category.type} file as text: ${filePath}`);
+    if (category.kind !== "text") {
+      throw new Error(`Cannot read ${category.kind} file as text: ${filePath}`);
     }
 
     const content = await readFile(resolvedPath, "utf-8");
 
     return {
-      path: resolvedPath,
-      content,
+      kind: "text",
       mimeType: category.mimeType,
       size: stats.size,
       name: fileName,
-      type: "text",
+      source: { type: "text", content },
     };
   } else {
-    if (category.type === "text") {
+    if (category.kind === "text") {
       throw new Error(`Cannot read text file as binary: ${filePath}`);
     }
 
@@ -281,12 +349,11 @@ export async function loadFileContent(
     const base64 = fileBuffer.toString("base64");
 
     return {
-      path: resolvedPath,
-      base64,
+      kind: category.kind,
       mimeType: category.mimeType,
       size: stats.size,
       name: fileName,
-      type: category.type,
+      source: { type: "base64", data: base64 },
     };
   }
 }

@@ -1,31 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
-import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
+import { StreamingRequestParams } from "../types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
 
-export async function* createStreamingRequest(params: {
-  client: GoogleGenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  runtime: { tracer?: TracingContext };
-  signal?: AbortSignal;
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, runtime, signal, options } = params;
-  const tracer = runtime?.tracer;
+export async function* createStreamingRequest(
+  params: StreamingRequestParams & { client: GoogleGenAI; model: string },
+): AsyncGenerator<AnyStreamChunk, void, unknown> {
+  const { client, model, messages, system, tools, context, signal, options } = params;
+  const tracer = context?.tracer;
 
   // Extract serverTools before option conversion
   const { serverTools, ...rawOptions } = options ?? {};
@@ -63,15 +47,21 @@ export async function* createStreamingRequest(params: {
     }
   }
 
-  const request = {
-    contents: convertAxleMessagesToGemini(messages),
-    config,
-  };
-  tracer?.debug("Gemini streaming request", { request });
-
   const streamingAdapter = createGeminiStreamingAdapter();
 
   try {
+    const contents = await convertAxleMessagesToGemini(messages, {
+      model,
+      fileResolver: context?.fileResolver,
+      signal,
+    });
+
+    const request = {
+      contents,
+      config,
+    };
+    tracer?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
+
     const stream = await client.models.generateContentStream({
       model,
       ...request,

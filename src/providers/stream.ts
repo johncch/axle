@@ -10,6 +10,7 @@ import type {
 import type { ServerTool, ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
+import type { FileResolver } from "../utils/file.js";
 import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
@@ -71,6 +72,7 @@ export interface StreamOptions {
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
+  fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
   signal?: AbortSignal;
 }
@@ -140,6 +142,7 @@ async function run(
     onToolCall,
     maxIterations,
     tracer,
+    fileResolver,
     options: genOptions,
   } = options;
   const workingMessages = [...messages];
@@ -236,19 +239,14 @@ async function run(
 
     const mergedOptions = serverTools ? { ...genOptions, serverTools } : genOptions;
 
-    const streamSource = provider.createStreamingRequest?.(model, {
+    const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
       system,
       tools,
-      context: { tracer: turnSpan },
+      context: { tracer: turnSpan, fileResolver },
       signal,
       options: mergedOptions,
     });
-
-    if (!streamSource) {
-      turnSpan?.end("error");
-      throw new Error("Provider does not support streaming. Use generate() instead.");
-    }
 
     const turnParts: Array<
       ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool

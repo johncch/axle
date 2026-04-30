@@ -3,6 +3,12 @@ import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { ToolDefinition } from "../../tools/types.js";
+import {
+  type FileInfo,
+  type FileResolver,
+  type ResolvedFileSource,
+  resolveFileSource,
+} from "../../utils/file.js";
 
 /* To Request */
 
@@ -19,37 +25,54 @@ export function prepareTools(tools?: Array<ToolDefinition>) {
   return undefined;
 }
 
-export function convertAxleMessageToResponseInput(messages: AxleMessage[]): ResponseInput {
-  return messages.map(convertMessage).flat(1);
+interface OpenAIConversionContext {
+  model: string;
+  fileResolver?: FileResolver;
+  signal?: AbortSignal;
 }
 
-function convertMessage(msg: AxleMessage): ResponseInput[number] | ResponseInput {
+export async function convertAxleMessageToResponseInput(
+  messages: AxleMessage[],
+  context: OpenAIConversionContext = { model: "" },
+): Promise<ResponseInput> {
+  const converted = await Promise.all(messages.map((msg) => convertMessage(msg, context)));
+  return converted.flat(1);
+}
+
+async function convertMessage(
+  msg: AxleMessage,
+  context: OpenAIConversionContext,
+): Promise<ResponseInput[number] | ResponseInput> {
   switch (msg.role) {
     case "tool":
-      return convertToolMessage(msg);
+      return convertToolMessage(msg, context);
     case "assistant":
       return convertAssistantMessage(msg);
     default:
-      return convertUserMessage(msg);
+      return convertUserMessage(msg, context);
   }
 }
 
-function convertToolMessage(msg: AxleMessage & { role: "tool" }) {
-  return msg.content.map((r) => ({
-    type: "function_call_output" as const,
-    call_id: r.id,
-    output:
-      typeof r.content === "string"
-        ? r.content
-        : r.content.map((part) =>
-            part.type === "text"
-              ? { type: "input_text" as const, text: part.text }
-              : {
-                  type: "input_image" as const,
-                  image_url: `data:${part.mimeType};base64,${part.data}`,
-                },
-          ),
-  }));
+async function convertToolMessage(
+  msg: AxleMessage & { role: "tool" },
+  context: OpenAIConversionContext,
+) {
+  return Promise.all(
+    msg.content.map(async (r) => ({
+      type: "function_call_output" as const,
+      call_id: r.id,
+      output:
+        typeof r.content === "string"
+          ? r.content
+          : await Promise.all(
+              r.content.map((part) =>
+                part.type === "text"
+                  ? Promise.resolve({ type: "input_text" as const, text: part.text })
+                  : convertFilePart(part.file, context, "tool-result"),
+              ),
+            ),
+    })),
+  );
 }
 
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): ResponseInput {
@@ -85,14 +108,19 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
   return result;
 }
 
-function convertUserMessage(msg: AxleMessage & { role: "user" }) {
+async function convertUserMessage(
+  msg: AxleMessage & { role: "user" },
+  context: OpenAIConversionContext,
+) {
   if (typeof msg.content === "string") {
     return {
       role: msg.role,
       content: msg.content,
     };
   } else {
-    const content = msg.content.map(convertContentPart).filter((item) => item !== null);
+    const content = (
+      await Promise.all(msg.content.map((part) => convertContentPart(part, context)))
+    ).filter((item) => item !== null);
 
     return {
       role: msg.role,
@@ -101,7 +129,7 @@ function convertUserMessage(msg: AxleMessage & { role: "user" }) {
   }
 }
 
-function convertContentPart(item: ContentPart) {
+async function convertContentPart(item: ContentPart, context: OpenAIConversionContext) {
   if (item.type === "text") {
     return {
       type: "input_text" as const,
@@ -110,25 +138,90 @@ function convertContentPart(item: ContentPart) {
   }
 
   if (item.type === "file") {
-    if (item.file.type === "image") {
-      return {
-        type: "input_image" as const,
-        image_url: `data:${item.file.mimeType};base64,${item.file.base64}`,
-        detail: "auto" as const,
-      };
-    }
-
-    if (item.file.type === "document") {
-      return {
-        type: "input_file" as const,
-        filename: item.file.path,
-        file_data: `data:${item.file.mimeType};base64,${item.file.base64}`,
-      };
-    }
+    return convertFilePart(item.file, context, "user-message");
   }
   if (item.type === "thinking") {
     return null;
   }
 
   return null;
+}
+
+async function convertFilePart(
+  file: FileInfo,
+  context: OpenAIConversionContext,
+  purpose: "user-message" | "tool-result",
+) {
+  if (file.kind === "image") {
+    const resolved = await resolveFileSource(file, {
+      provider: "openai",
+      model: context.model,
+      accepted: ["url", "base64"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+    });
+    return {
+      type: "input_image" as const,
+      image_url: resolvedToImageUrl(resolved, file),
+      detail: "auto" as const,
+    };
+  }
+
+  if (file.kind === "document") {
+    if (file.mimeType !== "application/pdf") {
+      throw new Error(
+        `OpenAI file inputs currently support PDF documents. Received ${file.mimeType}`,
+      );
+    }
+    const resolved = await resolveFileSource(file, {
+      provider: "openai",
+      model: context.model,
+      accepted: ["url", "base64"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+    });
+    return resolvedToInputFile(resolved, file);
+  }
+
+  const resolved = await resolveFileSource(file, {
+    provider: "openai",
+    model: context.model,
+    accepted: ["text", "url", "base64"],
+    purpose,
+    resolver: context.fileResolver,
+    signal: context.signal,
+  });
+
+  if (resolved.type === "text") {
+    return { type: "input_text" as const, text: resolved.content };
+  }
+  return resolvedToInputFile(resolved, file);
+}
+
+function resolvedToImageUrl(resolved: ResolvedFileSource, file: FileInfo): string {
+  if (resolved.type === "url") return resolved.url;
+  if (resolved.type === "base64") {
+    return `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`;
+  }
+  throw new Error(`Unsupported OpenAI image source: ${resolved.type}`);
+}
+
+function resolvedToInputFile(resolved: ResolvedFileSource, file: FileInfo) {
+  if (resolved.type === "url") {
+    return {
+      type: "input_file" as const,
+      filename: resolved.name ?? file.name,
+      file_url: resolved.url,
+    };
+  }
+  if (resolved.type === "base64") {
+    return {
+      type: "input_file" as const,
+      filename: resolved.name ?? file.name,
+      file_data: `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`,
+    };
+  }
+  throw new Error(`Unsupported OpenAI file source: ${resolved.type}`);
 }

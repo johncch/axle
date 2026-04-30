@@ -1,34 +1,19 @@
 import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
 import {
-  AxleMessage,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
-import { AxleStopReason, ModelResult } from "../types.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
+import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
 
-export async function createGenerationRequest(params: {
-  client: GoogleGenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext };
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): Promise<ModelResult> {
+export async function createGenerationRequest(
+  params: GenerationRequestParams & { client: GoogleGenAI; model: string },
+): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
   const tracer = context?.tracer;
 
@@ -51,14 +36,19 @@ export async function createGenerationRequest(params: {
     delete googleOptions.top_p;
   }
 
-  const request = {
-    contents: convertAxleMessagesToGemini(messages),
-    config: prepareConfig(tools, system, googleOptions),
-  };
-  tracer?.debug("Gemini request", { request });
-
   let result: ModelResult;
   try {
+    const contents = await convertAxleMessagesToGemini(messages, {
+      model,
+      fileResolver: context?.fileResolver,
+    });
+
+    const request = {
+      contents,
+      config: prepareConfig(tools, system, googleOptions),
+    };
+    tracer?.debug("Gemini request", { request: redactResolvedFileValues(request) });
+
     const response = await client.models.generateContent({
       model,
       ...request,
@@ -75,9 +65,9 @@ export async function createGenerationRequest(params: {
 
 function fromModelResponse(
   response: GenerateContentResponse,
-  runtime: { tracer?: TracingContext },
+  context: { tracer?: TracingContext },
 ): ModelResult {
-  const { tracer } = runtime;
+  const { tracer } = context;
 
   const inTokens = response.usageMetadata?.promptTokenCount ?? 0;
   const totalTokens = response.usageMetadata?.totalTokenCount ?? inTokens;

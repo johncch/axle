@@ -83,7 +83,15 @@ function formatToolResult(content: McpContent[]): string | ToolResultPart[] {
         return { type: "text" as const, text: c.text };
       }
       const img = c as { type: "image"; data: string; mimeType: string };
-      return { type: "image" as const, data: img.data, mimeType: img.mimeType };
+      return {
+        type: "file" as const,
+        file: {
+          kind: "image" as const,
+          mimeType: img.mimeType,
+          name: "mcp-image",
+          source: { type: "base64" as const, data: img.data },
+        },
+      };
     });
 }
 

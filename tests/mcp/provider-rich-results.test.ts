@@ -25,15 +25,23 @@ describe("Provider rich tool result conversion", () => {
         name: "test_tool",
         content: [
           { type: "text", text: "Here is the image:" },
-          { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+          {
+            type: "file",
+            file: {
+              kind: "image",
+              mimeType: "image/png",
+              name: "tool-image.png",
+              source: { type: "base64", data: "iVBORw0KGgo=" },
+            },
+          },
         ],
       },
     ],
   };
 
   describe("Anthropic", () => {
-    test("converts text-only tool result unchanged", () => {
-      const result = convertToProviderMessages([textOnlyToolMsg]);
+    test("converts text-only tool result unchanged", async () => {
+      const result = await convertToProviderMessages([textOnlyToolMsg]);
       expect(result).toHaveLength(1);
       const msg = result[0];
       expect(msg.role).toBe("user");
@@ -43,8 +51,8 @@ describe("Provider rich tool result conversion", () => {
       expect(content.content).toBe("plain text result");
     });
 
-    test("converts rich tool result to content blocks", () => {
-      const result = convertToProviderMessages([richToolMsg]);
+    test("converts rich tool result to content blocks", async () => {
+      const result = await convertToProviderMessages([richToolMsg]);
       expect(result).toHaveLength(1);
       const msg = result[0];
       const toolResult = (msg as any).content[0];
@@ -67,8 +75,8 @@ describe("Provider rich tool result conversion", () => {
   });
 
   describe("OpenAI Responses API", () => {
-    test("converts text-only tool result unchanged", () => {
-      const result = convertAxleMessageToResponseInput([textOnlyToolMsg]);
+    test("converts text-only tool result unchanged", async () => {
+      const result = await convertAxleMessageToResponseInput([textOnlyToolMsg]);
       expect(result).toHaveLength(1);
       const msg = result[0] as any;
       expect(msg.type).toBe("function_call_output");
@@ -76,8 +84,8 @@ describe("Provider rich tool result conversion", () => {
       expect(msg.output).toBe("plain text result");
     });
 
-    test("converts rich tool result to content array", () => {
-      const result = convertAxleMessageToResponseInput([richToolMsg]);
+    test("converts rich tool result to content array", async () => {
+      const result = await convertAxleMessageToResponseInput([richToolMsg]);
       expect(result).toHaveLength(1);
       const msg = result[0] as any;
       expect(msg.type).toBe("function_call_output");
@@ -87,6 +95,7 @@ describe("Provider rich tool result conversion", () => {
       expect(msg.output[1]).toEqual({
         type: "input_image",
         image_url: "data:image/png;base64,iVBORw0KGgo=",
+        detail: "auto",
       });
     });
   });

@@ -22,9 +22,8 @@ import { AxleStopReason } from "../../src/providers/types.js";
 function makeProvider(opts: {
   streamChunks?: AnyStreamChunk[][];
   streamFactory?: () => AsyncGenerator<AnyStreamChunk, void, unknown>;
-  supportsStreaming?: boolean;
 }): AIProvider {
-  const { streamChunks, streamFactory, supportsStreaming = true } = opts;
+  const { streamChunks, streamFactory } = opts;
   let streamCallIndex = 0;
 
   const provider: AIProvider = {
@@ -34,19 +33,16 @@ function makeProvider(opts: {
     async createGenerationRequest(_model: string) {
       throw new Error("Not implemented");
     },
+    createStreamingRequest: streamFactory
+      ? ((() => streamFactory()) as any)
+      : (function* (_model: string) {
+          const chunks = streamChunks?.[streamCallIndex++];
+          if (!chunks) throw new Error("No stream chunks configured");
+          for (const chunk of chunks) {
+            yield chunk;
+          }
+        } as any),
   };
-
-  if (supportsStreaming && streamFactory) {
-    provider.createStreamingRequest = (() => streamFactory()) as any;
-  } else if (supportsStreaming && streamChunks) {
-    provider.createStreamingRequest = function* (_model: string) {
-      const chunks = streamChunks[streamCallIndex++];
-      if (!chunks) throw new Error("No stream chunks configured");
-      for (const chunk of chunks) {
-        yield chunk;
-      }
-    } as any;
-  }
 
   return provider;
 }
@@ -595,16 +591,6 @@ describe("stream()", () => {
       expect(final.result).toBe("error");
       if (final.result !== "error") return;
       expect(final.error.type).toBe("model");
-    });
-  });
-
-  describe("non-streaming provider", () => {
-    test("throws when provider has no createStreamingRequest", async () => {
-      const provider = makeProvider({ supportsStreaming: false });
-
-      const result = stream({ provider, model: "test-model", messages: [] });
-
-      await expect(result.final).rejects.toThrow("Provider does not support streaming");
     });
   });
 

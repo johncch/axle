@@ -1,10 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AxleMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
-import { AxleStopReason, ModelResult } from "../types.js";
+import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
   convertStopReason,
@@ -13,41 +11,32 @@ import {
   convertToProviderTools,
 } from "./utils.js";
 
-export async function createGenerationRequest(params: {
-  client: Anthropic;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context?: { tracer?: TracingContext };
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): Promise<ModelResult> {
+export async function createGenerationRequest(
+  params: GenerationRequestParams & { client: Anthropic; model: string },
+): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
   const tracer = context?.tracer;
 
   const { stop, max_tokens, ...restOptions } = options ?? {};
 
-  const request = {
-    model: model,
-    max_tokens: max_tokens ?? 16000,
-    messages: convertToProviderMessages(messages),
-    ...(system && { system }),
-    ...(stop && { stop_sequences: arrayify(stop) }),
-    ...(tools && { tools: convertToProviderTools(tools) }),
-    ...restOptions,
-  };
-  tracer?.debug("Anthropic request", { request });
-
   let result: ModelResult;
   try {
+    const providerMessages = await convertToProviderMessages(messages, {
+      model,
+      fileResolver: context?.fileResolver,
+    });
+
+    const request = {
+      model: model,
+      max_tokens: max_tokens ?? 16000,
+      messages: providerMessages,
+      ...(system && { system }),
+      ...(stop && { stop_sequences: arrayify(stop) }),
+      ...(tools && { tools: convertToProviderTools(tools) }),
+      ...restOptions,
+    };
+    tracer?.debug("Anthropic request", { request: redactResolvedFileValues(request) });
+
     const completion = await client.messages.create(request);
     result = convertToAIResponse(completion);
   } catch (e) {

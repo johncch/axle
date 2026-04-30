@@ -2,6 +2,12 @@ import { Content, FinishReason, GenerateContentConfig } from "@google/genai";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/index.js";
+import {
+  type FileInfo,
+  type FileResolver,
+  type ResolvedFileSource,
+  resolveFileSource,
+} from "../../utils/file.js";
 import { AxleStopReason } from "../types.js";
 
 /* To Request */
@@ -39,49 +45,71 @@ export function prepareConfig(
   return config;
 }
 
-export function convertAxleMessagesToGemini(messages: AxleMessage[]): Content[] {
-  return messages.map(convertMessage).filter((msg): msg is Content => msg !== undefined);
+interface GeminiConversionContext {
+  model: string;
+  fileResolver?: FileResolver;
+  signal?: AbortSignal;
 }
 
-function convertMessage(msg: AxleMessage): Content | undefined {
+export async function convertAxleMessagesToGemini(
+  messages: AxleMessage[],
+  context: GeminiConversionContext = { model: "" },
+): Promise<Content[]> {
+  const converted = await Promise.all(messages.map((msg) => convertMessage(msg, context)));
+  return converted.filter((msg): msg is Content => msg !== undefined);
+}
+
+async function convertMessage(
+  msg: AxleMessage,
+  context: GeminiConversionContext,
+): Promise<Content | undefined> {
   switch (msg.role) {
     case "tool":
-      return convertToolMessage(msg);
+      return convertToolMessage(msg, context);
     case "assistant":
       return convertAssistantMessage(msg);
     case "user":
-      return convertUserMessage(msg);
+      return convertUserMessage(msg, context);
   }
 }
 
-function convertToolMessage(msg: AxleMessage & { role: "tool" }): Content {
-  return {
-    role: "user",
-    parts: msg.content.flatMap((item) => {
+async function convertToolMessage(
+  msg: AxleMessage & { role: "tool" },
+  context: GeminiConversionContext,
+): Promise<Content> {
+  const groupedParts = await Promise.all(
+    msg.content.map(async (item) => {
+      const textOutput =
+        typeof item.content === "string"
+          ? item.content
+          : item.content
+              .filter((p) => p.type === "text")
+              .map((p) => p.text)
+              .join("\n");
+
       const responsePart = {
         functionResponse: {
           id: item.id ?? undefined,
           name: item.name,
-          response: {
-            output:
-              typeof item.content === "string"
-                ? item.content
-                : item.content
-                    .filter((p) => p.type === "text")
-                    .map((p) => p.text)
-                    .join("\n"),
-          },
+          response: { output: textOutput },
         },
       };
 
       if (typeof item.content === "string") return [responsePart];
 
-      const imageParts = item.content
-        .filter((p) => p.type === "image")
-        .map((p) => ({ inlineData: { mimeType: p.mimeType, data: p.data } }));
+      const fileParts = await Promise.all(
+        item.content
+          .filter((p) => p.type === "file")
+          .map((p) => convertFilePart(p.file, context, "tool-result")),
+      );
 
-      return [responsePart, ...imageParts];
+      return [responsePart, ...fileParts];
     }),
+  );
+
+  return {
+    role: "user",
+    parts: groupedParts.flat(1),
   };
 }
 
@@ -121,11 +149,16 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
   };
 }
 
-function convertUserMessage(msg: AxleMessage & { role: "user" }): Content {
+async function convertUserMessage(
+  msg: AxleMessage & { role: "user" },
+  context: GeminiConversionContext,
+): Promise<Content> {
   if (typeof msg.content === "string") {
     return { role: "user", parts: [{ text: msg.content }] };
   } else {
-    const parts = msg.content.map(convertContentPart).filter((item) => item !== null);
+    const parts = (
+      await Promise.all(msg.content.map((part) => convertContentPart(part, context)))
+    ).filter((item) => item !== null);
 
     return {
       role: "user",
@@ -134,7 +167,10 @@ function convertUserMessage(msg: AxleMessage & { role: "user" }): Content {
   }
 }
 
-function convertContentPart(item: ContentPart): any | null {
+async function convertContentPart(
+  item: ContentPart,
+  context: GeminiConversionContext,
+): Promise<any | null> {
   if (item.type === "text") {
     return {
       text: item.text,
@@ -142,18 +178,85 @@ function convertContentPart(item: ContentPart): any | null {
   }
 
   if (item.type === "file") {
-    if (item.file.type === "image" || item.file.type === "document") {
-      return {
-        inlineData: {
-          mimeType: item.file.mimeType,
-          data: item.file.base64,
-        },
-      };
-    }
+    return convertFilePart(item.file, context, "user-message");
   }
 
   // TODO: thinking, etc.
   return null;
+}
+
+async function convertFilePart(
+  file: FileInfo,
+  context: GeminiConversionContext,
+  purpose: "user-message" | "tool-result",
+): Promise<any> {
+  if (file.kind === "text") {
+    const resolved = await resolveFileSource(file, {
+      provider: "gemini",
+      model: context.model,
+      accepted: ["text"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+    });
+    if (resolved.type !== "text") {
+      throw new Error(`Unsupported Gemini text source: ${resolved.type}`);
+    }
+    return {
+      text: formatTextFileContent(file, resolved.content, resolved.name, resolved.mimeType),
+    };
+  }
+
+  if (file.kind === "document" && file.mimeType !== "application/pdf") {
+    throw new Error(`Gemini document file support is limited to PDFs. Received ${file.mimeType}`);
+  }
+
+  const resolved = await resolveFileSource(file, {
+    provider: "gemini",
+    model: context.model,
+    accepted: ["gemini-file-uri", "url", "base64"],
+    purpose,
+    resolver: context.fileResolver,
+    signal: context.signal,
+  });
+  return resolvedToGeminiPart(resolved, file);
+}
+
+function resolvedToGeminiPart(resolved: ResolvedFileSource, file: FileInfo): any {
+  if (resolved.type === "base64") {
+    return {
+      inlineData: {
+        mimeType: resolved.mimeType ?? file.mimeType,
+        data: resolved.data,
+      },
+    };
+  }
+  if (resolved.type === "url") {
+    return {
+      fileData: {
+        mimeType: resolved.mimeType ?? file.mimeType,
+        fileUri: resolved.url,
+      },
+    };
+  }
+  if (resolved.type === "gemini-file-uri") {
+    return {
+      fileData: {
+        mimeType: resolved.mimeType ?? file.mimeType,
+        fileUri: resolved.uri,
+      },
+    };
+  }
+  throw new Error(`Unsupported Gemini file source: ${resolved.type}`);
+}
+
+function formatTextFileContent(
+  file: FileInfo,
+  content: string,
+  name?: string,
+  mimeType?: string,
+): string {
+  return `File: ${name ?? file.name}\nMIME type: ${mimeType ?? file.mimeType}\n\n${content}`;
 }
 
 /* To Response */

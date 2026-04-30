@@ -52,7 +52,6 @@ describe("History", () => {
 
       expect(history.latestTurn()?.id).toBe("t2");
     });
-
   });
 
   describe("log management", () => {
@@ -88,12 +87,11 @@ describe("History", () => {
 
   describe("helper methods", () => {
     const imageFile: FileInfo = {
-      path: "/test/image.jpg",
-      base64: "base64data",
+      kind: "image",
       mimeType: "image/jpeg",
       size: 1000,
       name: "image.jpg",
-      type: "image",
+      source: { type: "base64", data: "base64data" },
     };
 
     test("getTextContent extracts text from ContentPart array", () => {
@@ -119,12 +117,11 @@ describe("History", () => {
 
     test("getFiles with multiple files", () => {
       const documentFile: FileInfo = {
-        path: "/test/document.pdf",
-        base64: "base64data",
+        kind: "document",
         mimeType: "application/pdf",
         size: 2000,
         name: "document.pdf",
-        type: "document",
+        source: { type: "base64", data: "base64data" },
       };
 
       const content: Array<ContentPartText | ContentPartFile> = [

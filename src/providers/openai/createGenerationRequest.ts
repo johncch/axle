@@ -6,51 +6,39 @@ import {
   ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import {
-  AxleMessage,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
-import { AxleStopReason, ModelResult } from "../types.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
+import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessageToResponseInput, prepareTools } from "./utils.js";
 
-export async function createGenerationRequest(params: {
-  client: OpenAI;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext };
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): Promise<ModelResult> {
+export async function createGenerationRequest(
+  params: GenerationRequestParams & { client: OpenAI; model: string },
+): Promise<ModelResult> {
   const { client, model, messages, system, tools, context, options } = params;
   const tracer = context?.tracer;
 
-  const modelTools = prepareTools(tools);
-  const request: ResponseCreateParamsNonStreaming = {
-    model,
-    input: convertAxleMessageToResponseInput(messages),
-    ...(system && { instructions: system }),
-    ...(modelTools ? { tools: modelTools } : {}),
-    ...options,
-  };
-
-  tracer?.debug("OpenAI ResponsesAPI request", { request });
-
   let result: ModelResult;
   try {
+    const modelTools = prepareTools(tools);
+    const input = await convertAxleMessageToResponseInput(messages, {
+      model,
+      fileResolver: context?.fileResolver,
+    });
+    const request: ResponseCreateParamsNonStreaming = {
+      model,
+      input,
+      ...(system && { instructions: system }),
+      ...(modelTools ? { tools: modelTools } : {}),
+      ...options,
+    };
+
+    tracer?.debug("OpenAI ResponsesAPI request", { request: redactResolvedFileValues(request) });
+
     const response = await client.responses.create(request);
     result = fromModelResponse(response);
   } catch (e) {

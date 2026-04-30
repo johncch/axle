@@ -8,6 +8,7 @@ import { AnyStreamChunk } from "../messages/stream.js";
 import { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { Stats } from "../types.js";
+import type { FileResolver } from "../utils/file.js";
 
 /*
  Vendor specific configuration
@@ -32,48 +33,43 @@ export interface AIProviderConfig {
  General AI Interfaces
  */
 
+export interface ProviderRequestContext {
+  tracer?: TracingContext;
+  fileResolver?: FileResolver;
+}
+
+export interface GenerateTurnOptions {
+  temperature?: number;
+  top_p?: number;
+  max_tokens?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop?: string | string[];
+  [key: string]: any;
+}
+
+export interface GenerationRequestParams {
+  messages: Array<AxleMessage>;
+  system?: string;
+  tools?: Array<ToolDefinition>;
+  context: ProviderRequestContext;
+  options?: GenerateTurnOptions;
+}
+
+export interface StreamingRequestParams extends GenerationRequestParams {
+  signal?: AbortSignal;
+}
+
 export interface AIProvider {
   get name(): string;
 
   /** @internal */
-  createGenerationRequest(
-    model: string,
-    params: {
-      messages: Array<AxleMessage>;
-      system?: string;
-      tools?: Array<ToolDefinition>;
-      context: { tracer?: TracingContext };
-      options?: {
-        temperature?: number;
-        top_p?: number;
-        max_tokens?: number;
-        frequency_penalty?: number;
-        presence_penalty?: number;
-        stop?: string | string[];
-        [key: string]: any;
-      };
-    },
-  ): Promise<ModelResult>;
+  createGenerationRequest(model: string, params: GenerationRequestParams): Promise<ModelResult>;
 
   /** @internal */
-  createStreamingRequest?(
+  createStreamingRequest(
     model: string,
-    params: {
-      messages: Array<AxleMessage>;
-      system?: string;
-      tools?: Array<ToolDefinition>;
-      context: { tracer?: TracingContext };
-      signal?: AbortSignal;
-      options?: {
-        temperature?: number;
-        top_p?: number;
-        max_tokens?: number;
-        frequency_penalty?: number;
-        presence_penalty?: number;
-        stop?: string | string[];
-        [key: string]: any;
-      };
-    },
+    params: StreamingRequestParams,
   ): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 

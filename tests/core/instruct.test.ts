@@ -13,12 +13,11 @@ describe("Instruct", () => {
     test("addFile accepts image files", () => {
       const instruction = new Instruct("Test prompt");
       const imageFile: FileInfo = {
-        path: "/test/image.jpg",
-        base64: "base64data",
+        kind: "image",
         mimeType: "image/jpeg",
         size: 1000,
         name: "image.jpg",
-        type: "image",
+        source: { type: "base64", data: "base64data" },
       };
 
       instruction.addFile(imageFile);
@@ -30,12 +29,11 @@ describe("Instruct", () => {
     test("addFile accepts document files", () => {
       const instruction = new Instruct("Test prompt");
       const pdfFile: FileInfo = {
-        path: "/test/document.pdf",
-        base64: "base64data",
+        kind: "document",
         mimeType: "application/pdf",
         size: 1000,
         name: "document.pdf",
-        type: "document",
+        source: { type: "base64", data: "base64data" },
       };
 
       instruction.addFile(pdfFile);
@@ -46,12 +44,11 @@ describe("Instruct", () => {
     test("addFile accepts text files as references", () => {
       const instruction = new Instruct("Test prompt");
       const textFile: FileInfo = {
-        path: "/test/file.txt",
-        content: "hello world",
+        kind: "text",
         mimeType: "text/plain",
         size: 11,
         name: "file.txt",
-        type: "text",
+        source: { type: "text", content: "hello world" },
       };
 
       instruction.addFile(textFile);
@@ -76,12 +73,11 @@ describe("Instruct", () => {
     test("hasFiles returns true when files are added", () => {
       const instruction = new Instruct("Test prompt");
       const imageFile: FileInfo = {
-        path: "/test/image.jpg",
-        base64: "base64data",
+        kind: "image",
         mimeType: "image/jpeg",
         size: 1000,
         name: "image.jpg",
-        type: "image",
+        source: { type: "base64", data: "base64data" },
       };
 
       instruction.addFile(imageFile);
@@ -96,20 +92,18 @@ describe("Instruct", () => {
     test("multiple files can be added", () => {
       const instruction = new Instruct("Test prompt");
       const file1: FileInfo = {
-        path: "/test/image1.jpg",
-        base64: "base64data1",
+        kind: "image",
         mimeType: "image/jpeg",
         size: 1000,
         name: "image1.jpg",
-        type: "image",
+        source: { type: "base64", data: "base64data1" },
       };
       const file2: FileInfo = {
-        path: "/test/image2.png",
-        base64: "base64data2",
+        kind: "image",
         mimeType: "image/png",
         size: 2000,
         name: "image2.png",
-        type: "image",
+        source: { type: "base64", data: "base64data2" },
       };
 
       instruction.addFile(file1);

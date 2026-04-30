@@ -14,6 +14,7 @@ import { TurnBuilder } from "../turns/builder.js";
 import type { AgentEvent } from "../turns/events.js";
 import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
+import type { FileResolver } from "../utils/file.js";
 import { createHandle, type Handle } from "../utils/utils.js";
 import { compileInstruct } from "./compile.js";
 import { History } from "./history.js";
@@ -35,6 +36,7 @@ export interface AgentConfig {
   mcps?: MCP[];
   memory?: AgentMemory;
   tracer?: TracingContext;
+  fileResolver?: FileResolver;
   options?: AgentOptions;
 }
 
@@ -49,6 +51,7 @@ export type AgentHandle<T = string> = Handle<AgentResult<T>>;
 export type AgentEventCallback = (event: AgentEvent) => void;
 export interface SendMessageOptions {
   signal?: AbortSignal;
+  fileResolver?: FileResolver;
 }
 
 export interface SendInstructOptions extends SendMessageOptions {
@@ -67,6 +70,7 @@ export class Agent {
   readonly name?: string;
   readonly scope?: Record<string, string>;
   readonly store: FileStore;
+  readonly fileResolver?: FileResolver;
 
   system: string | undefined;
   tools: Record<string, ExecutableTool> = {};
@@ -89,6 +93,7 @@ export class Agent {
     this.name = config.name;
     this.scope = config.scope;
     this.store = new LocalFileStore(".axle");
+    this.fileResolver = config.fileResolver;
     this.options = config.options ?? {};
     if (config.tools) {
       this.addTools(config.tools);
@@ -173,7 +178,7 @@ export class Agent {
 
     const { handle, settled } = createHandle(
       this.sendQueue,
-      (signal) => this.run(userMessage, schema, signal),
+      (signal) => this.run(userMessage, schema, signal, options?.fileResolver),
       options?.signal,
     );
     this.sendQueue = settled;
@@ -198,6 +203,7 @@ export class Agent {
     userMessage: AxleUserMessage,
     schema: OutputSchema | undefined,
     signal: AbortSignal,
+    sendFileResolver?: FileResolver,
   ): Promise<AgentResult<any>> {
     const builder = new TurnBuilder();
 
@@ -250,6 +256,7 @@ export class Agent {
       tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
       serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
       tracer: this.tracer,
+      fileResolver: sendFileResolver ?? this.fileResolver,
       onToolCall: async (name, params) => {
         const tool = tools[name];
         if (!tool) return null;

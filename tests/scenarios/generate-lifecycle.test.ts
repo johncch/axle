@@ -256,6 +256,9 @@ describe("generate() error paths", () => {
       async createGenerationRequest() {
         throw new Error("Network failure");
       },
+      async *createStreamingRequest() {
+        throw new Error("Not implemented");
+      },
     };
 
     await expect(

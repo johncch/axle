@@ -1,33 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
+import { StreamingRequestParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import { MAX_OUTPUT_TOKENS } from "./models.js";
 import { convertToProviderMessages, convertToProviderTools } from "./utils.js";
 
-export async function* createStreamingRequest(params: {
-  client: Anthropic;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  runtime: { tracer?: TracingContext };
-  signal?: AbortSignal;
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, runtime, signal, options } = params;
-  const tracer = runtime?.tracer;
+export async function* createStreamingRequest(
+  params: StreamingRequestParams & { client: Anthropic; model: string },
+): AsyncGenerator<AnyStreamChunk, void, unknown> {
+  const { client, model, messages, system, tools, context, signal, options } = params;
+  const tracer = context?.tracer;
 
   const { stop, max_tokens, serverTools, ...restOptions } = options ?? {};
 
@@ -43,20 +27,26 @@ export async function* createStreamingRequest(params: {
     }
   }
 
-  const request = {
-    model: model,
-    max_tokens: max_tokens ?? getMaxTokens(model),
-    messages: convertToProviderMessages(messages),
-    ...(system && { system }),
-    ...(stop && { stop_sequences: arrayify(stop) }),
-    ...(providerTools.length > 0 && { tools: providerTools }),
-    ...restOptions,
-  };
-  tracer?.debug("Anthropic streaming request", { request });
-
   const streamingAdapter = createAnthropicStreamingAdapter();
 
   try {
+    const providerMessages = await convertToProviderMessages(messages, {
+      model,
+      fileResolver: context?.fileResolver,
+      signal,
+    });
+
+    const request = {
+      model: model,
+      max_tokens: max_tokens ?? getMaxTokens(model),
+      messages: providerMessages,
+      ...(system && { system }),
+      ...(stop && { stop_sequences: arrayify(stop) }),
+      ...(providerTools.length > 0 && { tools: providerTools }),
+      ...restOptions,
+    };
+    tracer?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
+
     const stream = await client.messages.create(
       {
         ...request,
@@ -71,7 +61,6 @@ export async function* createStreamingRequest(params: {
         yield chunk;
       }
     }
-    // testStream.end();
   } catch (error) {
     if (signal?.aborted) return;
     yield {

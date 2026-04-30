@@ -1,62 +1,52 @@
 import {
-  AxleMessage,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import { ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
-import { ModelResult } from "../types.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
+import { GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { ChatCompletionResponse } from "./types.js";
 import { convertAxleMessages, convertFinishReason, convertTools } from "./utils.js";
 
-export async function createGenerationRequest(params: {
-  baseUrl: string;
-  model: string;
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext };
-  apiKey?: string;
-  options?: {
-    temperature?: number;
-    top_p?: number;
-    max_tokens?: number;
-    frequency_penalty?: number;
-    presence_penalty?: number;
-    stop?: string | string[];
-    [key: string]: any;
-  };
-}): Promise<ModelResult> {
+export async function createGenerationRequest(
+  params: GenerationRequestParams & {
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+  },
+): Promise<ModelResult> {
   const { baseUrl, model, messages, system, tools, context, apiKey, options } = params;
   const tracer = context?.tracer;
 
-  const chatMessages = convertAxleMessages(messages, system);
-  const chatTools = convertTools(tools);
-
-  const requestBody: Record<string, any> = {
-    model,
-    messages: chatMessages,
-    ...(chatTools && { tools: chatTools }),
-  };
-
-  if (options) {
-    if (options.temperature !== undefined) requestBody.temperature = options.temperature;
-    if (options.top_p !== undefined) requestBody.top_p = options.top_p;
-    if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
-    if (options.frequency_penalty !== undefined)
-      requestBody.frequency_penalty = options.frequency_penalty;
-    if (options.presence_penalty !== undefined)
-      requestBody.presence_penalty = options.presence_penalty;
-    if (options.stop !== undefined) requestBody.stop = options.stop;
-  }
-
-  tracer?.debug("ChatCompletions request", { request: requestBody });
-
   let result: ModelResult;
   try {
+    const chatMessages = await convertAxleMessages(messages, system, {
+      model,
+      fileResolver: context?.fileResolver,
+    });
+    const chatTools = convertTools(tools);
+
+    const requestBody: Record<string, any> = {
+      model,
+      messages: chatMessages,
+      ...(chatTools && { tools: chatTools }),
+    };
+
+    if (options) {
+      if (options.temperature !== undefined) requestBody.temperature = options.temperature;
+      if (options.top_p !== undefined) requestBody.top_p = options.top_p;
+      if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
+      if (options.frequency_penalty !== undefined)
+        requestBody.frequency_penalty = options.frequency_penalty;
+      if (options.presence_penalty !== undefined)
+        requestBody.presence_penalty = options.presence_penalty;
+      if (options.stop !== undefined) requestBody.stop = options.stop;
+    }
+
+    tracer?.debug("ChatCompletions request", { request: redactResolvedFileValues(requestBody) });
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };

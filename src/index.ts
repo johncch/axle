@@ -92,6 +92,15 @@ export type { FileStore } from "./store/index.js";
 
 // Utils
 export { loadFileContent } from "./utils/file.js";
-export type { FileInfo } from "./utils/file.js";
+export type {
+  DeferredFileInfo,
+  FileInfo,
+  FileKind,
+  FileProviderId,
+  FileResolveFormat,
+  FileResolveRequest,
+  FileResolver,
+  ResolvedFileSource,
+} from "./utils/file.js";
 export { createHandle } from "./utils/utils.js";
 export type { Handle } from "./utils/utils.js";
