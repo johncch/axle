@@ -3,12 +3,12 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { StreamingRequestParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
-import { convertAxleMessageToResponseInput, prepareTools } from "./utils.js";
+import { convertAxleMessageToResponseInput, prepareTools, toOpenAIReasoning } from "./utils.js";
 
 export async function* createStreamingRequest(
   params: StreamingRequestParams & { client: OpenAI; model: string },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, context, signal, options } = params;
+  const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
   const tracer = context?.tracer;
 
   const { serverTools, ...restOptions } = options ?? {};
@@ -41,6 +41,7 @@ export async function* createStreamingRequest(
       ...(system && { instructions: system }),
       stream: true as const,
       ...(modelTools.length > 0 ? { tools: modelTools } : {}),
+      ...toOpenAIReasoning(reasoning),
       ...restOptions,
     };
 

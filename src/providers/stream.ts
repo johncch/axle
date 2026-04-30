@@ -74,6 +74,7 @@ export interface StreamOptions {
   tracer?: TracingContext;
   fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
+  reasoning?: boolean;
   signal?: AbortSignal;
 }
 
@@ -144,6 +145,7 @@ async function run(
     tracer,
     fileResolver,
     options: genOptions,
+    reasoning,
   } = options;
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
@@ -246,6 +248,7 @@ async function run(
       context: { tracer: turnSpan, fileResolver },
       signal,
       options: mergedOptions,
+      reasoning,
     });
 
     const turnParts: Array<

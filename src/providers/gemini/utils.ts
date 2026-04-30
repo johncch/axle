@@ -45,6 +45,21 @@ export function prepareConfig(
   return config;
 }
 
+/**
+ * Translate Axle's normalized `reasoning` boolean into Gemini's thinkingConfig.
+ * `true` → enable thinking with a sensible budget; `false` → disable
+ * (thinkingBudget: 0); `undefined` → omit (model uses its default, which on
+ * 2.5+ is dynamic). Users wanting precise budgets or `includeThoughts: false`
+ * set `options.thinkingConfig` directly, which spreads after this and overrides.
+ */
+export function toGeminiThinkingConfig(reasoning: boolean | undefined) {
+  if (reasoning === true) {
+    return { thinkingConfig: { thinkingBudget: 8192, includeThoughts: true } };
+  }
+  if (reasoning === false) return { thinkingConfig: { thinkingBudget: 0 } };
+  return {};
+}
+
 interface GeminiConversionContext {
   model: string;
   fileResolver?: FileResolver;

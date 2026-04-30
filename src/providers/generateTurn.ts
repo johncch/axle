@@ -15,15 +15,18 @@ interface GenerateTurnProps {
   tracer?: TracingContext;
   fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
+  reasoning?: boolean;
 }
 
 export async function generateTurn(props: GenerateTurnProps): Promise<ModelResult> {
-  const { provider, model, messages, system, tools, tracer, fileResolver, options } = props;
+  const { provider, model, messages, system, tools, tracer, fileResolver, options, reasoning } =
+    props;
   return provider.createGenerationRequest(model, {
     messages,
     system,
     tools,
     context: { tracer, fileResolver },
     options,
+    reasoning,
   });
 }

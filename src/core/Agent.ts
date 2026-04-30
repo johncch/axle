@@ -37,6 +37,7 @@ export interface AgentConfig {
   memory?: AgentMemory;
   tracer?: TracingContext;
   fileResolver?: FileResolver;
+  reasoning?: boolean;
   options?: AgentOptions;
 }
 
@@ -52,6 +53,7 @@ export type AgentEventCallback = (event: AgentEvent) => void;
 export interface SendMessageOptions {
   signal?: AbortSignal;
   fileResolver?: FileResolver;
+  reasoning?: boolean;
 }
 
 export interface SendInstructOptions extends SendMessageOptions {
@@ -71,6 +73,7 @@ export class Agent {
   readonly scope?: Record<string, string>;
   readonly store: FileStore;
   readonly fileResolver?: FileResolver;
+  readonly reasoning?: boolean;
 
   system: string | undefined;
   tools: Record<string, ExecutableTool> = {};
@@ -94,6 +97,7 @@ export class Agent {
     this.scope = config.scope;
     this.store = new LocalFileStore(".axle");
     this.fileResolver = config.fileResolver;
+    this.reasoning = config.reasoning;
     this.options = config.options ?? {};
     if (config.tools) {
       this.addTools(config.tools);
@@ -176,9 +180,11 @@ export class Agent {
       schema = messageOrInstruct.schema;
     }
 
+    const effectiveReasoning = options?.reasoning ?? this.reasoning;
+
     const { handle, settled } = createHandle(
       this.sendQueue,
-      (signal) => this.run(userMessage, schema, signal, options?.fileResolver),
+      (signal) => this.run(userMessage, schema, signal, options?.fileResolver, effectiveReasoning),
       options?.signal,
     );
     this.sendQueue = settled;
@@ -204,6 +210,7 @@ export class Agent {
     schema: OutputSchema | undefined,
     signal: AbortSignal,
     sendFileResolver?: FileResolver,
+    reasoning?: boolean,
   ): Promise<AgentResult<any>> {
     const builder = new TurnBuilder();
 
@@ -257,6 +264,7 @@ export class Agent {
       serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
       tracer: this.tracer,
       fileResolver: sendFileResolver ?? this.fileResolver,
+      reasoning,
       onToolCall: async (name, params) => {
         const tool = tools[name];
         if (!tool) return null;

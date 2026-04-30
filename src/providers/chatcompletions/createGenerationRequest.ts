@@ -8,7 +8,12 @@ import { redactResolvedFileValues } from "../../utils/redact.js";
 import { GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { ChatCompletionResponse } from "./types.js";
-import { convertAxleMessages, convertFinishReason, convertTools } from "./utils.js";
+import {
+  convertAxleMessages,
+  convertFinishReason,
+  convertTools,
+  toReasoningEffort,
+} from "./utils.js";
 
 export async function createGenerationRequest(
   params: GenerationRequestParams & {
@@ -17,7 +22,7 @@ export async function createGenerationRequest(
     apiKey?: string;
   },
 ): Promise<ModelResult> {
-  const { baseUrl, model, messages, system, tools, context, apiKey, options } = params;
+  const { baseUrl, model, messages, system, tools, context, apiKey, options, reasoning } = params;
   const tracer = context?.tracer;
 
   let result: ModelResult;
@@ -32,6 +37,7 @@ export async function createGenerationRequest(
       model,
       messages: chatMessages,
       ...(chatTools && { tools: chatTools }),
+      ...toReasoningEffort(reasoning),
     };
 
     if (options) {
@@ -43,6 +49,8 @@ export async function createGenerationRequest(
       if (options.presence_penalty !== undefined)
         requestBody.presence_penalty = options.presence_penalty;
       if (options.stop !== undefined) requestBody.stop = options.stop;
+      if (options.reasoning_effort !== undefined)
+        requestBody.reasoning_effort = options.reasoning_effort;
     }
 
     tracer?.debug("ChatCompletions request", { request: redactResolvedFileValues(requestBody) });

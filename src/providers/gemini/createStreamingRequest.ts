@@ -3,19 +3,22 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { StreamingRequestParams } from "../types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
-import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
+import { convertAxleMessagesToGemini, prepareConfig, toGeminiThinkingConfig } from "./utils.js";
 
 export async function* createStreamingRequest(
   params: StreamingRequestParams & { client: GoogleGenAI; model: string },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, context, signal, options } = params;
+  const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
   const tracer = context?.tracer;
 
   // Extract serverTools before option conversion
   const { serverTools, ...rawOptions } = options ?? {};
 
-  // Convert max_tokens to maxOutputTokens for Google AI
-  const googleOptions = rawOptions ? { ...rawOptions } : {};
+  // Reasoning translation comes first so user-supplied thinkingConfig overrides.
+  const googleOptions: Record<string, any> = {
+    ...toGeminiThinkingConfig(reasoning),
+    ...rawOptions,
+  };
   if (googleOptions.max_tokens) {
     googleOptions.maxOutputTokens = googleOptions.max_tokens;
     delete googleOptions.max_tokens;

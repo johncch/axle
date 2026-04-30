@@ -9,12 +9,13 @@ import {
   convertToAxleContentParts,
   convertToProviderMessages,
   convertToProviderTools,
+  toAnthropicThinking,
 } from "./utils.js";
 
 export async function createGenerationRequest(
   params: GenerationRequestParams & { client: Anthropic; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options } = params;
+  const { client, model, messages, system, tools, context, options, reasoning } = params;
   const tracer = context?.tracer;
 
   const { stop, max_tokens, ...restOptions } = options ?? {};
@@ -33,6 +34,7 @@ export async function createGenerationRequest(
       ...(system && { system }),
       ...(stop && { stop_sequences: arrayify(stop) }),
       ...(tools && { tools: convertToProviderTools(tools) }),
+      ...toAnthropicThinking(reasoning),
       ...restOptions,
     };
     tracer?.debug("Anthropic request", { request: redactResolvedFileValues(request) });

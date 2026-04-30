@@ -9,16 +9,25 @@ import type { TracingContext } from "../../tracer/types.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
+import {
+  convertAxleMessagesToGemini,
+  convertStopReason,
+  prepareConfig,
+  toGeminiThinkingConfig,
+} from "./utils.js";
 
 export async function createGenerationRequest(
   params: GenerationRequestParams & { client: GoogleGenAI; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options } = params;
+  const { client, model, messages, system, tools, context, options, reasoning } = params;
   const tracer = context?.tracer;
 
-  // Convert max_tokens to maxOutputTokens for Google AI
-  const googleOptions = options ? { ...options } : {};
+  // Convert max_tokens to maxOutputTokens for Google AI; user options spread
+  // after the reasoning translation so a raw thinkingConfig overrides ours.
+  const googleOptions: Record<string, any> = {
+    ...toGeminiThinkingConfig(reasoning),
+    ...(options ?? {}),
+  };
   if (googleOptions.max_tokens) {
     googleOptions.maxOutputTokens = googleOptions.max_tokens;
     delete googleOptions.max_tokens;

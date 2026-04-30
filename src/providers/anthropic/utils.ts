@@ -243,6 +243,20 @@ function toAnthropicPdfSource(
   throw new Error(`Unsupported Anthropic PDF source: ${resolved.type}`);
 }
 
+/**
+ * Translate Axle's normalized `reasoning` boolean into Anthropic's thinking
+ * field. `true` enables extended thinking with a sensible default budget;
+ * `false` and `undefined` produce no field (Anthropic defaults to off).
+ * Users wanting precise control set `options.thinking` directly, which spreads
+ * after this and overrides.
+ */
+export function toAnthropicThinking(reasoning: boolean | undefined) {
+  if (reasoning === true) {
+    return { thinking: { type: "enabled" as const, budget_tokens: 8192 } };
+  }
+  return {};
+}
+
 export function convertToProviderTools(
   tools: Array<ToolDefinition>,
 ): Array<Anthropic.Messages.Tool> {

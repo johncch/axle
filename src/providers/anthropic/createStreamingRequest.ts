@@ -5,12 +5,12 @@ import { arrayify } from "../../utils/utils.js";
 import { StreamingRequestParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import { MAX_OUTPUT_TOKENS } from "./models.js";
-import { convertToProviderMessages, convertToProviderTools } from "./utils.js";
+import { convertToProviderMessages, convertToProviderTools, toAnthropicThinking } from "./utils.js";
 
 export async function* createStreamingRequest(
   params: StreamingRequestParams & { client: Anthropic; model: string },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, context, signal, options } = params;
+  const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
   const tracer = context?.tracer;
 
   const { stop, max_tokens, serverTools, ...restOptions } = options ?? {};
@@ -43,6 +43,7 @@ export async function* createStreamingRequest(
       ...(system && { system }),
       ...(stop && { stop_sequences: arrayify(stop) }),
       ...(providerTools.length > 0 && { tools: providerTools }),
+      ...toAnthropicThinking(reasoning),
       ...restOptions,
     };
     tracer?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });

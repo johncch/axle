@@ -54,6 +54,7 @@ export interface GenerationRequestParams {
   tools?: Array<ToolDefinition>;
   context: ProviderRequestContext;
   options?: GenerateTurnOptions;
+  reasoning?: boolean;
 }
 
 export interface StreamingRequestParams extends GenerationRequestParams {

@@ -3,7 +3,7 @@ import { redactResolvedFileValues } from "../../utils/redact.js";
 import { StreamingRequestParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { ChatCompletionChunk } from "./types.js";
-import { convertAxleMessages, convertTools } from "./utils.js";
+import { convertAxleMessages, convertTools, toReasoningEffort } from "./utils.js";
 
 export async function* createStreamingRequest(
   params: StreamingRequestParams & {
@@ -12,7 +12,8 @@ export async function* createStreamingRequest(
     apiKey?: string;
   },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { baseUrl, model, messages, system, tools, context, signal, apiKey, options } = params;
+  const { baseUrl, model, messages, system, tools, context, signal, apiKey, options, reasoning } =
+    params;
   const tracer = context?.tracer;
 
   if (options?.serverTools) {
@@ -35,6 +36,7 @@ export async function* createStreamingRequest(
       stream: true,
       stream_options: { include_usage: true },
       ...(chatTools && { tools: chatTools }),
+      ...toReasoningEffort(reasoning),
     };
 
     if (options) {
@@ -46,6 +48,8 @@ export async function* createStreamingRequest(
       if (options.presence_penalty !== undefined)
         requestBody.presence_penalty = options.presence_penalty;
       if (options.stop !== undefined) requestBody.stop = options.stop;
+      if (options.reasoning_effort !== undefined)
+        requestBody.reasoning_effort = options.reasoning_effort;
     }
 
     tracer?.debug("ChatCompletions streaming request", {

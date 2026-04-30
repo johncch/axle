@@ -14,12 +14,12 @@ import { getTextContent } from "../../messages/utils.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessageToResponseInput, prepareTools } from "./utils.js";
+import { convertAxleMessageToResponseInput, prepareTools, toOpenAIReasoning } from "./utils.js";
 
 export async function createGenerationRequest(
   params: GenerationRequestParams & { client: OpenAI; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options } = params;
+  const { client, model, messages, system, tools, context, options, reasoning } = params;
   const tracer = context?.tracer;
 
   let result: ModelResult;
@@ -34,6 +34,7 @@ export async function createGenerationRequest(
       input,
       ...(system && { instructions: system }),
       ...(modelTools ? { tools: modelTools } : {}),
+      ...toOpenAIReasoning(reasoning),
       ...options,
     };
 

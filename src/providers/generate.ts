@@ -27,6 +27,7 @@ export interface GenerateOptions {
   tracer?: TracingContext;
   fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
+  reasoning?: boolean;
 }
 
 export async function generate(options: GenerateOptions): Promise<GenerateResult> {
@@ -41,6 +42,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     tracer,
     fileResolver,
     options: generateOptions,
+    reasoning,
   } = options;
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
@@ -118,6 +120,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       tracer: turnSpan,
       fileResolver,
       options: generateOptions,
+      reasoning,
     });
 
     appendUsage(usage, response);
