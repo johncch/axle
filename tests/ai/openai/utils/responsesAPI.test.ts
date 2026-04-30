@@ -226,6 +226,83 @@ describe("responsesAPI utils", () => {
       });
     });
 
+    test("should convert user message with PDF document as data URL", async () => {
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "Summarize this.",
+            },
+            {
+              type: "file" as const,
+              file: {
+                kind: "document" as const,
+                name: "doc.pdf",
+                mimeType: "application/pdf",
+                size: 100,
+                source: {
+                  type: "base64" as const,
+                  data: "JVBERi0xLjQK",
+                },
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = await convertAxleMessageToResponseInput(messages);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        role: "user",
+        content: [
+          { type: "input_text", text: "Summarize this." },
+          {
+            type: "input_file",
+            filename: "doc.pdf",
+            file_data: "data:application/pdf;base64,JVBERi0xLjQK",
+          },
+        ],
+      });
+    });
+
+    test("should pass through PDF document URL", async () => {
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "file" as const,
+              file: {
+                kind: "document" as const,
+                name: "doc.pdf",
+                mimeType: "application/pdf",
+                source: {
+                  type: "url" as const,
+                  url: "https://example.com/doc.pdf",
+                },
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = await convertAxleMessageToResponseInput(messages);
+
+      expect(result[0]).toMatchObject({
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            filename: "doc.pdf",
+            file_url: "https://example.com/doc.pdf",
+          },
+        ],
+      });
+    });
+
     test("should handle mixed conversation with thinking (thinking skipped)", async () => {
       const messages = [
         {

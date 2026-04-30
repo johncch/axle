@@ -220,7 +220,7 @@ function resolvedToInputFile(resolved: ResolvedFileSource, file: FileInfo) {
     return {
       type: "input_file" as const,
       filename: resolved.name ?? file.name,
-      file_data: resolved.data,
+      file_data: `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`,
     };
   }
   throw new Error(`Unsupported OpenAI file source: ${resolved.type}`);
