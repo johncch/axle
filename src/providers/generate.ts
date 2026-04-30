@@ -3,6 +3,7 @@ import { getToolCalls } from "../messages/utils.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
+import type { FileResolver } from "../utils/file.js";
 import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
 import { appendUsage, executeToolCalls, GenerateResult, ToolCallCallback } from "./helpers.js";
 import { AIProvider, AxleStopReason, ModelResult } from "./types.js";
@@ -24,6 +25,7 @@ export interface GenerateOptions {
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
+  fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
 }
 
@@ -37,6 +39,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     onToolCall,
     maxIterations,
     tracer,
+    fileResolver,
     options: generateOptions,
   } = options;
   const workingMessages = [...messages];
@@ -113,6 +116,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       system,
       tools,
       tracer: turnSpan,
+      fileResolver,
       options: generateOptions,
     });
 

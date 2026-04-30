@@ -1,14 +1,38 @@
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
+import {
+  type FileInfo,
+  type FileResolutionMemo,
+  type FileResolver,
+  type ResolvedFileSource,
+  resolveFileSource,
+} from "../../utils/file.js";
 import { AxleStopReason } from "../types.js";
-import { ChatCompletionContentPart, ChatCompletionMessage, ChatCompletionTool } from "./types.js";
+import {
+  type ChatCompletionsFileInputMode,
+  ChatCompletionContentPart,
+  ChatCompletionMessage,
+  ChatCompletionTool,
+} from "./types.js";
 
-export function convertAxleMessages(
+interface ChatCompletionsConversionContext {
+  model: string;
+  fileResolver?: FileResolver;
+  signal?: AbortSignal;
+  memo?: FileResolutionMemo;
+  fileInputs?: ChatCompletionsFileInputMode;
+}
+
+export async function convertAxleMessages(
   messages: AxleMessage[],
   system?: string,
-): ChatCompletionMessage[] {
-  const converted = messages.map(convertMessage).flat(1);
+  context: ChatCompletionsConversionContext = { model: "" },
+): Promise<ChatCompletionMessage[]> {
+  const memo = context.memo ?? new WeakMap();
+  const converted = (
+    await Promise.all(messages.map((msg) => convertMessage(msg, { ...context, memo })))
+  ).flat(1);
 
   if (system) {
     return [{ role: "system", content: system }, ...converted];
@@ -47,29 +71,34 @@ export function convertFinishReason(reason: string | null): AxleStopReason {
   }
 }
 
-function convertMessage(msg: AxleMessage): ChatCompletionMessage | ChatCompletionMessage[] {
+async function convertMessage(
+  msg: AxleMessage,
+  context: ChatCompletionsConversionContext,
+): Promise<ChatCompletionMessage | ChatCompletionMessage[]> {
   switch (msg.role) {
     case "tool":
-      return convertToolMessage(msg);
+      return convertToolMessage(msg, context);
     case "assistant":
       return convertAssistantMessage(msg);
     default:
-      return convertUserMessage(msg);
+      return convertUserMessage(msg, context);
   }
 }
 
-function convertToolMessage(msg: AxleMessage & { role: "tool" }): ChatCompletionMessage[] {
-  return msg.content.map((r) => ({
-    role: "tool" as const,
-    content:
-      typeof r.content === "string"
-        ? r.content
-        : r.content
-            .filter((p) => p.type === "text")
-            .map((p) => p.text)
-            .join("\n"),
-    tool_call_id: r.id,
-  }));
+async function convertToolMessage(
+  msg: AxleMessage & { role: "tool" },
+  context: ChatCompletionsConversionContext,
+): Promise<ChatCompletionMessage[]> {
+  return Promise.all(
+    msg.content.map(async (r) => ({
+      role: "tool" as const,
+      content:
+        typeof r.content === "string"
+          ? r.content
+          : await convertToolResultContent(r.content, context),
+      tool_call_id: r.id,
+    })),
+  );
 }
 
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): ChatCompletionMessage {
@@ -95,12 +124,17 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Chat
   };
 }
 
-function convertUserMessage(msg: AxleMessage & { role: "user" }): ChatCompletionMessage {
+async function convertUserMessage(
+  msg: AxleMessage & { role: "user" },
+  context: ChatCompletionsConversionContext,
+): Promise<ChatCompletionMessage> {
   if (typeof msg.content === "string") {
     return { role: "user", content: msg.content };
   }
 
-  const parts = msg.content.map(convertContentPart).filter((p) => p !== null);
+  const parts = (
+    await Promise.all(msg.content.map((part) => convertContentPart(part, context)))
+  ).filter((p) => p !== null);
 
   // If all parts are text, join them into a single string
   if (parts.every((p) => p.type === "text")) {
@@ -113,7 +147,10 @@ function convertUserMessage(msg: AxleMessage & { role: "user" }): ChatCompletion
   return { role: "user", content: parts };
 }
 
-function convertContentPart(item: ContentPart): ChatCompletionContentPart | null {
+async function convertContentPart(
+  item: ContentPart,
+  context: ChatCompletionsConversionContext,
+): Promise<ChatCompletionContentPart | null> {
   if (item.type === "text") {
     return {
       type: "text" as const,
@@ -121,14 +158,141 @@ function convertContentPart(item: ContentPart): ChatCompletionContentPart | null
     };
   }
 
-  if (item.type === "file" && item.file.type === "image") {
+  if (item.type === "file") {
+    return convertFilePart(item.file, context, "user-message");
+  }
+
+  return null;
+}
+
+async function convertToolResultContent(
+  parts: Array<{ type: "text"; text: string } | { type: "file"; file: FileInfo }>,
+  context: ChatCompletionsConversionContext,
+): Promise<string> {
+  const output: string[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      output.push(part.text);
+      continue;
+    }
+    if (part.file.kind === "text") {
+      const resolved = await resolveFileSource(part.file, {
+        provider: "chatcompletions",
+        model: context.model,
+        accepted: ["text"],
+        purpose: "tool-result",
+        resolver: context.fileResolver,
+        signal: context.signal,
+        memo: context.memo,
+      });
+      if (resolved.type !== "text") {
+        throw new Error(`Unsupported ChatCompletions text source: ${resolved.type}`);
+      }
+      output.push(
+        formatTextFileContent(part.file, resolved.content, resolved.name, resolved.mimeType),
+      );
+      continue;
+    }
+    throw new Error("ChatCompletions tool results do not support file parts other than text");
+  }
+  return output.join("\n");
+}
+
+async function convertFilePart(
+  file: FileInfo,
+  context: ChatCompletionsConversionContext,
+  purpose: "user-message" | "tool-result",
+): Promise<ChatCompletionContentPart> {
+  if (file.kind === "text") {
+    const resolved = await resolveFileSource(file, {
+      provider: "chatcompletions",
+      model: context.model,
+      accepted: ["text"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+      memo: context.memo,
+    });
+    if (resolved.type !== "text") {
+      throw new Error(`Unsupported ChatCompletions text source: ${resolved.type}`);
+    }
     return {
-      type: "image_url" as const,
-      image_url: {
-        url: `data:${item.file.mimeType};base64,${item.file.base64}`,
+      type: "text",
+      text: formatTextFileContent(file, resolved.content, resolved.name, resolved.mimeType),
+    };
+  }
+
+  if (file.kind === "document") {
+    if (file.mimeType !== "application/pdf") {
+      throw new Error(
+        `ChatCompletions generic file inputs currently support PDF documents. Received ${file.mimeType}`,
+      );
+    }
+    if (context.fileInputs !== "fileData") {
+      throw new Error(
+        "ChatCompletions document file inputs require provider option fileInputs: 'fileData'",
+      );
+    }
+    const resolved = await resolveFileSource(file, {
+      provider: "chatcompletions",
+      model: context.model,
+      accepted: ["url", "base64"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+      memo: context.memo,
+    });
+
+    return {
+      type: "file",
+      file: {
+        filename: resolved.name ?? file.name,
+        fileData: resolvedToFileData(resolved, file),
       },
     };
   }
 
-  return null;
+  if (file.kind !== "image") {
+    throw new Error("ChatCompletions only supports text, image, and configured document files");
+  }
+
+  const resolved = await resolveFileSource(file, {
+    provider: "chatcompletions",
+    model: context.model,
+    accepted: ["url", "base64"],
+    purpose,
+    resolver: context.fileResolver,
+    signal: context.signal,
+    memo: context.memo,
+  });
+
+  return {
+    type: "image_url",
+    image_url: { url: resolvedToImageUrl(resolved, file) },
+  };
+}
+
+function resolvedToImageUrl(resolved: ResolvedFileSource, file: FileInfo): string {
+  if (resolved.type === "url") return resolved.url;
+  if (resolved.type === "base64") {
+    return `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`;
+  }
+  throw new Error(`Unsupported ChatCompletions image source: ${resolved.type}`);
+}
+
+function resolvedToFileData(resolved: ResolvedFileSource, file: FileInfo): string {
+  if (resolved.type === "url") return resolved.url;
+  if (resolved.type === "base64") {
+    return `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`;
+  }
+  throw new Error(`Unsupported ChatCompletions file source: ${resolved.type}`);
+}
+
+function formatTextFileContent(
+  file: FileInfo,
+  content: string,
+  name?: string,
+  mimeType?: string,
+): string {
+  return `File: ${name ?? file.name}\nMIME type: ${mimeType ?? file.mimeType}\n\n${content}`;
 }

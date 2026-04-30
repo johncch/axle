@@ -8,130 +8,233 @@ import {
   type ToolResultPart,
 } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
+import {
+  type FileInfo,
+  type FileResolutionMemo,
+  type FileResolver,
+  type ResolvedFileSource,
+  resolveFileSource,
+} from "../../utils/file.js";
 import { AxleStopReason } from "../types.js";
 
-export function convertToProviderMessages(
+interface AnthropicConversionContext {
+  model: string;
+  fileResolver?: FileResolver;
+  signal?: AbortSignal;
+  memo?: FileResolutionMemo;
+}
+
+export async function convertToProviderMessages(
   messages: Array<AxleMessage>,
-): Array<Anthropic.MessageParam> {
-  return messages.map((msg) => {
-    if (msg.role === "assistant") {
-      const content: Array<Anthropic.ContentBlockParam> = [];
-      for (const part of msg.content) {
-        if (part.type === "text") {
+  context: AnthropicConversionContext = { model: "" },
+): Promise<Array<Anthropic.MessageParam>> {
+  const memo = context.memo ?? new WeakMap();
+  return Promise.all(messages.map((msg) => convertMessage(msg, { ...context, memo })));
+}
+
+async function convertMessage(
+  msg: AxleMessage,
+  context: AnthropicConversionContext,
+): Promise<Anthropic.MessageParam> {
+  if (msg.role === "assistant") {
+    const content: Array<Anthropic.ContentBlockParam> = [];
+    for (const part of msg.content) {
+      if (part.type === "text") {
+        content.push({
+          type: "text",
+          text: part.text,
+        });
+      } else if (part.type === "thinking") {
+        if (part.redacted) {
           content.push({
-            type: "text",
-            text: part.text,
+            type: "redacted_thinking",
+            data: part.text,
           });
-        } else if (part.type === "thinking") {
-          if (part.redacted) {
-            content.push({
-              type: "redacted_thinking",
-              data: part.text,
-            });
-          } else if (part.signature) {
-            content.push({
-              type: "thinking",
-              thinking: part.text,
-              signature: part.signature,
-            });
-          }
-        } else if (part.type === "tool-call") {
+        } else if (part.signature) {
           content.push({
-            type: "tool_use",
-            id: part.id,
-            name: part.name,
-            input: part.parameters,
-          } satisfies Anthropic.ToolUseBlockParam);
-        } else if (part.type === "internal-tool") {
+            type: "thinking",
+            thinking: part.text,
+            signature: part.signature,
+          });
+        }
+      } else if (part.type === "tool-call") {
+        content.push({
+          type: "tool_use",
+          id: part.id,
+          name: part.name,
+          input: part.parameters,
+        } satisfies Anthropic.ToolUseBlockParam);
+      } else if (part.type === "internal-tool") {
+        content.push({
+          type: "server_tool_use",
+          id: part.id,
+          name: part.name,
+          input: part.input ?? {},
+        } as any);
+        if (part.output != null) {
           content.push({
-            type: "server_tool_use",
-            id: part.id,
-            name: part.name,
-            input: part.input ?? {},
+            type: "web_search_tool_result",
+            tool_use_id: part.id,
+            content: part.output,
           } as any);
-          if (part.output != null) {
-            content.push({
-              type: "web_search_tool_result",
-              tool_use_id: part.id,
-              content: part.output,
-            } as any);
-          }
         }
       }
-      return {
-        role: "assistant",
-        content,
-      };
     }
+    return {
+      role: "assistant",
+      content,
+    };
+  }
 
-    if (msg.role === "tool") {
-      return {
-        role: "user",
-        content: msg.content.map((r) => ({
-          type: "tool_result",
+  if (msg.role === "tool") {
+    return {
+      role: "user",
+      content: (await Promise.all(
+        msg.content.map(async (r) => ({
+          type: "tool_result" as const,
           tool_use_id: r.id,
-          content: typeof r.content === "string" ? r.content : convertToolResultParts(r.content),
+          content:
+            typeof r.content === "string"
+              ? r.content
+              : await convertToolResultParts(r.content, context),
           ...(r.isError ? { is_error: true } : {}),
-        })) satisfies Array<Anthropic.ToolResultBlockParam>,
-      } satisfies Anthropic.MessageParam;
-    }
+        })),
+      )) satisfies Array<Anthropic.ToolResultBlockParam>,
+    } satisfies Anthropic.MessageParam;
+  }
 
-    if (typeof msg.content === "string") {
-      return {
-        role: "user",
-        content: msg.content,
-      } satisfies Anthropic.MessageParam;
-    } else {
-      const content: Array<
-        Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam
-      > = [];
+  if (typeof msg.content === "string") {
+    return {
+      role: "user",
+      content: msg.content,
+    } satisfies Anthropic.MessageParam;
+  } else {
+    const content: Array<
+      Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam
+    > = [];
 
-      for (const part of msg.content) {
-        if (part.type === "text") {
-          content.push({
-            type: "text",
-            text: part.text,
-          } satisfies Anthropic.TextBlockParam);
-        } else if (part.type === "file") {
-          if (part.file.type === "image") {
-            if (part.file.base64) {
-              content.push({
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: part.file.mimeType as
-                    | "image/jpeg"
-                    | "image/png"
-                    | "image/gif"
-                    | "image/webp",
-                  data: part.file.base64,
-                },
-              } satisfies Anthropic.ImageBlockParam);
-            }
-          } else if (
-            part.file.type === "document" &&
-            part.file.mimeType === "application/pdf" &&
-            part.file.base64
-          ) {
-            content.push({
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: part.file.base64,
-              },
-            } satisfies Anthropic.DocumentBlockParam);
-          }
-          // Skip unsupported file types (non-PDF documents, videos, etc.)
-        }
+    for (const part of msg.content) {
+      if (part.type === "text") {
+        content.push({
+          type: "text",
+          text: part.text,
+        } satisfies Anthropic.TextBlockParam);
+      } else if (part.type === "file") {
+        content.push(await convertFilePart(part.file, context, "user-message"));
       }
-
-      return {
-        role: "user",
-        content,
-      } satisfies Anthropic.MessageParam;
     }
+
+    return {
+      role: "user",
+      content,
+    } satisfies Anthropic.MessageParam;
+  }
+}
+
+async function convertFilePart(
+  file: FileInfo,
+  context: AnthropicConversionContext,
+  purpose: "user-message" | "tool-result",
+): Promise<Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam | Anthropic.TextBlockParam> {
+  if (file.kind === "image") {
+    const resolved = await resolveFileSource(file, {
+      provider: "anthropic",
+      model: context.model,
+      accepted: ["url", "base64"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+      memo: context.memo,
+    });
+    return {
+      type: "image",
+      source: toAnthropicImageSource(resolved, file),
+    } satisfies Anthropic.ImageBlockParam;
+  }
+
+  if (file.kind === "document") {
+    if (file.mimeType !== "application/pdf") {
+      throw new Error(`Anthropic only supports PDF document files. Received ${file.mimeType}`);
+    }
+    const resolved = await resolveFileSource(file, {
+      provider: "anthropic",
+      model: context.model,
+      accepted: ["url", "base64"],
+      purpose,
+      resolver: context.fileResolver,
+      signal: context.signal,
+      memo: context.memo,
+    });
+    return {
+      type: "document",
+      source: toAnthropicPdfSource(resolved),
+      title: resolved.name ?? file.name,
+    } satisfies Anthropic.DocumentBlockParam;
+  }
+
+  const resolved = await resolveFileSource(file, {
+    provider: "anthropic",
+    model: context.model,
+    accepted: ["text"],
+    purpose,
+    resolver: context.fileResolver,
+    signal: context.signal,
+    memo: context.memo,
   });
+  if (resolved.type !== "text") {
+    throw new Error(`Unsupported Anthropic text source: ${resolved.type}`);
+  }
+
+  if (purpose === "tool-result") {
+    return { type: "text", text: resolved.content } satisfies Anthropic.TextBlockParam;
+  }
+
+  return {
+    type: "document",
+    source: {
+      type: "text",
+      media_type: "text/plain",
+      data: resolved.content,
+    },
+    title: resolved.name ?? file.name,
+  } satisfies Anthropic.DocumentBlockParam;
+}
+
+function toAnthropicImageSource(
+  resolved: ResolvedFileSource,
+  file: FileInfo,
+): Anthropic.ImageBlockParam["source"] {
+  if (resolved.type === "url") {
+    return { type: "url", url: resolved.url };
+  }
+  if (resolved.type === "base64") {
+    return {
+      type: "base64",
+      media_type: (resolved.mimeType ?? file.mimeType) as
+        | "image/jpeg"
+        | "image/png"
+        | "image/gif"
+        | "image/webp",
+      data: resolved.data,
+    };
+  }
+  throw new Error(`Unsupported Anthropic image source: ${resolved.type}`);
+}
+
+function toAnthropicPdfSource(
+  resolved: ResolvedFileSource,
+): Anthropic.DocumentBlockParam["source"] {
+  if (resolved.type === "url") {
+    return { type: "url", url: resolved.url };
+  }
+  if (resolved.type === "base64") {
+    return {
+      type: "base64",
+      media_type: "application/pdf",
+      data: resolved.data,
+    };
+  }
+  throw new Error(`Unsupported Anthropic PDF source: ${resolved.type}`);
 }
 
 export function convertToProviderTools(
@@ -212,20 +315,21 @@ function isObjectSchema(schema: any): schema is { type: "object"; [key: string]:
   return schema && typeof schema === "object" && schema.type === "object";
 }
 
-function convertToolResultParts(
+async function convertToolResultParts(
   parts: ToolResultPart[],
-): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
-  return parts.map((part) => {
-    if (part.type === "text") {
-      return { type: "text" as const, text: part.text };
-    }
-    return {
-      type: "image" as const,
-      source: {
-        type: "base64" as const,
-        media_type: part.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-        data: part.data,
-      },
-    };
-  });
+  context: AnthropicConversionContext,
+): Promise<Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>> {
+  return Promise.all(
+    parts.map(async (part) => {
+      if (part.type === "text") {
+        return { type: "text" as const, text: part.text };
+      }
+      if (part.file.kind !== "image" && part.file.kind !== "text") {
+        throw new Error("Anthropic tool results only support text and image file parts");
+      }
+      return convertFilePart(part.file, context, "tool-result") as Promise<
+        Anthropic.TextBlockParam | Anthropic.ImageBlockParam
+      >;
+    }),
+  );
 }

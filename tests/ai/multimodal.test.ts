@@ -1,27 +1,33 @@
 import { describe, expect, test } from "vitest";
-import type { AxleUserMessage, ContentPartFile, ContentPartText } from "../../src/messages/message.js";
+import type {
+  AxleUserMessage,
+  ContentPartFile,
+  ContentPartText,
+} from "../../src/messages/message.js";
 import { getFiles, getTextContent } from "../../src/messages/utils.js";
 import { FileInfo } from "../../src/utils/file.js";
 
 describe("Multimodal Support", () => {
   const mockImageFile: FileInfo = {
-    path: "/test/image.jpg",
-    base64:
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    kind: "image",
     mimeType: "image/jpeg",
     size: 1000,
     name: "image.jpg",
-    type: "image",
+    source: {
+      type: "base64",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    },
   };
 
   const mockPdfFile: FileInfo = {
-    path: "/test/document.pdf",
-    base64:
-      "JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKL01lZGlhQm94IFswIDAgNTk1IDg0Ml0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UK",
+    kind: "document",
     mimeType: "application/pdf",
     size: 2000,
     name: "document.pdf",
-    type: "document",
+    source: {
+      type: "base64",
+      data: "JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKL01lZGlhQm94IFswIDAgNTk1IDg0Ml0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UK",
+    },
   };
 
   describe("Conversation Integration", () => {

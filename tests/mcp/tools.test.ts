@@ -103,7 +103,15 @@ describe("createMcpTools", () => {
     expect(Array.isArray(result)).toBe(true);
     expect(result).toEqual([
       { type: "text", text: "Here is the image:" },
-      { type: "image", data: "base64data==", mimeType: "image/png" },
+      {
+        type: "file",
+        file: {
+          kind: "image",
+          mimeType: "image/png",
+          name: "mcp-image",
+          source: { type: "base64", data: "base64data==" },
+        },
+      },
     ]);
   });
 

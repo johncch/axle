@@ -8,9 +8,19 @@ export interface ChatCompletionMessage {
 }
 
 export interface ChatCompletionContentPart {
-  type: "text" | "image_url";
+  type: "text" | "image_url" | "file";
   text?: string;
   image_url?: { url: string };
+  file?: {
+    filename?: string;
+    fileData: string;
+  };
+}
+
+export type ChatCompletionsFileInputMode = "none" | "fileData";
+
+export interface ChatCompletionsProviderOptions {
+  fileInputs?: ChatCompletionsFileInputMode;
 }
 
 export interface ChatCompletionMessageToolCall {

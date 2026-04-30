@@ -15,6 +15,10 @@ export { parseResponse } from "./core/parse.js";
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
+export type {
+  ChatCompletionsFileInputMode,
+  ChatCompletionsProviderOptions,
+} from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
 export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
@@ -91,7 +95,17 @@ export { LocalFileStore } from "./store/index.js";
 export type { FileStore } from "./store/index.js";
 
 // Utils
-export { loadFileContent } from "./utils/file.js";
-export type { FileInfo } from "./utils/file.js";
+export { loadFileContent, loadFileReference } from "./utils/file.js";
+export type {
+  DeferredFileInfo,
+  FileInfo,
+  FileKind,
+  FileProviderId,
+  FileResolveFormat,
+  FileResolveRequest,
+  FileResolver,
+  FileSource,
+  ResolvedFileSource,
+} from "./utils/file.js";
 export { createHandle } from "./utils/utils.js";
 export type { Handle } from "./utils/utils.js";

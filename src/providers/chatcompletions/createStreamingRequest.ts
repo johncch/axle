@@ -2,8 +2,9 @@ import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
-import { ChatCompletionChunk } from "./types.js";
+import { type ChatCompletionsProviderOptions, ChatCompletionChunk } from "./types.js";
 import { convertAxleMessages, convertTools } from "./utils.js";
 
 export async function* createStreamingRequest(params: {
@@ -12,9 +13,10 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext };
+  context: { tracer?: TracingContext; fileResolver?: FileResolver };
   signal?: AbortSignal;
   apiKey?: string;
+  providerOptions?: ChatCompletionsProviderOptions;
   options?: {
     temperature?: number;
     top_p?: number;
@@ -25,40 +27,58 @@ export async function* createStreamingRequest(params: {
     [key: string]: any;
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { baseUrl, model, messages, system, tools, context, signal, apiKey, options } = params;
+  const {
+    baseUrl,
+    model,
+    messages,
+    system,
+    tools,
+    context,
+    signal,
+    apiKey,
+    providerOptions,
+    options,
+  } = params;
   const tracer = context?.tracer;
 
   if (options?.serverTools) {
     tracer?.warn("serverTools not supported by ChatCompletions provider");
   }
 
-  const chatMessages = convertAxleMessages(messages, system);
-  const chatTools = convertTools(tools);
-
-  const requestBody: Record<string, any> = {
-    model,
-    messages: chatMessages,
-    stream: true,
-    stream_options: { include_usage: true },
-    ...(chatTools && { tools: chatTools }),
-  };
-
-  if (options) {
-    if (options.temperature !== undefined) requestBody.temperature = options.temperature;
-    if (options.top_p !== undefined) requestBody.top_p = options.top_p;
-    if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
-    if (options.frequency_penalty !== undefined)
-      requestBody.frequency_penalty = options.frequency_penalty;
-    if (options.presence_penalty !== undefined)
-      requestBody.presence_penalty = options.presence_penalty;
-    if (options.stop !== undefined) requestBody.stop = options.stop;
-  }
-
-  tracer?.debug("ChatCompletions streaming request", { request: requestBody });
-
   const adapter = createStreamingAdapter();
 
   try {
+    const chatMessages = await convertAxleMessages(messages, system, {
+      model,
+      fileResolver: context?.fileResolver,
+      signal,
+      fileInputs: providerOptions?.fileInputs,
+    });
+    const chatTools = convertTools(tools);
+
+    const requestBody: Record<string, any> = {
+      model,
+      messages: chatMessages,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...(chatTools && { tools: chatTools }),
+    };
+
+    if (options) {
+      if (options.temperature !== undefined) requestBody.temperature = options.temperature;
+      if (options.top_p !== undefined) requestBody.top_p = options.top_p;
+      if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
+      if (options.frequency_penalty !== undefined)
+        requestBody.frequency_penalty = options.frequency_penalty;
+      if (options.presence_penalty !== undefined)
+        requestBody.presence_penalty = options.presence_penalty;
+      if (options.stop !== undefined) requestBody.stop = options.stop;
+    }
+
+    tracer?.debug("ChatCompletions streaming request", {
+      request: redactResolvedFileValues(requestBody),
+    });
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };

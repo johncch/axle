@@ -3,6 +3,7 @@ import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
 import { arrayify } from "../../utils/utils.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import { MAX_OUTPUT_TOKENS } from "./models.js";
@@ -14,7 +15,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { tracer?: TracingContext };
+  runtime: { tracer?: TracingContext; fileResolver?: FileResolver };
   signal?: AbortSignal;
   options?: {
     temperature?: number;
@@ -43,20 +44,26 @@ export async function* createStreamingRequest(params: {
     }
   }
 
-  const request = {
-    model: model,
-    max_tokens: max_tokens ?? getMaxTokens(model),
-    messages: convertToProviderMessages(messages),
-    ...(system && { system }),
-    ...(stop && { stop_sequences: arrayify(stop) }),
-    ...(providerTools.length > 0 && { tools: providerTools }),
-    ...restOptions,
-  };
-  tracer?.debug("Anthropic streaming request", { request });
-
   const streamingAdapter = createAnthropicStreamingAdapter();
 
   try {
+    const providerMessages = await convertToProviderMessages(messages, {
+      model,
+      fileResolver: runtime?.fileResolver,
+      signal,
+    });
+
+    const request = {
+      model: model,
+      max_tokens: max_tokens ?? getMaxTokens(model),
+      messages: providerMessages,
+      ...(system && { system }),
+      ...(stop && { stop_sequences: arrayify(stop) }),
+      ...(providerTools.length > 0 && { tools: providerTools }),
+      ...restOptions,
+    };
+    tracer?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
+
     const stream = await client.messages.create(
       {
         ...request,
@@ -71,7 +78,6 @@ export async function* createStreamingRequest(params: {
         yield chunk;
       }
     }
-    // testStream.end();
   } catch (error) {
     if (signal?.aborted) return;
     yield {

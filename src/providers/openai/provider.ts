@@ -3,6 +3,7 @@ import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import type { FileResolver } from "../../utils/file.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
@@ -21,7 +22,7 @@ export function openai(apiKey: string): AIProvider {
         messages: Array<AxleMessage>;
         system?: string;
         tools?: Array<ToolDefinition>;
-        context: { tracer?: TracingContext };
+        context: { tracer?: TracingContext; fileResolver?: FileResolver };
         options?: {
           temperature?: number;
           top_p?: number;
@@ -47,7 +48,7 @@ export function openai(apiKey: string): AIProvider {
         messages: Array<AxleMessage>;
         system?: string;
         tools?: Array<ToolDefinition>;
-        context: { tracer?: TracingContext };
+        context: { tracer?: TracingContext; fileResolver?: FileResolver };
         signal?: AbortSignal;
         options?: {
           temperature?: number;

@@ -230,13 +230,11 @@ describe("file module", () => {
 
       const result = await loadFileContent(filePath, "utf-8");
 
-      expect(result.content).toBe(testContent);
-      expect(result.type).toBe("text");
+      expect(result.source).toEqual({ type: "text", content: testContent });
+      expect(result.kind).toBe("text");
       expect(result.mimeType).toBe("text/plain");
       expect(result.name).toBe("test.txt");
-      expect(result.path).toBe(filePath);
       expect(result.size).toBe(testContent.length);
-      expect(result.base64).toBeUndefined();
     });
 
     it("should load a markdown file successfully with explicit utf-8 encoding", async () => {
@@ -246,11 +244,10 @@ describe("file module", () => {
 
       const result = await loadFileContent(filePath, "utf-8");
 
-      expect(result.content).toBe(testContent);
-      expect(result.type).toBe("text");
+      expect(result.source).toEqual({ type: "text", content: testContent });
+      expect(result.kind).toBe("text");
       expect(result.mimeType).toBe("text/markdown");
       expect(result.name).toBe("test.md");
-      expect(result.path).toBe(filePath);
       expect(result.size).toBe(testContent.length);
     });
 
@@ -261,7 +258,7 @@ describe("file module", () => {
 
       const result = await loadFileContent(filePath, "utf-8");
 
-      expect(result.content).toBe(testContent);
+      expect(result.source).toEqual({ type: "text", content: testContent });
       expect(result.mimeType).toBe("text/markdown");
       expect(result.name).toBe("test.markdown");
     });
@@ -279,8 +276,8 @@ describe("file module", () => {
       await writeFile(filePath, "console.log('test');");
 
       const result = await loadFileContent(filePath, "utf-8");
-      expect(result.content).toBe("console.log('test');");
-      expect(result.type).toBe("text");
+      expect(result.source).toEqual({ type: "text", content: "console.log('test');" });
+      expect(result.kind).toBe("text");
       expect(result.mimeType).toBe("text/javascript");
     });
 
@@ -301,8 +298,8 @@ describe("file module", () => {
 
       const result = await loadFileContent(filePath, "utf-8");
 
-      expect(result.content).toBe("");
-      expect(result.type).toBe("text");
+      expect(result.source).toEqual({ type: "text", content: "" });
+      expect(result.kind).toBe("text");
       expect(result.size).toBe(0);
     });
 
@@ -313,7 +310,7 @@ describe("file module", () => {
 
       const result = await loadFileContent(filePath, "utf-8");
 
-      expect(result.content).toBe(testContent);
+      expect(result.source).toEqual({ type: "text", content: testContent });
     });
 
     it("should load binary files with base64 encoding", async () => {
@@ -323,12 +320,10 @@ describe("file module", () => {
 
       const result = await loadFileContent(filePath, "base64");
 
-      expect(result.base64).toBe(testBuffer.toString("base64"));
-      expect(result.type).toBe("image");
+      expect(result.source).toEqual({ type: "base64", data: testBuffer.toString("base64") });
+      expect(result.kind).toBe("image");
       expect(result.mimeType).toBe("image/png");
       expect(result.name).toBe("test.png");
-      expect(result.path).toBe(filePath);
-      expect(result.content).toBeUndefined();
     });
 
     it("should enforce encoding validation for mismatched types", async () => {
@@ -361,9 +356,8 @@ describe("file module", () => {
 
           const result = await loadFileContent(filePath);
 
-          expect(result.content).toBe(testCase.content);
-          expect(result.type).toBe("text");
-          expect(result.base64).toBeUndefined();
+          expect(result.source).toEqual({ type: "text", content: testCase.content });
+          expect(result.kind).toBe("text");
         }
       });
 
@@ -381,9 +375,8 @@ describe("file module", () => {
 
           const result = await loadFileContent(filePath);
 
-          expect(result.base64).toBe(testBuffer.toString("base64"));
-          expect(result.type).toBe(testCase.type);
-          expect(result.content).toBeUndefined();
+          expect(result.source).toEqual({ type: "base64", data: testBuffer.toString("base64") });
+          expect(result.kind).toBe(testCase.type);
         }
       });
 
@@ -402,14 +395,12 @@ describe("file module", () => {
       });
 
       it("should handle case-insensitive extensions", async () => {
-        const testCases: Array<
-          | { file: string; content: string }
-          | { file: string; data: Buffer }
-        > = [
-          { file: "test.TXT", content: "uppercase txt" },
-          { file: "test.PNG", data: Buffer.from("fake png", "utf-8") },
-          { file: "test.MD", content: "uppercase markdown" },
-        ];
+        const testCases: Array<{ file: string; content: string } | { file: string; data: Buffer }> =
+          [
+            { file: "test.TXT", content: "uppercase txt" },
+            { file: "test.PNG", data: Buffer.from("fake png", "utf-8") },
+            { file: "test.MD", content: "uppercase markdown" },
+          ];
 
         for (const testCase of testCases) {
           const filePath = join(TEST_DIR, testCase.file);
@@ -417,13 +408,16 @@ describe("file module", () => {
           if ("content" in testCase) {
             await writeFile(filePath, testCase.content);
             const result = await loadFileContent(filePath);
-            expect(result.content).toBe(testCase.content);
-            expect(result.type).toBe("text");
+            expect(result.source).toEqual({ type: "text", content: testCase.content });
+            expect(result.kind).toBe("text");
           } else {
             await writeFile(filePath, testCase.data);
             const result = await loadFileContent(filePath);
-            expect(result.base64).toBe(testCase.data.toString("base64"));
-            expect(result.type).toBe("image");
+            expect(result.source).toEqual({
+              type: "base64",
+              data: testCase.data.toString("base64"),
+            });
+            expect(result.kind).toBe("image");
           }
         }
       });

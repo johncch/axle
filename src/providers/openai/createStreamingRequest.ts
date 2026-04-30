@@ -3,6 +3,7 @@ import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessageToResponseInput, prepareTools } from "./utils.js";
 
@@ -12,7 +13,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { tracer?: TracingContext };
+  runtime: { tracer?: TracingContext; fileResolver?: FileResolver };
   signal?: AbortSignal;
   options?: {
     temperature?: number;
@@ -42,20 +43,28 @@ export async function* createStreamingRequest(params: {
     }
   }
 
-  const request = {
-    model,
-    input: convertAxleMessageToResponseInput(messages),
-    ...(system && { instructions: system }),
-    stream: true as const,
-    ...(modelTools.length > 0 ? { tools: modelTools } : {}),
-    ...restOptions,
-  };
-
-  tracer?.debug("OpenAI ResponsesAPI streaming request", { request });
-
   const streamingAdapter = createStreamingAdapter();
 
   try {
+    const input = await convertAxleMessageToResponseInput(messages, {
+      model,
+      fileResolver: runtime?.fileResolver,
+      signal,
+    });
+
+    const request = {
+      model,
+      input,
+      ...(system && { instructions: system }),
+      stream: true as const,
+      ...(modelTools.length > 0 ? { tools: modelTools } : {}),
+      ...restOptions,
+    };
+
+    tracer?.debug("OpenAI ResponsesAPI streaming request", {
+      request: redactResolvedFileValues(request),
+    });
+
     const stream = client.responses.stream(request, ...(signal ? [{ signal }] : []));
 
     for await (const event of stream) {

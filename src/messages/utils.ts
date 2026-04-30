@@ -40,7 +40,7 @@ export function getDocuments(content: string | ContentPart[]): FileInfo[] {
   }
 
   return content
-    .filter((item) => item.type === "file" && item.file.type === "document")
+    .filter((item) => item.type === "file" && item.file.kind === "document")
     .map((item) => (item as ContentPartFile).file);
 }
 
@@ -50,7 +50,7 @@ export function getImages(content: string | ContentPart[]): FileInfo[] {
   }
 
   return content
-    .filter((item) => item.type === "file" && item.file.type === "image")
+    .filter((item) => item.type === "file" && item.file.kind === "image")
     .map((item) => (item as ContentPartFile).file);
 }
 

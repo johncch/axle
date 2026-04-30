@@ -3,6 +3,7 @@ import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";
 
@@ -12,7 +13,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { tracer?: TracingContext };
+  runtime: { tracer?: TracingContext; fileResolver?: FileResolver };
   signal?: AbortSignal;
   options?: {
     temperature?: number;
@@ -63,15 +64,21 @@ export async function* createStreamingRequest(params: {
     }
   }
 
-  const request = {
-    contents: convertAxleMessagesToGemini(messages),
-    config,
-  };
-  tracer?.debug("Gemini streaming request", { request });
-
   const streamingAdapter = createGeminiStreamingAdapter();
 
   try {
+    const contents = await convertAxleMessagesToGemini(messages, {
+      model,
+      fileResolver: runtime?.fileResolver,
+      signal,
+    });
+
+    const request = {
+      contents,
+      config,
+    };
+    tracer?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
+
     const stream = await client.models.generateContentStream({
       model,
       ...request,

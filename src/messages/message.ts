@@ -26,9 +26,7 @@ export interface AxleToolCallMessage {
   content: Array<AxleToolCallResult>;
 }
 
-export type ToolResultPart =
-  | { type: "text"; text: string }
-  | { type: "image"; data: string; mimeType: string };
+export type ToolResultPart = { type: "text"; text: string } | { type: "file"; file: FileInfo };
 
 export interface AxleToolCallResult {
   id: string;

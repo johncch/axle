@@ -2,11 +2,17 @@ import { AxleMessage } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import type { FileResolver } from "../../utils/file.js";
 import { AIProvider, ModelResult } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
+import type { ChatCompletionsProviderOptions } from "./types.js";
 
-export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
+export function chatCompletions(
+  baseUrl: string,
+  apiKey?: string,
+  providerOptions: ChatCompletionsProviderOptions = {},
+): AIProvider {
   return {
     name: "ChatCompletions",
 
@@ -17,7 +23,7 @@ export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
         messages: Array<AxleMessage>;
         system?: string;
         tools?: Array<ToolDefinition>;
-        context: { tracer?: TracingContext };
+        context: { tracer?: TracingContext; fileResolver?: FileResolver };
         options?: {
           temperature?: number;
           top_p?: number;
@@ -33,6 +39,7 @@ export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
         baseUrl,
         model,
         apiKey,
+        providerOptions,
         ...params,
       });
     },
@@ -44,7 +51,7 @@ export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
         messages: Array<AxleMessage>;
         system?: string;
         tools?: Array<ToolDefinition>;
-        context: { tracer?: TracingContext };
+        context: { tracer?: TracingContext; fileResolver?: FileResolver };
         signal?: AbortSignal;
         options?: {
           temperature?: number;
@@ -61,6 +68,7 @@ export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
         baseUrl,
         model,
         apiKey,
+        providerOptions,
         ...params,
       });
     },

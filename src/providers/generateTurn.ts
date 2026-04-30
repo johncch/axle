@@ -1,6 +1,7 @@
 import { AxleMessage } from "../messages/message.js";
 import { ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
+import type { FileResolver } from "../utils/file.js";
 import { AIProvider, ModelResult } from "./types.js";
 
 export interface GenerateTurnOptions {
@@ -20,16 +21,17 @@ interface GenerateTurnProps {
   system?: string;
   tools?: Array<ToolDefinition>;
   tracer?: TracingContext;
+  fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
 }
 
 export async function generateTurn(props: GenerateTurnProps): Promise<ModelResult> {
-  const { provider, model, messages, system, tools, tracer, options } = props;
+  const { provider, model, messages, system, tools, tracer, fileResolver, options } = props;
   return provider.createGenerationRequest(model, {
     messages,
     system,
     tools,
-    context: { tracer },
+    context: { tracer, fileResolver },
     options,
   });
 }

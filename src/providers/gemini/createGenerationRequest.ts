@@ -8,6 +8,7 @@ import {
 import { getTextContent } from "../../messages/utils.js";
 import { ToolDefinition } from "../../tools/types.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { type FileResolver, redactResolvedFileValues } from "../../utils/file.js";
 import { AxleStopReason, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
@@ -18,7 +19,7 @@ export async function createGenerationRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  context: { tracer?: TracingContext };
+  context: { tracer?: TracingContext; fileResolver?: FileResolver };
   options?: {
     temperature?: number;
     top_p?: number;
@@ -51,14 +52,19 @@ export async function createGenerationRequest(params: {
     delete googleOptions.top_p;
   }
 
-  const request = {
-    contents: convertAxleMessagesToGemini(messages),
-    config: prepareConfig(tools, system, googleOptions),
-  };
-  tracer?.debug("Gemini request", { request });
-
   let result: ModelResult;
   try {
+    const contents = await convertAxleMessagesToGemini(messages, {
+      model,
+      fileResolver: context?.fileResolver,
+    });
+
+    const request = {
+      contents,
+      config: prepareConfig(tools, system, googleOptions),
+    };
+    tracer?.debug("Gemini request", { request: redactResolvedFileValues(request) });
+
     const response = await client.models.generateContent({
       model,
       ...request,
