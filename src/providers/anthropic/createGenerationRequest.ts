@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getTextContent } from "../../messages/utils.js";
-import { redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";

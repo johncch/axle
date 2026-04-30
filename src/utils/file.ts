@@ -242,39 +242,6 @@ export async function resolveFileSource(
   return assertAccepted(resolved, file, options);
 }
 
-export function redactResolvedFileValues<T>(value: T): T {
-  return redactValue(value, null) as T;
-}
-
-function redactValue(value: unknown, key: string | null): unknown {
-  if (value == null || typeof value !== "object") {
-    if (typeof value === "string" && key && REDACTED_FILE_VALUE_KEYS.has(key)) {
-      return "[redacted-file-value]";
-    }
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, null));
-  }
-
-  const result: Record<string, unknown> = {};
-  for (const [entryKey, entryValue] of Object.entries(value)) {
-    result[entryKey] = redactValue(entryValue, entryKey);
-  }
-  return result;
-}
-
-const REDACTED_FILE_VALUE_KEYS = new Set([
-  "data",
-  "file_data",
-  "file_url",
-  "image_url",
-  "url",
-  "uri",
-  "fileUri",
-]);
-
 function assertAccepted(
   resolved: ResolvedFileSource,
   file: FileInfo,

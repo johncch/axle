@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
 import { StreamingRequestParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";

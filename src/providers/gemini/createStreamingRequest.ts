@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { StreamingRequestParams } from "../types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import { convertAxleMessagesToGemini, prepareConfig } from "./utils.js";

@@ -1,5 +1,5 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { StreamingRequestParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { type ChatCompletionsProviderOptions, ChatCompletionChunk } from "./types.js";

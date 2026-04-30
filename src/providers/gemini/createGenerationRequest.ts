@@ -6,7 +6,7 @@ import {
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import type { TracingContext } from "../../tracer/types.js";
-import { redactResolvedFileValues } from "../../utils/file.js";
+import { redactResolvedFileValues } from "../../utils/redact.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessagesToGemini, convertStopReason, prepareConfig } from "./utils.js";
