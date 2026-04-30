@@ -324,18 +324,15 @@ function isObjectSchema(schema: any): schema is { type: "object"; [key: string]:
 async function convertToolResultParts(
   parts: ToolResultPart[],
   context: AnthropicConversionContext,
-): Promise<Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>> {
+): Promise<
+  Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam>
+> {
   return Promise.all(
     parts.map(async (part) => {
       if (part.type === "text") {
         return { type: "text" as const, text: part.text };
       }
-      if (part.file.kind !== "image" && part.file.kind !== "text") {
-        throw new Error("Anthropic tool results only support text and image file parts");
-      }
-      return convertFilePart(part.file, context, "tool-result") as Promise<
-        Anthropic.TextBlockParam | Anthropic.ImageBlockParam
-      >;
+      return convertFilePart(part.file, context, "tool-result");
     }),
   );
 }

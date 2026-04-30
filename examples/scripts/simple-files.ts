@@ -15,6 +15,7 @@ const agent = new Agent({
   provider,
   model,
   fileResolver: async (params) => {
+    // For demo: inspect what the resolver receives. Drop in real code.
     console.log(params);
     const imageFile = await loadFileContent(
       "./examples/data/economist-brainy-imports.png",

@@ -64,6 +64,60 @@ describe("deferred file resolution", () => {
     expect(JSON.stringify(events)).not.toContain(resolvedUrl);
   });
 
+  test("propagates AbortSignal from send through to the FileResolver", async () => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+
+    const fileResolver: FileResolver = async ({ signal }) => {
+      receivedSignal = signal;
+      return { type: "url", url: "https://example/x.png" };
+    };
+
+    const provider: AIProvider = {
+      name: "test-signal",
+      async createGenerationRequest() {
+        throw new Error("not used");
+      },
+      async *createStreamingRequest(model, params) {
+        await convertAxleMessageToResponseInput(params.messages, {
+          model,
+          fileResolver: params.context.fileResolver,
+          signal: params.signal,
+        });
+
+        yield { type: "start", id: "turn-1", data: { model, timestamp: Date.now() } };
+        yield { type: "text-start", data: { index: 0 } };
+        yield { type: "text-delta", data: { text: "done", index: 0 } };
+        yield { type: "text-complete", data: { text: "done", index: 0 } };
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        };
+      },
+    };
+
+    const agent = new Agent({ provider, model: "test-model", fileResolver });
+    const file: FileInfo = {
+      kind: "image",
+      mimeType: "image/png",
+      name: "x.png",
+      source: { type: "ref", ref: "x" },
+    };
+
+    const instruct = new Instruct("Inspect");
+    instruct.addFile(file);
+
+    await agent.send(instruct, { signal: controller.signal }).final;
+
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    expect(receivedSignal!.aborted).toBe(false);
+
+    // Aborting the caller's controller propagates through the merged signal
+    // that was handed to the resolver.
+    controller.abort();
+    expect(receivedSignal!.aborted).toBe(true);
+  });
+
   test("preserves text file name and MIME type for Gemini text parts", async () => {
     const file: FileInfo = {
       kind: "text",

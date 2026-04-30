@@ -113,21 +113,6 @@ export function pathToComponents(fullpath: string): FilePathInfo | null {
   return null;
 }
 
-export async function fileExists({
-  baseName,
-  directory = ".",
-}: {
-  baseName: string;
-  directory?: string;
-}): Promise<boolean> {
-  try {
-    const files = await glob(`${directory}/${baseName}.*`);
-    return files.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 // Function to ensure the directory exists
 export async function ensureDirectoryExistence(filePath: string) {
   const dirName = dirname(filePath);

@@ -32,6 +32,12 @@ function walk(value: unknown, key: string | null, keys: Set<string>, placeholder
 /**
  * Object keys that carry resolved file payload values across provider request
  * bodies (base64 blobs, signed URLs, data URLs, etc.).
+ *
+ * Note: file *text* content is intentionally not redacted. It flows through
+ * the same `text` field as user prompts in OpenAI / Gemini / ChatCompletions,
+ * so key-based redaction can't distinguish them. Trace output volume for
+ * large text payloads is a separate concern (truncation, log levels) and
+ * should be handled by the tracer, not here.
  */
 const FILE_VALUE_KEYS = new Set([
   "data",
