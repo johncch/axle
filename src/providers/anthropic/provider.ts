@@ -58,17 +58,7 @@ export function anthropic(apiKey: string): AIProvider {
         };
       },
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      const { messages, system, tools, context, signal, options } = params;
-      return createStreamingRequest({
-        client,
-        model,
-        messages,
-        system,
-        tools,
-        runtime: context,
-        signal,
-        options,
-      });
+      return createStreamingRequest({ client, model, ...params });
     },
   };
 }

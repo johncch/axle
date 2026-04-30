@@ -13,7 +13,7 @@ export async function* createStreamingRequest(params: {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  runtime: { tracer?: TracingContext; fileResolver?: FileResolver };
+  context: { tracer?: TracingContext; fileResolver?: FileResolver };
   signal?: AbortSignal;
   options?: {
     temperature?: number;
@@ -25,8 +25,8 @@ export async function* createStreamingRequest(params: {
     [key: string]: any;
   };
 }): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, runtime, signal, options } = params;
-  const tracer = runtime?.tracer;
+  const { client, model, messages, system, tools, context, signal, options } = params;
+  const tracer = context?.tracer;
 
   // Extract serverTools before option conversion
   const { serverTools, ...rawOptions } = options ?? {};
@@ -69,7 +69,7 @@ export async function* createStreamingRequest(params: {
   try {
     const contents = await convertAxleMessagesToGemini(messages, {
       model,
-      fileResolver: runtime?.fileResolver,
+      fileResolver: context?.fileResolver,
       signal,
     });
 

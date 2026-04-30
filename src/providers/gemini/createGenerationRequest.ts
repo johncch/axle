@@ -81,9 +81,9 @@ export async function createGenerationRequest(params: {
 
 function fromModelResponse(
   response: GenerateContentResponse,
-  runtime: { tracer?: TracingContext },
+  context: { tracer?: TracingContext },
 ): ModelResult {
-  const { tracer } = runtime;
+  const { tracer } = context;
 
   const inTokens = response.usageMetadata?.promptTokenCount ?? 0;
   const totalTokens = response.usageMetadata?.totalTokenCount ?? inTokens;
