@@ -10,7 +10,6 @@ import {
 import { ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
-  type FileResolutionMemo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
@@ -21,15 +20,13 @@ interface AnthropicConversionContext {
   model: string;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
-  memo?: FileResolutionMemo;
 }
 
 export async function convertToProviderMessages(
   messages: Array<AxleMessage>,
   context: AnthropicConversionContext = { model: "" },
 ): Promise<Array<Anthropic.MessageParam>> {
-  const memo = context.memo ?? new WeakMap();
-  return Promise.all(messages.map((msg) => convertMessage(msg, { ...context, memo })));
+  return Promise.all(messages.map((msg) => convertMessage(msg, context)));
 }
 
 async function convertMessage(
@@ -144,7 +141,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
     return {
       type: "image",
@@ -163,7 +159,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
     return {
       type: "document",
@@ -179,7 +174,6 @@ async function convertFilePart(
     purpose,
     resolver: context.fileResolver,
     signal: context.signal,
-    memo: context.memo,
   });
   if (resolved.type !== "text") {
     throw new Error(`Unsupported Anthropic text source: ${resolved.type}`);

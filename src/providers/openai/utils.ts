@@ -5,7 +5,6 @@ import { getTextContent } from "../../messages/utils.js";
 import { ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
-  type FileResolutionMemo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
@@ -30,17 +29,13 @@ interface OpenAIConversionContext {
   model: string;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
-  memo?: FileResolutionMemo;
 }
 
 export async function convertAxleMessageToResponseInput(
   messages: AxleMessage[],
   context: OpenAIConversionContext = { model: "" },
 ): Promise<ResponseInput> {
-  const memo = context.memo ?? new WeakMap();
-  const converted = await Promise.all(
-    messages.map((msg) => convertMessage(msg, { ...context, memo })),
-  );
+  const converted = await Promise.all(messages.map((msg) => convertMessage(msg, context)));
   return converted.flat(1);
 }
 
@@ -165,7 +160,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
     return {
       type: "input_image" as const,
@@ -187,7 +181,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
     return resolvedToInputFile(resolved, file);
   }
@@ -199,7 +192,6 @@ async function convertFilePart(
     purpose,
     resolver: context.fileResolver,
     signal: context.signal,
-    memo: context.memo,
   });
 
   if (resolved.type === "text") {

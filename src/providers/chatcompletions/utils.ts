@@ -3,7 +3,6 @@ import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
-  type FileResolutionMemo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
@@ -20,7 +19,6 @@ interface ChatCompletionsConversionContext {
   model: string;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
-  memo?: FileResolutionMemo;
   fileInputs?: ChatCompletionsFileInputMode;
 }
 
@@ -29,10 +27,9 @@ export async function convertAxleMessages(
   system?: string,
   context: ChatCompletionsConversionContext = { model: "" },
 ): Promise<ChatCompletionMessage[]> {
-  const memo = context.memo ?? new WeakMap();
-  const converted = (
-    await Promise.all(messages.map((msg) => convertMessage(msg, { ...context, memo })))
-  ).flat(1);
+  const converted = (await Promise.all(messages.map((msg) => convertMessage(msg, context)))).flat(
+    1,
+  );
 
   if (system) {
     return [{ role: "system", content: system }, ...converted];
@@ -183,7 +180,6 @@ async function convertToolResultContent(
         purpose: "tool-result",
         resolver: context.fileResolver,
         signal: context.signal,
-        memo: context.memo,
       });
       if (resolved.type !== "text") {
         throw new Error(`Unsupported ChatCompletions text source: ${resolved.type}`);
@@ -211,7 +207,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
     if (resolved.type !== "text") {
       throw new Error(`Unsupported ChatCompletions text source: ${resolved.type}`);
@@ -240,7 +235,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
 
     return {
@@ -263,7 +257,6 @@ async function convertFilePart(
     purpose,
     resolver: context.fileResolver,
     signal: context.signal,
-    memo: context.memo,
   });
 
   return {

@@ -197,7 +197,6 @@ export interface FileResolveRequest {
 }
 
 export type FileResolver = (request: FileResolveRequest) => Promise<ResolvedFileSource>;
-export type FileResolutionMemo = WeakMap<FileInfo, Map<string, Promise<ResolvedFileSource>>>;
 
 export interface ResolveFileSourceOptions {
   provider: FileProviderId;
@@ -206,27 +205,41 @@ export interface ResolveFileSourceOptions {
   purpose: FilePurpose;
   resolver?: FileResolver;
   signal?: AbortSignal;
-  memo?: FileResolutionMemo;
 }
 
 export async function resolveFileSource(
   file: FileInfo,
   options: ResolveFileSourceOptions,
 ): Promise<ResolvedFileSource> {
-  const key = `${options.provider}:${options.model}:${options.purpose}:${options.accepted.join("|")}`;
-  const memo = options.memo;
-  if (memo) {
-    const existing = memo.get(file)?.get(key);
-    if (existing) return existing;
+  if (options.signal?.aborted) {
+    throw new DOMException("File resolution aborted", "AbortError");
   }
 
-  const promise = resolveFileSourceUncached(file, options);
-  if (memo) {
-    const fileMemo = memo.get(file) ?? new Map<string, Promise<ResolvedFileSource>>();
-    fileMemo.set(key, promise);
-    memo.set(file, fileMemo);
+  const { source } = file;
+  if (source.type === "base64") {
+    return assertAccepted({ type: "base64", data: source.data }, file, options);
   }
-  return promise;
+  if (source.type === "text") {
+    return assertAccepted({ type: "text", content: source.content }, file, options);
+  }
+  if (source.type === "url") {
+    return assertAccepted({ type: "url", url: source.url }, file, options);
+  }
+
+  if (!options.resolver) {
+    throw new Error(`No fileResolver configured for deferred file: ${file.name}`);
+  }
+
+  const resolved = await options.resolver({
+    file: file as DeferredFileInfo,
+    ref: source.ref,
+    provider: options.provider,
+    model: options.model,
+    accepted: options.accepted,
+    purpose: options.purpose,
+    signal: options.signal,
+  });
+  return assertAccepted(resolved, file, options);
 }
 
 export function redactResolvedFileValues<T>(value: T): T {
@@ -261,41 +274,6 @@ const REDACTED_FILE_VALUE_KEYS = new Set([
   "uri",
   "fileUri",
 ]);
-
-async function resolveFileSourceUncached(
-  file: FileInfo,
-  options: ResolveFileSourceOptions,
-): Promise<ResolvedFileSource> {
-  if (options.signal?.aborted) {
-    throw new DOMException("File resolution aborted", "AbortError");
-  }
-
-  const { source } = file;
-  if (source.type === "base64") {
-    return assertAccepted({ type: "base64", data: source.data }, file, options);
-  }
-  if (source.type === "text") {
-    return assertAccepted({ type: "text", content: source.content }, file, options);
-  }
-  if (source.type === "url") {
-    return assertAccepted({ type: "url", url: source.url }, file, options);
-  }
-
-  if (!options.resolver) {
-    throw new Error(`No fileResolver configured for deferred file: ${file.name}`);
-  }
-
-  const resolved = await options.resolver({
-    file: file as DeferredFileInfo,
-    ref: source.ref,
-    provider: options.provider,
-    model: options.model,
-    accepted: options.accepted,
-    purpose: options.purpose,
-    signal: options.signal,
-  });
-  return assertAccepted(resolved, file, options);
-}
 
 function assertAccepted(
   resolved: ResolvedFileSource,

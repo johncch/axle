@@ -4,7 +4,6 @@ import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/index.js";
 import {
   type FileInfo,
-  type FileResolutionMemo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
@@ -50,17 +49,13 @@ interface GeminiConversionContext {
   model: string;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
-  memo?: FileResolutionMemo;
 }
 
 export async function convertAxleMessagesToGemini(
   messages: AxleMessage[],
   context: GeminiConversionContext = { model: "" },
 ): Promise<Content[]> {
-  const memo = context.memo ?? new WeakMap();
-  const converted = await Promise.all(
-    messages.map((msg) => convertMessage(msg, { ...context, memo })),
-  );
+  const converted = await Promise.all(messages.map((msg) => convertMessage(msg, context)));
   return converted.filter((msg): msg is Content => msg !== undefined);
 }
 
@@ -203,7 +198,6 @@ async function convertFilePart(
       purpose,
       resolver: context.fileResolver,
       signal: context.signal,
-      memo: context.memo,
     });
     if (resolved.type !== "text") {
       throw new Error(`Unsupported Gemini text source: ${resolved.type}`);
@@ -224,7 +218,6 @@ async function convertFilePart(
     purpose,
     resolver: context.fileResolver,
     signal: context.signal,
-    memo: context.memo,
   });
   return resolvedToGeminiPart(resolved, file);
 }
