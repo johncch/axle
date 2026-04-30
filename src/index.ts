@@ -95,7 +95,7 @@ export { LocalFileStore } from "./store/index.js";
 export type { FileStore } from "./store/index.js";
 
 // Utils
-export { loadFileContent, loadFileReference } from "./utils/file.js";
+export { loadFileContent } from "./utils/file.js";
 export type {
   DeferredFileInfo,
   FileInfo,

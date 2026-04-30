@@ -154,7 +154,6 @@ export type FileSource =
   | { type: "base64"; data: string }
   | { type: "text"; content: string }
   | { type: "url"; url: string }
-  | { type: "path"; path: string }
   | { type: "ref"; ref: unknown };
 
 export interface FileInfo {
@@ -297,9 +296,6 @@ async function resolveFileSourceUncached(
   if (source.type === "url") {
     return assertAccepted({ type: "url", url: source.url }, file, options);
   }
-  if (source.type === "path") {
-    return resolvePathFile(file, options);
-  }
 
   if (!options.resolver) {
     throw new Error(`No fileResolver configured for deferred file: ${file.name}`);
@@ -315,35 +311,6 @@ async function resolveFileSourceUncached(
     signal: options.signal,
   });
   return assertAccepted(resolved, file, options);
-}
-
-async function resolvePathFile(
-  file: FileInfo,
-  options: ResolveFileSourceOptions,
-): Promise<ResolvedFileSource> {
-  if (file.source.type !== "path") {
-    throw new Error("Expected path file source");
-  }
-
-  const resolvedPath = resolve(file.source.path);
-  try {
-    await access(resolvedPath);
-  } catch {
-    throw new Error(`File not found: ${file.source.path}`);
-  }
-
-  const stats = await stat(resolvedPath);
-  if (stats.size > MAX_FILE_SIZE) {
-    throw new Error(`File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`);
-  }
-
-  if (file.kind === "text") {
-    const content = await readFile(resolvedPath, "utf-8");
-    return assertAccepted({ type: "text", content }, file, options);
-  }
-
-  const fileBuffer = await readFile(resolvedPath);
-  return assertAccepted({ type: "base64", data: fileBuffer.toString("base64") }, file, options);
 }
 
 function assertAccepted(
@@ -473,30 +440,4 @@ export async function loadFileContent(
       source: { type: "base64", data: base64 },
     };
   }
-}
-
-export async function loadFileReference(filePath: string): Promise<FileInfo> {
-  const resolvedPath = resolve(filePath);
-
-  try {
-    await access(resolvedPath);
-  } catch {
-    throw new Error(`File not found: ${filePath}`);
-  }
-
-  const stats = await stat(resolvedPath);
-  if (stats.size > MAX_FILE_SIZE) {
-    throw new Error(`File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`);
-  }
-
-  const fileName = resolvedPath.split("/").pop() || "";
-  const category = getFileCategory(resolvedPath);
-
-  return {
-    kind: category.kind,
-    mimeType: category.mimeType,
-    size: stats.size,
-    name: fileName,
-    source: { type: "path", path: resolvedPath },
-  };
 }
