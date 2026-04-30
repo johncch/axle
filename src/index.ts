@@ -15,10 +15,6 @@ export { parseResponse } from "./core/parse.js";
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
-export type {
-  ChatCompletionsFileInputMode,
-  ChatCompletionsProviderOptions,
-} from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
 export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";

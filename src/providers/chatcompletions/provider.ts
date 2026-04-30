@@ -7,13 +7,8 @@ import {
 } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import type { ChatCompletionsProviderOptions } from "./types.js";
 
-export function chatCompletions(
-  baseUrl: string,
-  apiKey?: string,
-  providerOptions: ChatCompletionsProviderOptions = {},
-): AIProvider {
+export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider {
   return {
     name: "ChatCompletions",
 
@@ -22,13 +17,7 @@ export function chatCompletions(
       model: string,
       params: GenerationRequestParams,
     ): Promise<ModelResult> {
-      return await createGenerationRequest({
-        baseUrl,
-        model,
-        apiKey,
-        providerOptions,
-        ...params,
-      });
+      return await createGenerationRequest({ baseUrl, model, apiKey, ...params });
     },
 
     /** @internal */
@@ -36,13 +25,7 @@ export function chatCompletions(
       model: string,
       params: StreamingRequestParams,
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      return createStreamingRequest({
-        baseUrl,
-        model,
-        apiKey,
-        providerOptions,
-        ...params,
-      });
+      return createStreamingRequest({ baseUrl, model, apiKey, ...params });
     },
   };
 }

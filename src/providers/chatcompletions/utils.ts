@@ -8,18 +8,12 @@ import {
   resolveFileSource,
 } from "../../utils/file.js";
 import { AxleStopReason } from "../types.js";
-import {
-  type ChatCompletionsFileInputMode,
-  ChatCompletionContentPart,
-  ChatCompletionMessage,
-  ChatCompletionTool,
-} from "./types.js";
+import { ChatCompletionContentPart, ChatCompletionMessage, ChatCompletionTool } from "./types.js";
 
 interface ChatCompletionsConversionContext {
   model: string;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
-  fileInputs?: ChatCompletionsFileInputMode;
 }
 
 export async function convertAxleMessages(
@@ -220,12 +214,7 @@ async function convertFilePart(
   if (file.kind === "document") {
     if (file.mimeType !== "application/pdf") {
       throw new Error(
-        `ChatCompletions generic file inputs currently support PDF documents. Received ${file.mimeType}`,
-      );
-    }
-    if (context.fileInputs !== "fileData") {
-      throw new Error(
-        "ChatCompletions document file inputs require provider option fileInputs: 'fileData'",
+        `ChatCompletions document file inputs currently support PDF only. Received ${file.mimeType}`,
       );
     }
     const resolved = await resolveFileSource(file, {
@@ -241,13 +230,9 @@ async function convertFilePart(
       type: "file",
       file: {
         filename: resolved.name ?? file.name,
-        fileData: resolvedToFileData(resolved, file),
+        file_data: resolvedToFileData(resolved, file),
       },
     };
-  }
-
-  if (file.kind !== "image") {
-    throw new Error("ChatCompletions only supports text, image, and configured document files");
   }
 
   const resolved = await resolveFileSource(file, {

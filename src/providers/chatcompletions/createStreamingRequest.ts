@@ -2,7 +2,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { StreamingRequestParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
-import { type ChatCompletionsProviderOptions, ChatCompletionChunk } from "./types.js";
+import { ChatCompletionChunk } from "./types.js";
 import { convertAxleMessages, convertTools } from "./utils.js";
 
 export async function* createStreamingRequest(
@@ -10,21 +10,9 @@ export async function* createStreamingRequest(
     baseUrl: string;
     model: string;
     apiKey?: string;
-    providerOptions?: ChatCompletionsProviderOptions;
   },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const {
-    baseUrl,
-    model,
-    messages,
-    system,
-    tools,
-    context,
-    signal,
-    apiKey,
-    providerOptions,
-    options,
-  } = params;
+  const { baseUrl, model, messages, system, tools, context, signal, apiKey, options } = params;
   const tracer = context?.tracer;
 
   if (options?.serverTools) {
@@ -38,7 +26,6 @@ export async function* createStreamingRequest(
       model,
       fileResolver: context?.fileResolver,
       signal,
-      fileInputs: providerOptions?.fileInputs,
     });
     const chatTools = convertTools(tools);
 

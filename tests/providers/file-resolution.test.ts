@@ -159,7 +159,7 @@ describe("deferred file resolution", () => {
     });
   });
 
-  test("emits configured generic ChatCompletions PDF file parts", async () => {
+  test("emits ChatCompletions PDF file parts using snake_case file_data", async () => {
     const file: FileInfo = {
       kind: "document",
       mimeType: "application/pdf",
@@ -167,16 +167,12 @@ describe("deferred file resolution", () => {
       source: { type: "url", url: "https://example.com/paper.pdf" },
     };
 
-    const result = await convertAxleMessages(
-      [
-        {
-          role: "user",
-          content: [{ type: "file", file }],
-        },
-      ],
-      undefined,
-      { model: "test-model", fileInputs: "fileData" },
-    );
+    const result = await convertAxleMessages([
+      {
+        role: "user",
+        content: [{ type: "file", file }],
+      },
+    ]);
 
     expect(result[0]).toEqual({
       role: "user",
@@ -185,28 +181,10 @@ describe("deferred file resolution", () => {
           type: "file",
           file: {
             filename: "paper.pdf",
-            fileData: "https://example.com/paper.pdf",
+            file_data: "https://example.com/paper.pdf",
           },
         },
       ],
     });
-  });
-
-  test("rejects ChatCompletions PDF file parts unless file inputs are enabled", async () => {
-    const file: FileInfo = {
-      kind: "document",
-      mimeType: "application/pdf",
-      name: "paper.pdf",
-      source: { type: "base64", data: "JVBERi0=" },
-    };
-
-    await expect(
-      convertAxleMessages([
-        {
-          role: "user",
-          content: [{ type: "file", file }],
-        },
-      ]),
-    ).rejects.toThrow("fileInputs: 'fileData'");
   });
 });

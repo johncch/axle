@@ -7,7 +7,7 @@ import { getTextContent } from "../../messages/utils.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { type ChatCompletionsProviderOptions, ChatCompletionResponse } from "./types.js";
+import { ChatCompletionResponse } from "./types.js";
 import { convertAxleMessages, convertFinishReason, convertTools } from "./utils.js";
 
 export async function createGenerationRequest(
@@ -15,11 +15,9 @@ export async function createGenerationRequest(
     baseUrl: string;
     model: string;
     apiKey?: string;
-    providerOptions?: ChatCompletionsProviderOptions;
   },
 ): Promise<ModelResult> {
-  const { baseUrl, model, messages, system, tools, context, apiKey, providerOptions, options } =
-    params;
+  const { baseUrl, model, messages, system, tools, context, apiKey, options } = params;
   const tracer = context?.tracer;
 
   let result: ModelResult;
@@ -27,7 +25,6 @@ export async function createGenerationRequest(
     const chatMessages = await convertAxleMessages(messages, system, {
       model,
       fileResolver: context?.fileResolver,
-      fileInputs: providerOptions?.fileInputs,
     });
     const chatTools = convertTools(tools);
 

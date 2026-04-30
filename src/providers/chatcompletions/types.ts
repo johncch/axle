@@ -13,14 +13,8 @@ export interface ChatCompletionContentPart {
   image_url?: { url: string };
   file?: {
     filename?: string;
-    fileData: string;
+    file_data: string;
   };
-}
-
-export type ChatCompletionsFileInputMode = "none" | "fileData";
-
-export interface ChatCompletionsProviderOptions {
-  fileInputs?: ChatCompletionsFileInputMode;
 }
 
 export interface ChatCompletionMessageToolCall {
