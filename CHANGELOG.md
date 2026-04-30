@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.12.0] - 2026-04-30
+
+- Added basic thinking/reasoning support to the generation API
+- Added file support improvements: better `FileInfo` types, improved image type checks, file data support in chat completions, and new usage examples
+- Removed `instructions` as a concept from `Instruct`, simplifying the interface
+
 ## [0.11.0] - 2026-04-24
 
 - Added support for OpenAI models
