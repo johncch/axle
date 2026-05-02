@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import patchFileTool from "../../src/tools/patch-file.js";
 
 const TEST_DIR = join(import.meta.dirname, "__patch_file_test_tmp__");
+const ctx = { signal: new AbortController().signal };
 
 beforeEach(async () => {
   await mkdir(TEST_DIR, { recursive: true });
@@ -31,13 +32,16 @@ describe("patchFileTool", () => {
 
   it("should patch a single occurrence in the line range", async () => {
     const filePath = await writeTestFile("test.txt", "line1\nline2\nline3\nline4\n");
-    const result = await patchFileTool.execute({
-      path: filePath,
-      old_string: "line2",
-      new_string: "LINE_TWO",
-      start_line: 2,
-      end_line: 2,
-    });
+    const result = await patchFileTool.execute(
+      {
+        path: filePath,
+        old_string: "line2",
+        new_string: "LINE_TWO",
+        start_line: 2,
+        end_line: 2,
+      },
+      ctx,
+    );
     expect(result).toContain("Successfully patched");
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("line1\nLINE_TWO\nline3\nline4\n");
@@ -46,77 +50,95 @@ describe("patchFileTool", () => {
   it("should fail when old_string is not found in range", async () => {
     const filePath = await writeTestFile("test.txt", "aaa\nbbb\nccc\n");
     await expect(
-      patchFileTool.execute({
-        path: filePath,
-        old_string: "zzz",
-        new_string: "yyy",
-        start_line: 1,
-        end_line: 3,
-      }),
+      patchFileTool.execute(
+        {
+          path: filePath,
+          old_string: "zzz",
+          new_string: "yyy",
+          start_line: 1,
+          end_line: 3,
+        },
+        ctx,
+      ),
     ).rejects.toThrow(/old_string not found/);
   });
 
   it("should fail when old_string matches multiple times in range", async () => {
     const filePath = await writeTestFile("test.txt", "foo\nfoo\nbar\n");
     await expect(
-      patchFileTool.execute({
-        path: filePath,
-        old_string: "foo",
-        new_string: "baz",
-        start_line: 1,
-        end_line: 2,
-      }),
+      patchFileTool.execute(
+        {
+          path: filePath,
+          old_string: "foo",
+          new_string: "baz",
+          start_line: 1,
+          end_line: 2,
+        },
+        ctx,
+      ),
     ).rejects.toThrow(/matches multiple times/);
   });
 
   it("should succeed when old_string exists elsewhere but only once in range", async () => {
     const filePath = await writeTestFile("test.txt", "foo\nbar\nfoo\nbaz\n");
-    await patchFileTool.execute({
-      path: filePath,
-      old_string: "foo",
-      new_string: "qux",
-      start_line: 3,
-      end_line: 3,
-    });
+    await patchFileTool.execute(
+      {
+        path: filePath,
+        old_string: "foo",
+        new_string: "qux",
+        start_line: 3,
+        end_line: 3,
+      },
+      ctx,
+    );
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("foo\nbar\nqux\nbaz\n");
   });
 
   it("should handle patching the first line", async () => {
     const filePath = await writeTestFile("test.txt", "alpha\nbeta\ngamma\n");
-    await patchFileTool.execute({
-      path: filePath,
-      old_string: "alpha",
-      new_string: "ALPHA",
-      start_line: 1,
-      end_line: 1,
-    });
+    await patchFileTool.execute(
+      {
+        path: filePath,
+        old_string: "alpha",
+        new_string: "ALPHA",
+        start_line: 1,
+        end_line: 1,
+      },
+      ctx,
+    );
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("ALPHA\nbeta\ngamma\n");
   });
 
   it("should handle patching the last line", async () => {
     const filePath = await writeTestFile("test.txt", "alpha\nbeta\ngamma");
-    await patchFileTool.execute({
-      path: filePath,
-      old_string: "gamma",
-      new_string: "GAMMA",
-      start_line: 3,
-      end_line: 3,
-    });
+    await patchFileTool.execute(
+      {
+        path: filePath,
+        old_string: "gamma",
+        new_string: "GAMMA",
+        start_line: 3,
+        end_line: 3,
+      },
+      ctx,
+    );
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("alpha\nbeta\nGAMMA");
   });
 
   it("should handle a multi-line range", async () => {
     const filePath = await writeTestFile("test.txt", "a\nb\nc\nd\ne\n");
-    await patchFileTool.execute({
-      path: filePath,
-      old_string: "b\nc\nd",
-      new_string: "B\nC\nD",
-      start_line: 2,
-      end_line: 4,
-    });
+    await patchFileTool.execute(
+      {
+        path: filePath,
+        old_string: "b\nc\nd",
+        new_string: "B\nC\nD",
+        start_line: 2,
+        end_line: 4,
+      },
+      ctx,
+    );
     const content = await readFile(filePath, "utf-8");
     expect(content).toBe("a\nB\nC\nD\ne\n");
   });
@@ -124,39 +146,48 @@ describe("patchFileTool", () => {
   it("should throw when end_line < start_line", async () => {
     const filePath = await writeTestFile("test.txt", "a\nb\nc\n");
     await expect(
-      patchFileTool.execute({
-        path: filePath,
-        old_string: "a",
-        new_string: "A",
-        start_line: 3,
-        end_line: 1,
-      }),
+      patchFileTool.execute(
+        {
+          path: filePath,
+          old_string: "a",
+          new_string: "A",
+          start_line: 3,
+          end_line: 1,
+        },
+        ctx,
+      ),
     ).rejects.toThrow(/end_line.*must be >= start_line/);
   });
 
   it("should throw when start_line exceeds file length", async () => {
     const filePath = await writeTestFile("test.txt", "a\nb\n");
     await expect(
-      patchFileTool.execute({
-        path: filePath,
-        old_string: "a",
-        new_string: "A",
-        start_line: 10,
-        end_line: 10,
-      }),
+      patchFileTool.execute(
+        {
+          path: filePath,
+          old_string: "a",
+          new_string: "A",
+          start_line: 10,
+          end_line: 10,
+        },
+        ctx,
+      ),
     ).rejects.toThrow(/start_line.*exceeds file length/);
   });
 
   it("should throw when file does not exist", async () => {
     const filePath = join(TEST_DIR, "nonexistent.txt");
     await expect(
-      patchFileTool.execute({
-        path: filePath,
-        old_string: "a",
-        new_string: "b",
-        start_line: 1,
-        end_line: 1,
-      }),
+      patchFileTool.execute(
+        {
+          path: filePath,
+          old_string: "a",
+          new_string: "b",
+          start_line: 1,
+          end_line: 1,
+        },
+        ctx,
+      ),
     ).rejects.toThrow(/Failed to read file/);
   });
 });

@@ -28,6 +28,7 @@ export interface GenerateOptions {
   fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
   reasoning?: boolean;
+  signal?: AbortSignal;
 }
 
 export async function generate(options: GenerateOptions): Promise<GenerateResult> {
@@ -43,6 +44,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     fileResolver,
     options: generateOptions,
     reasoning,
+    signal = new AbortController().signal,
   } = options;
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
@@ -164,7 +166,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       });
     }
 
-    const { results } = await executeToolCalls(toolCalls, onToolCall, tracer);
+    const { results } = await executeToolCalls(toolCalls, onToolCall, signal, tracer);
     if (results.length > 0) {
       addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
     }

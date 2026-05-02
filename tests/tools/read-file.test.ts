@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import readFileTool from "../../src/tools/read-file.js";
 
 const TEST_DIR = join(import.meta.dirname, "__read_file_test_tmp__");
+const ctx = { signal: new AbortController().signal };
 
 beforeEach(async () => {
   await mkdir(TEST_DIR, { recursive: true });
@@ -22,12 +23,14 @@ describe("readFileTool", () => {
   it("should read an existing file", async () => {
     const filePath = join(TEST_DIR, "hello.txt");
     await writeFile(filePath, "hello world", "utf-8");
-    const result = await readFileTool.execute({ path: filePath });
+    const result = await readFileTool.execute({ path: filePath }, ctx);
     expect(result).toBe("hello world");
   });
 
   it("should throw on missing file", async () => {
     const filePath = join(TEST_DIR, "nonexistent.txt");
-    await expect(readFileTool.execute({ path: filePath })).rejects.toThrow(/Failed to read file/);
+    await expect(readFileTool.execute({ path: filePath }, ctx)).rejects.toThrow(
+      /Failed to read file/,
+    );
   });
 });

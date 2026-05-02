@@ -533,13 +533,13 @@ async function run(
     emit(cbs, { type: "tool-results:start", id: toolResultsId });
 
     let toolExecIndex = 0;
-    const emittingToolCall: ToolCallCallback = async (name, parameters) => {
+    const emittingToolCall: ToolCallCallback = async (name, parameters, ctx) => {
       const call = toolCalls[toolExecIndex++];
       const idx = toolCallIndexMap.get(call.id) ?? -1;
 
       emit(cbs, { type: "tool:exec-start", index: idx, id: call.id, name, parameters });
 
-      const rawResult = onToolCall ? await onToolCall(name, parameters) : null;
+      const rawResult = onToolCall ? await onToolCall(name, parameters, ctx) : null;
       const result = rawResult ?? makeNotFoundToolResult(name);
 
       emit(cbs, {
@@ -553,7 +553,7 @@ async function run(
       return result;
     };
 
-    const { results } = await executeToolCalls(toolCalls, emittingToolCall, tracer);
+    const { results } = await executeToolCalls(toolCalls, emittingToolCall, signal, tracer);
 
     if (results.length > 0) {
       const toolResultsMessage: AxleToolCallMessage = {

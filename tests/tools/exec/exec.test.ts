@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import execTool from "../../../src/tools/exec/index.js";
 
+const ctx = { signal: new AbortController().signal };
+
 describe("ExecTool", () => {
   beforeEach(() => {
     // Reset the tool state before each test
@@ -25,24 +27,27 @@ describe("ExecTool", () => {
 
   describe("command execution", () => {
     it("should return stdout from successful command", async () => {
-      const result = await execTool.execute({ command: "echo hello" });
+      const result = await execTool.execute({ command: "echo hello" }, ctx);
       expect(result).toBe("hello\n");
     });
 
     it("should include stderr when present", async () => {
-      const result = await execTool.execute({
-        command: 'sh -c "echo error >&2"',
-      });
+      const result = await execTool.execute(
+        {
+          command: 'sh -c "echo error >&2"',
+        },
+        ctx,
+      );
       expect(result).toContain("error");
     });
 
     it("should handle commands that fail", async () => {
-      const result = await execTool.execute({ command: "false" });
+      const result = await execTool.execute({ command: "false" }, ctx);
       expect(result).toContain("Error");
     });
 
     it("should handle commands that don't exist", async () => {
-      const result = await execTool.execute({ command: "nonexistent-command-xyz" });
+      const result = await execTool.execute({ command: "nonexistent-command-xyz" }, ctx);
       expect(result).toContain("Error");
     });
   });
@@ -53,7 +58,7 @@ describe("ExecTool", () => {
         timeout: 100, // 100ms timeout
       });
 
-      const result = await execTool.execute({ command: "sleep 5" });
+      const result = await execTool.execute({ command: "sleep 5" }, ctx);
       expect(result).toContain("Error");
     });
 
@@ -62,7 +67,7 @@ describe("ExecTool", () => {
         cwd: "/tmp",
       });
 
-      const result = await execTool.execute({ command: "pwd" });
+      const result = await execTool.execute({ command: "pwd" }, ctx);
       // On macOS, /tmp is a symlink to /private/tmp
       expect(result.trim()).toMatch(/^(\/tmp|\/private\/tmp)$/);
     });
@@ -71,7 +76,7 @@ describe("ExecTool", () => {
       execTool.configure({});
 
       // Should complete quickly without hitting default 30s timeout
-      const result = await execTool.execute({ command: "echo test" });
+      const result = await execTool.execute({ command: "echo test" }, ctx);
       expect(result).toBe("test\n");
     });
   });

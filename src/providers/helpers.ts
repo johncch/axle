@@ -5,6 +5,7 @@ import type {
   ContentPartToolCall,
   ToolResultPart,
 } from "../messages/message.js";
+import type { ToolContext } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { ModelError, ModelResult } from "./types.js";
@@ -19,6 +20,7 @@ export type ToolCallResult =
 export type ToolCallCallback = (
   name: string,
   parameters: Record<string, unknown>,
+  ctx: ToolContext,
 ) => Promise<ToolCallResult | null | undefined>;
 
 export type GenerateError =
@@ -61,16 +63,18 @@ export function serializeToolError(error: { type: string; message: string }): st
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
   onToolCall: ToolCallCallback = async () => null,
+  signal: AbortSignal,
   tracer?: TracingContext,
 ): Promise<{ results: AxleToolCallResult[] }> {
   const results: AxleToolCallResult[] = [];
 
   for (const call of toolCalls) {
     const span = tracer?.startSpan(call.name, { type: "tool" });
+    const ctx: ToolContext = { signal, tracer: span };
     let resolved: ToolCallResult | null | undefined;
 
     try {
-      resolved = await onToolCall(call.name, call.parameters);
+      resolved = await onToolCall(call.name, call.parameters, ctx);
     } catch (error) {
       resolved = {
         type: "error",

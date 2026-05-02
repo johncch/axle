@@ -1,6 +1,6 @@
 import * as z from "zod";
 import type { ExecProviderConfig } from "../../cli/configs/schemas.js";
-import type { ExecutableTool } from "../types.js";
+import type { ExecutableTool, ToolContext } from "../types.js";
 import { formatExecError, formatOutput, runCommand } from "./helpers.js";
 
 const execSchema = z.object({
@@ -32,7 +32,7 @@ class ExecTool implements ExecutableTool<typeof execSchema> {
     return params.command;
   }
 
-  async execute(params: z.infer<typeof execSchema>): Promise<string> {
+  async execute(params: z.infer<typeof execSchema>, _ctx: ToolContext): Promise<string> {
     const { command } = params;
 
     try {

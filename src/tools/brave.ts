@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { BraveProviderConfig } from "../cli/configs/schemas.js";
 import { delay } from "../utils/utils.js";
-import type { ExecutableTool } from "./types.js";
+import type { ExecutableTool, ToolContext } from "./types.js";
 
 const braveSearchSchema = z.object({
   searchTerm: z.string().describe("The search term to query"),
@@ -28,7 +28,7 @@ class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
     this.throttle = rateLimit ? 1100 / rateLimit : undefined;
   }
 
-  async execute(params: z.infer<typeof braveSearchSchema>): Promise<string> {
+  async execute(params: z.infer<typeof braveSearchSchema>, _ctx: ToolContext): Promise<string> {
     const { searchTerm } = params;
 
     if (this.throttle) {

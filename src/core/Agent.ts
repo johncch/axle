@@ -271,11 +271,11 @@ export class Agent {
       tracer: this.tracer,
       fileResolver: sendFileResolver ?? this.fileResolver,
       reasoning,
-      onToolCall: async (name, params) => {
+      onToolCall: async (name, params, ctx) => {
         const tool = tools[name];
         if (!tool) return null;
         try {
-          const result = await tool.execute(params);
+          const result = await tool.execute(params, ctx);
           return { type: "success", content: result };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
