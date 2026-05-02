@@ -61,7 +61,7 @@ async function convertMessage(
           name: part.name,
           input: part.parameters,
         } satisfies Anthropic.ToolUseBlockParam);
-      } else if (part.type === "internal-tool") {
+      } else if (part.type === "provider-tool") {
         content.push({
           type: "server_tool_use",
           id: part.id,
@@ -257,7 +257,7 @@ export function toAnthropicThinking(reasoning: boolean | undefined) {
   return {};
 }
 
-export function convertToProviderTools(
+export function convertToAnthropicTools(
   tools: Array<ToolDefinition>,
 ): Array<Anthropic.Messages.Tool> {
   return tools.map((tool) => {

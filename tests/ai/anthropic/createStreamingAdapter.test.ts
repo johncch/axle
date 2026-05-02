@@ -553,7 +553,7 @@ describe("createAnthropicStreamingAdapter", () => {
   });
 
   describe("internal tools", () => {
-    test("should emit internal-tool-start for server_tool_use", () => {
+    test("should emit provider-tool-start for server_tool_use", () => {
       const adapter = createAnthropicStreamingAdapter();
 
       const chunks = adapter.handleEvent({
@@ -568,14 +568,14 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-start");
-      if (chunks[0].type === "internal-tool-start") {
+      expect(chunks[0].type).toBe("provider-tool-start");
+      if (chunks[0].type === "provider-tool-start") {
         expect(chunks[0].data.id).toBe("srvtoolu_123");
         expect(chunks[0].data.name).toBe("web_search");
       }
     });
 
-    test("should emit internal-tool-complete for web_search_tool_result", () => {
+    test("should emit provider-tool-complete for web_search_tool_result", () => {
       const adapter = createAnthropicStreamingAdapter();
 
       // Start the server tool
@@ -602,8 +602,8 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-complete");
-      if (chunks[0].type === "internal-tool-complete") {
+      expect(chunks[0].type).toBe("provider-tool-complete");
+      if (chunks[0].type === "provider-tool-complete") {
         expect(chunks[0].data.id).toBe("srvtoolu_123");
         expect(chunks[0].data.name).toBe("web_search");
         expect(chunks[0].data.output).toBeDefined();

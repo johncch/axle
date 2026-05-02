@@ -25,7 +25,7 @@ export type { AIProvider } from "./providers/types.js";
 
 // Tools
 export { braveSearchTool, calculatorTool } from "./tools/index.js";
-export type { AxleTool, ExecutableTool, ServerTool, ToolDefinition } from "./tools/types.js";
+export type { ExecutableTool, ProviderTool, ToolDefinition } from "./tools/types.js";
 
 // MCP
 export { MCP } from "./mcp/index.js";
@@ -41,7 +41,7 @@ export type {
   AxleUserMessage,
   ContentPart,
   ContentPartFile,
-  ContentPartInternalTool,
+  ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -55,7 +55,7 @@ export type {
   ActionPart,
   ActionResult,
   FilePart,
-  InternalToolAction,
+  ProviderToolAction,
   SubagentAction,
   TextPart,
   ThinkingPart,

@@ -6,9 +6,9 @@ import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.j
 import { getUndefinedError } from "../utils.js";
 import {
   convertStopReason,
+  convertToAnthropicTools,
   convertToAxleContentParts,
   convertToProviderMessages,
-  convertToProviderTools,
   toAnthropicThinking,
 } from "./utils.js";
 
@@ -33,7 +33,7 @@ export async function createGenerationRequest(
       messages: providerMessages,
       ...(system && { system }),
       ...(stop && { stop_sequences: arrayify(stop) }),
-      ...(tools && { tools: convertToProviderTools(tools) }),
+      ...(tools && { tools: convertToAnthropicTools(tools) }),
       ...toAnthropicThinking(reasoning),
       ...restOptions,
     };

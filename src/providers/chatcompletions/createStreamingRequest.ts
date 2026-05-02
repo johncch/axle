@@ -16,8 +16,8 @@ export async function* createStreamingRequest(
     params;
   const tracer = context?.tracer;
 
-  if (options?.serverTools) {
-    tracer?.warn("serverTools not supported by ChatCompletions provider");
+  if (options?.providerTools) {
+    tracer?.warn("providerTools not supported by ChatCompletions provider");
   }
 
   const adapter = createStreamingAdapter();

@@ -552,7 +552,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
   });
 
   describe("internal tools", () => {
-    test("should emit internal-tool-start for web_search_call", () => {
+    test("should emit provider-tool-start for web_search_call", () => {
       const adapter = createStreamingAdapter();
 
       const chunks = adapter.handleEvent({
@@ -567,14 +567,14 @@ describe("createResponsesAPIStreamingAdapter", () => {
       } as ResponseStreamEvent);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-start");
-      if (chunks[0].type === "internal-tool-start") {
+      expect(chunks[0].type).toBe("provider-tool-start");
+      if (chunks[0].type === "provider-tool-start") {
         expect(chunks[0].data.id).toBe("ws_123");
         expect(chunks[0].data.name).toBe("web_search_call");
       }
     });
 
-    test("should emit internal-tool-complete on output_item.done", () => {
+    test("should emit provider-tool-complete on output_item.done", () => {
       const adapter = createStreamingAdapter();
 
       adapter.handleEvent({
@@ -600,8 +600,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
       } as ResponseStreamEvent);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-complete");
-      if (chunks[0].type === "internal-tool-complete") {
+      expect(chunks[0].type).toBe("provider-tool-complete");
+      if (chunks[0].type === "provider-tool-complete") {
         expect(chunks[0].data.id).toBe("ws_123");
         expect(chunks[0].data.name).toBe("web_search_call");
       }

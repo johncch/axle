@@ -9,8 +9,8 @@ export function createStreamingAdapter() {
   let currentPartIndex = -1;
   let hasFunctionCalls = false;
   const functionInfo = new Map<string, { name: string; callId: string }>();
-  const internalToolIndices = new Map<string, number>();
-  const INTERNAL_TOOL_TYPES = new Set([
+  const providerToolIndices = new Map<string, number>();
+  const PROVIDER_TOOL_TYPES = new Set([
     "web_search_call",
     "file_search_call",
     "code_interpreter_call",
@@ -174,12 +174,12 @@ export function createStreamingAdapter() {
               callId: item.call_id || itemId,
             });
           }
-        } else if (event.item && INTERNAL_TOOL_TYPES.has(event.item.type)) {
+        } else if (event.item && PROVIDER_TOOL_TYPES.has(event.item.type)) {
           const item = event.item as { id: string; type: string };
           const idx = partIndex++;
-          internalToolIndices.set(item.id, idx);
+          providerToolIndices.set(item.id, idx);
           chunks.push({
-            type: "internal-tool-start",
+            type: "provider-tool-start",
             data: {
               index: idx,
               id: item.id,
@@ -197,12 +197,12 @@ export function createStreamingAdapter() {
             data: { index: currentPartIndex },
           });
           currentPartIndex = -1;
-        } else if (event.item && INTERNAL_TOOL_TYPES.has(event.item.type)) {
+        } else if (event.item && PROVIDER_TOOL_TYPES.has(event.item.type)) {
           const item = event.item as { id: string; type: string };
-          const idx = internalToolIndices.get(item.id);
+          const idx = providerToolIndices.get(item.id);
           if (idx !== undefined) {
             chunks.push({
-              type: "internal-tool-complete",
+              type: "provider-tool-complete",
               data: {
                 index: idx,
                 id: item.id,
@@ -210,7 +210,7 @@ export function createStreamingAdapter() {
                 output: event.item,
               },
             });
-            internalToolIndices.delete(item.id);
+            providerToolIndices.delete(item.id);
           }
         }
         break;

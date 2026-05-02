@@ -11,17 +11,17 @@ export async function* createStreamingRequest(
   const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
   const tracer = context?.tracer;
 
-  const { serverTools, ...restOptions } = options ?? {};
+  const { providerTools, ...restOptions } = options ?? {};
 
   const modelTools: any[] = prepareTools(tools) ?? [];
 
-  if (serverTools) {
-    const OPENAI_SERVER_TOOL_MAP: Record<string, string> = {
+  if (providerTools) {
+    const OPENAI_PROVIDER_TOOL_MAP: Record<string, string> = {
       web_search: "web_search_preview",
       code_execution: "code_interpreter",
     };
-    for (const st of serverTools) {
-      const mappedType = OPENAI_SERVER_TOOL_MAP[st.name] ?? st.name;
+    for (const st of providerTools) {
+      const mappedType = OPENAI_PROVIDER_TOOL_MAP[st.name] ?? st.name;
       modelTools.push({ type: mappedType, ...st.config });
     }
   }

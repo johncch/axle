@@ -309,7 +309,7 @@ describe("TurnBuilder", () => {
     const events: AgentEvent[] = [];
     events.push(
       ...builder.handleStreamEvent({
-        type: "internal-tool:start",
+        type: "provider-tool:start",
         index: 0,
         id: "it1",
         name: "web_search",
@@ -317,7 +317,7 @@ describe("TurnBuilder", () => {
     );
     events.push(
       ...builder.handleStreamEvent({
-        type: "internal-tool:complete",
+        type: "provider-tool:complete",
         index: 0,
         id: "it1",
         name: "web_search",

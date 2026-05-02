@@ -11,12 +11,10 @@ export interface ExecutableTool<TSchema extends ZodObject<any> = ZodObject<any>>
   summarize?(input: z.infer<TSchema>): string;
 }
 
-export interface ServerTool {
-  type: "server";
+export interface ProviderTool {
+  type: "provider";
   name: string;
   config?: Record<string, unknown>;
 }
-
-export type AxleTool = ExecutableTool | ServerTool;
 
 export type ToolDefinition = Pick<ExecutableTool, "name" | "description" | "schema">;

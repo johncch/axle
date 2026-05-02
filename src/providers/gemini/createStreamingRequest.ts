@@ -11,8 +11,8 @@ export async function* createStreamingRequest(
   const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
   const tracer = context?.tracer;
 
-  // Extract serverTools before option conversion
-  const { serverTools, ...rawOptions } = options ?? {};
+  // Extract providerTools before option conversion
+  const { providerTools, ...rawOptions } = options ?? {};
 
   // Reasoning translation comes first so user-supplied thinkingConfig overrides.
   const googleOptions: Record<string, any> = {
@@ -38,14 +38,14 @@ export async function* createStreamingRequest(
 
   const config = prepareConfig(tools, system, googleOptions);
 
-  if (serverTools) {
-    const GEMINI_SERVER_TOOL_MAP: Record<string, string> = {
+  if (providerTools) {
+    const GEMINI_PROVIDER_TOOL_MAP: Record<string, string> = {
       web_search: "googleSearch",
       code_execution: "codeExecution",
     };
     if (!config.tools) config.tools = [];
-    for (const st of serverTools) {
-      const key = GEMINI_SERVER_TOOL_MAP[st.name] ?? st.name;
+    for (const st of providerTools) {
+      const key = GEMINI_PROVIDER_TOOL_MAP[st.name] ?? st.name;
       config.tools.push({ [key]: st.config ?? {} } as any);
     }
   }

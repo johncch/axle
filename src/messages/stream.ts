@@ -13,8 +13,8 @@ export interface StreamChunk {
     | "thinking-delta"
     | "thinking-summary-delta"
     | "thinking-complete"
-    | "internal-tool-start"
-    | "internal-tool-complete"
+    | "provider-tool-start"
+    | "provider-tool-complete"
     | "complete"
     | "error";
   id?: string;
@@ -140,11 +140,11 @@ export interface StreamToolCallCompleteChunk extends StreamChunk {
 }
 
 // ---------------------------------------------------------------------------
-// Internal tools (web search, file search, code interpreter)
+// Provider tools (web search, file search, code interpreter)
 // ---------------------------------------------------------------------------
 
-export interface StreamInternalToolStartChunk extends StreamChunk {
-  type: "internal-tool-start";
+export interface StreamProviderToolStartChunk extends StreamChunk {
+  type: "provider-tool-start";
   data: {
     index: number;
     id: string;
@@ -152,8 +152,8 @@ export interface StreamInternalToolStartChunk extends StreamChunk {
   };
 }
 
-export interface StreamInternalToolCompleteChunk extends StreamChunk {
-  type: "internal-tool-complete";
+export interface StreamProviderToolCompleteChunk extends StreamChunk {
+  type: "provider-tool-complete";
   data: {
     index: number;
     id: string;
@@ -179,5 +179,5 @@ export type AnyStreamChunk =
   | StreamThinkingCompleteChunk
   | StreamToolCallStartChunk
   | StreamToolCallCompleteChunk
-  | StreamInternalToolStartChunk
-  | StreamInternalToolCompleteChunk;
+  | StreamProviderToolStartChunk
+  | StreamProviderToolCompleteChunk;

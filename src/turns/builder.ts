@@ -3,10 +3,10 @@ import type { StreamEvent } from "../providers/stream.js";
 import type { Stats } from "../types.js";
 import type { AgentEvent } from "./events.js";
 import type {
-  InternalToolAction,
-  TimingInfo,
+  ProviderToolAction,
   TextPart,
   ThinkingPart,
+  TimingInfo,
   ToolAction,
   Turn,
   TurnPart,
@@ -251,13 +251,13 @@ export class TurnBuilder {
         break;
       }
 
-      case "internal-tool:start": {
+      case "provider-tool:start": {
         this.closeOpenParts(turn, events);
         const partId = crypto.randomUUID();
-        const part: InternalToolAction = {
+        const part: ProviderToolAction = {
           id: partId,
           type: "action",
-          kind: "internal-tool",
+          kind: "provider-tool",
           status: "running",
           timing: startTiming(),
           detail: { name: event.name },
@@ -273,10 +273,10 @@ export class TurnBuilder {
         break;
       }
 
-      case "internal-tool:complete": {
+      case "provider-tool:complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as InternalToolAction | undefined;
+          const part = this.findActionPart(turn, mapping.partId) as ProviderToolAction | undefined;
           if (part) {
             part.status = "complete";
             part.timing = completeTiming(part.timing);

@@ -2,12 +2,12 @@ import type {
   AxleAssistantMessage,
   AxleMessage,
   AxleToolCallMessage,
-  ContentPartInternalTool,
+  ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../messages/message.js";
-import type { ServerTool, ToolDefinition } from "../tools/types.js";
+import type { ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -54,9 +54,9 @@ export type StreamEvent =
       name: string;
       result: ToolCallResult;
     }
-  // Internal tools (provider-managed: web search, code interpreter, etc.)
-  | { type: "internal-tool:start"; index: number; id: string; name: string }
-  | { type: "internal-tool:complete"; index: number; id: string; name: string; output?: unknown }
+  // Provider tools (provider-managed: web search, code interpreter, etc.)
+  | { type: "provider-tool:start"; index: number; id: string; name: string }
+  | { type: "provider-tool:complete"; index: number; id: string; name: string; output?: unknown }
   // Error
   | { type: "error"; error: GenerateError };
 
@@ -68,7 +68,7 @@ export interface StreamOptions {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  serverTools?: Array<ServerTool>;
+  providerTools?: Array<ProviderTool>;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
@@ -139,7 +139,7 @@ async function run(
     messages,
     system,
     tools,
-    serverTools,
+    providerTools,
     onToolCall,
     maxIterations,
     tracer,
@@ -190,7 +190,7 @@ async function run(
 
   const buildCancelledResult = (
     turnParts: Array<
-      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
     >,
     turnId: string,
     turnModel: string,
@@ -239,7 +239,7 @@ async function run(
     iterations += 1;
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
 
-    const mergedOptions = serverTools ? { ...genOptions, serverTools } : genOptions;
+    const mergedOptions = providerTools ? { ...genOptions, providerTools } : genOptions;
 
     const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
@@ -252,7 +252,7 @@ async function run(
     });
 
     const turnParts: Array<
-      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
     > = [];
     let turnId = "";
     let turnModel = "";
@@ -385,17 +385,17 @@ async function run(
           break;
         }
 
-        case "internal-tool-start": {
+        case "provider-tool-start": {
           closePart();
           const idx = globalIndex++;
           turnParts.push({
-            type: "internal-tool",
+            type: "provider-tool",
             id: chunk.data.id,
             name: chunk.data.name,
           });
           currentPartIndex = turnParts.length - 1;
           emit(cbs, {
-            type: "internal-tool:start",
+            type: "provider-tool:start",
             index: idx,
             id: chunk.data.id,
             name: chunk.data.name,
@@ -403,11 +403,11 @@ async function run(
           break;
         }
 
-        case "internal-tool-complete": {
-          const part = turnParts[currentPartIndex] as ContentPartInternalTool;
+        case "provider-tool-complete": {
+          const part = turnParts[currentPartIndex] as ContentPartProviderTool;
           if (chunk.data.output != null) part.output = chunk.data.output;
           emit(cbs, {
-            type: "internal-tool:complete",
+            type: "provider-tool:complete",
             index: chunk.data.index,
             id: chunk.data.id,
             name: chunk.data.name,

@@ -6,7 +6,7 @@ import { Instruct } from "../core/Instruct.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
 import type { AIProvider } from "../providers/types.js";
-import type { AxleTool } from "../tools/types.js";
+import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import { loadFileContent } from "../utils/file.js";
@@ -17,7 +17,8 @@ export async function runSingle(
   jobConfig: JobConfig,
   provider: AIProvider,
   model: string,
-  tools: AxleTool[],
+  tools: ExecutableTool[],
+  providerTools: ProviderTool[],
   mcps: MCP[],
   variables: Record<string, any>,
   options: ProgramOptions,
@@ -37,6 +38,7 @@ export async function runSingle(
     provider,
     model,
     tools,
+    providerTools,
     mcps,
     tracer: jobSpan,
     name: jobConfig.name,
@@ -123,7 +125,8 @@ export async function runBatch(
   jobConfig: JobConfig,
   provider: AIProvider,
   model: string,
-  tools: AxleTool[],
+  tools: ExecutableTool[],
+  providerTools: ProviderTool[],
   mcps: MCP[],
   variables: Record<string, any>,
   options: ProgramOptions,
@@ -182,6 +185,7 @@ export async function runBatch(
         provider,
         model,
         tools,
+        providerTools,
         mcps,
         tracer: itemSpan,
         name: jobConfig.name,

@@ -2,7 +2,7 @@
 provider:
   type: anthropic
 
-server_tools:
+provider_tools:
   - web_search
 
 task: |

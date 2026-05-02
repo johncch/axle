@@ -8,7 +8,7 @@ import { stream } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
-import type { AxleTool, ExecutableTool, ServerTool } from "../tools/types.js";
+import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { TurnBuilder } from "../turns/builder.js";
 import type { AgentEvent } from "../turns/events.js";
@@ -32,7 +32,8 @@ export interface AgentConfig {
   system?: string;
   name?: string;
   scope?: Record<string, string>;
-  tools?: AxleTool[];
+  tools?: ExecutableTool[];
+  providerTools?: ProviderTool[];
   mcps?: MCP[];
   memory?: AgentMemory;
   tracer?: TracingContext;
@@ -60,10 +61,6 @@ export interface SendInstructOptions extends SendMessageOptions {
   variables?: Record<string, string>;
 }
 
-function isServerTool(t: AxleTool): t is ServerTool {
-  return t.type === "server";
-}
-
 export class Agent {
   readonly provider: AIProvider;
   readonly model: string;
@@ -77,7 +74,7 @@ export class Agent {
 
   system: string | undefined;
   tools: Record<string, ExecutableTool> = {};
-  serverTools: ServerTool[] = [];
+  providerTools: ProviderTool[] = [];
 
   private mcps: MCP[] = [];
   private mcpToolsResolved = false;
@@ -102,6 +99,9 @@ export class Agent {
     if (config.tools) {
       this.addTools(config.tools);
     }
+    if (config.providerTools) {
+      this.addProviderTools(config.providerTools);
+    }
     if (config.mcps) {
       this.mcps = [...config.mcps];
     }
@@ -117,17 +117,23 @@ export class Agent {
     }
   }
 
-  addTool(tool: AxleTool) {
-    if (isServerTool(tool)) {
-      this.serverTools.push(tool);
-    } else {
-      this.tools[tool.name] = tool;
+  addTool(tool: ExecutableTool) {
+    this.tools[tool.name] = tool;
+  }
+
+  addTools(tools: ExecutableTool[]) {
+    for (const tool of tools) {
+      this.addTool(tool);
     }
   }
 
-  addTools(tools: AxleTool[]) {
+  addProviderTool(tool: ProviderTool) {
+    this.providerTools.push(tool);
+  }
+
+  addProviderTools(tools: ProviderTool[]) {
     for (const tool of tools) {
-      this.addTool(tool);
+      this.addProviderTool(tool);
     }
   }
 
@@ -143,7 +149,7 @@ export class Agent {
 
   hasTools(): boolean {
     return (
-      Object.keys(this.tools).length > 0 || this.serverTools.length > 0 || this.mcps.length > 0
+      Object.keys(this.tools).length > 0 || this.providerTools.length > 0 || this.mcps.length > 0
     );
   }
 
@@ -261,7 +267,7 @@ export class Agent {
       messages: requestMessages,
       system: effectiveSystem,
       tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
-      serverTools: this.serverTools.length > 0 ? this.serverTools : undefined,
+      providerTools: this.providerTools.length > 0 ? this.providerTools : undefined,
       tracer: this.tracer,
       fileResolver: sendFileResolver ?? this.fileResolver,
       reasoning,
