@@ -32,7 +32,7 @@ class ExecTool implements ExecutableTool<typeof execSchema> {
     return params.command;
   }
 
-  async execute(params: z.infer<typeof execSchema>, _ctx: ToolContext): Promise<string> {
+  async execute(params: z.infer<typeof execSchema>, ctx: ToolContext): Promise<string> {
     const { command } = params;
 
     try {
@@ -40,6 +40,8 @@ class ExecTool implements ExecutableTool<typeof execSchema> {
         timeout: this.timeout,
         maxBuffer: this.maxBuffer,
         cwd: this.cwd,
+        signal: ctx.signal,
+        onChunk: (chunk) => ctx.emit(chunk),
       });
 
       return formatOutput(result.stdout, result.stderr);

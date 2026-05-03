@@ -24,8 +24,16 @@ export { AxleStopReason } from "./providers/types.js";
 export type { AIProvider } from "./providers/types.js";
 
 // Tools
-export { braveSearchTool, calculatorTool } from "./tools/index.js";
-export type { ExecutableTool, ProviderTool, ToolDefinition } from "./tools/types.js";
+export {
+  braveSearchTool,
+  calculatorTool,
+  execTool,
+  patchFileTool,
+  readFileTool,
+  writeFileTool,
+} from "./tools/index.js";
+export { ToolRegistry } from "./tools/registry.js";
+export type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "./tools/types.js";
 
 // MCP
 export { MCP } from "./mcp/index.js";

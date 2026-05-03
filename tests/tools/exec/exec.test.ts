@@ -85,4 +85,44 @@ describe("ExecTool", () => {
       expect(result).toBe("test\n");
     });
   });
+
+  describe("streaming via ctx.emit", () => {
+    it("emits stdout chunks as they arrive", async () => {
+      const chunks: string[] = [];
+      const streamingCtx = {
+        signal: new AbortController().signal,
+        registry: new ToolRegistry(),
+        emit: (chunk: string) => chunks.push(chunk),
+      };
+
+      const result = await execTool.execute(
+        { command: 'sh -c "echo line1; echo line2"' },
+        streamingCtx,
+      );
+
+      expect(result).toContain("line1");
+      expect(result).toContain("line2");
+      // At least one chunk should have arrived via emit. Multiple lines
+      // may arrive as one chunk depending on buffering, so just check the
+      // joined chunks cover the output.
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.join("")).toContain("line1");
+      expect(chunks.join("")).toContain("line2");
+    });
+
+    it("aborts the subprocess when ctx.signal fires", async () => {
+      const controller = new AbortController();
+      const abortingCtx = {
+        signal: controller.signal,
+        registry: new ToolRegistry(),
+        emit: () => {},
+      };
+
+      // Kick off a long-running command, abort it after 50ms.
+      setTimeout(() => controller.abort(), 50);
+      const result = await execTool.execute({ command: "sleep 5" }, abortingCtx);
+      expect(result).toContain("Error");
+      expect(result).toContain("aborted");
+    });
+  });
 });
