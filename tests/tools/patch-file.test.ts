@@ -5,7 +5,11 @@ import patchFileTool from "../../src/tools/patch-file.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 
 const TEST_DIR = join(import.meta.dirname, "__patch_file_test_tmp__");
-const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 beforeEach(async () => {
   await mkdir(TEST_DIR, { recursive: true });

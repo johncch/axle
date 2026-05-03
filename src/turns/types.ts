@@ -81,5 +81,6 @@ export interface ProviderToolAction extends ActionPartBase {
 export type ActionPart = ToolAction | SubagentAction | ProviderToolAction;
 
 export type ActionResult =
+  | { type: "in-progress"; content: string }
   | { type: "success"; content: unknown }
   | { type: "error"; error: { type: string; message: string } };

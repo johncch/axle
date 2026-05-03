@@ -89,7 +89,7 @@ export async function executeToolCalls(
 
   for (const call of toolCalls) {
     const span = tracer?.startSpan(call.name, { type: "tool" });
-    const ctx: ToolContext = { signal, tracer: span, registry };
+    const ctx: ToolContext = { signal, tracer: span, registry, emit: () => {} };
     let resolved: ToolCallResult | null | undefined;
 
     try {

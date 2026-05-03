@@ -1003,5 +1003,57 @@ describe("stream()", () => {
 
       await expect(handle.final).rejects.toThrow(/Cannot specify both/);
     });
+
+    test("ctx.emit fires tool:exec-delta events", async () => {
+      const { z } = await import("zod");
+      const tool = {
+        name: "stream-tool",
+        description: "emits progress",
+        schema: z.object({}),
+        async execute(_input: any, ctx: any) {
+          ctx.emit("first");
+          ctx.emit("second");
+          return "done";
+        },
+      };
+
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "stream-tool"),
+            toolCallCompleteChunk(0, "c1", "stream-tool", {}),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "ok"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+        onToolCall: async (_name, _params, ctx) => {
+          const result = await tool.execute(_params, ctx);
+          return { type: "success", content: result };
+        },
+      });
+      handle.on(callback);
+      await handle.final;
+
+      const deltas = events.filter((e) => e.type === "tool:exec-delta");
+      expect(deltas).toHaveLength(2);
+      expect(deltas[0].type === "tool:exec-delta" && deltas[0].chunk).toBe("first");
+      expect(deltas[1].type === "tool:exec-delta" && deltas[1].chunk).toBe("second");
+      expect(deltas[0].type === "tool:exec-delta" && deltas[0].name).toBe("stream-tool");
+    });
   });
 });

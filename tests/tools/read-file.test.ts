@@ -5,7 +5,11 @@ import readFileTool from "../../src/tools/read-file.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 
 const TEST_DIR = join(import.meta.dirname, "__read_file_test_tmp__");
-const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 beforeEach(async () => {
   await mkdir(TEST_DIR, { recursive: true });

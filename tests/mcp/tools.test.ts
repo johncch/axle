@@ -2,7 +2,11 @@ import { describe, expect, test, vi } from "vitest";
 import { createMcpToolDefinitions, createMcpTools } from "../../src/mcp/tools.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 
-const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 function createMockClient(responses: Record<string, any> = {}) {
   return {

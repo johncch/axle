@@ -220,6 +220,25 @@ export class TurnBuilder {
         break;
       }
 
+      case "tool:exec-delta": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
+          if (part) {
+            const prior =
+              part.detail.result?.type === "in-progress" ? part.detail.result.content : "";
+            part.detail.result = { type: "in-progress", content: prior + event.chunk };
+          }
+          events.push({
+            type: "action:progress",
+            turnId: turn.id,
+            partId: mapping.partId,
+            chunk: event.chunk,
+          });
+        }
+        break;
+      }
+
       case "tool:exec-complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {

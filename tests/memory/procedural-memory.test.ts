@@ -6,7 +6,11 @@ import { AxleStopReason } from "../../src/providers/types.js";
 import type { FileStore } from "../../src/store/types.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 
-const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 function createMockProvider(responses: string[]): AIProvider {
   let callIndex = 0;

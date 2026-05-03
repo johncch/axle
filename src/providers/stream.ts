@@ -8,7 +8,7 @@ import type {
   ContentPartToolCall,
 } from "../messages/message.js";
 import { ToolRegistry } from "../tools/registry.js";
-import type { ExecutableTool, ProviderTool, ToolDefinition } from "../tools/types.js";
+import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -48,6 +48,13 @@ export type StreamEvent =
       id: string;
       name: string;
       parameters: Record<string, unknown>;
+    }
+  | {
+      type: "tool:exec-delta";
+      index: number;
+      id: string;
+      name: string;
+      chunk: string;
     }
   | {
       type: "tool:exec-complete";
@@ -548,7 +555,14 @@ async function run(
 
       emit(cbs, { type: "tool:exec-start", index: idx, id: call.id, name, parameters });
 
-      const rawResult = onToolCall ? await onToolCall(name, parameters, ctx) : null;
+      const wrappedCtx: ToolContext = {
+        ...ctx,
+        emit: (chunk: string) => {
+          emit(cbs, { type: "tool:exec-delta", index: idx, id: call.id, name, chunk });
+        },
+      };
+
+      const rawResult = onToolCall ? await onToolCall(name, parameters, wrappedCtx) : null;
       const result = rawResult ?? makeNotFoundToolResult(name);
 
       emit(cbs, {

@@ -6,6 +6,7 @@ import type { ToolRegistry } from "./registry.js";
 export interface ToolContext {
   registry: ToolRegistry;
   signal: AbortSignal;
+  emit: (chunk: string) => void;
   tracer?: TracingContext;
 }
 

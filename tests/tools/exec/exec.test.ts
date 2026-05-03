@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import execTool from "../../../src/tools/exec/index.js";
 import { ToolRegistry } from "../../../src/tools/registry.js";
 
-const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 describe("ExecTool", () => {
   beforeEach(() => {

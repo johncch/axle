@@ -5,7 +5,11 @@ import { ToolRegistry } from "../../src/tools/registry.js";
 import writeFileTool from "../../src/tools/write-file.js";
 
 const TEST_DIR = join(import.meta.dirname, "__write_file_test_tmp__");
-const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 beforeEach(async () => {
   await mkdir(TEST_DIR, { recursive: true });
