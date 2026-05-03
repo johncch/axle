@@ -4,8 +4,9 @@ import type { MemoryContext } from "../../src/memory/types.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import type { FileStore } from "../../src/store/types.js";
+import { ToolRegistry } from "../../src/tools/registry.js";
 
-const ctx = { signal: new AbortController().signal };
+const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
 
 function createMockProvider(responses: string[]): AIProvider {
   let callIndex = 0;

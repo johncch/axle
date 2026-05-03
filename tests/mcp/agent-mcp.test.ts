@@ -92,8 +92,8 @@ describe("Agent with MCP", () => {
     await agent.send("test").final;
 
     // Both local and MCP tools should be in the registry
-    expect(agent.tools["local-tool"]).toBeDefined();
-    expect(agent.tools["mcp-tool"]).toBeDefined();
+    expect(agent.registry.get("local-tool")).toBeDefined();
+    expect(agent.registry.get("mcp-tool")).toBeDefined();
   });
 
   test("MCP tools are resolved only once across multiple sends", async () => {

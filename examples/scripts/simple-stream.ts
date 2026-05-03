@@ -1,15 +1,19 @@
 import z from "zod";
 import { SimpleWriter, stream, Tracer } from "../../src/index.js";
+import type { ExecutableTool } from "../../src/tools/types.js";
 import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
 
-const callNameTool = {
+const callNameTool: ExecutableTool<z.ZodObject<{ name: z.ZodString }>> = {
   name: "setName",
   description: "Set your name in the app",
   schema: z.object({
     name: z.string().describe("The name to call yourself"),
   }),
+  async execute() {
+    return "success";
+  },
 };
 
 let options: any = {};
@@ -42,7 +46,7 @@ try {
     ],
     tools: [callNameTool],
     options,
-    onToolCall: async (name, parameters) => {
+    onToolCall: async (name, parameters, _ctx) => {
       console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
       return {
         type: "success",

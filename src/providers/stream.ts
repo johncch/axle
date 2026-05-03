@@ -7,7 +7,8 @@ import type {
   ContentPartThinking,
   ContentPartToolCall,
 } from "../messages/message.js";
-import type { ProviderTool, ToolDefinition } from "../tools/types.js";
+import { ToolRegistry } from "../tools/registry.js";
+import type { ExecutableTool, ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -15,6 +16,7 @@ import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
   type GenerateError,
+  resolveToolRegistry,
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -67,8 +69,9 @@ export interface StreamOptions {
   model: string;
   messages: Array<AxleMessage>;
   system?: string;
-  tools?: Array<ToolDefinition>;
-  providerTools?: Array<ProviderTool>;
+  tools?: ExecutableTool[];
+  providerTools?: ProviderTool[];
+  registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
@@ -98,6 +101,10 @@ function makeNotFoundToolResult(name: string): ToolCallResult {
       message: `Tool not found: ${name}`,
     },
   };
+}
+
+function toToolDefinition(tool: ExecutableTool): ToolDefinition {
+  return { name: tool.name, description: tool.description, schema: tool.schema };
 }
 
 export function stream(options: StreamOptions): StreamHandle {
@@ -138,8 +145,6 @@ async function run(
     model,
     messages,
     system,
-    tools,
-    providerTools,
     onToolCall,
     maxIterations,
     tracer,
@@ -147,6 +152,7 @@ async function run(
     options: genOptions,
     reasoning,
   } = options;
+  const registry = resolveToolRegistry(options);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = { in: 0, out: 0 };
@@ -239,7 +245,10 @@ async function run(
     iterations += 1;
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
 
-    const mergedOptions = providerTools ? { ...genOptions, providerTools } : genOptions;
+    const executable = registry?.executable() ?? [];
+    const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
+    const providerTools = registry?.provider() ?? [];
+    const mergedOptions = providerTools.length > 0 ? { ...genOptions, providerTools } : genOptions;
 
     const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
@@ -553,7 +562,13 @@ async function run(
       return result;
     };
 
-    const { results } = await executeToolCalls(toolCalls, emittingToolCall, signal, tracer);
+    const { results } = await executeToolCalls(
+      toolCalls,
+      emittingToolCall,
+      signal,
+      registry,
+      tracer,
+    );
 
     if (results.length > 0) {
       const toolResultsMessage: AxleToolCallMessage = {

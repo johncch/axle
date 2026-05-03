@@ -382,6 +382,73 @@ describe("Agent", () => {
     expect(agent.hasTools()).toBe(true);
   });
 
+  test("a tool can mutate ctx.registry mid-send", async () => {
+    const { z } = await import("zod");
+
+    let callIndex = 0;
+    const provider: AIProvider = {
+      name: "mock",
+      async createGenerationRequest() {
+        throw new Error("not used");
+      },
+      async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
+        callIndex++;
+        yield {
+          type: "start",
+          id: `mock-${callIndex}`,
+          data: { model: "mock", timestamp: 0 },
+        };
+        if (callIndex === 1) {
+          yield {
+            type: "tool-call-start",
+            data: { index: 0, id: "tc1", name: "load_more" },
+          };
+          yield {
+            type: "tool-call-complete",
+            data: { index: 0, id: "tc1", name: "load_more", arguments: {} },
+          };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.FunctionCall, usage: { in: 1, out: 1 } },
+          };
+        } else {
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "done" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        }
+      },
+    };
+
+    const lateTool = {
+      name: "late-tool",
+      description: "added during a tool call",
+      schema: z.object({}),
+      async execute() {
+        return "ok";
+      },
+    };
+
+    const loadTool = {
+      name: "load_more",
+      description: "loads more tools",
+      schema: z.object({}),
+      execute: vi.fn(async (_input: any, ctx: any) => {
+        ctx.registry.add(lateTool);
+        return "loaded";
+      }),
+    };
+
+    const agent = new Agent({ provider, model: "mock", tools: [loadTool] });
+    await agent.send("hi").final;
+
+    expect(loadTool.execute).toHaveBeenCalled();
+    expect(agent.registry.get("late-tool")).toBeDefined();
+  });
+
   describe("memory integration", () => {
     function createMockMemory(overrides?: Partial<AgentMemory>): AgentMemory {
       return {
@@ -501,7 +568,7 @@ describe("Agent", () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
 
-      expect(agent.tools["add_instruction"]).toBeDefined();
+      expect(agent.registry.get("add_instruction")).toBeDefined();
       expect(agent.hasTools()).toBe(true);
     });
 

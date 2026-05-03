@@ -2,9 +2,10 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import patchFileTool from "../../src/tools/patch-file.js";
+import { ToolRegistry } from "../../src/tools/registry.js";
 
 const TEST_DIR = join(import.meta.dirname, "__patch_file_test_tmp__");
-const ctx = { signal: new AbortController().signal };
+const ctx = { signal: new AbortController().signal, registry: new ToolRegistry() };
 
 beforeEach(async () => {
   await mkdir(TEST_DIR, { recursive: true });

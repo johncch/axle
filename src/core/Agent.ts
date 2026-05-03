@@ -8,6 +8,7 @@ import { stream } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
+import { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { TurnBuilder } from "../turns/builder.js";
@@ -71,13 +72,12 @@ export class Agent {
   readonly store: FileStore;
   readonly fileResolver?: FileResolver;
   readonly reasoning?: boolean;
+  readonly registry: ToolRegistry;
 
   system: string | undefined;
-  tools: Record<string, ExecutableTool> = {};
-  providerTools: ProviderTool[] = [];
 
   private mcps: MCP[] = [];
-  private mcpToolsResolved = false;
+  private resolvedMcps = new WeakSet<MCP>();
   private memory?: AgentMemory;
 
   private options: AgentOptions;
@@ -96,12 +96,10 @@ export class Agent {
     this.fileResolver = config.fileResolver;
     this.reasoning = config.reasoning;
     this.options = config.options ?? {};
-    if (config.tools) {
-      this.addTools(config.tools);
-    }
-    if (config.providerTools) {
-      this.addProviderTools(config.providerTools);
-    }
+    this.registry = new ToolRegistry({
+      tools: config.tools,
+      providerTools: config.providerTools,
+    });
     if (config.mcps) {
       this.mcps = [...config.mcps];
     }
@@ -113,44 +111,20 @@ export class Agent {
       }
       this.memory = config.memory;
       const memoryTools = config.memory.tools?.();
-      if (memoryTools) this.addTools(memoryTools);
-    }
-  }
-
-  addTool(tool: ExecutableTool) {
-    this.tools[tool.name] = tool;
-  }
-
-  addTools(tools: ExecutableTool[]) {
-    for (const tool of tools) {
-      this.addTool(tool);
-    }
-  }
-
-  addProviderTool(tool: ProviderTool) {
-    this.providerTools.push(tool);
-  }
-
-  addProviderTools(tools: ProviderTool[]) {
-    for (const tool of tools) {
-      this.addProviderTool(tool);
+      if (memoryTools) this.registry.add(memoryTools);
     }
   }
 
   addMcp(mcp: MCP) {
     this.mcps.push(mcp);
-    this.mcpToolsResolved = false;
   }
 
   addMcps(mcps: MCP[]) {
     this.mcps.push(...mcps);
-    this.mcpToolsResolved = false;
   }
 
   hasTools(): boolean {
-    return (
-      Object.keys(this.tools).length > 0 || this.providerTools.length > 0 || this.mcps.length > 0
-    );
+    return this.registry.size > 0 || this.mcps.length > 0;
   }
 
   on(callback: AgentEventCallback) {
@@ -198,13 +172,12 @@ export class Agent {
   }
 
   private async resolveMcpTools(): Promise<void> {
-    if (this.mcpToolsResolved) return;
-    this.tracer?.debug("resolving MCP tools", { count: this.mcps.length });
     for (const mcp of this.mcps) {
+      if (this.resolvedMcps.has(mcp)) continue;
       const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer });
-      this.addTools(tools);
+      this.registry.add(tools);
+      this.resolvedMcps.add(mcp);
     }
-    this.mcpToolsResolved = true;
   }
 
   private emitEvent(event: AgentEvent): void {
@@ -249,13 +222,6 @@ export class Agent {
       this.emitEvent(evt);
     }
 
-    const tools = this.tools;
-    const toolDefinitions = Object.values(tools).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      schema: tool.schema,
-    }));
-
     // Start agent turn
     const { turn: agentTurn, events: startEvents } = builder.startAgentTurn();
     this.history.addTurn(agentTurn);
@@ -266,13 +232,12 @@ export class Agent {
       model: this.model,
       messages: requestMessages,
       system: effectiveSystem,
-      tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
-      providerTools: this.providerTools.length > 0 ? this.providerTools : undefined,
+      registry: this.registry,
       tracer: this.tracer,
       fileResolver: sendFileResolver ?? this.fileResolver,
       reasoning,
       onToolCall: async (name, params, ctx) => {
-        const tool = tools[name];
+        const tool = this.registry.get(name);
         if (!tool) return null;
         try {
           const result = await tool.execute(params, ctx);

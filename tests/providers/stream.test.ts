@@ -941,4 +941,67 @@ describe("stream()", () => {
       expect(final.usage.out).toBe(5);
     });
   });
+
+  describe("tool option shortcuts", () => {
+    test("`tools` shortcut wraps into a registry that ctx sees", async () => {
+      const { z } = await import("zod");
+      const tool = {
+        name: "ping",
+        description: "ping",
+        schema: z.object({}),
+        async execute() {
+          return "pong";
+        },
+      };
+
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "ping"),
+            toolCallCompleteChunk(0, "c1", "ping", {}),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "done"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      let observedRegistrySize = -1;
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+        onToolCall: async (_name, _params, ctx) => {
+          observedRegistrySize = ctx.registry.size;
+          return { type: "success", content: "pong" };
+        },
+      });
+
+      const final = await handle.final;
+      expect(final.result).toBe("success");
+      expect(observedRegistrySize).toBe(1);
+    });
+
+    test("throws when both `registry` and `tools` are provided", async () => {
+      const { ToolRegistry } = await import("../../src/tools/registry.js");
+      const provider = makeProvider({ streamChunks: [[]] });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        registry: new ToolRegistry(),
+        tools: [],
+      });
+
+      await expect(handle.final).rejects.toThrow(/Cannot specify both/);
+    });
+  });
 });

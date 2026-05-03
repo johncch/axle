@@ -1,8 +1,10 @@
 import type { z, ZodObject } from "zod";
 import type { ToolResultPart } from "../messages/message.js";
 import type { TracingContext } from "../tracer/types.js";
+import type { ToolRegistry } from "./registry.js";
 
 export interface ToolContext {
+  registry: ToolRegistry;
   signal: AbortSignal;
   tracer?: TracingContext;
 }

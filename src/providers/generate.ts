@@ -1,11 +1,18 @@
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getToolCalls } from "../messages/utils.js";
-import type { ToolDefinition } from "../tools/types.js";
+import type { ToolRegistry } from "../tools/registry.js";
+import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
-import { appendUsage, executeToolCalls, GenerateResult, ToolCallCallback } from "./helpers.js";
+import {
+  appendUsage,
+  executeToolCalls,
+  GenerateResult,
+  resolveToolRegistry,
+  ToolCallCallback,
+} from "./helpers.js";
 import { AIProvider, AxleStopReason, ModelResult } from "./types.js";
 
 export type {
@@ -21,7 +28,9 @@ export interface GenerateOptions {
   model: string;
   messages: Array<AxleMessage>;
   system?: string;
-  tools?: Array<ToolDefinition>;
+  tools?: ExecutableTool[];
+  providerTools?: ProviderTool[];
+  registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
@@ -37,7 +46,6 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     model,
     messages,
     system,
-    tools,
     onToolCall,
     maxIterations,
     tracer,
@@ -46,6 +54,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     reasoning,
     signal = new AbortController().signal,
   } = options;
+  const registry = resolveToolRegistry(options);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = { in: 0, out: 0 };
@@ -113,6 +122,11 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     iterations += 1;
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
 
+    const executable = registry.executable();
+    const tools =
+      executable.length > 0
+        ? executable.map((t) => ({ name: t.name, description: t.description, schema: t.schema }))
+        : undefined;
     const response = await generateTurn({
       provider,
       model,
@@ -166,7 +180,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       });
     }
 
-    const { results } = await executeToolCalls(toolCalls, onToolCall, signal, tracer);
+    const { results } = await executeToolCalls(toolCalls, onToolCall, signal, registry, tracer);
     if (results.length > 0) {
       addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
     }
