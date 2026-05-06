@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0] - 2026-05-06
+
+- Added provider tool registries for configuring and organizing available tools
+- Added streaming support for tool outputs and tool arguments
+- Improved tool execution with abort-signal support and streamed command output
+- Updated available models
+
 ## [0.12.0] - 2026-04-30
 
 - Added basic thinking/reasoning support to the generation API
