@@ -53,8 +53,6 @@ export const Models = {
   GPT_4_1_NANO: "gpt-4.1-nano",
 
   GPT_4O_2024_11_20: "gpt-4o-2024-11-20",
-  GPT_4O_2024_08_06: "gpt-4o-2024-08-06",
-  GPT_4O_2024_05_13: "gpt-4o-2024-05-13",
   GPT_4O: "gpt-4o",
 
   GPT_4O_MINI_2024_07_18: "gpt-4o-mini-2024-07-18",
@@ -71,12 +69,6 @@ export const Models = {
 
   O3_MINI_2025_01_31: "o3-mini-2025-01-31",
   O3_MINI: "o3-mini",
-
-  O1_2024_12_17: "o1-2024-12-17",
-  O1: "o1",
-
-  O1_PRO_2025_03_19: "o1-pro-2025-03-19",
-  O1_PRO: "o1-pro",
 } as const;
 
 export const MULTIMODAL_MODELS = [
@@ -88,9 +80,12 @@ export const MULTIMODAL_MODELS = [
   Models.GPT_5_4_NANO,
   Models.GPT_5_3_CHAT_LATEST,
   Models.GPT_5_2,
+  Models.GPT_5_2_CHAT_LATEST,
   Models.GPT_5_2_PRO,
   Models.GPT_5_1,
+  Models.GPT_5_1_CHAT_LATEST,
   Models.GPT_5,
+  Models.GPT_5_CHAT_LATEST,
   Models.GPT_5_PRO,
   Models.GPT_5_MINI,
   Models.GPT_5_NANO,
@@ -103,8 +98,6 @@ export const MULTIMODAL_MODELS = [
   Models.O3,
   Models.O3_PRO,
   Models.O3_MINI,
-  Models.O1,
-  Models.O1_PRO,
 ] as const;
 
 export const DEFAULT_MODEL = Models.GPT_5_4_MINI;

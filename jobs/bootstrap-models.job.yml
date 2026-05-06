@@ -9,8 +9,8 @@
 #   pnpm start -- examples/jobs/bootstrap-models.job.yml
 
 provider:
-  type: anthropic
-  model: claude-sonnet-4-6
+  type: openai
+  model: gpt-5.5
 
 task: |
   Your task is to update the provider files in ./src/ai/<provider>/models.ts

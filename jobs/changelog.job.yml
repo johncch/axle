@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../schemas/v2/job.yaml
 provider:
-  type: anthropic
-  model: claude-sonnet-4-6
+  type: openai
+  model: gpt-5.5
 
 task: |
   Generate a changelog entry for version {{version}}.
