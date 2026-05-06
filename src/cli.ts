@@ -23,7 +23,7 @@ import type {
   GeminiProviderConfig,
   OpenAIProviderConfig,
 } from "./providers/types.js";
-import type { AxleTool, ServerTool } from "./tools/types.js";
+import type { ExecutableTool, ProviderTool } from "./tools/types.js";
 import { Tracer } from "./tracer/tracer.js";
 import { SimpleWriter } from "./tracer/writers/simple.js";
 import type { Stats } from "./types.js";
@@ -215,14 +215,11 @@ rootSpan.info("All systems operational. Running job...");
 
 const memory = new ProceduralMemory({ provider, model });
 
-const serverTools: ServerTool[] = (jobConfig.server_tools ?? []).map((name) => ({
-  type: "server",
+const providerTools: ProviderTool[] = (jobConfig.provider_tools ?? []).map((name) => ({
+  type: "provider",
   name,
 }));
-const sharedTools: AxleTool[] = [
-  ...(jobConfig.tools?.length ? createTools(jobConfig.tools) : []),
-  ...serverTools,
-];
+const sharedTools: ExecutableTool[] = jobConfig.tools?.length ? createTools(jobConfig.tools) : [];
 
 let mcps: MCP[] = [];
 if (jobConfig.mcps?.length) {
@@ -247,6 +244,7 @@ try {
       provider,
       model,
       sharedTools,
+      providerTools,
       mcps,
       variables,
       options,
@@ -260,6 +258,7 @@ try {
       provider,
       model,
       sharedTools,
+      providerTools,
       mcps,
       variables,
       options,

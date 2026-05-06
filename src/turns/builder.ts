@@ -3,10 +3,10 @@ import type { StreamEvent } from "../providers/stream.js";
 import type { Stats } from "../types.js";
 import type { AgentEvent } from "./events.js";
 import type {
-  InternalToolAction,
-  TimingInfo,
+  ProviderToolAction,
   TextPart,
   ThinkingPart,
+  TimingInfo,
   ToolAction,
   Turn,
   TurnPart,
@@ -202,6 +202,24 @@ export class TurnBuilder {
         break;
       }
 
+      case "tool:args-delta": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
+          if (part) {
+            part.detail.pendingArgs = event.accumulated;
+          }
+          events.push({
+            type: "action:args-delta",
+            turnId: turn.id,
+            partId: mapping.partId,
+            delta: event.delta,
+            accumulated: event.accumulated,
+          });
+        }
+        break;
+      }
+
       case "tool:exec-start": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
@@ -209,6 +227,7 @@ export class TurnBuilder {
           if (part) {
             part.status = "running";
             part.detail.parameters = event.parameters;
+            delete part.detail.pendingArgs;
             events.push({
               type: "action:running",
               turnId: turn.id,
@@ -216,6 +235,25 @@ export class TurnBuilder {
               parameters: event.parameters,
             });
           }
+        }
+        break;
+      }
+
+      case "tool:exec-delta": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
+          if (part) {
+            const prior =
+              part.detail.result?.type === "in-progress" ? part.detail.result.content : "";
+            part.detail.result = { type: "in-progress", content: prior + event.chunk };
+          }
+          events.push({
+            type: "action:progress",
+            turnId: turn.id,
+            partId: mapping.partId,
+            chunk: event.chunk,
+          });
         }
         break;
       }
@@ -251,13 +289,13 @@ export class TurnBuilder {
         break;
       }
 
-      case "internal-tool:start": {
+      case "provider-tool:start": {
         this.closeOpenParts(turn, events);
         const partId = crypto.randomUUID();
-        const part: InternalToolAction = {
+        const part: ProviderToolAction = {
           id: partId,
           type: "action",
-          kind: "internal-tool",
+          kind: "provider-tool",
           status: "running",
           timing: startTiming(),
           detail: { name: event.name },
@@ -273,10 +311,10 @@ export class TurnBuilder {
         break;
       }
 
-      case "internal-tool:complete": {
+      case "provider-tool:complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as InternalToolAction | undefined;
+          const part = this.findActionPart(turn, mapping.partId) as ProviderToolAction | undefined;
           if (part) {
             part.status = "complete";
             part.timing = completeTiming(part.timing);

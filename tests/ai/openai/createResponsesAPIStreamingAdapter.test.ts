@@ -337,11 +337,17 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
       const chunks = adapter.handleEvent(event);
 
-      expect(chunks).toHaveLength(1);
+      // First delta produces both tool-call-start (lazy init) and the args-delta.
+      expect(chunks).toHaveLength(2);
       expect(chunks[0].type).toBe("tool-call-start");
       if (chunks[0].type === "tool-call-start") {
         expect(chunks[0].data.id).toBe("call_123");
         expect(chunks[0].data.index).toBe(0);
+      }
+      expect(chunks[1].type).toBe("tool-call-args-delta");
+      if (chunks[1].type === "tool-call-args-delta") {
+        expect(chunks[1].data.delta).toBe('{"query": "');
+        expect(chunks[1].data.accumulated).toBe('{"query": "');
       }
     });
 
@@ -552,7 +558,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
   });
 
   describe("internal tools", () => {
-    test("should emit internal-tool-start for web_search_call", () => {
+    test("should emit provider-tool-start for web_search_call", () => {
       const adapter = createStreamingAdapter();
 
       const chunks = adapter.handleEvent({
@@ -567,14 +573,14 @@ describe("createResponsesAPIStreamingAdapter", () => {
       } as ResponseStreamEvent);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-start");
-      if (chunks[0].type === "internal-tool-start") {
+      expect(chunks[0].type).toBe("provider-tool-start");
+      if (chunks[0].type === "provider-tool-start") {
         expect(chunks[0].data.id).toBe("ws_123");
         expect(chunks[0].data.name).toBe("web_search_call");
       }
     });
 
-    test("should emit internal-tool-complete on output_item.done", () => {
+    test("should emit provider-tool-complete on output_item.done", () => {
       const adapter = createStreamingAdapter();
 
       adapter.handleEvent({
@@ -600,8 +606,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
       } as ResponseStreamEvent);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-complete");
-      if (chunks[0].type === "internal-tool-complete") {
+      expect(chunks[0].type).toBe("provider-tool-complete");
+      if (chunks[0].type === "provider-tool-complete") {
         expect(chunks[0].data.id).toBe("ws_123");
         expect(chunks[0].data.name).toBe("web_search_call");
       }

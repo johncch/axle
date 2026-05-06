@@ -2,12 +2,13 @@ import type {
   AxleAssistantMessage,
   AxleMessage,
   AxleToolCallMessage,
-  ContentPartInternalTool,
+  ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../messages/message.js";
-import type { ServerTool, ToolDefinition } from "../tools/types.js";
+import { ToolRegistry } from "../tools/registry.js";
+import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "../tools/types.js";
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -15,6 +16,7 @@ import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
   type GenerateError,
+  resolveToolRegistry,
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -41,11 +43,26 @@ export type StreamEvent =
   // Tool calls
   | { type: "tool:request"; index: number; id: string; name: string }
   | {
+      type: "tool:args-delta";
+      index: number;
+      id: string;
+      name: string;
+      delta: string;
+      accumulated: string;
+    }
+  | {
       type: "tool:exec-start";
       index: number;
       id: string;
       name: string;
       parameters: Record<string, unknown>;
+    }
+  | {
+      type: "tool:exec-delta";
+      index: number;
+      id: string;
+      name: string;
+      chunk: string;
     }
   | {
       type: "tool:exec-complete";
@@ -54,9 +71,9 @@ export type StreamEvent =
       name: string;
       result: ToolCallResult;
     }
-  // Internal tools (provider-managed: web search, code interpreter, etc.)
-  | { type: "internal-tool:start"; index: number; id: string; name: string }
-  | { type: "internal-tool:complete"; index: number; id: string; name: string; output?: unknown }
+  // Provider tools (provider-managed: web search, code interpreter, etc.)
+  | { type: "provider-tool:start"; index: number; id: string; name: string }
+  | { type: "provider-tool:complete"; index: number; id: string; name: string; output?: unknown }
   // Error
   | { type: "error"; error: GenerateError };
 
@@ -67,8 +84,9 @@ export interface StreamOptions {
   model: string;
   messages: Array<AxleMessage>;
   system?: string;
-  tools?: Array<ToolDefinition>;
-  serverTools?: Array<ServerTool>;
+  tools?: ExecutableTool[];
+  providerTools?: ProviderTool[];
+  registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
   tracer?: TracingContext;
@@ -98,6 +116,10 @@ function makeNotFoundToolResult(name: string): ToolCallResult {
       message: `Tool not found: ${name}`,
     },
   };
+}
+
+function toToolDefinition(tool: ExecutableTool): ToolDefinition {
+  return { name: tool.name, description: tool.description, schema: tool.schema };
 }
 
 export function stream(options: StreamOptions): StreamHandle {
@@ -138,8 +160,6 @@ async function run(
     model,
     messages,
     system,
-    tools,
-    serverTools,
     onToolCall,
     maxIterations,
     tracer,
@@ -147,6 +167,7 @@ async function run(
     options: genOptions,
     reasoning,
   } = options;
+  const registry = resolveToolRegistry(options);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = { in: 0, out: 0 };
@@ -190,7 +211,7 @@ async function run(
 
   const buildCancelledResult = (
     turnParts: Array<
-      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
     >,
     turnId: string,
     turnModel: string,
@@ -239,7 +260,10 @@ async function run(
     iterations += 1;
     const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
 
-    const mergedOptions = serverTools ? { ...genOptions, serverTools } : genOptions;
+    const executable = registry?.executable() ?? [];
+    const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
+    const providerTools = registry?.provider() ?? [];
+    const mergedOptions = providerTools.length > 0 ? { ...genOptions, providerTools } : genOptions;
 
     const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
@@ -252,7 +276,7 @@ async function run(
     });
 
     const turnParts: Array<
-      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
     > = [];
     let turnId = "";
     let turnModel = "";
@@ -376,6 +400,19 @@ async function run(
           break;
         }
 
+        case "tool-call-args-delta": {
+          const idx = toolCallIndexMap.get(chunk.data.id) ?? -1;
+          emit(cbs, {
+            type: "tool:args-delta",
+            index: idx,
+            id: chunk.data.id,
+            name: chunk.data.name,
+            delta: chunk.data.delta,
+            accumulated: chunk.data.accumulated,
+          });
+          break;
+        }
+
         case "tool-call-complete": {
           const part = turnParts[currentPartIndex] as ContentPartToolCall;
           if (chunk.data.id) part.id = chunk.data.id;
@@ -385,17 +422,17 @@ async function run(
           break;
         }
 
-        case "internal-tool-start": {
+        case "provider-tool-start": {
           closePart();
           const idx = globalIndex++;
           turnParts.push({
-            type: "internal-tool",
+            type: "provider-tool",
             id: chunk.data.id,
             name: chunk.data.name,
           });
           currentPartIndex = turnParts.length - 1;
           emit(cbs, {
-            type: "internal-tool:start",
+            type: "provider-tool:start",
             index: idx,
             id: chunk.data.id,
             name: chunk.data.name,
@@ -403,11 +440,11 @@ async function run(
           break;
         }
 
-        case "internal-tool-complete": {
-          const part = turnParts[currentPartIndex] as ContentPartInternalTool;
+        case "provider-tool-complete": {
+          const part = turnParts[currentPartIndex] as ContentPartProviderTool;
           if (chunk.data.output != null) part.output = chunk.data.output;
           emit(cbs, {
-            type: "internal-tool:complete",
+            type: "provider-tool:complete",
             index: chunk.data.index,
             id: chunk.data.id,
             name: chunk.data.name,
@@ -533,13 +570,20 @@ async function run(
     emit(cbs, { type: "tool-results:start", id: toolResultsId });
 
     let toolExecIndex = 0;
-    const emittingToolCall: ToolCallCallback = async (name, parameters) => {
+    const emittingToolCall: ToolCallCallback = async (name, parameters, ctx) => {
       const call = toolCalls[toolExecIndex++];
       const idx = toolCallIndexMap.get(call.id) ?? -1;
 
       emit(cbs, { type: "tool:exec-start", index: idx, id: call.id, name, parameters });
 
-      const rawResult = onToolCall ? await onToolCall(name, parameters) : null;
+      const wrappedCtx: ToolContext = {
+        ...ctx,
+        emit: (chunk: string) => {
+          emit(cbs, { type: "tool:exec-delta", index: idx, id: call.id, name, chunk });
+        },
+      };
+
+      const rawResult = onToolCall ? await onToolCall(name, parameters, wrappedCtx) : null;
       const result = rawResult ?? makeNotFoundToolResult(name);
 
       emit(cbs, {
@@ -553,7 +597,13 @@ async function run(
       return result;
     };
 
-    const { results } = await executeToolCalls(toolCalls, emittingToolCall, tracer);
+    const { results } = await executeToolCalls(
+      toolCalls,
+      emittingToolCall,
+      signal,
+      registry,
+      tracer,
+    );
 
     if (results.length > 0) {
       const toolResultsMessage: AxleToolCallMessage = {

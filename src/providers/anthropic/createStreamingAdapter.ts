@@ -3,8 +3,8 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import { convertStopReason } from "./utils.js";
 
 export function createAnthropicStreamingAdapter() {
-  const blockTypes = new Map<number, "text" | "thinking" | "tool" | "internal-tool">();
-  const internalToolInfo = new Map<string, { index: number; name: string }>();
+  const blockTypes = new Map<number, "text" | "thinking" | "tool" | "provider-tool">();
+  const providerToolInfo = new Map<string, { index: number; name: string }>();
   const toolCallBuffers = new Map<
     number,
     {
@@ -90,11 +90,11 @@ export function createAnthropicStreamingAdapter() {
             },
           });
         } else if (event.content_block.type === "server_tool_use") {
-          blockTypes.set(event.index, "internal-tool");
+          blockTypes.set(event.index, "provider-tool");
           const block = event.content_block;
-          internalToolInfo.set(block.id, { index: event.index, name: block.name });
+          providerToolInfo.set(block.id, { index: event.index, name: block.name });
           chunks.push({
-            type: "internal-tool-start",
+            type: "provider-tool-start",
             data: {
               index: event.index,
               id: block.id,
@@ -103,10 +103,10 @@ export function createAnthropicStreamingAdapter() {
           });
         } else if (event.content_block.type === "web_search_tool_result") {
           const block = event.content_block;
-          const info = internalToolInfo.get(block.tool_use_id);
+          const info = providerToolInfo.get(block.tool_use_id);
           if (info) {
             chunks.push({
-              type: "internal-tool-complete",
+              type: "provider-tool-complete",
               data: {
                 index: info.index,
                 id: block.tool_use_id,
@@ -114,7 +114,7 @@ export function createAnthropicStreamingAdapter() {
                 output: block.content,
               },
             });
-            internalToolInfo.delete(block.tool_use_id);
+            providerToolInfo.delete(block.tool_use_id);
           }
         }
         break;
@@ -132,6 +132,16 @@ export function createAnthropicStreamingAdapter() {
           const buffer = toolCallBuffers.get(event.index);
           if (buffer) {
             buffer.argumentsBuffer += event.delta.partial_json;
+            chunks.push({
+              type: "tool-call-args-delta",
+              data: {
+                index: event.index,
+                id: buffer.id,
+                name: buffer.name,
+                delta: event.delta.partial_json,
+                accumulated: buffer.argumentsBuffer,
+              },
+            });
           }
         } else if (event.delta.type === "thinking_delta") {
           chunks.push({
@@ -155,7 +165,7 @@ export function createAnthropicStreamingAdapter() {
           chunks.push({ type: "text-complete", data: { index: event.index } });
         } else if (blockType === "thinking") {
           chunks.push({ type: "thinking-complete", data: { index: event.index } });
-        } else if (blockType === "internal-tool") {
+        } else if (blockType === "provider-tool") {
           // Completion already emitted via web_search_tool_result
         } else if (blockType === "tool") {
           const buffer = toolCallBuffers.get(event.index);

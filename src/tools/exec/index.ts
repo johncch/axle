@@ -1,6 +1,6 @@
 import * as z from "zod";
 import type { ExecProviderConfig } from "../../cli/configs/schemas.js";
-import type { ExecutableTool } from "../types.js";
+import type { ExecutableTool, ToolContext } from "../types.js";
 import { formatExecError, formatOutput, runCommand } from "./helpers.js";
 
 const execSchema = z.object({
@@ -32,7 +32,7 @@ class ExecTool implements ExecutableTool<typeof execSchema> {
     return params.command;
   }
 
-  async execute(params: z.infer<typeof execSchema>): Promise<string> {
+  async execute(params: z.infer<typeof execSchema>, ctx: ToolContext): Promise<string> {
     const { command } = params;
 
     try {
@@ -40,6 +40,8 @@ class ExecTool implements ExecutableTool<typeof execSchema> {
         timeout: this.timeout,
         maxBuffer: this.maxBuffer,
         cwd: this.cwd,
+        signal: ctx.signal,
+        onChunk: (chunk) => ctx.emit(chunk),
       });
 
       return formatOutput(result.stdout, result.stderr);

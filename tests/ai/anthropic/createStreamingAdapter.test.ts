@@ -310,9 +310,22 @@ describe("createAnthropicStreamingAdapter", () => {
         },
       });
 
-      // Arguments are buffered but not emitted
-      expect(delta1).toHaveLength(0);
-      expect(delta2).toHaveLength(0);
+      // Each input_json_delta also surfaces as a tool-call-args-delta chunk
+      // so consumers can render the model "typing" args.
+      expect(delta1).toHaveLength(1);
+      expect(delta1[0].type).toBe("tool-call-args-delta");
+      if (delta1[0].type === "tool-call-args-delta") {
+        expect(delta1[0].data.delta).toBe('{"query":');
+        expect(delta1[0].data.accumulated).toBe('{"query":');
+        expect(delta1[0].data.id).toBe("toolu_123");
+      }
+
+      expect(delta2).toHaveLength(1);
+      expect(delta2[0].type).toBe("tool-call-args-delta");
+      if (delta2[0].type === "tool-call-args-delta") {
+        expect(delta2[0].data.delta).toBe('"test"}');
+        expect(delta2[0].data.accumulated).toBe('{"query":"test"}');
+      }
     });
 
     test("should complete tool call with parsed arguments on content_block_stop", () => {
@@ -553,7 +566,7 @@ describe("createAnthropicStreamingAdapter", () => {
   });
 
   describe("internal tools", () => {
-    test("should emit internal-tool-start for server_tool_use", () => {
+    test("should emit provider-tool-start for server_tool_use", () => {
       const adapter = createAnthropicStreamingAdapter();
 
       const chunks = adapter.handleEvent({
@@ -568,14 +581,14 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-start");
-      if (chunks[0].type === "internal-tool-start") {
+      expect(chunks[0].type).toBe("provider-tool-start");
+      if (chunks[0].type === "provider-tool-start") {
         expect(chunks[0].data.id).toBe("srvtoolu_123");
         expect(chunks[0].data.name).toBe("web_search");
       }
     });
 
-    test("should emit internal-tool-complete for web_search_tool_result", () => {
+    test("should emit provider-tool-complete for web_search_tool_result", () => {
       const adapter = createAnthropicStreamingAdapter();
 
       // Start the server tool
@@ -602,8 +615,8 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("internal-tool-complete");
-      if (chunks[0].type === "internal-tool-complete") {
+      expect(chunks[0].type).toBe("provider-tool-complete");
+      if (chunks[0].type === "provider-tool-complete") {
         expect(chunks[0].data.id).toBe("srvtoolu_123");
         expect(chunks[0].data.name).toBe("web_search");
         expect(chunks[0].data.output).toBeDefined();

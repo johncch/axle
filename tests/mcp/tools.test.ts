@@ -1,5 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
 import { createMcpToolDefinitions, createMcpTools } from "../../src/mcp/tools.js";
+import { ToolRegistry } from "../../src/tools/registry.js";
+
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 function createMockClient(responses: Record<string, any> = {}) {
   return {
@@ -65,7 +72,7 @@ describe("createMcpTools", () => {
     const client = createMockClient();
     const tools = createMcpTools(sampleTools, client, "fs");
 
-    await tools[0].execute({ path: "/test.txt" });
+    await tools[0].execute({ path: "/test.txt" }, ctx);
 
     expect(client.callTool).toHaveBeenCalledWith({
       name: "read_file", // original name, not prefixed
@@ -83,7 +90,7 @@ describe("createMcpTools", () => {
       },
     });
     const tools = createMcpTools(sampleTools, client);
-    const result = await tools[0].execute({ path: "/test.txt" });
+    const result = await tools[0].execute({ path: "/test.txt" }, ctx);
 
     expect(result).toBe("line 1\nline 2");
   });
@@ -98,7 +105,7 @@ describe("createMcpTools", () => {
       },
     });
     const tools = createMcpTools(sampleTools, client);
-    const result = await tools[0].execute({ path: "/test.png" });
+    const result = await tools[0].execute({ path: "/test.png" }, ctx);
 
     expect(Array.isArray(result)).toBe(true);
     expect(result).toEqual([
@@ -124,7 +131,7 @@ describe("createMcpTools", () => {
     });
     const tools = createMcpTools(sampleTools, client);
 
-    await expect(tools[0].execute({ path: "/missing.txt" })).rejects.toThrow("File not found");
+    await expect(tools[0].execute({ path: "/missing.txt" }, ctx)).rejects.toThrow("File not found");
   });
 
   test("execute() uses default error message when error has no text", async () => {
@@ -136,7 +143,7 @@ describe("createMcpTools", () => {
     });
     const tools = createMcpTools(sampleTools, client);
 
-    await expect(tools[0].execute({ path: "/missing.txt" })).rejects.toThrow(
+    await expect(tools[0].execute({ path: "/missing.txt" }, ctx)).rejects.toThrow(
       "MCP tool execution error",
     );
   });

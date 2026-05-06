@@ -79,6 +79,16 @@ function toolCallStartChunk(index: number, id: string, name: string): StreamTool
   return { type: "tool-call-start", data: { index, id, name } };
 }
 
+function toolCallArgsDeltaChunk(
+  index: number,
+  id: string,
+  name: string,
+  delta: string,
+  accumulated: string,
+): AnyStreamChunk {
+  return { type: "tool-call-args-delta", data: { index, id, name, delta, accumulated } };
+}
+
 function toolCallCompleteChunk(
   index: number,
   id: string,
@@ -939,6 +949,165 @@ describe("stream()", () => {
       // Usage should only include turn 1 (completed)
       expect(final.usage.in).toBe(10);
       expect(final.usage.out).toBe(5);
+    });
+  });
+
+  describe("tool option shortcuts", () => {
+    test("`tools` shortcut wraps into a registry that ctx sees", async () => {
+      const { z } = await import("zod");
+      const tool = {
+        name: "ping",
+        description: "ping",
+        schema: z.object({}),
+        async execute() {
+          return "pong";
+        },
+      };
+
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "ping"),
+            toolCallCompleteChunk(0, "c1", "ping", {}),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "done"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      let observedRegistrySize = -1;
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+        onToolCall: async (_name, _params, ctx) => {
+          observedRegistrySize = ctx.registry.size;
+          return { type: "success", content: "pong" };
+        },
+      });
+
+      const final = await handle.final;
+      expect(final.result).toBe("success");
+      expect(observedRegistrySize).toBe(1);
+    });
+
+    test("throws when both `registry` and `tools` are provided", async () => {
+      const { ToolRegistry } = await import("../../src/tools/registry.js");
+      const provider = makeProvider({ streamChunks: [[]] });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        registry: new ToolRegistry(),
+        tools: [],
+      });
+
+      await expect(handle.final).rejects.toThrow(/Cannot specify both/);
+    });
+
+    test("tool-call-args-delta chunks surface as tool:args-delta events", async () => {
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "make-it"),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", '{"path":"/', '{"path":"/'),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", 'tmp/foo"', '{"path":"/tmp/foo"'),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", "}", '{"path":"/tmp/foo"}'),
+            toolCallCompleteChunk(0, "c1", "make-it", { path: "/tmp/foo" }),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "ok"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      handle.on(callback);
+      await handle.final;
+
+      const argDeltas = events.filter((e) => e.type === "tool:args-delta");
+      expect(argDeltas).toHaveLength(3);
+      if (argDeltas[0].type === "tool:args-delta") {
+        expect(argDeltas[0].delta).toBe('{"path":"/');
+        expect(argDeltas[0].accumulated).toBe('{"path":"/');
+        expect(argDeltas[0].name).toBe("make-it");
+      }
+      if (argDeltas[2].type === "tool:args-delta") {
+        expect(argDeltas[2].accumulated).toBe('{"path":"/tmp/foo"}');
+      }
+    });
+
+    test("ctx.emit fires tool:exec-delta events", async () => {
+      const { z } = await import("zod");
+      const tool = {
+        name: "stream-tool",
+        description: "emits progress",
+        schema: z.object({}),
+        async execute(_input: any, ctx: any) {
+          ctx.emit("first");
+          ctx.emit("second");
+          return "done";
+        },
+      };
+
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "stream-tool"),
+            toolCallCompleteChunk(0, "c1", "stream-tool", {}),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "ok"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+        onToolCall: async (_name, _params, ctx) => {
+          const result = await tool.execute(_params, ctx);
+          return { type: "success", content: result };
+        },
+      });
+      handle.on(callback);
+      await handle.final;
+
+      const deltas = events.filter((e) => e.type === "tool:exec-delta");
+      expect(deltas).toHaveLength(2);
+      expect(deltas[0].type === "tool:exec-delta" && deltas[0].chunk).toBe("first");
+      expect(deltas[1].type === "tool:exec-delta" && deltas[1].chunk).toBe("second");
+      expect(deltas[0].type === "tool:exec-delta" && deltas[0].name).toBe("stream-tool");
     });
   });
 });

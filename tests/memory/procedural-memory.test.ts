@@ -4,6 +4,13 @@ import type { MemoryContext } from "../../src/memory/types.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import type { FileStore } from "../../src/store/types.js";
+import { ToolRegistry } from "../../src/tools/registry.js";
+
+const ctx = {
+  signal: new AbortController().signal,
+  registry: new ToolRegistry(),
+  emit: () => {},
+};
 
 function createMockProvider(responses: string[]): AIProvider {
   let callIndex = 0;
@@ -253,7 +260,7 @@ describe("ProceduralMemory", () => {
       await memory.recall(makeContext({ name: "tool-agent", store }));
 
       const tools = memory.tools();
-      const result = await tools[0].execute({ instruction: "Remember this" });
+      const result = await tools[0].execute({ instruction: "Remember this" }, ctx);
 
       expect(result).toContain("Remember this");
 

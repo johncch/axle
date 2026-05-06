@@ -5,7 +5,11 @@ import { arrayify } from "../../utils/utils.js";
 import { StreamingRequestParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import { MAX_OUTPUT_TOKENS } from "./models.js";
-import { convertToProviderMessages, convertToProviderTools, toAnthropicThinking } from "./utils.js";
+import {
+  convertToAnthropicTools,
+  convertToProviderMessages,
+  toAnthropicThinking,
+} from "./utils.js";
 
 export async function* createStreamingRequest(
   params: StreamingRequestParams & { client: Anthropic; model: string },
@@ -13,17 +17,17 @@ export async function* createStreamingRequest(
   const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
   const tracer = context?.tracer;
 
-  const { stop, max_tokens, serverTools, ...restOptions } = options ?? {};
+  const { stop, max_tokens, providerTools, ...restOptions } = options ?? {};
 
-  const providerTools: any[] = tools ? convertToProviderTools(tools) : [];
+  const apiTools: any[] = tools ? convertToAnthropicTools(tools) : [];
 
-  if (serverTools) {
-    const ANTHROPIC_SERVER_TOOL_MAP: Record<string, string> = {
+  if (providerTools) {
+    const ANTHROPIC_PROVIDER_TOOL_MAP: Record<string, string> = {
       web_search: "web_search_20250305",
     };
-    for (const st of serverTools) {
-      const mappedType = ANTHROPIC_SERVER_TOOL_MAP[st.name] ?? st.name;
-      providerTools.push({ type: mappedType, name: st.name, ...st.config });
+    for (const st of providerTools) {
+      const mappedType = ANTHROPIC_PROVIDER_TOOL_MAP[st.name] ?? st.name;
+      apiTools.push({ type: mappedType, name: st.name, ...st.config });
     }
   }
 
@@ -42,7 +46,7 @@ export async function* createStreamingRequest(
       messages: providerMessages,
       ...(system && { system }),
       ...(stop && { stop_sequences: arrayify(stop) }),
-      ...(providerTools.length > 0 && { tools: providerTools }),
+      ...(apiTools.length > 0 && { tools: apiTools }),
       ...toAnthropicThinking(reasoning),
       ...restOptions,
     };

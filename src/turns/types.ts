@@ -55,6 +55,7 @@ export interface ToolAction extends ActionPartBase {
   detail: {
     name: string;
     parameters: Record<string, unknown>;
+    pendingArgs?: string;
     result?: ActionResult;
   };
 }
@@ -69,8 +70,8 @@ export interface SubagentAction extends ActionPartBase {
   };
 }
 
-export interface InternalToolAction extends ActionPartBase {
-  kind: "internal-tool";
+export interface ProviderToolAction extends ActionPartBase {
+  kind: "provider-tool";
   detail: {
     name: string;
     input?: unknown;
@@ -78,8 +79,9 @@ export interface InternalToolAction extends ActionPartBase {
   };
 }
 
-export type ActionPart = ToolAction | SubagentAction | InternalToolAction;
+export type ActionPart = ToolAction | SubagentAction | ProviderToolAction;
 
 export type ActionResult =
+  | { type: "in-progress"; content: string }
   | { type: "success"; content: unknown }
   | { type: "error"; error: { type: string; message: string } };

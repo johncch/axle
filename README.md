@@ -185,23 +185,21 @@ const agent = new Agent({
 Axle includes several built-in tools: `braveSearchTool`, `calculatorTool`,
 `execTool`, `readFileTool`, `writeFileTool`, and `patchFileTool`.
 
-### Server Tools
+### Provider Tools
 
-Server tools are provider-managed tools that execute on the provider's side
-(e.g. web search, code interpreter). Pass them alongside regular tools using
-`{ type: "server", name: "..." }`.
+Provider tools are tools that execute on the LLM provider's side (e.g. web
+search, code interpreter). Pass them via the `providerTools` option using
+`{ type: "provider", name: "..." }`.
 
 ```typescript
-import { Agent } from "@fifthrevision/axle";
-import type { ServerTool } from "@fifthrevision/axle";
+import { Agent, calculatorTool } from "@fifthrevision/axle";
+import type { ProviderTool } from "@fifthrevision/axle";
 
 const agent = new Agent({
   provider,
   model,
-  tools: [
-    { type: "server", name: "web_search" },
-    calculatorTool, // regular tools work alongside server tools
-  ],
+  tools: [calculatorTool],
+  providerTools: [{ type: "provider", name: "web_search" }],
 });
 ```
 
@@ -216,10 +214,10 @@ You can also pass provider-specific names directly. Use the optional `config`
 field for provider-specific options:
 
 ```typescript
-{ type: "server", name: "web_search", config: { max_results: 5 } }
+{ type: "provider", name: "web_search", config: { max_results: 5 } }
 ```
 
-Server tool events stream as `internal-tool:start` and `internal-tool:complete`.
+Provider tool events stream as `provider-tool:start` and `provider-tool:complete`.
 
 ### MCP (Model Context Protocol)
 
@@ -288,8 +286,8 @@ const result = await handle.final;
 Event types include `turn:start`, `turn:complete`, `tool-results:start`,
 `tool-results:complete`, `text:start`, `text:delta`, `text:end`,
 `thinking:start`, `thinking:delta`, `thinking:end`, `tool:request`,
-`tool:exec-start`, `tool:exec-complete`, `internal-tool:start`,
-`internal-tool:complete`, and `error`. The `turn:*` and `tool-results:*`
+`tool:exec-start`, `tool:exec-complete`, `provider-tool:start`,
+`provider-tool:complete`, and `error`. The `turn:*` and `tool-results:*`
 events carry complete `AxleAssistantMessage` and `AxleToolCallMessage` objects
 for client-server architectures that need authoritative message boundaries.
 
@@ -343,7 +341,7 @@ task: |
 tools:
   - calculator
 
-server_tools:
+provider_tools:
   - web_search
 
 files:

@@ -1,27 +1,27 @@
 import { Agent } from "../../src/index.js";
-import type { ServerTool } from "../../src/tools/types.js";
+import type { ProviderTool } from "../../src/tools/types.js";
 import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
 
-const webSearch: ServerTool = { type: "server", name: "web_search" };
+const webSearch: ProviderTool = { type: "provider", name: "web_search" };
 
-const agent = new Agent({ provider, model, tools: [webSearch] });
+const agent = new Agent({ provider, model, providerTools: [webSearch] });
 
 agent.on((event) => {
   switch (event.type) {
     case "part:start":
       if (event.part.type === "text") {
         console.log(`\n[Text] started`);
-      } else if (event.part.type === "action" && event.part.kind === "internal-tool") {
-        console.log(`\n[Server Tool] ${event.part.detail.name} started`);
+      } else if (event.part.type === "action" && event.part.kind === "provider-tool") {
+        console.log(`\n[Provider Tool] ${event.part.detail.name} started`);
       }
       break;
     case "text:delta":
       process.stdout.write(event.delta);
       break;
     case "action:complete":
-      console.log(`[Server Tool] complete ${JSON.stringify(event.result)}`);
+      console.log(`[Provider Tool] complete ${JSON.stringify(event.result)}`);
       break;
     case "error":
       console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);

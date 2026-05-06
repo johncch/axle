@@ -19,7 +19,7 @@ export interface AxleAssistantMessage {
   id: string;
   model?: string;
   content: Array<
-    ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartInternalTool
+    ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
   >;
   finishReason?: AxleStopReason;
 }
@@ -42,7 +42,7 @@ export type ContentPart =
   | ContentPartFile
   | ContentPartToolCall
   | ContentPartThinking
-  | ContentPartInternalTool;
+  | ContentPartProviderTool;
 
 export interface ContentPartText {
   type: "text";
@@ -72,8 +72,8 @@ export interface ContentPartToolCall {
   providerMetadata?: Record<string, unknown>;
 }
 
-export interface ContentPartInternalTool {
-  type: "internal-tool";
+export interface ContentPartProviderTool {
+  type: "provider-tool";
   id: string;
   name: string;
   input?: unknown;

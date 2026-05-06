@@ -111,8 +111,8 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
     });
   }
 
-  const internalToolParts = msg.content.filter((c) => c.type === "internal-tool");
-  for (const part of internalToolParts) {
+  const providerToolParts = msg.content.filter((c) => c.type === "provider-tool");
+  for (const part of providerToolParts) {
     if (part.output != null) {
       result.push(part.output as any);
     }

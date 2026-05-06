@@ -1,3 +1,4 @@
+import { AxleError } from "../errors/AxleError.js";
 import type {
   AxleAssistantMessage,
   AxleMessage,
@@ -5,6 +6,8 @@ import type {
   ContentPartToolCall,
   ToolResultPart,
 } from "../messages/message.js";
+import { ToolRegistry } from "../tools/registry.js";
+import type { ExecutableTool, ProviderTool, ToolContext } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { ModelError, ModelResult } from "./types.js";
@@ -19,6 +22,7 @@ export type ToolCallResult =
 export type ToolCallCallback = (
   name: string,
   parameters: Record<string, unknown>,
+  ctx: ToolContext,
 ) => Promise<ToolCallResult | null | undefined>;
 
 export type GenerateError =
@@ -58,19 +62,38 @@ export function serializeToolError(error: { type: string; message: string }): st
   return JSON.stringify({ error });
 }
 
+export function resolveToolRegistry(options: {
+  registry?: ToolRegistry;
+  tools?: ExecutableTool[];
+  providerTools?: ProviderTool[];
+}): ToolRegistry {
+  const hasShortcut = options.tools !== undefined || options.providerTools !== undefined;
+  if (options.registry && hasShortcut) {
+    throw new AxleError(
+      "Cannot specify both `registry` and `tools` / `providerTools`. Use one or the other.",
+      { code: "TOOL_OPTIONS_CONFLICT" },
+    );
+  }
+  if (options.registry) return options.registry;
+  return new ToolRegistry({ tools: options.tools, providerTools: options.providerTools });
+}
+
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
   onToolCall: ToolCallCallback = async () => null,
+  signal: AbortSignal,
+  registry: ToolRegistry,
   tracer?: TracingContext,
 ): Promise<{ results: AxleToolCallResult[] }> {
   const results: AxleToolCallResult[] = [];
 
   for (const call of toolCalls) {
     const span = tracer?.startSpan(call.name, { type: "tool" });
+    const ctx: ToolContext = { signal, tracer: span, registry, emit: () => {} };
     let resolved: ToolCallResult | null | undefined;
 
     try {
-      resolved = await onToolCall(call.name, call.parameters);
+      resolved = await onToolCall(call.name, call.parameters, ctx);
     } catch (error) {
       resolved = {
         type: "error",

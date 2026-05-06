@@ -4,7 +4,7 @@ export type {
   ActionPart,
   ActionResult,
   FilePart,
-  InternalToolAction,
+  ProviderToolAction,
   SubagentAction,
   TextPart,
   ThinkingPart,
