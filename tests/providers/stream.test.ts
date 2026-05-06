@@ -79,6 +79,16 @@ function toolCallStartChunk(index: number, id: string, name: string): StreamTool
   return { type: "tool-call-start", data: { index, id, name } };
 }
 
+function toolCallArgsDeltaChunk(
+  index: number,
+  id: string,
+  name: string,
+  delta: string,
+  accumulated: string,
+): AnyStreamChunk {
+  return { type: "tool-call-args-delta", data: { index, id, name, delta, accumulated } };
+}
+
 function toolCallCompleteChunk(
   index: number,
   id: string,
@@ -1002,6 +1012,50 @@ describe("stream()", () => {
       });
 
       await expect(handle.final).rejects.toThrow(/Cannot specify both/);
+    });
+
+    test("tool-call-args-delta chunks surface as tool:args-delta events", async () => {
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "make-it"),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", '{"path":"/', '{"path":"/'),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", 'tmp/foo"', '{"path":"/tmp/foo"'),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", "}", '{"path":"/tmp/foo"}'),
+            toolCallCompleteChunk(0, "c1", "make-it", { path: "/tmp/foo" }),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "ok"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      handle.on(callback);
+      await handle.final;
+
+      const argDeltas = events.filter((e) => e.type === "tool:args-delta");
+      expect(argDeltas).toHaveLength(3);
+      if (argDeltas[0].type === "tool:args-delta") {
+        expect(argDeltas[0].delta).toBe('{"path":"/');
+        expect(argDeltas[0].accumulated).toBe('{"path":"/');
+        expect(argDeltas[0].name).toBe("make-it");
+      }
+      if (argDeltas[2].type === "tool:args-delta") {
+        expect(argDeltas[2].accumulated).toBe('{"path":"/tmp/foo"}');
+      }
     });
 
     test("ctx.emit fires tool:exec-delta events", async () => {

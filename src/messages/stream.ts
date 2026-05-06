@@ -8,6 +8,7 @@ export interface StreamChunk {
     | "text-delta"
     | "text-complete"
     | "tool-call-start"
+    | "tool-call-args-delta"
     | "tool-call-complete"
     | "thinking-start"
     | "thinking-delta"
@@ -128,6 +129,17 @@ export interface StreamToolCallStartChunk extends StreamChunk {
   };
 }
 
+export interface StreamToolCallArgsDeltaChunk extends StreamChunk {
+  type: "tool-call-args-delta";
+  data: {
+    index: number;
+    id: string;
+    name: string;
+    delta: string;
+    accumulated: string;
+  };
+}
+
 export interface StreamToolCallCompleteChunk extends StreamChunk {
   type: "tool-call-complete";
   data: {
@@ -178,6 +190,7 @@ export type AnyStreamChunk =
   | StreamThinkingSummaryDeltaChunk
   | StreamThinkingCompleteChunk
   | StreamToolCallStartChunk
+  | StreamToolCallArgsDeltaChunk
   | StreamToolCallCompleteChunk
   | StreamProviderToolStartChunk
   | StreamProviderToolCompleteChunk;

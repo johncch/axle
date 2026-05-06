@@ -14,6 +14,13 @@ export type AgentEvent =
   | { type: "thinking:delta"; turnId: string; partId: string; delta: string }
   | { type: "part:end"; turnId: string; partId: string; timing?: TimingInfo }
   // Action lifecycle
+  | {
+      type: "action:args-delta";
+      turnId: string;
+      partId: string;
+      delta: string;
+      accumulated: string;
+    }
   | { type: "action:running"; turnId: string; partId: string; parameters?: Record<string, unknown> }
   | { type: "action:progress"; turnId: string; partId: string; chunk: string }
   | { type: "action:complete"; turnId: string; partId: string; result: ActionResult }

@@ -55,6 +55,7 @@ export interface ToolAction extends ActionPartBase {
   detail: {
     name: string;
     parameters: Record<string, unknown>;
+    pendingArgs?: string;
     result?: ActionResult;
   };
 }

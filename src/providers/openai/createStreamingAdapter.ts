@@ -94,6 +94,16 @@ export function createStreamingAdapter() {
 
         const buffer = toolCallBuffers.get(itemId)!;
         buffer.argumentsBuffer += event.delta;
+        chunks.push({
+          type: "tool-call-args-delta",
+          data: {
+            index: buffer.partIdx,
+            id: buffer.callId,
+            name: buffer.name,
+            delta: event.delta,
+            accumulated: buffer.argumentsBuffer,
+          },
+        });
         break;
       }
 

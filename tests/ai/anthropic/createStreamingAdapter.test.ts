@@ -310,9 +310,22 @@ describe("createAnthropicStreamingAdapter", () => {
         },
       });
 
-      // Arguments are buffered but not emitted
-      expect(delta1).toHaveLength(0);
-      expect(delta2).toHaveLength(0);
+      // Each input_json_delta also surfaces as a tool-call-args-delta chunk
+      // so consumers can render the model "typing" args.
+      expect(delta1).toHaveLength(1);
+      expect(delta1[0].type).toBe("tool-call-args-delta");
+      if (delta1[0].type === "tool-call-args-delta") {
+        expect(delta1[0].data.delta).toBe('{"query":');
+        expect(delta1[0].data.accumulated).toBe('{"query":');
+        expect(delta1[0].data.id).toBe("toolu_123");
+      }
+
+      expect(delta2).toHaveLength(1);
+      expect(delta2[0].type).toBe("tool-call-args-delta");
+      if (delta2[0].type === "tool-call-args-delta") {
+        expect(delta2[0].data.delta).toBe('"test"}');
+        expect(delta2[0].data.accumulated).toBe('{"query":"test"}');
+      }
     });
 
     test("should complete tool call with parsed arguments on content_block_stop", () => {

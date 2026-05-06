@@ -43,6 +43,14 @@ export type StreamEvent =
   // Tool calls
   | { type: "tool:request"; index: number; id: string; name: string }
   | {
+      type: "tool:args-delta";
+      index: number;
+      id: string;
+      name: string;
+      delta: string;
+      accumulated: string;
+    }
+  | {
       type: "tool:exec-start";
       index: number;
       id: string;
@@ -389,6 +397,19 @@ async function run(
           currentPartIndex = turnParts.length - 1;
           toolCallIndexMap.set(chunk.data.id, idx);
           emit(cbs, { type: "tool:request", index: idx, id: chunk.data.id, name: chunk.data.name });
+          break;
+        }
+
+        case "tool-call-args-delta": {
+          const idx = toolCallIndexMap.get(chunk.data.id) ?? -1;
+          emit(cbs, {
+            type: "tool:args-delta",
+            index: idx,
+            id: chunk.data.id,
+            name: chunk.data.name,
+            delta: chunk.data.delta,
+            accumulated: chunk.data.accumulated,
+          });
           break;
         }
 

@@ -202,6 +202,24 @@ export class TurnBuilder {
         break;
       }
 
+      case "tool:args-delta": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
+          if (part) {
+            part.detail.pendingArgs = event.accumulated;
+          }
+          events.push({
+            type: "action:args-delta",
+            turnId: turn.id,
+            partId: mapping.partId,
+            delta: event.delta,
+            accumulated: event.accumulated,
+          });
+        }
+        break;
+      }
+
       case "tool:exec-start": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
@@ -209,6 +227,7 @@ export class TurnBuilder {
           if (part) {
             part.status = "running";
             part.detail.parameters = event.parameters;
+            delete part.detail.pendingArgs;
             events.push({
               type: "action:running",
               turnId: turn.id,

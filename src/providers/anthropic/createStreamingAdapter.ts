@@ -132,6 +132,16 @@ export function createAnthropicStreamingAdapter() {
           const buffer = toolCallBuffers.get(event.index);
           if (buffer) {
             buffer.argumentsBuffer += event.delta.partial_json;
+            chunks.push({
+              type: "tool-call-args-delta",
+              data: {
+                index: event.index,
+                id: buffer.id,
+                name: buffer.name,
+                delta: event.delta.partial_json,
+                accumulated: buffer.argumentsBuffer,
+              },
+            });
           }
         } else if (event.delta.type === "thinking_delta") {
           chunks.push({

@@ -302,6 +302,49 @@ describe("TurnBuilder", () => {
     }
   });
 
+  test("tool:args-delta accumulates pendingArgs and emits action:args-delta", () => {
+    const builder = new TurnBuilder();
+    const { turn } = builder.startAgentTurn();
+
+    builder.handleStreamEvent({ type: "tool:request", index: 0, id: "tc1", name: "do" });
+    const evs1 = builder.handleStreamEvent({
+      type: "tool:args-delta",
+      index: 0,
+      id: "tc1",
+      name: "do",
+      delta: '{"x":',
+      accumulated: '{"x":',
+    });
+    const evs2 = builder.handleStreamEvent({
+      type: "tool:args-delta",
+      index: 0,
+      id: "tc1",
+      name: "do",
+      delta: '"hi"}',
+      accumulated: '{"x":"hi"}',
+    });
+
+    const argDeltas = [...evs1, ...evs2].filter((e) => e.type === "action:args-delta");
+    expect(argDeltas).toHaveLength(2);
+    if (argDeltas[1].type === "action:args-delta") {
+      expect(argDeltas[1].accumulated).toBe('{"x":"hi"}');
+    }
+
+    const part = turn.parts.find((p: any) => p.kind === "tool") as any;
+    expect(part.detail.pendingArgs).toBe('{"x":"hi"}');
+
+    // tool:exec-start clears pendingArgs and sets parameters
+    builder.handleStreamEvent({
+      type: "tool:exec-start",
+      index: 0,
+      id: "tc1",
+      name: "do",
+      parameters: { x: "hi" },
+    });
+    expect(part.detail.pendingArgs).toBeUndefined();
+    expect(part.detail.parameters).toEqual({ x: "hi" });
+  });
+
   test("internal tool lifecycle produces correct events", () => {
     const builder = new TurnBuilder();
     builder.startAgentTurn();

@@ -118,11 +118,27 @@ export function createGeminiStreamingAdapter() {
           },
         });
 
+        // Gemini delivers args as a complete object, not as a stream. Emit
+        // a single synthetic args-delta with the full JSON so consumers get
+        // a uniform delta event surface across providers.
+        const args = part.functionCall.args ?? {};
+        const argsJson = JSON.stringify(args);
+        chunks.push({
+          type: "tool-call-args-delta",
+          data: {
+            index: toolIdx,
+            id: toolCallId,
+            name: toolName,
+            delta: argsJson,
+            accumulated: argsJson,
+          },
+        });
+
         const completeData: any = {
           index: toolIdx,
           id: toolCallId,
           name: toolName,
-          arguments: part.functionCall.args ?? {},
+          arguments: args,
         };
         const rawPart = part as Record<string, unknown>;
         if (rawPart.thoughtSignature) {

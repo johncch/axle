@@ -130,6 +130,16 @@ export function createStreamingAdapter() {
         if (toolCallDelta.function?.name) buffer.name = toolCallDelta.function.name;
         if (toolCallDelta.function?.arguments) {
           buffer.argumentsBuffer += toolCallDelta.function.arguments;
+          chunks.push({
+            type: "tool-call-args-delta",
+            data: {
+              index: buffer.partIdx,
+              id: buffer.id,
+              name: buffer.name,
+              delta: toolCallDelta.function.arguments,
+              accumulated: buffer.argumentsBuffer,
+            },
+          });
         }
       }
     }
