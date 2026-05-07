@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.14.0] - 2026-05-07
+
+- Simplified the Agent and Instruct APIs for easier use and better TypeScript support
+- Added support for binding inputs to Instruct templates with `withInputs`, `withInput`, and `clone`
+- Improved template variable handling by consistently reporting missing required variables
+
 ## [0.13.0] - 2026-05-06
 
 - Added provider tool registries for configuring and organizing available tools
