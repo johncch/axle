@@ -44,12 +44,12 @@ describe("Agent", () => {
     expect(result.usage).toEqual({ in: 10, out: 20 });
   });
 
-  test("send(instruct, { variables }) substitutes into prompt", async () => {
+  test("send(instruct.withInputs()) substitutes into prompt", async () => {
     const provider = createMockStreamProvider(["Greeting sent"]);
-    const instruct = new Instruct("Say hello to {{name}}");
+    const instruct = new Instruct("Say hello to {{name}}").withInputs({ name: "Alice" });
     const agent = new Agent({ provider, model: "mock" });
 
-    const result = await agent.send(instruct, { variables: { name: "Alice" } }).final;
+    const result = await agent.send(instruct).final;
 
     expect(result.response).toBe("Greeting sent");
   });
@@ -127,7 +127,7 @@ describe("Agent", () => {
       expect(providerSignal?.aborted).toBe(false);
     });
 
-    test("send(instruct, { signal }) supports omitting variables", async () => {
+    test("send(instruct, { signal }) supports shared send options", async () => {
       let providerSignal: AbortSignal | undefined;
       let requestMessages: Array<{ role: string }> = [];
       const provider: AIProvider = {
@@ -166,7 +166,7 @@ describe("Agent", () => {
       expect(requestMessages[0]?.role).toBe("user");
     });
 
-    test("send(instruct, { variables, signal }) aborts the in-flight stream", async () => {
+    test("send(instruct.withInputs(), { signal }) aborts the in-flight stream", async () => {
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
         release = resolve;
@@ -202,11 +202,10 @@ describe("Agent", () => {
       };
 
       const controller = new AbortController();
-      const instruct = new Instruct("Hello {{name}}");
+      const instruct = new Instruct("Hello {{name}}").withInputs({ name: "Alice" });
       const agent = new Agent({ provider, model: "mock" });
 
       const handle = agent.send(instruct, {
-        variables: { name: "Alice" },
         signal: controller.signal,
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -669,12 +668,12 @@ describe("Agent", () => {
     test("on() receives turn:user event when send(instruct) is called", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
-      const instruct = new Instruct("Tell me about {{topic}}");
+      const instruct = new Instruct("Tell me about {{topic}}").withInputs({ topic: "cats" });
 
       const events: { type: string }[] = [];
       agent.on((event) => events.push(event));
 
-      await agent.send(instruct, { variables: { topic: "cats" } }).final;
+      await agent.send(instruct).final;
 
       const userEvents = events.filter((e) => e.type === "turn:user");
       expect(userEvents).toHaveLength(1);

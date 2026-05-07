@@ -60,15 +60,15 @@ const agent = new Agent({
 ### Instruct
 
 Instruct is a rich message. Use it when you need structured output, file
-attachments, variable substitution, or additional instructions.
+attachments, bound template inputs, or additional instructions.
 
 ```typescript
 import * as z from "zod";
 
-const instruct = new Instruct("Summarize the following document.", {
+const instruct = new Instruct("Summarize the following {{topic}}.", {
   summary: z.string(),
   keyPoints: z.array(z.string()),
-});
+}).withInputs({ topic: "document" });
 instruct.addFile(await loadFileContent("./report.pdf"));
 
 const result = await agent.send(instruct).final;

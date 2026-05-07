@@ -2,13 +2,40 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import * as z from "zod";
-import { compileInstruct } from "../../src/core/compile.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { FileInfo, loadFileContent } from "../../src/utils/file.js";
 
 const TEST_DIR = join(process.cwd(), "test-temp", "instruct-test");
 
 describe("Instruct", () => {
+  describe("input binding", () => {
+    test("withInputs returns a new instruct without mutating the original", () => {
+      const template = new Instruct("Hello {{name}}");
+      const bound = template.withInputs({ name: "Alice" });
+
+      expect(template).not.toBe(bound);
+      expect(template.inputs).toEqual({});
+      expect(bound.inputs).toEqual({ name: "Alice" });
+      expect(bound.render()).toBe("Hello Alice");
+    });
+
+    test("withInput merges into existing inputs on a cloned instruct", () => {
+      const template = new Instruct("Hello {{title}} {{name}}").withInputs({ title: "Dr." });
+      const bound = template.withInput("name", "Rivera");
+
+      expect(template).not.toBe(bound);
+      expect(template.inputs).toEqual({ title: "Dr." });
+      expect(bound.inputs).toEqual({ title: "Dr.", name: "Rivera" });
+      expect(bound.render()).toBe("Hello Dr. Rivera");
+    });
+
+    test("render throws when an input is missing", () => {
+      const template = new Instruct("Hello {{name}} from {{place}}").withInput("name", "Alice");
+
+      expect(() => template.render()).toThrow(/Missing variable: place/);
+    });
+  });
+
   describe("file methods", () => {
     test("addFile accepts image files", () => {
       const instruction = new Instruct("Test prompt");
@@ -132,7 +159,7 @@ describe("Instruct", () => {
       const instruct = new Instruct("Summarize the text");
       instruct.addFile(textFile, { name: "arxiv paper" });
 
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
 
       expect(compiled).toContain("Summarize the text");
       expect(compiled).toContain("## Reference 1: arxiv paper");
@@ -148,7 +175,7 @@ describe("Instruct", () => {
       const instruct = new Instruct("What does this document say?");
       instruct.addFile(textFile);
 
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
 
       expect(compiled).toContain("What does this document say?");
       expect(compiled).toContain("## Reference 1: document.md");
@@ -172,7 +199,7 @@ describe("Instruct", () => {
       instruct.addFile(textFile1, { name: "Paper A" });
       instruct.addFile(textFile2, { name: "Paper B" });
 
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
 
       expect(compiled).toContain("Compare these papers");
       expect(compiled).toContain("## Reference 1: Paper A");
@@ -187,13 +214,13 @@ describe("Instruct", () => {
       await writeFile(filePath, textContent);
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("Analyze the {{analysis_type}} in this document");
-      instruct.addFile(textFile, { name: "Reference Doc" });
-
-      const compiled = compileInstruct(instruct, {
+      const instruct = new Instruct("Analyze the {{analysis_type}} in this document").withInputs({
         topic: "artificial intelligence",
         analysis_type: "methodology",
       });
+      instruct.addFile(textFile, { name: "Reference Doc" });
+
+      const compiled = instruct.render();
 
       expect(compiled).toContain("Analyze the methodology in this document");
       expect(compiled).toContain("## Reference 1: Reference Doc");
@@ -220,7 +247,7 @@ console.log("code block");
       const instruct = new Instruct("Process this markdown");
       instruct.addFile(textFile, { name: "Markdown Doc" });
 
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
 
       expect(compiled).toContain("## Reference 1: Markdown Doc");
       expect(compiled).toContain("# Title");
@@ -236,7 +263,7 @@ console.log("code block");
       const instruct = new Instruct("What is in this file?");
       instruct.addFile(textFile, { name: "Empty File" });
 
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
 
       expect(compiled).toContain("What is in this file?");
       expect(compiled).toContain("## Reference 1: Empty File");
@@ -255,7 +282,7 @@ console.log("code block");
       });
       instruct.addFile(textFile, { name: "Score Data" });
 
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
 
       expect(compiled).toContain("Extract information");
       expect(compiled).toContain("## Reference 1: Score Data");
@@ -273,13 +300,13 @@ console.log("code block");
 
     it("emits message untouched when no schema is set", () => {
       const instruct = new Instruct("Hello world");
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
       expect(compiled).toBe("Hello world");
     });
 
     it("should include output format instructions when schema provided", () => {
       const instruct = new Instruct("Hello world", { answer: z.string() });
-      const compiled = compileInstruct(instruct);
+      const compiled = instruct.render();
       expect(compiled).toContain("# Output Format Instructions");
       expect(compiled).toContain("<answer></answer>");
     });

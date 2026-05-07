@@ -17,15 +17,10 @@ import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 import { createHandle, type Handle } from "../utils/utils.js";
-import { compileInstruct } from "./compile.js";
 import { History } from "./history.js";
 import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
 import { parseResponse } from "./parse.js";
-
-export interface AgentOptions {
-  strictVariables?: boolean;
-}
 
 export interface AgentConfig {
   provider: AIProvider;
@@ -40,7 +35,6 @@ export interface AgentConfig {
   tracer?: TracingContext;
   fileResolver?: FileResolver;
   reasoning?: boolean;
-  options?: AgentOptions;
 }
 
 export interface AgentResult<T = string> {
@@ -56,10 +50,6 @@ export interface SendMessageOptions {
   signal?: AbortSignal;
   fileResolver?: FileResolver;
   reasoning?: boolean;
-}
-
-export interface SendInstructOptions extends SendMessageOptions {
-  variables?: Record<string, string>;
 }
 
 export class Agent {
@@ -80,7 +70,6 @@ export class Agent {
   private resolvedMcps = new WeakSet<MCP>();
   private memory?: AgentMemory;
 
-  private options: AgentOptions;
   private eventCallbacks: AgentEventCallback[] = [];
   private sendQueue: Promise<void> = Promise.resolve();
 
@@ -95,7 +84,6 @@ export class Agent {
     this.store = new LocalFileStore(".axle");
     this.fileResolver = config.fileResolver;
     this.reasoning = config.reasoning;
-    this.options = config.options ?? {};
     this.registry = new ToolRegistry({
       tools: config.tools,
       providerTools: config.providerTools,
@@ -131,13 +119,12 @@ export class Agent {
     this.eventCallbacks.push(callback);
   }
 
-  send(message: string, options?: SendMessageOptions): AgentHandle<string>;
-  send(instruct: Instruct<undefined>, options?: SendInstructOptions): AgentHandle<string>;
+  send(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
-    options?: SendInstructOptions,
+    options?: SendMessageOptions,
   ): AgentHandle<ParsedSchema<TSchema>>;
-  send(messageOrInstruct: string | Instruct<any>, options?: SendInstructOptions): AgentHandle<any> {
+  send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
     let schema: OutputSchema | undefined;
     let userMessage: AxleUserMessage;
 
@@ -148,9 +135,7 @@ export class Agent {
         content: [{ type: "text", text: messageOrInstruct }],
       };
     } else {
-      const text = compileInstruct(messageOrInstruct, options?.variables, {
-        strictVariables: this.options.strictVariables,
-      });
+      const text = messageOrInstruct.render();
       const files = messageOrInstruct.files;
       userMessage = {
         role: "user",

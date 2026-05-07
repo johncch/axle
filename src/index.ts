@@ -5,11 +5,10 @@ export type {
   AgentEventCallback,
   AgentHandle,
   AgentResult,
-  SendInstructOptions,
   SendMessageOptions,
 } from "./core/Agent.js";
-export { compileInstruct } from "./core/compile.js";
 export { Instruct } from "./core/index.js";
+export type { InstructInputs } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
 
 // AI Providers

@@ -43,11 +43,10 @@ export async function runSingle(
     tracer: jobSpan,
     name: jobConfig.name,
     memory,
-    options: { strictVariables: !options.allowMissingVars },
   });
 
   try {
-    const result = await agent.send(instruct, { variables }).final;
+    const result = await agent.send(instruct.withInputs(variables)).final;
 
     stats.in += result.usage.in;
     stats.out += result.usage.out;
@@ -190,9 +189,8 @@ export async function runBatch(
         tracer: itemSpan,
         name: jobConfig.name,
         memory,
-        options: { strictVariables: !options.allowMissingVars },
       });
-      const result = await agent.send(instruct, { variables: itemVars }).final;
+      const result = await agent.send(instruct.withInputs(itemVars)).final;
 
       stats.in += result.usage.in;
       stats.out += result.usage.out;
