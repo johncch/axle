@@ -1,5 +1,6 @@
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
+import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type {
   AxleAssistantMessage,
   AxleMessage,
@@ -100,6 +101,16 @@ export async function executeToolCalls(
         throwAbortError();
       }
     } catch (error) {
+      if (error instanceof AxleToolFatalError) {
+        span?.setResult({
+          kind: "tool",
+          name: call.name,
+          input: call.parameters,
+          output: { type: "fatal", message: error.message },
+        });
+        span?.end("error");
+        throw error;
+      }
       if (
         signal.aborted ||
         error instanceof AxleAbortError ||

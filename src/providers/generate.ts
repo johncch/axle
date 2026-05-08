@@ -1,4 +1,5 @@
 import { AxleAbortError } from "../errors/AxleAbortError.js";
+import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getToolCalls } from "../messages/utils.js";
 import type { ToolRegistry } from "../tools/registry.js";
@@ -203,6 +204,16 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
       }
     }
   } catch (error) {
+    if (error instanceof AxleToolFatalError) {
+      tracer?.end("error");
+      throw new AxleToolFatalError(error.message, {
+        toolName: error.toolName,
+        messages: error.messages ?? newMessages,
+        partial: error.partial ?? finalMessage,
+        usage: error.usage ?? usage,
+        cause: error.cause,
+      });
+    }
     if (error instanceof AxleAbortError) {
       tracer?.end("ok");
       throw new AxleAbortError("Generate aborted", {

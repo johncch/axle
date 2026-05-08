@@ -1,6 +1,7 @@
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../errors/AxleAgentAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
+import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
 import type { AxleUserMessage } from "../messages/message.js";
@@ -241,6 +242,9 @@ export class Agent {
           const result = await tool.execute(params, ctx);
           return { type: "success", content: result };
         } catch (error) {
+          if (error instanceof AxleToolFatalError) {
+            throw error;
+          }
           const msg = error instanceof Error ? error.message : String(error);
           return { type: "error", error: { type: "execution", message: msg } };
         }
@@ -258,6 +262,22 @@ export class Agent {
     try {
       streamResult = await streamHandle.final;
     } catch (error) {
+      if (error instanceof AxleToolFatalError) {
+        if (error.messages && error.messages.length > 0) {
+          this.history.appendToLog(error.messages);
+        }
+
+        const finalizeEvents = builder.finalizeTurn("error");
+        for (const evt of finalizeEvents) this.emitEvent(evt);
+
+        throw new AxleToolFatalError(error.message, {
+          toolName: error.toolName,
+          messages: error.messages,
+          partial: error.partial,
+          usage: error.usage ?? emptyUsage,
+          cause: error.cause,
+        });
+      }
       if (error instanceof AxleAbortError) {
         if (error.messages && error.messages.length > 0) {
           this.history.appendToLog(error.messages);

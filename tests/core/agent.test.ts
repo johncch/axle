@@ -3,6 +3,7 @@ import { Agent } from "../../src/core/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
+import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { AgentMemory } from "../../src/memory/types.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
@@ -29,6 +30,65 @@ function createMockStreamProvider(responses: string[]): AIProvider {
         type: "complete",
         data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20 } },
       };
+    },
+  };
+}
+
+function createToolThenTextProvider(toolNames: string[], finalText = "Recovered") {
+  let callCount = 0;
+  const requests: unknown[][] = [];
+  const provider: AIProvider = {
+    name: "mock-tool-stream",
+    async createGenerationRequest() {
+      throw new Error("not used");
+    },
+    async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
+      callCount += 1;
+      requests.push([...messages]);
+      yield {
+        type: "start",
+        id: `mock-${callCount}`,
+        data: { model: "mock", timestamp: 0 },
+      };
+
+      if (callCount === 1) {
+        for (const [index, name] of toolNames.entries()) {
+          yield {
+            type: "tool-call-start",
+            data: { index, id: `tc${index + 1}`, name },
+          };
+          yield {
+            type: "tool-call-complete",
+            data: {
+              index,
+              id: `tc${index + 1}`,
+              name,
+              arguments: { input: "value" },
+            },
+          };
+        }
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.FunctionCall, usage: { in: 1, out: 2 } },
+        };
+        return;
+      }
+
+      yield { type: "text-start", data: { index: 0 } };
+      yield { type: "text-delta", data: { index: 0, text: finalText } };
+      yield { type: "text-complete", data: { index: 0 } };
+      yield {
+        type: "complete",
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 3, out: 4 } },
+      };
+    },
+  };
+
+  return {
+    provider,
+    requests,
+    get callCount() {
+      return callCount;
     },
   };
 }
@@ -476,6 +536,68 @@ describe("Agent", () => {
     await agent.send("Hi").final;
 
     expect(agent.hasTools()).toBe(true);
+  });
+
+  test("tool AxleToolFatalError rejects send without feeding the error back to the model", async () => {
+    const { z } = await import("zod");
+    const fatalCause = new Error("sandbox gone");
+    const toolStream = createToolThenTextProvider(["exec", "next_tool"]);
+    const events: { type: string }[] = [];
+
+    const execTool = {
+      name: "exec",
+      description: "Run a command",
+      schema: z.object({ input: z.string() }),
+      execute: vi.fn().mockRejectedValue(
+        new AxleToolFatalError("Sandbox terminated", {
+          toolName: "exec",
+          cause: fatalCause,
+        }),
+      ),
+    };
+
+    const agent = new Agent({ provider: toolStream.provider, model: "mock", tools: [execTool] });
+    agent.on((event) => events.push(event));
+
+    let thrown: unknown;
+    try {
+      await agent.send("run it").final;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AxleToolFatalError);
+    const fatal = thrown as AxleToolFatalError;
+    expect(fatal.message).toBe("Sandbox terminated");
+    expect(fatal.toolName).toBe("exec");
+    expect(fatal.cause).toBe(fatalCause);
+    expect(fatal.usage).toEqual({ in: 1, out: 2 });
+    expect(fatal.messages).toHaveLength(1);
+    expect(fatal.partial?.role).toBe("assistant");
+    expect(execTool.execute).toHaveBeenCalledTimes(1);
+    expect(toolStream.callCount).toBe(1);
+    expect(events.filter((event) => event.type === "action:running")).toHaveLength(1);
+  });
+
+  test("regular tool Error remains model-visible and can be retried", async () => {
+    const { z } = await import("zod");
+    const toolStream = createToolThenTextProvider(["exec"], "Recovered");
+
+    const execTool = {
+      name: "exec",
+      description: "Run a command",
+      schema: z.object({ input: z.string() }),
+      execute: vi.fn().mockRejectedValue(new Error("temporary failure")),
+    };
+
+    const agent = new Agent({ provider: toolStream.provider, model: "mock", tools: [execTool] });
+
+    const result = await agent.send("run it").final;
+
+    expect(result.response).toBe("Recovered");
+    expect(execTool.execute).toHaveBeenCalledTimes(1);
+    expect(toolStream.callCount).toBe(2);
+    expect(JSON.stringify(toolStream.requests[1])).toContain("temporary failure");
   });
 
   test("a tool can mutate ctx.registry mid-send", async () => {

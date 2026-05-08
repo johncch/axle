@@ -9,7 +9,7 @@ export class AxleError extends Error {
       code?: string;
       id?: string;
       details?: Record<string, any>;
-      cause?: Error;
+      cause?: unknown;
     },
   ) {
     super(message, { cause: options?.cause });

@@ -1,4 +1,5 @@
 import { AxleAbortError } from "../errors/AxleAbortError.js";
+import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type {
   AxleAssistantMessage,
   AxleMessage,
@@ -600,6 +601,16 @@ async function run(
     try {
       ({ results } = await executeToolCalls(toolCalls, emittingToolCall, signal, registry, tracer));
     } catch (error) {
+      if (error instanceof AxleToolFatalError) {
+        tracer?.end("error");
+        throw new AxleToolFatalError(error.message, {
+          toolName: error.toolName,
+          messages: error.messages ?? newMessages,
+          partial: error.partial ?? assistantMessage,
+          usage: error.usage ?? usage,
+          cause: error.cause,
+        });
+      }
       if (error instanceof AxleAbortError) {
         tracer?.end("ok");
         throw new AxleAbortError("Stream aborted", {

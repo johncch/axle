@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { executeToolCalls } from "../../src/providers/helpers.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
@@ -99,6 +100,15 @@ describe("executeToolCalls", () => {
       expect(results).toHaveLength(1);
       expect(results[0].isError).toBe(true);
       expect(results[0].content).toContain("crash");
+    });
+
+    test("rethrows AxleToolFatalError from onToolCall", async () => {
+      const fatal = new AxleToolFatalError("sandbox terminated", { toolName: "fatal-tool" });
+      const onToolCall = vi.fn().mockRejectedValue(fatal);
+
+      await expect(
+        executeToolCalls([makeToolCall("fatal-tool")], onToolCall, testSignal, testRegistry),
+      ).rejects.toBe(fatal);
     });
 
     test("passes a ToolContext with signal, tracer span, and registry", async () => {
