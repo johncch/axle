@@ -1,3 +1,4 @@
+import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import type {
   AxleAssistantMessage,
@@ -43,14 +44,7 @@ export type GenerateResult =
       usage?: Stats;
     };
 
-export type StreamResult =
-  | GenerateResult
-  | {
-      result: "cancelled";
-      messages: AxleMessage[];
-      partial?: AxleAssistantMessage;
-      usage: Stats;
-    };
+export type StreamResult = GenerateResult;
 
 export function appendUsage(total: Stats, result: ModelResult): void {
   const usage = result.usage ?? { in: 0, out: 0 };
@@ -87,14 +81,33 @@ export async function executeToolCalls(
 ): Promise<{ results: AxleToolCallResult[] }> {
   const results: AxleToolCallResult[] = [];
 
+  const throwAbortError = (): never => {
+    throw new AxleAbortError("Operation aborted", { reason: signal.reason });
+  };
+
   for (const call of toolCalls) {
+    if (signal.aborted) {
+      throwAbortError();
+    }
     const span = tracer?.startSpan(call.name, { type: "tool" });
     const ctx: ToolContext = { signal, tracer: span, registry, emit: () => {} };
     let resolved: ToolCallResult | null | undefined;
 
     try {
       resolved = await onToolCall(call.name, call.parameters, ctx);
+      if (signal.aborted) {
+        span?.end("ok");
+        throwAbortError();
+      }
     } catch (error) {
+      if (
+        signal.aborted ||
+        error instanceof AxleAbortError ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        span?.end("ok");
+        throwAbortError();
+      }
       resolved = {
         type: "error",
         error: {

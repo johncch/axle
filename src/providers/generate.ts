@@ -1,9 +1,11 @@
+import { AxleAbortError } from "../errors/AxleAbortError.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getToolCalls } from "../messages/utils.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
+import { throwIfAborted } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
 import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
 import {
@@ -100,89 +102,124 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     turnSpan.end();
   };
 
-  while (true) {
-    if (maxIterations !== undefined && iterations >= maxIterations) {
-      return endWithResult({
-        result: "error",
-        messages: newMessages,
-        error: {
-          type: "model",
+  try {
+    while (true) {
+      throwIfAborted(signal, "Generate aborted");
+
+      if (maxIterations !== undefined && iterations >= maxIterations) {
+        return endWithResult({
+          result: "error",
+          messages: newMessages,
           error: {
-            type: "error",
+            type: "model",
             error: {
-              type: "MaxIterations",
-              message: `Exceeded max iterations (${maxIterations})`,
+              type: "error",
+              error: {
+                type: "MaxIterations",
+                message: `Exceeded max iterations (${maxIterations})`,
+              },
             },
           },
-        },
-        usage,
+          usage,
+        });
+      }
+
+      iterations += 1;
+      const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
+
+      const executable = registry.executable();
+      const tools =
+        executable.length > 0
+          ? executable.map((t) => ({ name: t.name, description: t.description, schema: t.schema }))
+          : undefined;
+      let response: ModelResult;
+      try {
+        response = await generateTurn({
+          provider,
+          model,
+          messages: workingMessages,
+          system,
+          tools,
+          tracer: turnSpan,
+          fileResolver,
+          options: generateOptions,
+          reasoning,
+          signal,
+        });
+
+        throwIfAborted(signal, "Generate aborted");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          turnSpan?.end("ok");
+        }
+        throw error;
+      }
+
+      appendUsage(usage, response);
+      setTurnResult(turnSpan, response);
+
+      if (response.type === "error") {
+        return endWithResult({
+          result: "error",
+          messages: newMessages,
+          error: { type: "model", error: response },
+          usage,
+        });
+      }
+
+      const assistantMessage: AxleAssistantMessage = {
+        role: "assistant",
+        id: response.id,
+        model: response.model,
+        content: response.content,
+        finishReason: response.finishReason,
+      };
+      addMessage(assistantMessage);
+      finalMessage = assistantMessage;
+
+      if (response.finishReason !== AxleStopReason.FunctionCall) {
+        return endWithResult({
+          result: "success",
+          messages: newMessages,
+          final: finalMessage,
+          usage,
+        });
+      }
+
+      const toolCalls = getToolCalls(response.content);
+      if (toolCalls.length === 0) {
+        return endWithResult({
+          result: "success",
+          messages: newMessages,
+          final: finalMessage,
+          usage,
+        });
+      }
+
+      const { results } = await executeToolCalls(toolCalls, onToolCall, signal, registry, tracer);
+      throwIfAborted(signal, "Generate aborted");
+      if (results.length > 0) {
+        addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
+      }
+    }
+  } catch (error) {
+    if (error instanceof AxleAbortError) {
+      tracer?.end("ok");
+      throw new AxleAbortError("Generate aborted", {
+        reason: error.reason,
+        messages: error.messages ?? newMessages,
+        partial: error.partial,
+        usage: error.usage ?? usage,
       });
     }
-
-    iterations += 1;
-    const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
-
-    const executable = registry.executable();
-    const tools =
-      executable.length > 0
-        ? executable.map((t) => ({ name: t.name, description: t.description, schema: t.schema }))
-        : undefined;
-    const response = await generateTurn({
-      provider,
-      model,
-      messages: workingMessages,
-      system,
-      tools,
-      tracer: turnSpan,
-      fileResolver,
-      options: generateOptions,
-      reasoning,
-    });
-
-    appendUsage(usage, response);
-    setTurnResult(turnSpan, response);
-
-    if (response.type === "error") {
-      return endWithResult({
-        result: "error",
+    if (error instanceof Error && error.name === "AbortError") {
+      tracer?.end("ok");
+      throw new AxleAbortError("Generate aborted", {
+        reason: signal.reason,
         messages: newMessages,
-        error: { type: "model", error: response },
         usage,
       });
     }
-
-    const assistantMessage: AxleAssistantMessage = {
-      role: "assistant",
-      id: response.id,
-      model: response.model,
-      content: response.content,
-      finishReason: response.finishReason,
-    };
-    addMessage(assistantMessage);
-    finalMessage = assistantMessage;
-
-    if (response.finishReason !== AxleStopReason.FunctionCall) {
-      return endWithResult({
-        result: "success",
-        messages: newMessages,
-        final: finalMessage,
-        usage,
-      });
-    }
-
-    const toolCalls = getToolCalls(response.content);
-    if (toolCalls.length === 0) {
-      return endWithResult({
-        result: "success",
-        messages: newMessages,
-        final: finalMessage,
-        usage,
-      });
-    }
-
-    const { results } = await executeToolCalls(toolCalls, onToolCall, signal, registry, tracer);
-    if (results.length > 0) {
-      addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
-    }
+    throw error;
   }
 }

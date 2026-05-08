@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getTextContent } from "../../messages/utils.js";
+import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
@@ -15,16 +16,19 @@ import {
 export async function createGenerationRequest(
   params: GenerationRequestParams & { client: Anthropic; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options, reasoning } = params;
+  const { client, model, messages, system, tools, context, options, reasoning, signal } = params;
   const tracer = context?.tracer;
 
   const { stop, max_tokens, ...restOptions } = options ?? {};
 
   let result: ModelResult;
   try {
+    throwIfAborted(signal, "Generate aborted");
+
     const providerMessages = await convertToProviderMessages(messages, {
       model,
       fileResolver: context?.fileResolver,
+      signal,
     });
 
     const request = {
@@ -39,9 +43,15 @@ export async function createGenerationRequest(
     };
     tracer?.debug("Anthropic request", { request: redactResolvedFileValues(request) });
 
-    const completion = await client.messages.create(request);
+    const completion = await raceWithSignal(
+      client.messages.create(request, ...(signal ? [{ signal }] : [])),
+      signal,
+      "Generate aborted",
+    );
+    throwIfAborted(signal, "Generate aborted");
     result = convertToAIResponse(completion);
   } catch (e) {
+    throwIfAborted(signal, "Generate aborted");
     result = getUndefinedError(e);
   }
 

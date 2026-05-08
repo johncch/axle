@@ -6,6 +6,7 @@ import {
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import type { TracingContext } from "../../tracer/types.js";
+import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -19,7 +20,7 @@ import {
 export async function createGenerationRequest(
   params: GenerationRequestParams & { client: GoogleGenAI; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options, reasoning } = params;
+  const { client, model, messages, system, tools, context, options, reasoning, signal } = params;
   const tracer = context?.tracer;
 
   // Convert max_tokens to maxOutputTokens for Google AI; user options spread
@@ -47,9 +48,12 @@ export async function createGenerationRequest(
 
   let result: ModelResult;
   try {
+    throwIfAborted(signal, "Generate aborted");
+
     const contents = await convertAxleMessagesToGemini(messages, {
       model,
       fileResolver: context?.fileResolver,
+      signal,
     });
 
     const request = {
@@ -58,12 +62,18 @@ export async function createGenerationRequest(
     };
     tracer?.debug("Gemini request", { request: redactResolvedFileValues(request) });
 
-    const response = await client.models.generateContent({
-      model,
-      ...request,
-    });
+    const response = await raceWithSignal(
+      client.models.generateContent({
+        model,
+        ...request,
+      }),
+      signal,
+      "Generate aborted",
+    );
+    throwIfAborted(signal, "Generate aborted");
     result = fromModelResponse(response, { tracer });
   } catch (e) {
+    throwIfAborted(signal, "Generate aborted");
     tracer?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }

@@ -11,6 +11,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
+import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -19,15 +20,18 @@ import { convertAxleMessageToResponseInput, prepareTools, toOpenAIReasoning } fr
 export async function createGenerationRequest(
   params: GenerationRequestParams & { client: OpenAI; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options, reasoning } = params;
+  const { client, model, messages, system, tools, context, options, reasoning, signal } = params;
   const tracer = context?.tracer;
 
   let result: ModelResult;
   try {
+    throwIfAborted(signal, "Generate aborted");
+
     const modelTools = prepareTools(tools);
     const input = await convertAxleMessageToResponseInput(messages, {
       model,
       fileResolver: context?.fileResolver,
+      signal,
     });
     const request: ResponseCreateParamsNonStreaming = {
       model,
@@ -40,9 +44,15 @@ export async function createGenerationRequest(
 
     tracer?.debug("OpenAI ResponsesAPI request", { request: redactResolvedFileValues(request) });
 
-    const response = await client.responses.create(request);
+    const response = await raceWithSignal(
+      client.responses.create(request, ...(signal ? [{ signal }] : [])),
+      signal,
+      "Generate aborted",
+    );
+    throwIfAborted(signal, "Generate aborted");
     result = fromModelResponse(response);
   } catch (e) {
+    throwIfAborted(signal, "Generate aborted");
     tracer?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }

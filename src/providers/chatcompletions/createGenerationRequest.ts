@@ -4,6 +4,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
+import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -22,14 +23,18 @@ export async function createGenerationRequest(
     apiKey?: string;
   },
 ): Promise<ModelResult> {
-  const { baseUrl, model, messages, system, tools, context, apiKey, options, reasoning } = params;
+  const { baseUrl, model, messages, system, tools, context, apiKey, options, reasoning, signal } =
+    params;
   const tracer = context?.tracer;
 
   let result: ModelResult;
   try {
+    throwIfAborted(signal, "Generate aborted");
+
     const chatMessages = await convertAxleMessages(messages, system, {
       model,
       fileResolver: context?.fileResolver,
+      signal,
     });
     const chatTools = convertTools(tools);
 
@@ -62,11 +67,16 @@ export async function createGenerationRequest(
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    });
+    const response = await raceWithSignal(
+      fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        signal,
+      }),
+      signal,
+      "Generate aborted",
+    );
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
@@ -75,9 +85,15 @@ export async function createGenerationRequest(
       );
     }
 
-    const data: ChatCompletionResponse = await response.json();
+    const data: ChatCompletionResponse = await raceWithSignal(
+      response.json() as Promise<ChatCompletionResponse>,
+      signal,
+      "Generate aborted",
+    );
+    throwIfAborted(signal, "Generate aborted");
     result = fromModelResponse(data);
   } catch (e) {
+    throwIfAborted(signal, "Generate aborted");
     tracer?.error("Error fetching ChatCompletions response", {
       error: e instanceof Error ? e.message : String(e),
     });

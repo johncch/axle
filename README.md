@@ -133,6 +133,12 @@ Both handle the full tool-call loop automatically. Agent uses `stream()`
 internally and adds history management, system prompt, and callback wiring on
 top.
 
+Cancellation follows standard JavaScript abort semantics:
+
+- `handle.cancel(reason)` aborts a `stream()` or `agent.send()` handle.
+- `stream().final`, `generate(...)`, and `agent.send(...).final` reject with an error whose `name` is `"AbortError"`.
+- Axle abort errors preserve `reason`, `usage`, and partial state where available (`messages`, `partial`, and for `Agent.send`, `turn`).
+
 ## Details
 
 ### Structured Output
@@ -279,8 +285,17 @@ agent.on((event) => {
 });
 
 const handle = agent.send("Write me a poem.");
-// handle.cancel() to abort mid-stream
-const result = await handle.final;
+// handle.cancel(reason) aborts mid-stream and rejects handle.final with an AbortError
+try {
+  const result = await handle.final;
+} catch (err) {
+  if (err instanceof Error && err.name === "AbortError") {
+    // Cancellation preserves partial state on AxleAbortError: reason, turn, partial, usage
+    console.log("Cancelled");
+  } else {
+    throw err;
+  }
+}
 ```
 
 Event types include `turn:start`, `turn:complete`, `tool-results:start`,

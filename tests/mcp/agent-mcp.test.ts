@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { Agent } from "../../src/core/Agent.js";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import type { MCP } from "../../src/mcp/MCP.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
@@ -168,10 +169,18 @@ describe("Agent with MCP", () => {
     const handle = agent.send("test");
 
     // Cancel immediately — before MCP resolution may have completed
-    handle.cancel();
+    const reason = "mcp-cancel";
+    handle.cancel(reason);
 
-    const result = await handle.final;
-    // Should not throw, result may be null response due to cancellation
-    expect(result).toBeDefined();
+    let error: unknown;
+    try {
+      await handle.final;
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(AxleAbortError);
+    expect((error as AxleAbortError).name).toBe("AbortError");
+    expect((error as AxleAbortError).reason).toBe(reason);
   });
 });

@@ -1,9 +1,21 @@
 import { describe, expect, test } from "vitest";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { generate } from "../../src/providers/generate.js";
 import type { AIProvider, ModelError, ModelResponse } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import { makeGenerateProvider } from "./helpers/providers.js";
 import { createTracerAndWriter, eventIndex } from "./helpers/recording-writer.js";
+
+async function expectAbortError(promise: Promise<unknown>): Promise<AxleAbortError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(AxleAbortError);
+    return error as AxleAbortError;
+  }
+
+  throw new Error("Expected promise to reject with AxleAbortError");
+}
 
 // ─── 5. Happy paths ─────────────────────────────────────────────────────────
 
@@ -281,5 +293,127 @@ describe("generate() error paths", () => {
     // Root span also never ended
     const rootEnds = timeline.filter((e) => e.type === "span:end" && e.name === "generate");
     expect(rootEnds).toHaveLength(0);
+  });
+
+  test("6.4 abort during provider request rejects with AxleAbortError and closes spans", async () => {
+    const { writer, tracer } = createTracerAndWriter();
+    const rootSpan = tracer.startSpan("generate", { type: "workflow" });
+    const controller = new AbortController();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const provider: AIProvider = {
+      get name() {
+        return "test";
+      },
+      async createGenerationRequest(_model, { signal }) {
+        await gate;
+        if (signal?.aborted) {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          throw error;
+        }
+
+        return {
+          type: "success",
+          role: "assistant",
+          id: "msg_abort",
+          model: "test-model",
+          text: "done",
+          content: [{ type: "text", text: "done" }],
+          finishReason: AxleStopReason.Stop,
+          usage: { in: 1, out: 1 },
+          raw: {},
+        };
+      },
+      async *createStreamingRequest() {
+        throw new Error("Not implemented");
+      },
+    };
+
+    const pending = generate({
+      provider,
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+      tracer: rootSpan,
+      signal: controller.signal,
+    });
+
+    const reason = "timeout";
+    controller.abort(reason);
+    release();
+
+    const error = await expectAbortError(pending);
+    expect(error.name).toBe("AbortError");
+    expect(error.reason).toBe(reason);
+    expect(error.messages).toHaveLength(0);
+    expect(error.usage).toEqual({ in: 0, out: 0 });
+
+    const turn1Span = [...writer.spans.values()].find((s) => s.name === "turn-1")!;
+    const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
+    expect(turn1Span.status).toBe("ok");
+    expect(rootSpanData.status).toBe("ok");
+  });
+
+  test("6.5 abort during tool execution rejects with AxleAbortError and preserves prior state", async () => {
+    const { writer, tracer } = createTracerAndWriter();
+    const rootSpan = tracer.startSpan("generate", { type: "workflow" });
+    const controller = new AbortController();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let markToolStarted!: () => void;
+    const toolStarted = new Promise<void>((resolve) => {
+      markToolStarted = resolve;
+    });
+
+    const toolResponse: ModelResponse = {
+      type: "success",
+      role: "assistant",
+      id: "msg_1",
+      model: "test-model",
+      text: "",
+      content: [{ type: "tool-call", id: "call_1", name: "lookup", parameters: { id: 42 } }],
+      finishReason: AxleStopReason.FunctionCall,
+      usage: { in: 10, out: 15 },
+      raw: {},
+    };
+
+    const provider = makeGenerateProvider([toolResponse]);
+    const pending = generate({
+      provider,
+      model: "test-model",
+      messages: [{ role: "user", content: "Look up item 42" }],
+      tracer: rootSpan,
+      signal: controller.signal,
+      onToolCall: async (_name, _params, ctx) => {
+        markToolStarted();
+        await gate;
+        if (ctx.signal.aborted) {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          throw error;
+        }
+        return { type: "success", content: "Found item 42" };
+      },
+    });
+
+    await toolStarted;
+    controller.abort({ type: "tool-timeout" });
+    release();
+
+    const error = await expectAbortError(pending);
+    expect(error.reason).toEqual({ type: "tool-timeout" });
+    expect(error.messages).toHaveLength(1);
+    expect(error.messages![0].role).toBe("assistant");
+    expect(error.usage).toEqual({ in: 10, out: 15 });
+
+    const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
+    expect(rootSpanData.status).toBe("ok");
   });
 });

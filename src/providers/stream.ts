@@ -1,3 +1,4 @@
+import { AxleAbortError } from "../errors/AxleAbortError.js";
 import type {
   AxleAssistantMessage,
   AxleMessage,
@@ -98,7 +99,7 @@ export interface StreamOptions {
 
 export interface StreamHandle {
   on(callback: StreamEventCallback): void;
-  cancel(): void;
+  cancel(reason?: unknown): void;
   readonly final: Promise<StreamResult>;
 }
 
@@ -139,8 +140,8 @@ export function stream(options: StreamOptions): StreamHandle {
     on(cb) {
       callbacks.push(cb);
     },
-    cancel() {
-      controller.abort();
+    cancel(reason?: unknown) {
+      controller.abort(reason);
     },
     get final() {
       return finalPromise;
@@ -183,18 +184,8 @@ async function run(
     if (result.result === "error") {
       emit(cbs, { type: "error", error: result.error });
     }
-    const finalContent =
-      result.result === "success"
-        ? result.final?.content
-        : result.result === "cancelled"
-          ? result.partial?.content
-          : null;
-    const finishReason =
-      result.result === "success"
-        ? result.final?.finishReason
-        : result.result === "cancelled"
-          ? AxleStopReason.Cancelled
-          : undefined;
+    const finalContent = result.result === "success" ? result.final?.content : null;
+    const finishReason = result.result === "success" ? result.final?.finishReason : undefined;
     tracer?.setResult({
       kind: "llm",
       model,
@@ -209,19 +200,18 @@ async function run(
     return result;
   };
 
-  const buildCancelledResult = (
+  const throwAbortError = (
     turnParts: Array<
       ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
     >,
     turnId: string,
-    turnModel: string,
+    turnModel: string | undefined,
     closePart: () => void,
-  ): StreamResult => {
+  ): never => {
     closePart();
-    const hasContent = turnParts.length > 0;
-    const partial: AxleAssistantMessage | undefined = hasContent
+    const partial = turnParts.length
       ? {
-          role: "assistant",
+          role: "assistant" as const,
           id: turnId,
           model: turnModel,
           content: turnParts,
@@ -230,13 +220,18 @@ async function run(
       : undefined;
     if (partial) addMessage(partial);
     tracer?.end("ok");
-    return { result: "cancelled", messages: newMessages, partial, usage };
+    throw new AxleAbortError("Stream aborted", {
+      reason: signal.reason,
+      messages: newMessages,
+      partial,
+      usage,
+    });
   };
 
   while (true) {
     // Check 1: before starting a new iteration
     if (signal.aborted) {
-      return buildCancelledResult([], "", "", () => {});
+      throwAbortError([], "", "", () => {});
     }
 
     if (maxIterations !== undefined && iterations >= maxIterations) {
@@ -490,7 +485,7 @@ async function run(
 
     if (signal.aborted) {
       turnSpan?.end("ok");
-      return buildCancelledResult(turnParts, turnId, turnModel, closePart);
+      throwAbortError(turnParts, turnId, turnModel, closePart);
     }
 
     // Stream ended without a complete chunk — connection dropped or provider bug
@@ -563,7 +558,11 @@ async function run(
     // Check 3: before tool execution
     if (signal.aborted) {
       tracer?.end("ok");
-      return { result: "cancelled", messages: newMessages, usage };
+      throw new AxleAbortError("Stream aborted", {
+        reason: signal.reason,
+        messages: newMessages,
+        usage,
+      });
     }
 
     const toolResultsId = crypto.randomUUID();
@@ -597,13 +596,21 @@ async function run(
       return result;
     };
 
-    const { results } = await executeToolCalls(
-      toolCalls,
-      emittingToolCall,
-      signal,
-      registry,
-      tracer,
-    );
+    let results;
+    try {
+      ({ results } = await executeToolCalls(toolCalls, emittingToolCall, signal, registry, tracer));
+    } catch (error) {
+      if (error instanceof AxleAbortError) {
+        tracer?.end("ok");
+        throw new AxleAbortError("Stream aborted", {
+          reason: error.reason,
+          messages: error.messages ?? newMessages,
+          partial: error.partial,
+          usage: error.usage ?? usage,
+        });
+      }
+      throw error;
+    }
 
     if (results.length > 0) {
       const toolResultsMessage: AxleToolCallMessage = {

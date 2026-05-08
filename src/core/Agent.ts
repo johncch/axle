@@ -1,3 +1,5 @@
+import { AxleAbortError } from "../errors/AxleAbortError.js";
+import { AxleAgentAbortError } from "../errors/AxleAgentAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
@@ -177,6 +179,14 @@ export class Agent {
     reasoning?: boolean,
   ): Promise<AgentResult<any>> {
     const builder = new TurnBuilder();
+    const emptyUsage: Stats = { in: 0, out: 0 };
+
+    if (signal.aborted) {
+      throw new AxleAgentAbortError("Agent send aborted", {
+        reason: signal.reason,
+        usage: emptyUsage,
+      });
+    }
 
     await this.resolveMcpTools();
 
@@ -197,7 +207,10 @@ export class Agent {
     }
 
     if (signal.aborted) {
-      return { response: null, turn: undefined, usage: { in: 0, out: 0 } };
+      throw new AxleAgentAbortError("Agent send aborted", {
+        reason: signal.reason,
+        usage: emptyUsage,
+      });
     }
 
     const { turn: userTurn, events: userEvents } = builder.createUserTurn(userMessage);
@@ -241,15 +254,30 @@ export class Agent {
       for (const evt of agentEvents) this.emitEvent(evt);
     });
 
-    const streamResult: StreamResult = await streamHandle.final;
+    let streamResult: StreamResult;
+    try {
+      streamResult = await streamHandle.final;
+    } catch (error) {
+      if (error instanceof AxleAbortError) {
+        if (error.messages && error.messages.length > 0) {
+          this.history.appendToLog(error.messages);
+        }
 
-    // Determine outcome and finalize
-    const outcome =
-      streamResult.result === "cancelled"
-        ? "cancelled"
-        : streamResult.result === "error"
-          ? "error"
-          : "complete";
+        const finalizeEvents = builder.finalizeTurn("cancelled");
+        for (const evt of finalizeEvents) this.emitEvent(evt);
+
+        throw new AxleAgentAbortError("Agent send aborted", {
+          reason: error.reason,
+          messages: error.messages,
+          partial: error.partial,
+          turn: agentTurn,
+          usage: error.usage ?? emptyUsage,
+        });
+      }
+      throw error;
+    }
+
+    const outcome = streamResult.result === "error" ? "error" : "complete";
 
     if (streamResult.messages.length > 0) {
       this.history.appendToLog(streamResult.messages);
@@ -257,6 +285,8 @@ export class Agent {
 
     const finalizeEvents = builder.finalizeTurn(outcome);
     for (const evt of finalizeEvents) this.emitEvent(evt);
+
+    const usage = streamResult.usage ?? emptyUsage;
 
     if (streamResult.result === "error") {
       throw new AxleError(formatGenerateError(streamResult.error), {
@@ -291,7 +321,6 @@ export class Agent {
       }
     }
 
-    const usage = streamResult.usage ?? { in: 0, out: 0 };
     return { response, turn: agentTurn, usage };
   }
 }

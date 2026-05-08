@@ -55,6 +55,7 @@ export interface GenerationRequestParams {
   context: ProviderRequestContext;
   options?: GenerateTurnOptions;
   reasoning?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface StreamingRequestParams extends GenerationRequestParams {

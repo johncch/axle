@@ -1,4 +1,4 @@
-import { stream } from "../../src/index.js";
+import { AxleAbortError, stream } from "../../src/index.js";
 import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
@@ -6,7 +6,7 @@ const [provider, model] = useCLIHelper();
 console.log("[Starting...]");
 console.log("Will cancel the stream after 4 seconds.\n");
 
-const result = stream({
+const handle = stream({
   provider,
   model,
   messages: [
@@ -17,7 +17,7 @@ const result = stream({
   ],
 });
 
-result.on((event) => {
+handle.on((event) => {
   switch (event.type) {
     case "text:start":
       console.log(`[Start] part ${event.index} (text)`);
@@ -35,31 +35,42 @@ result.on((event) => {
     case "thinking:end":
       console.log(`\n[End] part ${event.index} (thinking)`);
       break;
+    case "error":
+      console.log(`\n[Stream error event] ${JSON.stringify(event.error)}`);
+      break;
   }
 });
 
-// Cancel after 2 seconds
 const timer = setTimeout(() => {
+  const reason = { type: "demo-timeout", afterMs: 4000 };
   console.log("\n\n--- Calling cancel() ---\n");
-  result.cancel();
+  handle.cancel(reason);
 }, 4000);
 
-const final = await result.final;
-clearTimeout(timer);
+try {
+  const final = await handle.final;
+  console.log(`\n[Result: ${final.result}]`);
+} catch (error) {
+  if (error instanceof AxleAbortError) {
+    console.log(`\n[Result: ${error.name}]`);
+    console.log(`[Reason: ${JSON.stringify(error.reason)}]`);
+    console.log(`[Messages collected: ${error.messages?.length ?? 0}]`);
 
-console.log(`\n[Result: ${final.result}]`);
-
-if (final.result === "cancelled") {
-  console.log(`[Messages collected: ${final.messages.length}]`);
-  if (final.partial) {
-    const textPart = final.partial.content.find((p) => p.type === "text");
-    if (textPart && textPart.type === "text") {
-      console.log(`[Partial text length: ${textPart.text.length} chars]`);
+    if (error.partial) {
+      const textPart = error.partial.content.find((p) => p.type === "text");
+      if (textPart?.type === "text") {
+        console.log(`[Partial text length: ${textPart.text.length} chars]`);
+      }
+    } else {
+      console.log("[No partial content]");
     }
+
+    console.log(`[Usage: ${error.usage?.in ?? 0} in / ${error.usage?.out ?? 0} out]`);
   } else {
-    console.log("[No partial content]");
+    throw error;
   }
-  console.log(`[Usage: ${final.usage.in} in / ${final.usage.out} out]`);
+} finally {
+  clearTimeout(timer);
 }
 
 console.log("[Complete]");

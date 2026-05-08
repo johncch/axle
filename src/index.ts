@@ -10,6 +10,7 @@ export type {
 export { Instruct } from "./core/index.js";
 export type { InstructInputs } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
+export { AxleAbortError, AxleAgentAbortError, AxleError, TaskError } from "./errors/index.js";
 
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";

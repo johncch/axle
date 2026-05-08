@@ -26,7 +26,7 @@ export function settleWhen(promise: Promise<unknown>): Promise<void> {
 }
 
 export interface Handle<T> {
-  cancel(): void;
+  cancel(reason?: unknown): void;
   readonly final: Promise<T>;
 }
 
@@ -49,7 +49,7 @@ export function createHandle<T>(
 
   return {
     handle: {
-      cancel: () => abort.abort(),
+      cancel: (reason?: unknown) => abort.abort(reason),
       get final() {
         return finalPromise;
       },

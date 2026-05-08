@@ -16,11 +16,22 @@ interface GenerateTurnProps {
   fileResolver?: FileResolver;
   options?: GenerateTurnOptions;
   reasoning?: boolean;
+  signal?: AbortSignal;
 }
 
 export async function generateTurn(props: GenerateTurnProps): Promise<ModelResult> {
-  const { provider, model, messages, system, tools, tracer, fileResolver, options, reasoning } =
-    props;
+  const {
+    provider,
+    model,
+    messages,
+    system,
+    tools,
+    tracer,
+    fileResolver,
+    options,
+    reasoning,
+    signal,
+  } = props;
   return provider.createGenerationRequest(model, {
     messages,
     system,
@@ -28,5 +39,6 @@ export async function generateTurn(props: GenerateTurnProps): Promise<ModelResul
     context: { tracer, fileResolver },
     options,
     reasoning,
+    signal,
   });
 }

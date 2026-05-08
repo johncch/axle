@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import type {
   AnyStreamChunk,
   StreamCompleteChunk,
@@ -18,6 +19,17 @@ import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 
 // --- Helpers ---
+
+async function expectAbortError(promise: Promise<unknown>): Promise<AxleAbortError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(AxleAbortError);
+    return error as AxleAbortError;
+  }
+
+  throw new Error("Expected promise to reject with AxleAbortError");
+}
 
 function makeProvider(opts: {
   streamChunks?: AnyStreamChunk[][];
@@ -735,14 +747,15 @@ describe("stream()", () => {
       });
 
       const handle = stream({ provider, model: "test-model", messages: [] });
-      handle.cancel();
+      const reason = "before-content";
+      handle.cancel(reason);
       yieldControl();
 
-      const final = await handle.final;
-      expect(final.result).toBe("cancelled");
-      if (final.result !== "cancelled") return;
-      expect(final.partial).toBeUndefined();
-      expect(final.messages).toHaveLength(0);
+      const error = await expectAbortError(handle.final);
+      expect(error.name).toBe("AbortError");
+      expect(error.reason).toBe(reason);
+      expect(error.partial).toBeUndefined();
+      expect(error.messages).toHaveLength(0);
     });
 
     test("cancel mid-stream — partial with accumulated text", async () => {
@@ -767,19 +780,19 @@ describe("stream()", () => {
 
       // Wait a tick so the generator processes chunks before the gate
       await new Promise((r) => setTimeout(r, 10));
-      handle.cancel();
+      const reason = { type: "mid-stream" };
+      handle.cancel(reason);
       yieldControl();
 
-      const final = await handle.final;
-      expect(final.result).toBe("cancelled");
-      if (final.result !== "cancelled") return;
-      expect(final.partial).toBeDefined();
-      expect(final.partial!.content).toHaveLength(1);
-      expect((final.partial!.content[0] as any).text).toBe("Hello world");
-      expect(final.partial!.finishReason).toBe(AxleStopReason.Cancelled);
+      const error = await expectAbortError(handle.final);
+      expect(error.reason).toBe(reason);
+      expect(error.partial).toBeDefined();
+      expect(error.partial!.content).toHaveLength(1);
+      expect((error.partial!.content[0] as any).text).toBe("Hello world");
+      expect(error.partial!.finishReason).toBe(AxleStopReason.Cancelled);
       // Partial is also included in messages
-      expect(final.messages).toHaveLength(1);
-      expect(final.messages[0].role).toBe("assistant");
+      expect(error.messages).toHaveLength(1);
+      expect(error.messages![0].role).toBe("assistant");
     });
 
     test("cancel between turns — completed messages, no partial", async () => {
@@ -831,17 +844,15 @@ describe("stream()", () => {
       await new Promise((r) => setTimeout(r, 20));
       turn2Gate();
 
-      const final = await handle.final;
-      expect(final.result).toBe("cancelled");
-      if (final.result !== "cancelled") return;
+      const error = await expectAbortError(handle.final);
       // Turn 1 assistant + tool results should be in messages
-      expect(final.messages).toHaveLength(2);
-      expect(final.messages[0].role).toBe("assistant");
-      expect(final.messages[1].role).toBe("tool");
-      expect(final.partial).toBeUndefined();
+      expect(error.messages).toHaveLength(2);
+      expect(error.messages![0].role).toBe("assistant");
+      expect(error.messages![1].role).toBe("tool");
+      expect(error.partial).toBeUndefined();
       // Usage should include turn 1 only
-      expect(final.usage.in).toBe(10);
-      expect(final.usage.out).toBe(5);
+      expect(error.usage!.in).toBe(10);
+      expect(error.usage!.out).toBe(5);
     });
 
     test("cancel after completion is a no-op", async () => {
@@ -892,8 +903,8 @@ describe("stream()", () => {
       handle.cancel();
       yieldControl();
 
-      const final = await handle.final;
-      expect(final.result).toBe("cancelled");
+      const error = await expectAbortError(handle.final);
+      expect(error.name).toBe("AbortError");
     });
 
     test("usage only includes completed turns", async () => {
@@ -938,17 +949,15 @@ describe("stream()", () => {
       handle.cancel();
       yieldControl();
 
-      const final = await handle.final;
-      expect(final.result).toBe("cancelled");
-      if (final.result !== "cancelled") return;
+      const error = await expectAbortError(handle.final);
       // Messages: turn 1 assistant + tool results + partial turn 2 assistant
-      expect(final.messages).toHaveLength(3);
-      expect(final.messages[0].role).toBe("assistant");
-      expect(final.messages[1].role).toBe("tool");
-      expect(final.messages[2].role).toBe("assistant");
+      expect(error.messages).toHaveLength(3);
+      expect(error.messages![0].role).toBe("assistant");
+      expect(error.messages![1].role).toBe("tool");
+      expect(error.messages![2].role).toBe("assistant");
       // Usage should only include turn 1 (completed)
-      expect(final.usage.in).toBe(10);
-      expect(final.usage.out).toBe(5);
+      expect(error.usage!.in).toBe(10);
+      expect(error.usage!.out).toBe(5);
     });
   });
 

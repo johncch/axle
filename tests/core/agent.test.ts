@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import { Agent } from "../../src/core/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import type { AgentMemory } from "../../src/memory/types.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
@@ -209,14 +211,23 @@ describe("Agent", () => {
         signal: controller.signal,
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
-      controller.abort();
+      const reason = { type: "user-cancel" };
+      controller.abort(reason);
       release();
 
-      const result = await handle.final;
+      let error: unknown;
+      try {
+        await handle.final;
+      } catch (e) {
+        error = e;
+      }
 
       expect(observedSignal?.aborted).toBe(true);
-      expect(result.response).toBeNull();
-      expect(result.turn?.status).toBe("cancelled");
+      expect(error).toBeInstanceOf(AxleAgentAbortError);
+      expect((error as AxleAbortError).name).toBe("AbortError");
+      expect((error as AxleAbortError).reason).toBe(reason);
+      expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect((error as AxleAbortError).partial?.content).toEqual([{ type: "text", text: "Hello" }]);
     });
 
     test("queued cancellation does not append a phantom user message to history", async () => {
@@ -262,15 +273,23 @@ describe("Agent", () => {
 
       const first = agent.send("first");
       const second = agent.send("second");
-      second.cancel();
+      const reason = "queued-cancel";
+      second.cancel(reason);
       releaseFirst();
 
       const firstResult = await first.final;
-      const secondResult = await second.final;
+      let secondError: unknown;
+      try {
+        await second.final;
+      } catch (e) {
+        secondError = e;
+      }
 
       expect(firstResult.response).toBe("First");
-      expect(secondResult.response).toBeNull();
-      expect(secondResult.turn).toBeUndefined();
+      expect(secondError).toBeInstanceOf(AxleAgentAbortError);
+      expect((secondError as AxleAbortError).name).toBe("AbortError");
+      expect((secondError as AxleAbortError).reason).toBe(reason);
+      expect((secondError as AxleAgentAbortError).turn).toBeUndefined();
       expect(callCount).toBe(1);
       expect(agent.history.turns).toHaveLength(2);
       expect(agent.history.log).toHaveLength(2);

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { stream } from "../../src/providers/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
@@ -507,8 +508,10 @@ describe("stream() cancellation paths", () => {
     // so cancel() sets the abort flag before the microtask fires.
     handle.cancel();
 
-    const result = await handle.final;
-    expect(result.result).toBe("cancelled");
+    await expect(handle.final).rejects.toBeInstanceOf(AxleAbortError);
+
+    const rootSpanData = [...writer.spans.values()].find((s) => s.name === "stream")!;
+    expect(rootSpanData.status).toBe("ok");
   });
 
   test("3.2 cancel mid-stream", async () => {
@@ -539,8 +542,10 @@ describe("stream() cancellation paths", () => {
     handle.cancel();
     resume();
 
-    const result = await handle.final;
-    expect(result.result).toBe("cancelled");
+    await expect(handle.final).rejects.toBeInstanceOf(AxleAbortError);
+
+    const rootSpanData = [...writer.spans.values()].find((s) => s.name === "stream")!;
+    expect(rootSpanData.status).toBe("ok");
   });
 });
 
