@@ -159,10 +159,10 @@ export class Agent {
     return handle;
   }
 
-  private async resolveMcpTools(): Promise<void> {
+  private async resolveMcpTools(signal: AbortSignal): Promise<void> {
     for (const mcp of this.mcps) {
       if (this.resolvedMcps.has(mcp)) continue;
-      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer });
+      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer, signal });
       this.registry.add(tools);
       this.resolvedMcps.add(mcp);
     }
@@ -189,7 +189,21 @@ export class Agent {
       });
     }
 
-    await this.resolveMcpTools();
+    try {
+      await this.resolveMcpTools(signal);
+    } catch (error) {
+      if (
+        signal.aborted ||
+        error instanceof AxleAbortError ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        throw new AxleAgentAbortError("Agent send aborted", {
+          reason: error instanceof AxleAbortError ? error.reason : signal.reason,
+          usage: emptyUsage,
+        });
+      }
+      throw error;
+    }
 
     let effectiveSystem = this.system;
     const requestMessages = [...this.history.log, userMessage];

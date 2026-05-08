@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { BraveProviderConfig } from "../cli/configs/schemas.js";
+import { throwIfAborted, raceWithSignal } from "../utils/abort.js";
 import { delay } from "../utils/utils.js";
 import type { ExecutableTool, ToolContext } from "./types.js";
 
@@ -28,17 +29,18 @@ class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
     this.throttle = rateLimit ? 1100 / rateLimit : undefined;
   }
 
-  async execute(params: z.infer<typeof braveSearchSchema>, _ctx: ToolContext): Promise<string> {
+  async execute(params: z.infer<typeof braveSearchSchema>, ctx: ToolContext): Promise<string> {
     const { searchTerm } = params;
 
     if (this.throttle) {
       while (Date.now() - this.lastExecTime < this.throttle) {
-        await delay(this.throttle - (Date.now() - this.lastExecTime));
+        await raceWithSignal(delay(this.throttle - (Date.now() - this.lastExecTime)), ctx.signal);
       }
       this.lastExecTime = Date.now();
     }
 
     try {
+      throwIfAborted(ctx.signal);
       const apiKey = this.apiKey;
       const endpoint = "https://api.search.brave.com/res/v1/web/search";
 
@@ -48,6 +50,7 @@ class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
 
       const response = await fetch(url.toString(), {
         method: "GET",
+        signal: ctx.signal,
         headers: {
           Accept: "application/json",
           "X-Subscription-Token": apiKey ?? "",
@@ -61,6 +64,9 @@ class BraveSearchTool implements ExecutableTool<typeof braveSearchSchema> {
       const data = await response.json();
       return JSON.stringify(data);
     } catch (error) {
+      if (ctx.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        throw error;
+      }
       if (error instanceof Error) {
         throw new Error(`[Brave] Error fetching search results: ${error.message}`);
       }

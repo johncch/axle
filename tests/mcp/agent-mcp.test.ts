@@ -183,4 +183,49 @@ describe("Agent with MCP", () => {
     expect((error as AxleAbortError).name).toBe("AbortError");
     expect((error as AxleAbortError).reason).toBe(reason);
   });
+
+  test("cancel() aborts an in-flight MCP tool discovery", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const mcp = {
+      name: "slow",
+      connected: true,
+      listTools: vi.fn(
+        (options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            markStarted();
+            options?.signal?.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  new AxleAbortError("MCP discovery aborted", {
+                    reason: options.signal?.reason,
+                  }),
+                ),
+              { once: true },
+            );
+          }),
+      ),
+    };
+
+    const agent = new Agent({ provider, model: "mock", mcps: [mcp as any] });
+    const handle = agent.send("test");
+
+    await started;
+    handle.cancel("stop-discovery");
+
+    await expect(handle.final).rejects.toMatchObject({
+      name: "AbortError",
+      reason: "stop-discovery",
+    });
+    expect(mcp.listTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prefix: "slow",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
 });

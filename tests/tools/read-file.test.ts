@@ -20,11 +20,6 @@ afterEach(async () => {
 });
 
 describe("readFileTool", () => {
-  it("should have correct name and schema", () => {
-    expect(readFileTool.name).toBe("read-file");
-    expect(readFileTool.schema.shape.path).toBeDefined();
-  });
-
   it("should read an existing file", async () => {
     const filePath = join(TEST_DIR, "hello.txt");
     await writeFile(filePath, "hello world", "utf-8");

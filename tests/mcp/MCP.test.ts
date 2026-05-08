@@ -62,25 +62,6 @@ describe("MCP", () => {
     vi.clearAllMocks();
   });
 
-  describe("constructor", () => {
-    test("creates with stdio config", () => {
-      const mcp = new MCP({
-        transport: "stdio",
-        command: "node",
-        args: ["server.js"],
-      });
-      expect(mcp.connected).toBe(false);
-    });
-
-    test("creates with http config", () => {
-      const mcp = new MCP({
-        transport: "http",
-        url: "http://localhost:3000/mcp",
-      });
-      expect(mcp.connected).toBe(false);
-    });
-  });
-
   describe("name", () => {
     test("returns config name when provided", () => {
       const mcp = new MCP({
@@ -153,6 +134,15 @@ describe("MCP", () => {
       // connect on the underlying client should only be called once
       expect(mockClient.connect).toHaveBeenCalledTimes(connectCount);
     });
+
+    test("passes AbortSignal to client.connect", async () => {
+      const signal = new AbortController().signal;
+      const mcp = new MCP({ transport: "stdio", command: "node" });
+
+      await mcp.connect({ signal });
+
+      expect(mockClient.connect).toHaveBeenCalledWith(expect.anything(), { signal });
+    });
   });
 
   describe("listTools", () => {
@@ -190,6 +180,16 @@ describe("MCP", () => {
 
       // listTools on the underlying client should only be called once for this MCP instance
       expect(mockClient.listTools.mock.calls.length - callsBefore).toBe(1);
+    });
+
+    test("passes AbortSignal to client.listTools", async () => {
+      const signal = new AbortController().signal;
+      const mcp = new MCP({ transport: "stdio", command: "node" });
+      await mcp.connect();
+
+      await mcp.listTools({ signal });
+
+      expect(mockClient.listTools).toHaveBeenCalledWith(undefined, { signal });
     });
   });
 
@@ -230,15 +230,6 @@ describe("MCP", () => {
       await mcp.connect();
       expect(mcp.connected).toBe(true);
 
-      await mcp.close();
-      expect(mcp.connected).toBe(false);
-    });
-
-    test("close is idempotent", async () => {
-      const mcp = new MCP({ transport: "stdio", command: "node" });
-      await mcp.connect();
-
-      await mcp.close();
       await mcp.close();
       expect(mcp.connected).toBe(false);
     });

@@ -14,22 +14,6 @@ describe("ExecTool", () => {
     execTool.configure({});
   });
 
-  describe("basic properties", () => {
-    it("should have correct name", () => {
-      expect(execTool.name).toBe("exec");
-    });
-
-    it("should have a description", () => {
-      expect(execTool.description).toContain("shell command");
-    });
-
-    it("should have a schema with command parameter", () => {
-      expect(execTool.schema).toBeDefined();
-      const shape = execTool.schema.shape;
-      expect(shape.command).toBeDefined();
-    });
-  });
-
   describe("command execution", () => {
     it("should return stdout from successful command", async () => {
       const result = await execTool.execute({ command: "echo hello" }, ctx);

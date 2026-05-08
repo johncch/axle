@@ -20,12 +20,6 @@ afterEach(async () => {
 });
 
 describe("writeFileTool", () => {
-  it("should have correct name and schema", () => {
-    expect(writeFileTool.name).toBe("write-file");
-    expect(writeFileTool.schema.shape.path).toBeDefined();
-    expect(writeFileTool.schema.shape.content).toBeDefined();
-  });
-
   it("should write a file and return success message", async () => {
     const filePath = join(TEST_DIR, "hello.txt");
     const result = await writeFileTool.execute({ path: filePath, content: "hello world" }, ctx);

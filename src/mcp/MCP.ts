@@ -47,7 +47,7 @@ export class MCP {
     return this._connected;
   }
 
-  async connect(options?: { tracer?: TracingContext }): Promise<void> {
+  async connect(options?: { tracer?: TracingContext; signal?: AbortSignal }): Promise<void> {
     if (this._connected) return;
 
     const span = options?.tracer?.startSpan("mcp:connect", { type: "internal" });
@@ -67,7 +67,7 @@ export class MCP {
     }
 
     try {
-      await this.client.connect(this.transport);
+      await this.client.connect(this.transport, { signal: options?.signal });
       this._connected = true;
       span?.end("ok");
     } catch (error) {
@@ -79,18 +79,20 @@ export class MCP {
   async listTools(options?: {
     prefix?: string;
     tracer?: TracingContext;
+    signal?: AbortSignal;
   }): Promise<ExecutableTool[]> {
     const client = this.assertConnected();
-    const mcpTools = await this.fetchTools(client, options?.tracer);
+    const mcpTools = await this.fetchTools(client, options?.tracer, options?.signal);
     return createMcpTools(mcpTools, client, options?.prefix);
   }
 
   async listToolDefinitions(options?: {
     prefix?: string;
     tracer?: TracingContext;
+    signal?: AbortSignal;
   }): Promise<ToolDefinition[]> {
     const client = this.assertConnected();
-    const mcpTools = await this.fetchTools(client, options?.tracer);
+    const mcpTools = await this.fetchTools(client, options?.tracer, options?.signal);
     return createMcpToolDefinitions(mcpTools, options?.prefix);
   }
 
@@ -110,11 +112,15 @@ export class MCP {
     this.cachedMcpTools = undefined;
   }
 
-  private async fetchTools(client: Client, tracer?: TracingContext): Promise<McpToolInfo[]> {
+  private async fetchTools(
+    client: Client,
+    tracer?: TracingContext,
+    signal?: AbortSignal,
+  ): Promise<McpToolInfo[]> {
     if (this.cachedMcpTools) return this.cachedMcpTools;
 
     tracer?.debug("mcp:listTools");
-    const result = await client.listTools();
+    const result = await client.listTools(undefined, { signal });
     this.cachedMcpTools = result.tools.map((tool) => ({
       name: tool.name,
       description: tool.description,

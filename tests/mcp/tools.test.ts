@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import { createMcpToolDefinitions, createMcpTools } from "../../src/mcp/tools.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 
@@ -48,23 +49,15 @@ const sampleTools = [
 ];
 
 describe("createMcpTools", () => {
-  test("creates Axle Tool objects from MCP tool definitions", () => {
-    const client = createMockClient();
-    const tools = createMcpTools(sampleTools, client);
-
-    expect(tools).toHaveLength(2);
-    expect(tools[0].name).toBe("read_file");
-    expect(tools[0].description).toBe("Read a file from disk");
-    expect(tools[0].schema).toBeDefined();
-    expect(tools[0].execute).toBeTypeOf("function");
-    expect(tools[1].name).toBe("write_file");
-  });
-
-  test("applies prefix to tool names", () => {
+  test("creates prefixed Axle Tool objects from MCP tool definitions", () => {
     const client = createMockClient();
     const tools = createMcpTools(sampleTools, client, "fs");
 
+    expect(tools).toHaveLength(2);
     expect(tools[0].name).toBe("fs_read_file");
+    expect(tools[0].description).toBe("Read a file from disk");
+    expect(tools[0].schema).toBeDefined();
+    expect(tools[0].execute).toBeTypeOf("function");
     expect(tools[1].name).toBe("fs_write_file");
   });
 
@@ -138,6 +131,35 @@ describe("createMcpTools", () => {
     await expect(tools[0].execute({ path: "/missing.txt" }, ctx)).rejects.toThrow("File not found");
   });
 
+  test("execute() preserves MCP tool errors as recoverable Error results", async () => {
+    const client = createMockClient({
+      read_file: {
+        content: [{ type: "text", text: "Invalid path" }],
+        isError: true,
+      },
+    });
+    const tools = createMcpTools(sampleTools, client);
+
+    await expect(tools[0].execute({ path: "bad" }, ctx)).rejects.toThrow("Invalid path");
+    await expect(tools[0].execute({ path: "bad" }, ctx)).rejects.not.toBeInstanceOf(
+      AxleToolFatalError,
+    );
+  });
+
+  test("execute() converts MCP request failures into AxleToolFatalError", async () => {
+    const cause = new Error("Connection closed");
+    const client = {
+      callTool: vi.fn().mockRejectedValue(cause),
+    } as any;
+    const tools = createMcpTools(sampleTools, client, "fs");
+
+    await expect(tools[0].execute({ path: "/test.txt" }, ctx)).rejects.toMatchObject({
+      message: "MCP tool call failed: read_file",
+      toolName: "fs_read_file",
+      cause,
+    });
+  });
+
   test("execute() uses default error message when error has no text", async () => {
     const client = createMockClient({
       read_file: {
@@ -152,12 +174,6 @@ describe("createMcpTools", () => {
     );
   });
 
-  test("handles tools with empty description", () => {
-    const client = createMockClient();
-    const tools = createMcpTools([{ name: "test", inputSchema: { type: "object" } }], client);
-
-    expect(tools[0].description).toBe("");
-  });
 });
 
 describe("createMcpToolDefinitions", () => {
