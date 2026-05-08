@@ -296,6 +296,84 @@ describe("Agent", () => {
       expect(agent.history.log[0]).toMatchObject({ role: "user" });
       expect(agent.history.log[1]).toMatchObject({ role: "assistant" });
     });
+
+    test("cancel during tool execution preserves assistant history and cancelled turn state", async () => {
+      const { z } = await import("zod");
+      let releaseTool!: () => void;
+      const toolGate = new Promise<void>((resolve) => {
+        releaseTool = resolve;
+      });
+      let markToolStarted!: () => void;
+      const toolStarted = new Promise<void>((resolve) => {
+        markToolStarted = resolve;
+      });
+      let callCount = 0;
+
+      const provider: AIProvider = {
+        name: "mock-stream",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          callCount += 1;
+          yield {
+            type: "start",
+            id: `mock-${callCount}`,
+            data: { model: "mock", timestamp: Date.now() },
+          };
+          yield {
+            type: "tool-call-start",
+            data: { index: 0, id: "call_1", name: "search" },
+          };
+          yield {
+            type: "tool-call-complete",
+            data: { index: 0, id: "call_1", name: "search", arguments: { q: "test" } },
+          };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.FunctionCall, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+
+      const slowTool = {
+        name: "search",
+        description: "Search",
+        schema: z.object({ q: z.string() }),
+        async execute() {
+          markToolStarted();
+          await toolGate;
+          return "results";
+        },
+      };
+
+      const agent = new Agent({ provider, model: "mock", tools: [slowTool] });
+      const handle = agent.send("search for test");
+
+      await toolStarted;
+      const reason = { type: "tool-exec-cancel" };
+      handle.cancel(reason);
+      releaseTool();
+
+      let error: unknown;
+      try {
+        await handle.final;
+      } catch (e) {
+        error = e;
+      }
+
+      expect(callCount).toBe(1);
+      expect(error).toBeInstanceOf(AxleAgentAbortError);
+      expect((error as AxleAbortError).reason).toEqual(reason);
+      expect((error as AxleAbortError).messages).toHaveLength(1);
+      expect((error as AxleAbortError).messages![0].role).toBe("assistant");
+      expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect((error as AxleAgentAbortError).turn?.usage).toEqual({ in: 1, out: 1 });
+      expect(agent.history.log).toHaveLength(2);
+      expect(agent.history.log[0]).toMatchObject({ role: "user" });
+      expect(agent.history.log[1]).toMatchObject({ role: "assistant" });
+      expect(agent.history.turns[1]?.status).toBe("cancelled");
+    });
   });
 
   test("streaming callbacks fire during send", async () => {

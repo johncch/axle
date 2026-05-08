@@ -1,5 +1,6 @@
 import { FinishReason, GoogleGenAI } from "@google/genai";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
+import { AxleAbortError } from "../../../src/errors/AxleAbortError.js";
 import type { AxleMessage } from "../../../src/messages/message.js";
 import { createGenerationRequest } from "../../../src/providers/gemini/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
@@ -15,6 +16,46 @@ describe("createGenerationRequest (Google AI)", () => {
         generateContent: mockGenerateContent,
       },
     } as any;
+  });
+
+  describe("abort handling", () => {
+    test("throws AxleAbortError before calling the SDK when signal is already aborted", async () => {
+      const controller = new AbortController();
+      controller.abort("pre-aborted");
+
+      await expect(
+        createGenerationRequest({
+          client: mockClient,
+          model: "gemini-2.0-flash",
+          messages: [{ role: "user" as const, content: "Hello" }],
+          context: {},
+          signal: controller.signal,
+        }),
+      ).rejects.toBeInstanceOf(AxleAbortError);
+
+      expect(mockGenerateContent).not.toHaveBeenCalled();
+    });
+
+    test("throws AxleAbortError when aborted during an in-flight SDK request", async () => {
+      const controller = new AbortController();
+      mockGenerateContent.mockImplementation(() => new Promise(() => {}));
+
+      const pending = createGenerationRequest({
+        client: mockClient,
+        model: "gemini-2.0-flash",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        context: {},
+        signal: controller.signal,
+      });
+
+      const reason = { type: "timeout" };
+      controller.abort(reason);
+
+      await expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+        reason,
+      });
+    });
   });
 
   describe("parameter normalization", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { generate } from "../../src/providers/generate.js";
 import type { AIProvider, ModelError, ModelResponse } from "../../src/providers/types.js";
@@ -412,6 +412,42 @@ describe("generate() error paths", () => {
     expect(error.messages).toHaveLength(1);
     expect(error.messages![0].role).toBe("assistant");
     expect(error.usage).toEqual({ in: 10, out: 15 });
+
+    const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
+    expect(rootSpanData.status).toBe("ok");
+  });
+
+  test("6.6 pre-aborted signal rejects before provider work starts", async () => {
+    const { writer, tracer } = createTracerAndWriter();
+    const rootSpan = tracer.startSpan("generate", { type: "workflow" });
+    const controller = new AbortController();
+    controller.abort("pre-aborted");
+
+    const createGenerationRequest = vi.fn();
+    const provider: AIProvider = {
+      get name() {
+        return "test";
+      },
+      createGenerationRequest,
+      async *createStreamingRequest() {
+        throw new Error("Not implemented");
+      },
+    };
+
+    const error = await expectAbortError(
+      generate({
+        provider,
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        tracer: rootSpan,
+        signal: controller.signal,
+      }),
+    );
+
+    expect(error.reason).toBe("pre-aborted");
+    expect(error.messages).toHaveLength(0);
+    expect(error.usage).toEqual({ in: 0, out: 0 });
+    expect(createGenerationRequest).not.toHaveBeenCalled();
 
     const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
     expect(rootSpanData.status).toBe("ok");

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
+import { AxleAbortError } from "../../../src/errors/AxleAbortError.js";
 import type { AxleMessage } from "../../../src/messages/message.js";
 import { createGenerationRequest } from "../../../src/providers/anthropic/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
@@ -15,6 +16,69 @@ describe("createGenerationRequest (Anthropic)", () => {
         create: mockCreate,
       },
     } as any;
+  });
+
+  describe("abort handling", () => {
+    test("throws AxleAbortError before calling the SDK when signal is already aborted", async () => {
+      const controller = new AbortController();
+      controller.abort("pre-aborted");
+
+      await expect(
+        createGenerationRequest({
+          client: mockClient,
+          model: "claude-3-5-sonnet-20241022",
+          messages: [{ role: "user" as const, content: "Hello" }],
+          context: {},
+          signal: controller.signal,
+        }),
+      ).rejects.toBeInstanceOf(AxleAbortError);
+
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    test("passes signal to the SDK request", async () => {
+      const controller = new AbortController();
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_123",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        model: "claude-3-5-sonnet-20241022",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 20 },
+      });
+
+      await createGenerationRequest({
+        client: mockClient,
+        model: "claude-3-5-sonnet-20241022",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        context: {},
+        signal: controller.signal,
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(expect.any(Object), { signal: controller.signal });
+    });
+
+    test("throws AxleAbortError when aborted during an in-flight SDK request", async () => {
+      const controller = new AbortController();
+      mockCreate.mockImplementation(() => new Promise(() => {}));
+
+      const pending = createGenerationRequest({
+        client: mockClient,
+        model: "claude-3-5-sonnet-20241022",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        context: {},
+        signal: controller.signal,
+      });
+
+      const reason = { type: "timeout" };
+      controller.abort(reason);
+
+      await expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+        reason,
+      });
+    });
   });
 
   describe("parameter normalization", () => {

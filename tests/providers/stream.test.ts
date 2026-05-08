@@ -855,6 +855,48 @@ describe("stream()", () => {
       expect(error.usage!.out).toBe(5);
     });
 
+    test("cancel during tool execution preserves completed assistant state without tool results", async () => {
+      let releaseTool!: () => void;
+      const toolGate = new Promise<void>((resolve) => {
+        releaseTool = resolve;
+      });
+      let markToolStarted!: () => void;
+      const toolStarted = new Promise<void>((resolve) => {
+        markToolStarted = resolve;
+      });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks] });
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => {
+          markToolStarted();
+          await toolGate;
+          return { type: "success", content: "results" };
+        },
+      });
+
+      await toolStarted;
+      const reason = { type: "tool-exec-cancel" };
+      handle.cancel(reason);
+      releaseTool();
+
+      const error = await expectAbortError(handle.final);
+      expect(error.reason).toEqual(reason);
+      expect(error.messages).toHaveLength(1);
+      expect(error.messages![0].role).toBe("assistant");
+      expect(error.partial).toBeUndefined();
+      expect(error.usage).toEqual({ in: 10, out: 5 });
+    });
+
     test("cancel after completion is a no-op", async () => {
       const chunks: AnyStreamChunk[] = [
         startChunk(),

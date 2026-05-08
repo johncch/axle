@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AxleAbortError } from "../../../src/errors/AxleAbortError.js";
 import { createGenerationRequest } from "../../../src/providers/chatcompletions/createGenerationRequest.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -12,6 +13,61 @@ describe("createGenerationRequest", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe("abort handling", () => {
+    test("throws AxleAbortError before calling fetch when signal is already aborted", async () => {
+      const controller = new AbortController();
+      controller.abort("pre-aborted");
+
+      await expect(
+        createGenerationRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          context: {},
+          signal: controller.signal,
+        }),
+      ).rejects.toBeInstanceOf(AxleAbortError);
+
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test("passes signal to fetch", async () => {
+      const controller = new AbortController();
+      (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
+
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+        signal: controller.signal,
+      });
+
+      expect((fetch as any).mock.calls[0][1].signal).toBe(controller.signal);
+    });
+
+    test("throws AxleAbortError when aborted during a pending fetch", async () => {
+      const controller = new AbortController();
+      (fetch as any).mockImplementation(() => new Promise(() => {}));
+
+      const pending = createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+        signal: controller.signal,
+      });
+
+      const reason = { type: "timeout" };
+      controller.abort(reason);
+
+      await expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+        reason,
+      });
+    });
   });
 
   describe("request construction", () => {
