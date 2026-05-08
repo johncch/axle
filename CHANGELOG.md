@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.15.1] - 2026-05-08
+
+- Added `AxleToolFatalError` for fatal tool failures, allowing generation, streaming, and agent runs to stop immediately without retrying or exposing the error to the model
+- Fatal tool errors now preserve available partial output, messages, usage, and tool context for easier handling by applications
+
 ## [0.15.0] - 2026-05-08
 
 - Abort operations now throw errors, making cancellation behavior easier to detect and handle
