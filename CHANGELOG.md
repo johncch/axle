@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.15.0] - 2026-05-08
+
+- Abort operations now throw errors, making cancellation behavior easier to detect and handle
+
 ## [0.14.0] - 2026-05-07
 
 - Simplified the Agent and Instruct APIs for easier use and better TypeScript support
