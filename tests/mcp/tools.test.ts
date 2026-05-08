@@ -68,16 +68,20 @@ describe("createMcpTools", () => {
     expect(tools[1].name).toBe("fs_write_file");
   });
 
-  test("execute() calls client.callTool with original name", async () => {
+  test("execute() calls client.callTool with original name and abort signal", async () => {
     const client = createMockClient();
     const tools = createMcpTools(sampleTools, client, "fs");
 
     await tools[0].execute({ path: "/test.txt" }, ctx);
 
-    expect(client.callTool).toHaveBeenCalledWith({
-      name: "read_file", // original name, not prefixed
-      arguments: { path: "/test.txt" },
-    });
+    expect(client.callTool).toHaveBeenCalledWith(
+      {
+        name: "read_file", // original name, not prefixed
+        arguments: { path: "/test.txt" },
+      },
+      undefined,
+      { signal: ctx.signal },
+    );
   });
 
   test("execute() returns text content as string", async () => {

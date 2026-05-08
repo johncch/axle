@@ -43,11 +43,15 @@ function createMcpTool(mcpTool: McpToolInfo, client: Client, prefix?: string): E
     description: mcpTool.description ?? "",
     schema,
 
-    async execute(input): Promise<string | ToolResultPart[]> {
-      const result = await client.callTool({
-        name: mcpTool.name, // always use original name with server
-        arguments: input,
-      });
+    async execute(input, ctx): Promise<string | ToolResultPart[]> {
+      const result = await client.callTool(
+        {
+          name: mcpTool.name, // always use original name with server
+          arguments: input,
+        },
+        undefined,
+        { signal: ctx.signal },
+      );
 
       if ("isError" in result && result.isError) {
         throw new Error(formatErrorContent(result.content as McpContent[]));
