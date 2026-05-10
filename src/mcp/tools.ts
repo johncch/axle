@@ -1,4 +1,5 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { ToolResultPart } from "../messages/message.js";
 import type { ExecutableTool, ToolDefinition } from "../tools/types.js";
 import { jsonSchemaToZod } from "./schema.js";
@@ -43,11 +44,26 @@ function createMcpTool(mcpTool: McpToolInfo, client: Client, prefix?: string): E
     description: mcpTool.description ?? "",
     schema,
 
-    async execute(input): Promise<string | ToolResultPart[]> {
-      const result = await client.callTool({
-        name: mcpTool.name, // always use original name with server
-        arguments: input,
-      });
+    async execute(input, ctx): Promise<string | ToolResultPart[]> {
+      let result;
+      try {
+        result = await client.callTool(
+          {
+            name: mcpTool.name, // always use original name with server
+            arguments: input,
+          },
+          undefined,
+          { signal: ctx.signal },
+        );
+      } catch (error) {
+        if (ctx.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+          throw error;
+        }
+        throw new AxleToolFatalError(`MCP tool call failed: ${mcpTool.name}`, {
+          toolName: name,
+          cause: error,
+        });
+      }
 
       if ("isError" in result && result.isError) {
         throw new Error(formatErrorContent(result.content as McpContent[]));

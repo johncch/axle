@@ -4,8 +4,6 @@ import { AxleError } from "../errors/AxleError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
-import type { AxleUserMessage } from "../messages/message.js";
-import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
@@ -23,7 +21,7 @@ import { createHandle, type Handle } from "../utils/utils.js";
 import { History } from "./history.js";
 import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
-import { parseResponse } from "./parse.js";
+import { compileUserTurn, type CompiledUserTurn } from "./userTurn.js";
 
 export interface AgentConfig {
   provider: AIProvider;
@@ -128,41 +126,22 @@ export class Agent {
     options?: SendMessageOptions,
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
-    let schema: OutputSchema | undefined;
-    let userMessage: AxleUserMessage;
-
-    if (typeof messageOrInstruct === "string") {
-      userMessage = {
-        role: "user",
-        id: crypto.randomUUID(),
-        content: [{ type: "text", text: messageOrInstruct }],
-      };
-    } else {
-      const text = messageOrInstruct.render();
-      const files = messageOrInstruct.files;
-      userMessage = {
-        role: "user",
-        id: crypto.randomUUID(),
-        content: toContentParts({ text, files }),
-      };
-      schema = messageOrInstruct.schema;
-    }
-
+    const userTurn = compileUserTurn(messageOrInstruct);
     const effectiveReasoning = options?.reasoning ?? this.reasoning;
 
     const { handle, settled } = createHandle(
       this.sendQueue,
-      (signal) => this.run(userMessage, schema, signal, options?.fileResolver, effectiveReasoning),
+      (signal) => this.run(userTurn, signal, options?.fileResolver, effectiveReasoning),
       options?.signal,
     );
     this.sendQueue = settled;
     return handle;
   }
 
-  private async resolveMcpTools(): Promise<void> {
+  private async resolveMcpTools(signal: AbortSignal): Promise<void> {
     for (const mcp of this.mcps) {
       if (this.resolvedMcps.has(mcp)) continue;
-      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer });
+      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer, signal });
       this.registry.add(tools);
       this.resolvedMcps.add(mcp);
     }
@@ -173,8 +152,7 @@ export class Agent {
   }
 
   private async run(
-    userMessage: AxleUserMessage,
-    schema: OutputSchema | undefined,
+    userTurn: CompiledUserTurn<any>,
     signal: AbortSignal,
     sendFileResolver?: FileResolver,
     reasoning?: boolean,
@@ -189,10 +167,24 @@ export class Agent {
       });
     }
 
-    await this.resolveMcpTools();
+    try {
+      await this.resolveMcpTools(signal);
+    } catch (error) {
+      if (
+        signal.aborted ||
+        error instanceof AxleAbortError ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        throw new AxleAgentAbortError("Agent send aborted", {
+          reason: error instanceof AxleAbortError ? error.reason : signal.reason,
+          usage: emptyUsage,
+        });
+      }
+      throw error;
+    }
 
     let effectiveSystem = this.system;
-    const requestMessages = [...this.history.log, userMessage];
+    const requestMessages = [...this.history.log, userTurn.message];
     if (this.memory) {
       const recallResult = await this.memory.recall({
         name: this.name,
@@ -214,9 +206,9 @@ export class Agent {
       });
     }
 
-    const { turn: userTurn, events: userEvents } = builder.createUserTurn(userMessage);
-    this.history.addTurn(userTurn);
-    this.history.appendToLog(userMessage);
+    const { turn: historyUserTurn, events: userEvents } = builder.createUserTurn(userTurn.message);
+    this.history.addTurn(historyUserTurn);
+    this.history.appendToLog(userTurn.message);
     for (const evt of userEvents) {
       this.emitEvent(evt);
     }
@@ -318,8 +310,7 @@ export class Agent {
     let response: any | null = null;
     if (streamResult.result === "success") {
       if (streamResult.final) {
-        const textContent = getTextContent(streamResult.final.content);
-        response = parseResponse(textContent, schema);
+        response = userTurn.parse(streamResult.final);
       }
 
       if (this.memory) {

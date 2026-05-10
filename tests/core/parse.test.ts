@@ -97,6 +97,116 @@ describe("parseResponse", () => {
     const result = parseResponse(raw, { answer: z.string() });
     expect(result).toEqual({ answer: "hello" });
   });
+
+  describe("schema shape coverage", () => {
+    it("parses flat primitives", () => {
+      const result = parseResponse(
+        "<answer>Use TypeScript</answer><confidence>0.82</confidence><accepted>true</accepted>",
+        {
+          answer: z.string(),
+          confidence: z.number(),
+          accepted: z.boolean(),
+        },
+      );
+
+      expect(result).toEqual({
+        answer: "Use TypeScript",
+        confidence: 0.82,
+        accepted: true,
+      });
+    });
+
+    it("parses arrays of primitives", () => {
+      const result = parseResponse(
+        '<bullets>["fast iteration","broad ecosystem"]</bullets><scores>[0.8,0.9]</scores>',
+        {
+          bullets: z.array(z.string()),
+          scores: z.array(z.number()),
+        },
+      );
+
+      expect(result).toEqual({
+        bullets: ["fast iteration", "broad ecosystem"],
+        scores: [0.8, 0.9],
+      });
+    });
+
+    it("parses nested objects when the top-level tag contains JSON", () => {
+      const result = parseResponse(
+        '<person>{"name":"Ada","age":37,"skills":["math","programming"]}</person>',
+        {
+          person: z.object({
+            name: z.string(),
+            age: z.number(),
+            skills: z.array(z.string()),
+          }),
+        },
+      );
+
+      expect(result).toEqual({
+        person: { name: "Ada", age: 37, skills: ["math", "programming"] },
+      });
+    });
+
+    it("parses arrays of objects when the top-level tag contains JSON", () => {
+      const result = parseResponse(
+        '<tasks>[{"title":"Ship JSON output","priority":"high","done":false},{"title":"Benchmark models","priority":"medium","done":false}]</tasks>',
+        {
+          tasks: z.array(
+            z.object({
+              title: z.string(),
+              priority: z.string(),
+              done: z.boolean(),
+            }),
+          ),
+        },
+      );
+
+      expect(result).toEqual({
+        tasks: [
+          { title: "Ship JSON output", priority: "high", done: false },
+          { title: "Benchmark models", priority: "medium", done: false },
+        ],
+      });
+    });
+
+    it("parses optional fields when present and omits them when missing", () => {
+      const withOptional = parseResponse("<title>Plan</title><notes>Keep it small</notes>", {
+        title: z.string(),
+        notes: z.string().optional(),
+      });
+      const withoutOptional = parseResponse("<title>Plan</title>", {
+        title: z.string(),
+        notes: z.string().optional(),
+      });
+
+      expect(withOptional).toEqual({ title: "Plan", notes: "Keep it small" });
+      expect(withoutOptional).toEqual({ title: "Plan" });
+    });
+
+    it("parses JSON-hostile string content as plain tag text", () => {
+      const raw =
+        '<content>Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.</content>';
+      const result = parseResponse(raw, {
+        content: z.string(),
+      });
+
+      expect(result).toEqual({
+        content: 'Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.',
+      });
+    });
+
+    it("does not parse nested XML tags as object JSON", () => {
+      expect(() =>
+        parseResponse("<person><name>Ada</name><age>37</age></person>", {
+          person: z.object({
+            name: z.string(),
+            age: z.number(),
+          }),
+        }),
+      ).toThrow("Cannot parse object as JSON");
+    });
+  });
 });
 
 describe("parseTaggedSections", () => {

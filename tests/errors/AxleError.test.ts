@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AxleError } from "../../src/errors/AxleError.js";
+import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 
 describe("AxleError", () => {
   it("should serialize to JSON with message", () => {
@@ -40,5 +41,28 @@ describe("AxleError", () => {
     expect(parsed.message).toBe("Outer");
     expect(parsed.cause.message).toBe("Middle");
     expect(parsed.cause.cause.message).toBe("Innermost");
+  });
+});
+
+describe("AxleToolFatalError", () => {
+  it("serializes tool metadata and partial turn state", () => {
+    const cause = { code: "SANDBOX_DEAD" };
+    const error = new AxleToolFatalError("Sandbox terminated", {
+      toolName: "exec",
+      messages: [{ role: "assistant", id: "a1", content: [], finishReason: "function_call" as any }],
+      partial: { role: "assistant", id: "a1", content: [], finishReason: "function_call" as any },
+      usage: { in: 10, out: 2 },
+      cause,
+    });
+
+    const parsed = JSON.parse(JSON.stringify(error));
+
+    expect(parsed.name).toBe("AxleToolFatalError");
+    expect(parsed.code).toBe("TOOL_FATAL_ERROR");
+    expect(parsed.toolName).toBe("exec");
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.partial.id).toBe("a1");
+    expect(parsed.usage).toEqual({ in: 10, out: 2 });
+    expect(parsed.cause).toEqual(cause);
   });
 });

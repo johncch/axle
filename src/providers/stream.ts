@@ -1,3 +1,7 @@
+import { Instruct } from "../core/Instruct.js";
+import type { OutputSchema } from "../core/parse.js";
+import type { InstructResponse } from "../core/userTurn.js";
+import { compileUserTurn } from "../core/userTurn.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type {
@@ -104,6 +108,27 @@ export interface StreamHandle {
   readonly final: Promise<StreamResult>;
 }
 
+export interface StreamInstructOptions<TSchema extends OutputSchema | undefined> extends Omit<
+  StreamOptions,
+  "messages"
+> {
+  messages?: Array<AxleMessage>;
+  instruct: Instruct<TSchema>;
+}
+
+export type StreamInstructResult<TSchema extends OutputSchema | undefined> =
+  | (Extract<StreamResult, { result: "success" }> & {
+      response: InstructResponse<TSchema> | null;
+    })
+  | Extract<StreamResult, { result: "error" }>;
+
+export interface StreamInstructHandle<TSchema extends OutputSchema | undefined> extends Omit<
+  StreamHandle,
+  "final"
+> {
+  readonly final: Promise<StreamInstructResult<TSchema>>;
+}
+
 // --- Implementation ---
 
 function emit(callbacks: StreamEventCallback[], event: StreamEvent) {
@@ -124,18 +149,44 @@ function toToolDefinition(tool: ExecutableTool): ToolDefinition {
   return { name: tool.name, description: tool.description, schema: tool.schema };
 }
 
-export function stream(options: StreamOptions): StreamHandle {
+export function stream<TSchema extends OutputSchema | undefined>(
+  options: StreamInstructOptions<TSchema>,
+): StreamInstructHandle<TSchema>;
+export function stream(options: StreamOptions): StreamHandle;
+export function stream(options: StreamOptions | StreamInstructOptions<any>): StreamHandle {
   const callbacks: StreamEventCallback[] = [];
+  let streamOptions: StreamOptions;
+  let parse: ((final: AxleAssistantMessage | undefined) => unknown) | undefined;
+
+  if ("instruct" in options) {
+    const { instruct, messages, ...rest } = options;
+    const userTurn = compileUserTurn(instruct);
+    parse = userTurn.parse;
+    streamOptions = {
+      ...rest,
+      messages: [...(messages ?? []), userTurn.message],
+    };
+  } else {
+    streamOptions = options;
+  }
 
   const controller = new AbortController();
-  const effectiveSignal = options.signal
-    ? AbortSignal.any([controller.signal, options.signal])
+  const effectiveSignal = streamOptions.signal
+    ? AbortSignal.any([controller.signal, streamOptions.signal])
     : controller.signal;
 
-  const { promise: finalPromise, resolve, reject } = Promise.withResolvers<StreamResult>();
+  const { promise: finalPromise, resolve, reject } = Promise.withResolvers<any>();
 
   // Kick off processing on next microtask so callers can register callbacks first
-  Promise.resolve().then(() => run(options, effectiveSignal, callbacks).then(resolve, reject));
+  Promise.resolve().then(() =>
+    run(streamOptions, effectiveSignal, callbacks).then((result) => {
+      if (parse && result.result === "success") {
+        resolve({ ...result, response: parse(result.final) });
+        return;
+      }
+      resolve(result);
+    }, reject),
+  );
 
   return {
     on(cb) {
