@@ -8,7 +8,7 @@ export type {
   SendMessageOptions,
 } from "./core/Agent.js";
 export { Instruct } from "./core/index.js";
-export type { InstructInputs } from "./core/index.js";
+export type { InstructInputs, InstructResponse } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
 export {
   AxleAbortError,
@@ -22,10 +22,18 @@ export {
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
+export type { GenerateInstructOptions, GenerateInstructResult } from "./providers/generate.js";
 export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
-export type { StreamEvent, StreamEventCallback, StreamHandle } from "./providers/stream.js";
+export type {
+  StreamEvent,
+  StreamEventCallback,
+  StreamHandle,
+  StreamInstructHandle,
+  StreamInstructOptions,
+  StreamInstructResult,
+} from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type { AIProvider } from "./providers/types.js";
 

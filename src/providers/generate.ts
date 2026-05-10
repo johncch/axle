@@ -1,3 +1,7 @@
+import { Instruct } from "../core/Instruct.js";
+import type { OutputSchema } from "../core/parse.js";
+import type { InstructResponse } from "../core/userTurn.js";
+import { compileUserTurn } from "../core/userTurn.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
@@ -43,7 +47,43 @@ export interface GenerateOptions {
   signal?: AbortSignal;
 }
 
-export async function generate(options: GenerateOptions): Promise<GenerateResult> {
+export interface GenerateInstructOptions<TSchema extends OutputSchema | undefined> extends Omit<
+  GenerateOptions,
+  "messages"
+> {
+  messages?: Array<AxleMessage>;
+  instruct: Instruct<TSchema>;
+}
+
+export type GenerateInstructResult<TSchema extends OutputSchema | undefined> =
+  | (Extract<GenerateResult, { result: "success" }> & {
+      response: InstructResponse<TSchema> | null;
+    })
+  | Extract<GenerateResult, { result: "error" }>;
+
+export async function generate<TSchema extends OutputSchema | undefined>(
+  options: GenerateInstructOptions<TSchema>,
+): Promise<GenerateInstructResult<TSchema>>;
+export async function generate(options: GenerateOptions): Promise<GenerateResult>;
+export async function generate(
+  options: GenerateOptions | GenerateInstructOptions<any>,
+): Promise<GenerateResult | GenerateInstructResult<any>> {
+  if ("instruct" in options) {
+    const { instruct, messages, ...rest } = options;
+    const userTurn = compileUserTurn(instruct);
+    const result = await runGenerate({
+      ...rest,
+      messages: [...(messages ?? []), userTurn.message],
+    });
+
+    if (result.result === "error") return result;
+    return { ...result, response: userTurn.parse(result.final) };
+  }
+
+  return runGenerate(options);
+}
+
+async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
   const {
     provider,
     model,

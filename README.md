@@ -129,6 +129,28 @@ const result = await generate({
 });
 ```
 
+Both `stream()` and `generate()` also accept an `Instruct` as the latest user
+turn. When `messages` is provided with `instruct`, `messages` is treated as
+prior context and the rendered `Instruct` is appended as the new user message.
+
+```typescript
+import * as z from "zod";
+import { generate, Instruct } from "@fifthrevision/axle";
+
+const result = await generate({
+  provider,
+  model,
+  messages: previousMessages,
+  instruct: new Instruct("Answer {{question}}.", {
+    answer: z.string(),
+  }).withInput("question", "Should we proceed?"),
+});
+
+if (result.result === "success") {
+  result.response?.answer; // string
+}
+```
+
 Both handle the full tool-call loop automatically. Agent uses `stream()`
 internally and adds history management, system prompt, and callback wiring on
 top.
@@ -163,6 +185,9 @@ result.response.name; // string
 result.response.distanceFromSun; // number
 result.response.moons; // string[]
 ```
+
+For one-shot structured calls without agent-managed history, pass the same
+`Instruct` directly to `generate()` or `stream()`.
 
 ### Tools
 
