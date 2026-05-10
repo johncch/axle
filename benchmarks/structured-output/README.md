@@ -4,9 +4,7 @@ This benchmark runs real model calls against the `Instruct` structured-output
 cases. It is intentionally outside Vitest because it can use API keys, cost
 money, and produce comparative JSONL output.
 
-The current baseline uses the existing tag-based `Instruct` output format. Run
-this before changing the parser to JSON, then run the same cases again after the
-JSON work.
+The benchmark uses the JSON-based `Instruct` output format.
 
 ## Usage
 
@@ -40,7 +38,7 @@ pnpm exec tsx benchmarks/structured-output/run.ts \
   --target gpt-5-4-mini \
   --case nested-object,array-of-objects \
   --repeats 3 \
-  --out output/benchmarks/tags-baseline.jsonl
+  --out output/benchmarks/json-baseline.jsonl
 ```
 
 Configured targets:
@@ -61,7 +59,7 @@ The runner writes JSONL records with:
 
 - provider and model
 - case id and description
-- success, model-error, or exception status
+- success, parse-error, model-error, or exception status
 - raw model text
 - parsed response when parsing succeeds
 - usage and duration

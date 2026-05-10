@@ -14,14 +14,14 @@ interface RunOptions {
 
 interface BenchmarkRecord {
   timestamp: string;
-  outputFormat: "tags";
+  outputFormat: "json";
   targetId: string;
   provider: string;
   model: string;
   caseId: string;
   caseDescription: string;
   repeat: number;
-  status: "success" | "model-error" | "exception";
+  status: "success" | "parse-error" | "model-error" | "exception";
   durationMs: number;
   usage?: { in?: number; out?: number };
   rawText?: string;
@@ -54,7 +54,7 @@ for (const target of targets) {
       const startedAt = Date.now();
       const recordBase = {
         timestamp: new Date().toISOString(),
-        outputFormat: "tags" as const,
+        outputFormat: "json" as const,
         targetId: target.id,
         provider: target.provider,
         model: target.model,
@@ -82,6 +82,20 @@ for (const target of targets) {
           });
           markSummary(target.id, false);
           console.log(`  [${testCase.id}] ${repeat}/${options.repeats} model-error`);
+          continue;
+        }
+
+        if (result.parseError) {
+          await writeRecord({
+            ...recordBase,
+            status: "parse-error",
+            durationMs,
+            usage: result.usage,
+            rawText: getRawText(result.final?.content),
+            error: serializeError(result.parseError),
+          });
+          markSummary(target.id, false);
+          console.log(`  [${testCase.id}] ${repeat}/${options.repeats} parse-error`);
           continue;
         }
 

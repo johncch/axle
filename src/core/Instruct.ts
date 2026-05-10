@@ -75,11 +75,14 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     if (schemaKeys.length === 0) return message;
 
     let instructions =
-      "# Output Format Instructions\n\nHere is how you should format your output. Follow the instructions strictly.\n";
+      "# Output Format Instructions\n\nReturn only a valid JSON object matching this schema. Do not wrap it in markdown. Do not include prose before or after the JSON.\n";
+    const exampleObject: Record<string, unknown> = {};
     for (const [key, fieldSchema] of Object.entries(this.schema!)) {
       const [value, example] = zodToExample(fieldSchema as z.ZodTypeAny);
-      instructions += `\n- Use <${key}></${key}> tags to indicate the answer for ${key}. The answer must be a ${value}.\n  Example: <${key}>${JSON.stringify(example)}</${key}>\n`;
+      exampleObject[key] = example;
+      instructions += `\n- ${key}: ${value}`;
     }
+    instructions += `\n\nExample:\n${JSON.stringify(exampleObject, null, 2)}\n\n`;
 
     return instructions + message;
   }

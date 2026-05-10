@@ -116,8 +116,8 @@ describe("Agent", () => {
     expect(result.response).toBe("Greeting sent");
   });
 
-  test("send(instruct) with schema parses response via tags", async () => {
-    const provider = createMockStreamProvider(["<answer>42</answer>"]);
+  test("send(instruct) with schema parses JSON response", async () => {
+    const provider = createMockStreamProvider(['{"answer":42}']);
     const { z } = await import("zod");
     const instruct = new Instruct("What is the answer?", {
       answer: z.number(),

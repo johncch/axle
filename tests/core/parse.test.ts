@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
-import { parseResponse, parseTaggedSections } from "../../src/core/parse.js";
+import { parseJsonObject, parseResponse, parseTaggedSections } from "../../src/core/parse.js";
 
 describe("parseResponse", () => {
   it("returns raw string when schema is undefined", () => {
@@ -8,73 +8,77 @@ describe("parseResponse", () => {
     expect(result).toBe("hello world");
   });
 
-  it("parses a single string tag", () => {
-    const result = parseResponse("<answer>Paris</answer>", {
+  it("parses flat primitives from JSON", () => {
+    const result = parseResponse('{"answer":"Paris","count":42,"accepted":true}', {
       answer: z.string(),
-    });
-    expect(result).toEqual({ answer: "Paris" });
-  });
-
-  it("parses a number tag", () => {
-    const result = parseResponse("<count>42</count>", {
       count: z.number(),
+      accepted: z.boolean(),
     });
-    expect(result).toEqual({ count: 42 });
+
+    expect(result).toEqual({ answer: "Paris", count: 42, accepted: true });
   });
 
-  it("parses a boolean tag", () => {
-    const result = parseResponse("<isTrue>true</isTrue>", {
-      isTrue: z.boolean(),
-    });
-    expect(result).toEqual({ isTrue: true });
-  });
-
-  it("parses multiple tags", () => {
-    const raw = "<name>Alice</name><age>30</age><active>true</active>";
-    const result = parseResponse(raw, {
-      name: z.string(),
-      age: z.number(),
-      active: z.boolean(),
-    });
-    expect(result).toEqual({ name: "Alice", age: 30, active: true });
-  });
-
-  it("parses an array tag", () => {
-    const result = parseResponse('<items>["a","b","c"]</items>', {
+  it("parses arrays of primitives from JSON", () => {
+    const result = parseResponse('{"items":["a","b","c"],"scores":[0.4,0.9]}', {
       items: z.array(z.string()),
+      scores: z.array(z.number()),
     });
-    expect(result).toEqual({ items: ["a", "b", "c"] });
+
+    expect(result).toEqual({ items: ["a", "b", "c"], scores: [0.4, 0.9] });
   });
 
-  it("parses comma-separated array fallback", () => {
-    const result = parseResponse("<items>apple, banana, cherry</items>", {
-      items: z.array(z.string()),
+  it("parses nested objects from JSON", () => {
+    const result = parseResponse('{"person":{"name":"Ada","age":37,"skills":["math","code"]}}', {
+      person: z.object({
+        name: z.string(),
+        age: z.number(),
+        skills: z.array(z.string()),
+      }),
     });
-    expect(result).toEqual({ items: ["apple", "banana", "cherry"] });
+
+    expect(result).toEqual({
+      person: { name: "Ada", age: 37, skills: ["math", "code"] },
+    });
   });
 
-  it("parses an object tag", () => {
-    const result = parseResponse('<data>{"x":1,"y":2}</data>', {
-      data: z.object({ x: z.number(), y: z.number() }),
+  it("parses arrays of objects from JSON", () => {
+    const result = parseResponse(
+      '{"tasks":[{"title":"Ship JSON output","priority":"high","done":false},{"title":"Benchmark models","priority":"medium","done":false}]}',
+      {
+        tasks: z.array(
+          z.object({
+            title: z.string(),
+            priority: z.string(),
+            done: z.boolean(),
+          }),
+        ),
+      },
+    );
+
+    expect(result).toEqual({
+      tasks: [
+        { title: "Ship JSON output", priority: "high", done: false },
+        { title: "Benchmark models", priority: "medium", done: false },
+      ],
     });
-    expect(result).toEqual({ data: { x: 1, y: 2 } });
   });
 
   it("handles optional fields that are missing", () => {
-    const result = parseResponse("<name>Bob</name>", {
+    const result = parseResponse('{"name":"Bob"}', {
       name: z.string(),
       nickname: z.string().optional(),
     });
+
     expect(result).toEqual({ name: "Bob" });
   });
 
-  it("throws when required tag is missing", () => {
+  it("throws when a required field is missing", () => {
     expect(() =>
-      parseResponse("<name>Bob</name>", {
+      parseResponse('{"name":"Bob"}', {
         name: z.string(),
         age: z.number(),
       }),
-    ).toThrow("Expected results with tag age but it does not exist");
+    ).toThrow("Validation failed");
   });
 
   it("handles empty schema with empty input", () => {
@@ -86,131 +90,62 @@ describe("parseResponse", () => {
     expect(() => parseResponse("some content", {})).toThrow("Schema is empty");
   });
 
-  it("handles multiline tag content", () => {
-    const raw = "<response>Line 1\nLine 2\nLine 3</response>";
-    const result = parseResponse(raw, { response: z.string() });
-    expect(result).toEqual({ response: "Line 1\nLine 2\nLine 3" });
-  });
-
-  it("unwraps json code block wrapper", () => {
-    const raw = "```json\n<answer>hello</answer>\n```";
+  it("unwraps a json code block wrapper", () => {
+    const raw = '```json\n{"answer":"hello"}\n```';
     const result = parseResponse(raw, { answer: z.string() });
     expect(result).toEqual({ answer: "hello" });
   });
 
-  describe("schema shape coverage", () => {
-    it("parses flat primitives", () => {
-      const result = parseResponse(
-        "<answer>Use TypeScript</answer><confidence>0.82</confidence><accepted>true</accepted>",
-        {
-          answer: z.string(),
-          confidence: z.number(),
-          accepted: z.boolean(),
-        },
-      );
+  it("throws when the model adds prose around JSON", () => {
+    const raw = 'Here is the answer:\n{"answer":"yes","confidence":0.8}\nThanks.';
+    expect(() =>
+      parseResponse(raw, {
+        answer: z.string(),
+        confidence: z.number(),
+      }),
+    ).toThrow("Cannot parse response as JSON");
+  });
 
-      expect(result).toEqual({
-        answer: "Use TypeScript",
-        confidence: 0.82,
-        accepted: true,
-      });
+  it("parses JSON-hostile string content when JSON escaping is valid", () => {
+    const raw = JSON.stringify({
+      content:
+        'Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.',
+    });
+    const result = parseResponse(raw, {
+      content: z.string(),
     });
 
-    it("parses arrays of primitives", () => {
-      const result = parseResponse(
-        '<bullets>["fast iteration","broad ecosystem"]</bullets><scores>[0.8,0.9]</scores>',
-        {
-          bullets: z.array(z.string()),
-          scores: z.array(z.number()),
-        },
-      );
+    expect(result).toEqual({
+      content:
+        'Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.',
+    });
+  });
 
-      expect(result).toEqual({
-        bullets: ["fast iteration", "broad ecosystem"],
-        scores: [0.8, 0.9],
-      });
+  it("parses nested object content that XML tags could not represent", () => {
+    const result = parseResponse('{"person":{"name":"Ada","age":37}}', {
+      person: z.object({
+        name: z.string(),
+        age: z.number(),
+      }),
     });
 
-    it("parses nested objects when the top-level tag contains JSON", () => {
-      const result = parseResponse(
-        '<person>{"name":"Ada","age":37,"skills":["math","programming"]}</person>',
-        {
-          person: z.object({
-            name: z.string(),
-            age: z.number(),
-            skills: z.array(z.string()),
-          }),
-        },
-      );
+    expect(result).toEqual({ person: { name: "Ada", age: 37 } });
+  });
+});
 
-      expect(result).toEqual({
-        person: { name: "Ada", age: 37, skills: ["math", "programming"] },
-      });
-    });
+describe("parseJsonObject", () => {
+  it("parses strict JSON", () => {
+    const result = parseJsonObject('{"a":"{literal}","b":[1,2]}');
+    expect(result).toEqual({ a: "{literal}", b: [1, 2] });
+  });
 
-    it("parses arrays of objects when the top-level tag contains JSON", () => {
-      const result = parseResponse(
-        '<tasks>[{"title":"Ship JSON output","priority":"high","done":false},{"title":"Benchmark models","priority":"medium","done":false}]</tasks>',
-        {
-          tasks: z.array(
-            z.object({
-              title: z.string(),
-              priority: z.string(),
-              done: z.boolean(),
-            }),
-          ),
-        },
-      );
-
-      expect(result).toEqual({
-        tasks: [
-          { title: "Ship JSON output", priority: "high", done: false },
-          { title: "Benchmark models", priority: "medium", done: false },
-        ],
-      });
-    });
-
-    it("parses optional fields when present and omits them when missing", () => {
-      const withOptional = parseResponse("<title>Plan</title><notes>Keep it small</notes>", {
-        title: z.string(),
-        notes: z.string().optional(),
-      });
-      const withoutOptional = parseResponse("<title>Plan</title>", {
-        title: z.string(),
-        notes: z.string().optional(),
-      });
-
-      expect(withOptional).toEqual({ title: "Plan", notes: "Keep it small" });
-      expect(withoutOptional).toEqual({ title: "Plan" });
-    });
-
-    it("parses JSON-hostile string content as plain tag text", () => {
-      const raw =
-        '<content>Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.</content>';
-      const result = parseResponse(raw, {
-        content: z.string(),
-      });
-
-      expect(result).toEqual({
-        content: 'Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.',
-      });
-    });
-
-    it("does not parse nested XML tags as object JSON", () => {
-      expect(() =>
-        parseResponse("<person><name>Ada</name><age>37</age></person>", {
-          person: z.object({
-            name: z.string(),
-            age: z.number(),
-          }),
-        }),
-      ).toThrow("Cannot parse object as JSON");
-    });
+  it("throws when no JSON value exists", () => {
+    expect(() => parseJsonObject("no object here")).toThrow("Cannot parse response as JSON");
   });
 });
 
 describe("parseTaggedSections", () => {
-  it("extracts tags from input", () => {
+  it("extracts legacy tags from input", () => {
     const result = parseTaggedSections("<foo>bar</foo> extra text");
     expect(result.tags).toEqual({ foo: "bar" });
     expect(result.remaining).toBe("extra text");

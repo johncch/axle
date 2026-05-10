@@ -16,8 +16,8 @@ describe("Instruct options", () => {
       role: "assistant",
       id: "msg_1",
       model: "test-model",
-      text: "<answer>yes</answer>",
-      content: [{ type: "text", text: "<answer>yes</answer>" }],
+      text: '{"answer":"yes"}',
+      content: [{ type: "text", text: '{"answer":"yes"}' }],
       finishReason: AxleStopReason.Stop,
       usage: { in: 4, out: 5 },
       raw: {},
@@ -42,7 +42,35 @@ describe("Instruct options", () => {
     expect(requests[0]).toHaveLength(2);
     expect(requests[0][0]).toMatchObject({ role: "user", content: "prior context" });
     expect(JSON.stringify(requests[0][1])).toContain("Answer now?");
-    expect(JSON.stringify(requests[0][1])).toContain("<answer>");
+    expect(JSON.stringify(requests[0][1])).toContain("answer");
+  });
+
+  test("generate() returns raw final content when instruct parsing fails", async () => {
+    const requests: AxleMessage[][] = [];
+    const provider = makeGenerateProvider(requests, {
+      type: "success",
+      role: "assistant",
+      id: "msg_1",
+      model: "test-model",
+      text: '{"answer":"unterminated}',
+      content: [{ type: "text", text: '{"answer":"unterminated}' }],
+      finishReason: AxleStopReason.Stop,
+      usage: { in: 4, out: 5 },
+      raw: {},
+    });
+
+    const result = await generate({
+      provider,
+      model: "test-model",
+      instruct: new Instruct("Answer", { answer: z.string() }),
+    });
+
+    expect(result.result).toBe("success");
+    if (result.result !== "success") return;
+
+    expect(result.response).toBeNull();
+    expect(result.parseError).toBeInstanceOf(Error);
+    expect(result.final?.content).toEqual([{ type: "text", text: '{"answer":"unterminated}' }]);
   });
 
   test("stream() appends instruct as latest user turn and returns parsed response", async () => {
@@ -50,7 +78,7 @@ describe("Instruct options", () => {
     const chunks: AnyStreamChunk[] = [
       { type: "start", id: "msg_1", data: { model: "test-model", timestamp: Date.now() } },
       { type: "text-start", data: { index: 0 } },
-      { type: "text-delta", data: { index: 0, text: "<count>3</count>" } },
+      { type: "text-delta", data: { index: 0, text: '{"count":3}' } },
       { type: "text-complete", data: { index: 0 } },
       { type: "complete", data: { finishReason: AxleStopReason.Stop, usage: { in: 4, out: 5 } } },
     ];
@@ -76,7 +104,32 @@ describe("Instruct options", () => {
     expect(requests[0]).toHaveLength(2);
     expect(requests[0][0]).toMatchObject({ role: "assistant", id: "prev" });
     expect(JSON.stringify(requests[0][1])).toContain("Count items");
-    expect(JSON.stringify(requests[0][1])).toContain("<count>");
+    expect(JSON.stringify(requests[0][1])).toContain("count");
+  });
+
+  test("stream() returns raw final content when instruct parsing fails", async () => {
+    const requests: AxleMessage[][] = [];
+    const chunks: AnyStreamChunk[] = [
+      { type: "start", id: "msg_1", data: { model: "test-model", timestamp: Date.now() } },
+      { type: "text-start", data: { index: 0 } },
+      { type: "text-delta", data: { index: 0, text: '{"count":' } },
+      { type: "text-complete", data: { index: 0 } },
+      { type: "complete", data: { finishReason: AxleStopReason.Stop, usage: { in: 4, out: 5 } } },
+    ];
+    const provider = makeStreamProvider(requests, chunks);
+
+    const result = await stream({
+      provider,
+      model: "test-model",
+      instruct: new Instruct("Count", { count: z.number() }),
+    }).final;
+
+    expect(result.result).toBe("success");
+    if (result.result !== "success") return;
+
+    expect(result.response).toBeNull();
+    expect(result.parseError).toBeInstanceOf(Error);
+    expect(result.final?.content).toEqual([{ type: "text", text: '{"count":' }]);
   });
 });
 
