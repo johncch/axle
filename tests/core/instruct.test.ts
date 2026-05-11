@@ -311,5 +311,42 @@ console.log("code block");
       expect(compiled).toContain("Return only a valid JSON object");
       expect(compiled).toContain('"answer": "Your answer"');
     });
+
+    it("renders enum schema examples without throwing", () => {
+      const instruct = new Instruct("Classify the run", {
+        status: z.enum(["success", "partial", "fail"]),
+      });
+      const compiled = instruct.render();
+
+      expect(compiled).toContain('- status: "success" | "partial" | "fail"');
+      expect(compiled).toContain('"status": "success"');
+    });
+
+    it("renders literal schema examples without throwing", () => {
+      const instruct = new Instruct("Return the fixed kind", {
+        kind: z.literal("foo"),
+      });
+      const compiled = instruct.render();
+
+      expect(compiled).toContain('- kind: "foo"');
+      expect(compiled).toContain('"kind": "foo"');
+    });
+
+    it("renders a valid JSON example object with enum and literal values", () => {
+      const instruct = new Instruct("Classify the result", {
+        status: z.enum(["success", "partial", "fail"]),
+        kind: z.literal("foo"),
+        tags: z.array(z.enum(["a", "b", "c"])),
+      });
+      const compiled = instruct.render();
+
+      const exampleMatch = compiled.match(/Example:\n([\s\S]*?)\n\nClassify the result/);
+      expect(exampleMatch?.[1]).toBeDefined();
+      expect(JSON.parse(exampleMatch![1])).toEqual({
+        status: "success",
+        kind: "foo",
+        tags: ["a"],
+      });
+    });
   });
 });

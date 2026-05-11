@@ -14,6 +14,14 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
   if (schema instanceof z.ZodBoolean) {
     return ["boolean", true];
   }
+  if (schema instanceof z.ZodEnum) {
+    const values = schema.options;
+    return [values.map(formatLiteralLabel).join(" | "), values[0]];
+  }
+  if (schema instanceof z.ZodLiteral) {
+    const value = schema.value;
+    return [formatLiteralLabel(value), value];
+  }
   if (schema instanceof z.ZodArray) {
     const elementSchema = schema.element;
     if (elementSchema instanceof z.ZodString) {
@@ -25,6 +33,9 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
     } else if (elementSchema instanceof z.ZodObject) {
       const [, objectExample] = zodToExample(elementSchema);
       return ["object array", [objectExample, objectExample]];
+    } else if (elementSchema instanceof z.ZodEnum || elementSchema instanceof z.ZodLiteral) {
+      const [elementLabel, elementExample] = zodToExample(elementSchema);
+      return [`${elementLabel} array`, [elementExample]];
     }
     return ["array", []];
   }
@@ -44,6 +55,10 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
   }
 
   throw new Error(`Unsupported Zod schema: ${schema.constructor.name}`);
+}
+
+function formatLiteralLabel(value: unknown): string {
+  return typeof value === "string" ? JSON.stringify(value) : String(value);
 }
 
 export function parseResponse<T extends OutputSchema>(

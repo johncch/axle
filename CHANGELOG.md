@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.16.1] - 2026-05-11
+
+- Added `z.enum` and `z.literal` support to Instruct structured-output schemas
+
 ## [0.16.0] - 2026-05-11
 
 - Added `instruct` support to generate and stream APIs for supplying structured instructions directly

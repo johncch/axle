@@ -24,6 +24,28 @@ describe("zodToExample", () => {
 
       expect(result).toEqual(["boolean", true]);
     });
+
+    it("should handle ZodEnum", () => {
+      const schema = z.enum(["success", "partial", "fail"]);
+      const result = zodToExample(schema);
+
+      expect(result).toEqual(['"success" | "partial" | "fail"', "success"]);
+    });
+
+    it("should handle ZodLiteral", () => {
+      const schema = z.literal("foo");
+      const result = zodToExample(schema);
+
+      expect(result).toEqual(['"foo"', "foo"]);
+    });
+
+    it("should handle non-string ZodLiteral labels", () => {
+      const numberResult = zodToExample(z.literal(7));
+      const booleanResult = zodToExample(z.literal(true));
+
+      expect(numberResult).toEqual(["7", 7]);
+      expect(booleanResult).toEqual(["true", true]);
+    });
   });
 
   describe("array types", () => {
@@ -53,6 +75,20 @@ describe("zodToExample", () => {
       const result = zodToExample(schema);
 
       expect(result).toEqual(["array", []]);
+    });
+
+    it("should handle ZodArray of enums", () => {
+      const schema = z.array(z.enum(["success", "partial", "fail"]));
+      const result = zodToExample(schema);
+
+      expect(result).toEqual(['"success" | "partial" | "fail" array', ["success"]]);
+    });
+
+    it("should handle ZodArray of literals", () => {
+      const schema = z.array(z.literal("foo"));
+      const result = zodToExample(schema);
+
+      expect(result).toEqual(['"foo" array', ["foo"]]);
     });
   });
 
@@ -215,6 +251,9 @@ describe("zodToExample", () => {
     it("should handle objects with optional properties", () => {
       const schema = z.object({
         required: z.string(),
+        status: z.enum(["success", "partial", "fail"]),
+        kind: z.literal("summary"),
+        allowedStatuses: z.array(z.enum(["success", "partial", "fail"])),
         optional: z.number().optional(),
         nested: z.object({
           value: z.string(),
@@ -227,6 +266,9 @@ describe("zodToExample", () => {
 
       const example = result[1] as any;
       expect(example.required).toBe("Your answer");
+      expect(example.status).toBe("success");
+      expect(example.kind).toBe("summary");
+      expect(example.allowedStatuses).toEqual(["success"]);
       expect(example.optional).toBe(42);
       expect(example.nested).toEqual({
         value: "Your answer",
@@ -284,18 +326,6 @@ describe("zodToExample", () => {
       const schema = z.date();
 
       expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodDate");
-    });
-
-    it("should throw for ZodEnum", () => {
-      const schema = z.enum(["red", "green", "blue"]);
-
-      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodEnum");
-    });
-
-    it("should throw for ZodLiteral", () => {
-      const schema = z.literal("specific-value");
-
-      expect(() => zodToExample(schema)).toThrow("Unsupported Zod schema: ZodLiteral");
     });
 
     it("should throw for ZodUnion", () => {
