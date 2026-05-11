@@ -119,6 +119,7 @@ export interface StreamInstructOptions<TSchema extends OutputSchema | undefined>
 export type StreamInstructResult<TSchema extends OutputSchema | undefined> =
   | (Extract<StreamResult, { result: "success" }> & {
       response: InstructResponse<TSchema> | null;
+      parseError?: unknown;
     })
   | Extract<StreamResult, { result: "error" }>;
 
@@ -181,7 +182,11 @@ export function stream(options: StreamOptions | StreamInstructOptions<any>): Str
   Promise.resolve().then(() =>
     run(streamOptions, effectiveSignal, callbacks).then((result) => {
       if (parse && result.result === "success") {
-        resolve({ ...result, response: parse(result.final) });
+        try {
+          resolve({ ...result, response: parse(result.final) });
+        } catch (parseError) {
+          resolve({ ...result, response: null, parseError });
+        }
         return;
       }
       resolve(result);

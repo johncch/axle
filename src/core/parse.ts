@@ -64,27 +64,10 @@ export function parseResponse<T extends OutputSchema>(
     );
   }
 
-  const taggedSections = parseTaggedSections(rawValue);
-
-  const parseInput: any = {};
-  for (const [key, fieldSchema] of Object.entries(schema)) {
-    const tagContent = taggedSections.tags[key];
-    if (tagContent !== undefined) {
-      parseInput[key] = preprocessValue(fieldSchema, tagContent);
-    } else if (fieldSchema.def.type !== "optional") {
-      throw new Error(`Expected results with tag ${key} but it does not exist`);
-    }
-  }
+  const parsed = parseJsonObject(rawValue);
 
   try {
-    const validatedResult: any = {};
-    for (const [key, fieldSchema] of Object.entries(schema)) {
-      if (key in parseInput) {
-        validatedResult[key] = fieldSchema.parse(parseInput[key]);
-      }
-    }
-
-    return validatedResult;
+    return z.object(schema).parse(parsed) as ParsedSchema<T>;
   } catch (error) {
     if (error && typeof error === "object" && "issues" in error) {
       const formattedErrors = (error as any).issues
@@ -96,76 +79,15 @@ export function parseResponse<T extends OutputSchema>(
   }
 }
 
-function preprocessValue(schema: z.ZodTypeAny, rawValue: string): any {
-  rawValue = rawValue.trim();
-  switch (schema.def.type) {
-    case "string":
-      try {
-        const parsed = JSON.parse(rawValue);
-        return parsed;
-      } catch (e) {
-        if (typeof rawValue === "string") {
-          return rawValue;
-        }
-        throw new Error(
-          `Cannot parse '${rawValue}' as string. Ensure it is a valid JSON string or a plain string.`,
-        );
-      }
-    case "number": {
-      const parsed = parseFloat(rawValue);
-      if (isNaN(parsed)) {
-        throw new Error(`Cannot parse '${rawValue}' as number`);
-      }
-      return parsed;
-    }
-    case "boolean": {
-      const lowerValue = rawValue.toLowerCase();
-      if (lowerValue === "true") return true;
-      if (lowerValue === "false") return false;
-      throw new Error(`Cannot parse '${rawValue}' as boolean. Expected 'true' or 'false'`);
-    }
-    case "array": {
-      if (rawValue === "") return [];
-      try {
-        const parsed = JSON.parse(rawValue);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      } catch (e) {
-        // If JSON parsing fails, fall back to line-by-line parsing
-      }
+export function parseJsonObject(rawValue: string): unknown {
+  const trimmed = rawValue.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fenced ? fenced[1].trim() : trimmed;
 
-      if (rawValue.includes(",")) {
-        return rawValue
-          .split(",")
-          .map((s) => {
-            const trimmed = s.trim();
-            try {
-              return JSON.parse(trimmed);
-            } catch (e) {
-              return trimmed;
-            }
-          })
-          .filter((item) => item !== "");
-      }
-    }
-    case "object": {
-      if (rawValue.includes("```json")) {
-        rawValue = rawValue.replace(/```json/g, "").replace(/```/g, "");
-      }
-      try {
-        const parsed = JSON.parse(rawValue);
-        return parsed;
-      } catch (error) {
-        throw new Error(`Cannot parse object as JSON: ${(error as Error).message}`);
-      }
-    }
-    case "optional": {
-      const innerSchema = (schema as any).def.innerType as z.ZodTypeAny;
-      return preprocessValue(innerSchema, rawValue);
-    }
-    default:
-      return rawValue;
+  try {
+    return JSON.parse(candidate);
+  } catch (directError) {
+    throw new Error(`Cannot parse response as JSON: ${(directError as Error).message}`);
   }
 }
 

@@ -58,6 +58,7 @@ export interface GenerateInstructOptions<TSchema extends OutputSchema | undefine
 export type GenerateInstructResult<TSchema extends OutputSchema | undefined> =
   | (Extract<GenerateResult, { result: "success" }> & {
       response: InstructResponse<TSchema> | null;
+      parseError?: unknown;
     })
   | Extract<GenerateResult, { result: "error" }>;
 
@@ -77,7 +78,11 @@ export async function generate(
     });
 
     if (result.result === "error") return result;
-    return { ...result, response: userTurn.parse(result.final) };
+    try {
+      return { ...result, response: userTurn.parse(result.final) };
+    } catch (parseError) {
+      return { ...result, response: null, parseError };
+    }
   }
 
   return runGenerate(options);
