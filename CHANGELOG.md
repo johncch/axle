@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0] - 2026-05-11
+
+- Added `instruct` support to generate and stream APIs for supplying structured instructions directly
+- Updated structured output instructions to use JSON for more reliable parsing
+- Added open-weight model options
+- Improved cancellation behavior by propagating abort signals through MCP tool calls
+
 ## [0.15.1] - 2026-05-08
 
 - Added `AxleToolFatalError` for fatal tool failures, allowing generation, streaming, and agent runs to stop immediately without retrying or exposing the error to the model
