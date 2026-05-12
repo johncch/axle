@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.16.2] - 2026-05-11
+
+- Fixed OpenAI and Chat Completions providers: `reasoning: false` now sends no reasoning effort instead of minimal reasoning
+
 ## [0.16.1] - 2026-05-11
 
 - Added `z.enum` and `z.literal` support to Instruct structured-output schemas

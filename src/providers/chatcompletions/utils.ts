@@ -34,14 +34,13 @@ export async function convertAxleMessages(
 
 /**
  * Translate Axle's normalized `reasoning` boolean into Chat Completions
- * `reasoning_effort`. `true` → "high"; `false` → "minimal" (suppresses
- * thinking on reasoning models that default to it); `undefined` → omit.
+ * `reasoning_effort`. `true` → "high"; `false` → "none"; `undefined` → omit.
  * Users who need a specific tier set `options.reasoning_effort` directly,
  * which overrides this.
  */
 export function toReasoningEffort(reasoning: boolean | undefined) {
   if (reasoning === true) return { reasoning_effort: "high" as const };
-  if (reasoning === false) return { reasoning_effort: "minimal" as const };
+  if (reasoning === false) return { reasoning_effort: "none" as const };
   return {};
 }
 

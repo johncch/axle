@@ -26,8 +26,8 @@ describe("reasoning translation", () => {
     test("true → effort: high", () => {
       expect(toOpenAIReasoning(true)).toEqual({ reasoning: { effort: "high" } });
     });
-    test("false → effort: minimal", () => {
-      expect(toOpenAIReasoning(false)).toEqual({ reasoning: { effort: "minimal" } });
+    test("false → effort: none", () => {
+      expect(toOpenAIReasoning(false)).toEqual({ reasoning: { effort: "none" } });
     });
   });
 
@@ -52,8 +52,8 @@ describe("reasoning translation", () => {
     test("true → reasoning_effort: high", () => {
       expect(toReasoningEffort(true)).toEqual({ reasoning_effort: "high" });
     });
-    test("false → reasoning_effort: minimal", () => {
-      expect(toReasoningEffort(false)).toEqual({ reasoning_effort: "minimal" });
+    test("false → reasoning_effort: none", () => {
+      expect(toReasoningEffort(false)).toEqual({ reasoning_effort: "none" });
     });
   });
 });

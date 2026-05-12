@@ -27,14 +27,13 @@ export function prepareTools(tools?: Array<ToolDefinition>) {
 
 /**
  * Translate Axle's normalized `reasoning` boolean into OpenAI's reasoning
- * field. `true` → effort: "high"; `false` → effort: "minimal" (suppresses
- * thinking on reasoning models that default to it); `undefined` → omit.
+ * field. `true` → effort: "high"; `false` → effort: "none"; `undefined` → omit.
  * Users wanting `xhigh` or other specific effort levels set `options.reasoning`
  * directly, which spreads after this and overrides.
  */
 export function toOpenAIReasoning(reasoning: boolean | undefined) {
   if (reasoning === true) return { reasoning: { effort: "high" as const } };
-  if (reasoning === false) return { reasoning: { effort: "minimal" as const } };
+  if (reasoning === false) return { reasoning: { effort: "none" as const } };
   return {};
 }
 
