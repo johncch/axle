@@ -321,6 +321,52 @@ describe("stream()", () => {
         content: "ok",
       });
     });
+
+    test("executes a local tool without onToolCall", async () => {
+      const { z } = await import("zod");
+      const execute = async () => "local result";
+      const tool = {
+        name: "local_lookup",
+        description: "Local lookup tool",
+        schema: z.object({ q: z.string() }),
+        execute,
+      };
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "local_lookup"),
+        toolCallCompleteChunk(0, "call_1", "local_lookup", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+      });
+      result.on(callback);
+
+      const final = await result.final;
+
+      expect(final.result).toBe("success");
+      const toolExecCompletes = events.filter((e) => e.type === "tool:exec-complete");
+      expect(toolExecCompletes).toHaveLength(1);
+      expect(
+        toolExecCompletes[0].type === "tool:exec-complete" && toolExecCompletes[0].result,
+      ).toEqual({
+        type: "success",
+        content: "local result",
+      });
+    });
   });
 
   describe("message boundary events", () => {

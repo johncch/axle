@@ -7,11 +7,11 @@ import {
 } from "../../src/providers/models.js";
 import type { AIProvider } from "../../src/providers/types.js";
 
-export type BenchmarkProviderKind = "openai" | "anthropic" | "gemini" | "chatcompletions";
+export type StructuredOutputProviderKind = "openai" | "anthropic" | "gemini" | "chatcompletions";
 
-export interface BenchmarkTarget {
+export interface StructuredOutputTarget {
   id: string;
-  provider: BenchmarkProviderKind;
+  provider: StructuredOutputProviderKind;
   model: string;
   apiKeyEnv?: string;
   baseUrl?: string;
@@ -19,7 +19,7 @@ export interface BenchmarkTarget {
 
 const openRouterBaseUrl = "https://openrouter.ai/api/v1";
 
-export const benchmarkTargets: BenchmarkTarget[] = [
+export const structuredOutputTargets: StructuredOutputTarget[] = [
   {
     id: "gpt-5-4-mini",
     provider: "openai",
@@ -46,7 +46,7 @@ export const benchmarkTargets: BenchmarkTarget[] = [
   openRouterTarget("minimax-m2", ChatCompletionsModels.MINIMAX_M2),
 ];
 
-export function createBenchmarkProvider(target: BenchmarkTarget): AIProvider {
+export function createStructuredOutputProvider(target: StructuredOutputTarget): AIProvider {
   switch (target.provider) {
     case "openai":
       return openai(getEnv(target.apiKeyEnv));
@@ -60,22 +60,22 @@ export function createBenchmarkProvider(target: BenchmarkTarget): AIProvider {
   }
 }
 
-export function resolveBenchmarkTargets(selectors: string[]): BenchmarkTarget[] {
-  if (selectors.length === 0 || selectors.includes("all")) return benchmarkTargets;
+export function resolveStructuredOutputTargets(selectors: string[]): StructuredOutputTarget[] {
+  if (selectors.length === 0 || selectors.includes("all")) return structuredOutputTargets;
 
-  const selected = new Map<string, BenchmarkTarget>();
+  const selected = new Map<string, StructuredOutputTarget>();
   for (const selector of selectors) {
-    const match = benchmarkTargets.find(
+    const match = structuredOutputTargets.find(
       (target) => target.id === selector || target.model === selector,
     );
-    if (!match) throw new Error(`Unknown benchmark target: ${selector}`);
+    if (!match) throw new Error(`Unknown structured-output target: ${selector}`);
     selected.set(match.id, match);
   }
 
   return [...selected.values()];
 }
 
-function openRouterTarget(id: string, model: string): BenchmarkTarget {
+function openRouterTarget(id: string, model: string): StructuredOutputTarget {
   return {
     id,
     provider: "chatcompletions",

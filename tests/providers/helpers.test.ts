@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { executeToolCalls } from "../../src/providers/helpers.js";
@@ -123,6 +124,32 @@ describe("executeToolCalls", () => {
   });
 
   describe("without onToolCall", () => {
+    test("executes matching tools from the registry", async () => {
+      const execute = vi.fn().mockResolvedValue("saw test");
+      const registry = new ToolRegistry({
+        tools: [
+          {
+            name: "registered-tool",
+            description: "Registered test tool",
+            schema: z.object({ input: z.string() }),
+            execute,
+          },
+        ],
+      });
+
+      const { results } = await executeToolCalls(
+        [makeToolCall("registered-tool")],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(execute).toHaveBeenCalledWith({ input: "test" }, expect.anything());
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe("saw test");
+      expect(results[0].isError).toBeUndefined();
+    });
+
     test("returns not-found errors for all tool calls", async () => {
       const { results } = await executeToolCalls(
         [makeToolCall("tool-a"), makeToolCall("tool-b")],

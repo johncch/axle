@@ -108,7 +108,7 @@ export function fromModelResponse(response: Response): ModelResult {
       try {
         content.push({
           type: "tool-call" as const,
-          id: toolCall.id || "",
+          id: toolCall.call_id || toolCall.id || "",
           name: toolCall.name || "",
           parameters: toolCall.arguments ? JSON.parse(toolCall.arguments) : {},
         });
@@ -125,7 +125,11 @@ export function fromModelResponse(response: Response): ModelResult {
     id: response.id,
     model: response.model || "",
     role: "assistant" as const,
-    finishReason: response.incomplete_details ? AxleStopReason.Error : AxleStopReason.Stop,
+    finishReason: response.incomplete_details
+      ? AxleStopReason.Error
+      : toolCallItems && toolCallItems.length > 0
+        ? AxleStopReason.FunctionCall
+        : AxleStopReason.Stop,
     content,
     text: getTextContent(content),
     usage: {

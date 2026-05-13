@@ -129,6 +129,54 @@ export async function executeToolCalls(
     }
 
     if (resolved == null) {
+      const tool = registry.get(call.name);
+      if (tool) {
+        try {
+          const content = await tool.execute(call.parameters, ctx);
+          span?.setResult({
+            kind: "tool",
+            name: call.name,
+            input: call.parameters,
+            output: content,
+          });
+          span?.end("ok");
+          results.push({
+            id: call.id,
+            name: call.name,
+            content,
+          });
+          continue;
+        } catch (error) {
+          if (error instanceof AxleToolFatalError) {
+            span?.setResult({
+              kind: "tool",
+              name: call.name,
+              input: call.parameters,
+              output: { type: "fatal", message: error.message },
+            });
+            span?.end("error");
+            throw error;
+          }
+          if (
+            signal.aborted ||
+            error instanceof AxleAbortError ||
+            (error instanceof Error && error.name === "AbortError")
+          ) {
+            span?.end("ok");
+            throwAbortError();
+          }
+          resolved = {
+            type: "error",
+            error: {
+              type: "execution",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          };
+        }
+      }
+    }
+
+    if (resolved == null) {
       const message = `Tool not found: ${call.name}`;
       span?.setResult({
         kind: "tool",

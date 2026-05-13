@@ -82,7 +82,7 @@ export async function createGenerationRequest(
   return result;
 }
 
-function fromModelResponse(
+export function fromModelResponse(
   response: GenerateContentResponse,
   context: { tracer?: TracingContext },
 ): ModelResult {
@@ -148,14 +148,24 @@ function fromModelResponse(
       content.push({ type: "text" as const, text: textContent });
     }
 
-    if (response.functionCalls) {
-      for (const call of response.functionCalls) {
+    const functionCallParts = parts.filter((part) => part.functionCall);
+    const functionCalls =
+      functionCallParts.length > 0
+        ? functionCallParts.map((part) => ({
+            call: part.functionCall!,
+            thoughtSignature: (part as Record<string, unknown>).thoughtSignature,
+          }))
+        : (response.functionCalls ?? []).map((call) => ({ call, thoughtSignature: undefined }));
+
+    if (functionCalls.length > 0) {
+      for (const { call, thoughtSignature } of functionCalls) {
         if (call.args == null) {
           content.push({
             type: "tool-call" as const,
             id: call.id ?? "",
             name: call.name ?? "",
             parameters: {},
+            ...(thoughtSignature ? { providerMetadata: { thoughtSignature } } : {}),
           });
         } else if (typeof call.args !== "object" || Array.isArray(call.args)) {
           throw new Error(
@@ -167,6 +177,7 @@ function fromModelResponse(
             id: call.id ?? "",
             name: call.name ?? "",
             parameters: call.args as Record<string, unknown>,
+            ...(thoughtSignature ? { providerMetadata: { thoughtSignature } } : {}),
           });
         }
       }
@@ -177,7 +188,7 @@ function fromModelResponse(
       id: response.responseId ?? "",
       model: response.modelVersion ?? "",
       role: "assistant",
-      finishReason: response.functionCalls ? AxleStopReason.FunctionCall : reason,
+      finishReason: functionCalls.length > 0 ? AxleStopReason.FunctionCall : reason,
       content,
       text: getTextContent(content),
       usage,

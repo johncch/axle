@@ -1,17 +1,17 @@
-# Structured Output Benchmark
+# Structured Output Check
 
-This benchmark runs real model calls against the `Instruct` structured-output
+This check runs real model calls against the `Instruct` structured-output
 cases. It is intentionally outside Vitest because it can use API keys, cost
 money, and produce comparative JSONL output.
 
-The benchmark uses the JSON-based `Instruct` output format.
+The check uses the JSON-based `Instruct` output format.
 
 ## Usage
 
 Run every configured target:
 
 ```bash
-pnpm exec tsx benchmarks/structured-output/run.ts
+pnpm exec tsx checks/structured-output/run.ts
 ```
 
 API keys are loaded from your shell environment or from the repo-local `.env`
@@ -27,18 +27,18 @@ OPENROUTER_API_KEY=...
 Run one target by short id or exact model slug:
 
 ```bash
-pnpm exec tsx benchmarks/structured-output/run.ts qwen-3-6-35b-a3b
-pnpm exec tsx benchmarks/structured-output/run.ts qwen/qwen3.6-35b-a3b
+pnpm exec tsx checks/structured-output/run.ts qwen-3-6-35b-a3b
+pnpm exec tsx checks/structured-output/run.ts qwen/qwen3.6-35b-a3b
 ```
 
 Select cases or repeats when needed:
 
 ```bash
-pnpm exec tsx benchmarks/structured-output/run.ts \
+pnpm exec tsx checks/structured-output/run.ts \
   --target gpt-5-4-mini \
   --case nested-object,array-of-objects \
   --repeats 3 \
-  --out output/benchmarks/json-baseline.jsonl
+  --out output/checks/json-baseline.jsonl
 ```
 
 Configured targets:

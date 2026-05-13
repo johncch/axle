@@ -1,9 +1,10 @@
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { inspect } from "node:util";
 import { Instruct, generate } from "../../src/index.js";
 import { structuredOutputCases } from "./cases.js";
-import { createBenchmarkProvider, resolveBenchmarkTargets } from "./providers.js";
+import { createStructuredOutputProvider, resolveStructuredOutputTargets } from "./providers.js";
 
 interface RunOptions {
   targets: string[];
@@ -12,7 +13,7 @@ interface RunOptions {
   out: string;
 }
 
-interface BenchmarkRecord {
+interface StructuredOutputRecord {
   timestamp: string;
   outputFormat: "json";
   targetId: string;
@@ -30,27 +31,30 @@ interface BenchmarkRecord {
 }
 
 const options = parseArgs(process.argv.slice(2));
-const targets = resolveBenchmarkTargets(options.targets);
+const targets = resolveStructuredOutputTargets(options.targets);
 const cases =
   options.cases.length === 0
     ? structuredOutputCases
     : structuredOutputCases.filter((testCase) => options.cases.includes(testCase.id));
 
 if (cases.length === 0) {
-  throw new Error(`No benchmark cases matched: ${options.cases.join(", ")}`);
+  throw new Error(`No structured-output cases matched: ${options.cases.join(", ")}`);
 }
 
 await mkdir(dirname(options.out), { recursive: true });
 await writeFile(options.out, "");
 
-const summary = new Map<string, { success: number; total: number }>();
+let passed = 0;
+let total = 0;
+const failedRecords: StructuredOutputRecord[] = [];
 
 for (const target of targets) {
   console.log(`[Target] ${target.provider}:${target.model}`);
-  const provider = createBenchmarkProvider(target);
+  const provider = createStructuredOutputProvider(target);
 
   for (const testCase of cases) {
     for (let repeat = 1; repeat <= options.repeats; repeat++) {
+      total += 1;
       const startedAt = Date.now();
       const recordBase = {
         timestamp: new Date().toISOString(),
@@ -73,72 +77,110 @@ for (const target of targets) {
 
         const durationMs = Date.now() - startedAt;
         if (result.result === "error") {
-          await writeRecord({
+          const record: StructuredOutputRecord = {
             ...recordBase,
             status: "model-error",
             durationMs,
             usage: result.usage,
             error: result.error,
-          });
-          markSummary(target.id, false);
-          console.log(`  [${testCase.id}] ${repeat}/${options.repeats} model-error`);
+          };
+          await writeRecord(record);
+          failedRecords.push(record);
+          console.log(`  ${formatStatus(record.status)} [${testCase.id}] ${formatRepeat(repeat)}`);
           continue;
         }
 
         if (result.parseError) {
-          await writeRecord({
+          const record: StructuredOutputRecord = {
             ...recordBase,
             status: "parse-error",
             durationMs,
             usage: result.usage,
             rawText: getRawText(result.final?.content),
             error: serializeError(result.parseError),
-          });
-          markSummary(target.id, false);
-          console.log(`  [${testCase.id}] ${repeat}/${options.repeats} parse-error`);
+          };
+          await writeRecord(record);
+          failedRecords.push(record);
+          console.log(`  ${formatStatus(record.status)} [${testCase.id}] ${formatRepeat(repeat)}`);
           continue;
         }
 
-        await writeRecord({
+        const record: StructuredOutputRecord = {
           ...recordBase,
           status: "success",
           durationMs,
           usage: result.usage,
           rawText: getRawText(result.final?.content),
           parsed: result.response,
-        });
-        markSummary(target.id, true);
-        console.log(`  [${testCase.id}] ${repeat}/${options.repeats} ok`);
+        };
+        await writeRecord(record);
+        passed += 1;
+        console.log(`  ${formatStatus(record.status)} [${testCase.id}] ${formatRepeat(repeat)}`);
       } catch (error) {
-        await writeRecord({
+        const record: StructuredOutputRecord = {
           ...recordBase,
           status: "exception",
           durationMs: Date.now() - startedAt,
           error: serializeError(error),
-        });
-        markSummary(target.id, false);
-        console.log(`  [${testCase.id}] ${repeat}/${options.repeats} exception`);
+        };
+        await writeRecord(record);
+        failedRecords.push(record);
+        console.log(`  ${formatStatus(record.status)} [${testCase.id}] ${formatRepeat(repeat)}`);
       }
     }
   }
 }
 
-console.log("\n[Summary]");
-for (const [targetId, counts] of summary.entries()) {
-  const rate = counts.total === 0 ? 0 : (counts.success / counts.total) * 100;
-  console.log(`${targetId}: ${counts.success}/${counts.total} (${rate.toFixed(1)}%)`);
+const rate = total === 0 ? 0 : (passed / total) * 100;
+console.log(`\n[Summary] ${passed}/${total} passed (${rate.toFixed(1)}%)`);
+if (failedRecords.length > 0) {
+  console.log("\n[Failures]");
+  for (const record of failedRecords) {
+    console.log(
+      `${formatStatus(record.status)} ${record.targetId} ${record.provider}:${record.model} ${record.caseId}${formatRepeat(record.repeat)}`,
+    );
+    console.log(formatDetails(getFailureDetails(record)));
+  }
 }
-console.log(`\n[Output] ${options.out}`);
+console.log(`[Output] ${options.out}`);
 
-async function writeRecord(record: BenchmarkRecord): Promise<void> {
+if (passed !== total) process.exitCode = 1;
+
+async function writeRecord(record: StructuredOutputRecord): Promise<void> {
   await writeFile(options.out, `${JSON.stringify(record)}\n`, { flag: "a" });
 }
 
-function markSummary(targetId: string, success: boolean): void {
-  const current = summary.get(targetId) ?? { success: 0, total: 0 };
-  current.total += 1;
-  if (success) current.success += 1;
-  summary.set(targetId, current);
+function formatStatus(status: StructuredOutputRecord["status"]): string {
+  if (status === "success") return color("green", "✓ pass");
+  if (status === "parse-error") return color("red", "✗ fail");
+  return color("red", "✗ error");
+}
+
+function formatRepeat(repeat: number): string {
+  return options.repeats > 1 ? ` ${repeat}/${options.repeats}` : "";
+}
+
+function color(colorName: "green" | "red", value: string): string {
+  const code = colorName === "green" ? 32 : 31;
+  return `\x1b[${code}m${value}\x1b[0m`;
+}
+
+function formatDetails(value: unknown): string {
+  return inspect(value, { colors: true, depth: 8, compact: false })
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+}
+
+function getFailureDetails(record: StructuredOutputRecord): Record<string, unknown> {
+  return {
+    status: record.status,
+    durationMs: record.durationMs,
+    usage: record.usage,
+    rawText: record.rawText,
+    parsed: record.parsed,
+    error: record.error,
+  };
 }
 
 function getRawText(
@@ -167,7 +209,7 @@ function parseArgs(args: string[]): RunOptions {
     targets: [],
     cases: [],
     repeats: 1,
-    out: join("output", "benchmarks", `structured-output-${Date.now()}.jsonl`),
+    out: join("output", "checks", `structured-output-${Date.now()}.jsonl`),
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -221,16 +263,16 @@ function splitList(value: string): string[] {
 }
 
 function printHelp(): void {
-  console.log(`Structured output benchmark
+  console.log(`Structured output check
 
 Usage:
-  pnpm exec tsx benchmarks/structured-output/run.ts [model] [options]
+  pnpm exec tsx checks/structured-output/run.ts [model] [options]
 
 Options:
   --target <id|model>    Target id or model slug. Repeat or comma-separate. Defaults to all.
                          Use "all" to run the full list explicitly.
   --case <id>            Case id. Repeat or comma-separate. Defaults to all cases.
   --repeats <n>          Repetitions per target/case. Defaults to 1.
-  --out <path>           JSONL output path. Defaults to output/benchmarks/*.jsonl.
+  --out <path>           JSONL output path. Defaults to output/checks/*.jsonl.
 `);
 }

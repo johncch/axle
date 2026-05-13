@@ -54,13 +54,14 @@ export function createGeminiStreamingAdapter() {
     for (const part of parts) {
       const isThought = "thought" in part && (part as { thought?: boolean }).thought === true;
       const partKeys = Object.keys(part);
+      const isEmptyText = partKeys.length === 1 && "text" in part && !part.text;
       const isSignatureOnly =
         ("thoughtSignature" in part && !part.text && !part.functionCall) ||
         (partKeys.length === 2 && "text" in part && "thoughtSignature" in part && !part.text);
 
       // Signatures are caching/verification metadata; we don't carry them
       // forward today, so skip silently rather than tripping the unhandled log.
-      if (isSignatureOnly) continue;
+      if (isSignatureOnly || isEmptyText) continue;
 
       // Handle thinking content
       if (isThought && part.text) {

@@ -639,7 +639,12 @@ async function run(
         },
       };
 
-      const rawResult = onToolCall ? await onToolCall(name, parameters, wrappedCtx) : null;
+      const tool = registry.get(name);
+      const rawResult = onToolCall
+        ? await onToolCall(name, parameters, wrappedCtx)
+        : tool
+          ? { type: "success" as const, content: await tool.execute(parameters, wrappedCtx) }
+          : null;
       const result = rawResult ?? makeNotFoundToolResult(name);
 
       emit(cbs, {

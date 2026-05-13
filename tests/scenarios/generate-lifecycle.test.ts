@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { generate } from "../../src/providers/generate.js";
 import type { AIProvider, ModelError, ModelResponse } from "../../src/providers/types.js";
@@ -179,6 +180,55 @@ describe("generate() happy paths", () => {
       // final points to the last assistant message
       expect(result.final).toBe(result.messages[2]);
     }
+  });
+
+  test("5.3 executes a local tool without onToolCall", async () => {
+    const toolResponse: ModelResponse = {
+      type: "success",
+      role: "assistant",
+      id: "msg_1",
+      model: "test-model",
+      text: "",
+      content: [{ type: "tool-call", id: "call_1", name: "lookup", parameters: { id: 42 } }],
+      finishReason: AxleStopReason.FunctionCall,
+      usage: { in: 10, out: 15 },
+      raw: {},
+    };
+
+    const textResponse: ModelResponse = {
+      type: "success",
+      role: "assistant",
+      id: "msg_2",
+      model: "test-model",
+      text: "Here are the results",
+      content: [{ type: "text", text: "Here are the results" }],
+      finishReason: AxleStopReason.Stop,
+      usage: { in: 30, out: 25 },
+      raw: {},
+    };
+
+    const execute = vi.fn().mockResolvedValue("Found item 42");
+    const provider = makeGenerateProvider([toolResponse, textResponse]);
+    const result = await generate({
+      provider,
+      model: "test-model",
+      messages: [{ role: "user", content: "Look up item 42" }],
+      tools: [
+        {
+          name: "lookup",
+          description: "Lookup an item",
+          schema: z.object({ id: z.number() }),
+          execute,
+        },
+      ],
+    });
+
+    expect(result.result).toBe("success");
+    expect(execute).toHaveBeenCalledWith({ id: 42 }, expect.anything());
+    expect(result.messages[1]).toMatchObject({
+      role: "tool",
+      content: [{ id: "call_1", name: "lookup", content: "Found item 42" }],
+    });
   });
 });
 
