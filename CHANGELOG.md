@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.16.3] - 2026-05-13
+
+- Added vars mode to Instruct for easier variable-based prompting
+- Fixed bugs found through live provider testing
+
 ## [0.16.2] - 2026-05-11
 
 - Fixed OpenAI and Chat Completions providers: `reasoning: false` now sends no reasoning effort instead of minimal reasoning
