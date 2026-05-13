@@ -53,7 +53,7 @@ describe("deferred file resolution", () => {
       source: { type: "ref", ref: { key: "private-image" } },
     };
 
-    const instruct = new Instruct("Inspect this image");
+    const instruct = new Instruct({ prompt: "Inspect this image" });
     instruct.addFile(file);
 
     await agent.send(instruct).final;
@@ -104,7 +104,7 @@ describe("deferred file resolution", () => {
       source: { type: "ref", ref: "x" },
     };
 
-    const instruct = new Instruct("Inspect");
+    const instruct = new Instruct({ prompt: "Inspect" });
     instruct.addFile(file);
 
     await agent.send(instruct, { signal: controller.signal }).final;

@@ -55,12 +55,9 @@ export interface GenerateInstructOptions<TSchema extends OutputSchema | undefine
   instruct: Instruct<TSchema>;
 }
 
-export type GenerateInstructResult<TSchema extends OutputSchema | undefined> =
-  | (Extract<GenerateResult, { result: "success" }> & {
-      response: InstructResponse<TSchema> | null;
-      parseError?: unknown;
-    })
-  | Extract<GenerateResult, { result: "error" }>;
+export type GenerateInstructResult<TSchema extends OutputSchema | undefined> = GenerateResult<
+  InstructResponse<TSchema>
+>;
 
 export async function generate<TSchema extends OutputSchema | undefined>(
   options: GenerateInstructOptions<TSchema>,
@@ -77,11 +74,21 @@ export async function generate(
       messages: [...(messages ?? []), userTurn.message],
     });
 
-    if (result.result === "error") return result;
+    if (!result.ok) return result;
     try {
-      return { ...result, response: userTurn.parse(result.final) };
+      return { ...result, response: userTurn.parse(result.final) as InstructResponse<any> };
     } catch (parseError) {
-      return { ...result, response: null, parseError };
+      return {
+        ok: false,
+        messages: result.messages,
+        final: result.final,
+        usage: result.usage,
+        error: {
+          kind: "parse",
+          error: parseError,
+          message: parseError instanceof Error ? parseError.message : String(parseError),
+        },
+      };
     }
   }
 
@@ -120,13 +127,13 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
       kind: "llm",
       model,
       request: { messages },
-      response: { content: result.result === "success" ? result.final?.content : null },
+      response: { content: result.ok ? result.final.content : null },
       usage: result.usage
         ? { inputTokens: result.usage.in, outputTokens: result.usage.out }
         : undefined,
-      finishReason: result.result === "success" ? result.final?.finishReason : undefined,
+      finishReason: result.ok ? result.final.finishReason : undefined,
     });
-    tracer?.end(result.result === "error" ? "error" : "ok");
+    tracer?.end(result.ok ? "ok" : "error");
     return result;
   };
 
@@ -154,10 +161,10 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
 
       if (maxIterations !== undefined && iterations >= maxIterations) {
         return endWithResult({
-          result: "error",
+          ok: false,
           messages: newMessages,
           error: {
-            type: "model",
+            kind: "model",
             error: {
               type: "error",
               error: {
@@ -206,9 +213,9 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
 
       if (response.type === "error") {
         return endWithResult({
-          result: "error",
+          ok: false,
           messages: newMessages,
-          error: { type: "model", error: response },
+          error: { kind: "model", error: response },
           usage,
         });
       }
@@ -225,7 +232,8 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
 
       if (response.finishReason !== AxleStopReason.FunctionCall) {
         return endWithResult({
-          result: "success",
+          ok: true,
+          response: finalMessage,
           messages: newMessages,
           final: finalMessage,
           usage,
@@ -235,7 +243,8 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
       const toolCalls = getToolCalls(response.content);
       if (toolCalls.length === 0) {
         return endWithResult({
-          result: "success",
+          ok: true,
+          response: finalMessage,
           messages: newMessages,
           final: finalMessage,
           usage,

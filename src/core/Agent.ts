@@ -39,12 +39,21 @@ export interface AgentConfig {
 }
 
 export interface AgentResult<T = string> {
-  response: T | null;
+  ok: true;
+  response: T;
+  turn: Turn;
+  usage: Stats;
+}
+
+export interface AgentErrorResult {
+  ok: false;
+  response?: undefined;
+  error: GenerateError;
   turn: Turn | undefined;
   usage: Stats;
 }
 
-export type AgentHandle<T = string> = Handle<AgentResult<T>>;
+export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
 export type AgentEventCallback = (event: AgentEvent) => void;
 export interface SendMessageOptions {
@@ -156,7 +165,7 @@ export class Agent {
     signal: AbortSignal,
     sendFileResolver?: FileResolver,
     reasoning?: boolean,
-  ): Promise<AgentResult<any>> {
+  ): Promise<AgentResult<any> | AgentErrorResult> {
     const builder = new TurnBuilder();
     const emptyUsage: Stats = { in: 0, out: 0 };
 
@@ -289,7 +298,7 @@ export class Agent {
       throw error;
     }
 
-    const outcome = streamResult.result === "error" ? "error" : "complete";
+    const outcome = streamResult.ok ? "complete" : "error";
 
     if (streamResult.messages.length > 0) {
       this.history.appendToLog(streamResult.messages);
@@ -300,45 +309,49 @@ export class Agent {
 
     const usage = streamResult.usage ?? emptyUsage;
 
-    if (streamResult.result === "error") {
-      throw new AxleError(formatGenerateError(streamResult.error), {
-        code: streamResult.error.type === "model" ? "MODEL_ERROR" : "TOOL_ERROR",
-        details: { error: streamResult.error },
-      });
+    if (!streamResult.ok) {
+      return {
+        ok: false,
+        error: streamResult.error,
+        turn: agentTurn,
+        usage,
+      };
     }
 
-    let response: any | null = null;
-    if (streamResult.result === "success") {
-      if (streamResult.final) {
-        response = userTurn.parse(streamResult.final);
-      }
+    let response: any;
+    try {
+      response = userTurn.parse(streamResult.final);
+    } catch (parseError) {
+      return {
+        ok: false,
+        error: {
+          kind: "parse",
+          error: parseError,
+          message: parseError instanceof Error ? parseError.message : String(parseError),
+        },
+        turn: agentTurn,
+        usage,
+      };
+    }
 
-      if (this.memory) {
-        try {
-          await this.memory.record({
-            name: this.name,
-            scope: this.scope,
-            system: this.system,
-            messages: this.history.log,
-            newMessages: streamResult.messages,
-            store: this.store,
-            tracer: this.tracer,
-          });
-        } catch (e) {
-          this.tracer?.warn("memory record failed", {
-            error: e instanceof Error ? e.message : String(e),
-          });
-        }
+    if (this.memory) {
+      try {
+        await this.memory.record({
+          name: this.name,
+          scope: this.scope,
+          system: this.system,
+          messages: this.history.log,
+          newMessages: streamResult.messages,
+          store: this.store,
+          tracer: this.tracer,
+        });
+      } catch (e) {
+        this.tracer?.warn("memory record failed", {
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
 
-    return { response, turn: agentTurn, usage };
+    return { ok: true, response, turn: agentTurn, usage };
   }
-}
-
-function formatGenerateError(error: GenerateError): string {
-  if (error.type === "model") {
-    return `Model error: ${error.error.error.message}`;
-  }
-  return `Tool error (${error.error.name}): ${error.error.message}`;
 }

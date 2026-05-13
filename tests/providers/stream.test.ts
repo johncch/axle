@@ -151,8 +151,8 @@ describe("stream()", () => {
 
       const final = await result.final;
 
-      expect(final.result).toBe("success");
-      if (final.result !== "success") return;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
 
       expect(final.messages).toHaveLength(1);
       expect(final.messages[0].role).toBe("assistant");
@@ -193,7 +193,7 @@ describe("stream()", () => {
       result.on(callback);
 
       const final = await result.final;
-      expect(final.result).toBe("success");
+      expect(final.ok).toBe(true);
 
       const thinkingStarts = events.filter((e) => e.type === "thinking:start");
       expect(thinkingStarts).toHaveLength(1);
@@ -252,8 +252,8 @@ describe("stream()", () => {
 
       const final = await result.final;
 
-      expect(final.result).toBe("success");
-      if (final.result !== "success") return;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
 
       // Messages: assistant (turn 1), tool results, assistant (turn 2)
       expect(final.messages).toHaveLength(3);
@@ -357,7 +357,7 @@ describe("stream()", () => {
 
       const final = await result.final;
 
-      expect(final.result).toBe("success");
+      expect(final.ok).toBe(true);
       const toolExecCompletes = events.filter((e) => e.type === "tool:exec-complete");
       expect(toolExecCompletes).toHaveLength(1);
       expect(
@@ -386,7 +386,7 @@ describe("stream()", () => {
       result.on(callback);
 
       const final = await result.final;
-      expect(final.result).toBe("success");
+      expect(final.ok).toBe(true);
 
       const turnStarts = events.filter((e) => e.type === "turn:start");
       expect(turnStarts).toHaveLength(1);
@@ -607,7 +607,7 @@ describe("stream()", () => {
 
       const final = await handle.final;
 
-      expect(final.result).toBe("success");
+      expect(final.ok).toBe(true);
       const toolExecComplete = events.find((event) => event.type === "tool:exec-complete");
       expect(toolExecComplete).toMatchObject({
         type: "tool:exec-complete",
@@ -637,9 +637,9 @@ describe("stream()", () => {
 
       const final = await result.final;
 
-      expect(final.result).toBe("error");
-      if (final.result !== "error") return;
-      expect(final.error.type).toBe("model");
+      expect(final.ok).toBe(false);
+      if (final.ok) return;
+      expect(final.error.kind).toBe("model");
     });
   });
 
@@ -656,9 +656,9 @@ describe("stream()", () => {
 
       const final = await result.final;
 
-      expect(final.result).toBe("error");
-      if (final.result !== "error") return;
-      expect(final.error.type).toBe("model");
+      expect(final.ok).toBe(false);
+      if (final.ok) return;
+      expect(final.error.kind).toBe("model");
     });
   });
 
@@ -956,7 +956,7 @@ describe("stream()", () => {
       const handle = stream({ provider, model: "test-model", messages: [] });
 
       const final = await handle.final;
-      expect(final.result).toBe("success");
+      expect(final.ok).toBe(true);
 
       // Should not throw
       handle.cancel();
@@ -964,7 +964,7 @@ describe("stream()", () => {
 
       // Result unchanged
       const final2 = await handle.final;
-      expect(final2.result).toBe("success");
+      expect(final2.ok).toBe(true);
     });
 
     test("cancel is idempotent — multiple calls do not throw", async () => {
@@ -1092,7 +1092,7 @@ describe("stream()", () => {
       });
 
       const final = await handle.final;
-      expect(final.result).toBe("success");
+      expect(final.ok).toBe(true);
       expect(observedRegistrySize).toBe(1);
     });
 

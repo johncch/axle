@@ -1,13 +1,17 @@
-import * as z from "zod";
+import { InstructVariableError } from "../errors/InstructVariableError.js";
 import type { FileInfo } from "../utils/file.js";
-import { replaceVariables } from "../utils/replace.js";
+import { MissingVariablesError, replaceVariables } from "../utils/replace.js";
 import type { OutputSchema } from "./parse.js";
-import { zodToExample } from "./parse.js";
+import { zodToExample, zodToFieldDescriptions } from "./parse.js";
 
 export type InstructInputs = Record<string, unknown>;
 export type InstructVarsMode = "required" | "optional";
 
-export interface InstructOptions {
+export interface InstructOptions<
+  TSchema extends OutputSchema | undefined = OutputSchema | undefined,
+> {
+  prompt: string;
+  schema?: TSchema;
   vars?: InstructVarsMode;
 }
 
@@ -20,14 +24,16 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
 
   schema: TSchema;
 
-  constructor(prompt: string, schema?: TSchema, options: InstructOptions = {}) {
-    this.prompt = prompt;
-    this.schema = schema as TSchema;
+  constructor(options: InstructOptions<TSchema>) {
+    this.prompt = options.prompt;
+    this.schema = options.schema as TSchema;
     this.vars = options.vars ?? "required";
   }
 
   clone(): Instruct<TSchema> {
-    const instruct = new Instruct(this.prompt, this.schema, {
+    const instruct = new Instruct({
+      prompt: this.prompt,
+      schema: this.schema,
       vars: this.vars,
     });
     instruct.inputs = { ...this.inputs };
@@ -71,9 +77,17 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   }
 
   render(options: { vars?: InstructVarsMode } = {}): string {
-    let message = replaceVariables(this.prompt, this.inputs, {
-      strict: (options.vars ?? this.vars) === "required",
-    });
+    let message: string;
+    try {
+      message = replaceVariables(this.prompt, this.inputs, {
+        strict: (options.vars ?? this.vars) === "required",
+      });
+    } catch (error) {
+      if (error instanceof MissingVariablesError) {
+        throw new InstructVariableError(error.missingVariables);
+      }
+      throw error;
+    }
 
     if (this.textReferences.length > 0) {
       for (const [index, ref] of this.textReferences.entries()) {
@@ -82,18 +96,15 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
       }
     }
 
-    const schemaKeys = this.schema ? Object.keys(this.schema) : [];
-    if (schemaKeys.length === 0) return message;
+    if (!this.schema) return message;
 
     let instructions =
-      "# Output Format Instructions\n\nReturn only a valid JSON object matching this schema. Do not wrap it in markdown. Do not include prose before or after the JSON.\n";
-    const exampleObject: Record<string, unknown> = {};
-    for (const [key, fieldSchema] of Object.entries(this.schema!)) {
-      const [value, example] = zodToExample(fieldSchema as z.ZodTypeAny);
-      exampleObject[key] = example;
+      "# Output Format Instructions\n\nReturn only valid JSON matching this schema. Do not wrap it in markdown. Do not include prose before or after the JSON.\n";
+    const [, example] = zodToExample(this.schema);
+    for (const [key, value] of zodToFieldDescriptions(this.schema)) {
       instructions += `\n- ${key}: ${value}`;
     }
-    instructions += `\n\nExample:\n${JSON.stringify(exampleObject, null, 2)}\n\n`;
+    instructions += `\n\nExample:\n${JSON.stringify(example, null, 2)}\n\n`;
 
     return instructions + message;
   }

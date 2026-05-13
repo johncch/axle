@@ -12,10 +12,12 @@ const provider = anthropic(process.env.ANTHROPIC_API_KEY);
 const agent = new Agent({ provider, model: "claude-sonnet-4-5-20250929" });
 
 const r1 = await agent.send("What is the capital of France?").final;
+if (!r1.ok) throw new Error(r1.error.kind);
 console.log(r1.response); // "Paris is the capital of France."
 
 // Multi-turn — history is managed automatically
 const r2 = await agent.send("And what about Germany?").final;
+if (!r2.ok) throw new Error(r2.error.kind);
 ```
 
 ## Philosophy
@@ -65,13 +67,17 @@ attachments, bound template inputs, or additional instructions.
 ```typescript
 import * as z from "zod";
 
-const instruct = new Instruct("Summarize the following {{topic}}.", {
-  summary: z.string(),
-  keyPoints: z.array(z.string()),
+const instruct = new Instruct({
+  prompt: "Summarize the following {{topic}}.",
+  schema: z.object({
+    summary: z.string(),
+    keyPoints: z.array(z.string()),
+  }),
 }).withInputs({ topic: "document" });
 instruct.addFile(await loadFileContent("./report.pdf"));
 
 const result = await agent.send(instruct).final;
+if (!result.ok) throw new Error(result.error.kind);
 // result.response is { summary: string, keyPoints: string[] }
 ```
 
@@ -110,8 +116,12 @@ const handle = stream({
   onToolCall: async (name, params) => ({ type: "success", content: "result" }),
 });
 
-handle.onPartUpdate((index, type, delta) => process.stdout.write(delta));
+handle.on((event) => {
+  if (event.type === "text:delta") process.stdout.write(event.delta);
+});
+
 const result = await handle.final;
+if (!result.ok) throw new Error(result.error.kind);
 ```
 
 `generate()` does the same but without streaming — it returns the final result
@@ -127,6 +137,9 @@ const result = await generate({
   tools: [myTool],
   onToolCall: async (name, params) => ({ type: "success", content: "result" }),
 });
+
+if (!result.ok) throw new Error(result.error.kind);
+result.response; // final assistant message
 ```
 
 Both `stream()` and `generate()` also accept an `Instruct` as the latest user
@@ -141,19 +154,44 @@ const result = await generate({
   provider,
   model,
   messages: previousMessages,
-  instruct: new Instruct("Answer {{question}}.", {
-    answer: z.string(),
+  instruct: new Instruct({
+    prompt: "Answer {{question}}.",
+    schema: z.object({
+      answer: z.string(),
+    }),
   }).withInput("question", "Should we proceed?"),
 });
 
-if (result.result === "success") {
-  result.response?.answer; // string
-}
+if (!result.ok) throw new Error(result.error.kind);
+result.response.answer; // string
 ```
 
 Both handle the full tool-call loop automatically. Agent uses `stream()`
 internally and adds history management, system prompt, and callback wiring on
 top.
+
+### Results
+
+`generate(...)`, `stream(...).final`, and `agent.send(...).final` all resolve to
+a two-state result:
+
+```typescript
+if (!result.ok) {
+  result.error.kind; // "model" | "tool" | "parse"
+  if (result.error.kind === "parse") {
+    result.error.message;
+  }
+  return;
+}
+
+result.response; // always present when ok is true
+```
+
+For `generate()` and `stream()`, plain calls return the final assistant message.
+For `Agent.send("...")`, plain calls return the assistant text. `Instruct`
+calls return the parsed schema value. Model, tool, and parse failures return
+`ok: false`; abort, fatal tool, configuration, and unexpected execution errors
+still throw.
 
 Cancellation follows standard JavaScript abort semantics:
 
@@ -165,21 +203,25 @@ Cancellation follows standard JavaScript abort semantics:
 
 ### Structured Output
 
-Pass a Zod schema as the second argument to Instruct. Axle compiles the schema
+Pass a Zod schema to Instruct. Axle compiles the schema
 into output format instructions, then parses the response back into typed
 objects.
 
 ```typescript
 import * as z from "zod";
 
-const instruct = new Instruct("Tell me about Mars.", {
-  name: z.string(),
-  distanceFromSun: z.number(),
-  moons: z.array(z.string()),
+const instruct = new Instruct({
+  prompt: "Tell me about Mars.",
+  schema: z.object({
+    name: z.string(),
+    distanceFromSun: z.number(),
+    moons: z.array(z.string()),
+  }),
 });
 
 const agent = new Agent({ provider, model });
 const result = await agent.send(instruct).final;
+if (!result.ok) throw new Error(result.error.kind);
 
 result.response.name; // string
 result.response.distanceFromSun; // number
@@ -268,6 +310,7 @@ await mcp.connect();
 
 const agent = new Agent({ provider, model, mcps: [mcp] });
 const result = await agent.send("Count the words in 'hello world'").final;
+if (!result.ok) throw new Error(result.error.kind);
 
 await mcp.close();
 ```
@@ -313,6 +356,9 @@ const handle = agent.send("Write me a poem.");
 // handle.cancel(reason) aborts mid-stream and rejects handle.final with an AbortError
 try {
   const result = await handle.final;
+  if (!result.ok) {
+    console.error(result.error);
+  }
 } catch (err) {
   if (err instanceof Error && err.name === "AbortError") {
     // Cancellation preserves partial state on AxleAbortError: reason, turn, partial, usage

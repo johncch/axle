@@ -4,9 +4,12 @@ import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
 
-const instruct = new Instruct("Name three planets and return a short note about the list.", {
-  planets: z.array(z.string()),
-  note: z.string(),
+const instruct = new Instruct({
+  prompt: "Name three planets and return a short note about the list.",
+  schema: z.object({
+    planets: z.array(z.string()),
+    note: z.string(),
+  }),
 });
 
 console.log("[Starting...]");
@@ -18,7 +21,7 @@ try {
     instruct,
   });
 
-  if (result.result === "error") {
+  if (!result.ok) {
     console.log(JSON.stringify(result.error, null, 2));
   } else {
     console.log("Parsed response:", result.response);

@@ -9,32 +9,46 @@ describe("parseResponse", () => {
   });
 
   it("parses flat primitives from JSON", () => {
-    const result = parseResponse('{"answer":"Paris","count":42,"accepted":true}', {
-      answer: z.string(),
-      count: z.number(),
-      accepted: z.boolean(),
-    });
+    const result = parseResponse(
+      '{"answer":"Paris","count":42,"accepted":true}',
+      z.object({
+        answer: z.string(),
+        count: z.number(),
+        accepted: z.boolean(),
+      }),
+    );
 
     expect(result).toEqual({ answer: "Paris", count: 42, accepted: true });
   });
 
+  it("parses a root primitive schema from JSON", () => {
+    const result = parseResponse('"approved"', z.literal("approved"));
+    expect(result).toBe("approved");
+  });
+
   it("parses arrays of primitives from JSON", () => {
-    const result = parseResponse('{"items":["a","b","c"],"scores":[0.4,0.9]}', {
-      items: z.array(z.string()),
-      scores: z.array(z.number()),
-    });
+    const result = parseResponse(
+      '{"items":["a","b","c"],"scores":[0.4,0.9]}',
+      z.object({
+        items: z.array(z.string()),
+        scores: z.array(z.number()),
+      }),
+    );
 
     expect(result).toEqual({ items: ["a", "b", "c"], scores: [0.4, 0.9] });
   });
 
   it("parses nested objects from JSON", () => {
-    const result = parseResponse('{"person":{"name":"Ada","age":37,"skills":["math","code"]}}', {
-      person: z.object({
-        name: z.string(),
-        age: z.number(),
-        skills: z.array(z.string()),
+    const result = parseResponse(
+      '{"person":{"name":"Ada","age":37,"skills":["math","code"]}}',
+      z.object({
+        person: z.object({
+          name: z.string(),
+          age: z.number(),
+          skills: z.array(z.string()),
+        }),
       }),
-    });
+    );
 
     expect(result).toEqual({
       person: { name: "Ada", age: 37, skills: ["math", "code"] },
@@ -44,7 +58,7 @@ describe("parseResponse", () => {
   it("parses arrays of objects from JSON", () => {
     const result = parseResponse(
       '{"tasks":[{"title":"Ship JSON output","priority":"high","done":false},{"title":"Benchmark models","priority":"medium","done":false}]}',
-      {
+      z.object({
         tasks: z.array(
           z.object({
             title: z.string(),
@@ -52,7 +66,7 @@ describe("parseResponse", () => {
             done: z.boolean(),
           }),
         ),
-      },
+      }),
     );
 
     expect(result).toEqual({
@@ -64,45 +78,56 @@ describe("parseResponse", () => {
   });
 
   it("handles optional fields that are missing", () => {
-    const result = parseResponse('{"name":"Bob"}', {
-      name: z.string(),
-      nickname: z.string().optional(),
-    });
+    const result = parseResponse(
+      '{"name":"Bob"}',
+      z.object({
+        name: z.string(),
+        nickname: z.string().optional(),
+      }),
+    );
 
     expect(result).toEqual({ name: "Bob" });
   });
 
   it("throws when a required field is missing", () => {
     expect(() =>
-      parseResponse('{"name":"Bob"}', {
-        name: z.string(),
-        age: z.number(),
-      }),
+      parseResponse(
+        '{"name":"Bob"}',
+        z.object({
+          name: z.string(),
+          age: z.number(),
+        }),
+      ),
     ).toThrow("Validation failed");
   });
 
   it("handles empty schema with empty input", () => {
-    const result = parseResponse("{}", {});
+    const result = parseResponse("{}", z.object({}));
     expect(result).toEqual({});
   });
 
-  it("throws on empty schema with non-empty input", () => {
-    expect(() => parseResponse("some content", {})).toThrow("Schema is empty");
+  it("throws on non-JSON input before validating schema", () => {
+    expect(() => parseResponse("some content", z.object({}))).toThrow(
+      "Cannot parse response as JSON",
+    );
   });
 
   it("unwraps a json code block wrapper", () => {
     const raw = '```json\n{"answer":"hello"}\n```';
-    const result = parseResponse(raw, { answer: z.string() });
+    const result = parseResponse(raw, z.object({ answer: z.string() }));
     expect(result).toEqual({ answer: "hello" });
   });
 
   it("throws when the model adds prose around JSON", () => {
     const raw = 'Here is the answer:\n{"answer":"yes","confidence":0.8}\nThanks.';
     expect(() =>
-      parseResponse(raw, {
-        answer: z.string(),
-        confidence: z.number(),
-      }),
+      parseResponse(
+        raw,
+        z.object({
+          answer: z.string(),
+          confidence: z.number(),
+        }),
+      ),
     ).toThrow("Cannot parse response as JSON");
   });
 
@@ -111,9 +136,12 @@ describe("parseResponse", () => {
       content:
         'Line one with "quotes"\n```ts\nconst value = "<tag>";\n```\nUse { braces } literally.',
     });
-    const result = parseResponse(raw, {
-      content: z.string(),
-    });
+    const result = parseResponse(
+      raw,
+      z.object({
+        content: z.string(),
+      }),
+    );
 
     expect(result).toEqual({
       content:
@@ -122,12 +150,15 @@ describe("parseResponse", () => {
   });
 
   it("parses nested object content that XML tags could not represent", () => {
-    const result = parseResponse('{"person":{"name":"Ada","age":37}}', {
-      person: z.object({
-        name: z.string(),
-        age: z.number(),
+    const result = parseResponse(
+      '{"person":{"name":"Ada","age":37}}',
+      z.object({
+        person: z.object({
+          name: z.string(),
+          age: z.number(),
+        }),
       }),
-    });
+    );
 
     expect(result).toEqual({ person: { name: "Ada", age: 37 } });
   });

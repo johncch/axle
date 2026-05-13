@@ -3,7 +3,7 @@ import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
 
-const instruct = new Instruct("What are the data that is shown in the image.");
+const instruct = new Instruct({ prompt: "What are the data that is shown in the image." });
 instruct.addFile({
   kind: "image",
   mimeType: "image/png",

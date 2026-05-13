@@ -19,9 +19,10 @@ const showChartTool: ExecutableTool = {
 };
 
 async function run() {
-  const instruct = new Instruct(
-    "Use the show_chart tool with topic 'imports', then describe what the chart shows in one sentence.",
-  );
+  const instruct = new Instruct({
+    prompt:
+      "Use the show_chart tool with topic 'imports', then describe what the chart shows in one sentence.",
+  });
 
   const agent = new Agent({ provider, model, tools: [showChartTool] });
   const result = await agent.send(instruct).final;

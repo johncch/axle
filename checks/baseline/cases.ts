@@ -3,6 +3,7 @@ import {
   Agent,
   Instruct,
   generate,
+  loadFileContent,
   stream,
   type AIProvider,
   type AxleAssistantMessage,
@@ -26,11 +27,11 @@ export interface BaselineCase {
   run(context: BaselineCaseContext): Promise<BaselineCaseResult>;
 }
 
-const answerSchema = {
+const answerSchema = z.object({
   answer: z.string(),
   count: z.number(),
   ok: z.boolean(),
-};
+});
 
 export const baselineCases: BaselineCase[] = [
   {
@@ -43,7 +44,7 @@ export const baselineCases: BaselineCase[] = [
         messages: [{ role: "user", content: "Reply with exactly: pong" }],
       });
 
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
         ok: text.toLowerCase().includes("pong"),
@@ -66,7 +67,7 @@ export const baselineCases: BaselineCase[] = [
       });
 
       const result = await handle.final;
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
         ok: text.toLowerCase().includes("pong") && textDeltas.length > 0,
@@ -81,17 +82,20 @@ export const baselineCases: BaselineCase[] = [
       const result = await generate({
         provider,
         model,
-        instruct: new Instruct("Return answer='pong', count=3, ok=true.", answerSchema),
+        instruct: new Instruct({
+          prompt: "Return answer='pong', count=3, ok=true.",
+          schema: answerSchema,
+        }),
       });
 
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       return {
         ok: Boolean(
           result.response?.answer.toLowerCase().includes("pong") &&
           result.response.count === 3 &&
           result.response.ok === true,
         ),
-        details: { response: result.response, parseError: serializeError(result.parseError) },
+        details: { response: result.response },
       };
     },
   },
@@ -102,18 +106,21 @@ export const baselineCases: BaselineCase[] = [
       const handle = stream({
         provider,
         model,
-        instruct: new Instruct("Return answer='pong', count=3, ok=true.", answerSchema),
+        instruct: new Instruct({
+          prompt: "Return answer='pong', count=3, ok=true.",
+          schema: answerSchema,
+        }),
       });
       const result = await handle.final;
 
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       return {
         ok: Boolean(
           result.response?.answer.toLowerCase().includes("pong") &&
           result.response.count === 3 &&
           result.response.ok === true,
         ),
-        details: { response: result.response, parseError: serializeError(result.parseError) },
+        details: { response: result.response },
       };
     },
   },
@@ -135,13 +142,16 @@ export const baselineCases: BaselineCase[] = [
             content: [{ type: "text", text: "I will remember lavender." }],
           },
         ],
-        instruct: new Instruct("What is the code word?", { word: z.string() }),
+        instruct: new Instruct({
+          prompt: "What is the code word?",
+          schema: z.object({ word: z.string() }),
+        }),
       });
 
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       return {
         ok: result.response?.word.toLowerCase().includes("lavender") ?? false,
-        details: { response: result.response, parseError: serializeError(result.parseError) },
+        details: { response: result.response },
       };
     },
   },
@@ -169,7 +179,10 @@ export const baselineCases: BaselineCase[] = [
     async run({ provider, model }) {
       const agent = new Agent({ provider, model });
       const result = await agent.send(
-        new Instruct("Return answer='pong', count=3, ok=true.", answerSchema),
+        new Instruct({
+          prompt: "Return answer='pong', count=3, ok=true.",
+          schema: answerSchema,
+        }),
       ).final;
 
       return {
@@ -225,7 +238,7 @@ export const baselineCases: BaselineCase[] = [
         tools: [addNumbersTool],
       });
 
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
         ok: text.includes("42") && hasSuccessfulToolResult(result.messages),
@@ -259,7 +272,7 @@ export const baselineCases: BaselineCase[] = [
       });
 
       const result = await handle.final;
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
         ok: text.includes("42") && toolRequestCount > 0 && hasSuccessfulToolResult(result.messages),
@@ -305,7 +318,7 @@ export const baselineCases: BaselineCase[] = [
         reasoning: false,
       });
 
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
         ok: text.toLowerCase().includes("pong"),
@@ -317,16 +330,70 @@ export const baselineCases: BaselineCase[] = [
     id: "instruct-text-reference",
     description: "Instruct text references are included in the user turn.",
     async run({ provider, model }) {
-      const instruct = new Instruct("Return the project code from the reference.", {
-        code: z.string(),
+      const instruct = new Instruct({
+        prompt: "Return the project code from the reference.",
+        schema: z.object({
+          code: z.string(),
+        }),
       });
       instruct.addFile("Project code: orchid-17", { name: "project-note" });
 
       const result = await generate({ provider, model, instruct });
-      if (result.result === "error") return fail({ error: result.error });
+      if (!result.ok) return fail({ error: result.error });
       return {
         ok: result.response?.code.toLowerCase().includes("orchid-17") ?? false,
-        details: { response: result.response, parseError: serializeError(result.parseError) },
+        details: { response: result.response },
+      };
+    },
+  },
+  {
+    id: "generate-image-file",
+    description: "generate() with an Instruct image file attachment.",
+    async run({ provider, model }) {
+      const image = await loadFileContent("./examples/data/economist-brainy-imports.png");
+      const instruct = new Instruct({
+        prompt: "Inspect the attached chart. Return the chart title and the top listed university.",
+        schema: z.object({
+          title: z.string(),
+          topUniversity: z.string(),
+        }),
+      });
+      instruct.addFile(image);
+
+      const result = await generate({ provider, model, instruct });
+      if (!result.ok) return fail({ error: result.error });
+
+      const title = result.response.title.toLowerCase();
+      const topUniversity = result.response.topUniversity.toLowerCase();
+      return {
+        ok:
+          (title.includes("brainy") || title.includes("import")) &&
+          topUniversity.includes("carnegie"),
+        details: { response: result.response },
+      };
+    },
+  },
+  {
+    id: "generate-pdf-file",
+    description: "generate() with an Instruct PDF file attachment.",
+    async run({ provider, model }) {
+      const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+      const instruct = new Instruct({
+        prompt:
+          "Inspect the attached document. Return fileType exactly as 'pdf' and provide a short summary.",
+        schema: z.object({
+          fileType: z.literal("pdf"),
+          summary: z.string(),
+        }),
+      });
+      instruct.addFile(pdf);
+
+      const result = await generate({ provider, model, instruct });
+      if (!result.ok) return fail({ error: result.error });
+
+      return {
+        ok: result.response.fileType === "pdf" && result.response.summary.trim().length > 0,
+        details: { response: result.response },
       };
     },
   },

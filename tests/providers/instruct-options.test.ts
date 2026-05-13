@@ -23,8 +23,11 @@ describe("Instruct options", () => {
       raw: {},
     });
 
-    const instruct = new Instruct("Answer {{question}}", {
-      answer: z.string(),
+    const instruct = new Instruct({
+      prompt: "Answer {{question}}",
+      schema: z.object({
+        answer: z.string(),
+      }),
     }).withInput("question", "now?");
 
     const result = await generate({
@@ -34,10 +37,10 @@ describe("Instruct options", () => {
       instruct,
     });
 
-    expect(result.result).toBe("success");
-    if (result.result !== "success") return;
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
 
-    expectTypeOf(result.response).toEqualTypeOf<{ answer: string } | null>();
+    expectTypeOf(result.response).toEqualTypeOf<{ answer: string }>();
     expect(result.response).toEqual({ answer: "yes" });
     expect(requests[0]).toHaveLength(2);
     expect(requests[0][0]).toMatchObject({ role: "user", content: "prior context" });
@@ -62,14 +65,16 @@ describe("Instruct options", () => {
     const result = await generate({
       provider,
       model: "test-model",
-      instruct: new Instruct("Answer", { answer: z.string() }),
+      instruct: new Instruct({
+        prompt: "Answer",
+        schema: z.object({ answer: z.string() }),
+      }),
     });
 
-    expect(result.result).toBe("success");
-    if (result.result !== "success") return;
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
 
-    expect(result.response).toBeNull();
-    expect(result.parseError).toBeInstanceOf(Error);
+    expect(result.error.kind).toBe("parse");
     expect(result.final?.content).toEqual([{ type: "text", text: '{"answer":"unterminated}' }]);
   });
 
@@ -83,8 +88,11 @@ describe("Instruct options", () => {
       { type: "complete", data: { finishReason: AxleStopReason.Stop, usage: { in: 4, out: 5 } } },
     ];
     const provider = makeStreamProvider(requests, chunks);
-    const instruct = new Instruct("Count {{thing}}", {
-      count: z.number(),
+    const instruct = new Instruct({
+      prompt: "Count {{thing}}",
+      schema: z.object({
+        count: z.number(),
+      }),
     }).withInput("thing", "items");
 
     const handle = stream({
@@ -96,10 +104,10 @@ describe("Instruct options", () => {
 
     const result = await handle.final;
 
-    expect(result.result).toBe("success");
-    if (result.result !== "success") return;
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
 
-    expectTypeOf(result.response).toEqualTypeOf<{ count: number } | null>();
+    expectTypeOf(result.response).toEqualTypeOf<{ count: number }>();
     expect(result.response).toEqual({ count: 3 });
     expect(requests[0]).toHaveLength(2);
     expect(requests[0][0]).toMatchObject({ role: "assistant", id: "prev" });
@@ -121,14 +129,16 @@ describe("Instruct options", () => {
     const result = await stream({
       provider,
       model: "test-model",
-      instruct: new Instruct("Count", { count: z.number() }),
+      instruct: new Instruct({
+        prompt: "Count",
+        schema: z.object({ count: z.number() }),
+      }),
     }).final;
 
-    expect(result.result).toBe("success");
-    if (result.result !== "success") return;
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
 
-    expect(result.response).toBeNull();
-    expect(result.parseError).toBeInstanceOf(Error);
+    expect(result.error.kind).toBe("parse");
     expect(result.final?.content).toEqual([{ type: "text", text: '{"count":' }]);
   });
 });

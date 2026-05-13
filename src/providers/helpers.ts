@@ -28,24 +28,28 @@ export type ToolCallCallback = (
 ) => Promise<ToolCallResult | null | undefined>;
 
 export type GenerateError =
-  | { type: "model"; error: ModelError }
-  | { type: "tool"; error: { name: string; message: string } };
+  | { kind: "model"; error: ModelError }
+  | { kind: "tool"; error: { name: string; message: string } }
+  | { kind: "parse"; error: unknown; message: string };
 
-export type GenerateResult =
+export type GenerateResult<TResponse = AxleAssistantMessage> =
   | {
-      result: "success";
+      ok: true;
+      response: TResponse;
       messages: AxleMessage[];
-      final?: AxleAssistantMessage;
+      final: AxleAssistantMessage;
       usage?: Stats;
     }
   | {
-      result: "error";
+      ok: false;
+      response?: undefined;
+      final?: AxleAssistantMessage;
       messages: AxleMessage[];
       error: GenerateError;
       usage?: Stats;
     };
 
-export type StreamResult = GenerateResult;
+export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TResponse>;
 
 export function appendUsage(total: Stats, result: ModelResult): void {
   const usage = result.usage ?? { in: 0, out: 0 };

@@ -20,6 +20,7 @@ export {
   AxleAgentAbortError,
   AxleError,
   AxleToolFatalError,
+  InstructVariableError,
   TaskError,
 } from "./errors/index.js";
 

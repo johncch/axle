@@ -103,7 +103,7 @@ if (failedRecords.length > 0) {
 }
 console.log(`[Output] ${options.out}`);
 
-if (passed !== total) process.exitCode = 1;
+if (failedRecords.length > 0) process.exitCode = 1;
 
 async function writeRecord(record: CheckRecord): Promise<void> {
   await writeFile(options.out, `${JSON.stringify(record)}\n`, { flag: "a" });

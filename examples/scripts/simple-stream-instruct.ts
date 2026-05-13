@@ -22,13 +22,13 @@ const messages: AxleMessage[] = [
   },
 ];
 
-const instruct = new Instruct(
-  "Using the prior context, choose the best default language and explain why.",
-  {
+const instruct = new Instruct({
+  prompt: "Using the prior context, choose the best default language and explain why.",
+  schema: z.object({
     choice: z.string(),
     reason: z.string(),
-  },
-);
+  }),
+});
 
 console.log("[Starting...]");
 
@@ -54,7 +54,7 @@ try {
   const result = await handle.final;
 
   console.log();
-  if (result.result === "error") {
+  if (!result.ok) {
     console.log(JSON.stringify(result.error, null, 2));
   } else {
     console.log("Parsed response:", result.response);

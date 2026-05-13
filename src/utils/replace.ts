@@ -3,6 +3,18 @@ export interface ReplaceVariablesOptions {
   strict?: boolean;
 }
 
+export class MissingVariablesError extends Error {
+  public readonly missingVariables: string[];
+
+  constructor(missingVariables: string[]) {
+    super(formatMissingVariablesMessage(missingVariables));
+    this.name = "MissingVariablesError";
+    this.missingVariables = missingVariables;
+
+    Object.setPrototypeOf(this, MissingVariablesError.prototype);
+  }
+}
+
 export function replaceVariables(
   input: string,
   variables: Record<string, any>,
@@ -23,8 +35,12 @@ export function replaceVariables(
   if (missing.length > 0) {
     const unique = [...new Set(missing)];
     if (strict) {
-      throw new Error(`Missing variable${unique.length > 1 ? "s" : ""}: ${unique.join(", ")}`);
+      throw new MissingVariablesError(unique);
     }
   }
   return input;
+}
+
+function formatMissingVariablesMessage(missingVariables: string[]): string {
+  return `Missing variable${missingVariables.length > 1 ? "s" : ""}: ${missingVariables.join(", ")}`;
 }

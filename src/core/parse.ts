@@ -1,8 +1,8 @@
 import * as z from "zod";
 
-export type OutputSchema = Record<string, z.ZodTypeAny>;
+export type OutputSchema = z.ZodTypeAny;
 
-export type ParsedSchema<T extends OutputSchema> = { [K in keyof T]: z.output<T[K]> };
+export type ParsedSchema<T extends OutputSchema> = z.output<T>;
 
 export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
   if (schema instanceof z.ZodString) {
@@ -57,6 +57,18 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
   throw new Error(`Unsupported Zod schema: ${schema.constructor.name}`);
 }
 
+export function zodToFieldDescriptions(schema: z.ZodTypeAny): Array<[string, string]> {
+  if (schema instanceof z.ZodObject) {
+    return Object.entries(schema.shape).map(([key, fieldSchema]) => {
+      const [label] = zodToExample(fieldSchema);
+      return [key, label];
+    });
+  }
+
+  const [label] = zodToExample(schema);
+  return [["response", label]];
+}
+
 function formatLiteralLabel(value: unknown): string {
   return typeof value === "string" ? JSON.stringify(value) : String(value);
 }
@@ -69,20 +81,10 @@ export function parseResponse<T extends OutputSchema>(
     return rawValue;
   }
 
-  const schemaKeys = Object.keys(schema);
-  if (schemaKeys.length === 0) {
-    if (rawValue.trim() === "{}" || rawValue.trim() === "") {
-      return {} as ParsedSchema<T>;
-    }
-    throw new Error(
-      "Schema is empty, but rawValue is not an empty object representation or empty string.",
-    );
-  }
-
   const parsed = parseJsonObject(rawValue);
 
   try {
-    return z.object(schema).parse(parsed) as ParsedSchema<T>;
+    return schema.parse(parsed) as ParsedSchema<T>;
   } catch (error) {
     if (error && typeof error === "object" && "issues" in error) {
       const formattedErrors = (error as any).issues

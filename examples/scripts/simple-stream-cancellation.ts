@@ -49,7 +49,7 @@ const timer = setTimeout(() => {
 
 try {
   const final = await handle.final;
-  console.log(`\n[Result: ${final.result}]`);
+  console.log(`\n[Result: ${final.ok ? "success" : "error"}]`);
 } catch (error) {
   if (error instanceof AxleAbortError) {
     console.log(`\n[Result: ${error.name}]`);

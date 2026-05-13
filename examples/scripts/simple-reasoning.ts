@@ -21,9 +21,9 @@ async function reasonIt() {
     }
   });
 
-  const instruct = new Instruct(
-    "If x + y = 10 and xy = 21, what are x and y? Show your reasoning step by step.",
-  );
+  const instruct = new Instruct({
+    prompt: "If x + y = 10 and xy = 21, what are x and y? Show your reasoning step by step.",
+  });
 
   await agent.send(instruct).final;
   process.stdout.write("\n");

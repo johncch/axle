@@ -68,7 +68,10 @@ for (const target of targets) {
       };
 
       try {
-        const instruct = new Instruct(testCase.prompt, testCase.schema);
+        const instruct = new Instruct({
+          prompt: testCase.prompt,
+          schema: testCase.schema,
+        });
         const result = await generate({
           provider,
           model: target.model,
@@ -76,28 +79,14 @@ for (const target of targets) {
         });
 
         const durationMs = Date.now() - startedAt;
-        if (result.result === "error") {
+        if (!result.ok) {
           const record: StructuredOutputRecord = {
             ...recordBase,
-            status: "model-error",
-            durationMs,
-            usage: result.usage,
-            error: result.error,
-          };
-          await writeRecord(record);
-          failedRecords.push(record);
-          console.log(`  ${formatStatus(record.status)} [${testCase.id}] ${formatRepeat(repeat)}`);
-          continue;
-        }
-
-        if (result.parseError) {
-          const record: StructuredOutputRecord = {
-            ...recordBase,
-            status: "parse-error",
+            status: result.error.kind === "parse" ? "parse-error" : "model-error",
             durationMs,
             usage: result.usage,
             rawText: getRawText(result.final?.content),
-            error: serializeError(result.parseError),
+            error: result.error,
           };
           await writeRecord(record);
           failedRecords.push(record);

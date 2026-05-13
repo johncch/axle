@@ -26,7 +26,7 @@ export async function runSingle(
   parentSpan: TracingContext,
   memory: AgentMemory,
 ) {
-  const instruct = new Instruct(jobConfig.task);
+  const instruct = new Instruct({ prompt: jobConfig.task });
   if (jobConfig.files) {
     for (const filePath of jobConfig.files) {
       instruct.addFile(await loadFileContent(filePath));
@@ -52,10 +52,7 @@ export async function runSingle(
     stats.out += result.usage.out;
 
     if (result.response) {
-      const text =
-        typeof result.response === "string"
-          ? result.response
-          : JSON.stringify(result.response, null, 2);
+      const text = result.response;
       parentSpan.info(text, { markdown: true });
     }
 
@@ -104,10 +101,7 @@ async function runInteractiveLoop(
         stats.out += result.usage.out;
 
         if (result.response) {
-          const text =
-            typeof result.response === "string"
-              ? result.response
-              : JSON.stringify(result.response, null, 2);
+          const text = result.response;
           tracer.info(text, { markdown: true });
         }
       } catch (e) {
@@ -170,7 +164,7 @@ export async function runBatch(
         return;
       }
 
-      const instruct = new Instruct(jobConfig.task);
+      const instruct = new Instruct({ prompt: jobConfig.task });
 
       for (const fi of sharedFiles) {
         instruct.addFile(fi);

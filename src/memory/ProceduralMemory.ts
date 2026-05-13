@@ -97,8 +97,8 @@ export class ProceduralMemory implements AgentMemory {
       tracer: extractSpan,
     });
 
-    if (result.result !== "success" || !result.final) {
-      span?.warn("extraction failed", { result: result.result });
+    if (!result.ok) {
+      span?.warn("extraction failed", { error: result.error });
       span?.end();
       return;
     }

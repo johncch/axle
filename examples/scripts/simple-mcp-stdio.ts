@@ -10,9 +10,10 @@ const wordCountMCP = new MCP({
 });
 await wordCountMCP.connect();
 
-const instruct = new Instruct(
-  "Can you tell me a 3 sentence story with a character's name and then tell me the number of words and characters in the story",
-);
+const instruct = new Instruct({
+  prompt:
+    "Can you tell me a 3 sentence story with a character's name and then tell me the number of words and characters in the story",
+});
 
 const agent = new Agent({ provider, model, mcps: [wordCountMCP] });
 

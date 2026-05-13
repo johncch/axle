@@ -17,9 +17,10 @@ const setNameTool: ExecutableTool = {
   },
 };
 
-const instruct = new Instruct(
-  "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
-);
+const instruct = new Instruct({
+  prompt:
+    "Can you tell me a 3 sentence story with a character's name and then call the setName function with the name",
+});
 
 const agent = new Agent({ provider, model, tools: [setNameTool] });
 

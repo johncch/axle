@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
+import { InstructVariableError } from "../../src/errors/InstructVariableError.js";
 import { FileInfo, loadFileContent } from "../../src/utils/file.js";
 
 const TEST_DIR = join(process.cwd(), "test-temp", "instruct-test");
@@ -10,7 +11,7 @@ const TEST_DIR = join(process.cwd(), "test-temp", "instruct-test");
 describe("Instruct", () => {
   describe("input binding", () => {
     test("withInputs returns a new instruct without mutating the original", () => {
-      const template = new Instruct("Hello {{name}}");
+      const template = new Instruct({ prompt: "Hello {{name}}" });
       const bound = template.withInputs({ name: "Alice" });
 
       expect(template).not.toBe(bound);
@@ -20,7 +21,9 @@ describe("Instruct", () => {
     });
 
     test("withInput merges into existing inputs on a cloned instruct", () => {
-      const template = new Instruct("Hello {{title}} {{name}}").withInputs({ title: "Dr." });
+      const template = new Instruct({ prompt: "Hello {{title}} {{name}}" }).withInputs({
+        title: "Dr.",
+      });
       const bound = template.withInput("name", "Rivera");
 
       expect(template).not.toBe(bound);
@@ -30,19 +33,39 @@ describe("Instruct", () => {
     });
 
     test("render throws when an input is missing", () => {
-      const template = new Instruct("Hello {{name}} from {{place}}").withInput("name", "Alice");
+      const template = new Instruct({ prompt: "Hello {{name}} from {{place}}" }).withInput(
+        "name",
+        "Alice",
+      );
 
       expect(() => template.render()).toThrow(/Missing variable: place/);
     });
 
+    test("render throws a typed error when inputs are missing", () => {
+      const template = new Instruct({ prompt: "Hello {{name}} from {{place}}" });
+
+      try {
+        template.render();
+        throw new Error("Expected render to throw");
+      } catch (error) {
+        expect(error).toBeInstanceOf(InstructVariableError);
+        expect((error as InstructVariableError).missingVariables).toEqual(["name", "place"]);
+        expect((error as InstructVariableError).code).toBe("INSTRUCT_VARIABLE_ERROR");
+      }
+    });
+
     test("render can leave missing variables unresolved", () => {
-      const template = new Instruct("Hello {{name}} from {{place}}").withInput("name", "Alice");
+      const template = new Instruct({ prompt: "Hello {{name}} from {{place}}" }).withInput(
+        "name",
+        "Alice",
+      );
 
       expect(template.render({ vars: "optional" })).toBe("Hello Alice from {{place}}");
     });
 
     test("vars option is preserved when cloning", () => {
-      const template = new Instruct("Describe a {{breed}}", undefined, {
+      const template = new Instruct({
+        prompt: "Describe a {{breed}}",
         vars: "optional",
       }).withInput("name", "Riley");
 
@@ -53,7 +76,7 @@ describe("Instruct", () => {
 
   describe("file methods", () => {
     test("addFile accepts image files", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       const imageFile: FileInfo = {
         kind: "image",
         mimeType: "image/jpeg",
@@ -69,7 +92,7 @@ describe("Instruct", () => {
     });
 
     test("addFile accepts document files", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       const pdfFile: FileInfo = {
         kind: "document",
         mimeType: "application/pdf",
@@ -84,7 +107,7 @@ describe("Instruct", () => {
     });
 
     test("addFile accepts text files as references", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       const textFile: FileInfo = {
         kind: "text",
         mimeType: "text/plain",
@@ -100,7 +123,7 @@ describe("Instruct", () => {
     });
 
     test("addFile accepts raw strings as references", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       instruction.addFile("some content", { name: "my ref" });
       expect(instruction.textReferences).toHaveLength(1);
       expect(instruction.textReferences[0].content).toBe("some content");
@@ -108,12 +131,12 @@ describe("Instruct", () => {
     });
 
     test("hasFiles returns false when no files added", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       expect(instruction.hasFiles()).toBe(false);
     });
 
     test("hasFiles returns true when files are added", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       const imageFile: FileInfo = {
         kind: "image",
         mimeType: "image/jpeg",
@@ -127,12 +150,12 @@ describe("Instruct", () => {
     });
 
     test("files array starts empty", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       expect(instruction.files).toHaveLength(0);
     });
 
     test("multiple files can be added", () => {
-      const instruction = new Instruct("Test prompt");
+      const instruction = new Instruct({ prompt: "Test prompt" });
       const file1: FileInfo = {
         kind: "image",
         mimeType: "image/jpeg",
@@ -171,7 +194,7 @@ describe("Instruct", () => {
       await writeFile(filePath, textContent);
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("Summarize the text");
+      const instruct = new Instruct({ prompt: "Summarize the text" });
       instruct.addFile(textFile, { name: "arxiv paper" });
 
       const compiled = instruct.render();
@@ -187,7 +210,7 @@ describe("Instruct", () => {
       await writeFile(filePath, textContent);
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("What does this document say?");
+      const instruct = new Instruct({ prompt: "What does this document say?" });
       instruct.addFile(textFile);
 
       const compiled = instruct.render();
@@ -210,7 +233,7 @@ describe("Instruct", () => {
       const textFile1 = await loadFileContent(paper1Path, "utf-8");
       const textFile2 = await loadFileContent(paper2Path, "utf-8");
 
-      const instruct = new Instruct("Compare these papers");
+      const instruct = new Instruct({ prompt: "Compare these papers" });
       instruct.addFile(textFile1, { name: "Paper A" });
       instruct.addFile(textFile2, { name: "Paper B" });
 
@@ -229,7 +252,9 @@ describe("Instruct", () => {
       await writeFile(filePath, textContent);
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("Analyze the {{analysis_type}} in this document").withInputs({
+      const instruct = new Instruct({
+        prompt: "Analyze the {{analysis_type}} in this document",
+      }).withInputs({
         topic: "artificial intelligence",
         analysis_type: "methodology",
       });
@@ -259,7 +284,7 @@ console.log("code block");
       await writeFile(filePath, markdownContent);
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("Process this markdown");
+      const instruct = new Instruct({ prompt: "Process this markdown" });
       instruct.addFile(textFile, { name: "Markdown Doc" });
 
       const compiled = instruct.render();
@@ -275,7 +300,7 @@ console.log("code block");
       await writeFile(filePath, "");
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("What is in this file?");
+      const instruct = new Instruct({ prompt: "What is in this file?" });
       instruct.addFile(textFile, { name: "Empty File" });
 
       const compiled = instruct.render();
@@ -291,9 +316,12 @@ console.log("code block");
       await writeFile(filePath, textContent);
 
       const textFile = await loadFileContent(filePath, "utf-8");
-      const instruct = new Instruct("Extract information", {
-        score: z.number(),
-        summary: z.string(),
+      const instruct = new Instruct({
+        prompt: "Extract information",
+        schema: z.object({
+          score: z.number(),
+          summary: z.string(),
+        }),
       });
       instruct.addFile(textFile, { name: "Score Data" });
 
@@ -309,27 +337,44 @@ console.log("code block");
 
   describe("optional schema", () => {
     it("should create instruct without schema", () => {
-      const instruct = new Instruct("Hello world");
+      const instruct = new Instruct({ prompt: "Hello world" });
       expect(instruct.schema).toBeUndefined();
     });
 
     it("emits message untouched when no schema is set", () => {
-      const instruct = new Instruct("Hello world");
+      const instruct = new Instruct({ prompt: "Hello world" });
       const compiled = instruct.render();
       expect(compiled).toBe("Hello world");
     });
 
     it("should include output format instructions when schema provided", () => {
-      const instruct = new Instruct("Hello world", { answer: z.string() });
+      const instruct = new Instruct({
+        prompt: "Hello world",
+        schema: z.object({ answer: z.string() }),
+      });
       const compiled = instruct.render();
       expect(compiled).toContain("# Output Format Instructions");
-      expect(compiled).toContain("Return only a valid JSON object");
+      expect(compiled).toContain("Return only valid JSON matching this schema");
       expect(compiled).toContain('"answer": "Your answer"');
     });
 
+    it("renders root non-object schema examples", () => {
+      const instruct = new Instruct({
+        prompt: "Return the fixed status",
+        schema: z.literal("approved"),
+      });
+      const compiled = instruct.render();
+
+      expect(compiled).toContain('- response: "approved"');
+      expect(compiled).toContain('"approved"');
+    });
+
     it("renders enum schema examples without throwing", () => {
-      const instruct = new Instruct("Classify the run", {
-        status: z.enum(["success", "partial", "fail"]),
+      const instruct = new Instruct({
+        prompt: "Classify the run",
+        schema: z.object({
+          status: z.enum(["success", "partial", "fail"]),
+        }),
       });
       const compiled = instruct.render();
 
@@ -338,8 +383,11 @@ console.log("code block");
     });
 
     it("renders literal schema examples without throwing", () => {
-      const instruct = new Instruct("Return the fixed kind", {
-        kind: z.literal("foo"),
+      const instruct = new Instruct({
+        prompt: "Return the fixed kind",
+        schema: z.object({
+          kind: z.literal("foo"),
+        }),
       });
       const compiled = instruct.render();
 
@@ -348,10 +396,13 @@ console.log("code block");
     });
 
     it("renders a valid JSON example object with enum and literal values", () => {
-      const instruct = new Instruct("Classify the result", {
-        status: z.enum(["success", "partial", "fail"]),
-        kind: z.literal("foo"),
-        tags: z.array(z.enum(["a", "b", "c"])),
+      const instruct = new Instruct({
+        prompt: "Classify the result",
+        schema: z.object({
+          status: z.enum(["success", "partial", "fail"]),
+          kind: z.literal("foo"),
+          tags: z.array(z.enum(["a", "b", "c"])),
+        }),
       });
       const compiled = instruct.render();
 

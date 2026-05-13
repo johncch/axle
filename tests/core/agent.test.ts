@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import * as z from "zod";
 import { Agent } from "../../src/core/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
@@ -96,7 +97,7 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
 describe("Agent", () => {
   test("send(instruct) resolves with raw text response", async () => {
     const provider = createMockStreamProvider(["Hello world"]);
-    const instruct = new Instruct("Hi");
+    const instruct = new Instruct({ prompt: "Hi" });
     const agent = new Agent({ provider, model: "mock" });
 
     const result = await agent.send(instruct).final;
@@ -108,7 +109,9 @@ describe("Agent", () => {
 
   test("send(instruct.withInputs()) substitutes into prompt", async () => {
     const provider = createMockStreamProvider(["Greeting sent"]);
-    const instruct = new Instruct("Say hello to {{name}}").withInputs({ name: "Alice" });
+    const instruct = new Instruct({ prompt: "Say hello to {{name}}" }).withInputs({
+      name: "Alice",
+    });
     const agent = new Agent({ provider, model: "mock" });
 
     const result = await agent.send(instruct).final;
@@ -119,8 +122,11 @@ describe("Agent", () => {
   test("send(instruct) with schema parses JSON response", async () => {
     const provider = createMockStreamProvider(['{"answer":42}']);
     const { z } = await import("zod");
-    const instruct = new Instruct("What is the answer?", {
-      answer: z.number(),
+    const instruct = new Instruct({
+      prompt: "What is the answer?",
+      schema: z.object({
+        answer: z.number(),
+      }),
     });
     const agent = new Agent({ provider, model: "mock" });
 
@@ -131,7 +137,7 @@ describe("Agent", () => {
 
   test("send() follow-on accumulates history", async () => {
     const provider = createMockStreamProvider(["Response 1", "Response 2"]);
-    const instruct = new Instruct("Initial message");
+    const instruct = new Instruct({ prompt: "Initial message" });
     const agent = new Agent({ provider, model: "mock" });
 
     await agent.send(instruct).final;
@@ -219,7 +225,7 @@ describe("Agent", () => {
       };
 
       const controller = new AbortController();
-      const instruct = new Instruct("Say hi");
+      const instruct = new Instruct({ prompt: "Say hi" });
       const agent = new Agent({ provider, model: "mock" });
 
       await agent.send(instruct, { signal: controller.signal }).final;
@@ -264,7 +270,7 @@ describe("Agent", () => {
       };
 
       const controller = new AbortController();
-      const instruct = new Instruct("Hello {{name}}").withInputs({ name: "Alice" });
+      const instruct = new Instruct({ prompt: "Hello {{name}}" }).withInputs({ name: "Alice" });
       const agent = new Agent({ provider, model: "mock" });
 
       const handle = agent.send(instruct, {
@@ -454,7 +460,7 @@ describe("Agent", () => {
 
   test("AgentResult.turn contains the completed agent turn", async () => {
     const provider = createMockStreamProvider(["First", "Second"]);
-    const instruct = new Instruct("msg1");
+    const instruct = new Instruct({ prompt: "msg1" });
     const agent = new Agent({ provider, model: "mock" });
 
     await agent.send(instruct).final;
@@ -486,7 +492,7 @@ describe("Agent", () => {
       {
         name: "prefixed_tool",
         description: "A tool",
-        schema: {},
+        schema: z.object({}),
         execute: vi.fn(),
       },
     ]);
@@ -851,7 +857,9 @@ describe("Agent", () => {
         memory,
       });
 
-      await expect(agent.send("Hi").final).rejects.toThrow();
+      const result = await agent.send("Hi").final;
+
+      expect(result.ok).toBe(false);
       expect(memory.record).not.toHaveBeenCalled();
     });
 
@@ -887,7 +895,9 @@ describe("Agent", () => {
     test("on() receives turn:user event when send(instruct) is called", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
-      const instruct = new Instruct("Tell me about {{topic}}").withInputs({ topic: "cats" });
+      const instruct = new Instruct({ prompt: "Tell me about {{topic}}" }).withInputs({
+        topic: "cats",
+      });
 
       const events: { type: string }[] = [];
       agent.on((event) => events.push(event));

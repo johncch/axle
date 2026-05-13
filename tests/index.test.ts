@@ -10,5 +10,6 @@ describe("public exports", () => {
     expect(axle.AxleAbortError).toBeTypeOf("function");
     expect(axle.AxleAgentAbortError).toBeTypeOf("function");
     expect(axle.AxleToolFatalError).toBeTypeOf("function");
+    expect(axle.InstructVariableError).toBeTypeOf("function");
   });
 });

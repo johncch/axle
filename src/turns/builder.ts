@@ -345,12 +345,14 @@ export class TurnBuilder {
       case "error": {
         const error = event.error;
         const msg =
-          error.type === "model"
+          error.kind === "model"
             ? error.error.error.message
-            : `Tool error (${error.error.name}): ${error.error.message}`;
+            : error.kind === "tool"
+              ? `Tool error (${error.error.name}): ${error.error.message}`
+              : `Parse error: ${error.message}`;
         events.push({
           type: "error",
-          error: { type: error.type, message: msg },
+          error: { type: error.kind, message: msg },
         });
         break;
       }

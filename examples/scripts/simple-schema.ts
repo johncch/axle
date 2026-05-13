@@ -4,11 +4,14 @@ import { useCLIHelper } from "./helper.js";
 
 const [provider, model] = useCLIHelper();
 
-const instruct = new Instruct("Tell me about the planet Mars.", {
-  name: z.string(),
-  distanceFromSun: z.number(),
-  moons: z.array(z.string()),
-  habitability: z.string(),
+const instruct = new Instruct({
+  prompt: "Tell me about the planet Mars.",
+  schema: z.object({
+    name: z.string(),
+    distanceFromSun: z.number(),
+    moons: z.array(z.string()),
+    habitability: z.string(),
+  }),
 });
 
 const agent = new Agent({ provider, model });

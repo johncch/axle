@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { replaceVariables } from "../../src/utils/replace.js";
+import { MissingVariablesError, replaceVariables } from "../../src/utils/replace.js";
 
 describe("replaceVariables", () => {
   test("replaces variables including falsy values", () => {
@@ -11,6 +11,14 @@ describe("replaceVariables", () => {
   test("throws on missing variables", () => {
     const template = "Hello {{name}}, welcome to {{place}}";
     expect(() => replaceVariables(template, {})).toThrow(/Missing variables: name, place/);
+
+    try {
+      replaceVariables(template, {});
+      throw new Error("Expected replaceVariables to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(MissingVariablesError);
+      expect((error as MissingVariablesError).missingVariables).toEqual(["name", "place"]);
+    }
   });
 
   test("throws on single missing variable", () => {

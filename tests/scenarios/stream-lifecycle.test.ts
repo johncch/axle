@@ -45,7 +45,7 @@ describe("stream() happy paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { timeline, spans } = writer;
 
@@ -124,7 +124,7 @@ describe("stream() happy paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { timeline, spans } = writer;
 
@@ -166,7 +166,7 @@ describe("stream() happy paths", () => {
     expect(rootSpanData.status).toBe("ok");
 
     // Messages accumulate correctly across turns
-    if (result.result === "success") {
+    if (result.ok) {
       expect(result.messages).toHaveLength(3);
       // Turn 1: assistant with tool call
       expect(result.messages[0].role).toBe("assistant");
@@ -216,7 +216,7 @@ describe("stream() happy paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { timeline, spans } = writer;
 
@@ -273,7 +273,7 @@ describe("stream() happy paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     // Span result contains both thinking and text parts
     const { spans } = writer;
@@ -308,7 +308,7 @@ describe("stream() error paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("error");
+    expect(result.ok).toBe(false);
 
     const { timeline, spans } = writer;
 
@@ -356,7 +356,7 @@ describe("stream() error paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("error");
+    expect(result.ok).toBe(false);
 
     const { spans } = writer;
 
@@ -389,8 +389,8 @@ describe("stream() error paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("error");
-    if (result.result === "error" && result.error.type === "model") {
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === "model") {
       const inner = result.error.error.error;
       expect(inner.type).toBe("IncompleteStream");
       expect(inner.message).toBe("Stream ended without a completion signal");
@@ -428,8 +428,8 @@ describe("stream() error paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("error");
-    if (result.result === "error" && result.error.type === "model") {
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === "model") {
       const inner = result.error.error.error;
       expect(inner.type).toBe("MaxIterations");
       expect(inner.message).toContain("max iterations");
@@ -582,7 +582,7 @@ describe("stream() tool span details", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { spans } = writer;
 
@@ -631,7 +631,7 @@ describe("stream() tool span details", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { spans } = writer;
 
@@ -673,7 +673,7 @@ describe("stream() tool span details", () => {
     });
 
     const result = await handle.final;
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { spans } = writer;
 

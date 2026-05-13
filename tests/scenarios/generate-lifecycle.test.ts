@@ -45,7 +45,7 @@ describe("generate() happy paths", () => {
       tracer: rootSpan,
     });
 
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { timeline, spans } = writer;
 
@@ -127,7 +127,7 @@ describe("generate() happy paths", () => {
       onToolCall: async () => ({ type: "success", content: "Found item 42" }),
     });
 
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
 
     const { timeline, spans } = writer;
 
@@ -166,7 +166,7 @@ describe("generate() happy paths", () => {
     }
 
     // Messages accumulate correctly across turns
-    if (result.result === "success") {
+    if (result.ok) {
       expect(result.messages).toHaveLength(3);
       // Turn 1: assistant with tool call
       expect(result.messages[0].role).toBe("assistant");
@@ -223,7 +223,7 @@ describe("generate() happy paths", () => {
       ],
     });
 
-    expect(result.result).toBe("success");
+    expect(result.ok).toBe(true);
     expect(execute).toHaveBeenCalledWith({ id: 42 }, expect.anything());
     expect(result.messages[1]).toMatchObject({
       role: "tool",
@@ -252,9 +252,9 @@ describe("generate() error paths", () => {
       tracer: rootSpan,
     });
 
-    expect(result.result).toBe("error");
-    if (result.result === "error") {
-      expect(result.error.type).toBe("model");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("model");
     }
 
     const { spans } = writer;
@@ -294,8 +294,8 @@ describe("generate() error paths", () => {
       onToolCall: async () => ({ type: "success", content: "result" }),
     });
 
-    expect(result.result).toBe("error");
-    if (result.result === "error" && result.error.type === "model") {
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === "model") {
       const inner = result.error.error.error;
       expect(inner.type).toBe("MaxIterations");
       expect(inner.message).toContain("max iterations");

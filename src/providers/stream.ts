@@ -116,12 +116,9 @@ export interface StreamInstructOptions<TSchema extends OutputSchema | undefined>
   instruct: Instruct<TSchema>;
 }
 
-export type StreamInstructResult<TSchema extends OutputSchema | undefined> =
-  | (Extract<StreamResult, { result: "success" }> & {
-      response: InstructResponse<TSchema> | null;
-      parseError?: unknown;
-    })
-  | Extract<StreamResult, { result: "error" }>;
+export type StreamInstructResult<TSchema extends OutputSchema | undefined> = StreamResult<
+  InstructResponse<TSchema>
+>;
 
 export interface StreamInstructHandle<TSchema extends OutputSchema | undefined> extends Omit<
   StreamHandle,
@@ -181,11 +178,21 @@ export function stream(options: StreamOptions | StreamInstructOptions<any>): Str
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
     run(streamOptions, effectiveSignal, callbacks).then((result) => {
-      if (parse && result.result === "success") {
+      if (parse && result.ok) {
         try {
           resolve({ ...result, response: parse(result.final) });
         } catch (parseError) {
-          resolve({ ...result, response: null, parseError });
+          resolve({
+            ok: false,
+            messages: result.messages,
+            final: result.final,
+            usage: result.usage,
+            error: {
+              kind: "parse",
+              error: parseError,
+              message: parseError instanceof Error ? parseError.message : String(parseError),
+            },
+          });
         }
         return;
       }
@@ -238,11 +245,11 @@ async function run(
   };
 
   const endWithResult = (result: StreamResult): StreamResult => {
-    if (result.result === "error") {
+    if (!result.ok) {
       emit(cbs, { type: "error", error: result.error });
     }
-    const finalContent = result.result === "success" ? result.final?.content : null;
-    const finishReason = result.result === "success" ? result.final?.finishReason : undefined;
+    const finalContent = result.ok ? result.final.content : null;
+    const finishReason = result.ok ? result.final.finishReason : undefined;
     tracer?.setResult({
       kind: "llm",
       model,
@@ -253,7 +260,7 @@ async function run(
         : undefined,
       finishReason,
     });
-    tracer?.end(result.result === "error" ? "error" : "ok");
+    tracer?.end(result.ok ? "ok" : "error");
     return result;
   };
 
@@ -293,10 +300,10 @@ async function run(
 
     if (maxIterations !== undefined && iterations >= maxIterations) {
       return endWithResult({
-        result: "error",
+        ok: false,
         messages: newMessages,
         error: {
-          type: "model",
+          kind: "model",
           error: {
             type: "error",
             error: {
@@ -519,10 +526,10 @@ async function run(
           usage.out += errorUsage.out ?? 0;
           turnSpan?.end("error");
           return endWithResult({
-            result: "error",
+            ok: false,
             messages: newMessages,
             error: {
-              type: "model",
+              kind: "model",
               error: {
                 type: "error",
                 error: { type: chunk.data.type, message: chunk.data.message },
@@ -550,10 +557,10 @@ async function run(
       closePart();
       turnSpan?.end("error");
       return endWithResult({
-        result: "error",
+        ok: false,
         messages: newMessages,
         error: {
-          type: "model",
+          kind: "model",
           error: {
             type: "error",
             error: {
@@ -594,7 +601,8 @@ async function run(
     // If not a function call, we're done
     if (turnFinishReason !== AxleStopReason.FunctionCall) {
       return endWithResult({
-        result: "success",
+        ok: true,
+        response: assistantMessage,
         messages: newMessages,
         final: assistantMessage,
         usage,
@@ -605,7 +613,8 @@ async function run(
     const toolCalls = turnParts.filter((p): p is ContentPartToolCall => p.type === "tool-call");
     if (toolCalls.length === 0) {
       return endWithResult({
-        result: "success",
+        ok: true,
+        response: assistantMessage,
         messages: newMessages,
         final: assistantMessage,
         usage,
