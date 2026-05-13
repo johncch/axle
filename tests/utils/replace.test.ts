@@ -15,7 +15,8 @@ describe("replaceVariables", () => {
 
   test("throws on single missing variable", () => {
     const template = "Hello {{name}}";
-    expect(() => replaceVariables(template, {})).toThrow(/Missing variable: name/);
+    expect(() => replaceVariables(template, {})).toThrow("Missing variable: name");
+    expect(() => replaceVariables(template, {})).not.toThrow(/--args/);
   });
 
   test("deduplicates missing variable names", () => {
@@ -27,5 +28,11 @@ describe("replaceVariables", () => {
     const template = "Hello {{name}}";
     const result = replaceVariables(template, { name: "Alice" });
     expect(result).toBe("Hello Alice");
+  });
+
+  test("leaves missing variables in place when strict is false", () => {
+    const template = "Hello {{name}}, meet {{breed}}";
+    const result = replaceVariables(template, { name: "Alice" }, { strict: false });
+    expect(result).toBe("Hello Alice, meet {{breed}}");
   });
 });

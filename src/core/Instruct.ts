@@ -5,22 +5,31 @@ import type { OutputSchema } from "./parse.js";
 import { zodToExample } from "./parse.js";
 
 export type InstructInputs = Record<string, unknown>;
+export type InstructVarsMode = "required" | "optional";
+
+export interface InstructOptions {
+  vars?: InstructVarsMode;
+}
 
 export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   prompt: string;
   inputs: InstructInputs = {};
   files: FileInfo[] = [];
   textReferences: Array<{ content: string; name?: string }> = [];
+  vars: InstructVarsMode;
 
   schema: TSchema;
 
-  constructor(prompt: string, schema?: TSchema) {
+  constructor(prompt: string, schema?: TSchema, options: InstructOptions = {}) {
     this.prompt = prompt;
     this.schema = schema as TSchema;
+    this.vars = options.vars ?? "required";
   }
 
   clone(): Instruct<TSchema> {
-    const instruct = new Instruct(this.prompt, this.schema);
+    const instruct = new Instruct(this.prompt, this.schema, {
+      vars: this.vars,
+    });
     instruct.inputs = { ...this.inputs };
     instruct.files = [...this.files];
     instruct.textReferences = this.textReferences.map((reference) => ({ ...reference }));
@@ -61,8 +70,10 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     return this.files.length > 0;
   }
 
-  render(): string {
-    let message = replaceVariables(this.prompt, this.inputs);
+  render(options: { vars?: InstructVarsMode } = {}): string {
+    let message = replaceVariables(this.prompt, this.inputs, {
+      strict: (options.vars ?? this.vars) === "required",
+    });
 
     if (this.textReferences.length > 0) {
       for (const [index, ref] of this.textReferences.entries()) {

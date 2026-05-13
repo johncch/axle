@@ -8,7 +8,12 @@ export type {
   SendMessageOptions,
 } from "./core/Agent.js";
 export { Instruct } from "./core/index.js";
-export type { InstructInputs, InstructResponse } from "./core/index.js";
+export type {
+  InstructInputs,
+  InstructOptions,
+  InstructResponse,
+  InstructVarsMode,
+} from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
 export {
   AxleAbortError,

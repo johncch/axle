@@ -34,6 +34,21 @@ describe("Instruct", () => {
 
       expect(() => template.render()).toThrow(/Missing variable: place/);
     });
+
+    test("render can leave missing variables unresolved", () => {
+      const template = new Instruct("Hello {{name}} from {{place}}").withInput("name", "Alice");
+
+      expect(template.render({ vars: "optional" })).toBe("Hello Alice from {{place}}");
+    });
+
+    test("vars option is preserved when cloning", () => {
+      const template = new Instruct("Describe a {{breed}}", undefined, {
+        vars: "optional",
+      }).withInput("name", "Riley");
+
+      expect(template.render()).toBe("Describe a {{breed}}");
+      expect(template.vars).toBe("optional");
+    });
   });
 
   describe("file methods", () => {

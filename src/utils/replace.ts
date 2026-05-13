@@ -1,5 +1,6 @@
 export interface ReplaceVariablesOptions {
   placeholderStyle?: "{}" | "{{}}";
+  strict?: boolean;
 }
 
 export function replaceVariables(
@@ -7,7 +8,7 @@ export function replaceVariables(
   variables: Record<string, any>,
   options: ReplaceVariablesOptions = {},
 ): string {
-  const { placeholderStyle = "{{}}" } = options;
+  const { placeholderStyle = "{{}}", strict = true } = options;
   const pattern = placeholderStyle === "{{}}" ? /\{\{(.*?)\}\}/g : /\{(.*?)\}/g;
   const missing: string[] = [];
   input = input.replace(pattern, (match, group) => {
@@ -21,9 +22,9 @@ export function replaceVariables(
   });
   if (missing.length > 0) {
     const unique = [...new Set(missing)];
-    throw new Error(
-      `Missing variable${unique.length > 1 ? "s" : ""}: ${unique.join(", ")}. Pass them as --args key=value.`,
-    );
+    if (strict) {
+      throw new Error(`Missing variable${unique.length > 1 ? "s" : ""}: ${unique.join(", ")}`);
+    }
   }
   return input;
 }
