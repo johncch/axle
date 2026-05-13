@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0] - 2026-05-13
+
+- Updated the Instruct constructor to use object-style options
+- Improved Instruct schema typing to support any Zod schema
+- Added clearer errors for missing template variables
+- Improved result ergonomics for easier handling by applications
+
 ## [0.16.3] - 2026-05-13
 
 - Added vars mode to Instruct for easier variable-based prompting
