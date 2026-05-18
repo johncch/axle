@@ -3,6 +3,8 @@
 Axle is a TypeScript library for building multi-turn LLM agents. It provides a
 small, focused API for building agentic applications.
 
+**Documentation:** https://axle.fifthrevision.com
+
 ## Quick Start
 
 ```typescript
@@ -330,7 +332,17 @@ const mcp = new MCP({
 
 ### Streaming
 
-Agent exposes a single `on()` method for streaming events as they arrive.
+Axle has two event models, used at different levels:
+
+- `Agent.on(...)` emits `AgentEvent` — a high-level turn view organized
+  around parts (text, thinking, action).
+- `stream(...).on(...)` emits `StreamEvent` — a lower-level view that
+  surfaces every text/thinking/tool transition the provider produces.
+
+`Agent` uses `stream()` internally and translates each `StreamEvent` into
+one or more `AgentEvent`s.
+
+#### Agent events
 
 ```typescript
 const agent = new Agent({ provider, model });
@@ -340,11 +352,16 @@ agent.on((event) => {
     case "text:delta":
       process.stdout.write(event.delta);
       break;
-    case "turn:complete":
-      console.log(`Turn done: ${event.message.id}`);
+    case "part:start":
+      if (event.part.type === "action") {
+        console.log(`Tool: ${event.part.detail.name}`);
+      }
       break;
-    case "tool:exec-start":
-      console.log(`Running tool: ${event.name}`);
+    case "action:complete":
+      console.log("Tool complete");
+      break;
+    case "turn:end":
+      console.log(`Turn ${event.status} (in: ${event.usage.in})`);
       break;
     case "error":
       console.error(event.error);
@@ -369,15 +386,33 @@ try {
 }
 ```
 
-Event types include `turn:start`, `turn:complete`, `tool-results:start`,
-`tool-results:complete`, `text:start`, `text:delta`, `text:end`,
-`thinking:start`, `thinking:delta`, `thinking:end`, `tool:request`,
-`tool:exec-start`, `tool:exec-complete`, `provider-tool:start`,
-`provider-tool:complete`, and `error`. The `turn:*` and `tool-results:*`
-events carry complete `AxleAssistantMessage` and `AxleToolCallMessage` objects
-for client-server architectures that need authoritative message boundaries.
+`AgentEvent` types: `session:restore`, `turn:user`, `turn:start`, `turn:end`,
+`part:start`, `part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
+`action:running`, `action:progress`, `action:complete`, `action:error`,
+`action:child-event`, `error`.
+
+`part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
+`"thinking"`, `"file"`, `"action"`). Action parts further discriminate on
+`part.kind` (`"tool" | "agent" | "provider-tool"`).
 
 Callbacks are registered once and fire on every subsequent `send()`.
+
+#### stream() events
+
+The low-level `stream()` primitive emits a different event shape — closer
+to the raw provider stream, with separate `start`/`end` events for each
+text and thinking block, and distinct events for tool request, execution,
+and completion.
+
+`StreamEvent` types: `text:start`, `text:delta`, `text:end`,
+`thinking:start`, `thinking:delta`, `thinking:end`, `tool:request`,
+`tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
+`provider-tool:start`, `provider-tool:complete`, `turn:complete`,
+`tool-results:start`, `tool-results:complete`, `error`.
+
+The `turn:complete` and `tool-results:complete` events carry complete
+`AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server
+architectures that need authoritative message boundaries.
 
 ### Hosting / Sessions
 
