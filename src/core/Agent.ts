@@ -5,12 +5,13 @@ import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
+import { estimateContextUsage } from "../providers/context.js";
 import { stream } from "../providers/stream.js";
-import type { AIProvider } from "../providers/types.js";
+import type { AIProvider, ContextUsage } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
 import { ToolRegistry } from "../tools/registry.js";
-import type { ExecutableTool, ProviderTool } from "../tools/types.js";
+import type { ExecutableTool, ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { TurnBuilder } from "../turns/builder.js";
 import type { AgentEvent } from "../turns/events.js";
@@ -129,6 +130,16 @@ export class Agent {
     this.eventCallbacks.push(callback);
   }
 
+  context(): ContextUsage {
+    return estimateContextUsage({
+      system: this.system,
+      messages: this.history.log,
+      tools: this.toToolDefinitions(this.registry.local()),
+      providerTools: this.registry.provider(),
+      mcpTools: this.toToolDefinitions(this.registry.mcp()),
+    });
+  }
+
   send(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
@@ -151,13 +162,21 @@ export class Agent {
     for (const mcp of this.mcps) {
       if (this.resolvedMcps.has(mcp)) continue;
       const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer, signal });
-      this.registry.add(tools);
+      this.registry.addMcp(tools);
       this.resolvedMcps.add(mcp);
     }
   }
 
   private emitEvent(event: AgentEvent): void {
     for (const cb of this.eventCallbacks) cb(event);
+  }
+
+  private toToolDefinitions(tools: ExecutableTool[]): ToolDefinition[] {
+    return tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      schema: tool.schema,
+    }));
   }
 
   private async run(

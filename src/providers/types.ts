@@ -62,6 +62,17 @@ export interface StreamingRequestParams extends GenerationRequestParams {
   signal?: AbortSignal;
 }
 
+export interface ContextUsage {
+  total: number;
+  system: number;
+  tools: number;
+  mcpTools: number;
+  providerTools: number;
+  messages: number;
+  limit?: number;
+  free?: number;
+}
+
 export interface AIProvider {
   get name(): string;
 

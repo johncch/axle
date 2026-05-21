@@ -2,7 +2,8 @@ import { AxleError } from "../errors/AxleError.js";
 import type { ExecutableTool, ProviderTool } from "./types.js";
 
 export class ToolRegistry {
-  private executableTools = new Map<string, ExecutableTool>();
+  private tools = new Map<string, ExecutableTool>();
+  private mcpTools = new Map<string, ExecutableTool>();
   private providerTools = new Map<string, ProviderTool>();
 
   constructor(init?: { tools?: ExecutableTool[]; providerTools?: ProviderTool[] }) {
@@ -21,7 +22,22 @@ export class ToolRegistry {
           details: { name: tool.name },
         });
       }
-      this.executableTools.set(tool.name, tool);
+      this.tools.set(tool.name, tool);
+    }
+  }
+
+  addMcp(tool: ExecutableTool): void;
+  addMcp(tools: ExecutableTool[]): void;
+  addMcp(toolOrTools: ExecutableTool | ExecutableTool[]): void {
+    const tools = Array.isArray(toolOrTools) ? toolOrTools : [toolOrTools];
+    for (const tool of tools) {
+      if (this.has(tool.name)) {
+        throw new AxleError(`Tool already registered: ${tool.name}`, {
+          code: "TOOL_REGISTRY_DUPLICATE",
+          details: { name: tool.name },
+        });
+      }
+      this.mcpTools.set(tool.name, tool);
     }
   }
 
@@ -41,15 +57,18 @@ export class ToolRegistry {
   }
 
   remove(name: string): boolean {
-    return this.executableTools.delete(name) || this.providerTools.delete(name);
+    const removedTool = this.tools.delete(name);
+    const removedMcp = this.mcpTools.delete(name);
+    const removedProvider = this.providerTools.delete(name);
+    return removedTool || removedMcp || removedProvider;
   }
 
   has(name: string): boolean {
-    return this.executableTools.has(name) || this.providerTools.has(name);
+    return this.tools.has(name) || this.mcpTools.has(name) || this.providerTools.has(name);
   }
 
   get(name: string): ExecutableTool | undefined {
-    return this.executableTools.get(name);
+    return this.tools.get(name) ?? this.mcpTools.get(name);
   }
 
   getProvider(name: string): ProviderTool | undefined {
@@ -57,7 +76,15 @@ export class ToolRegistry {
   }
 
   executable(): ExecutableTool[] {
-    return [...this.executableTools.values()];
+    return [...this.tools.values(), ...this.mcpTools.values()];
+  }
+
+  local(): ExecutableTool[] {
+    return [...this.tools.values()];
+  }
+
+  mcp(): ExecutableTool[] {
+    return [...this.mcpTools.values()];
   }
 
   provider(): ProviderTool[] {
@@ -65,6 +92,6 @@ export class ToolRegistry {
   }
 
   get size(): number {
-    return this.executableTools.size + this.providerTools.size;
+    return this.tools.size + this.mcpTools.size + this.providerTools.size;
   }
 }

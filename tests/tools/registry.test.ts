@@ -147,7 +147,36 @@ describe("ToolRegistry", () => {
         providerTools: [makeProvider("p1")],
       });
       expect(r.executable().map((t) => t.name)).toEqual(["e1", "e2"]);
+      expect(r.local().map((t) => t.name)).toEqual(["e1", "e2"]);
+      expect(r.mcp()).toEqual([]);
       expect(r.provider().map((t) => t.name)).toEqual(["p1"]);
+    });
+
+    it("add() stores normal executable tools", () => {
+      const local = makeExec("local");
+      const r = new ToolRegistry();
+      r.add(local);
+      expect(r.local()).toEqual([local]);
+      expect(r.mcp()).toEqual([]);
+      expect(r.executable()).toEqual([local]);
+    });
+
+    it("addProvider() stores provider tools", () => {
+      const provider = makeProvider("provider");
+      const r = new ToolRegistry();
+      r.addProvider(provider);
+      expect(r.provider()).toEqual([provider]);
+    });
+
+    it("addMcp() stores MCP tools and executable() includes them", () => {
+      const local = makeExec("local");
+      const mcp = makeExec("mcp");
+      const r = new ToolRegistry();
+      r.add(local);
+      r.addMcp(mcp);
+      expect(r.local()).toEqual([local]);
+      expect(r.mcp()).toEqual([mcp]);
+      expect(r.executable()).toEqual([local, mcp]);
     });
   });
 });

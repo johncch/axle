@@ -95,6 +95,74 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
 }
 
 describe("Agent", () => {
+  test("context() estimates committed history as a synchronous snapshot", async () => {
+    const provider = createMockStreamProvider(["Hello world"]);
+    const agent = new Agent({ provider, model: "mock", system: "You are helpful." });
+
+    await agent.send("Hi").final;
+
+    const context = agent.context();
+
+    expect(context.system).toBeGreaterThan(0);
+    expect(context.messages).toBeGreaterThan(0);
+    expect(context.tools).toBe(0);
+    expect(context.mcpTools).toBe(0);
+    expect(context.providerTools).toBe(0);
+    expect(context.total).toBe(
+      context.system + context.tools + context.mcpTools + context.providerTools + context.messages,
+    );
+  });
+
+  test("context() splits local tools and MCP tools", () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const localTool = {
+      name: "local",
+      description: "Local tool",
+      schema: z.object({ q: z.string() }),
+      async execute() {
+        return "local";
+      },
+    };
+    const mcpTool = {
+      name: "mcp_search",
+      description: "MCP search",
+      schema: z.object({ q: z.string() }),
+      async execute() {
+        return "mcp";
+      },
+    };
+    const agent = new Agent({ provider, model: "mock", tools: [localTool] });
+    agent.registry.addMcp(mcpTool);
+
+    const context = agent.context();
+
+    expect(context.tools).toBeGreaterThan(0);
+    expect(context.mcpTools).toBeGreaterThan(0);
+    expect(context.providerTools).toBe(0);
+    expect(context.messages).toBe(0);
+    expect(context.total).toBe(
+      context.system + context.tools + context.mcpTools + context.providerTools + context.messages,
+    );
+  });
+
+  test("context() splits provider tools", () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const agent = new Agent({
+      provider,
+      model: "mock",
+      providerTools: [{ type: "provider", name: "web_search" }],
+    });
+
+    const context = agent.context();
+
+    expect(context.tools).toBe(0);
+    expect(context.mcpTools).toBe(0);
+    expect(context.providerTools).toBeGreaterThan(0);
+    expect(context.total).toBe(
+      context.system + context.tools + context.mcpTools + context.providerTools + context.messages,
+    );
+  });
+
   test("send(instruct) resolves with raw text response", async () => {
     const provider = createMockStreamProvider(["Hello world"]);
     const instruct = new Instruct({ prompt: "Hi" });

@@ -32,6 +32,7 @@ export type { GenerateInstructOptions, GenerateInstructResult } from "./provider
 export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
+export { estimateContextUsage } from "./providers/context.js";
 export type {
   StreamEvent,
   StreamEventCallback,
@@ -41,7 +42,7 @@ export type {
   StreamInstructResult,
 } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
-export type { AIProvider } from "./providers/types.js";
+export type { AIProvider, ContextUsage } from "./providers/types.js";
 
 // Tools
 export {
