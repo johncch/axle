@@ -18,6 +18,7 @@ import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "
 import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
+import { addStats, createStats, toTokenUsage } from "../utils/stats.js";
 import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
@@ -235,7 +236,7 @@ async function run(
   const registry = resolveToolRegistry(options);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
-  const usage: Stats = { in: 0, out: 0 };
+  const usage: Stats = createStats();
   let globalIndex = 0;
   let iterations = 0;
 
@@ -255,9 +256,7 @@ async function run(
       model,
       request: { messages },
       response: { content: finalContent ?? null },
-      usage: result.usage
-        ? { inputTokens: result.usage.in, outputTokens: result.usage.out }
-        : undefined,
+      usage: toTokenUsage(result.usage),
       finishReason,
     });
     tracer?.end(result.ok ? "ok" : "error");
@@ -340,7 +339,7 @@ async function run(
     let turnId = "";
     let turnModel = "";
     let turnFinishReason: AxleStopReason | null = null;
-    let turnUsage: Stats = { in: 0, out: 0 };
+    let turnUsage: Stats = createStats();
 
     // Track the current "open" part for accumulation
     let openPartIndex = -1;
@@ -521,9 +520,7 @@ async function run(
 
         case "error": {
           closePart();
-          const errorUsage = chunk.data.usage ?? { in: 0, out: 0 };
-          usage.in += errorUsage.in ?? 0;
-          usage.out += errorUsage.out ?? 0;
+          addStats(usage, chunk.data.usage);
           turnSpan?.end("error");
           return endWithResult({
             ok: false,
@@ -573,15 +570,14 @@ async function run(
       });
     }
 
-    usage.in += turnUsage.in ?? 0;
-    usage.out += turnUsage.out ?? 0;
+    addStats(usage, turnUsage);
 
     const turnLLMResult: LLMResult = {
       kind: "llm",
       model: turnModel,
       request: { messages: workingMessages },
       response: { content: turnParts },
-      usage: { inputTokens: turnUsage.in, outputTokens: turnUsage.out },
+      usage: toTokenUsage(turnUsage),
       finishReason: turnFinishReason,
     };
     turnSpan?.setResult(turnLLMResult);

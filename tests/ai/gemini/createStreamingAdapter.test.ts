@@ -73,6 +73,33 @@ describe("createGeminiStreamingAdapter", () => {
       }
     });
 
+    test("should include cache and reasoning usage details on completion", () => {
+      const adapter = createGeminiStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ text: "Done" }],
+          finishReason: FinishReason.STOP,
+          usage: {
+            promptTokenCount: 10,
+            totalTokenCount: 30,
+            cachedContentTokenCount: 6,
+            thoughtsTokenCount: 4,
+          },
+        }),
+      );
+
+      const completeChunk = chunks.find((c) => c.type === "complete");
+      expect(completeChunk?.type).toBe("complete");
+      if (completeChunk?.type === "complete") {
+        expect(completeChunk.data.usage).toEqual({
+          in: 10,
+          out: 20,
+          cachedIn: 6,
+          reasoningOut: 4,
+        });
+      }
+    });
+
     test("should handle completion with MAX_TOKENS finish reason", () => {
       const adapter = createGeminiStreamingAdapter();
       adapter.handleChunk(makeChunk({ parts: [{ text: "Hi" }] }));
@@ -297,7 +324,12 @@ describe("createGeminiStreamingAdapter", () => {
 function makeChunk(options: {
   parts: any[];
   finishReason?: FinishReason;
-  usage?: { promptTokenCount?: number; totalTokenCount?: number };
+  usage?: {
+    promptTokenCount?: number;
+    totalTokenCount?: number;
+    cachedContentTokenCount?: number;
+    thoughtsTokenCount?: number;
+  };
 }) {
   return {
     responseId: "resp_123",

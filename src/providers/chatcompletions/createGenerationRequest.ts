@@ -10,6 +10,7 @@ import { GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { ChatCompletionResponse } from "./types.js";
 import {
+  chatUsageToStats,
   convertAxleMessages,
   convertFinishReason,
   convertTools,
@@ -173,10 +174,7 @@ function fromModelResponse(data: ChatCompletionResponse): ModelResult {
     finishReason,
     content,
     text: getTextContent(content),
-    usage: {
-      in: data.usage?.prompt_tokens || 0,
-      out: data.usage?.completion_tokens || 0,
-    },
+    usage: chatUsageToStats(data.usage),
     raw: data,
   };
 }

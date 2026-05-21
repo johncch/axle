@@ -129,6 +129,52 @@ describe("createAnthropicStreamingAdapter", () => {
       }
     });
 
+    test("should include cache usage details from the streamed usage snapshot", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "message_start",
+        message: {
+          id: "msg_123",
+          type: "message",
+          role: "assistant",
+          content: [],
+          container: null,
+          model: "claude-3-5-sonnet-20241022",
+          stop_reason: null,
+          stop_sequence: null,
+          stop_details: null,
+          usage: {
+            input_tokens: 10,
+            output_tokens: 0,
+            cache_read_input_tokens: 30,
+            cache_creation_input_tokens: 40,
+          },
+        },
+      } as any);
+
+      const chunks = adapter.handleEvent({
+        type: "message_delta",
+        delta: {
+          stop_reason: "end_turn",
+          stop_sequence: null,
+        },
+        usage: {
+          output_tokens: 25,
+        },
+      } as any);
+
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.usage).toEqual({
+          in: 80,
+          out: 25,
+          cachedIn: 30,
+          cacheWriteIn: 40,
+        });
+      }
+    });
+
     test("should handle message_stop event", () => {
       const adapter = createAnthropicStreamingAdapter();
 

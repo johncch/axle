@@ -57,6 +57,9 @@ export interface TokenUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  reasoningOutputTokens?: number;
 }
 
 export interface ToolResult {

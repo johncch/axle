@@ -1,7 +1,8 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
+import type { Stats } from "../../types.js";
 import { AxleStopReason } from "../types.js";
 import { ChatCompletionChunk } from "./types.js";
-import { convertFinishReason } from "./utils.js";
+import { chatUsageToStats, convertFinishReason } from "./utils.js";
 
 export function createStreamingAdapter() {
   const toolCallBuffers = new Map<
@@ -23,7 +24,7 @@ export function createStreamingAdapter() {
   // Deferred completion: finish_reason arrives before the usage-only chunk,
   // so we hold the complete event until finalize() is called.
   let pendingFinishReason: AxleStopReason | undefined;
-  let pendingUsage: { in: number; out: number } | undefined;
+  let pendingUsage: Stats | undefined;
 
   function closeActivePart(chunks: Array<AnyStreamChunk>) {
     if (currentPartIndex < 0) return;
@@ -42,7 +43,7 @@ export function createStreamingAdapter() {
     // Capture usage whenever present — some providers (e.g. OpenRouter) send it
     // on every chunk, others only on a final usage-only chunk.
     if (chunk.usage) {
-      pendingUsage = { in: chunk.usage.prompt_tokens, out: chunk.usage.completion_tokens };
+      pendingUsage = chatUsageToStats(chunk.usage);
     }
 
     const choice = chunk.choices?.[0];

@@ -13,6 +13,7 @@ import {
 import { getTextContent } from "../../messages/utils.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import { convertAxleMessageToResponseInput, prepareTools, toOpenAIReasoning } from "./utils.js";
@@ -69,10 +70,7 @@ export function fromModelResponse(response: Response): ModelResult {
         type: response.error.code || "undetermined",
         message: response.error.message || "Response generation failed",
       },
-      usage: {
-        in: response.usage?.input_tokens ?? 0,
-        out: response.usage?.output_tokens ?? 0,
-      },
+      usage: toUsage(response.usage),
       raw: response,
     };
   }
@@ -132,10 +130,20 @@ export function fromModelResponse(response: Response): ModelResult {
         : AxleStopReason.Stop,
     content,
     text: getTextContent(content),
-    usage: {
-      in: response.usage?.input_tokens ?? 0,
-      out: response.usage?.output_tokens ?? 0,
-    },
+    usage: toUsage(response.usage),
     raw: response,
   };
+}
+
+function toUsage(usage: Response["usage"]) {
+  return withUsageDetails(
+    {
+      in: usage?.input_tokens ?? 0,
+      out: usage?.output_tokens ?? 0,
+    },
+    {
+      cachedIn: usage?.input_tokens_details?.cached_tokens,
+      reasoningOut: usage?.output_tokens_details?.reasoning_tokens,
+    },
+  );
 }

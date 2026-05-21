@@ -51,6 +51,23 @@ describe("createGenerationRequest (OpenAI)", () => {
     expect(mockCreate).toHaveBeenCalledWith(expect.any(Object), { signal: controller.signal });
   });
 
+  test("maps cache and reasoning usage details", async () => {
+    const response = makeTextResponse("Hello") as any;
+    response.usage.input_tokens_details = { cached_tokens: 7 };
+    response.usage.output_tokens_details = { reasoning_tokens: 3 };
+    mockCreate.mockResolvedValue(response);
+
+    const result = await createGenerationRequest({
+      client: mockClient,
+      model: MODEL,
+      messages: [{ role: "user", content: "Hello" }],
+      context: {},
+    });
+
+    expect(result.type).toBe("success");
+    expect(result.usage).toEqual({ in: 10, out: 20, cachedIn: 7, reasoningOut: 3 });
+  });
+
   test("throws AxleAbortError when aborted during an in-flight SDK request", async () => {
     const controller = new AbortController();
     mockCreate.mockImplementation(() => new Promise(() => {}));

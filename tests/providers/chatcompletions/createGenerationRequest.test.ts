@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AxleAbortError } from "../../../src/errors/AxleAbortError.js";
 import { createGenerationRequest } from "../../../src/providers/chatcompletions/createGenerationRequest.js";
+import type { ChatCompletionResponse } from "../../../src/providers/chatcompletions/types.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
 const BASE_URL = "http://localhost:11434/v1";
@@ -247,7 +248,12 @@ describe("createGenerationRequest", () => {
 
     test("maps usage stats", async () => {
       const response = makeTextResponse("Hi");
-      response.usage = { prompt_tokens: 42, completion_tokens: 17 };
+      response.usage = {
+        prompt_tokens: 42,
+        completion_tokens: 17,
+        prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 9 },
+        completion_tokens_details: { reasoning_tokens: 8 },
+      };
       (fetch as any).mockResolvedValue(makeOkResponse(response));
 
       const result = await createGenerationRequest({
@@ -259,7 +265,41 @@ describe("createGenerationRequest", () => {
 
       expect(result.type).toBe("success");
       if (result.type !== "success") return;
-      expect(result.usage).toEqual({ in: 42, out: 17 });
+      expect(result.usage).toEqual({
+        in: 42,
+        out: 17,
+        cachedIn: 30,
+        cacheWriteIn: 9,
+        reasoningOut: 8,
+      });
+    });
+
+    test("maps alternate usage detail field names", async () => {
+      const response = makeTextResponse("Hi");
+      response.usage = {
+        prompt_tokens: 42,
+        completion_tokens: 17,
+        input_tokens_details: { cached_tokens: 30, cache_creation_tokens: 9 },
+        output_tokens_details: { reasoning_tokens: 8 },
+      };
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+
+      const result = await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        context: {},
+      });
+
+      expect(result.type).toBe("success");
+      if (result.type !== "success") return;
+      expect(result.usage).toEqual({
+        in: 42,
+        out: 17,
+        cachedIn: 30,
+        cacheWriteIn: 9,
+        reasoningOut: 8,
+      });
     });
   });
 
@@ -352,7 +392,7 @@ describe("createGenerationRequest", () => {
 
 // Helpers
 
-function makeTextResponse(text: string) {
+function makeTextResponse(text: string): ChatCompletionResponse {
   return {
     id: "chatcmpl-123",
     model: MODEL,

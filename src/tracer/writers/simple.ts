@@ -169,6 +169,15 @@ export class SimpleWriter implements TraceWriter {
         if (result.usage.outputTokens !== undefined) {
           parts.push(`outputTokens=${result.usage.outputTokens}`);
         }
+        if (result.usage.cachedInputTokens !== undefined) {
+          parts.push(`cachedInputTokens=${result.usage.cachedInputTokens}`);
+        }
+        if (result.usage.cacheWriteInputTokens !== undefined) {
+          parts.push(`cacheWriteInputTokens=${result.usage.cacheWriteInputTokens}`);
+        }
+        if (result.usage.reasoningOutputTokens !== undefined) {
+          parts.push(`reasoningOutputTokens=${result.usage.reasoningOutputTokens}`);
+        }
       }
       this.output(`${timestamp}${indent}  INFO  LLM complete ${parts.join(" ")}`);
 
@@ -239,9 +248,7 @@ function renderTerminalMarkdown(text: string): string {
 }
 
 function renderBlockTokens(tokens: Token[] = []): string {
-  const rendered = tokens
-    .map((token) => renderBlockToken(token))
-    .filter((part) => part.length > 0);
+  const rendered = tokens.map((token) => renderBlockToken(token)).filter((part) => part.length > 0);
   return rendered.join("\n");
 }
 

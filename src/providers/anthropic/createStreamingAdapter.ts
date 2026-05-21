@@ -1,10 +1,15 @@
 import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { convertStopReason } from "./utils.js";
 
 export function createAnthropicStreamingAdapter() {
   const blockTypes = new Map<number, "text" | "thinking" | "tool" | "provider-tool">();
   const providerToolInfo = new Map<string, { index: number; name: string }>();
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadInputTokens = 0;
+  let cacheWriteInputTokens = 0;
   const toolCallBuffers = new Map<
     number,
     {
@@ -19,6 +24,12 @@ export function createAnthropicStreamingAdapter() {
 
     switch (event.type) {
       case "message_start":
+        inputTokens =
+          (event.message.usage?.input_tokens ?? 0) +
+          (event.message.usage?.cache_creation_input_tokens ?? 0) +
+          (event.message.usage?.cache_read_input_tokens ?? 0);
+        cacheWriteInputTokens = event.message.usage?.cache_creation_input_tokens ?? 0;
+        cacheReadInputTokens = event.message.usage?.cache_read_input_tokens ?? 0;
         chunks.push({
           type: "start",
           id: event.message.id,
@@ -30,15 +41,26 @@ export function createAnthropicStreamingAdapter() {
         break;
 
       case "message_delta":
+        if (event.usage) {
+          outputTokens = event.usage.output_tokens ?? outputTokens;
+          if (event.usage.input_tokens != null) {
+            inputTokens =
+              event.usage.input_tokens +
+              (event.usage.cache_creation_input_tokens ?? cacheWriteInputTokens) +
+              (event.usage.cache_read_input_tokens ?? cacheReadInputTokens);
+          }
+          cacheWriteInputTokens = event.usage.cache_creation_input_tokens ?? cacheWriteInputTokens;
+          cacheReadInputTokens = event.usage.cache_read_input_tokens ?? cacheReadInputTokens;
+        }
         if (event.delta.stop_reason) {
           chunks.push({
             type: "complete",
             data: {
               finishReason: convertStopReason(event.delta.stop_reason),
-              usage: {
-                in: event.usage?.input_tokens || 0,
-                out: event.usage?.output_tokens || 0,
-              },
+              usage: withUsageDetails(
+                { in: inputTokens, out: outputTokens },
+                { cachedIn: cacheReadInputTokens, cacheWriteIn: cacheWriteInputTokens },
+              ),
             },
           });
         }

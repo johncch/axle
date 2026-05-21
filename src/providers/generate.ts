@@ -12,6 +12,7 @@ import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import { throwIfAborted } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
+import { createStats, toTokenUsage } from "../utils/stats.js";
 import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
 import {
   appendUsage,
@@ -112,7 +113,7 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
   const registry = resolveToolRegistry(options);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
-  const usage: Stats = { in: 0, out: 0 };
+  const usage: Stats = createStats();
 
   let iterations = 0;
   let finalMessage: AxleAssistantMessage | undefined;
@@ -128,9 +129,7 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
       model,
       request: { messages },
       response: { content: result.ok ? result.final.content : null },
-      usage: result.usage
-        ? { inputTokens: result.usage.in, outputTokens: result.usage.out }
-        : undefined,
+      usage: toTokenUsage(result.usage),
       finishReason: result.ok ? result.final.finishReason : undefined,
     });
     tracer?.end(result.ok ? "ok" : "error");
@@ -147,9 +146,7 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
       model: response.model ?? model,
       request: { messages: workingMessages },
       response: { content: response.content },
-      usage: response.usage
-        ? { inputTokens: response.usage.in, outputTokens: response.usage.out }
-        : undefined,
+      usage: toTokenUsage(response.usage),
       finishReason: response.finishReason,
     });
     turnSpan.end();

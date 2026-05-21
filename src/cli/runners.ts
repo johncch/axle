@@ -10,6 +10,7 @@ import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { ProgramOptions, Stats } from "../types.js";
 import { loadFileContent } from "../utils/file.js";
+import { addStats } from "../utils/stats.js";
 import type { JobConfig } from "./configs/schemas.js";
 import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
 
@@ -48,8 +49,7 @@ export async function runSingle(
   try {
     const result = await agent.send(instruct.withInputs(variables)).final;
 
-    stats.in += result.usage.in;
-    stats.out += result.usage.out;
+    addStats(stats, result.usage);
 
     if (result.response) {
       const text = result.response;
@@ -97,8 +97,7 @@ async function runInteractiveLoop(
       try {
         const result = await agent.send(input.trim()).final;
 
-        stats.in += result.usage.in;
-        stats.out += result.usage.out;
+        addStats(stats, result.usage);
 
         if (result.response) {
           const text = result.response;
@@ -186,8 +185,7 @@ export async function runBatch(
       });
       const result = await agent.send(instruct.withInputs(itemVars)).final;
 
-      stats.in += result.usage.in;
-      stats.out += result.usage.out;
+      addStats(stats, result.usage);
 
       await appendLedgerEntry({ file: batchFilePath, hash, timestamp: Date.now() });
       itemSpan.end();

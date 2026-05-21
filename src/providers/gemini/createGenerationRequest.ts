@@ -8,6 +8,7 @@ import { getTextContent } from "../../messages/utils.js";
 import type { TracingContext } from "../../tracer/types.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
@@ -91,7 +92,13 @@ export function fromModelResponse(
   const inTokens = response.usageMetadata?.promptTokenCount ?? 0;
   const totalTokens = response.usageMetadata?.totalTokenCount ?? inTokens;
   const outTokens = totalTokens - inTokens;
-  const usage = { in: inTokens, out: outTokens };
+  const usage = withUsageDetails(
+    { in: inTokens, out: outTokens },
+    {
+      cachedIn: (response.usageMetadata as any)?.cachedContentTokenCount,
+      reasoningOut: (response.usageMetadata as any)?.thoughtsTokenCount,
+    },
+  );
 
   if (!response) {
     return {

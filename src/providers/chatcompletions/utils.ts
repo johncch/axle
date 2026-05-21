@@ -1,14 +1,21 @@
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { ToolDefinition } from "../../tools/types.js";
+import type { Stats } from "../../types.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
-import { ChatCompletionContentPart, ChatCompletionMessage, ChatCompletionTool } from "./types.js";
+import {
+  ChatCompletionContentPart,
+  ChatCompletionMessage,
+  ChatCompletionTool,
+  type ChatCompletionUsage,
+} from "./types.js";
 
 interface ChatCompletionsConversionContext {
   model: string;
@@ -42,6 +49,27 @@ export function toReasoningEffort(reasoning: boolean | undefined) {
   if (reasoning === true) return { reasoning_effort: "high" as const };
   if (reasoning === false) return { reasoning_effort: "none" as const };
   return {};
+}
+
+export function chatUsageToStats(usage: ChatCompletionUsage | undefined): Stats {
+  return withUsageDetails(
+    {
+      in: usage?.prompt_tokens || 0,
+      out: usage?.completion_tokens || 0,
+    },
+    {
+      cachedIn:
+        usage?.prompt_tokens_details?.cached_tokens ?? usage?.input_tokens_details?.cached_tokens,
+      cacheWriteIn:
+        usage?.prompt_tokens_details?.cache_write_tokens ??
+        usage?.prompt_tokens_details?.cache_creation_tokens ??
+        usage?.input_tokens_details?.cache_write_tokens ??
+        usage?.input_tokens_details?.cache_creation_tokens,
+      reasoningOut:
+        usage?.completion_tokens_details?.reasoning_tokens ??
+        usage?.output_tokens_details?.reasoning_tokens,
+    },
+  );
 }
 
 export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[] | undefined {

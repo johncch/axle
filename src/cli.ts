@@ -27,6 +27,7 @@ import type { ExecutableTool, ProviderTool } from "./tools/types.js";
 import { Tracer } from "./tracer/tracer.js";
 import { SimpleWriter } from "./tracer/writers/simple.js";
 import type { Stats } from "./types.js";
+import { createStats } from "./utils/stats.js";
 
 const program = new Command()
   .name("axle")
@@ -233,7 +234,7 @@ if (jobConfig.mcps?.length) {
   }
 }
 
-const stats: Stats = { in: 0, out: 0 };
+const stats: Stats = createStats();
 const startTime = performance.now();
 
 try {
@@ -280,6 +281,11 @@ const duration = performance.now() - startTime;
 rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
 rootSpan.info(`Input tokens: ${stats.in}`);
 rootSpan.info(`Output tokens: ${stats.out}`);
+if (stats.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${stats.cachedIn}`);
+if (stats.cacheWriteIn !== undefined)
+  rootSpan.info(`Cache write input tokens: ${stats.cacheWriteIn}`);
+if (stats.reasoningOut !== undefined)
+  rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
 
 rootSpan.info("Complete. Goodbye");
 rootSpan.end();

@@ -1,5 +1,6 @@
 import { FinishReason, GenerateContentResponse } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
 import { convertStopReason } from "./utils.js";
 
@@ -11,6 +12,8 @@ export function createGeminiStreamingAdapter() {
   let model = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let cachedInputTokens = 0;
+  let reasoningOutputTokens = 0;
 
   let activePart: "text" | "thinking" | null = null;
 
@@ -43,6 +46,8 @@ export function createGeminiStreamingAdapter() {
     if (chunk.usageMetadata) {
       inputTokens = chunk.usageMetadata.promptTokenCount || 0;
       outputTokens = (chunk.usageMetadata.totalTokenCount || 0) - inputTokens;
+      cachedInputTokens = (chunk.usageMetadata as any).cachedContentTokenCount || 0;
+      reasoningOutputTokens = (chunk.usageMetadata as any).thoughtsTokenCount || 0;
     }
 
     // Process candidates
@@ -168,7 +173,10 @@ export function createGeminiStreamingAdapter() {
           data: {
             type: "FinishReasonError",
             message: `Unexpected finish reason: ${candidate.finishReason}`,
-            usage: { in: inputTokens, out: outputTokens },
+            usage: withUsageDetails(
+              { in: inputTokens, out: outputTokens },
+              { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
+            ),
             raw: chunk,
           },
         });
@@ -177,7 +185,10 @@ export function createGeminiStreamingAdapter() {
           type: "complete",
           data: {
             finishReason: stopReason,
-            usage: { in: inputTokens, out: outputTokens },
+            usage: withUsageDetails(
+              { in: inputTokens, out: outputTokens },
+              { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
+            ),
           },
         });
       }

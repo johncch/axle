@@ -28,6 +28,8 @@ describe("Gemini createGenerationRequest", () => {
         usageMetadata: {
           promptTokenCount: 10,
           totalTokenCount: 15,
+          cachedContentTokenCount: 4,
+          thoughtsTokenCount: 2,
         },
       } as any,
       {},
@@ -36,6 +38,7 @@ describe("Gemini createGenerationRequest", () => {
     expect(result.type).toBe("success");
     if (result.type !== "success") return;
     expect(result.finishReason).toBe(AxleStopReason.FunctionCall);
+    expect(result.usage).toEqual({ in: 10, out: 5, cachedIn: 4, reasoningOut: 2 });
     expect(result.content).toEqual([
       {
         type: "tool-call",

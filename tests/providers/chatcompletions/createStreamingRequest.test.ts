@@ -21,7 +21,7 @@ describe("createStreamingRequest", () => {
       "",
       `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: " world" }, finish_reason: null }] })}`,
       "",
-      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 10 } })}`,
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 }, completion_tokens_details: { reasoning_tokens: 2 } } })}`,
       "",
       "data: [DONE]",
       "",
@@ -50,7 +50,13 @@ describe("createStreamingRequest", () => {
 
     const complete = chunks.find((c) => c.type === "complete");
     expect((complete as any).data.finishReason).toBe(AxleStopReason.Stop);
-    expect((complete as any).data.usage).toEqual({ in: 5, out: 10 });
+    expect((complete as any).data.usage).toEqual({
+      in: 5,
+      out: 10,
+      cachedIn: 3,
+      cacheWriteIn: 4,
+      reasoningOut: 2,
+    });
   });
 
   test("handles data: [DONE] gracefully", async () => {

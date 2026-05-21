@@ -119,6 +119,41 @@ describe("createResponsesAPIStreamingAdapter", () => {
       }
     });
 
+    test("should include cache and reasoning usage details on completion", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 150,
+            input_tokens_details: { cached_tokens: 80 },
+            output_tokens_details: { reasoning_tokens: 12 },
+          },
+        },
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.usage).toEqual({
+          in: 100,
+          out: 50,
+          cachedIn: 80,
+          reasoningOut: 12,
+        });
+      }
+    });
+
     test("should handle response.failed event", () => {
       const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {

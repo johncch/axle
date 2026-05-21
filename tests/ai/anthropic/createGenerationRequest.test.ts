@@ -235,6 +235,38 @@ describe("createGenerationRequest (Anthropic)", () => {
       }
     });
 
+    test("should include cache usage details in input totals", async () => {
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_123",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        model: "claude-3-5-sonnet-20241022",
+        stop_reason: "end_turn",
+        usage: {
+          input_tokens: 10,
+          output_tokens: 20,
+          cache_read_input_tokens: 30,
+          cache_creation_input_tokens: 40,
+        },
+      });
+
+      const result = await createGenerationRequest({
+        client: mockClient,
+        model: "claude-3-5-sonnet-20241022",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        context: {},
+      });
+
+      expect(result.type).toBe("success");
+      expect(result.usage).toEqual({
+        in: 80,
+        out: 20,
+        cachedIn: 30,
+        cacheWriteIn: 40,
+      });
+    });
+
     test("should handle response with tool calls", async () => {
       (mockCreate.mockResolvedValue as any)({
         id: "msg_123",

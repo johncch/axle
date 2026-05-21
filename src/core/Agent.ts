@@ -4,8 +4,8 @@ import { AxleError } from "../errors/AxleError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { MCP } from "../mcp/index.js";
 import type { AgentMemory } from "../memory/types.js";
-import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { estimateContextUsage } from "../providers/context.js";
+import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream } from "../providers/stream.js";
 import type { AIProvider, ContextUsage } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
@@ -18,6 +18,7 @@ import type { AgentEvent } from "../turns/events.js";
 import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
+import { createStats } from "../utils/stats.js";
 import { createHandle, type Handle } from "../utils/utils.js";
 import { History } from "./history.js";
 import { Instruct } from "./Instruct.js";
@@ -186,7 +187,7 @@ export class Agent {
     reasoning?: boolean,
   ): Promise<AgentResult<any> | AgentErrorResult> {
     const builder = new TurnBuilder();
-    const emptyUsage: Stats = { in: 0, out: 0 };
+    const emptyUsage: Stats = createStats();
 
     if (signal.aborted) {
       throw new AxleAgentAbortError("Agent send aborted", {

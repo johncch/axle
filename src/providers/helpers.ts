@@ -12,6 +12,7 @@ import { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool, ToolContext } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
+import { addStats } from "../utils/stats.js";
 import type { ModelError, ModelResult } from "./types.js";
 
 export type ToolCallResult =
@@ -52,9 +53,7 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
 export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TResponse>;
 
 export function appendUsage(total: Stats, result: ModelResult): void {
-  const usage = result.usage ?? { in: 0, out: 0 };
-  total.in += usage.in ?? 0;
-  total.out += usage.out ?? 0;
+  addStats(total, result.usage);
 }
 
 export function serializeToolError(error: { type: string; message: string }): string {

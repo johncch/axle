@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getTextContent } from "../../messages/utils.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { arrayify } from "../../utils/utils.js";
 import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
@@ -68,10 +69,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
         type: "Uncaught error",
         message: `Stop reason is not recognized or unhandled: ${completion.stop_reason}`,
       },
-      usage: {
-        in: completion.usage.input_tokens,
-        out: completion.usage.output_tokens,
-      },
+      usage: cacheUsage(completion.usage),
       raw: completion,
     };
   }
@@ -86,10 +84,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       finishReason: AxleStopReason.FunctionCall,
       content,
       text: getTextContent(content),
-      usage: {
-        in: completion.usage.input_tokens,
-        out: completion.usage.output_tokens,
-      },
+      usage: cacheUsage(completion.usage),
       raw: completion,
     };
   }
@@ -104,10 +99,7 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       finishReason: stopReason,
       content,
       text: getTextContent(content),
-      usage: {
-        in: completion.usage.input_tokens,
-        out: completion.usage.output_tokens,
-      },
+      usage: cacheUsage(completion.usage),
       raw: completion,
     };
   }
@@ -118,10 +110,25 @@ function convertToAIResponse(completion: Anthropic.Messages.Message): ModelResul
       type: "InvalidResponse",
       message: `Unsupported completion type: ${completion.type}`,
     },
-    usage: {
-      in: completion.usage.input_tokens,
-      out: completion.usage.output_tokens,
-    },
+    usage: cacheUsage(completion.usage),
     raw: completion,
   };
+}
+
+function inputTokens(usage: Anthropic.Messages.Usage): number {
+  return (
+    usage.input_tokens +
+    (usage.cache_creation_input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0)
+  );
+}
+
+function cacheUsage(usage: Anthropic.Messages.Usage) {
+  return withUsageDetails(
+    { in: inputTokens(usage), out: usage.output_tokens },
+    {
+      cachedIn: usage.cache_read_input_tokens ?? undefined,
+      cacheWriteIn: usage.cache_creation_input_tokens ?? undefined,
+    },
+  );
 }

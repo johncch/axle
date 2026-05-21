@@ -1,5 +1,6 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
 
 export function createStreamingAdapter() {
@@ -145,10 +146,16 @@ export function createStreamingAdapter() {
               : hasFunctionCalls
                 ? AxleStopReason.FunctionCall
                 : AxleStopReason.Stop,
-            usage: {
-              in: usage?.input_tokens || 0,
-              out: usage?.output_tokens || 0,
-            },
+            usage: withUsageDetails(
+              {
+                in: usage?.input_tokens || 0,
+                out: usage?.output_tokens || 0,
+              },
+              {
+                cachedIn: usage?.input_tokens_details?.cached_tokens,
+                reasoningOut: usage?.output_tokens_details?.reasoning_tokens,
+              },
+            ),
           },
         });
         break;

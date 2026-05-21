@@ -1,6 +1,7 @@
 import type { AxleUserMessage } from "../messages/message.js";
 import type { StreamEvent } from "../providers/stream.js";
 import type { Stats } from "../types.js";
+import { addStats, createStats } from "../utils/stats.js";
 import type { AgentEvent } from "./events.js";
 import type {
   ProviderToolAction,
@@ -31,7 +32,7 @@ export class TurnBuilder {
   private currentTextPart: TextPart | null = null;
   private currentThinkingPart: ThinkingPart | null = null;
   private toolIdMap = new Map<string, { partId: string; turnId: string }>();
-  private accumulatedUsage: Stats = { in: 0, out: 0 };
+  private accumulatedUsage: Stats = createStats();
 
   createUserTurn(message: AxleUserMessage): { turn: Turn; events: AgentEvent[] } {
     const turnId = message.id ?? crypto.randomUUID();
@@ -84,7 +85,7 @@ export class TurnBuilder {
     this.currentTextPart = null;
     this.currentThinkingPart = null;
     this.toolIdMap.clear();
-    this.accumulatedUsage = { in: 0, out: 0 };
+    this.accumulatedUsage = createStats();
     return { turn, events: [{ type: "turn:start", turnId }] };
   }
 
@@ -332,9 +333,7 @@ export class TurnBuilder {
 
       case "turn:complete": {
         this.closeOpenParts(turn, events);
-        const stepUsage = event.usage ?? { in: 0, out: 0 };
-        this.accumulatedUsage.in += stepUsage.in;
-        this.accumulatedUsage.out += stepUsage.out;
+        addStats(this.accumulatedUsage, event.usage);
         break;
       }
 
