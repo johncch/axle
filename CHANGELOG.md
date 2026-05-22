@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.0] - 2026-05-22
+
+- Added support for Gemini 3.5 Flash
+- Standardized request options across providers, including output tokens, temperature, top-p, stop sequences, tool choice, and provider-specific options
+- Renamed provider option types and runtime parameters; see the 0.18.0 migration guide for update details
+- Updated usage stats to include cached tokens and thinking tokens
+- Added a simple context counter and split MCP tools for more flexible tool usage
+- Fixed bugs found during smoke testing
+
 ## [0.17.0] - 2026-05-13
 
 - Updated the Instruct constructor to use object-style options
