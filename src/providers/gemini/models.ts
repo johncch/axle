@@ -10,6 +10,8 @@ export const Models = {
   GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview",
   GEMINI_3_FLASH: "gemini-3-flash-preview",
 
+  GEMINI_3_5_FLASH: "gemini-3.5-flash",
+
   GEMINI_2_5_PRO: "gemini-2.5-pro",
   GEMINI_2_5_FLASH: "gemini-2.5-flash",
   GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite",
@@ -30,6 +32,7 @@ export const MULTIMODAL_MODELS = [
   Models.GEMINI_3_1_FLASH_LITE,
   Models.GEMINI_3_PRO,
   Models.GEMINI_3_FLASH,
+  Models.GEMINI_3_5_FLASH,
   Models.GEMINI_2_5_PRO,
   Models.GEMINI_2_5_FLASH,
   Models.GEMINI_2_5_FLASH_LITE,
