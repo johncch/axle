@@ -229,6 +229,63 @@ describe("Agent", () => {
     expect(result.usage.out).toBe(20);
   });
 
+  test("send() merges per-call request options over agent defaults", async () => {
+    let observedRequest: unknown;
+    const provider: AIProvider = {
+      name: "mock-stream",
+      async createGenerationRequest() {
+        throw new Error("not used");
+      },
+      async *createStreamingRequest(
+        _model,
+        params,
+      ): AsyncGenerator<AnyStreamChunk, void> {
+        observedRequest = {
+          reasoning: params.reasoning,
+          maxOutputTokens: params.maxOutputTokens,
+          temperature: params.temperature,
+          topP: params.topP,
+          providerOptions: params.providerOptions,
+        };
+        yield {
+          type: "start",
+          id: "mock-1",
+          data: { model: "mock", timestamp: Date.now() },
+        };
+        yield { type: "text-start", data: { index: 0 } };
+        yield { type: "text-delta", data: { index: 0, text: "ok" } };
+        yield { type: "text-complete", data: { index: 0 } };
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        };
+      },
+    };
+    const agent = new Agent({
+      provider,
+      model: "mock",
+      reasoning: true,
+      temperature: 0.7,
+      maxOutputTokens: 100,
+      providerOptions: { seed: 1, metadata: { source: "agent" } },
+    });
+
+    await agent.send("Hi", {
+      reasoning: false,
+      maxOutputTokens: 20,
+      topP: 0.5,
+      providerOptions: { metadata: { source: "send" } },
+    }).final;
+
+    expect(observedRequest).toEqual({
+      reasoning: false,
+      maxOutputTokens: 20,
+      temperature: 0.7,
+      topP: 0.5,
+      providerOptions: { seed: 1, metadata: { source: "send" } },
+    });
+  });
+
   describe("abort signals", () => {
     test("send(string, { signal }) passes an abort signal to the provider", async () => {
       let providerSignal: AbortSignal | undefined;

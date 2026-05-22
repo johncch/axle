@@ -1,14 +1,19 @@
-import { Content, FinishReason, GenerateContentConfig } from "@google/genai";
+import {
+  Content,
+  FinishReason,
+  FunctionCallingConfigMode,
+  GenerateContentConfig,
+} from "@google/genai";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
-import { ToolDefinition } from "../../tools/index.js";
+import { ProviderTool, ToolDefinition } from "../../tools/index.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { AxleStopReason } from "../types.js";
+import { AxleStopReason, ToolChoice } from "../types.js";
 
 /* To Request */
 
@@ -45,12 +50,70 @@ export function prepareConfig(
   return config;
 }
 
+const PROVIDER_TOOL_MAP: Record<string, string> = {
+  web_search: "googleSearch",
+  code_execution: "codeExecution",
+};
+
+export function addGeminiProviderTools(
+  config: GenerateContentConfig,
+  providerTools?: ProviderTool[],
+) {
+  if (!providerTools || providerTools.length === 0) return;
+  if (!config.tools) config.tools = [];
+  for (const tool of providerTools) {
+    const key = PROVIDER_TOOL_MAP[tool.name] ?? tool.name;
+    config.tools.push({ [key]: tool.config ?? {} } as any);
+  }
+}
+
+export function toGeminiToolConfig(
+  choice: ToolChoice | undefined,
+  parallelToolCalls: boolean | undefined,
+  tools?: Array<ToolDefinition>,
+  providerTools?: Array<ProviderTool>,
+) {
+  if (parallelToolCalls === false) {
+    throw new Error("Gemini does not support disabling parallel tool calls");
+  }
+  if (choice === undefined) return {};
+  if (choice === "auto") {
+    return { toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } } };
+  }
+  if (choice === "none") {
+    return { toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.NONE } } };
+  }
+  if (choice === "required") {
+    if (!tools || tools.length === 0) {
+      throw new Error("Gemini requires function tools for required tool choice");
+    }
+    return { toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY } } };
+  }
+
+  if (tools?.some((tool) => tool.name === choice.name)) {
+    return {
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.ANY,
+          allowedFunctionNames: [choice.name],
+        },
+      },
+    };
+  }
+
+  if (providerTools?.some((tool) => tool.name === choice.name)) {
+    throw new Error(`Gemini does not support provider tool choice: ${choice.name}`);
+  }
+
+  throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+}
+
 /**
  * Translate Axle's normalized `reasoning` boolean into Gemini's thinkingConfig.
  * `true` → enable thinking with a sensible budget; `false` → disable
  * (thinkingBudget: 0); `undefined` → omit (model uses its default, which on
  * 2.5+ is dynamic). Users wanting precise budgets or `includeThoughts: false`
- * set `options.thinkingConfig` directly, which spreads after this and overrides.
+ * set `providerOptions.thinkingConfig` directly, which spreads after this and overrides.
  */
 export function toGeminiThinkingConfig(reasoning: boolean | undefined) {
   if (reasoning === true) {

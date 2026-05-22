@@ -16,19 +16,12 @@ const callNameTool: ExecutableTool<z.ZodObject<{ name: z.ZodString }>> = {
   },
 };
 
-let options: any = {};
-// if (provider.name === "OpenAI") {
-//   options.reasoning = {
-//     summary: "detailed",
-//   };
-// }
-
 console.log("[Starting...]");
 
 const tracer = new Tracer();
 const logWriter = new SimpleWriter({
-  minLevel: options.debug ? "debug" : "info",
-  showInternal: options.debug,
+  minLevel: "info",
+  showInternal: false,
   showTimestamp: true,
 });
 tracer.addWriter(logWriter);
@@ -45,7 +38,6 @@ try {
       },
     ],
     tools: [callNameTool],
-    options,
     onToolCall: async (name, parameters, _ctx) => {
       console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
       return {

@@ -2,13 +2,14 @@ import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import { ToolDefinition } from "../../tools/types.js";
+import { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
+import type { ToolChoice } from "../types.js";
 
 /* To Request */
 
@@ -25,10 +26,42 @@ export function prepareTools(tools?: Array<ToolDefinition>) {
   return undefined;
 }
 
+const PROVIDER_TOOL_MAP: Record<string, string> = {
+  web_search: "web_search_preview",
+  code_execution: "code_interpreter",
+};
+
+export function prepareProviderTools(providerTools?: Array<ProviderTool>): any[] | undefined {
+  return providerTools?.map((tool) => ({
+    type: PROVIDER_TOOL_MAP[tool.name] ?? tool.name,
+    ...tool.config,
+  }));
+}
+
+export function toOpenAIToolChoice(
+  choice: ToolChoice | undefined,
+  tools?: Array<ToolDefinition>,
+  providerTools?: Array<ProviderTool>,
+): Record<string, any> {
+  if (choice === undefined) return {};
+  if (choice === "auto" || choice === "none" || choice === "required") return { tool_choice: choice };
+
+  if (tools?.some((tool) => tool.name === choice.name)) {
+    return { tool_choice: { type: "function" as const, name: choice.name } };
+  }
+
+  const providerTool = providerTools?.find((tool) => tool.name === choice.name);
+  if (providerTool) {
+    return { tool_choice: { type: PROVIDER_TOOL_MAP[providerTool.name] ?? providerTool.name } };
+  }
+
+  throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+}
+
 /**
  * Translate Axle's normalized `reasoning` boolean into OpenAI's reasoning
  * field. `true` → effort: "high"; `false` → effort: "none"; `undefined` → omit.
- * Users wanting `xhigh` or other specific effort levels set `options.reasoning`
+ * Users wanting `xhigh` or other specific effort levels set `providerOptions.reasoning`
  * directly, which spreads after this and overrides.
  */
 export function toOpenAIReasoning(reasoning: boolean | undefined) {

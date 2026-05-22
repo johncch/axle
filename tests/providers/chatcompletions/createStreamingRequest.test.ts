@@ -34,7 +34,7 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       }),
     );
 
@@ -76,7 +76,7 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       }),
     );
 
@@ -103,7 +103,7 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       }),
     );
 
@@ -123,7 +123,7 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       }),
     );
 
@@ -140,7 +140,7 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       }),
     );
 
@@ -165,7 +165,7 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       }),
     );
 

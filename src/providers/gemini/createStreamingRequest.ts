@@ -1,53 +1,55 @@
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
-import { StreamingRequestParams } from "../types.js";
+import { ProviderStreamParams } from "../types.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
-import { convertAxleMessagesToGemini, prepareConfig, toGeminiThinkingConfig } from "./utils.js";
+import {
+  addGeminiProviderTools,
+  convertAxleMessagesToGemini,
+  prepareConfig,
+  toGeminiThinkingConfig,
+  toGeminiToolConfig,
+} from "./utils.js";
 
 export async function* createStreamingRequest(
-  params: StreamingRequestParams & { client: GoogleGenAI; model: string },
+  params: ProviderStreamParams & { client: GoogleGenAI; model: string },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
-  const tracer = context?.tracer;
+  const {
+    client,
+    model,
+    messages,
+    system,
+    tools,
+    providerTools,
+    runtime,
+    signal,
+    reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
+  } = params;
+  const tracer = runtime?.tracer;
 
-  // Extract providerTools before option conversion
-  const { providerTools, ...rawOptions } = options ?? {};
-
-  // Reasoning translation comes first so user-supplied thinkingConfig overrides.
   const googleOptions: Record<string, any> = {
+    // Axle-normalized options.
     ...toGeminiThinkingConfig(reasoning),
-    ...rawOptions,
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(stop !== undefined ? { stopSequences: Array.isArray(stop) ? stop : [stop] } : {}),
+    ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
+
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
   };
-  if (googleOptions.max_tokens) {
-    googleOptions.maxOutputTokens = googleOptions.max_tokens;
-    delete googleOptions.max_tokens;
-  }
-  // Convert stop to stopSequences for Google AI
-  if (googleOptions.stop) {
-    googleOptions.stopSequences = Array.isArray(googleOptions.stop)
-      ? googleOptions.stop
-      : [googleOptions.stop];
-    delete googleOptions.stop;
-  }
-  // Convert top_p to topP for Google AI
-  if (googleOptions.top_p !== undefined) {
-    googleOptions.topP = googleOptions.top_p;
-    delete googleOptions.top_p;
-  }
 
   const config = prepareConfig(tools, system, googleOptions);
-
-  if (providerTools) {
-    const GEMINI_PROVIDER_TOOL_MAP: Record<string, string> = {
-      web_search: "googleSearch",
-      code_execution: "codeExecution",
-    };
-    if (!config.tools) config.tools = [];
-    for (const st of providerTools) {
-      const key = GEMINI_PROVIDER_TOOL_MAP[st.name] ?? st.name;
-      config.tools.push({ [key]: st.config ?? {} } as any);
-    }
+  if (toolChoice !== "none") {
+    addGeminiProviderTools(config, providerTools);
   }
 
   const streamingAdapter = createGeminiStreamingAdapter();
@@ -55,7 +57,7 @@ export async function* createStreamingRequest(
   try {
     const contents = await convertAxleMessagesToGemini(messages, {
       model,
-      fileResolver: context?.fileResolver,
+      fileResolver: runtime?.fileResolver,
       signal,
     });
 

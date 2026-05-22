@@ -9,43 +9,52 @@ import type { TracingContext } from "../../tracer/types.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { withUsageDetails } from "../../utils/stats.js";
-import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
+import { AxleStopReason, ProviderGenerationParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
+  addGeminiProviderTools,
   convertAxleMessagesToGemini,
   convertStopReason,
   prepareConfig,
   toGeminiThinkingConfig,
+  toGeminiToolConfig,
 } from "./utils.js";
 
 export async function createGenerationRequest(
-  params: GenerationRequestParams & { client: GoogleGenAI; model: string },
+  params: ProviderGenerationParams & { client: GoogleGenAI; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options, reasoning, signal } = params;
-  const tracer = context?.tracer;
+  const {
+    client,
+    model,
+    messages,
+    system,
+    tools,
+    providerTools,
+    runtime,
+    reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
+    signal,
+  } = params;
+  const tracer = runtime?.tracer;
 
-  // Convert max_tokens to maxOutputTokens for Google AI; user options spread
-  // after the reasoning translation so a raw thinkingConfig overrides ours.
   const googleOptions: Record<string, any> = {
+    // Axle-normalized options.
     ...toGeminiThinkingConfig(reasoning),
-    ...(options ?? {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(stop !== undefined ? { stopSequences: Array.isArray(stop) ? stop : [stop] } : {}),
+    ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
+
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
   };
-  if (googleOptions.max_tokens) {
-    googleOptions.maxOutputTokens = googleOptions.max_tokens;
-    delete googleOptions.max_tokens;
-  }
-  // Convert stop to stopSequences for Google AI
-  if (googleOptions.stop) {
-    googleOptions.stopSequences = Array.isArray(googleOptions.stop)
-      ? googleOptions.stop
-      : [googleOptions.stop];
-    delete googleOptions.stop;
-  }
-  // Convert top_p to topP for Google AI
-  if (googleOptions.top_p !== undefined) {
-    googleOptions.topP = googleOptions.top_p;
-    delete googleOptions.top_p;
-  }
 
   let result: ModelResult;
   try {
@@ -53,13 +62,18 @@ export async function createGenerationRequest(
 
     const contents = await convertAxleMessagesToGemini(messages, {
       model,
-      fileResolver: context?.fileResolver,
+      fileResolver: runtime?.fileResolver,
       signal,
     });
 
+    const config = prepareConfig(tools, system, googleOptions);
+    if (toolChoice !== "none") {
+      addGeminiProviderTools(config, providerTools);
+    }
+
     const request = {
       contents,
-      config: prepareConfig(tools, system, googleOptions),
+      config,
     };
     tracer?.debug("Gemini request", { request: redactResolvedFileValues(request) });
 

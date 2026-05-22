@@ -28,7 +28,7 @@ describe("createGenerationRequest (Anthropic)", () => {
           client: mockClient,
           model: "claude-3-5-sonnet-20241022",
           messages: [{ role: "user" as const, content: "Hello" }],
-          context: {},
+          runtime: {},
           signal: controller.signal,
         }),
       ).rejects.toBeInstanceOf(AxleAbortError);
@@ -52,7 +52,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages: [{ role: "user" as const, content: "Hello" }],
-        context: {},
+        runtime: {},
         signal: controller.signal,
       });
 
@@ -67,7 +67,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages: [{ role: "user" as const, content: "Hello" }],
-        context: {},
+        runtime: {},
         signal: controller.signal,
       });
 
@@ -99,8 +99,8 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
-        options: { stop: "STOP" },
+        runtime: {},
+        stop: "STOP",
       });
 
       expect(mockCreate).toHaveBeenCalledWith(
@@ -128,8 +128,8 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
-        options: { stop: ["STOP1", "STOP2"] },
+        runtime: {},
+        stop: ["STOP1", "STOP2"],
       });
 
       expect(mockCreate).toHaveBeenCalledWith(
@@ -139,7 +139,7 @@ describe("createGenerationRequest (Anthropic)", () => {
       );
     });
 
-    test("should pass through other options unchanged", async () => {
+    test("should map normalized options and pass through providerOptions", async () => {
       (mockCreate.mockResolvedValue as any)({
         id: "msg_123",
         type: "message",
@@ -156,12 +156,11 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
-        options: {
-          temperature: 0.7,
-          top_p: 0.9,
-          max_tokens: 1000,
-        },
+        runtime: {},
+        temperature: 0.7,
+        topP: 0.9,
+        maxOutputTokens: 1000,
+        providerOptions: { metadata: { user_id: "u1" } },
       });
 
       expect(mockCreate).toHaveBeenCalledWith(
@@ -169,6 +168,7 @@ describe("createGenerationRequest (Anthropic)", () => {
           temperature: 0.7,
           top_p: 0.9,
           max_tokens: 1000,
+          metadata: { user_id: "u1" },
         }),
       );
     });
@@ -191,7 +191,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         model: "claude-3-5-sonnet-20241022",
         messages,
         system: "You are a helpful assistant",
-        context: {},
+        runtime: {},
       });
 
       expect(mockCreate).toHaveBeenCalledWith(
@@ -220,7 +220,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -255,7 +255,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages: [{ role: "user" as const, content: "Hello" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -292,7 +292,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -332,7 +332,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -360,7 +360,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -380,7 +380,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -400,7 +400,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -423,7 +423,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -434,7 +434,7 @@ describe("createGenerationRequest (Anthropic)", () => {
   });
 
   describe("edge cases", () => {
-    test("should handle options being undefined", async () => {
+    test("should handle request options being undefined", async () => {
       (mockCreate.mockResolvedValue as any)({
         id: "msg_123",
         type: "message",
@@ -451,7 +451,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -474,7 +474,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -503,7 +503,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         client: mockClient,
         model: "claude-3-5-sonnet-20241022",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");

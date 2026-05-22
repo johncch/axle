@@ -5,7 +5,7 @@ import {
   ContentPartToolCall,
 } from "../messages/message.js";
 import { AnyStreamChunk } from "../messages/stream.js";
-import { ToolDefinition } from "../tools/types.js";
+import { ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -33,34 +33,79 @@ export interface AIProviderConfig {
  General AI Interfaces
  */
 
-export interface ProviderRequestContext {
+/**
+ * Internal services available to provider adapters while executing a model request.
+ */
+export interface ProviderRuntime {
+  /** Request-scoped tracing span used by provider adapters. */
   tracer?: TracingContext;
+  /** Resolves file references before provider-specific request conversion. */
   fileResolver?: FileResolver;
 }
 
-export interface GenerateTurnOptions {
-  temperature?: number;
-  top_p?: number;
-  max_tokens?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  stop?: string | string[];
+/**
+ * Raw provider-specific request fields.
+ *
+ * Provider adapters apply this after Axle-normalized options, so these values
+ * can intentionally override Axle's provider mappings.
+ */
+export interface ProviderOptions {
   [key: string]: any;
 }
 
-export interface GenerationRequestParams {
-  messages: Array<AxleMessage>;
-  system?: string;
-  tools?: Array<ToolDefinition>;
-  context: ProviderRequestContext;
-  options?: GenerateTurnOptions;
+/**
+ * Controls how the model may use tools during a single model request.
+ */
+export type ToolChoice = "auto" | "none" | "required" | { type: "tool"; name: string };
+
+/**
+ * Provider-portable options for a single model request.
+ *
+ * These fields are normalized by Axle and mapped to each provider's request
+ * shape. Use `providerOptions` for provider-specific controls that are not
+ * represented here.
+ */
+export interface AxleModelRequestOptions {
+  /** Enables or disables provider reasoning/thinking controls where supported. */
   reasoning?: boolean;
+  /** Maximum output tokens to request from the model. */
+  maxOutputTokens?: number;
+  /** Sampling temperature, when supported by the provider/model. */
+  temperature?: number;
+  /** Nucleus sampling value, mapped to provider-specific casing. */
+  topP?: number;
+  /** Stop sequence or sequences for text generation. */
+  stop?: string | string[];
+  /** Constrains tool use for this model request. */
+  toolChoice?: ToolChoice;
+  /** Requests that the provider avoid parallel tool calls when supported. */
+  parallelToolCalls?: boolean;
+  /** Raw provider-specific request fields applied after normalized mappings. */
+  providerOptions?: ProviderOptions;
+  /** Abort signal for the in-flight model request. */
   signal?: AbortSignal;
 }
 
-export interface StreamingRequestParams extends GenerationRequestParams {
-  signal?: AbortSignal;
+/**
+ * Parameters passed to provider adapters for one non-streaming generation call.
+ */
+export interface ProviderGenerationParams extends AxleModelRequestOptions {
+  /** Conversation messages to send to the provider. */
+  messages: Array<AxleMessage>;
+  /** Optional system/developer instruction for the request. */
+  system?: string;
+  /** Executable tools exposed as provider function tools. */
+  tools?: Array<ToolDefinition>;
+  /** Provider-managed tools such as web search or code execution. */
+  providerTools?: Array<ProviderTool>;
+  /** Internal services available during provider request creation. */
+  runtime: ProviderRuntime;
 }
+
+/**
+ * Parameters passed to provider adapters for one streaming generation call.
+ */
+export interface ProviderStreamParams extends ProviderGenerationParams {}
 
 export interface ContextUsage {
   total: number;
@@ -77,12 +122,12 @@ export interface AIProvider {
   get name(): string;
 
   /** @internal */
-  createGenerationRequest(model: string, params: GenerationRequestParams): Promise<ModelResult>;
+  createGenerationRequest(model: string, params: ProviderGenerationParams): Promise<ModelResult>;
 
   /** @internal */
   createStreamingRequest(
     model: string,
-    params: StreamingRequestParams,
+    params: ProviderStreamParams,
   ): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 

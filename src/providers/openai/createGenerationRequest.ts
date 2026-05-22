@@ -14,34 +14,73 @@ import { getTextContent } from "../../messages/utils.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { withUsageDetails } from "../../utils/stats.js";
-import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
+import { AxleStopReason, ProviderGenerationParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
-import { convertAxleMessageToResponseInput, prepareTools, toOpenAIReasoning } from "./utils.js";
+import {
+  convertAxleMessageToResponseInput,
+  prepareProviderTools,
+  prepareTools,
+  toOpenAIReasoning,
+  toOpenAIToolChoice,
+} from "./utils.js";
 
 export async function createGenerationRequest(
-  params: GenerationRequestParams & { client: OpenAI; model: string },
+  params: ProviderGenerationParams & { client: OpenAI; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options, reasoning, signal } = params;
-  const tracer = context?.tracer;
+  const {
+    client,
+    model,
+    messages,
+    system,
+    tools,
+    providerTools,
+    runtime,
+    reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
+    signal,
+  } = params;
+  const tracer = runtime?.tracer;
 
   let result: ModelResult;
   try {
     throwIfAborted(signal, "Generate aborted");
 
-    const modelTools = prepareTools(tools);
+    if (stop !== undefined) {
+      throw new Error("OpenAI Responses does not support normalized stop sequences");
+    }
+
+    const modelTools: any[] = [
+      ...(prepareTools(tools) ?? []),
+      ...(prepareProviderTools(providerTools) ?? []),
+    ];
     const input = await convertAxleMessageToResponseInput(messages, {
       model,
-      fileResolver: context?.fileResolver,
+      fileResolver: runtime?.fileResolver,
       signal,
     });
     const request: ResponseCreateParamsNonStreaming = {
       model,
       input,
       ...(system && { instructions: system }),
-      ...(modelTools ? { tools: modelTools } : {}),
+
+      // Axle-normalized options.
+      ...(modelTools.length > 0 ? { tools: modelTools } : {}),
       ...toOpenAIReasoning(reasoning),
-      ...options,
-    };
+      ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { top_p: topP } : {}),
+      ...toOpenAIToolChoice(toolChoice, tools, providerTools),
+      ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+
+      // Raw provider options are applied last so they can override Axle mappings.
+      ...providerOptions,
+    } as ResponseCreateParamsNonStreaming;
 
     tracer?.debug("OpenAI ResponsesAPI request", { request: redactResolvedFileValues(request) });
 

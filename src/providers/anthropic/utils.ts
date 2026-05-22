@@ -7,14 +7,14 @@ import {
   ContentPartToolCall,
   type ToolResultPart,
 } from "../../messages/message.js";
-import { ToolDefinition } from "../../tools/types.js";
+import { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { AxleStopReason } from "../types.js";
+import { AxleStopReason, ToolChoice } from "../types.js";
 
 interface AnthropicConversionContext {
   model: string;
@@ -247,7 +247,7 @@ function toAnthropicPdfSource(
  * Translate Axle's normalized `reasoning` boolean into Anthropic's thinking
  * field. `true` enables extended thinking with a sensible default budget;
  * `false` and `undefined` produce no field (Anthropic defaults to off).
- * Users wanting precise control set `options.thinking` directly, which spreads
+ * Users wanting precise control set `providerOptions.thinking` directly, which spreads
  * after this and overrides.
  */
 export function toAnthropicThinking(reasoning: boolean | undefined) {
@@ -271,6 +271,40 @@ export function convertToAnthropicTools(
       input_schema: schema,
     };
   });
+}
+
+const PROVIDER_TOOL_MAP: Record<string, string> = {
+  web_search: "web_search_20250305",
+};
+
+export function convertToAnthropicProviderTools(providerTools?: Array<ProviderTool>): any[] {
+  return (providerTools ?? []).map((tool) => ({
+    type: PROVIDER_TOOL_MAP[tool.name] ?? tool.name,
+    name: tool.name,
+    ...tool.config,
+  }));
+}
+
+export function toAnthropicToolChoice(
+  choice: ToolChoice | undefined,
+  parallelToolCalls: boolean | undefined,
+  tools?: Array<ToolDefinition>,
+  providerTools?: Array<ProviderTool>,
+) {
+  if (choice === undefined && parallelToolCalls !== false) return {};
+
+  const disable = parallelToolCalls === false ? { disable_parallel_tool_use: true } : {};
+  if (choice === undefined || choice === "auto") {
+    return { tool_choice: { type: "auto" as const, ...disable } };
+  }
+  if (choice === "required") return { tool_choice: { type: "any" as const, ...disable } };
+  if (choice === "none") return { tool_choice: { type: "none" as const } };
+
+  const exists =
+    tools?.some((tool) => tool.name === choice.name) ||
+    providerTools?.some((tool) => tool.name === choice.name);
+  if (!exists) throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+  return { tool_choice: { type: "tool" as const, name: choice.name, ...disable } };
 }
 
 export function convertToAxleContentParts(

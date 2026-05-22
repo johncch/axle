@@ -51,9 +51,9 @@ async function run(cachedContent: string): Promise<Stats> {
         content: "Using the cached context, answer with exactly this text: cache telemetry ok",
       },
     ],
-    options: {
+    maxOutputTokens: 24,
+    providerOptions: {
       cachedContent,
-      maxOutputTokens: 24,
     },
   });
 

@@ -2,9 +2,9 @@ import AnthropicSDK from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import {
   AIProvider,
-  GenerationRequestParams,
+  ProviderGenerationParams,
   ModelResult,
-  StreamingRequestParams,
+  ProviderStreamParams,
 } from "../types.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
@@ -19,7 +19,7 @@ export function anthropic(apiKey: string): AIProvider {
     /** @internal */
     async createGenerationRequest(
       model: string,
-      params: GenerationRequestParams,
+      params: ProviderGenerationParams,
     ): Promise<ModelResult> {
       return await createGenerationRequest({ client, model, ...params });
     },
@@ -27,7 +27,7 @@ export function anthropic(apiKey: string): AIProvider {
     /** @internal */
     createStreamingRequest(
       model: string,
-      params: StreamingRequestParams,
+      params: ProviderStreamParams,
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
       return createStreamingRequest({ client, model, ...params });
     },

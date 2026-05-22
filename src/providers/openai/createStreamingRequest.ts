@@ -1,37 +1,54 @@
 import OpenAI from "openai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
-import { StreamingRequestParams } from "../types.js";
+import { ProviderStreamParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
-import { convertAxleMessageToResponseInput, prepareTools, toOpenAIReasoning } from "./utils.js";
+import {
+  convertAxleMessageToResponseInput,
+  prepareProviderTools,
+  prepareTools,
+  toOpenAIReasoning,
+  toOpenAIToolChoice,
+} from "./utils.js";
 
 export async function* createStreamingRequest(
-  params: StreamingRequestParams & { client: OpenAI; model: string },
+  params: ProviderStreamParams & { client: OpenAI; model: string },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { client, model, messages, system, tools, context, signal, options, reasoning } = params;
-  const tracer = context?.tracer;
+  const {
+    client,
+    model,
+    messages,
+    system,
+    tools,
+    providerTools,
+    runtime,
+    signal,
+    reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
+  } = params;
+  const tracer = runtime?.tracer;
 
-  const { providerTools, ...restOptions } = options ?? {};
-
-  const modelTools: any[] = prepareTools(tools) ?? [];
-
-  if (providerTools) {
-    const OPENAI_PROVIDER_TOOL_MAP: Record<string, string> = {
-      web_search: "web_search_preview",
-      code_execution: "code_interpreter",
-    };
-    for (const st of providerTools) {
-      const mappedType = OPENAI_PROVIDER_TOOL_MAP[st.name] ?? st.name;
-      modelTools.push({ type: mappedType, ...st.config });
-    }
+  if (stop !== undefined) {
+    throw new Error("OpenAI Responses does not support normalized stop sequences");
   }
+
+  const modelTools: any[] = [
+    ...(prepareTools(tools) ?? []),
+    ...(prepareProviderTools(providerTools) ?? []),
+  ];
 
   const streamingAdapter = createStreamingAdapter();
 
   try {
     const input = await convertAxleMessageToResponseInput(messages, {
       model,
-      fileResolver: context?.fileResolver,
+      fileResolver: runtime?.fileResolver,
       signal,
     });
 
@@ -40,16 +57,25 @@ export async function* createStreamingRequest(
       input,
       ...(system && { instructions: system }),
       stream: true as const,
+
+      // Axle-normalized options.
       ...(modelTools.length > 0 ? { tools: modelTools } : {}),
       ...toOpenAIReasoning(reasoning),
-      ...restOptions,
+      ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { top_p: topP } : {}),
+      ...toOpenAIToolChoice(toolChoice, tools, providerTools),
+      ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+
+      // Raw provider options are applied last so they can override Axle mappings.
+      ...providerOptions,
     };
 
     tracer?.debug("OpenAI ResponsesAPI streaming request", {
       request: redactResolvedFileValues(request),
     });
 
-    const stream = client.responses.stream(request, ...(signal ? [{ signal }] : []));
+    const stream = client.responses.stream(request as any, ...(signal ? [{ signal }] : []));
 
     for await (const event of stream) {
       const chunks = streamingAdapter.handleEvent(event);

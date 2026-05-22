@@ -26,7 +26,7 @@ Streaming is explicitly out of scope for this design.
 ## Proposed API (Draft)
 
 ```ts
-type GenerateWithToolsOptions = {
+type GenerateWithToolsOptions = AxleModelRequestOptions & {
   provider: AIProvider;
   messages: AxleMessage[];
   system?: string;
@@ -37,7 +37,6 @@ type GenerateWithToolsOptions = {
   ) => Promise<ToolCallResult | null | undefined>;
   maxIterations?: number; // cap on model calls; undefined means no cap
   recorder?: Recorder;
-  options?: GenerateOptions;
 };
 
 type ToolCallResult =

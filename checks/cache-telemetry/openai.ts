@@ -30,8 +30,8 @@ async function run(label: string): Promise<Stats> {
     provider,
     model,
     messages: [{ role: "user", content: prompt }],
-    options: {
-      max_output_tokens: 24,
+    maxOutputTokens: 24,
+    providerOptions: {
       prompt_cache_key: cacheKey,
       prompt_cache_retention: "in_memory",
     },

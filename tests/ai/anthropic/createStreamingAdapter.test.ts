@@ -125,7 +125,7 @@ describe("createAnthropicStreamingAdapter", () => {
       expect(chunks[0].type).toBe("complete");
       if (chunks[0].type === "complete") {
         expect(chunks[0].data.finishReason).toBe(AxleStopReason.Stop);
-        expect(chunks[0].data.usage).toEqual({ in: 0, out: 25 });
+        expect(chunks[0].data.usage).toEqual({ in: 0, out: 25, cachedIn: 0, cacheWriteIn: 0 });
       }
     });
 

@@ -13,7 +13,7 @@ import type { Stats } from "../types.js";
 import { throwIfAborted } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
 import { createStats, toTokenUsage } from "../utils/stats.js";
-import { generateTurn, GenerateTurnOptions } from "./generateTurn.js";
+import { generateTurn } from "./generateTurn.js";
 import {
   appendUsage,
   executeToolCalls,
@@ -21,7 +21,7 @@ import {
   resolveToolRegistry,
   ToolCallCallback,
 } from "./helpers.js";
-import { AIProvider, AxleStopReason, ModelResult } from "./types.js";
+import { AIProvider, AxleModelRequestOptions, AxleStopReason, ModelResult } from "./types.js";
 
 export type {
   GenerateError,
@@ -31,7 +31,7 @@ export type {
   ToolCallResult,
 } from "./helpers.js";
 
-export interface GenerateOptions {
+export interface GenerateParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;
   messages: Array<AxleMessage>;
@@ -43,13 +43,10 @@ export interface GenerateOptions {
   maxIterations?: number;
   tracer?: TracingContext;
   fileResolver?: FileResolver;
-  options?: GenerateTurnOptions;
-  reasoning?: boolean;
-  signal?: AbortSignal;
 }
 
-export interface GenerateInstructOptions<TSchema extends OutputSchema | undefined> extends Omit<
-  GenerateOptions,
+export interface GenerateInstructParams<TSchema extends OutputSchema | undefined> extends Omit<
+  GenerateParams,
   "messages"
 > {
   messages?: Array<AxleMessage>;
@@ -61,11 +58,11 @@ export type GenerateInstructResult<TSchema extends OutputSchema | undefined> = G
 >;
 
 export async function generate<TSchema extends OutputSchema | undefined>(
-  options: GenerateInstructOptions<TSchema>,
+  options: GenerateInstructParams<TSchema>,
 ): Promise<GenerateInstructResult<TSchema>>;
-export async function generate(options: GenerateOptions): Promise<GenerateResult>;
+export async function generate(options: GenerateParams): Promise<GenerateResult>;
 export async function generate(
-  options: GenerateOptions | GenerateInstructOptions<any>,
+  options: GenerateParams | GenerateInstructParams<any>,
 ): Promise<GenerateResult | GenerateInstructResult<any>> {
   if ("instruct" in options) {
     const { instruct, messages, ...rest } = options;
@@ -96,7 +93,7 @@ export async function generate(
   return runGenerate(options);
 }
 
-async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
+async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
   const {
     provider,
     model,
@@ -106,8 +103,14 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
     maxIterations,
     tracer,
     fileResolver,
-    options: generateOptions,
     reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
     signal = new AbortController().signal,
   } = options;
   const registry = resolveToolRegistry(options);
@@ -182,6 +185,7 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
         executable.length > 0
           ? executable.map((t) => ({ name: t.name, description: t.description, schema: t.schema }))
           : undefined;
+      const providerTools = registry.provider();
       let response: ModelResult;
       try {
         response = await generateTurn({
@@ -190,10 +194,17 @@ async function runGenerate(options: GenerateOptions): Promise<GenerateResult> {
           messages: workingMessages,
           system,
           tools,
+          providerTools: providerTools.length > 0 ? providerTools : undefined,
           tracer: turnSpan,
           fileResolver,
-          options: generateOptions,
           reasoning,
+          maxOutputTokens,
+          temperature,
+          topP,
+          stop,
+          toolChoice,
+          parallelToolCalls,
+          providerOptions,
           signal,
         });
 

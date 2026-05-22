@@ -1,6 +1,6 @@
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
-import { ToolDefinition } from "../../tools/types.js";
+import { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
 import {
   type FileInfo,
@@ -9,7 +9,7 @@ import {
   resolveFileSource,
 } from "../../utils/file.js";
 import { withUsageDetails } from "../../utils/stats.js";
-import { AxleStopReason } from "../types.js";
+import { AxleStopReason, ToolChoice } from "../types.js";
 import {
   ChatCompletionContentPart,
   ChatCompletionMessage,
@@ -42,7 +42,7 @@ export async function convertAxleMessages(
 /**
  * Translate Axle's normalized `reasoning` boolean into Chat Completions
  * `reasoning_effort`. `true` → "high"; `false` → "none"; `undefined` → omit.
- * Users who need a specific tier set `options.reasoning_effort` directly,
+ * Users who need a specific tier set `providerOptions.reasoning_effort` directly,
  * which overrides this.
  */
 export function toReasoningEffort(reasoning: boolean | undefined) {
@@ -84,6 +84,25 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
     }));
   }
   return undefined;
+}
+
+export function toChatCompletionsToolChoice(
+  choice: ToolChoice | undefined,
+  tools?: Array<ToolDefinition>,
+  providerTools?: Array<ProviderTool>,
+) {
+  if (choice === undefined) return {};
+  if (choice === "auto" || choice === "none" || choice === "required") return { tool_choice: choice };
+
+  if (tools?.some((tool) => tool.name === choice.name)) {
+    return { tool_choice: { type: "function" as const, function: { name: choice.name } } };
+  }
+
+  if (providerTools?.some((tool) => tool.name === choice.name)) {
+    throw new Error(`ChatCompletions does not support provider tool choice: ${choice.name}`);
+  }
+
+  throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
 }
 
 export function convertFinishReason(reason: string | null): AxleStopReason {

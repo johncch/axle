@@ -1,44 +1,38 @@
 import { AxleMessage } from "../messages/message.js";
-import { ToolDefinition } from "../tools/types.js";
+import { ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
 import type { FileResolver } from "../utils/file.js";
-import { AIProvider, GenerateTurnOptions, ModelResult } from "./types.js";
+import { AIProvider, AxleModelRequestOptions, ModelResult } from "./types.js";
 
-export type { GenerateTurnOptions } from "./types.js";
-
-interface GenerateTurnProps {
+interface GenerateTurnParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
+  providerTools?: Array<ProviderTool>;
   tracer?: TracingContext;
   fileResolver?: FileResolver;
-  options?: GenerateTurnOptions;
-  reasoning?: boolean;
-  signal?: AbortSignal;
 }
 
-export async function generateTurn(props: GenerateTurnProps): Promise<ModelResult> {
+export async function generateTurn(props: GenerateTurnParams): Promise<ModelResult> {
   const {
     provider,
     model,
     messages,
     system,
     tools,
+    providerTools,
     tracer,
     fileResolver,
-    options,
-    reasoning,
-    signal,
+    ...requestOptions
   } = props;
   return provider.createGenerationRequest(model, {
     messages,
     system,
     tools,
-    context: { tracer, fileResolver },
-    options,
-    reasoning,
-    signal,
+    providerTools,
+    runtime: { tracer, fileResolver },
+    ...requestOptions,
   });
 }

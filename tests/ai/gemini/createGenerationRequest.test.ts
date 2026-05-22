@@ -1,4 +1,4 @@
-import { FinishReason, GoogleGenAI } from "@google/genai";
+import { FinishReason, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
 import { AxleAbortError } from "../../../src/errors/AxleAbortError.js";
 import type { AxleMessage } from "../../../src/messages/message.js";
@@ -28,7 +28,7 @@ describe("createGenerationRequest (Google AI)", () => {
           client: mockClient,
           model: "gemini-2.0-flash",
           messages: [{ role: "user" as const, content: "Hello" }],
-          context: {},
+          runtime: {},
           signal: controller.signal,
         }),
       ).rejects.toBeInstanceOf(AxleAbortError);
@@ -44,7 +44,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages: [{ role: "user" as const, content: "Hello" }],
-        context: {},
+        runtime: {},
         signal: controller.signal,
       });
 
@@ -59,7 +59,7 @@ describe("createGenerationRequest (Google AI)", () => {
   });
 
   describe("parameter normalization", () => {
-    test("should convert max_tokens to maxOutputTokens", async () => {
+    test("should map maxOutputTokens", async () => {
       (mockGenerateContent.mockResolvedValue as any)({
         responseId: "resp_123",
         modelVersion: "gemini-2.0-flash",
@@ -79,8 +79,8 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
-        options: { max_tokens: 1000 },
+        runtime: {},
+        maxOutputTokens: 1000,
       });
 
       expect(mockGenerateContent).toHaveBeenCalledWith(
@@ -90,7 +90,6 @@ describe("createGenerationRequest (Google AI)", () => {
           }),
         }),
       );
-      expect((mockGenerateContent.mock.calls[0][0] as any).config).not.toHaveProperty("max_tokens");
     });
 
     test("should convert stop string to stopSequences array", async () => {
@@ -113,8 +112,8 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
-        options: { stop: "STOP" },
+        runtime: {},
+        stop: "STOP",
       });
 
       expect(mockGenerateContent).toHaveBeenCalledWith(
@@ -146,8 +145,8 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
-        options: { stop: ["STOP1", "STOP2"] },
+        runtime: {},
+        stop: ["STOP1", "STOP2"],
       });
 
       expect(mockGenerateContent).toHaveBeenCalledWith(
@@ -159,7 +158,7 @@ describe("createGenerationRequest (Google AI)", () => {
       );
     });
 
-    test("should convert top_p to topP", async () => {
+    test("should map topP", async () => {
       (mockGenerateContent.mockResolvedValue as any)({
         responseId: "resp_123",
         modelVersion: "gemini-2.0-flash",
@@ -179,8 +178,8 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
-        options: { top_p: 0.9 },
+        runtime: {},
+        topP: 0.9,
       });
 
       expect(mockGenerateContent).toHaveBeenCalledWith(
@@ -190,7 +189,6 @@ describe("createGenerationRequest (Google AI)", () => {
           }),
         }),
       );
-      expect((mockGenerateContent.mock.calls[0][0] as any).config).not.toHaveProperty("top_p");
     });
 
     test("should pass through temperature unchanged", async () => {
@@ -213,8 +211,8 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
-        options: { temperature: 0.7 },
+        runtime: {},
+        temperature: 0.7,
       });
 
       expect(mockGenerateContent).toHaveBeenCalledWith(
@@ -224,6 +222,38 @@ describe("createGenerationRequest (Google AI)", () => {
           }),
         }),
       );
+    });
+
+    test("should omit provider tools when toolChoice is none", async () => {
+      (mockGenerateContent.mockResolvedValue as any)({
+        responseId: "resp_123",
+        modelVersion: "gemini-2.0-flash",
+        candidates: [
+          {
+            content: { role: "model", parts: [{ text: "Hello" }] },
+            finishReason: FinishReason.STOP,
+            index: 0,
+          },
+        ],
+        usageMetadata: { promptTokenCount: 10, totalTokenCount: 30 },
+      });
+
+      const messages: AxleMessage[] = [{ role: "user" as const, content: "Hello" }];
+
+      await createGenerationRequest({
+        client: mockClient,
+        model: "gemini-2.0-flash",
+        messages,
+        runtime: {},
+        providerTools: [{ type: "provider", name: "web_search" }],
+        toolChoice: "none",
+      });
+
+      const request = mockGenerateContent.mock.calls[0][0];
+      expect(request.config.tools).toBeUndefined();
+      expect(request.config.toolConfig).toEqual({
+        functionCallingConfig: { mode: FunctionCallingConfigMode.NONE },
+      });
     });
   });
 
@@ -248,7 +278,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -290,7 +320,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -327,7 +357,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -359,7 +389,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -379,7 +409,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -405,7 +435,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -429,7 +459,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -458,7 +488,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -494,7 +524,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -505,7 +535,7 @@ describe("createGenerationRequest (Google AI)", () => {
   });
 
   describe("edge cases", () => {
-    test("should handle undefined options", async () => {
+    test("should handle undefined request options", async () => {
       (mockGenerateContent.mockResolvedValue as any)({
         responseId: "resp_123",
         modelVersion: "gemini-2.0-flash",
@@ -525,7 +555,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -551,7 +581,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -582,7 +612,7 @@ describe("createGenerationRequest (Google AI)", () => {
         client: mockClient,
         model: "gemini-2.0-flash",
         messages,
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");

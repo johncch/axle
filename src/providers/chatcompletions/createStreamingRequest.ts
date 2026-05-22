@@ -1,22 +1,44 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
-import { StreamingRequestParams } from "../types.js";
+import { ProviderStreamParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { ChatCompletionChunk } from "./types.js";
-import { convertAxleMessages, convertTools, toReasoningEffort } from "./utils.js";
+import {
+  convertAxleMessages,
+  convertTools,
+  toChatCompletionsToolChoice,
+  toReasoningEffort,
+} from "./utils.js";
 
 export async function* createStreamingRequest(
-  params: StreamingRequestParams & {
+  params: ProviderStreamParams & {
     baseUrl: string;
     model: string;
     apiKey?: string;
   },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-  const { baseUrl, model, messages, system, tools, context, signal, apiKey, options, reasoning } =
-    params;
-  const tracer = context?.tracer;
+  const {
+    baseUrl,
+    model,
+    messages,
+    system,
+    tools,
+    providerTools,
+    runtime,
+    signal,
+    apiKey,
+    reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
+  } = params;
+  const tracer = runtime?.tracer;
 
-  if (options?.providerTools) {
+  if (providerTools && providerTools.length > 0) {
     tracer?.warn("providerTools not supported by ChatCompletions provider");
   }
 
@@ -25,7 +47,7 @@ export async function* createStreamingRequest(
   try {
     const chatMessages = await convertAxleMessages(messages, system, {
       model,
-      fileResolver: context?.fileResolver,
+      fileResolver: runtime?.fileResolver,
       signal,
     });
     const chatTools = convertTools(tools);
@@ -35,22 +57,20 @@ export async function* createStreamingRequest(
       messages: chatMessages,
       stream: true,
       stream_options: { include_usage: true },
+
+      // Axle-normalized options.
       ...(chatTools && { tools: chatTools }),
       ...toReasoningEffort(reasoning),
-    };
+      ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { top_p: topP } : {}),
+      ...(stop !== undefined ? { stop } : {}),
+      ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
+      ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
 
-    if (options) {
-      if (options.temperature !== undefined) requestBody.temperature = options.temperature;
-      if (options.top_p !== undefined) requestBody.top_p = options.top_p;
-      if (options.max_tokens !== undefined) requestBody.max_tokens = options.max_tokens;
-      if (options.frequency_penalty !== undefined)
-        requestBody.frequency_penalty = options.frequency_penalty;
-      if (options.presence_penalty !== undefined)
-        requestBody.presence_penalty = options.presence_penalty;
-      if (options.stop !== undefined) requestBody.stop = options.stop;
-      if (options.reasoning_effort !== undefined)
-        requestBody.reasoning_effort = options.reasoning_effort;
-    }
+      // Raw provider options are applied last so they can override Axle mappings.
+      ...providerOptions,
+    };
 
     tracer?.debug("ChatCompletions streaming request", {
       request: redactResolvedFileValues(requestBody),

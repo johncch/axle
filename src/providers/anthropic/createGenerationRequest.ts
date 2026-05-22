@@ -4,23 +4,40 @@ import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { arrayify } from "../../utils/utils.js";
-import { AxleStopReason, GenerationRequestParams, ModelResult } from "../types.js";
+import { AxleStopReason, ProviderGenerationParams, ModelResult } from "../types.js";
 import { getUndefinedError } from "../utils.js";
 import {
+  convertToAnthropicProviderTools,
   convertStopReason,
   convertToAnthropicTools,
   convertToAxleContentParts,
   convertToProviderMessages,
+  toAnthropicToolChoice,
   toAnthropicThinking,
 } from "./utils.js";
 
 export async function createGenerationRequest(
-  params: GenerationRequestParams & { client: Anthropic; model: string },
+  params: ProviderGenerationParams & { client: Anthropic; model: string },
 ): Promise<ModelResult> {
-  const { client, model, messages, system, tools, context, options, reasoning, signal } = params;
-  const tracer = context?.tracer;
-
-  const { stop, max_tokens, ...restOptions } = options ?? {};
+  const {
+    client,
+    model,
+    messages,
+    system,
+    tools,
+    providerTools,
+    runtime,
+    reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
+    signal,
+  } = params;
+  const tracer = runtime?.tracer;
 
   let result: ModelResult;
   try {
@@ -28,19 +45,28 @@ export async function createGenerationRequest(
 
     const providerMessages = await convertToProviderMessages(messages, {
       model,
-      fileResolver: context?.fileResolver,
+      fileResolver: runtime?.fileResolver,
       signal,
     });
 
     const request = {
       model: model,
-      max_tokens: max_tokens ?? 16000,
+      max_tokens: maxOutputTokens ?? 16000,
       messages: providerMessages,
       ...(system && { system }),
+
+      // Axle-normalized options.
       ...(stop && { stop_sequences: arrayify(stop) }),
-      ...(tools && { tools: convertToAnthropicTools(tools) }),
+      ...((tools || providerTools) && {
+        tools: [...(tools ? convertToAnthropicTools(tools) : []), ...convertToAnthropicProviderTools(providerTools)],
+      }),
       ...toAnthropicThinking(reasoning),
-      ...restOptions,
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { top_p: topP } : {}),
+      ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
+
+      // Raw provider options are applied last so they can override Axle mappings.
+      ...providerOptions,
     };
     tracer?.debug("Anthropic request", { request: redactResolvedFileValues(request) });
 

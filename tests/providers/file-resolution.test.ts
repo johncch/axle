@@ -28,7 +28,7 @@ describe("deferred file resolution", () => {
       async *createStreamingRequest(model, params) {
         providerInput = await convertAxleMessageToResponseInput(params.messages, {
           model,
-          fileResolver: params.context.fileResolver,
+          fileResolver: params.runtime.fileResolver,
           signal: params.signal,
         });
 
@@ -81,7 +81,7 @@ describe("deferred file resolution", () => {
       async *createStreamingRequest(model, params) {
         await convertAxleMessageToResponseInput(params.messages, {
           model,
-          fileResolver: params.context.fileResolver,
+          fileResolver: params.runtime.fileResolver,
           signal: params.signal,
         });
 

@@ -7,7 +7,11 @@ import type { AgentMemory } from "../memory/types.js";
 import { estimateContextUsage } from "../providers/context.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream } from "../providers/stream.js";
-import type { AIProvider, ContextUsage } from "../providers/types.js";
+import type {
+  AIProvider,
+  AxleModelRequestOptions,
+  ContextUsage,
+} from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
 import { ToolRegistry } from "../tools/registry.js";
@@ -25,7 +29,21 @@ import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
 import { compileUserTurn, type CompiledUserTurn } from "./userTurn.js";
 
-export interface AgentConfig {
+function mergeAxleModelRequestOptions(
+  defaults?: Omit<AxleModelRequestOptions, "signal">,
+  overrides?: AxleModelRequestOptions,
+): AxleModelRequestOptions {
+  return {
+    ...defaults,
+    ...overrides,
+    providerOptions:
+      defaults?.providerOptions || overrides?.providerOptions
+        ? { ...defaults?.providerOptions, ...overrides?.providerOptions }
+        : undefined,
+  };
+}
+
+export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   provider: AIProvider;
   model: string;
   system?: string;
@@ -37,7 +55,6 @@ export interface AgentConfig {
   memory?: AgentMemory;
   tracer?: TracingContext;
   fileResolver?: FileResolver;
-  reasoning?: boolean;
 }
 
 export interface AgentResult<T = string> {
@@ -58,10 +75,8 @@ export interface AgentErrorResult {
 export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
 export type AgentEventCallback = (event: AgentEvent) => void;
-export interface SendMessageOptions {
-  signal?: AbortSignal;
+export interface SendMessageOptions extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
-  reasoning?: boolean;
 }
 
 export class Agent {
@@ -73,7 +88,7 @@ export class Agent {
   readonly scope?: Record<string, string>;
   readonly store: FileStore;
   readonly fileResolver?: FileResolver;
-  readonly reasoning?: boolean;
+  readonly requestOptions: Omit<AxleModelRequestOptions, "signal">;
   readonly registry: ToolRegistry;
 
   system: string | undefined;
@@ -95,7 +110,16 @@ export class Agent {
     this.scope = config.scope;
     this.store = new LocalFileStore(".axle");
     this.fileResolver = config.fileResolver;
-    this.reasoning = config.reasoning;
+    this.requestOptions = {
+      reasoning: config.reasoning,
+      maxOutputTokens: config.maxOutputTokens,
+      temperature: config.temperature,
+      topP: config.topP,
+      stop: config.stop,
+      toolChoice: config.toolChoice,
+      parallelToolCalls: config.parallelToolCalls,
+      providerOptions: config.providerOptions,
+    };
     this.registry = new ToolRegistry({
       tools: config.tools,
       providerTools: config.providerTools,
@@ -148,11 +172,11 @@ export class Agent {
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
     const userTurn = compileUserTurn(messageOrInstruct);
-    const effectiveReasoning = options?.reasoning ?? this.reasoning;
+    const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, options);
 
     const { handle, settled } = createHandle(
       this.sendQueue,
-      (signal) => this.run(userTurn, signal, options?.fileResolver, effectiveReasoning),
+      (signal) => this.run(userTurn, signal, options?.fileResolver, requestOptions),
       options?.signal,
     );
     this.sendQueue = settled;
@@ -184,7 +208,7 @@ export class Agent {
     userTurn: CompiledUserTurn<any>,
     signal: AbortSignal,
     sendFileResolver?: FileResolver,
-    reasoning?: boolean,
+    requestOptions?: AxleModelRequestOptions,
   ): Promise<AgentResult<any> | AgentErrorResult> {
     const builder = new TurnBuilder();
     const emptyUsage: Stats = createStats();
@@ -247,6 +271,7 @@ export class Agent {
     this.history.addTurn(agentTurn);
     for (const evt of startEvents) this.emitEvent(evt);
 
+    const { signal: _requestSignal, ...streamRequestOptions } = requestOptions ?? {};
     const streamHandle = stream({
       provider: this.provider,
       model: this.model,
@@ -255,7 +280,8 @@ export class Agent {
       registry: this.registry,
       tracer: this.tracer,
       fileResolver: sendFileResolver ?? this.fileResolver,
-      reasoning,
+      ...streamRequestOptions,
+      signal,
       onToolCall: async (name, params, ctx) => {
         const tool = this.registry.get(name);
         if (!tool) return null;
@@ -270,7 +296,6 @@ export class Agent {
           return { type: "error", error: { type: "execution", message: msg } };
         }
       },
-      signal,
     });
 
     // Translate StreamEvents → AgentEvents

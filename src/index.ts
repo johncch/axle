@@ -28,7 +28,11 @@ export {
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
-export type { GenerateInstructOptions, GenerateInstructResult } from "./providers/generate.js";
+export type {
+  GenerateInstructParams,
+  GenerateInstructResult,
+  GenerateParams,
+} from "./providers/generate.js";
 export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
@@ -37,12 +41,19 @@ export type {
   StreamEvent,
   StreamEventCallback,
   StreamHandle,
+  StreamParams,
   StreamInstructHandle,
-  StreamInstructOptions,
+  StreamInstructParams,
   StreamInstructResult,
 } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
-export type { AIProvider, ContextUsage } from "./providers/types.js";
+export type {
+  AIProvider,
+  AxleModelRequestOptions,
+  ContextUsage,
+  ProviderOptions,
+  ToolChoice,
+} from "./providers/types.js";
 
 // Tools
 export {

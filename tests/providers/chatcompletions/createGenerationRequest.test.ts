@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { AxleAbortError } from "../../../src/errors/AxleAbortError.js";
 import { createGenerationRequest } from "../../../src/providers/chatcompletions/createGenerationRequest.js";
 import type { ChatCompletionResponse } from "../../../src/providers/chatcompletions/types.js";
@@ -26,7 +27,7 @@ describe("createGenerationRequest", () => {
           baseUrl: BASE_URL,
           model: MODEL,
           messages: [{ role: "user", content: "Hi" }],
-          context: {},
+          runtime: {},
           signal: controller.signal,
         }),
       ).rejects.toBeInstanceOf(AxleAbortError);
@@ -42,7 +43,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
         signal: controller.signal,
       });
 
@@ -57,7 +58,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
         signal: controller.signal,
       });
 
@@ -80,7 +81,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(fetch).toHaveBeenCalledWith(
@@ -96,7 +97,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
         apiKey: "sk-test-key",
       });
 
@@ -111,7 +112,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       const callArgs = (fetch as any).mock.calls[0];
@@ -125,7 +126,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hello world" }],
-        context: {},
+        runtime: {},
       });
 
       const body = JSON.parse((fetch as any).mock.calls[0][1].body);
@@ -133,20 +134,41 @@ describe("createGenerationRequest", () => {
       expect(body.messages).toEqual([{ role: "user", content: "Hello world" }]);
     });
 
-    test("passes options through to request body", async () => {
+    test("maps normalized options and passes providerOptions through", async () => {
       (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
 
       await createGenerationRequest({
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
-        options: { temperature: 0.5, max_tokens: 100 },
+        runtime: {},
+        temperature: 0.5,
+        maxOutputTokens: 100,
+        providerOptions: { max_tokens: 200, reasoning_effort: "medium" },
       });
 
       const body = JSON.parse((fetch as any).mock.calls[0][1].body);
       expect(body.temperature).toBe(0.5);
-      expect(body.max_tokens).toBe(100);
+      expect(body.max_tokens).toBe(200);
+      expect(body.reasoning_effort).toBe("medium");
+    });
+
+    test("maps named tool choice and parallel tool calls", async () => {
+      (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
+
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
+        toolChoice: { type: "tool", name: "lookup" },
+        parallelToolCalls: false,
+      });
+
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.tool_choice).toEqual({ type: "function", function: { name: "lookup" } });
+      expect(body.parallel_tool_calls).toBe(false);
     });
   });
 
@@ -158,7 +180,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -193,7 +215,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "What is the meaning of life?" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -235,7 +257,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Search for test" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -260,7 +282,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -288,7 +310,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("success");
@@ -315,7 +337,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -328,7 +350,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -368,7 +390,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");
@@ -382,7 +404,7 @@ describe("createGenerationRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        context: {},
+        runtime: {},
       });
 
       expect(result.type).toBe("error");

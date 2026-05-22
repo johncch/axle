@@ -50,9 +50,7 @@ async function run(label: string): Promise<Stats> {
     provider,
     model,
     messages: [{ role: "user", content: prompt }],
-    options: {
-      max_tokens: 24,
-    },
+    maxOutputTokens: 24,
   });
 
   if (!result.ok) {

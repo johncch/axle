@@ -19,7 +19,6 @@ import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 import { addStats, createStats, toTokenUsage } from "../utils/stats.js";
-import type { GenerateTurnOptions } from "./generateTurn.js";
 import {
   executeToolCalls,
   type GenerateError,
@@ -28,7 +27,7 @@ import {
   type ToolCallCallback,
   type ToolCallResult,
 } from "./helpers.js";
-import type { AIProvider } from "./types.js";
+import type { AIProvider, AxleModelRequestOptions } from "./types.js";
 import { AxleStopReason } from "./types.js";
 
 // --- Public types ---
@@ -86,7 +85,7 @@ export type StreamEvent =
 
 export type StreamEventCallback = (event: StreamEvent) => void;
 
-export interface StreamOptions {
+export interface StreamParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;
   messages: Array<AxleMessage>;
@@ -98,9 +97,6 @@ export interface StreamOptions {
   maxIterations?: number;
   tracer?: TracingContext;
   fileResolver?: FileResolver;
-  options?: GenerateTurnOptions;
-  reasoning?: boolean;
-  signal?: AbortSignal;
 }
 
 export interface StreamHandle {
@@ -109,8 +105,8 @@ export interface StreamHandle {
   readonly final: Promise<StreamResult>;
 }
 
-export interface StreamInstructOptions<TSchema extends OutputSchema | undefined> extends Omit<
-  StreamOptions,
+export interface StreamInstructParams<TSchema extends OutputSchema | undefined> extends Omit<
+  StreamParams,
   "messages"
 > {
   messages?: Array<AxleMessage>;
@@ -149,12 +145,12 @@ function toToolDefinition(tool: ExecutableTool): ToolDefinition {
 }
 
 export function stream<TSchema extends OutputSchema | undefined>(
-  options: StreamInstructOptions<TSchema>,
+  options: StreamInstructParams<TSchema>,
 ): StreamInstructHandle<TSchema>;
-export function stream(options: StreamOptions): StreamHandle;
-export function stream(options: StreamOptions | StreamInstructOptions<any>): StreamHandle {
+export function stream(options: StreamParams): StreamHandle;
+export function stream(options: StreamParams | StreamInstructParams<any>): StreamHandle {
   const callbacks: StreamEventCallback[] = [];
-  let streamOptions: StreamOptions;
+  let streamOptions: StreamParams;
   let parse: ((final: AxleAssistantMessage | undefined) => unknown) | undefined;
 
   if ("instruct" in options) {
@@ -217,7 +213,7 @@ export function stream(options: StreamOptions | StreamInstructOptions<any>): Str
 // --- Core loop ---
 
 async function run(
-  options: StreamOptions,
+  options: StreamParams,
   signal: AbortSignal,
   cbs: StreamEventCallback[],
 ): Promise<StreamResult> {
@@ -230,8 +226,14 @@ async function run(
     maxIterations,
     tracer,
     fileResolver,
-    options: genOptions,
     reasoning,
+    maxOutputTokens,
+    temperature,
+    topP,
+    stop,
+    toolChoice,
+    parallelToolCalls,
+    providerOptions,
   } = options;
   const registry = resolveToolRegistry(options);
   const workingMessages = [...messages];
@@ -321,16 +323,22 @@ async function run(
     const executable = registry?.executable() ?? [];
     const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
     const providerTools = registry?.provider() ?? [];
-    const mergedOptions = providerTools.length > 0 ? { ...genOptions, providerTools } : genOptions;
 
     const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
       system,
       tools,
-      context: { tracer: turnSpan, fileResolver },
+      providerTools: providerTools.length > 0 ? providerTools : undefined,
+      runtime: { tracer: turnSpan, fileResolver },
       signal,
-      options: mergedOptions,
       reasoning,
+      maxOutputTokens,
+      temperature,
+      topP,
+      stop,
+      toolChoice,
+      parallelToolCalls,
+      providerOptions,
     });
 
     const turnParts: Array<
