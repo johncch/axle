@@ -77,6 +77,15 @@ describe("createStreamingAdapter", () => {
       expect((thinkingDeltas[0] as any).data.text).toBe("Step 1");
     });
 
+    test("emits thinking-delta for reasoning", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(makeChunk({ reasoning: "OpenRouter step" }));
+
+      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-delta");
+      expect(thinkingDeltas).toHaveLength(1);
+      expect((thinkingDeltas[0] as any).data.text).toBe("OpenRouter step");
+    });
+
     test("does not emit thinking-start for subsequent reasoning chunks", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ reasoning_content: "Step 1" }));

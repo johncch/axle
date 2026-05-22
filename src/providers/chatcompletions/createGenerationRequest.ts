@@ -140,10 +140,11 @@ function fromModelResponse(data: ChatCompletionResponse): ModelResult {
 
   const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
 
-  if (choice.message.reasoning_content) {
+  const reasoningText = choice.message.reasoning_content ?? choice.message.reasoning;
+  if (reasoningText) {
     content.push({
       type: "thinking",
-      text: choice.message.reasoning_content,
+      text: reasoningText,
     });
   }
 

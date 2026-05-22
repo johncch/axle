@@ -69,6 +69,7 @@ export interface ChatCompletionChoice {
     role: string;
     content: string | null;
     reasoning_content?: string | null;
+    reasoning?: string | null;
     tool_calls?: {
       id: string;
       type: "function";
@@ -96,6 +97,7 @@ export interface ChatCompletionChunkChoice {
     role?: string;
     content?: string;
     reasoning_content?: string;
+    reasoning?: string;
     tool_calls?: {
       index: number;
       id?: string;

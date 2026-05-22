@@ -64,7 +64,8 @@ export function createStreamingAdapter() {
     const delta = choice.delta;
 
     // Reasoning content (DeepSeek, vLLM, Kimi)
-    if (delta.reasoning_content) {
+    const reasoningDelta = delta.reasoning_content ?? delta.reasoning;
+    if (reasoningDelta) {
       if (activePart !== "thinking") {
         closeActivePart(chunks);
         currentPartIndex = partIndex++;
@@ -77,7 +78,7 @@ export function createStreamingAdapter() {
 
       chunks.push({
         type: "thinking-delta",
-        data: { index: currentPartIndex, text: delta.reasoning_content },
+        data: { index: currentPartIndex, text: reasoningDelta },
       });
     }
 

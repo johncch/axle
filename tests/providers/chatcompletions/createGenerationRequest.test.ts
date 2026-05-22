@@ -225,6 +225,37 @@ describe("createGenerationRequest", () => {
       expect(result.content[1]).toEqual({ type: "text", text: "The answer is 42." });
     });
 
+    test("parses reasoning into thinking part", async () => {
+      const response = {
+        id: "chatcmpl-123",
+        model: MODEL,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: null,
+              reasoning: "OpenRouter reasoning text",
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 20 },
+      };
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+
+      const result = await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "What is the meaning of life?" }],
+        runtime: {},
+      });
+
+      expect(result.type).toBe("success");
+      if (result.type !== "success") return;
+      expect(result.content).toEqual([{ type: "thinking", text: "OpenRouter reasoning text" }]);
+    });
+
     test("parses tool calls with JSON.parse on arguments", async () => {
       const response = {
         id: "chatcmpl-456",
