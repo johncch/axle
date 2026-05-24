@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.19.0] - 2026-05-24
+
+- Added a browser-only export for client-side bundles that omits server-only code
+- Added annotations support to Turns
+
 ## [0.18.0] - 2026-05-22
 
 - Added support for Gemini 3.5 Flash
