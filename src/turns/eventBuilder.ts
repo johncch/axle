@@ -2,7 +2,7 @@ import type { AxleUserMessage } from "../messages/message.js";
 import type { StreamEvent } from "../providers/stream.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats } from "../utils/stats.js";
-import type { AgentEvent } from "./events.js";
+import type { TurnEvent } from "./events.js";
 import type {
   ProviderToolAction,
   TextPart,
@@ -27,14 +27,15 @@ function completeTiming(timing: TimingInfo | undefined, now = new Date()): Timin
   };
 }
 
-export class TurnBuilder {
-  private currentTurn: Turn | null = null;
-  private currentTextPart: TextPart | null = null;
-  private currentThinkingPart: ThinkingPart | null = null;
-  private toolIdMap = new Map<string, { partId: string; turnId: string }>();
+export class TurnEventBuilder {
+  private currentTurnId: string | null = null;
+  private currentTurnTiming: TimingInfo | undefined;
+  private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
+  private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
+  private toolIdMap = new Map<string, { partId: string; turnId: string; timing?: TimingInfo }>();
   private accumulatedUsage: Stats = createStats();
 
-  createUserTurn(message: AxleUserMessage): { turn: Turn; events: AgentEvent[] } {
+  createUserTurn(message: AxleUserMessage): TurnEvent[] {
     const turnId = message.id ?? crypto.randomUUID();
     const parts: TurnPart[] = [];
     const now = new Date();
@@ -69,54 +70,46 @@ export class TurnBuilder {
     }
 
     const turn: Turn = { id: turnId, owner: "user", parts, status: "complete", timing };
-    return { turn, events: [{ type: "turn:user", turn }] };
+    return [{ type: "turn:user", turn }];
   }
 
-  startAgentTurn(): { turn: Turn; events: AgentEvent[] } {
+  startAgentTurn(): Extract<TurnEvent, { type: "turn:start" }> {
     const turnId = crypto.randomUUID();
-    const turn: Turn = {
-      id: turnId,
-      owner: "agent",
-      parts: [],
-      status: "streaming",
-      timing: startTiming(),
-    };
-    this.currentTurn = turn;
+    this.currentTurnId = turnId;
+    this.currentTurnTiming = startTiming();
     this.currentTextPart = null;
     this.currentThinkingPart = null;
     this.toolIdMap.clear();
     this.accumulatedUsage = createStats();
-    return { turn, events: [{ type: "turn:start", turnId }] };
+    return { type: "turn:start", turnId, timing: this.currentTurnTiming };
   }
 
-  handleStreamEvent(event: StreamEvent): AgentEvent[] {
-    const turn = this.currentTurn;
-    if (!turn) return [];
+  handleStreamEvent(event: StreamEvent): TurnEvent[] {
+    const turnId = this.currentTurnId;
+    if (!turnId) return [];
 
-    const events: AgentEvent[] = [];
+    const events: TurnEvent[] = [];
 
     switch (event.type) {
       case "turn:start":
         // stream emits turn:start per provider round-trip, but the
-        // builder treats the entire tool loop as one agent turn.
+        // agent presents the entire tool loop as one turn.
         break;
 
       case "text:start": {
-        this.closeOpenParts(turn, events);
+        this.closeOpenParts(events);
         const partId = crypto.randomUUID();
         const part: TextPart = { id: partId, type: "text", text: "", timing: startTiming() };
-        turn.parts.push(part);
-        this.currentTextPart = part;
-        events.push({ type: "part:start", turnId: turn.id, part: { ...part } });
+        this.currentTextPart = { id: partId, timing: part.timing };
+        events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "text:delta": {
         if (this.currentTextPart) {
-          this.currentTextPart.text = event.accumulated;
           events.push({
             type: "text:delta",
-            turnId: turn.id,
+            turnId,
             partId: this.currentTextPart.id,
             delta: event.delta,
           });
@@ -126,13 +119,12 @@ export class TurnBuilder {
 
       case "text:end": {
         if (this.currentTextPart) {
-          this.currentTextPart.text = event.final;
-          this.currentTextPart.timing = completeTiming(this.currentTextPart.timing);
+          const timing = completeTiming(this.currentTextPart.timing);
           events.push({
             type: "part:end",
-            turnId: turn.id,
+            turnId,
             partId: this.currentTextPart.id,
-            timing: this.currentTextPart.timing,
+            timing,
           });
           this.currentTextPart = null;
         }
@@ -140,7 +132,7 @@ export class TurnBuilder {
       }
 
       case "thinking:start": {
-        this.closeOpenParts(turn, events);
+        this.closeOpenParts(events);
         const partId = crypto.randomUUID();
         const part: ThinkingPart = {
           id: partId,
@@ -148,18 +140,16 @@ export class TurnBuilder {
           text: "",
           timing: startTiming(),
         };
-        turn.parts.push(part);
-        this.currentThinkingPart = part;
-        events.push({ type: "part:start", turnId: turn.id, part: { ...part } });
+        this.currentThinkingPart = { id: partId, timing: part.timing };
+        events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "thinking:delta": {
         if (this.currentThinkingPart) {
-          this.currentThinkingPart.text = event.accumulated;
           events.push({
             type: "thinking:delta",
-            turnId: turn.id,
+            turnId,
             partId: this.currentThinkingPart.id,
             delta: event.delta,
           });
@@ -169,13 +159,12 @@ export class TurnBuilder {
 
       case "thinking:end": {
         if (this.currentThinkingPart) {
-          this.currentThinkingPart.text = event.final;
-          this.currentThinkingPart.timing = completeTiming(this.currentThinkingPart.timing);
+          const timing = completeTiming(this.currentThinkingPart.timing);
           events.push({
             type: "part:end",
-            turnId: turn.id,
+            turnId,
             partId: this.currentThinkingPart.id,
-            timing: this.currentThinkingPart.timing,
+            timing,
           });
           this.currentThinkingPart = null;
         }
@@ -183,36 +172,28 @@ export class TurnBuilder {
       }
 
       case "tool:request": {
-        this.closeOpenParts(turn, events);
+        this.closeOpenParts(events);
         const partId = crypto.randomUUID();
+        const timing = startTiming();
         const part: ToolAction = {
           id: partId,
           type: "action",
           kind: "tool",
           status: "pending",
-          timing: startTiming(),
+          timing,
           detail: { name: event.name, parameters: {} },
         };
-        turn.parts.push(part);
-        this.toolIdMap.set(event.id, { partId, turnId: turn.id });
-        events.push({
-          type: "part:start",
-          turnId: turn.id,
-          part: { ...part, detail: { ...part.detail } },
-        });
+        this.toolIdMap.set(event.id, { partId, turnId, timing });
+        events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "tool:args-delta": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
-          if (part) {
-            part.detail.pendingArgs = event.accumulated;
-          }
           events.push({
             type: "action:args-delta",
-            turnId: turn.id,
+            turnId,
             partId: mapping.partId,
             delta: event.delta,
             accumulated: event.accumulated,
@@ -224,18 +205,12 @@ export class TurnBuilder {
       case "tool:exec-start": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
-          if (part) {
-            part.status = "running";
-            part.detail.parameters = event.parameters;
-            delete part.detail.pendingArgs;
-            events.push({
-              type: "action:running",
-              turnId: turn.id,
-              partId: mapping.partId,
-              parameters: event.parameters,
-            });
-          }
+          events.push({
+            type: "action:running",
+            turnId,
+            partId: mapping.partId,
+            parameters: event.parameters,
+          });
         }
         break;
       }
@@ -243,15 +218,9 @@ export class TurnBuilder {
       case "tool:exec-delta": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
-          if (part) {
-            const prior =
-              part.detail.result?.type === "in-progress" ? part.detail.result.content : "";
-            part.detail.result = { type: "in-progress", content: prior + event.chunk };
-          }
           events.push({
             type: "action:progress",
-            turnId: turn.id,
+            turnId,
             partId: mapping.partId,
             chunk: event.chunk,
           });
@@ -262,77 +231,65 @@ export class TurnBuilder {
       case "tool:exec-complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as ToolAction | undefined;
-          if (part) {
-            if (event.result.type === "success") {
-              part.status = "complete";
-              part.timing = completeTiming(part.timing);
-              part.detail.result = { type: "success", content: event.result.content };
-              events.push({
-                type: "action:complete",
-                turnId: turn.id,
-                partId: mapping.partId,
-                result: part.detail.result,
-              });
-            } else {
-              part.status = "error";
-              part.timing = completeTiming(part.timing);
-              part.detail.result = { type: "error", error: event.result.error };
-              events.push({
-                type: "action:error",
-                turnId: turn.id,
-                partId: mapping.partId,
-                error: event.result.error,
-              });
-            }
-          }
-        }
-        break;
-      }
-
-      case "provider-tool:start": {
-        this.closeOpenParts(turn, events);
-        const partId = crypto.randomUUID();
-        const part: ProviderToolAction = {
-          id: partId,
-          type: "action",
-          kind: "provider-tool",
-          status: "running",
-          timing: startTiming(),
-          detail: { name: event.name },
-        };
-        turn.parts.push(part);
-        this.toolIdMap.set(event.id, { partId, turnId: turn.id });
-        events.push({
-          type: "part:start",
-          turnId: turn.id,
-          part: { ...part, detail: { ...part.detail } },
-        });
-        events.push({ type: "action:running", turnId: turn.id, partId });
-        break;
-      }
-
-      case "provider-tool:complete": {
-        const mapping = this.toolIdMap.get(event.id);
-        if (mapping) {
-          const part = this.findActionPart(turn, mapping.partId) as ProviderToolAction | undefined;
-          if (part) {
-            part.status = "complete";
-            part.timing = completeTiming(part.timing);
-            part.detail.result = { type: "success", content: event.output };
+          const timing = completeTiming(mapping.timing);
+          mapping.timing = timing;
+          if (event.result.type === "success") {
             events.push({
               type: "action:complete",
-              turnId: turn.id,
+              turnId,
               partId: mapping.partId,
-              result: part.detail.result,
+              result: { type: "success", content: event.result.content },
+              timing,
+            });
+          } else {
+            events.push({
+              type: "action:error",
+              turnId,
+              partId: mapping.partId,
+              error: event.result.error,
+              timing,
             });
           }
         }
         break;
       }
 
+      case "provider-tool:start": {
+        this.closeOpenParts(events);
+        const partId = crypto.randomUUID();
+        const timing = startTiming();
+        const part: ProviderToolAction = {
+          id: partId,
+          type: "action",
+          kind: "provider-tool",
+          status: "running",
+          timing,
+          detail: { name: event.name },
+        };
+        this.toolIdMap.set(event.id, { partId, turnId, timing });
+        events.push({ type: "part:start", turnId, part });
+        events.push({ type: "action:running", turnId, partId });
+        break;
+      }
+
+      case "provider-tool:complete": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          const timing = completeTiming(mapping.timing);
+          mapping.timing = timing;
+          events.push({
+            type: "action:complete",
+            turnId,
+            partId: mapping.partId,
+            result: { type: "success", content: event.output },
+            timing,
+          });
+        }
+        break;
+      }
+
       case "turn:complete": {
-        this.closeOpenParts(turn, events);
+        this.closeOpenParts(events);
         addStats(this.accumulatedUsage, event.usage);
         break;
       }
@@ -360,49 +317,45 @@ export class TurnBuilder {
     return events;
   }
 
-  finalizeTurn(outcome: "complete" | "cancelled" | "error" = "complete"): AgentEvent[] {
-    const turn = this.currentTurn;
-    if (!turn) return [];
-    const events: AgentEvent[] = [];
-    this.closeOpenParts(turn, events);
-    turn.status = outcome;
-    turn.usage = { ...this.accumulatedUsage };
-    turn.timing = completeTiming(turn.timing);
+  finalizeTurn(outcome: "complete" | "cancelled" | "error" = "complete"): TurnEvent[] {
+    const turnId = this.currentTurnId;
+    if (!turnId) return [];
+    const events: TurnEvent[] = [];
+    this.closeOpenParts(events);
+    const timing = completeTiming(this.currentTurnTiming);
     events.push({
       type: "turn:end",
-      turnId: turn.id,
+      turnId,
       status: outcome,
-      usage: turn.usage,
-      timing: turn.timing,
+      usage: { ...this.accumulatedUsage },
+      timing,
     });
-    this.currentTurn = null;
+    this.currentTurnId = null;
+    this.currentTurnTiming = undefined;
     return events;
   }
 
-  private closeOpenParts(turn: Turn, events: AgentEvent[]) {
+  private closeOpenParts(events: TurnEvent[]) {
+    const turnId = this.currentTurnId;
+    if (!turnId) return;
+
     if (this.currentTextPart) {
-      this.currentTextPart.timing = completeTiming(this.currentTextPart.timing);
       events.push({
         type: "part:end",
-        turnId: turn.id,
+        turnId,
         partId: this.currentTextPart.id,
-        timing: this.currentTextPart.timing,
+        timing: completeTiming(this.currentTextPart.timing),
       });
       this.currentTextPart = null;
     }
     if (this.currentThinkingPart) {
-      this.currentThinkingPart.timing = completeTiming(this.currentThinkingPart.timing);
       events.push({
         type: "part:end",
-        turnId: turn.id,
+        turnId,
         partId: this.currentThinkingPart.id,
-        timing: this.currentThinkingPart.timing,
+        timing: completeTiming(this.currentThinkingPart.timing),
       });
       this.currentThinkingPart = null;
     }
-  }
-
-  private findActionPart(turn: Turn, partId: string) {
-    return turn.parts.find((p) => p.id === partId && p.type === "action");
   }
 }

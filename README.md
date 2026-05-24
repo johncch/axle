@@ -334,15 +334,15 @@ const mcp = new MCP({
 
 Axle has two event models, used at different levels:
 
-- `Agent.on(...)` emits `AgentEvent` — a high-level turn view organized
+- `Agent.on(...)` emits `TurnEvent` — a high-level turn view organized
   around parts (text, thinking, action).
 - `stream(...).on(...)` emits `StreamEvent` — a lower-level view that
   surfaces every text/thinking/tool transition the provider produces.
 
 `Agent` uses `stream()` internally and translates each `StreamEvent` into
-one or more `AgentEvent`s.
+one or more `TurnEvent`s.
 
-#### Agent events
+#### Turn events
 
 ```typescript
 const agent = new Agent({ provider, model });
@@ -386,16 +386,94 @@ try {
 }
 ```
 
-`AgentEvent` types: `session:restore`, `turn:user`, `turn:start`, `turn:end`,
+`TurnEvent` types: `session:restore`, `turn:user`, `turn:start`, `turn:end`,
 `part:start`, `part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
 `action:running`, `action:progress`, `action:complete`, `action:error`,
-`action:child-event`, `error`.
+`action:child-event`, `annotation:start`, `annotation:update`,
+`annotation:end`, `error`.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"action"`). Action parts further discriminate on
 `part.kind` (`"tool" | "agent" | "provider-tool"`).
 
 Callbacks are registered once and fire on every subsequent `send()`.
+
+#### Turn accumulator
+
+`Turn` objects are accumulated render state. They are the snapshot counterpart
+to `TurnEvent` streams: text deltas are folded into text parts, tool call
+lifecycles become stable action parts, and tool results are collapsed back into
+the action part that produced them. `AxleMessage[]` remains the canonical model
+conversation state; turns do not affect model input or tool routing.
+
+Hosts that transport Axle events over SSE, WebSockets, or another mixed event
+stream can use `TurnAccumulator` instead of reimplementing this reducer:
+
+```typescript
+import { TurnAccumulator, type Annotation } from "@fifthrevision/axle/ui";
+
+type AppAnnotation =
+  | Annotation<{ image: string }, "sandbox">
+  | Annotation<{ score: number; passed: boolean }, "eval">;
+
+type HostEvent = { type: "run:terminal"; status: string };
+
+const accumulator = new TurnAccumulator<AppAnnotation, HostEvent>();
+
+for await (const event of events) {
+  const { handled, state } = accumulator.apply(event);
+
+  if (!handled) {
+    // event is typed as HostEvent here
+    applyHostEvent(event);
+  }
+
+  render(state.turns);
+}
+```
+
+Use `@fifthrevision/axle/ui` for browser-safe presentation primitives. It
+exports turns, annotations, turn events, and `TurnAccumulator` without importing
+providers, MCP, tools, or other server-side runtime code.
+
+The accumulator accepts open event objects. Unknown host events, such as
+`run:terminal` or `session:expired`, return `handled: false` and leave the
+state unchanged. Session-level annotations are accumulated in
+`state.sessionAnnotations`; turn and part annotations are embedded on their
+targets. The accumulator is not idempotent; callers should deduplicate replayed
+transport events before applying them.
+
+#### Annotations
+
+Annotations are embedded render metadata for sessions, turns, and parts. They
+are useful for out-of-band UI such as sandbox startup, eval results, deployment
+state, or any other consumer-owned status that should render alongside turns
+without becoming model state.
+
+```typescript
+type EvalAnnotation = Annotation<{ score: number; passed: boolean }, "eval">;
+
+const annotation: EvalAnnotation = {
+  id: crypto.randomUUID(),
+  kind: "eval",
+  label: "Plan adherence",
+  placement: "after",
+  status: "complete",
+  data: { score: 0.92, passed: true },
+};
+
+agentEventSink({
+  type: "annotation:end",
+  target: { type: "turn", turnId },
+  annotation,
+});
+```
+
+Annotation `label` is required so generic renderers have a common UI surface.
+`placement` defaults to `"after"`, and `annotation:end` defaults missing
+`status` to `"complete"` in accumulated state. `annotation:update` and
+`annotation:end` carry the full updated annotation object; Axle does not define
+patch or merge semantics for annotation data.
 
 #### stream() events
 

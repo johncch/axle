@@ -6,13 +6,13 @@ import { convertAxleMessagesToGemini } from "../../src/providers/gemini/utils.js
 import { convertAxleMessageToResponseInput } from "../../src/providers/openai/utils.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import type { AgentEvent } from "../../src/turns/events.js";
+import type { TurnEvent } from "../../src/turns/events.js";
 import type { FileInfo, FileResolver } from "../../src/utils/file.js";
 
 describe("deferred file resolution", () => {
   test("resolves refs only during provider conversion and does not leak into history or events", async () => {
     const resolvedUrl = "https://signed.example/private-image.png?token=secret";
-    const events: AgentEvent[] = [];
+    const events: TurnEvent[] = [];
     let providerInput: unknown;
 
     const fileResolver: FileResolver = async ({ accepted }) => {

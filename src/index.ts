@@ -2,10 +2,10 @@
 export { Agent } from "./core/Agent.js";
 export type {
   AgentConfig,
-  AgentEventCallback,
   AgentHandle,
   AgentResult,
   SendMessageOptions,
+  TurnEventCallback,
 } from "./core/Agent.js";
 export { Instruct } from "./core/index.js";
 export type {
@@ -27,6 +27,7 @@ export {
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
+export { estimateContextUsage } from "./providers/context.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
 export type {
   GenerateInstructParams,
@@ -36,15 +37,14 @@ export type {
 export type { StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
-export { estimateContextUsage } from "./providers/context.js";
 export type {
   StreamEvent,
   StreamEventCallback,
   StreamHandle,
-  StreamParams,
   StreamInstructHandle,
   StreamInstructParams,
   StreamInstructResult,
+  StreamParams,
 } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type {
@@ -89,11 +89,20 @@ export type {
 } from "./messages/message.js";
 
 // Turns (public format)
-export { TurnBuilder } from "./turns/builder.js";
-export type { AgentEvent } from "./turns/events.js";
+export { TurnAccumulator } from "./turns/accumulator.js";
+export type {
+  AccumulatableEvent,
+  TurnAccumulatorResult,
+  TurnAccumulatorState,
+} from "./turns/accumulator.js";
+export { TurnEventBuilder } from "./turns/eventBuilder.js";
+export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export type {
   ActionPart,
   ActionResult,
+  Annotation,
+  AnnotationPlacement,
+  AnnotationStatus,
   FilePart,
   ProviderToolAction,
   SubagentAction,

@@ -7,18 +7,15 @@ import type { AgentMemory } from "../memory/types.js";
 import { estimateContextUsage } from "../providers/context.js";
 import type { GenerateError, StreamResult } from "../providers/helpers.js";
 import { stream } from "../providers/stream.js";
-import type {
-  AIProvider,
-  AxleModelRequestOptions,
-  ContextUsage,
-} from "../providers/types.js";
+import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../providers/types.js";
 import { LocalFileStore } from "../store/LocalFileStore.js";
 import type { FileStore } from "../store/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { TracingContext } from "../tracer/types.js";
-import { TurnBuilder } from "../turns/builder.js";
-import type { AgentEvent } from "../turns/events.js";
+import { TurnAccumulator } from "../turns/accumulator.js";
+import { TurnEventBuilder } from "../turns/eventBuilder.js";
+import type { TurnEvent } from "../turns/events.js";
 import type { Turn } from "../turns/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -74,7 +71,7 @@ export interface AgentErrorResult {
 
 export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
-export type AgentEventCallback = (event: AgentEvent) => void;
+export type TurnEventCallback = (event: TurnEvent) => void;
 export interface SendMessageOptions extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
 }
@@ -97,7 +94,7 @@ export class Agent {
   private resolvedMcps = new WeakSet<MCP>();
   private memory?: AgentMemory;
 
-  private eventCallbacks: AgentEventCallback[] = [];
+  private eventCallbacks: TurnEventCallback[] = [];
   private sendQueue: Promise<void> = Promise.resolve();
 
   constructor(config: AgentConfig) {
@@ -151,7 +148,7 @@ export class Agent {
     return this.registry.size > 0 || this.mcps.length > 0;
   }
 
-  on(callback: AgentEventCallback) {
+  on(callback: TurnEventCallback) {
     this.eventCallbacks.push(callback);
   }
 
@@ -192,7 +189,7 @@ export class Agent {
     }
   }
 
-  private emitEvent(event: AgentEvent): void {
+  private emitEvent(event: TurnEvent): void {
     for (const cb of this.eventCallbacks) cb(event);
   }
 
@@ -210,7 +207,18 @@ export class Agent {
     sendFileResolver?: FileResolver,
     requestOptions?: AxleModelRequestOptions,
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const builder = new TurnBuilder();
+    const turnEventBuilder = new TurnEventBuilder();
+    const turnAccumulator = new TurnAccumulator({ turns: this.history.turns });
+    let agentTurnId: string | undefined;
+    const applyTurnEvent = (event: TurnEvent): void => {
+      const result = turnAccumulator.apply(event);
+      if (result.handled) {
+        this.history.replaceTurns(result.state.turns);
+      }
+      this.emitEvent(event);
+    };
+    const currentAgentTurn = (): Turn | undefined =>
+      agentTurnId ? turnAccumulator.state.turns.find((turn) => turn.id === agentTurnId) : undefined;
     const emptyUsage: Stats = createStats();
 
     if (signal.aborted) {
@@ -259,17 +267,15 @@ export class Agent {
       });
     }
 
-    const { turn: historyUserTurn, events: userEvents } = builder.createUserTurn(userTurn.message);
-    this.history.addTurn(historyUserTurn);
     this.history.appendToLog(userTurn.message);
-    for (const evt of userEvents) {
-      this.emitEvent(evt);
+    for (const evt of turnEventBuilder.createUserTurn(userTurn.message)) {
+      applyTurnEvent(evt);
     }
 
     // Start agent turn
-    const { turn: agentTurn, events: startEvents } = builder.startAgentTurn();
-    this.history.addTurn(agentTurn);
-    for (const evt of startEvents) this.emitEvent(evt);
+    const startEvent = turnEventBuilder.startAgentTurn();
+    agentTurnId = startEvent.turnId;
+    applyTurnEvent(startEvent);
 
     const { signal: _requestSignal, ...streamRequestOptions } = requestOptions ?? {};
     const streamHandle = stream({
@@ -298,10 +304,10 @@ export class Agent {
       },
     });
 
-    // Translate StreamEvents → AgentEvents
+    // Translate StreamEvents → TurnEvents
     streamHandle.on((streamEvent) => {
-      const agentEvents = builder.handleStreamEvent(streamEvent);
-      for (const evt of agentEvents) this.emitEvent(evt);
+      const turnEvents = turnEventBuilder.handleStreamEvent(streamEvent);
+      for (const evt of turnEvents) applyTurnEvent(evt);
     });
 
     let streamResult: StreamResult;
@@ -313,8 +319,8 @@ export class Agent {
           this.history.appendToLog(error.messages);
         }
 
-        const finalizeEvents = builder.finalizeTurn("error");
-        for (const evt of finalizeEvents) this.emitEvent(evt);
+        const finalizeEvents = turnEventBuilder.finalizeTurn("error");
+        for (const evt of finalizeEvents) applyTurnEvent(evt);
 
         throw new AxleToolFatalError(error.message, {
           toolName: error.toolName,
@@ -329,14 +335,14 @@ export class Agent {
           this.history.appendToLog(error.messages);
         }
 
-        const finalizeEvents = builder.finalizeTurn("cancelled");
-        for (const evt of finalizeEvents) this.emitEvent(evt);
+        const finalizeEvents = turnEventBuilder.finalizeTurn("cancelled");
+        for (const evt of finalizeEvents) applyTurnEvent(evt);
 
         throw new AxleAgentAbortError("Agent send aborted", {
           reason: error.reason,
           messages: error.messages,
           partial: error.partial,
-          turn: agentTurn,
+          turn: currentAgentTurn(),
           usage: error.usage ?? emptyUsage,
         });
       }
@@ -349,10 +355,11 @@ export class Agent {
       this.history.appendToLog(streamResult.messages);
     }
 
-    const finalizeEvents = builder.finalizeTurn(outcome);
-    for (const evt of finalizeEvents) this.emitEvent(evt);
+    const finalizeEvents = turnEventBuilder.finalizeTurn(outcome);
+    for (const evt of finalizeEvents) applyTurnEvent(evt);
 
     const usage = streamResult.usage ?? emptyUsage;
+    const agentTurn = currentAgentTurn();
 
     if (!streamResult.ok) {
       return {
@@ -377,6 +384,10 @@ export class Agent {
         turn: agentTurn,
         usage,
       };
+    }
+
+    if (!agentTurn) {
+      throw new AxleError("Agent turn missing after send");
     }
 
     if (this.memory) {

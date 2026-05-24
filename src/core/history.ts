@@ -22,6 +22,10 @@ export class History {
     this._turns.push(turn);
   }
 
+  replaceTurns(turns: Turn[]): void {
+    this._turns = [...turns];
+  }
+
   appendToLog(messages: AxleMessage | AxleMessage[]): void {
     if (Array.isArray(messages)) {
       this._log.push(...messages);
