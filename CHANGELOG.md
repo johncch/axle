@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.0] - 2026-05-25
+
+- Split the library and CLI into separate packages for clearer installation and usage
+- Added `AgentSession` and snapshot restore APIs for saving and resuming agent sessions
+- Added `createAgentConfig` for easier agent configuration
+- Updated memory handling so memory is managed separately from `AgentConfig`
+- Added documentation updates and removed Brave-related docs/support
+
 ## [0.19.0] - 2026-05-24
 
 - Added a browser-only export for client-side bundles that omits server-only code
