@@ -15,25 +15,38 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run tests
-        run: npm test
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit --pretty false
+
+      - name: Test
+        run: pnpm test
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
-      - name: Publish to npm
-        run: npm publish --access public
+      - name: Pack core
+        run: pnpm --filter @fifthrevision/axle pack --pack-destination artifacts/core
+
+      - name: Pack CLI
+        run: pnpm --filter @fifthrevision/axle-cli pack --pack-destination artifacts/cli
+
+      - name: Publish core
+        run: npm publish artifacts/core/*.tgz --access public
+
+      - name: Publish CLI
+        run: npm publish artifacts/cli/*.tgz --access public
