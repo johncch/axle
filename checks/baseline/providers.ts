@@ -1,10 +1,10 @@
-import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "../../src/index.js";
+import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
 import {
   AnthropicModels,
   ChatCompletionsModels,
   GeminiModels,
   OpenAIModels,
-} from "../../src/providers/models.js";
+} from "@fifthrevision/axle/models";
 
 export type BaselineProviderId = "openai" | "anthropic" | "gemini" | "openrouter";
 

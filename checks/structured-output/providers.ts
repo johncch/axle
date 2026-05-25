@@ -1,11 +1,11 @@
-import { anthropic, chatCompletions, gemini, openai } from "../../src/index.js";
+import type { AIProvider } from "@fifthrevision/axle";
+import { anthropic, chatCompletions, gemini, openai } from "@fifthrevision/axle";
 import {
   AnthropicModels,
   ChatCompletionsModels,
   GeminiModels,
   OpenAIModels,
-} from "../../src/providers/models.js";
-import type { AIProvider } from "../../src/providers/types.js";
+} from "@fifthrevision/axle/models";
 
 export type StructuredOutputProviderKind = "openai" | "anthropic" | "gemini" | "chatcompletions";
 

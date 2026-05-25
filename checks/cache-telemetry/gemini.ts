@@ -1,8 +1,8 @@
+import type { Stats } from "@fifthrevision/axle";
+import { gemini, generate } from "@fifthrevision/axle";
+import { GeminiModels } from "@fifthrevision/axle/models";
 import { GoogleGenAI } from "@google/genai";
 import "dotenv/config";
-import { gemini, generate } from "../../src/index.js";
-import { GeminiModels } from "../../src/providers/models.js";
-import type { Stats } from "../../src/types.js";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("GEMINI_API_KEY");

@@ -1,5 +1,5 @@
-import { Agent, Instruct, loadFileContent } from "../../src/index.js";
-import { useCLIHelper } from "./helper.js";
+import { Agent, Instruct, loadFileContent } from "@fifthrevision/axle";
+import { useCLIHelper } from "./helpers/cli.js";
 
 const [provider, model] = useCLIHelper();
 

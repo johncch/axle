@@ -1,7 +1,7 @@
+import type { Stats } from "@fifthrevision/axle";
+import { anthropic, generate } from "@fifthrevision/axle";
+import { AnthropicModels } from "@fifthrevision/axle/models";
 import "dotenv/config";
-import { anthropic, generate } from "../../src/index.js";
-import { AnthropicModels } from "../../src/providers/models.js";
-import type { Stats } from "../../src/types.js";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("ANTHROPIC_API_KEY");

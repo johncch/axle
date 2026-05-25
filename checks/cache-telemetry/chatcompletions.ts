@@ -1,7 +1,7 @@
+import type { Stats } from "@fifthrevision/axle";
+import { chatCompletions, generate } from "@fifthrevision/axle";
+import { ChatCompletionsModels } from "@fifthrevision/axle/models";
 import "dotenv/config";
-import { chatCompletions, generate } from "../../src/index.js";
-import { ChatCompletionsModels } from "../../src/providers/models.js";
-import type { Stats } from "../../src/types.js";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("OPENROUTER_API_KEY");

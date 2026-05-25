@@ -1,8 +1,8 @@
+import { Instruct, generate } from "@fifthrevision/axle";
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
-import { Instruct, generate } from "../../src/index.js";
 import { structuredOutputCases } from "./cases.js";
 import { createStructuredOutputProvider, resolveStructuredOutputTargets } from "./providers.js";
 

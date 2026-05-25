@@ -13,6 +13,10 @@ properties:
     type: array
     items:
       type: string
+  provider_tools:
+    type: array
+    items:
+      type: string
   files:
     type: array
     items:
@@ -90,10 +94,16 @@ definitions:
         properties:
           type:
             type: string
-            const: "ollama"
-          url:
+            const: "chatcompletions"
+          "base-url":
             type: string
           model:
+            type: string
+          "api-key":
+            type: string
+          apiKeyEnv:
+            type: string
+          "api-key-env":
             type: string
         required:
           - type
@@ -104,6 +114,10 @@ definitions:
             type: string
             const: "anthropic"
           "api-key":
+            type: string
+          apiKeyEnv:
+            type: string
+          "api-key-env":
             type: string
           model:
             type: string
@@ -117,6 +131,10 @@ definitions:
             const: "openai"
           "api-key":
             type: string
+          apiKeyEnv:
+            type: string
+          "api-key-env":
+            type: string
           model:
             type: string
         required:
@@ -128,6 +146,10 @@ definitions:
             type: string
             const: "gemini"
           "api-key":
+            type: string
+          apiKeyEnv:
+            type: string
+          "api-key-env":
             type: string
           model:
             type: string

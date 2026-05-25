@@ -1,5 +1,5 @@
-import { Agent, Instruct, MCP } from "../../src/index.js";
-import { useCLIHelper } from "./helper.js";
+import { Agent, Instruct, MCP } from "@fifthrevision/axle";
+import { useCLIHelper } from "./helpers/cli.js";
 
 const [provider, model] = useCLIHelper();
 

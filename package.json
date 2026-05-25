@@ -1,64 +1,27 @@
 {
-  "name": "@fifthrevision/axle",
+  "name": "axle-workspace",
   "version": "0.19.0",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/johncch/axle.git"
-  },
-  "description": "axle is a command line tool for running workflows against LLM APIs.",
+  "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./ui": {
-      "types": "./dist/ui.d.ts",
-      "import": "./dist/ui.js"
-    },
-    "./models": {
-      "types": "./dist/providers/models.d.ts",
-      "import": "./dist/providers/models.js"
-    }
-  },
-  "bin": {
-    "axle": "dist/cli.js"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "prepare": "pnpm run build",
-    "start": "tsx ./src/cli.ts",
-    "build": "tsdown --clean --minify",
-    "build:watch": "tsdown --watch",
-    "build-dev": "tsdown",
+    "start": "pnpm --filter @fifthrevision/axle build-dev && pnpm exec tsx packages/axle-cli/src/cli.ts",
+    "build": "pnpm -r --filter @fifthrevision/axle --filter @fifthrevision/axle-cli build",
+    "build:watch": "pnpm --filter @fifthrevision/axle build:watch",
+    "build-dev": "pnpm -r --filter @fifthrevision/axle --filter @fifthrevision/axle-cli build-dev",
     "test": "vitest run",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
     "update-models": "pnpm start -j ./jobs/bootstrap-models.job.yml",
-    "release": "pnpm test && pnpm run build && npm version",
+    "release": "node scripts/release.mjs",
     "cut-release": "node scripts/cut-release.mjs",
     "smoke-test": "pnpm exec tsx checks/baseline/run.ts"
   },
-  "author": "Chong Han Chua",
-  "license": "ISC",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.98.0",
-    "@commander-js/extra-typings": "^14.0.0",
-    "@google/genai": "^2.6.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "chalk": "^5.6.2",
-    "commander": "^14.0.3",
-    "glob": "^13.0.6",
-    "marked": "^18.0.4",
-    "mime": "^4.1.0",
-    "openai": "^6.39.0",
-    "serialize-error": "^13.0.1",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
-  },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.2",
+    "@fifthrevision/axle": "workspace:*",
+    "@google/genai": "^2.6.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^14.0.3",
     "dotenv": "^17.4.2",
     "prettier": "^3.8.3",
     "prettier-plugin-organize-imports": "^4.3.0",
@@ -66,6 +29,7 @@
     "tsdown": "^0.22.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "zod": "^4.4.3"
   }
 }

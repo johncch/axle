@@ -1,0 +1,54 @@
+{
+  "name": "@fifthrevision/axle-cli",
+  "version": "0.19.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johncch/axle.git"
+  },
+  "description": "Axle command line workflow runner.",
+  "type": "module",
+  "bin": {
+    "axle": "dist/cli.js"
+  },
+  "exports": {
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/index.d.ts",
+      "import": "./dist/store/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "start": "tsx ./src/cli.ts",
+    "build": "tsdown --clean --minify",
+    "build:watch": "tsdown --watch",
+    "build-dev": "tsdown"
+  },
+  "author": "Chong Han Chua",
+  "license": "ISC",
+  "dependencies": {
+    "@commander-js/extra-typings": "^14.0.0",
+    "@fifthrevision/axle": "workspace:*",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.2",
+    "glob": "^13.0.6",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/core": "^0.18.2",
+    "publint": "^0.3.21",
+    "tsdown": "^0.22.0",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  }
+}

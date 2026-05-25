@@ -9,7 +9,9 @@ if (!arg) {
   process.exit(1);
 }
 
-const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const pkg = JSON.parse(
+  readFileSync(new URL("../packages/axle/package.json", import.meta.url), "utf8"),
+);
 const [maj, min, pat] = pkg.version.split(".").map(Number);
 
 let next;

@@ -57,7 +57,6 @@ const agent = new Agent({
   provider: anthropic(apiKey),
   model: "claude-sonnet-4-5-20250929",
   system: "You are a helpful assistant.",
-  tools: [calculatorTool],
 });
 ```
 
@@ -257,8 +256,9 @@ const agent = new Agent({
 });
 ```
 
-Axle includes several built-in tools: `braveSearchTool`, `calculatorTool`,
-`execTool`, `readFileTool`, `writeFileTool`, and `patchFileTool`.
+The core package does not ship concrete local tools. Define application tools
+directly, or use the CLI package's job-file tool names when running jobs through
+`axle`.
 
 ### Provider Tools
 
@@ -267,13 +267,12 @@ search, code interpreter). Pass them via the `providerTools` option using
 `{ type: "provider", name: "..." }`.
 
 ```typescript
-import { Agent, calculatorTool } from "@fifthrevision/axle";
+import { Agent } from "@fifthrevision/axle";
 import type { ProviderTool } from "@fifthrevision/axle";
 
 const agent = new Agent({
   provider,
   model,
-  tools: [calculatorTool],
   providerTools: [{ type: "provider", name: "web_search" }],
 });
 ```
@@ -506,30 +505,28 @@ turn events that Axle emits.
 ## CLI
 
 In accordance to Axle's lineage of a workflow tool, Axle exposes a command
-line interface that accepts a declarative config file.
+line interface that accepts a declarative YAML job file.
 
 ### Installation
 
 ```bash
-npm install -g @fifthrevision/axle
+npm install -g @fifthrevision/axle-cli
 ```
 
 ### Usage
 
-The CLI looks for `axle.job.yaml` and `axle.config.yaml` in the current
-directory by default. You can also specify them using the `-j` and `-c` flags
+The CLI requires an explicit YAML job file using the `-j` flag.
 
 ```bash
-axle
-axle -j path/to/job.yaml -c path/to/config.yaml
-axle --args key=value other=thing
-axle --debug
+axle -j path/to/job.yaml
+axle -j path/to/job.yaml --args key=value other=thing
+axle -j path/to/job.yaml --debug
 ```
 
 A job file specifies the provider, task prompt, and optional tools/files:
 
 ```yaml
-# axle.job.yaml
+# job.yaml
 provider:
   type: anthropic
   model: claude-sonnet-4-5-20250929
@@ -553,7 +550,7 @@ Add a `batch` key to the job file to run the same task across multiple files.
 Each matched file is attached to the instruct automatically.
 
 ```yaml
-# axle.job.yaml
+# job.yaml
 provider:
   type: openai
 
@@ -576,7 +573,7 @@ Add an `mcps` key to connect to MCP servers. Both stdio and HTTP transports
 are supported.
 
 ```yaml
-# axle.job.yaml
+# job.yaml
 provider:
   type: anthropic
 
@@ -601,21 +598,36 @@ Each entry supports:
 
 ### Configuration
 
-For CLI use, create an `axle.config.yaml` in your working directory with API
-keys:
+For CLI use, put provider secrets in your environment or a local `.env` file:
 
-```yaml
-# axle.config.yaml
-openai:
-  api-key: "<api-key>"
-anthropic:
-  api-key: "<api-key>"
-gemini:
-  api-key: "<api-key>"
-chatcompletions:
-  base-url: "http://localhost:11434/v1"
-  model: "llama3"
-  api-key: "<api-key>" # optional
+```bash
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+GEMINI_API_KEY=...
+BRAVE_API_KEY=...
 ```
 
-Provider-level keys in the job file override the config file.
+Optional model overrides use provider-specific variables:
+
+```bash
+OPENAI_MODEL=gpt-4.1
+ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+GEMINI_MODEL=gemini-2.5-pro
+```
+
+For OpenAI-compatible endpoints:
+
+```bash
+CHATCOMPLETIONS_BASE_URL=http://localhost:11434/v1
+CHATCOMPLETIONS_MODEL=llama3
+CHATCOMPLETIONS_API_KEY=...
+```
+
+Provider-level keys in the job file override environment variables. To
+reference a non-standard environment variable from a job file, use `apiKeyEnv`:
+
+```yaml
+provider:
+  type: openai
+  apiKeyEnv: CUSTOM_OPENAI_KEY
+```

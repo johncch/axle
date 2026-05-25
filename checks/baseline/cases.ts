@@ -1,4 +1,3 @@
-import * as z from "zod";
 import {
   Agent,
   Instruct,
@@ -8,7 +7,8 @@ import {
   type AIProvider,
   type AxleAssistantMessage,
   type ExecutableTool,
-} from "../../src/index.js";
+} from "@fifthrevision/axle";
+import * as z from "zod";
 
 export interface BaselineCaseContext {
   provider: AIProvider;

@@ -1,7 +1,7 @@
+import type { Stats } from "@fifthrevision/axle";
+import { generate, openai } from "@fifthrevision/axle";
+import { OpenAIModels } from "@fifthrevision/axle/models";
 import "dotenv/config";
-import { generate, openai } from "../../src/index.js";
-import { OpenAIModels } from "../../src/providers/models.js";
-import type { Stats } from "../../src/types.js";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("OPENAI_API_KEY");

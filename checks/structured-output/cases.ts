@@ -1,5 +1,5 @@
+import type { OutputSchema } from "@fifthrevision/axle";
 import * as z from "zod";
-import type { OutputSchema } from "../../src/core/parse.js";
 
 export interface StructuredOutputCase<TSchema extends OutputSchema = OutputSchema> {
   id: string;

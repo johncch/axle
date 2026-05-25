@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/v2/job.yaml
 provider:
-  type: ollama
+  type: chatcompletions
+  base-url: http://localhost:11434/v1
   model: gemma3
 
 task: |

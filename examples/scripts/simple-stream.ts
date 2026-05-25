@@ -1,7 +1,7 @@
+import type { ExecutableTool } from "@fifthrevision/axle";
+import { SimpleWriter, stream, Tracer } from "@fifthrevision/axle";
 import z from "zod";
-import { SimpleWriter, stream, Tracer } from "../../src/index.js";
-import type { ExecutableTool } from "../../src/tools/types.js";
-import { useCLIHelper } from "./helper.js";
+import { useCLIHelper } from "./helpers/cli.js";
 
 const [provider, model] = useCLIHelper();
 

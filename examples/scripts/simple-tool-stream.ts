@@ -1,10 +1,11 @@
-import { Agent, execTool } from "../../src/index.js";
-import { useCLIHelper } from "./helper.js";
+import { Agent } from "@fifthrevision/axle";
+import { useCLIHelper } from "./helpers/cli.js";
+import { execTool } from "./helpers/execTool.js";
 
 const [provider, model] = useCLIHelper();
 
 /**
- * The built-in exec tool streams stdout/stderr as it arrives, surfacing
+ * This local exec tool streams stdout/stderr as it arrives, surfacing
  * each chunk through `ctx.emit` → `tool:exec-delta` → `action:progress`.
  * Run something visibly slow to see the streaming in action.
  */

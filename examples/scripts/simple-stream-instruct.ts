@@ -1,7 +1,7 @@
+import type { AxleMessage } from "@fifthrevision/axle";
+import { Instruct, stream } from "@fifthrevision/axle";
 import z from "zod";
-import { Instruct, stream } from "../../src/index.js";
-import type { AxleMessage } from "../../src/messages/message.js";
-import { useCLIHelper } from "./helper.js";
+import { useCLIHelper } from "./helpers/cli.js";
 
 const [provider, model] = useCLIHelper();
 

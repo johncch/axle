@@ -1,6 +1,6 @@
-import { Agent } from "../../src/index.js";
-import type { ProviderTool } from "../../src/tools/types.js";
-import { useCLIHelper } from "./helper.js";
+import type { ProviderTool } from "@fifthrevision/axle";
+import { Agent } from "@fifthrevision/axle";
+import { useCLIHelper } from "./helpers/cli.js";
 
 const [provider, model] = useCLIHelper();
 

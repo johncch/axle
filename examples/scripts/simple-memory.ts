@@ -1,20 +1,15 @@
-import { Agent, ProceduralMemory } from "../../src/index.js";
-import { useCLIHelper } from "./helper.js";
+import { Agent } from "@fifthrevision/axle";
+import { useCLIHelper } from "./helpers/cli.js";
+import { ProceduralMemory } from "./helpers/proceduralMemory.js";
 
 const [provider, model] = useCLIHelper();
-
-const memory = new ProceduralMemory({
-  provider,
-  model,
-});
 
 const agent = new Agent({
   provider,
   model,
   system: "You are a helpful assistant that summarizes text.",
   name: "summarizer",
-  // scope: { user: "demo" },
-  memory,
+  memory: new ProceduralMemory(),
 });
 
 agent.on((event) => {
@@ -44,5 +39,3 @@ try {
 }
 
 console.log("[Complete]");
-console.log("[Tip] Run this script again to see learned instructions applied from the start.");
-console.log("[Tip] Check .axle/memory/procedural/ to see the stored instructions.");
