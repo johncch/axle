@@ -2,7 +2,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
-const version = process.argv[2];
+const version = process.argv.find((arg) => /^\d+\.\d+\.\d+$/.test(arg));
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
   console.error("Usage: pnpm run release -- <x.y.z>");
   process.exit(1);
