@@ -13,5 +13,6 @@
     "resolveJsonModule": true,
     "ignoreDeprecations": "6.0",
     "skipLibCheck": true
-  }
+  },
+  "exclude": ["**/dist/**", "node_modules"]
 }

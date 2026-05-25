@@ -1,10 +1,8 @@
-export { default as braveSearchTool } from "./brave.js";
 export { default as calculatorTool } from "./calculator.js";
 export { default as execTool } from "./exec/index.js";
 export { default as patchFileTool } from "./patch-file.js";
 export { default as readFileTool } from "./read-file.js";
 export type {
-  BraveProviderConfig,
   ExecProviderConfig,
   ExecutableTool,
   ProviderTool,

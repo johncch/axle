@@ -544,6 +544,14 @@ files:
   - ./data/report.txt
 ```
 
+CLI job files can use these local tool names:
+
+- `calculator`
+- `exec`
+- `patch-file`
+- `read-file`
+- `write-file`
+
 ### Batch
 
 Add a `batch` key to the job file to run the same task across multiple files.
@@ -604,7 +612,6 @@ For CLI use, put provider secrets in your environment or a local `.env` file:
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
-BRAVE_API_KEY=...
 ```
 
 Optional model overrides use provider-specific variables:

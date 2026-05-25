@@ -5,7 +5,6 @@ import {
   OpenAIProviderConfig as OpenAIConfig,
 } from "@fifthrevision/axle";
 import { z } from "zod";
-import type { BraveProviderConfig } from "../../tools/types.js";
 
 /* ============================================================================
  * Validation Error Type
@@ -20,12 +19,6 @@ export type ValidationError = z.infer<typeof ValidationErrorSchema>;
 /* ============================================================================
  * Provider Configuration Schemas
  * ========================================================================== */
-
-// Brave Provider
-export const BraveProviderConfigSchema = z.object({
-  "api-key": z.string(),
-  rateLimit: z.number().optional(),
-});
 
 // Exec Provider
 export const ExecProviderConfigSchema = z.object({
@@ -81,7 +74,6 @@ export interface ServiceConfig {
   anthropic?: AnthropicConfig;
   openai?: OpenAIConfig;
   gemini?: GeminiConfig;
-  brave?: BraveProviderConfig;
 }
 
 /* ============================================================================

@@ -1,5 +1,4 @@
 import {
-  braveSearchTool,
   calculatorTool,
   execTool,
   patchFileTool,
@@ -15,13 +14,6 @@ import {
  */
 export function createTool(name: string, config?: ToolProviderConfig): ExecutableTool {
   switch (name) {
-    case "brave": {
-      const toolConfig = config?.brave;
-      if (toolConfig) {
-        braveSearchTool.configure(toolConfig);
-      }
-      return braveSearchTool;
-    }
     case "calculator": {
       return calculatorTool;
     }
@@ -57,7 +49,6 @@ export function createTools(names: string[], config?: ToolProviderConfig): Execu
  * Available tool names for reference.
  */
 export const availableTools = [
-  "brave",
   "calculator",
   "exec",
   "patch-file",

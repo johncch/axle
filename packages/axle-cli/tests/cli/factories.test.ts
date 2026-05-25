@@ -3,13 +3,6 @@ import { availableTools, createTool, createTools } from "../../src/cli/tools.js"
 
 describe("CLI Factories", () => {
   describe("createTool", () => {
-    it("should create brave tool", () => {
-      const tool = createTool("brave");
-      expect(tool.name).toBe("brave");
-      expect(tool.description).toContain("Brave");
-      expect(tool.schema).toBeDefined();
-    });
-
     it("should create exec tool", () => {
       const tool = createTool("exec");
       expect(tool.name).toBe("exec");
@@ -24,9 +17,9 @@ describe("CLI Factories", () => {
 
   describe("createTools", () => {
     it("should create multiple tools", () => {
-      const tools = createTools(["brave", "exec"]);
+      const tools = createTools(["calculator", "exec"]);
       expect(tools).toHaveLength(2);
-      expect(tools[0].name).toBe("brave");
+      expect(tools[0].name).toBe("calculator");
       expect(tools[1].name).toBe("exec");
     });
 
@@ -36,18 +29,18 @@ describe("CLI Factories", () => {
     });
 
     it("should throw if any tool name is unknown", () => {
-      expect(() => createTools(["brave", "unknown"])).toThrow("Unknown tool: unknown");
+      expect(() => createTools(["calculator", "unknown"])).toThrow("Unknown tool: unknown");
     });
   });
 
   describe("availableTools", () => {
     it("should contain all available tools", () => {
-      expect(availableTools).toContain("brave");
       expect(availableTools).toContain("calculator");
       expect(availableTools).toContain("exec");
       expect(availableTools).toContain("patch-file");
       expect(availableTools).toContain("read-file");
       expect(availableTools).toContain("write-file");
+      expect(availableTools).not.toContain("brave" as never);
     });
   });
 });

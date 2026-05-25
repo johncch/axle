@@ -79,12 +79,6 @@ function getEnvServiceConfig(): ServiceConfig {
             "api-key": process.env.CHATCOMPLETIONS_API_KEY,
           }
         : undefined,
-    brave: process.env.BRAVE_API_KEY
-      ? {
-          "api-key": process.env.BRAVE_API_KEY,
-          rateLimit: parseOptionalNumber(process.env.BRAVE_RATE_LIMIT),
-        }
-      : undefined,
   });
 }
 
@@ -92,13 +86,6 @@ function compactServiceConfig(config: ServiceConfig): ServiceConfig {
   return Object.fromEntries(
     Object.entries(config).filter(([, value]) => value && Object.keys(value).length > 0),
   ) as ServiceConfig;
-}
-
-function parseOptionalNumber(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function redactConfig(value: unknown): unknown {

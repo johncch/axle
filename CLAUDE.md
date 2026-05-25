@@ -13,7 +13,7 @@
 - Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
-- Release: `pnpm run release` (runs tests, builds, then npm version)
+- Release: `pnpm run release -- <version>` (runs tests, builds, versions packages, commits, and tags)
 
 # Code Style Guidelines
 
@@ -28,21 +28,24 @@
 
 # Repository Structure
 
-- `src/`: Source code
-  - `core/`: Agent, Instruct, compile, parse
-  - `providers/`: LLM provider integrations
-    - `anthropic/`, `openai/`, `gemini/`, `chatcompletions/`
-    - `stream.ts`, `generate.ts`, `generateTurn.ts` — lower-level primitives
-  - `mcp/`: Model Context Protocol adapter
-  - `messages/`: Conversation history and message types
-  - `tools/`: LLM-callable tools (brave, calculator, exec, read-file, write-file, patch-file)
-  - `tracer/`: Tracing/logging with pluggable writers
-  - `errors/`: Custom error classes
-  - `utils/`: Helper functions
-  - `cli/`: CLI implementation
-    - `configs/`: Configuration handling
-    - `runners.ts`, `tools.ts`, `ledger.ts`
-- `tests/`: Test files (mirrors src/ structure)
+- `packages/axle/`: Core runtime package
+  - `src/core/`: Agent, Instruct, compile, parse
+  - `src/providers/`: LLM provider integrations
+  - `src/mcp/`: Model Context Protocol adapter
+  - `src/messages/`: Conversation history and message types
+  - `src/tools/`: Tool interfaces and registry
+  - `src/turns/`: Turn presentation types, events, accumulator
+  - `src/tracer/`: Tracing/logging with pluggable writers
+  - `src/errors/`: Custom error classes
+  - `src/utils/`: Helper functions
+  - `tests/`: Core package tests
+- `packages/axle-cli/`: CLI harness package
+  - `src/cli.ts`: CLI entrypoint
+  - `src/cli/`: YAML loading, runners, tool factory, ledger
+  - `src/tools/`: CLI local workflow tools (calculator, exec, read-file, write-file, patch-file)
+  - `src/memory/`: CLI memory implementation
+  - `src/store/`: CLI local file store
+  - `tests/`: CLI package tests
 - `examples/`: Sample job definitions and scripts
 - `scripts/`: Utility scripts
 - `docs/`: Documentation
@@ -52,7 +55,7 @@
 # Build Notes
 
 - **`dist/` is not checked in** — It's generated during build and ignored by git
-- **`prepare` script** — Runs `npm run build` automatically when installing from git URLs
+- **`prepare` script** — Runs `pnpm run build` automatically when installing from git URLs
 - **npm link workflow** — Use `pnpm run build:watch` for live rebuilding during development
 
 # Key Concepts
@@ -61,7 +64,7 @@
 - **Instruct**: Rich message with structured output (Zod schema), file attachments, and variable substitution.
 - **Providers**: `anthropic()`, `openai()`, `gemini()`, `chatCompletions()` — factory functions that create provider instances.
 - **`stream()` / `generate()`**: Lower-level primitives for tool-loop execution without conversation management. Agent uses `stream()` internally.
-- **Tool**: Object with name, description, Zod schema, and `execute` function. Built-in tools: `braveSearchTool`, `calculatorTool`, `execTool`, `readFileTool`, `writeFileTool`, `patchFileTool`.
+- **Tool**: Object with name, description, Zod schema, and `execute` function. Core exports tool interfaces and `ToolRegistry`; CLI owns local workflow tool implementations.
 - **MCP**: Adapter for connecting to Model Context Protocol servers (stdio and HTTP transports).
 - **Tracer**: First-class concept. All functions that do work must accept and use the tracer interface. Structured tracing with span-based logging and pluggable writers.
 

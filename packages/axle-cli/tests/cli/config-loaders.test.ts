@@ -73,13 +73,10 @@ describe("config loaders", () => {
     process.chdir(TEST_DIR);
     vi.stubEnv("OPENAI_API_KEY", "openai-key");
     vi.stubEnv("OPENAI_MODEL", "gpt-test");
-    vi.stubEnv("BRAVE_API_KEY", "brave-key");
-    vi.stubEnv("BRAVE_RATE_LIMIT", "5");
 
     const config = await getServiceConfig({});
 
     expect(config.openai).toEqual({ "api-key": "openai-key", model: "gpt-test" });
-    expect(config.brave).toEqual({ "api-key": "brave-key", rateLimit: 5 });
   });
 
   it("reports validation errors with paths", async () => {

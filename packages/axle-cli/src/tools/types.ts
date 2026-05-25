@@ -5,11 +5,6 @@ export type {
   ToolDefinition,
 } from "@fifthrevision/axle";
 
-export interface BraveProviderConfig {
-  "api-key": string;
-  rateLimit?: number;
-}
-
 export interface ExecProviderConfig {
   timeout?: number;
   maxBuffer?: number;
@@ -17,6 +12,5 @@ export interface ExecProviderConfig {
 }
 
 export interface ToolProviderConfig {
-  brave?: BraveProviderConfig;
   exec?: ExecProviderConfig;
 }
