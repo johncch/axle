@@ -1,6 +1,6 @@
 import type { MCP, MCPConfig } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
-import type { AxleMessage } from "../../messages/message.js";
+import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { GenerateError } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
@@ -191,6 +191,11 @@ export type TurnEventCallback = (event: TurnEvent) => void;
 
 export interface SendMessageOptions extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
+  /**
+   * Stable host-owned metadata attached to the user message and copied to the
+   * renderable user turn. Providers ignore this data.
+   */
+  metadata?: MessageMetadata;
 }
 
 export type { ContextUsage };

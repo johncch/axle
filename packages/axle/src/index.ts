@@ -94,6 +94,7 @@ export type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  MessageMetadata,
   ToolResultPart,
 } from "./messages/message.js";
 
@@ -119,6 +120,7 @@ export type {
   ThinkingPart,
   ToolAction,
   Turn,
+  TurnMetadata,
   TurnPart,
   TurnStatus,
 } from "./turns/types.js";

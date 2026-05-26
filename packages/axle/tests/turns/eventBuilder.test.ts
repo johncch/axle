@@ -14,6 +14,7 @@ describe("TurnEventBuilder", () => {
       role: "user",
       id: "u1",
       content: [{ type: "text", text: "Hello" }],
+      metadata: { source: "prompt-editor" },
     });
 
     expect(events).toHaveLength(1);
@@ -23,6 +24,7 @@ describe("TurnEventBuilder", () => {
         id: "u1",
         owner: "user",
         status: "complete",
+        metadata: { source: "prompt-editor" },
         parts: [{ type: "text", text: "Hello" }],
       },
     });

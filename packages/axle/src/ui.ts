@@ -20,6 +20,7 @@ export type {
   TimingInfo,
   ToolAction,
   Turn,
+  TurnMetadata,
   TurnPart,
   TurnStatus,
 } from "./turns/types.js";

@@ -69,7 +69,14 @@ export class TurnEventBuilder {
       }
     }
 
-    const turn: Turn = { id: turnId, owner: "user", parts, status: "complete", timing };
+    const turn: Turn = {
+      id: turnId,
+      owner: "user",
+      parts,
+      status: "complete",
+      timing,
+      ...(message.metadata ? { metadata: message.metadata } : {}),
+    };
     return [{ type: "turn:user", turn }];
   }
 

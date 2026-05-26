@@ -95,6 +95,53 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
 }
 
 describe("Agent", () => {
+  test("send metadata is stored on user messages and copied to user turns", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const agent = new Agent({ provider, model: "mock" });
+    const events: { type: string; turn?: { metadata?: Record<string, unknown> } }[] = [];
+    agent.on((event) => events.push(event));
+
+    await agent.send("Render this specially", { metadata: { source: "system-editor" } }).final;
+
+    expect(agent.history.log[0]).toMatchObject({
+      role: "user",
+      metadata: { source: "system-editor" },
+    });
+    expect(agent.history.turns[0]).toMatchObject({
+      owner: "user",
+      metadata: { source: "system-editor" },
+    });
+    expect(events.find((event) => event.type === "turn:user")?.turn?.metadata).toEqual({
+      source: "system-editor",
+    });
+    expect(agent.snapshot().messages[0]).toMatchObject({
+      metadata: { source: "system-editor" },
+    });
+    expect(agent.snapshot().turns?.[0]).toMatchObject({
+      metadata: { source: "system-editor" },
+    });
+  });
+
+  test("instruct metadata is copied to user messages and turns", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const agent = new Agent({ provider, model: "mock" });
+    const instruct = new Instruct({
+      prompt: "Review this prompt",
+      metadata: { surface: "prompt-review" },
+    });
+
+    await agent.send(instruct).final;
+
+    expect(agent.history.log[0]).toMatchObject({
+      role: "user",
+      metadata: { surface: "prompt-review" },
+    });
+    expect(agent.history.turns[0]).toMatchObject({
+      owner: "user",
+      metadata: { surface: "prompt-review" },
+    });
+  });
+
   test("snapshot and restore preserve model and render state", async () => {
     const requests: unknown[][] = [];
     const provider: AIProvider = {

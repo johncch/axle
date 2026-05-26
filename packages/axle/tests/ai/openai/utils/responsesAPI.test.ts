@@ -9,6 +9,7 @@ describe("responsesAPI utils", () => {
         {
           role: "user" as const,
           content: "Hello, how are you?",
+          metadata: { source: "system-editor" },
         },
       ];
 
@@ -19,6 +20,7 @@ describe("responsesAPI utils", () => {
         role: "user",
         content: "Hello, how are you?",
       });
+      expect(result[0]).not.toHaveProperty("metadata");
     });
 
     test("should convert assistant message with text content", async () => {

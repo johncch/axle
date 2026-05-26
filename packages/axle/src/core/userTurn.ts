@@ -1,4 +1,8 @@
-import type { AxleAssistantMessage, AxleUserMessage } from "../messages/message.js";
+import type {
+  AxleAssistantMessage,
+  AxleUserMessage,
+  MessageMetadata,
+} from "../messages/message.js";
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import { Instruct } from "./Instruct.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
@@ -12,18 +16,33 @@ export interface CompiledUserTurn<TResponse = string> {
   parse(final: AxleAssistantMessage | undefined): TResponse | null;
 }
 
-export function compileUserTurn(message: string): CompiledUserTurn<string>;
+export interface CompileUserTurnOptions {
+  metadata?: MessageMetadata;
+}
+
+export function compileUserTurn(
+  message: string,
+  options?: CompileUserTurnOptions,
+): CompiledUserTurn<string>;
 export function compileUserTurn<TSchema extends OutputSchema | undefined>(
   instruct: Instruct<TSchema>,
+  options?: CompileUserTurnOptions,
 ): CompiledUserTurn<InstructResponse<TSchema>>;
-export function compileUserTurn(messageOrInstruct: string | Instruct<any>): CompiledUserTurn<any>;
-export function compileUserTurn(messageOrInstruct: string | Instruct<any>): CompiledUserTurn<any> {
+export function compileUserTurn(
+  messageOrInstruct: string | Instruct<any>,
+  options?: CompileUserTurnOptions,
+): CompiledUserTurn<any>;
+export function compileUserTurn(
+  messageOrInstruct: string | Instruct<any>,
+  options: CompileUserTurnOptions = {},
+): CompiledUserTurn<any> {
   if (typeof messageOrInstruct === "string") {
     return {
       message: {
         role: "user",
         id: crypto.randomUUID(),
         content: [{ type: "text", text: messageOrInstruct }],
+        ...(options.metadata ? { metadata: options.metadata } : {}),
       },
       parse: (final) => parseAssistantResponse(final, undefined),
     };
@@ -32,12 +51,14 @@ export function compileUserTurn(messageOrInstruct: string | Instruct<any>): Comp
   const text = messageOrInstruct.render();
   const files = messageOrInstruct.files;
   const schema = messageOrInstruct.schema;
+  const metadata = options.metadata ?? messageOrInstruct.metadata;
 
   return {
     message: {
       role: "user",
       id: crypto.randomUUID(),
       content: toContentParts({ text, files }),
+      ...(metadata ? { metadata } : {}),
     },
     parse: (final) => parseAssistantResponse(final, schema),
   };

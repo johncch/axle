@@ -10,6 +10,14 @@ import type { FileInfo } from "../utils/file.js";
 export type TurnStatus = "streaming" | "complete" | "cancelled" | "error";
 
 /**
+ * Host-owned stable render metadata attached to a turn.
+ *
+ * Metadata is not model state and has no lifecycle. Use annotations for
+ * mutable, async, or explicitly placed UI state.
+ */
+export type TurnMetadata = Record<string, unknown>;
+
+/**
  * ISO timestamp metadata for a turn, part, action, or annotation.
  */
 export interface TimingInfo {
@@ -78,6 +86,8 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   status: TurnStatus;
   /** Annotations attached to the whole turn. */
   annotations?: TAnnotation[];
+  /** Stable host-owned render metadata copied from the source message. */
+  metadata?: TurnMetadata;
   /** Optional timing metadata. */
   timing?: TimingInfo;
   /** Token usage accumulated for this turn, when available. */

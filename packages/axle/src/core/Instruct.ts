@@ -1,4 +1,5 @@
 import { InstructVariableError } from "../errors/InstructVariableError.js";
+import type { MessageMetadata } from "../messages/message.js";
 import type { FileInfo } from "../utils/file.js";
 import { MissingVariablesError, replaceVariables } from "../utils/replace.js";
 import type { OutputSchema } from "./parse.js";
@@ -13,6 +14,7 @@ export interface InstructOptions<
   prompt: string;
   schema?: TSchema;
   vars?: InstructVarsMode;
+  metadata?: MessageMetadata;
 }
 
 export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
@@ -21,6 +23,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   files: FileInfo[] = [];
   textReferences: Array<{ content: string; name?: string }> = [];
   vars: InstructVarsMode;
+  metadata?: MessageMetadata;
 
   schema: TSchema;
 
@@ -28,6 +31,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     this.prompt = options.prompt;
     this.schema = options.schema as TSchema;
     this.vars = options.vars ?? "required";
+    this.metadata = options.metadata;
   }
 
   clone(): Instruct<TSchema> {
@@ -35,6 +39,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
       prompt: this.prompt,
       schema: this.schema,
       vars: this.vars,
+      metadata: this.metadata,
     });
     instruct.inputs = { ...this.inputs };
     instruct.files = [...this.files];

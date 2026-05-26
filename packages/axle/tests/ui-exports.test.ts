@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import type { Annotation, FileInfo, Stats, TimingInfo, Turn, TurnEvent } from "../src/ui.js";
+import type {
+  Annotation,
+  FileInfo,
+  Stats,
+  TimingInfo,
+  Turn,
+  TurnEvent,
+  TurnMetadata,
+} from "../src/ui.js";
 import { TurnAccumulator } from "../src/ui.js";
 
 describe("ui entrypoint", () => {
@@ -13,6 +21,7 @@ describe("ui entrypoint", () => {
 
     const result = accumulator.apply(event);
     const turns: Turn<AppAnnotation>[] = result.state.turns;
+    const metadata: TurnMetadata = { source: "example" };
     const usage: Stats = { in: 1, out: 1 };
     const timing: TimingInfo = { start: "2026-01-01T00:00:00.000Z" };
     const file: FileInfo = {
@@ -23,6 +32,7 @@ describe("ui entrypoint", () => {
     };
 
     expect(result.handled).toBe(true);
+    expect(metadata.source).toBe("example");
     expect(turns).toEqual([{ id: "t1", owner: "agent", parts: [], status: "streaming" }]);
     expect(usage.in).toBe(1);
     expect(timing.start).toBe("2026-01-01T00:00:00.000Z");

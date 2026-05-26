@@ -167,13 +167,14 @@ export class Agent {
     options?: SendMessageOptions,
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
-    const userTurn = compileUserTurn(messageOrInstruct);
-    const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, options);
+    const { fileResolver, metadata, ...modelOptions } = options ?? {};
+    const userTurn = compileUserTurn(messageOrInstruct, { metadata });
+    const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
 
     const { handle, settled } = createHandle(
       this.sendQueue,
-      (signal) => this.run(userTurn, signal, options?.fileResolver, requestOptions),
-      options?.signal,
+      (signal) => this.run(userTurn, signal, fileResolver, requestOptions),
+      modelOptions.signal,
     );
     this.sendQueue = settled;
     return handle;

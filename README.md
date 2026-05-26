@@ -442,6 +442,27 @@ state unchanged. Session-level annotations are accumulated in
 targets. The accumulator is not idempotent; callers should deduplicate replayed
 transport events before applying them.
 
+#### Turn metadata
+
+User messages can carry stable host-owned metadata for rendering. Metadata is
+stored in history, copied onto the corresponding user `Turn`, and ignored by
+providers.
+
+```typescript
+await agent.send("Rewrite this prompt", {
+  metadata: { surface: "prompt-editor" },
+});
+
+const instruct = new Instruct({
+  prompt: "Review this prompt",
+  metadata: { surface: "prompt-review" },
+});
+```
+
+Use metadata for stable facts about the message, such as which UI surface
+created it. Use annotations for lifecycle UI, async status, or render data that
+needs explicit placement before or after a turn or part.
+
 #### Annotations
 
 Annotations are embedded render metadata for sessions, turns, and parts. They
