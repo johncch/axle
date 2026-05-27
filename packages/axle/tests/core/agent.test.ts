@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import * as z from "zod";
-import { Agent } from "../../src/core/agent/index.js";
+import { Agent, createAgentConfig } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
@@ -211,6 +211,70 @@ describe("Agent", () => {
         messages: [],
       } as any),
     ).toThrow("Unsupported agent session version: 2");
+  });
+
+  test("constructor restores continuation state from an agent session", async () => {
+    const requests: unknown[][] = [];
+    const provider: AIProvider = {
+      name: "restore-provider",
+      async createGenerationRequest() {
+        throw new Error("not used");
+      },
+      async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
+        requests.push([...messages]);
+        yield {
+          type: "start",
+          id: `mock-${requests.length}`,
+          data: { model: "mock", timestamp: Date.now() },
+        };
+        yield { type: "text-start", data: { index: 0 } };
+        yield { type: "text-delta", data: { index: 0, text: `response-${requests.length}` } };
+        yield { type: "text-complete", data: { index: 0 } };
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 2 } },
+        };
+      },
+    };
+    const memory: AgentMemory = {
+      recall: vi.fn(async () => ({})),
+      record: vi.fn(async () => {}),
+    };
+
+    const original = new Agent({ provider, model: "mock" });
+    await original.send("one").final;
+
+    const saved = {
+      definition: {
+        version: 1,
+        name: "restored-agent",
+        provider: { type: "mock" },
+        model: "mock",
+        system: "You are restored.",
+      },
+      session: original.snapshot(),
+    } as const;
+
+    const config = await createAgentConfig(saved.definition, (definition) => {
+      expect(definition.provider.type).toBe("mock");
+      return { provider };
+    });
+    const restored = new Agent({ ...config, sessionId: "runtime-session", memory }, saved.session);
+
+    expect(restored.sessionId).toBe(saved.session.sessionId);
+    expect(restored.history.log).toEqual(saved.session.messages);
+    expect(restored.history.turns).toEqual(saved.session.turns);
+
+    await restored.send("two").final;
+
+    expect(requests[1]).toMatchObject([{ role: "user" }, { role: "assistant" }, { role: "user" }]);
+    expect(memory.recall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: "restored-agent",
+        sessionId: saved.session.sessionId,
+        messages: expect.arrayContaining([expect.objectContaining({ role: "user" })]),
+      }),
+    );
   });
 
   test("context() estimates committed history as a synchronous snapshot", async () => {

@@ -67,7 +67,13 @@ export class Agent {
   private eventCallbacks: TurnEventCallback[] = [];
   private sendQueue: Promise<void> = Promise.resolve();
 
-  constructor(config: AgentConfig) {
+  /**
+   * Create an agent from runtime config and, optionally, restore saved session state.
+   *
+   * When both `config.sessionId` and `session.sessionId` are supplied, the
+   * restored session id wins.
+   */
+  constructor(config: AgentConfig, session?: AgentSession) {
     this.provider = config.provider;
     this.model = config.model;
     this.sessionId = config.sessionId ?? crypto.randomUUID();
@@ -97,6 +103,9 @@ export class Agent {
       this.memory = config.memory;
       const memoryTools = config.memory.tools?.();
       if (memoryTools) this.registry.add(memoryTools);
+    }
+    if (session) {
+      this.restore(session);
     }
   }
 
