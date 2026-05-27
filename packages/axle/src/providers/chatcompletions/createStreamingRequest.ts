@@ -1,7 +1,8 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
-import { ProviderStreamParams } from "../types.js";
+import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
+import { withRetry } from "./retry.js";
 import { ChatCompletionChunk } from "./types.js";
 import {
   convertAxleMessages,
@@ -11,11 +12,12 @@ import {
 } from "./utils.js";
 
 export async function* createStreamingRequest(
-  params: ProviderStreamParams & {
-    baseUrl: string;
-    model: string;
-    apiKey?: string;
-  },
+  params: ProviderStreamParams &
+    ProviderClientOptions & {
+      baseUrl: string;
+      model: string;
+      apiKey?: string;
+    },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const {
     baseUrl,
@@ -27,6 +29,8 @@ export async function* createStreamingRequest(
     runtime,
     signal,
     apiKey,
+    maxRetries,
+    timeoutMs,
     reasoning,
     maxOutputTokens,
     temperature,
@@ -83,12 +87,29 @@ export async function* createStreamingRequest(
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-      signal,
-    });
+    const response = await withRetry(
+      ({ signal }) =>
+        fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
+          signal,
+        }),
+      {
+        maxRetries,
+        timeoutMs,
+        signal,
+        onRetry: (info) =>
+          tracer?.debug("ChatCompletions streaming request retry", {
+            attempt: info.attempt,
+            maxRetries,
+            timeoutMs,
+            delayMs: info.delayMs,
+            status: info.status,
+            error: info.error instanceof Error ? info.error.message : undefined,
+          }),
+      },
+    );
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");

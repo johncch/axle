@@ -41,7 +41,10 @@ function resolveCliProvider(
         throw new Error("The provider openai is not configured. Please check your configuration.");
       }
       return {
-        provider: openai(apiKey),
+        provider: openai(apiKey, {
+          maxRetries: config.maxRetries,
+          timeoutMs: config.timeoutMs,
+        }),
         model: config.model || OpenAI.DefaultModel,
       };
     }
@@ -55,7 +58,10 @@ function resolveCliProvider(
         );
       }
       return {
-        provider: anthropic(apiKey),
+        provider: anthropic(apiKey, {
+          maxRetries: config.maxRetries,
+          timeoutMs: config.timeoutMs,
+        }),
         model: config.model || Anthropic.DefaultModel,
       };
     }
@@ -67,7 +73,10 @@ function resolveCliProvider(
         throw new Error("The provider gemini is not configured. Please check your configuration.");
       }
       return {
-        provider: gemini(apiKey),
+        provider: gemini(apiKey, {
+          maxRetries: config.maxRetries,
+          timeoutMs: config.timeoutMs,
+        }),
         model: config.model || Gemini.DefaultModel,
       };
     }
@@ -82,7 +91,11 @@ function resolveCliProvider(
         );
       }
       return {
-        provider: chatCompletions(baseUrl, resolveApiKey(config)),
+        provider: chatCompletions(baseUrl, {
+          apiKey: resolveApiKey(config),
+          maxRetries: config.maxRetries,
+          timeoutMs: config.timeoutMs,
+        }),
         model: providerModel,
       };
     }

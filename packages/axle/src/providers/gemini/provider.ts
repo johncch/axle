@@ -4,14 +4,24 @@ import {
   AIProvider,
   ModelResult,
   ProviderGenerationParams,
+  ProviderClientOptions,
   ProviderStreamParams,
 } from "../types.js";
+import { requireInteger } from "../utils.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 export const NAME = "Gemini" as const;
 
-export function gemini(apiKey: string): AIProvider {
-  const client = new GoogleGenAI({ apiKey });
+export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIProvider {
+  const client = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      retryOptions: { attempts: retryAttempts(options.maxRetries) },
+      ...(options.timeoutMs !== undefined
+        ? { timeout: requireInteger(options.timeoutMs, "timeoutMs", { min: 1 }) }
+        : {}),
+    },
+  });
 
   return {
     name: NAME,
@@ -32,4 +42,8 @@ export function gemini(apiKey: string): AIProvider {
       return createStreamingRequest({ client, model, ...params });
     },
   };
+}
+
+function retryAttempts(maxRetries = 2): number {
+  return requireInteger(maxRetries, "maxRetries", { min: 0 }) + 1;
 }

@@ -62,15 +62,13 @@ export type {
 export { AxleStopReason } from "./providers/types.js";
 export type {
   AIProvider,
-  AnthropicProviderConfig,
   AxleModelRequestOptions,
-  ChatCompletionsProviderConfig,
   ContextUsage,
-  GeminiProviderConfig,
-  OpenAIProviderConfig,
+  ProviderClientOptions,
   ProviderOptions,
   ToolChoice,
 } from "./providers/types.js";
+export type { ChatCompletionsOptions } from "./providers/chatcompletions/provider.js";
 
 // Tools
 export { ToolRegistry } from "./tools/registry.js";

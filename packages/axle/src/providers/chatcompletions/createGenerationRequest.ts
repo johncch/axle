@@ -6,8 +6,9 @@ import {
 import { getTextContent } from "../../messages/utils.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
-import { ModelResult, ProviderGenerationParams } from "../types.js";
+import { ModelResult, ProviderClientOptions, ProviderGenerationParams } from "../types.js";
 import { getUndefinedError } from "../utils.js";
+import { withRetry } from "./retry.js";
 import { ChatCompletionResponse } from "./types.js";
 import {
   chatUsageToStats,
@@ -19,11 +20,12 @@ import {
 } from "./utils.js";
 
 export async function createGenerationRequest(
-  params: ProviderGenerationParams & {
-    baseUrl: string;
-    model: string;
-    apiKey?: string;
-  },
+  params: ProviderGenerationParams &
+    ProviderClientOptions & {
+      baseUrl: string;
+      model: string;
+      apiKey?: string;
+    },
 ): Promise<ModelResult> {
   const {
     baseUrl,
@@ -34,6 +36,8 @@ export async function createGenerationRequest(
     providerTools,
     runtime,
     apiKey,
+    maxRetries,
+    timeoutMs,
     reasoning,
     maxOutputTokens,
     temperature,
@@ -87,15 +91,28 @@ export async function createGenerationRequest(
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
-    const response = await raceWithSignal(
-      fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
+    const response = await withRetry(
+      ({ signal }) =>
+        fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
+          signal,
+        }),
+      {
+        maxRetries,
+        timeoutMs,
         signal,
-      }),
-      signal,
-      "Generate aborted",
+        onRetry: (info) =>
+          tracer?.debug("ChatCompletions request retry", {
+            attempt: info.attempt,
+            maxRetries,
+            timeoutMs,
+            delayMs: info.delayMs,
+            status: info.status,
+            error: info.error instanceof Error ? info.error.message : undefined,
+          }),
+      },
     );
 
     if (!response.ok) {

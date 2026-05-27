@@ -1,9 +1,3 @@
-import {
-  AnthropicProviderConfig as AnthropicConfig,
-  ChatCompletionsProviderConfig as ChatCompletionsConfig,
-  GeminiProviderConfig as GeminiConfig,
-  OpenAIProviderConfig as OpenAIConfig,
-} from "@fifthrevision/axle";
 import { z } from "zod";
 
 /* ============================================================================
@@ -33,30 +27,39 @@ const ApiKeyFieldsSchema = {
   "api-key-env": z.string().optional(),
 };
 
+const ProviderClientFieldsSchema = {
+  maxRetries: z.number().int().nonnegative().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+};
+
 // AI Provider Use - Discriminated by 'type'
 const ChatCompletionsProviderUseSchema = z.strictObject({
   type: z.literal("chatcompletions"),
   "base-url": z.string().optional(),
   model: z.string().optional(),
   ...ApiKeyFieldsSchema,
+  ...ProviderClientFieldsSchema,
 });
 
 const AnthropicProviderUseSchema = z.strictObject({
   type: z.literal("anthropic"),
   model: z.string().optional(),
   ...ApiKeyFieldsSchema,
+  ...ProviderClientFieldsSchema,
 });
 
 const OpenAIProviderUseSchema = z.strictObject({
   type: z.literal("openai"),
   model: z.string().optional(),
   ...ApiKeyFieldsSchema,
+  ...ProviderClientFieldsSchema,
 });
 
 const GeminiProviderUseSchema = z.strictObject({
   type: z.literal("gemini"),
   model: z.string().optional(),
   ...ApiKeyFieldsSchema,
+  ...ProviderClientFieldsSchema,
 });
 
 export const AIProviderUseSchema = z.discriminatedUnion("type", [
@@ -69,11 +72,24 @@ export const AIProviderUseSchema = z.discriminatedUnion("type", [
 export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 
 // Service Config
+export interface ProviderServiceConfig {
+  "api-key"?: string;
+  apiKeyEnv?: string;
+  "api-key-env"?: string;
+  model?: string;
+  maxRetries?: number;
+  timeoutMs?: number;
+}
+
+export interface ChatCompletionsServiceConfig extends ProviderServiceConfig {
+  "base-url"?: string;
+}
+
 export interface ServiceConfig {
-  chatcompletions?: ChatCompletionsConfig;
-  anthropic?: AnthropicConfig;
-  openai?: OpenAIConfig;
-  gemini?: GeminiConfig;
+  chatcompletions?: ChatCompletionsServiceConfig;
+  anthropic?: ProviderServiceConfig;
+  openai?: ProviderServiceConfig;
+  gemini?: ProviderServiceConfig;
 }
 
 /* ============================================================================

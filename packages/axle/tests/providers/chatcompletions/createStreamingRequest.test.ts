@@ -35,6 +35,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
+        maxRetries: 0,
       }),
     );
 
@@ -141,12 +142,44 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
+        maxRetries: 0,
       }),
     );
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].type).toBe("error");
     expect((chunks[0] as any).data.message).toContain("Connection refused");
+  });
+
+  test("retries fetch setup failures before reading the stream", async () => {
+    vi.useFakeTimers();
+    const sseLines = [
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Recovered" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}`,
+      "",
+    ];
+    (fetch as any)
+      .mockRejectedValueOnce(new Error("Connection refused"))
+      .mockResolvedValueOnce(makeSSEResponse(sseLines.join("\n")));
+
+    const pending = collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 1,
+      }),
+    );
+
+    await vi.runAllTimersAsync();
+    const chunks = await pending;
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
+    vi.useRealTimers();
   });
 
   test("includes stream: true and stream_options in request body", async () => {

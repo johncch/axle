@@ -441,6 +441,120 @@ describe("createGenerationRequest", () => {
       expect(result.type).toBe("error");
     });
   });
+
+  describe("retries", () => {
+    test("retries network errors then succeeds", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockRejectedValueOnce(new Error("Connection reset"))
+        .mockResolvedValueOnce(makeOkResponse(makeTextResponse("Recovered")));
+
+      const pending = createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 1,
+      });
+
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result.type).toBe("success");
+      vi.useRealTimers();
+    });
+
+    test("retries retryable HTTP statuses then succeeds", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockResolvedValueOnce(makeErrorResponse(429, "Rate limited"))
+        .mockResolvedValueOnce(makeOkResponse(makeTextResponse("Recovered")));
+
+      const pending = createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 1,
+      });
+
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result.type).toBe("success");
+      vi.useRealTimers();
+    });
+
+    test("does not retry non-retryable HTTP statuses", async () => {
+      (fetch as any).mockResolvedValue(makeErrorResponse(400, "Bad request"));
+
+      const result = await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(result.type).toBe("error");
+    });
+
+    test("honors retry-after-ms header", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockResolvedValueOnce(makeErrorResponse(503, "Unavailable", { "retry-after-ms": "25" }))
+        .mockResolvedValueOnce(makeOkResponse(makeTextResponse("Recovered")));
+
+      const pending = createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 1,
+      });
+
+      await vi.advanceTimersByTimeAsync(24);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result.type).toBe("success");
+      vi.useRealTimers();
+    });
+
+    test("retries request timeouts then succeeds", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockImplementationOnce((_url: string, init: RequestInit) => {
+          return new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+              once: true,
+            });
+          });
+        })
+        .mockResolvedValueOnce(makeOkResponse(makeTextResponse("Recovered")));
+
+      const pending = createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 1,
+        timeoutMs: 25,
+      });
+
+      await vi.advanceTimersByTimeAsync(25);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(result.type).toBe("success");
+      vi.useRealTimers();
+    });
+  });
 });
 
 // Helpers
@@ -466,5 +580,14 @@ function makeOkResponse(data: any) {
     status: 200,
     json: () => Promise.resolve(data),
     text: () => Promise.resolve(JSON.stringify(data)),
+  };
+}
+
+function makeErrorResponse(status: number, text: string, headers: Record<string, string> = {}) {
+  return {
+    ok: false,
+    status,
+    headers: new Headers(headers),
+    text: () => Promise.resolve(text),
   };
 }

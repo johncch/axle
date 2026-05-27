@@ -11,25 +11,6 @@ import { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 
 /*
- Vendor specific configuration
- */
-export type AnthropicProviderConfig = { "api-key": string; model?: string };
-export type OpenAIProviderConfig = { "api-key": string; model?: string };
-export type GeminiProviderConfig = { "api-key": string; model?: string };
-export type ChatCompletionsProviderConfig = {
-  "base-url": string;
-  model: string;
-  "api-key"?: string;
-};
-
-export interface AIProviderConfig {
-  chatcompletions: ChatCompletionsProviderConfig;
-  anthropic: AnthropicProviderConfig;
-  openai: OpenAIProviderConfig;
-  gemini: GeminiProviderConfig;
-}
-
-/*
  General AI Interfaces
  */
 
@@ -86,6 +67,19 @@ export interface AxleModelRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface AIProvider {
+  get name(): string;
+
+  /** @internal */
+  createGenerationRequest(model: string, params: ProviderGenerationParams): Promise<ModelResult>;
+
+  /** @internal */
+  createStreamingRequest(
+    model: string,
+    params: ProviderStreamParams,
+  ): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
+
 /**
  * Parameters passed to provider adapters for one non-streaming generation call.
  */
@@ -106,30 +100,6 @@ export interface ProviderGenerationParams extends AxleModelRequestOptions {
  * Parameters passed to provider adapters for one streaming generation call.
  */
 export interface ProviderStreamParams extends ProviderGenerationParams {}
-
-export interface ContextUsage {
-  total: number;
-  system: number;
-  tools: number;
-  mcpTools: number;
-  providerTools: number;
-  messages: number;
-  limit?: number;
-  free?: number;
-}
-
-export interface AIProvider {
-  get name(): string;
-
-  /** @internal */
-  createGenerationRequest(model: string, params: ProviderGenerationParams): Promise<ModelResult>;
-
-  /** @internal */
-  createStreamingRequest(
-    model: string,
-    params: ProviderStreamParams,
-  ): AsyncGenerator<AnyStreamChunk, void, unknown>;
-}
 
 export interface ModelResponse {
   type: "success";
@@ -154,6 +124,35 @@ export interface ModelError {
 }
 
 export type ModelResult = ModelResponse | ModelError;
+
+export interface ContextUsage {
+  total: number;
+  system: number;
+  tools: number;
+  mcpTools: number;
+  providerTools: number;
+  messages: number;
+  limit?: number;
+  free?: number;
+}
+
+/**
+ * Client-level transport options for provider adapters.
+ *
+ * These options are applied when the provider client is constructed, not per
+ * model request.
+ */
+export interface ProviderClientOptions {
+  /**
+   * Number of retry attempts after the first request. Axle's built-in
+   * providers default to `2`; use `0` to disable retries.
+   */
+  maxRetries?: number;
+  /**
+   * Request timeout in milliseconds. Omit to use the provider SDK default.
+   */
+  timeoutMs?: number;
+}
 
 export enum AxleStopReason {
   Stop = "stop",
