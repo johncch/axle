@@ -43,4 +43,4 @@ export const MULTIMODAL_MODELS = [
   Models.GEMINI_PRO_LATEST,
 ] as const;
 
-export const DEFAULT_MODEL = Models.GEMINI_3_1_FLASH_LITE;
+export const DEFAULT_MODEL = Models.GEMINI_3_5_FLASH;

@@ -3,6 +3,7 @@
   "version": "0.20.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.0.5",
   "scripts": {
     "prepare": "pnpm run build",
     "start": "pnpm --filter @fifthrevision/axle build-dev && pnpm exec tsx packages/axle-cli/src/cli.ts",
