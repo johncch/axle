@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.0] - 2026-05-30
+
+- Added support for Opus 4.8
+- Added support for citations and thinking formats
+- Added configurable retry options
+- Added a convenience method for rehydrating agents
+- Added metadata support for turns and messages
+
 ## [0.20.0] - 2026-05-25
 
 - Split the library and CLI into separate packages for clearer installation and usage
