@@ -12,6 +12,8 @@ import type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  Citation,
+  ThinkingContinuity,
 } from "../messages/message.js";
 import { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "../tools/types.js";
@@ -41,10 +43,25 @@ export type StreamEvent =
   // Text streaming
   | { type: "text:start"; index: number }
   | { type: "text:delta"; index: number; delta: string; accumulated: string }
+  | { type: "text:citation"; index: number; citation: Citation; citations: Citation[] }
   | { type: "text:end"; index: number; final: string }
   // Thinking streaming
-  | { type: "thinking:start"; index: number }
+  | {
+      type: "thinking:start";
+      index: number;
+      redacted?: boolean;
+      continuity?: ThinkingContinuity;
+      providerMetadata?: Record<string, unknown>;
+    }
   | { type: "thinking:delta"; index: number; delta: string; accumulated: string }
+  | { type: "thinking:summary-delta"; index: number; delta: string; accumulated: string }
+  | {
+      type: "thinking:update";
+      index: number;
+      redacted?: boolean;
+      continuity?: ThinkingContinuity;
+      providerMetadata?: Record<string, unknown>;
+    }
   | { type: "thinking:end"; index: number; final: string }
   // Tool calls
   | { type: "tool:request"; index: number; id: string; name: string }
@@ -356,6 +373,8 @@ async function run(
 
     // Track tool call id → globalIndex for tool execution events
     const toolCallIndexMap = new Map<string, number>();
+    const chunkIndexToPartIndex = new Map<number, number>();
+    const chunkIndexToGlobalIndex = new Map<number, number>();
 
     // Index of the most recently pushed turnParts entry.
     // Provider block indices can have gaps (e.g. web_search_tool_result), but
@@ -385,6 +404,8 @@ async function run(
           turnParts.push({ type: "text", text: "" });
           currentPartIndex = turnParts.length - 1;
           openPartIndex = globalIndex++;
+          chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
+          chunkIndexToGlobalIndex.set(chunk.data.index, openPartIndex);
           openPartType = "text";
           openAccumulated = "";
           emit(cbs, { type: "text:start", index: openPartIndex });
@@ -404,6 +425,21 @@ async function run(
           break;
         }
 
+        case "text-citation": {
+          const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
+          const eventIndex = chunkIndexToGlobalIndex.get(chunk.data.index) ?? openPartIndex;
+          const part = turnParts[partIndex] as ContentPartText;
+          if (!part || part.type !== "text") break;
+          part.citations = [...(part.citations ?? []), chunk.data.citation];
+          emit(cbs, {
+            type: "text:citation",
+            index: eventIndex,
+            citation: chunk.data.citation,
+            citations: part.citations,
+          });
+          break;
+        }
+
         case "text-complete": {
           closePart();
           break;
@@ -411,18 +447,33 @@ async function run(
 
         case "thinking-start": {
           closePart();
-          turnParts.push({ type: "thinking", text: "" });
+          turnParts.push({
+            type: "thinking",
+            text: "",
+            ...(chunk.data.id ? { id: chunk.data.id } : {}),
+            ...(chunk.data.redacted !== undefined ? { redacted: chunk.data.redacted } : {}),
+            ...(chunk.data.continuity ? { continuity: chunk.data.continuity } : {}),
+            ...(chunk.data.providerMetadata ? { providerMetadata: chunk.data.providerMetadata } : {}),
+          });
           currentPartIndex = turnParts.length - 1;
           openPartIndex = globalIndex++;
+          chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
+          chunkIndexToGlobalIndex.set(chunk.data.index, openPartIndex);
           openPartType = "thinking";
           openAccumulated = "";
-          emit(cbs, { type: "thinking:start", index: openPartIndex });
+          emit(cbs, {
+            type: "thinking:start",
+            index: openPartIndex,
+            redacted: chunk.data.redacted,
+            continuity: chunk.data.continuity,
+            providerMetadata: chunk.data.providerMetadata,
+          });
           break;
         }
 
         case "thinking-delta": {
           const part = turnParts[currentPartIndex] as ContentPartThinking;
-          part.text += chunk.data.text;
+          part.text = (part.text ?? "") + chunk.data.text;
           openAccumulated = part.text;
           emit(cbs, {
             type: "thinking:delta",
@@ -435,13 +486,31 @@ async function run(
 
         case "thinking-summary-delta": {
           const part = turnParts[currentPartIndex] as ContentPartThinking;
-          part.text += chunk.data.text;
-          openAccumulated = part.text;
+          part.summary = (part.summary ?? "") + chunk.data.text;
+          openAccumulated = part.summary;
           emit(cbs, {
-            type: "thinking:delta",
+            type: "thinking:summary-delta",
             index: openPartIndex,
             delta: chunk.data.text,
             accumulated: openAccumulated,
+          });
+          break;
+        }
+
+        case "thinking-metadata": {
+          const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
+          const eventIndex = chunkIndexToGlobalIndex.get(chunk.data.index) ?? openPartIndex;
+          const part = turnParts[partIndex] as ContentPartThinking;
+          if (!part || part.type !== "thinking") break;
+          if (chunk.data.redacted !== undefined) part.redacted = chunk.data.redacted;
+          if (chunk.data.continuity) part.continuity = chunk.data.continuity;
+          if (chunk.data.providerMetadata) part.providerMetadata = chunk.data.providerMetadata;
+          emit(cbs, {
+            type: "thinking:update",
+            index: eventIndex,
+            redacted: chunk.data.redacted,
+            continuity: chunk.data.continuity,
+            providerMetadata: chunk.data.providerMetadata,
           });
           break;
         }
@@ -461,6 +530,8 @@ async function run(
             parameters: {},
           });
           currentPartIndex = turnParts.length - 1;
+          chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
+          chunkIndexToGlobalIndex.set(chunk.data.index, idx);
           toolCallIndexMap.set(chunk.data.id, idx);
           emit(cbs, { type: "tool:request", index: idx, id: chunk.data.id, name: chunk.data.name });
           break;
@@ -497,6 +568,8 @@ async function run(
             name: chunk.data.name,
           });
           currentPartIndex = turnParts.length - 1;
+          chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
+          chunkIndexToGlobalIndex.set(chunk.data.index, idx);
           emit(cbs, {
             type: "provider-tool:start",
             index: idx,

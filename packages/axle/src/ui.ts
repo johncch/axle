@@ -7,6 +7,13 @@ export type {
 } from "./turns/accumulator.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export type {
+  Citation,
+  CitationOutputSpan,
+  CitationSource,
+  DocumentLocator,
+  ThinkingContinuity,
+} from "./messages/message.js";
+export type {
   ActionPart,
   ActionResult,
   Annotation,

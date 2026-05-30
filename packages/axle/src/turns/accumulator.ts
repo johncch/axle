@@ -1,4 +1,5 @@
 import type { Stats } from "../types.js";
+import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { TurnEvent } from "./events.js";
 import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
 
@@ -94,6 +95,20 @@ export class TurnAccumulator<
           },
         );
 
+      case "text:citation":
+        return this.updatePart(
+          rawEvent.turnId as string,
+          rawEvent.partId as string,
+          event,
+          (part) => {
+            if (part.type !== "text") return part;
+            return {
+              ...part,
+              citations: [...(part.citations ?? []), rawEvent.citation as Citation],
+            };
+          },
+        );
+
       case "thinking:delta":
         return this.updatePart(
           rawEvent.turnId as string,
@@ -101,7 +116,38 @@ export class TurnAccumulator<
           event,
           (part) => {
             if (part.type !== "thinking") return part;
-            return { ...part, text: part.text + (rawEvent.delta as string) };
+            return { ...part, text: (part.text ?? "") + (rawEvent.delta as string) };
+          },
+        );
+
+      case "thinking:summary-delta":
+        return this.updatePart(
+          rawEvent.turnId as string,
+          rawEvent.partId as string,
+          event,
+          (part) => {
+            if (part.type !== "thinking") return part;
+            return { ...part, summary: (part.summary ?? "") + (rawEvent.delta as string) };
+          },
+        );
+
+      case "thinking:update":
+        return this.updatePart(
+          rawEvent.turnId as string,
+          rawEvent.partId as string,
+          event,
+          (part) => {
+            if (part.type !== "thinking") return part;
+            return {
+              ...part,
+              ...(rawEvent.redacted !== undefined ? { redacted: rawEvent.redacted as boolean } : {}),
+              ...(rawEvent.continuity
+                ? { continuity: rawEvent.continuity as ThinkingContinuity }
+                : {}),
+              ...(rawEvent.providerMetadata
+                ? { providerMetadata: rawEvent.providerMetadata as Record<string, unknown> }
+                : {}),
+            };
           },
         );
 

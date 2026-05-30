@@ -1,7 +1,7 @@
 import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
-import { convertStopReason } from "./utils.js";
+import { convertStopReason, normalizeAnthropicCitation } from "./utils.js";
 
 export function createAnthropicStreamingAdapter() {
   const blockTypes = new Map<number, "text" | "thinking" | "tool" | "provider-tool">();
@@ -95,11 +95,17 @@ export function createAnthropicStreamingAdapter() {
           });
         } else if (event.content_block.type === "thinking") {
           blockTypes.set(event.index, "thinking");
+          const isRedacted =
+            event.content_block.thinking.length === 0 && Boolean(event.content_block.signature);
           chunks.push({
             type: "thinking-start",
             data: {
               index: event.index,
-              redacted: false,
+              redacted: isRedacted,
+              continuity: {
+                provider: "anthropic",
+                signature: event.content_block.signature,
+              },
             },
           });
         } else if (event.content_block.type === "redacted_thinking") {
@@ -109,6 +115,10 @@ export function createAnthropicStreamingAdapter() {
             data: {
               index: event.index,
               redacted: true,
+              continuity: {
+                provider: "anthropic",
+                redactedData: event.content_block.data,
+              },
             },
           });
         } else if (event.content_block.type === "server_tool_use") {
@@ -174,9 +184,21 @@ export function createAnthropicStreamingAdapter() {
             },
           });
         } else if (event.delta.type === "signature_delta") {
-          // TODO
+          chunks.push({
+            type: "thinking-metadata",
+            data: {
+              index: event.index,
+              continuity: { provider: "anthropic", signature: event.delta.signature },
+            },
+          });
         } else if (event.delta.type === "citations_delta") {
-          // TODO
+          chunks.push({
+            type: "text-citation",
+            data: {
+              index: event.index,
+              citation: normalizeAnthropicCitation(event.delta.citation),
+            },
+          });
         }
         break;
 

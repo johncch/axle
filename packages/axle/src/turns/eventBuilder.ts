@@ -56,6 +56,8 @@ export class TurnEventBuilder {
             id: crypto.randomUUID(),
             type: "text",
             text: part.text,
+            ...(part.citations ? { citations: part.citations } : {}),
+            ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
             timing: instantTiming(),
           });
         } else if (part.type === "file") {
@@ -146,6 +148,9 @@ export class TurnEventBuilder {
           type: "thinking",
           text: "",
           timing: startTiming(),
+          ...(event.redacted !== undefined ? { redacted: event.redacted } : {}),
+          ...(event.continuity ? { continuity: event.continuity } : {}),
+          ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
         };
         this.currentThinkingPart = { id: partId, timing: part.timing };
         events.push({ type: "part:start", turnId, part });
@@ -159,6 +164,44 @@ export class TurnEventBuilder {
             turnId,
             partId: this.currentThinkingPart.id,
             delta: event.delta,
+          });
+        }
+        break;
+      }
+
+      case "text:citation": {
+        if (this.currentTextPart) {
+          events.push({
+            type: "text:citation",
+            turnId,
+            partId: this.currentTextPart.id,
+            citation: event.citation,
+          });
+        }
+        break;
+      }
+
+      case "thinking:summary-delta": {
+        if (this.currentThinkingPart) {
+          events.push({
+            type: "thinking:summary-delta",
+            turnId,
+            partId: this.currentThinkingPart.id,
+            delta: event.delta,
+          });
+        }
+        break;
+      }
+
+      case "thinking:update": {
+        if (this.currentThinkingPart) {
+          events.push({
+            type: "thinking:update",
+            turnId,
+            partId: this.currentThinkingPart.id,
+            redacted: event.redacted,
+            continuity: event.continuity,
+            providerMetadata: event.providerMetadata,
           });
         }
         break;

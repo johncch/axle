@@ -59,7 +59,7 @@ function estimatePart(part: ContentPart): number {
     case "text":
       return estimateTokens(part.text);
     case "thinking":
-      return estimateTokens(part.summary ?? part.text);
+      return estimateTokens(part.summary ?? part.text ?? "");
     case "tool-call":
       return estimateTokens(part.name) + estimateJson(part.parameters);
     case "provider-tool":

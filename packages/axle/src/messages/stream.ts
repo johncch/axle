@@ -1,11 +1,13 @@
 import { AxleStopReason } from "../providers/types.js";
 import { Stats } from "../types.js";
+import type { Citation, ThinkingContinuity } from "./message.js";
 
 export interface StreamChunk {
   type:
     | "start"
     | "text-start"
     | "text-delta"
+    | "text-citation"
     | "text-complete"
     | "tool-call-start"
     | "tool-call-args-delta"
@@ -13,6 +15,7 @@ export interface StreamChunk {
     | "thinking-start"
     | "thinking-delta"
     | "thinking-summary-delta"
+    | "thinking-metadata"
     | "thinking-complete"
     | "provider-tool-start"
     | "provider-tool-complete"
@@ -72,6 +75,14 @@ export interface StreamTextDeltaChunk extends StreamChunk {
   };
 }
 
+export interface StreamTextCitationChunk extends StreamChunk {
+  type: "text-citation";
+  data: {
+    index: number;
+    citation: Citation;
+  };
+}
+
 export interface StreamTextCompleteChunk extends StreamChunk {
   type: "text-complete";
   data: {
@@ -89,7 +100,8 @@ export interface StreamThinkingStartChunk extends StreamChunk {
     index: number;
     id?: string;
     redacted?: boolean;
-    signature?: string;
+    continuity?: ThinkingContinuity;
+    providerMetadata?: Record<string, unknown>;
   };
 }
 
@@ -106,6 +118,16 @@ export interface StreamThinkingSummaryDeltaChunk extends StreamChunk {
   data: {
     index: number;
     text: string;
+  };
+}
+
+export interface StreamThinkingMetadataChunk extends StreamChunk {
+  type: "thinking-metadata";
+  data: {
+    index: number;
+    continuity?: ThinkingContinuity;
+    redacted?: boolean;
+    providerMetadata?: Record<string, unknown>;
   };
 }
 
@@ -184,10 +206,12 @@ export type AnyStreamChunk =
   | StreamErrorChunk
   | StreamTextStartChunk
   | StreamTextDeltaChunk
+  | StreamTextCitationChunk
   | StreamTextCompleteChunk
   | StreamThinkingStartChunk
   | StreamThinkingDeltaChunk
   | StreamThinkingSummaryDeltaChunk
+  | StreamThinkingMetadataChunk
   | StreamThinkingCompleteChunk
   | StreamToolCallStartChunk
   | StreamToolCallArgsDeltaChunk

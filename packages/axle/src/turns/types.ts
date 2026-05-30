@@ -1,3 +1,4 @@
+import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
 
@@ -113,6 +114,10 @@ export interface TextPart<TAnnotation extends Annotation = Annotation> {
   type: "text";
   /** Accumulated text content. */
   text: string;
+  /** Source citations that support spans of this text, when supplied by the provider. */
+  citations?: Citation[];
+  /** Provider-specific metadata that is not part of Axle's normalized contract. */
+  providerMetadata?: Record<string, unknown>;
   /** Annotations attached to this part. */
   annotations?: TAnnotation[];
   /** Optional timing metadata. */
@@ -143,12 +148,16 @@ export interface ThinkingPart<TAnnotation extends Annotation = Annotation> {
   id: string;
   /** Part discriminator. */
   type: "thinking";
-  /** Accumulated thinking text. */
-  text: string;
+  /** Accumulated renderable thinking text, when the provider exposes it. */
+  text?: string;
   /** Optional provider-supplied summary. */
   summary?: string;
   /** Whether the provider marked the thinking content as redacted. */
   redacted?: boolean;
+  /** Provider continuity payload that should be preserved for future requests. */
+  continuity?: ThinkingContinuity;
+  /** Provider-specific metadata that is not part of Axle's normalized contract. */
+  providerMetadata?: Record<string, unknown>;
   /** Annotations attached to this part. */
   annotations?: TAnnotation[];
   /** Optional timing metadata. */

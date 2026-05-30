@@ -86,6 +86,10 @@ export type {
   AxleToolCallMessage,
   AxleToolCallResult,
   AxleUserMessage,
+  Citation,
+  CitationOutputSpan,
+  CitationSource,
+  DocumentLocator,
   ContentPart,
   ContentPartFile,
   ContentPartProviderTool,
@@ -93,6 +97,7 @@ export type {
   ContentPartThinking,
   ContentPartToolCall,
   MessageMetadata,
+  ThinkingContinuity,
   ToolResultPart,
 } from "./messages/message.js";
 

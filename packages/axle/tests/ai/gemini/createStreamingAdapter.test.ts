@@ -133,19 +133,31 @@ describe("createGeminiStreamingAdapter", () => {
   });
 
   describe("thinking content", () => {
-    test("should emit thinking-start before first thinking-delta", () => {
+    test("should emit thinking-start before first thinking-summary-delta", () => {
       const adapter = createGeminiStreamingAdapter();
       const chunks = adapter.handleChunk(
-        makeChunk({ parts: [{ text: "Let me think about this...", thought: true }] }),
+        makeChunk({
+          parts: [
+            { text: "Let me think about this...", thought: true, thoughtSignature: "sig_123" },
+          ],
+        }),
       );
 
       const types = chunks.map((c) => c.type);
       expect(types).toContain("thinking-start");
-      expect(types).toContain("thinking-delta");
-      expect(types.indexOf("thinking-start")).toBeLessThan(types.indexOf("thinking-delta"));
+      expect(types).toContain("thinking-summary-delta");
+      expect(types.indexOf("thinking-start")).toBeLessThan(types.indexOf("thinking-summary-delta"));
 
-      const thinkingDelta = chunks.find((c) => c.type === "thinking-delta");
-      if (thinkingDelta && thinkingDelta.type === "thinking-delta") {
+      const thinkingStart = chunks.find((c) => c.type === "thinking-start");
+      if (thinkingStart?.type === "thinking-start") {
+        expect(thinkingStart.data.continuity).toEqual({
+          provider: "gemini",
+          thoughtSignature: "sig_123",
+        });
+      }
+
+      const thinkingDelta = chunks.find((c) => c.type === "thinking-summary-delta");
+      if (thinkingDelta && thinkingDelta.type === "thinking-summary-delta") {
         expect(thinkingDelta.data.text).toBe("Let me think about this...");
         expect(thinkingDelta.data.index).toBe(0);
       }
@@ -160,10 +172,10 @@ describe("createGeminiStreamingAdapter", () => {
 
       const types = chunks.map((c) => c.type);
       expect(types).not.toContain("thinking-start");
-      expect(types).toContain("thinking-delta");
+      expect(types).toContain("thinking-summary-delta");
 
-      const delta = chunks.find((c) => c.type === "thinking-delta");
-      if (delta && delta.type === "thinking-delta") {
+      const delta = chunks.find((c) => c.type === "thinking-summary-delta");
+      if (delta && delta.type === "thinking-summary-delta") {
         expect(delta.data.text).toBe("I need to consider...");
       }
     });
@@ -179,7 +191,7 @@ describe("createGeminiStreamingAdapter", () => {
       const types = allChunks.map((c) => c.type);
 
       expect(types).toContain("thinking-start");
-      expect(types).toContain("thinking-delta");
+      expect(types).toContain("thinking-summary-delta");
       expect(types).toContain("thinking-complete");
       expect(types).toContain("text-start");
       expect(types).toContain("text-delta");
@@ -317,6 +329,36 @@ describe("createGeminiStreamingAdapter", () => {
       }
     });
   });
+
+  describe("citations", () => {
+    test("emits text-citation from grounding metadata", () => {
+      const adapter = createGeminiStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ text: "The answer is grounded." }],
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: "Source", uri: "https://example.com" } }],
+            groundingSupports: [
+              {
+                groundingChunkIndices: [0],
+                segment: { partIndex: 0, startIndex: 0, endIndex: 10, text: "The answer" },
+              },
+            ],
+          },
+        }),
+      );
+
+      const citation = chunks.find((c) => c.type === "text-citation");
+      expect(citation?.type).toBe("text-citation");
+      if (citation?.type === "text-citation") {
+        expect(citation.data.citation).toMatchObject({
+          source: { type: "web", title: "Source", url: "https://example.com" },
+          outputSpan: { start: 0, end: 10 },
+          providerMetadata: { outputText: "The answer" },
+        });
+      }
+    });
+  });
 });
 
 // Helpers
@@ -330,6 +372,7 @@ function makeChunk(options: {
     cachedContentTokenCount?: number;
     thoughtsTokenCount?: number;
   };
+  groundingMetadata?: Record<string, unknown>;
 }) {
   return {
     responseId: "resp_123",
@@ -339,6 +382,7 @@ function makeChunk(options: {
         content: { role: "model", parts: options.parts },
         finishReason: options.finishReason ?? FinishReason.FINISH_REASON_UNSPECIFIED,
         index: 0,
+        ...(options.groundingMetadata && { groundingMetadata: options.groundingMetadata }),
       },
     ],
     ...(options.usage && { usageMetadata: options.usage }),

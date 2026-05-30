@@ -106,6 +106,10 @@ export interface ContentPartText {
   type: "text";
   /** Text content. */
   text: string;
+  /** Source citations that support spans of this text, when supplied by the provider. */
+  citations?: Citation[];
+  /** Provider-specific metadata that is not part of Axle's normalized contract. */
+  providerMetadata?: Record<string, unknown>;
 }
 
 /**
@@ -126,17 +130,96 @@ export interface ContentPartThinking {
   type: "thinking";
   /** Provider thinking block id, when supplied. */
   id?: string;
-  /** Reasoning text content. */
-  text: string;
+  /** Renderable reasoning text content, when the provider exposes it. */
+  text?: string;
   /** Optional provider-supplied reasoning summary. */
   summary?: string;
   /** Whether the provider redacted the reasoning content. */
   redacted?: boolean;
-  /** Provider-encrypted reasoning payload, when supplied. */
-  encrypted?: string;
-  /** Provider verification signature, when supplied. */
-  signature?: string;
+  /** Provider continuity payload that should be preserved for future requests. */
+  continuity?: ThinkingContinuity;
+  /** Provider-specific metadata that is not part of Axle's normalized contract. */
+  providerMetadata?: Record<string, unknown>;
 }
+
+/**
+ * Source attribution attached to model text.
+ *
+ * Providers expose citations with different source records and locator
+ * metadata. Axle keeps the common renderable surface small: what source is
+ * cited, and where that citation applies in the generated output text.
+ */
+export interface Citation {
+  /** Source being cited. */
+  source: CitationSource;
+  /** Character/byte offsets in the generated output text, when supplied. */
+  outputSpan?: CitationOutputSpan;
+  /** Provider-specific citation payload fields not covered by the normalized shape. */
+  providerMetadata?: Record<string, unknown>;
+}
+
+/**
+ * Citation source categories Axle currently normalizes from provider APIs.
+ */
+export type CitationSource =
+  | {
+      type: "web";
+      title?: string;
+      url: string;
+      citedText?: string;
+    }
+  | {
+      type: "document";
+      title?: string;
+      fileId?: string;
+      citedText?: string;
+      locator?: DocumentLocator;
+    }
+  | {
+      type: "search-result";
+      title?: string;
+      url?: string;
+      citedText?: string;
+      locator?: DocumentLocator;
+    }
+  | {
+      type: "retrieved-context";
+      title?: string;
+      uri?: string;
+      citedText?: string;
+      locator?: DocumentLocator;
+    }
+  | {
+      type: "unknown";
+      citedText?: string;
+    };
+
+/**
+ * Provider-reported location inside a cited source.
+ */
+export type DocumentLocator =
+  | { type: "char"; start?: number; end?: number }
+  | { type: "page"; start?: number; end?: number }
+  | { type: "block"; start?: number; end?: number }
+  | { type: "part"; index?: number };
+
+/**
+ * Citation coordinates in generated output text.
+ */
+export interface CitationOutputSpan {
+  /** Inclusive output offset. */
+  start?: number;
+  /** Exclusive output offset. */
+  end?: number;
+}
+
+/**
+ * Opaque provider state needed to continue reasoning across requests.
+ */
+export type ThinkingContinuity =
+  | { provider: "openai"; encrypted: string }
+  | { provider: "anthropic"; signature?: string; redactedData?: string }
+  | { provider: "gemini"; thoughtSignature: string };
 
 /**
  * Axle-managed tool call request emitted by the assistant.

@@ -1,4 +1,5 @@
 import { FinishReason, GenerateContentResponse } from "@google/genai";
+import type { Citation } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
@@ -16,6 +17,7 @@ export function createGeminiStreamingAdapter() {
   let reasoningOutputTokens = 0;
 
   let activePart: "text" | "thinking" | null = null;
+  const modelPartToStreamPart = new Map<number, number>();
 
   function closeActivePart(chunks: Array<AnyStreamChunk>) {
     if (currentPartIndex < 0) return;
@@ -56,7 +58,8 @@ export function createGeminiStreamingAdapter() {
 
     const parts = candidate.content?.parts || [];
 
-    for (const part of parts) {
+    for (let modelPartIndex = 0; modelPartIndex < parts.length; modelPartIndex++) {
+      const part = parts[modelPartIndex];
       const isThought = "thought" in part && (part as { thought?: boolean }).thought === true;
       const partKeys = Object.keys(part);
       const isEmptyText = partKeys.length === 1 && "text" in part && !part.text;
@@ -76,12 +79,22 @@ export function createGeminiStreamingAdapter() {
           activePart = "thinking";
           chunks.push({
             type: "thinking-start",
-            data: { index: currentPartIndex },
+            data: {
+              index: currentPartIndex,
+              ...(part.thoughtSignature
+                ? {
+                    continuity: {
+                      provider: "gemini" as const,
+                      thoughtSignature: part.thoughtSignature,
+                    },
+                  }
+                : {}),
+            },
           });
         }
 
         chunks.push({
-          type: "thinking-delta",
+          type: "thinking-summary-delta",
           data: { index: currentPartIndex, text: part.text },
         });
       }
@@ -96,6 +109,7 @@ export function createGeminiStreamingAdapter() {
             data: { index: currentPartIndex },
           });
         }
+        modelPartToStreamPart.set(modelPartIndex, currentPartIndex);
         chunks.push({
           type: "text-delta",
           data: { text: part.text, index: currentPartIndex },
@@ -158,6 +172,16 @@ export function createGeminiStreamingAdapter() {
       }
     }
 
+    for (const { partIndex, citation } of normalizeGeminiCitations(candidate)) {
+      const streamPartIndex =
+        partIndex !== undefined ? modelPartToStreamPart.get(partIndex) : currentPartIndex;
+      if (streamPartIndex === undefined || streamPartIndex < 0) continue;
+      chunks.push({
+        type: "text-citation",
+        data: { index: streamPartIndex, citation },
+      });
+    }
+
     // Check for completion (FINISH_REASON_UNSPECIFIED means still streaming)
     if (
       candidate.finishReason &&
@@ -198,4 +222,84 @@ export function createGeminiStreamingAdapter() {
   }
 
   return { handleChunk };
+}
+
+function normalizeGeminiCitations(
+  candidate: NonNullable<GenerateContentResponse["candidates"]>[number],
+): Array<{ partIndex?: number; citation: Citation }> {
+  const citations: Array<{ partIndex?: number; citation: Citation }> = [];
+  const groundingMetadata = candidate.groundingMetadata;
+  const chunks = groundingMetadata?.groundingChunks ?? [];
+
+  for (const support of groundingMetadata?.groundingSupports ?? []) {
+    for (const chunkIndex of support.groundingChunkIndices ?? []) {
+      const chunk = chunks[chunkIndex];
+      if (!chunk) continue;
+      citations.push({
+        partIndex: support.segment?.partIndex,
+        citation: normalizeGeminiGroundingChunk(chunk, support),
+      });
+    }
+  }
+
+  for (const citation of candidate.citationMetadata?.citations ?? []) {
+    citations.push({
+      citation: {
+        source: citation.uri
+          ? { type: "web", title: citation.title, url: citation.uri }
+          : { type: "unknown" },
+        outputSpan: { start: citation.startIndex, end: citation.endIndex },
+        providerMetadata: {
+          license: citation.license,
+          publicationDate: citation.publicationDate,
+        },
+      },
+    });
+  }
+
+  return citations;
+}
+
+function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
+  const segment = support.segment;
+  if (chunk.web) {
+    return {
+      source: {
+        type: "web",
+        title: chunk.web.title,
+        url: chunk.web.uri,
+      },
+      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      providerMetadata: {
+        outputText: segment?.text,
+        confidenceScores: support.confidenceScores,
+      },
+    };
+  }
+  if (chunk.retrievedContext) {
+    return {
+      source: {
+        type: "retrieved-context",
+        title: chunk.retrievedContext.title,
+        uri: chunk.retrievedContext.uri,
+        citedText: chunk.retrievedContext.text,
+        locator: {
+          type: "page",
+          start: chunk.retrievedContext.pageNumber,
+          end: chunk.retrievedContext.pageNumber,
+        },
+      },
+      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      providerMetadata: {
+        documentName: chunk.retrievedContext.documentName,
+        outputText: segment?.text,
+        confidenceScores: support.confidenceScores,
+      },
+    };
+  }
+  return {
+    source: { type: "unknown" },
+    outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+    providerMetadata: { chunk, outputText: segment?.text, confidenceScores: support.confidenceScores },
+  };
 }

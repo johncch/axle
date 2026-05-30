@@ -208,6 +208,10 @@ describe("createAnthropicStreamingAdapter", () => {
       if (chunks[0].type === "thinking-start") {
         expect(chunks[0].data.index).toBe(0);
         expect(chunks[0].data.redacted).toBe(false);
+        expect(chunks[0].data.continuity).toEqual({
+          provider: "anthropic",
+          signature: undefined,
+        });
       }
     });
 
@@ -230,6 +234,10 @@ describe("createAnthropicStreamingAdapter", () => {
       if (chunks[0].type === "thinking-start") {
         expect(chunks[0].data.index).toBe(0);
         expect(chunks[0].data.redacted).toBe(true);
+        expect(chunks[0].data.continuity).toEqual({
+          provider: "anthropic",
+          redactedData: "",
+        });
       }
     });
 
@@ -289,6 +297,61 @@ describe("createAnthropicStreamingAdapter", () => {
       if (delta1[0].type === "thinking-delta" && delta2[0].type === "thinking-delta") {
         expect(delta1[0].data.text).toBe("First, ");
         expect(delta2[0].data.text).toBe("I need to consider...");
+      }
+    });
+
+    test("should handle signature_delta as thinking metadata", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "signature_delta", signature: "sig_123" },
+      } as any);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-metadata");
+      if (chunks[0].type === "thinking-metadata") {
+        expect(chunks[0].data.continuity).toEqual({
+          provider: "anthropic",
+          signature: "sig_123",
+        });
+      }
+    });
+  });
+
+  describe("citations", () => {
+    test("should handle citations_delta", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: {
+          type: "citations_delta",
+          citation: {
+            type: "char_location",
+            cited_text: "source text",
+            document_index: 0,
+            document_title: "Doc",
+            start_char_index: 10,
+            end_char_index: 21,
+            file_id: "file_123",
+          },
+        },
+      } as any);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("text-citation");
+      if (chunks[0].type === "text-citation") {
+        expect(chunks[0].data.citation).toMatchObject({
+          source: {
+            type: "document",
+            title: "Doc",
+            citedText: "source text",
+            locator: { type: "char", start: 10, end: 21 },
+          },
+        });
       }
     });
   });

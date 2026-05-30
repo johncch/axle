@@ -211,6 +211,53 @@ describe("stream()", () => {
       expect(textEnds).toHaveLength(1);
       expect(textEnds[0].type === "text:end" && textEnds[0].index).toBe(1);
     });
+
+    test("accumulates citations and thinking summary metadata", async () => {
+      const citation = {
+        source: { type: "web" as const, title: "OpenAI", url: "https://openai.com" },
+        outputSpan: { start: 0, end: 6 },
+      };
+      const continuity = { provider: "openai" as const, encrypted: "encrypted-reasoning" };
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "OpenAI"),
+        { type: "text-citation", data: { index: 0, citation } },
+        textCompleteChunk(0),
+        { type: "thinking-start", data: { index: 1 } },
+        { type: "thinking-summary-delta", data: { index: 1, text: "Checked sources." } },
+        { type: "thinking-metadata", data: { index: 1, continuity } },
+        thinkingCompleteChunk(1),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toMatchObject([
+        {
+          type: "text",
+          text: "OpenAI",
+          citations: [citation],
+        },
+        {
+          type: "thinking",
+          summary: "Checked sources.",
+          continuity,
+        },
+      ]);
+
+      expect(events.some((event) => event.type === "text:citation")).toBe(true);
+      expect(events.some((event) => event.type === "thinking:summary-delta")).toBe(true);
+      expect(events.some((event) => event.type === "thinking:update")).toBe(true);
+    });
   });
 
   describe("with tool calls", () => {

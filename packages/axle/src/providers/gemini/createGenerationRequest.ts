@@ -1,5 +1,6 @@
 import { GenerateContentResponse, GoogleGenAI } from "@google/genai";
 import {
+  Citation,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -156,17 +157,33 @@ export function fromModelResponse(
 
   const candidate = response.candidates[0];
   const parts = candidate.content?.parts || [];
-  const textContent = parts
-    .map((part) => part.text)
-    .filter((text) => text !== undefined)
-    .join("");
 
   const [success, reason] = convertStopReason(candidate.finishReason);
   if (success) {
     const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
 
-    if (textContent) {
-      content.push({ type: "text" as const, text: textContent });
+    for (let index = 0; index < parts.length; index++) {
+      const part = parts[index];
+      if (!part.text) continue;
+      if (part.thought) {
+        content.push({
+          type: "thinking" as const,
+          summary: part.text,
+          ...(part.thoughtSignature
+            ? { continuity: { provider: "gemini" as const, thoughtSignature: part.thoughtSignature } }
+            : {}),
+        });
+      } else {
+        const citations = normalizeGeminiCitations(candidate, index);
+        pushTextPart(content, {
+          type: "text" as const,
+          text: part.text,
+          ...(citations.length > 0 ? { citations } : {}),
+          ...(part.thoughtSignature
+            ? { providerMetadata: { thoughtSignature: part.thoughtSignature } }
+            : {}),
+        });
+      }
     }
 
     const functionCallParts = parts.filter((part) => part.functionCall);
@@ -226,4 +243,116 @@ export function fromModelResponse(
       raw: response,
     };
   }
+}
+
+function pushTextPart(
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>,
+  part: ContentPartText,
+) {
+  const previous = content[content.length - 1];
+  const canMerge =
+    previous?.type === "text" &&
+    !previous.citations?.length &&
+    !previous.providerMetadata &&
+    !part.citations?.length &&
+    !part.providerMetadata;
+
+  if (canMerge) {
+    previous.text += part.text;
+    return;
+  }
+
+  content.push(part);
+}
+
+function normalizeGeminiCitations(candidate: NonNullable<GenerateContentResponse["candidates"]>[number], partIndex: number): Citation[] {
+  const citations: Citation[] = [];
+  const groundingMetadata = candidate.groundingMetadata;
+  const chunks = groundingMetadata?.groundingChunks ?? [];
+
+  for (const support of groundingMetadata?.groundingSupports ?? []) {
+    if (support.segment?.partIndex !== undefined && support.segment.partIndex !== partIndex) {
+      continue;
+    }
+    for (const chunkIndex of support.groundingChunkIndices ?? []) {
+      const chunk = chunks[chunkIndex];
+      if (!chunk) continue;
+      citations.push(normalizeGeminiGroundingChunk(chunk, support));
+    }
+  }
+
+  for (const citation of candidate.citationMetadata?.citations ?? []) {
+    citations.push({
+      source: citation.uri
+        ? { type: "web", title: citation.title, url: citation.uri }
+        : { type: "unknown" },
+      outputSpan: { start: citation.startIndex, end: citation.endIndex },
+      providerMetadata: {
+        license: citation.license,
+        publicationDate: citation.publicationDate,
+      },
+    });
+  }
+
+  return citations;
+}
+
+function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
+  const segment = support.segment;
+  if (chunk.web) {
+    return {
+      source: {
+        type: "web",
+        title: chunk.web.title,
+        url: chunk.web.uri,
+      },
+      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      providerMetadata: {
+        outputText: segment?.text,
+        confidenceScores: support.confidenceScores,
+      },
+    };
+  }
+  if (chunk.retrievedContext) {
+    return {
+      source: {
+        type: "retrieved-context",
+        title: chunk.retrievedContext.title,
+        uri: chunk.retrievedContext.uri,
+        citedText: chunk.retrievedContext.text,
+        locator: {
+          type: "page",
+          start: chunk.retrievedContext.pageNumber,
+          end: chunk.retrievedContext.pageNumber,
+        },
+      },
+      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      providerMetadata: {
+        documentName: chunk.retrievedContext.documentName,
+        outputText: segment?.text,
+        confidenceScores: support.confidenceScores,
+      },
+    };
+  }
+  if (chunk.maps) {
+    return {
+      source: {
+        type: "web",
+        title: chunk.maps.title,
+        url: chunk.maps.uri,
+        citedText: chunk.maps.text,
+      },
+      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      providerMetadata: {
+        placeId: chunk.maps.placeId,
+        outputText: segment?.text,
+        confidenceScores: support.confidenceScores,
+      },
+    };
+  }
+  return {
+    source: { type: "unknown" },
+    outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+    providerMetadata: { chunk, outputText: segment?.text, confidenceScores: support.confidenceScores },
+  };
 }

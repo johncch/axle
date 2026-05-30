@@ -89,6 +89,45 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("text-delta");
     });
 
+    test("should emit text-citation for output text annotations", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "OpenAI",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_text.annotation.added",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        annotation_index: 0,
+        sequence_number: 2,
+        annotation: {
+          type: "url_citation",
+          title: "OpenAI",
+          url: "https://openai.com",
+          start_index: 0,
+          end_index: 6,
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("text-citation");
+      if (chunks[0].type === "text-citation") {
+        expect(chunks[0].data.index).toBe(0);
+        expect(chunks[0].data.citation).toMatchObject({
+          source: { type: "web", title: "OpenAI", url: "https://openai.com" },
+          outputSpan: { start: 0, end: 6 },
+        });
+      }
+    });
+
     test("should handle response.completed event", () => {
       const adapter = createStreamingAdapter();
       const event: ResponseStreamEvent = {
@@ -199,6 +238,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(chunks[0].type).toBe("thinking-start");
       if (chunks[0].type === "thinking-start") {
         expect(chunks[0].data.index).toBe(0);
+        expect(chunks[0].data.id).toBe("rs_0245d29486a558cc00690e48675edc81968d9d8ffbb51bebfc");
         expect(chunks[0].data.redacted).toBeUndefined();
       }
     });

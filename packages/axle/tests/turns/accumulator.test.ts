@@ -90,6 +90,53 @@ describe("TurnAccumulator", () => {
     });
   });
 
+  test("accumulates citations and thinking summary metadata", () => {
+    const accumulator = new TurnAccumulator();
+
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "p1", type: "text", text: "" },
+    });
+    accumulator.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "OpenAI" });
+    accumulator.apply({
+      type: "text:citation",
+      turnId: "t1",
+      partId: "p1",
+      citation: { source: { type: "web", title: "OpenAI", url: "https://openai.com" } },
+    });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "p2", type: "thinking", summary: "", redacted: false },
+    });
+    accumulator.apply({
+      type: "thinking:summary-delta",
+      turnId: "t1",
+      partId: "p2",
+      delta: "Checked sources.",
+    });
+    const result = accumulator.apply({
+      type: "thinking:update",
+      turnId: "t1",
+      partId: "p2",
+      continuity: { provider: "openai", encrypted: "encrypted" },
+    });
+
+    expect(result.state.turns[0].parts[0]).toMatchObject({
+      type: "text",
+      text: "OpenAI",
+      citations: [{ source: { type: "web", title: "OpenAI", url: "https://openai.com" } }],
+    });
+    expect(result.state.turns[0].parts[1]).toMatchObject({
+      type: "thinking",
+      summary: "Checked sources.",
+      redacted: false,
+      continuity: { provider: "openai", encrypted: "encrypted" },
+    });
+  });
+
   test("returns unhandled for unknown host events", () => {
     type HostEvent = { type: "run:terminal"; status: "completed" };
     const accumulator = new TurnAccumulator<Annotation, HostEvent>();

@@ -112,7 +112,8 @@ describe("responsesAPI", () => {
         // First content part should be thinking
         expect(result.content[0]).toEqual({
           type: "thinking",
-          text: "Let me think about this problem step by step...",
+          id: "rs_123",
+          summary: "Let me think about this problem step by step...",
         });
 
         // Second content part should be text
@@ -185,12 +186,14 @@ describe("responsesAPI", () => {
 
         expect(result.content[0]).toEqual({
           type: "thinking",
-          text: "First, I need to understand the question...",
+          id: "rs_1",
+          summary: "First, I need to understand the question...",
         });
 
         expect(result.content[1]).toEqual({
           type: "thinking",
-          text: "Then, I'll analyze the data...",
+          id: "rs_2",
+          summary: "Then, I'll analyze the data...",
         });
 
         expect(result.content[2]).toEqual({
@@ -251,6 +254,7 @@ describe("responsesAPI", () => {
 
         expect(result.content[0]).toEqual({
           type: "thinking",
+          id: "rs_123",
           text: "This is the full reasoning text...",
         });
 
@@ -394,7 +398,8 @@ describe("responsesAPI", () => {
         expect(result.content).toHaveLength(1);
         expect(result.content[0]).toEqual({
           type: "thinking",
-          text: "I need to think about this more...",
+          id: "rs_only",
+          summary: "I need to think about this more...",
         });
       }
     });
@@ -501,8 +506,9 @@ describe("responsesAPI", () => {
 
         expect(result.content[0]).toEqual({
           type: "thinking",
-          text: "Summary of my reasoning...",
-          encrypted: "encrypted_base64_string_here",
+          id: "rs_encrypted",
+          summary: "Summary of my reasoning...",
+          continuity: { provider: "openai", encrypted: "encrypted_base64_string_here" },
         });
 
         expect(result.content[1]).toEqual({

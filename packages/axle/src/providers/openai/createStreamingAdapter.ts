@@ -1,4 +1,5 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
+import type { Citation } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
@@ -9,6 +10,7 @@ export function createStreamingAdapter() {
   let partIndex = 0;
   let currentPartIndex = -1;
   let hasFunctionCalls = false;
+  const textPartIndices = new Map<string, number>();
   const functionInfo = new Map<string, { name: string; callId: string }>();
   const providerToolIndices = new Map<string, number>();
   const PROVIDER_TOOL_TYPES = new Set([
@@ -42,8 +44,10 @@ export function createStreamingAdapter() {
       }
 
       case "response.output_text.delta": {
+        const key = textKey(event.item_id, event.content_index);
         if (currentPartIndex === -1) {
           currentPartIndex = partIndex++;
+          textPartIndices.set(key, currentPartIndex);
           chunks.push({
             type: "text-start",
             data: { index: currentPartIndex },
@@ -57,6 +61,8 @@ export function createStreamingAdapter() {
       }
 
       case "response.output_text.done": {
+        const key = textKey(event.item_id, event.content_index);
+        textPartIndices.set(key, currentPartIndex);
         if (currentPartIndex >= 0) {
           chunks.push({
             type: "text-complete",
@@ -64,6 +70,20 @@ export function createStreamingAdapter() {
           });
           currentPartIndex = -1;
         }
+        break;
+      }
+
+      case "response.output_text.annotation.added": {
+        const citation = normalizeOpenAICitation(event.annotation);
+        if (!citation) break;
+        const index = textPartIndices.get(textKey(event.item_id, event.content_index));
+        chunks.push({
+          type: "text-citation",
+          data: {
+            index: index ?? currentPartIndex,
+            citation,
+          },
+        });
         break;
       }
 
@@ -175,11 +195,21 @@ export function createStreamingAdapter() {
 
       case "response.output_item.added": {
         if (event.item?.type === "reasoning") {
+          const reasoning = event.item as { id?: string; encrypted_content?: string | null };
           currentPartIndex = partIndex++;
           chunks.push({
             type: "thinking-start",
             data: {
               index: currentPartIndex,
+              id: reasoning.id,
+              ...(reasoning.encrypted_content
+                ? {
+                    continuity: {
+                      provider: "openai" as const,
+                      encrypted: reasoning.encrypted_content,
+                    },
+                  }
+                : {}),
             },
           });
         } else if (event.item?.type === "function_call") {
@@ -280,4 +310,58 @@ export function createStreamingAdapter() {
   }
 
   return { handleEvent };
+}
+
+function textKey(itemId: string, contentIndex: number): string {
+  return `${itemId}:${contentIndex}`;
+}
+
+function normalizeOpenAICitation(annotation: unknown): Citation | null {
+  if (!annotation || typeof annotation !== "object") return null;
+  const value = annotation as Record<string, any>;
+
+  switch (value.type) {
+    case "url_citation":
+      return {
+        source: {
+          type: "web",
+          title: value.title,
+          url: value.url,
+        },
+        outputSpan: { start: value.start_index, end: value.end_index },
+        providerMetadata: { type: value.type },
+      };
+    case "file_citation":
+      return {
+        source: {
+          type: "document",
+          title: value.filename,
+          fileId: value.file_id,
+        },
+        providerMetadata: { type: value.type, index: value.index },
+      };
+    case "container_file_citation":
+      return {
+        source: {
+          type: "document",
+          title: value.filename,
+          fileId: value.file_id,
+        },
+        outputSpan: { start: value.start_index, end: value.end_index },
+        providerMetadata: {
+          type: value.type,
+          containerId: value.container_id,
+        },
+      };
+    case "file_path":
+      return {
+        source: {
+          type: "document",
+          fileId: value.file_id,
+        },
+        providerMetadata: { type: value.type, index: value.index },
+      };
+    default:
+      return { source: { type: "unknown" }, providerMetadata: value };
+  }
 }

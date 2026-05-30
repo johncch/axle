@@ -132,6 +132,18 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
     });
   }
 
+  const thinkingParts = msg.content.filter((c) => c.type === "thinking");
+  for (const part of thinkingParts) {
+    if (part.continuity?.provider !== "openai") continue;
+    result.push({
+      type: "reasoning" as const,
+      id: part.id,
+      summary: part.summary ? [{ type: "summary_text" as const, text: part.summary }] : [],
+      ...(part.text ? { content: [{ type: "reasoning_text" as const, text: part.text }] } : {}),
+      encrypted_content: part.continuity.encrypted,
+    } as any);
+  }
+
   const toolCallParts = msg.content.filter((c) => c.type === "tool-call") as Array<
     ContentPart & { type: "tool-call" }
   >;

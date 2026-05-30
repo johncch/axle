@@ -6,6 +6,7 @@ import {
   ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
 import {
+  Citation,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -127,14 +128,21 @@ export function fromModelResponse(response: Response): ModelResult {
       if (thinkingText || reasoning.encrypted_content) {
         content.push({
           type: "thinking" as const,
-          text: thinkingText,
-          ...(reasoning.encrypted_content && { encrypted: reasoning.encrypted_content }),
+          id: reasoning.id,
+          ...(reasoning.content?.[0]?.text ? { text: reasoning.content[0].text } : {}),
+          ...(reasoning.summary?.[0]?.text ? { summary: reasoning.summary[0].text } : {}),
+          ...(reasoning.encrypted_content
+            ? { continuity: { provider: "openai" as const, encrypted: reasoning.encrypted_content } }
+            : {}),
         });
       }
     }
   }
 
-  if (response.output_text) {
+  const textParts = extractTextParts(response);
+  if (textParts.length > 0) {
+    content.push(...textParts);
+  } else if (response.output_text) {
     content.push({ type: "text" as const, text: response.output_text });
   }
 
@@ -172,6 +180,84 @@ export function fromModelResponse(response: Response): ModelResult {
     usage: toUsage(response.usage),
     raw: response,
   };
+}
+
+function extractTextParts(response: Response): ContentPartText[] {
+  const parts: ContentPartText[] = [];
+  for (const item of response.output ?? []) {
+    if (item.type !== "message") continue;
+    for (const content of item.content ?? []) {
+      if (content.type !== "output_text") continue;
+      const citations = (content.annotations ?? [])
+        .map(normalizeOpenAICitation)
+        .filter((c) => c !== null);
+      parts.push({
+        type: "text",
+        text: content.text,
+        ...(citations.length > 0 ? { citations } : {}),
+      });
+    }
+  }
+  return parts;
+}
+
+function normalizeOpenAICitation(annotation: unknown): Citation | null {
+  if (!annotation || typeof annotation !== "object") return null;
+  const value = annotation as Record<string, any>;
+
+  switch (value.type) {
+    case "url_citation":
+      return {
+        source: {
+          type: "web",
+          title: value.title,
+          url: value.url,
+        },
+        outputSpan: { start: value.start_index, end: value.end_index },
+        providerMetadata: { type: value.type },
+      };
+    case "file_citation":
+      return {
+        source: {
+          type: "document",
+          title: value.filename,
+          fileId: value.file_id,
+        },
+        providerMetadata: {
+          type: value.type,
+          index: value.index,
+        },
+      };
+    case "container_file_citation":
+      return {
+        source: {
+          type: "document",
+          title: value.filename,
+          fileId: value.file_id,
+        },
+        outputSpan: { start: value.start_index, end: value.end_index },
+        providerMetadata: {
+          type: value.type,
+          containerId: value.container_id,
+        },
+      };
+    case "file_path":
+      return {
+        source: {
+          type: "document",
+          fileId: value.file_id,
+        },
+        providerMetadata: {
+          type: value.type,
+          index: value.index,
+        },
+      };
+    default:
+      return {
+        source: { type: "unknown" },
+        providerMetadata: value,
+      };
+  }
 }
 
 function toUsage(usage: Response["usage"]) {

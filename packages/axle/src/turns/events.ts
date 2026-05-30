@@ -1,4 +1,5 @@
 import type { Stats } from "../types.js";
+import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
 
 export type AnnotationTarget =
@@ -26,7 +27,17 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   // Part streaming
   | { type: "part:start"; turnId: string; part: TurnPart<TAnnotation> }
   | { type: "text:delta"; turnId: string; partId: string; delta: string }
+  | { type: "text:citation"; turnId: string; partId: string; citation: Citation }
   | { type: "thinking:delta"; turnId: string; partId: string; delta: string }
+  | { type: "thinking:summary-delta"; turnId: string; partId: string; delta: string }
+  | {
+      type: "thinking:update";
+      turnId: string;
+      partId: string;
+      redacted?: boolean;
+      continuity?: ThinkingContinuity;
+      providerMetadata?: Record<string, unknown>;
+    }
   | { type: "part:end"; turnId: string; partId: string; timing?: TimingInfo }
   // Action lifecycle
   | {

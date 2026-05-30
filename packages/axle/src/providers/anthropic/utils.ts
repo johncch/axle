@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import z from "zod";
 import {
   AxleMessage,
+  Citation,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -42,16 +43,18 @@ async function convertMessage(
           text: part.text,
         });
       } else if (part.type === "thinking") {
+        const continuity =
+          part.continuity?.provider === "anthropic" ? part.continuity : undefined;
         if (part.redacted) {
           content.push({
             type: "redacted_thinking",
-            data: part.text,
+            data: continuity?.redactedData ?? part.text ?? "",
           });
-        } else if (part.signature) {
+        } else if (continuity?.signature) {
           content.push({
             type: "thinking",
-            thinking: part.text,
-            signature: part.signature,
+            thinking: part.text ?? "",
+            signature: continuity.signature,
           });
         }
       } else if (part.type === "tool-call") {
@@ -164,6 +167,7 @@ async function convertFilePart(
       type: "document",
       source: toAnthropicPdfSource(resolved),
       title: resolved.name ?? file.name,
+      citations: { enabled: true },
     } satisfies Anthropic.DocumentBlockParam;
   }
 
@@ -191,6 +195,7 @@ async function convertFilePart(
       data: resolved.content,
     },
     title: resolved.name ?? file.name,
+    citations: { enabled: true },
   } satisfies Anthropic.DocumentBlockParam;
 }
 
@@ -314,21 +319,25 @@ export function convertToAxleContentParts(
 
   for (const block of contentBlocks) {
     if (block.type === "text") {
+      const citations = block.citations?.map(normalizeAnthropicCitation);
       result.push({
         type: "text",
         text: block.text,
+        ...(citations && citations.length > 0 ? { citations } : {}),
       });
     } else if (block.type === "thinking") {
+      const isRedacted = block.thinking.length === 0 && Boolean(block.signature);
       result.push({
         type: "thinking",
-        text: (block as any).text || "",
-        redacted: false,
+        ...(block.thinking ? { text: block.thinking } : {}),
+        redacted: isRedacted,
+        continuity: { provider: "anthropic", signature: block.signature },
       });
     } else if (block.type === "redacted_thinking") {
       result.push({
         type: "thinking",
-        text: (block as any).text || "",
         redacted: true,
+        continuity: { provider: "anthropic", redactedData: block.data },
       });
     } else if (block.type === "tool_use") {
       if (typeof block.input !== "object" || block.input === null || Array.isArray(block.input)) {
@@ -346,6 +355,93 @@ export function convertToAxleContentParts(
   }
 
   return result;
+}
+
+export function normalizeAnthropicCitation(citation: Anthropic.Messages.TextCitation): Citation {
+  switch (citation.type) {
+    case "char_location":
+      return {
+        source: {
+          type: "document",
+          title: citation.document_title ?? undefined,
+          fileId: citation.file_id ?? undefined,
+          citedText: citation.cited_text,
+          locator: {
+            type: "char",
+            start: citation.start_char_index,
+            end: citation.end_char_index,
+          },
+        },
+        providerMetadata: {
+          type: citation.type,
+          documentIndex: citation.document_index,
+        },
+      };
+    case "page_location":
+      return {
+        source: {
+          type: "document",
+          title: citation.document_title ?? undefined,
+          fileId: citation.file_id ?? undefined,
+          citedText: citation.cited_text,
+          locator: {
+            type: "page",
+            start: citation.start_page_number,
+            end: citation.end_page_number,
+          },
+        },
+        providerMetadata: {
+          type: citation.type,
+          documentIndex: citation.document_index,
+        },
+      };
+    case "content_block_location":
+      return {
+        source: {
+          type: "document",
+          title: citation.document_title ?? undefined,
+          fileId: citation.file_id ?? undefined,
+          citedText: citation.cited_text,
+          locator: {
+            type: "block",
+            start: citation.start_block_index,
+            end: citation.end_block_index,
+          },
+        },
+        providerMetadata: {
+          type: citation.type,
+          documentIndex: citation.document_index,
+        },
+      };
+    case "web_search_result_location":
+      return {
+        source: {
+          type: "web",
+          title: citation.title ?? undefined,
+          url: citation.url,
+          citedText: citation.cited_text,
+        },
+        providerMetadata: { type: citation.type, encryptedIndex: citation.encrypted_index },
+      };
+    case "search_result_location":
+      return {
+        source: {
+          type: "search-result",
+          title: citation.title ?? undefined,
+          url: citation.source,
+          citedText: citation.cited_text,
+          locator: {
+            type: "block",
+            start: citation.start_block_index,
+            end: citation.end_block_index,
+          },
+        },
+        providerMetadata: {
+          type: citation.type,
+          searchResultIndex: citation.search_result_index,
+        },
+      };
+  }
 }
 
 export function convertStopReason(reason: string | null | undefined) {

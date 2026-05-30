@@ -196,9 +196,14 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
 
   const textParts = msg.content.filter((c) => c.type === "text");
   if (textParts.length > 0) {
-    const text = textParts.map((c: any) => c.text).join("");
-    if (text) {
-      parts.push({ text });
+    for (const item of textParts) {
+      const text = item.text;
+      if (!text) continue;
+      const part: Record<string, unknown> = { text };
+      if (item.providerMetadata?.thoughtSignature) {
+        part.thoughtSignature = item.providerMetadata.thoughtSignature;
+      }
+      parts.push(part);
     }
   }
 
