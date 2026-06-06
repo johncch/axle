@@ -8,11 +8,11 @@ import type {
   AxleAssistantMessage,
   AxleMessage,
   AxleToolCallMessage,
+  Citation,
   ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-  Citation,
   ThinkingContinuity,
 } from "../messages/message.js";
 import { ToolRegistry } from "../tools/registry.js";
@@ -453,7 +453,9 @@ async function run(
             ...(chunk.data.id ? { id: chunk.data.id } : {}),
             ...(chunk.data.redacted !== undefined ? { redacted: chunk.data.redacted } : {}),
             ...(chunk.data.continuity ? { continuity: chunk.data.continuity } : {}),
-            ...(chunk.data.providerMetadata ? { providerMetadata: chunk.data.providerMetadata } : {}),
+            ...(chunk.data.providerMetadata
+              ? { providerMetadata: chunk.data.providerMetadata }
+              : {}),
           });
           currentPartIndex = turnParts.length - 1;
           openPartIndex = globalIndex++;
@@ -551,7 +553,9 @@ async function run(
         }
 
         case "tool-call-complete": {
-          const part = turnParts[currentPartIndex] as ContentPartToolCall;
+          const targetIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
+          const part = turnParts[targetIndex] as ContentPartToolCall;
+          if (!part || part.type !== "tool-call") break;
           if (chunk.data.id) part.id = chunk.data.id;
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
@@ -580,11 +584,15 @@ async function run(
         }
 
         case "provider-tool-complete": {
-          const part = turnParts[currentPartIndex] as ContentPartProviderTool;
-          if (chunk.data.output != null) part.output = chunk.data.output;
+          const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
+          const eventIndex = chunkIndexToGlobalIndex.get(chunk.data.index) ?? chunk.data.index;
+          const part = turnParts[partIndex] as ContentPartProviderTool;
+          if (part && part.type === "provider-tool" && chunk.data.output != null) {
+            part.output = chunk.data.output;
+          }
           emit(cbs, {
             type: "provider-tool:complete",
-            index: chunk.data.index,
+            index: eventIndex,
             id: chunk.data.id,
             name: chunk.data.name,
             output: chunk.data.output,

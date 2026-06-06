@@ -414,6 +414,82 @@ describe("stream()", () => {
         content: "local result",
       });
     });
+
+    test("parallel tool calls with deferred completes each get their own parameters", async () => {
+      // Mirrors the chatcompletions adapter: two tool calls stream their args,
+      // then BOTH completes are flushed together at finish_reason — i.e. after
+      // currentPartIndex has already moved off the first tool part. Each
+      // complete must land on the part it names (by index), not on whatever
+      // part happens to be active, or the earlier call executes with empty
+      // params.
+      const turn1: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "view-skill"),
+        toolCallArgsDeltaChunk(0, "call_1", "view-skill", '{"name":"pdf"}', '{"name":"pdf"}'),
+        toolCallStartChunk(1, "call_2", "exec"),
+        toolCallArgsDeltaChunk(1, "call_2", "exec", '{"command":"ls"}', '{"command":"ls"}'),
+        // Deferred: both completes arrive after both starts (the bug trigger).
+        toolCallCompleteChunk(0, "call_1", "view-skill", { name: "pdf" }),
+        toolCallCompleteChunk(1, "call_2", "exec", { command: "ls" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1, turn2] });
+      const received: Record<string, unknown> = {};
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async (name, parameters) => {
+          received[name] = parameters;
+          return { type: "success", content: "ok" };
+        },
+      });
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+
+      expect(received["view-skill"]).toEqual({ name: "pdf" });
+      expect(received["exec"]).toEqual({ command: "ls" });
+    });
+  });
+
+  describe("provider tools", () => {
+    test("a deferred provider-tool-complete lands output on its own part, not the active one", async () => {
+      const output = { results: ["r1", "r2"] };
+      const chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        { type: "provider-tool-start", data: { index: 0, id: "ps_1", name: "web_search" } },
+        textStartChunk(1),
+        textChunk(1, "searching the web"),
+        textCompleteChunk(1),
+        { type: "provider-tool-complete", data: { index: 0, id: "ps_1", name: "web_search", output } },
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      const providerToolPart = final.final.content.find((p) => p.type === "provider-tool");
+      expect(providerToolPart).toBeDefined();
+      expect((providerToolPart as any).output).toEqual(output);
+
+      const textPart = final.final.content.find((p) => p.type === "text");
+      expect((textPart as any).output).toBeUndefined();
+    });
   });
 
   describe("message boundary events", () => {
