@@ -36,6 +36,6 @@ execSync(
   { stdio: "inherit" },
 );
 execSync(`git commit -m "Release ${version}"`, { stdio: "inherit" });
-execSync(`git tag v${version}`, { stdio: "inherit" });
+execSync(`git tag -a v${version} -m "v${version}"`, { stdio: "inherit" });
 
 console.log(`Released ${version}. Push with: git push --follow-tags`);
