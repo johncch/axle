@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.22.0] - 2026-06-06
+
+- Added support for OpenRouter web search citations
+- Improved citation handling for web search results
+- Fixed tool handling for interleaved tool calls
+
 ## [0.21.0] - 2026-05-30
 
 - Added support for Opus 4.8
