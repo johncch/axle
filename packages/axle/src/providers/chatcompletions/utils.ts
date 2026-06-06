@@ -16,6 +16,12 @@ import {
   ChatCompletionTool,
   type ChatCompletionUsage,
 } from "./types.js";
+import {
+  prepareOpenRouterProviderTools,
+  type ChatCompletionsProviderToolVendor,
+} from "./vendors/openrouter.js";
+
+export type { ChatCompletionsProviderToolVendor } from "./vendors/openrouter.js";
 
 interface ChatCompletionsConversionContext {
   model: string;
@@ -84,6 +90,24 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
     }));
   }
   return undefined;
+}
+
+export function prepareProviderTools(
+  providerTools?: Array<ProviderTool>,
+  vendor?: ChatCompletionsProviderToolVendor,
+  warn?: (message: string, attributes?: Record<string, unknown>) => void,
+): any[] | undefined {
+  if (!providerTools || providerTools.length === 0) return undefined;
+
+  if (!vendor) {
+    warn?.("providerTools not supported by ChatCompletions provider");
+    return undefined;
+  }
+
+  switch (vendor) {
+    case "openrouter":
+      return prepareOpenRouterProviderTools(providerTools, warn);
+  }
 }
 
 export function toChatCompletionsToolChoice(

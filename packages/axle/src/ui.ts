@@ -19,6 +19,7 @@ export type {
   Annotation,
   AnnotationPlacement,
   AnnotationStatus,
+  CitationPart,
   FilePart,
   ProviderToolAction,
   SubagentAction,

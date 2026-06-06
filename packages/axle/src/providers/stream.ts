@@ -9,6 +9,7 @@ import type {
   AxleMessage,
   AxleToolCallMessage,
   Citation,
+  ContentPartCitation,
   ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
@@ -45,6 +46,13 @@ export type StreamEvent =
   | { type: "text:delta"; index: number; delta: string; accumulated: string }
   | { type: "text:citation"; index: number; citation: Citation; citations: Citation[] }
   | { type: "text:end"; index: number; final: string }
+  // Unanchored citation/source parts
+  | {
+      type: "citation";
+      index: number;
+      citations: Citation[];
+      providerMetadata?: Record<string, unknown>;
+    }
   // Thinking streaming
   | {
       type: "thinking:start";
@@ -284,7 +292,11 @@ async function run(
 
   const throwAbortError = (
     turnParts: Array<
-      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
+      | ContentPartText
+      | ContentPartThinking
+      | ContentPartToolCall
+      | ContentPartProviderTool
+      | ContentPartCitation
     >,
     turnId: string,
     turnModel: string | undefined,
@@ -359,7 +371,11 @@ async function run(
     });
 
     const turnParts: Array<
-      ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
+      | ContentPartText
+      | ContentPartThinking
+      | ContentPartToolCall
+      | ContentPartProviderTool
+      | ContentPartCitation
     > = [];
     let turnId = "";
     let turnModel = "";
@@ -436,6 +452,28 @@ async function run(
             index: eventIndex,
             citation: chunk.data.citation,
             citations: part.citations,
+          });
+          break;
+        }
+
+        case "citation": {
+          closePart();
+          const idx = globalIndex++;
+          turnParts.push({
+            type: "citation",
+            citations: chunk.data.citations,
+            ...(chunk.data.providerMetadata
+              ? { providerMetadata: chunk.data.providerMetadata }
+              : {}),
+          });
+          currentPartIndex = turnParts.length - 1;
+          chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
+          chunkIndexToGlobalIndex.set(chunk.data.index, idx);
+          emit(cbs, {
+            type: "citation",
+            index: idx,
+            citations: chunk.data.citations,
+            providerMetadata: chunk.data.providerMetadata,
           });
           break;
         }

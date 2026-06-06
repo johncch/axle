@@ -8,6 +8,7 @@ export interface StreamChunk {
     | "text-start"
     | "text-delta"
     | "text-citation"
+    | "citation"
     | "text-complete"
     | "tool-call-start"
     | "tool-call-args-delta"
@@ -80,6 +81,15 @@ export interface StreamTextCitationChunk extends StreamChunk {
   data: {
     index: number;
     citation: Citation;
+  };
+}
+
+export interface StreamCitationChunk extends StreamChunk {
+  type: "citation";
+  data: {
+    index: number;
+    citations: Citation[];
+    providerMetadata?: Record<string, unknown>;
   };
 }
 
@@ -207,6 +217,7 @@ export type AnyStreamChunk =
   | StreamTextStartChunk
   | StreamTextDeltaChunk
   | StreamTextCitationChunk
+  | StreamCitationChunk
   | StreamTextCompleteChunk
   | StreamThinkingStartChunk
   | StreamThinkingDeltaChunk

@@ -4,6 +4,7 @@ import type { Stats } from "../types.js";
 import { addStats, createStats } from "../utils/stats.js";
 import type { TurnEvent } from "./events.js";
 import type {
+  CitationPart,
   ProviderToolAction,
   TextPart,
   ThinkingPart,
@@ -137,6 +138,21 @@ export class TurnEventBuilder {
           });
           this.currentTextPart = null;
         }
+        break;
+      }
+
+      case "citation": {
+        this.closeOpenParts(events);
+        const timing = completeTiming(startTiming());
+        const part: CitationPart = {
+          id: crypto.randomUUID(),
+          type: "citation",
+          citations: event.citations,
+          ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
+          timing,
+        };
+        events.push({ type: "part:start", turnId, part });
+        events.push({ type: "part:end", turnId, partId: part.id, timing });
         break;
       }
 

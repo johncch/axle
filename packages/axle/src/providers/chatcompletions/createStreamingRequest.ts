@@ -7,6 +7,8 @@ import { ChatCompletionChunk } from "./types.js";
 import {
   convertAxleMessages,
   convertTools,
+  prepareProviderTools,
+  type ChatCompletionsProviderToolVendor,
   toChatCompletionsToolChoice,
   toReasoningEffort,
 } from "./utils.js";
@@ -17,6 +19,7 @@ export async function* createStreamingRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
+      providerToolVendor?: ChatCompletionsProviderToolVendor;
     },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const {
@@ -29,6 +32,7 @@ export async function* createStreamingRequest(
     runtime,
     signal,
     apiKey,
+    providerToolVendor,
     maxRetries,
     timeoutMs,
     reasoning,
@@ -42,10 +46,6 @@ export async function* createStreamingRequest(
   } = params;
   const tracer = runtime?.tracer;
 
-  if (providerTools && providerTools.length > 0) {
-    tracer?.warn("providerTools not supported by ChatCompletions provider");
-  }
-
   const adapter = createStreamingAdapter();
 
   try {
@@ -55,6 +55,12 @@ export async function* createStreamingRequest(
       signal,
     });
     const chatTools = convertTools(tools);
+    const chatProviderTools = prepareProviderTools(
+      providerTools,
+      providerToolVendor,
+      tracer?.warn.bind(tracer),
+    );
+    const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
     const requestBody: Record<string, any> = {
       model,
@@ -63,7 +69,7 @@ export async function* createStreamingRequest(
       stream_options: { include_usage: true },
 
       // Axle-normalized options.
-      ...(chatTools && { tools: chatTools }),
+      ...(requestTools.length > 0 ? { tools: requestTools } : {}),
       ...toReasoningEffort(reasoning),
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...(temperature !== undefined ? { temperature } : {}),

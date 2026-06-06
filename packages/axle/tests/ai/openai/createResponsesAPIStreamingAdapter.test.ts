@@ -1,5 +1,5 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createStreamingAdapter } from "../../../src/providers/openai/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -126,6 +126,31 @@ describe("createResponsesAPIStreamingAdapter", () => {
           outputSpan: { start: 0, end: 6 },
         });
       }
+    });
+
+    test("warns when an output text annotation has no resolved text part", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_text.annotation.added",
+        item_id: "missing_item",
+        output_index: 0,
+        content_index: 0,
+        annotation_index: 0,
+        sequence_number: 1,
+        annotation: {
+          type: "url_citation",
+          title: "OpenAI",
+          url: "https://openai.com",
+        },
+      } as ResponseStreamEvent);
+
+      expect(warn).toHaveBeenCalledWith(
+        "[OpenAI] received text annotation without a resolved text part; falling back to current part",
+        { itemId: "missing_item", contentIndex: 0 },
+      );
+      warn.mockRestore();
     });
 
     test("should handle response.completed event", () => {

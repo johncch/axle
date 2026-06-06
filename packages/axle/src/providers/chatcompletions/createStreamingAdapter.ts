@@ -2,7 +2,14 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { AxleStopReason } from "../types.js";
 import { ChatCompletionChunk } from "./types.js";
-import { chatUsageToStats, convertFinishReason } from "./utils.js";
+import {
+  chatUsageToStats,
+  convertFinishReason,
+} from "./utils.js";
+import {
+  isOpenRouterTextAnchoredCitation,
+  normalizeOpenRouterCitation,
+} from "./vendors/openrouter.js";
 
 export function createStreamingAdapter() {
   const toolCallBuffers = new Map<
@@ -100,6 +107,34 @@ export function createStreamingAdapter() {
       });
     }
 
+    if (delta.annotations) {
+      const citations = delta.annotations
+        .map(normalizeOpenRouterCitation)
+        .filter((citation) => citation !== null);
+      const textCitations =
+        activePart === "text" ? citations.filter(isOpenRouterTextAnchoredCitation) : [];
+      for (const citation of textCitations) {
+        chunks.push({
+          type: "text-citation",
+          data: { index: currentPartIndex, citation },
+        });
+      }
+
+      const citationPartCitations = citations.filter(
+        (citation) => !textCitations.includes(citation),
+      );
+      if (citationPartCitations.length > 0) {
+        closeActivePart(chunks);
+        chunks.push({
+          type: "citation",
+          data: {
+            index: partIndex++,
+            citations: citationPartCitations,
+          },
+        });
+      }
+    }
+
     // Tool calls
     if (delta.tool_calls) {
       closeActivePart(chunks);
@@ -147,7 +182,7 @@ export function createStreamingAdapter() {
     }
 
     // Completion — defer emitting until finalize() so usage-only chunk can arrive
-    if (choice.finish_reason) {
+    if (choice.finish_reason && pendingFinishReason === undefined) {
       closeActivePart(chunks);
 
       // Flush pending tool calls

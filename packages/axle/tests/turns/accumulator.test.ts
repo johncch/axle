@@ -137,6 +137,25 @@ describe("TurnAccumulator", () => {
     });
   });
 
+  test("accumulates citation parts", () => {
+    const accumulator = new TurnAccumulator();
+    const citation = {
+      source: { type: "web" as const, title: "Example", url: "https://example.com" },
+    };
+
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    const result = accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "p1", type: "citation", citations: [citation] },
+    });
+
+    expect(result.state.turns[0].parts[0]).toMatchObject({
+      type: "citation",
+      citations: [citation],
+    });
+  });
+
   test("returns unhandled for unknown host events", () => {
     type HostEvent = { type: "run:terminal"; status: "completed" };
     const accumulator = new TurnAccumulator<Annotation, HostEvent>();

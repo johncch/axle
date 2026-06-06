@@ -170,6 +170,80 @@ describe("createGenerationRequest", () => {
       expect(body.tool_choice).toEqual({ type: "function", function: { name: "lookup" } });
       expect(body.parallel_tool_calls).toBe(false);
     });
+
+    test("drops provider tools and warns without a provider tool vendor", async () => {
+      const tracer = makeTracer();
+      (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
+
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: { tracer },
+        providerTools: [{ type: "provider", name: "web_search" }],
+      });
+
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.tools).toBeUndefined();
+      expect(tracer.warn).toHaveBeenCalledWith(
+        "providerTools not supported by ChatCompletions provider",
+      );
+    });
+
+    test("maps OpenRouter provider tools and keeps function tools", async () => {
+      (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
+
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        providerToolVendor: "openrouter",
+        tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
+        providerTools: [
+          {
+            type: "provider",
+            name: "web_search",
+            config: { max_results: 3, allowed_domains: ["example.com"] },
+          },
+        ],
+      });
+
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.tools).toHaveLength(2);
+      expect(body.tools[0]).toMatchObject({
+        type: "function",
+        function: { name: "lookup" },
+      });
+      expect(body.tools[1]).toEqual({
+        type: "openrouter:web_search",
+        parameters: { max_results: 3, allowed_domains: ["example.com"] },
+      });
+    });
+
+    test("drops unknown OpenRouter provider tools and warns", async () => {
+      const tracer = makeTracer();
+      (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
+
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: { tracer },
+        providerToolVendor: "openrouter",
+        providerTools: [
+          { type: "provider", name: "unknown_tool" },
+          { type: "provider", name: "web_search" },
+        ],
+      });
+
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.tools).toEqual([{ type: "openrouter:web_search" }]);
+      expect(tracer.warn).toHaveBeenCalledWith(
+        "providerTool not supported by ChatCompletions provider vendor",
+        { vendor: "openrouter", name: "unknown_tool" },
+      );
+    });
   });
 
   describe("response parsing", () => {
@@ -190,6 +264,54 @@ describe("createGenerationRequest", () => {
       expect(result.finishReason).toBe(AxleStopReason.Stop);
       expect(result.id).toBe("chatcmpl-123");
       expect(result.model).toBe(MODEL);
+    });
+
+    test("parses url citation annotations into citation parts", async () => {
+      const response = makeTextResponse("See example.com for details.");
+      response.choices[0].message.annotations = [
+        {
+          type: "url_citation",
+          url_citation: {
+            url: "https://example.com/news",
+            title: "Example News",
+            content: "A relevant excerpt.",
+            start_index: 0,
+            end_index: 0,
+          },
+        },
+      ];
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+
+      const result = await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+      });
+
+      expect(result.type).toBe("success");
+      if (result.type !== "success") return;
+      expect(result.content).toEqual([
+        {
+          type: "text",
+          text: "See example.com for details.",
+        },
+        {
+          type: "citation",
+          citations: [
+            {
+              source: {
+                type: "web",
+                title: "Example News",
+                url: "https://example.com/news",
+                citedText: "A relevant excerpt.",
+              },
+              outputSpan: { start: 0, end: 0 },
+              providerMetadata: { type: "url_citation" },
+            },
+          ],
+        },
+      ]);
     });
 
     test("parses reasoning_content into thinking part", async () => {
@@ -590,4 +712,12 @@ function makeErrorResponse(status: number, text: string, headers: Record<string,
     headers: new Headers(headers),
     text: () => Promise.resolve(text),
   };
+}
+
+function makeTracer() {
+  return {
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  } as any;
 }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/chatcompletions/createStreamingRequest.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
@@ -206,6 +207,66 @@ describe("createStreamingRequest", () => {
     expect(body.stream).toBe(true);
     expect(body.stream_options).toEqual({ include_usage: true });
   });
+
+  test("drops provider tools and warns without a provider tool vendor", async () => {
+    const tracer = makeTracer();
+    const sseLines = [
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}`,
+      "",
+    ];
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: { tracer },
+        providerTools: [{ type: "provider", name: "web_search" }],
+      }),
+    );
+
+    const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+    expect(body.tools).toBeUndefined();
+    expect(tracer.warn).toHaveBeenCalledWith(
+      "providerTools not supported by ChatCompletions provider",
+    );
+  });
+
+  test("maps OpenRouter provider tools and keeps function tools", async () => {
+    const sseLines = [
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}`,
+      "",
+    ];
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        providerToolVendor: "openrouter",
+        tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
+        providerTools: [{ type: "provider", name: "web_search", config: { max_results: 3 } }],
+      }),
+    );
+
+    const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+    expect(body.tools).toHaveLength(2);
+    expect(body.tools[0]).toMatchObject({
+      type: "function",
+      function: { name: "lookup" },
+    });
+    expect(body.tools[1]).toEqual({
+      type: "openrouter:web_search",
+      parameters: { max_results: 3 },
+    });
+  });
 });
 
 // Helpers
@@ -242,4 +303,12 @@ function makeSSEResponse(sseText: string) {
     body: stream,
     text: () => Promise.resolve(sseText),
   };
+}
+
+function makeTracer() {
+  return {
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  } as any;
 }

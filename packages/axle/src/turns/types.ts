@@ -100,6 +100,7 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
  */
 export type TurnPart<TAnnotation extends Annotation = Annotation> =
   | TextPart<TAnnotation>
+  | CitationPart<TAnnotation>
   | FilePart<TAnnotation>
   | ThinkingPart<TAnnotation>
   | ActionPart<TAnnotation>;
@@ -116,6 +117,24 @@ export interface TextPart<TAnnotation extends Annotation = Annotation> {
   text: string;
   /** Source citations that support spans of this text, when supplied by the provider. */
   citations?: Citation[];
+  /** Provider-specific metadata that is not part of Axle's normalized contract. */
+  providerMetadata?: Record<string, unknown>;
+  /** Annotations attached to this part. */
+  annotations?: TAnnotation[];
+  /** Optional timing metadata. */
+  timing?: TimingInfo;
+}
+
+/**
+ * Unanchored citations or source list emitted as an ordered renderable part.
+ */
+export interface CitationPart<TAnnotation extends Annotation = Annotation> {
+  /** Stable part id. */
+  id: string;
+  /** Part discriminator. */
+  type: "citation";
+  /** Source citations carried by this part. */
+  citations: Citation[];
   /** Provider-specific metadata that is not part of Axle's normalized contract. */
   providerMetadata?: Record<string, unknown>;
   /** Annotations attached to this part. */

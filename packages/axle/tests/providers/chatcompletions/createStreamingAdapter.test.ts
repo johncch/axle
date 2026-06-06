@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { createStreamingAdapter } from "../../../src/providers/chatcompletions/createStreamingAdapter.js";
 import { ChatCompletionChunk } from "../../../src/providers/chatcompletions/types.js";
@@ -56,6 +57,131 @@ describe("createStreamingAdapter", () => {
       const types = all.map((c) => c.type);
       expect(types).toContain("text-complete");
       expect(types.indexOf("text-complete")).toBeLessThan(types.indexOf("complete"));
+    });
+
+    test("emits citation part for url citation annotations", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ reasoning_content: "Thinking" }));
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          annotations: [
+            {
+              type: "url_citation",
+              url_citation: {
+                url: "https://example.com/news",
+                title: "Example News",
+                content: "A relevant excerpt.",
+                start_index: 0,
+                end_index: 0,
+              },
+            },
+          ],
+        }),
+      );
+
+      const citation = chunks.find((c) => c.type === "citation");
+      expect(citation).toEqual({
+        type: "citation",
+        data: {
+          index: 1,
+          citations: [
+            {
+              source: {
+                type: "web",
+                title: "Example News",
+                url: "https://example.com/news",
+                citedText: "A relevant excerpt.",
+              },
+              outputSpan: { start: 0, end: 0 },
+              providerMetadata: { type: "url_citation" },
+            },
+          ],
+        },
+      });
+      expect(chunks.some((c) => c.type === "thinking-complete")).toBe(true);
+    });
+
+    test("emits text-citation for anchored url citation annotations on active text", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "See example.com" }));
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          annotations: [
+            {
+              type: "url_citation",
+              url_citation: {
+                url: "https://example.com/news",
+                title: "Example News",
+                start_index: 4,
+                end_index: 15,
+              },
+            },
+          ],
+        }),
+      );
+
+      expect(chunks.find((c) => c.type === "text-citation")).toMatchObject({
+        type: "text-citation",
+        data: {
+          index: 0,
+          citation: {
+            source: {
+              type: "web",
+              title: "Example News",
+              url: "https://example.com/news",
+            },
+            outputSpan: { start: 4, end: 15 },
+            providerMetadata: { type: "url_citation" },
+          },
+        },
+      });
+    });
+  });
+
+  describe("OpenRouter web-search fixture", () => {
+    test("preserves annotation-only 0/0 citations as ordered citation parts", () => {
+      const chunks = replaySseFixture("../../fixtures/openrouter-web-search.sse");
+      const types = chunks.map((chunk) => chunk.type);
+
+      expect(types).toEqual([
+        "start",
+        "thinking-start",
+        "thinking-delta",
+        "thinking-complete",
+        "citation",
+        "text-start",
+        "text-delta",
+        "text-delta",
+        "text-complete",
+        "complete",
+      ]);
+
+      const citation = chunks.find((chunk) => chunk.type === "citation");
+      expect(citation).toEqual({
+        type: "citation",
+        data: {
+          index: 1,
+          citations: [
+            {
+              source: {
+                type: "web",
+                title: "Example AI News",
+                url: "https://example.com/ai-news",
+                citedText: "Sanitized source excerpt from the captured OpenRouter web-search result.",
+              },
+              outputSpan: { start: 0, end: 0 },
+              providerMetadata: { type: "url_citation" },
+            },
+          ],
+        },
+      });
+
+      expect(chunks.some((chunk) => chunk.type === "text-citation")).toBe(false);
+      const complete = chunks.find((chunk) => chunk.type === "complete");
+      expect(complete).toMatchObject({
+        type: "complete",
+        data: { usage: { in: 10, out: 5 } },
+      });
     });
   });
 
@@ -299,6 +425,7 @@ function makeChunk(
     content?: string;
     reasoning?: string;
     reasoning_content?: string;
+    annotations?: any[];
     tool_calls?: any[];
   },
   finishReason?: string | null,
@@ -314,4 +441,21 @@ function makeChunk(
       },
     ],
   };
+}
+
+function replaySseFixture(path: string) {
+  const adapter = createStreamingAdapter();
+  const fixture = readFileSync(new URL(path, import.meta.url), "utf8");
+  const chunks = [];
+
+  for (const line of fixture.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":") || !trimmed.startsWith("data: ")) continue;
+    const data = trimmed.slice("data: ".length);
+    if (data === "[DONE]") continue;
+    chunks.push(...adapter.handleChunk(JSON.parse(data) as ChatCompletionChunk));
+  }
+
+  chunks.push(...adapter.finalize());
+  return chunks;
 }

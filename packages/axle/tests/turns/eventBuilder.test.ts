@@ -185,6 +185,29 @@ describe("TurnEventBuilder", () => {
     ]);
   });
 
+  test("citation stream event emits ordered citation part", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+
+    const citation = {
+      source: { type: "web" as const, title: "Example", url: "https://example.com" },
+    };
+    const events = builder.handleStreamEvent({
+      type: "citation",
+      index: 0,
+      citations: [citation],
+    });
+
+    expect(events.map((event) => event.type)).toEqual(["part:start", "part:end"]);
+    expect(events[0]).toMatchObject({
+      type: "part:start",
+      part: {
+        type: "citation",
+        citations: [citation],
+      },
+    });
+  });
+
   test("turn:complete accumulates usage for finalizeTurn", () => {
     const builder = new TurnEventBuilder();
     const start = builder.startAgentTurn();

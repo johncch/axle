@@ -51,6 +51,10 @@ export interface ChatCompletionUsage {
   input_tokens_details?: ChatCompletionInputTokenDetails;
   completion_tokens_details?: ChatCompletionOutputTokenDetails;
   output_tokens_details?: ChatCompletionOutputTokenDetails;
+  server_tool_use?: {
+    web_search_requests?: number;
+    [key: string]: unknown;
+  };
 }
 
 export interface ChatCompletionInputTokenDetails {
@@ -70,6 +74,7 @@ export interface ChatCompletionChoice {
     content: string | null;
     reasoning_content?: string | null;
     reasoning?: string | null;
+    annotations?: ChatCompletionAnnotation[];
     tool_calls?: {
       id: string;
       type: "function";
@@ -80,6 +85,18 @@ export interface ChatCompletionChoice {
     }[];
   };
   finish_reason: string;
+}
+
+export interface ChatCompletionAnnotation {
+  type: string;
+  url_citation?: {
+    url?: string;
+    title?: string;
+    content?: string;
+    start_index?: number;
+    end_index?: number;
+  };
+  [key: string]: unknown;
 }
 
 /* Streaming types */
@@ -98,6 +115,7 @@ export interface ChatCompletionChunkChoice {
     content?: string;
     reasoning_content?: string;
     reasoning?: string;
+    annotations?: ChatCompletionAnnotation[];
     tool_calls?: {
       index: number;
       id?: string;

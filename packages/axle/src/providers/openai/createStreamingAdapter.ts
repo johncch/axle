@@ -77,6 +77,15 @@ export function createStreamingAdapter() {
         const citation = normalizeOpenAICitation(event.annotation);
         if (!citation) break;
         const index = textPartIndices.get(textKey(event.item_id, event.content_index));
+        if (index === undefined) {
+          console.warn(
+            "[OpenAI] received text annotation without a resolved text part; falling back to current part",
+            {
+              itemId: event.item_id,
+              contentIndex: event.content_index,
+            },
+          );
+        }
         chunks.push({
           type: "text-citation",
           data: {

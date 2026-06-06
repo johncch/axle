@@ -1,5 +1,6 @@
 import {
   AxleMessage,
+  ContentPartCitation,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -107,7 +108,7 @@ export interface ModelResponse {
   id: string;
   model: string;
   text: string;
-  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>;
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartCitation>;
   finishReason: AxleStopReason;
   usage: Stats;
   raw: any;

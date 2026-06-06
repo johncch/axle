@@ -2,6 +2,7 @@ import { FileInfo } from "../utils/file.js";
 import {
   ContentPart,
   ContentPartFile,
+  ContentPartCitation,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
@@ -65,7 +66,7 @@ export function getFiles(content: string | ContentPart[]): FileInfo[] {
 }
 
 export function getToolCalls(
-  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall>,
+  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartCitation>,
 ): ContentPartToolCall[] {
   return content.filter((item) => item.type === "tool-call") as ContentPartToolCall[];
 }

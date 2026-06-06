@@ -12,24 +12,33 @@ import { createStreamingRequest } from "./createStreamingRequest.js";
 
 export interface ChatCompletionsOptions extends ProviderClientOptions {
   apiKey?: string;
+  providerToolVendor?: "openrouter";
 }
 
 export function chatCompletions(baseUrl: string, options?: ChatCompletionsOptions): AIProvider;
 export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider;
 export function chatCompletions(
   baseUrl: string,
+  apiKey: string,
+  options?: Omit<ChatCompletionsOptions, "apiKey">,
+): AIProvider;
+export function chatCompletions(
+  baseUrl: string,
   apiKeyOrOptions?: string | ChatCompletionsOptions,
+  options?: Omit<ChatCompletionsOptions, "apiKey">,
 ): AIProvider {
   const apiKey = typeof apiKeyOrOptions === "string" ? apiKeyOrOptions : apiKeyOrOptions?.apiKey;
+  const clientOptions = typeof apiKeyOrOptions === "string" ? options : apiKeyOrOptions;
   const maxRetries = requireInteger(
-    typeof apiKeyOrOptions === "string" ? 2 : (apiKeyOrOptions?.maxRetries ?? 2),
+    clientOptions?.maxRetries ?? 2,
     "maxRetries",
     { min: 0 },
   );
   const timeoutMs =
-    typeof apiKeyOrOptions === "string" || apiKeyOrOptions?.timeoutMs === undefined
+    clientOptions?.timeoutMs === undefined
       ? undefined
-      : requireInteger(apiKeyOrOptions.timeoutMs, "timeoutMs", { min: 1 });
+      : requireInteger(clientOptions.timeoutMs, "timeoutMs", { min: 1 });
+  const providerToolVendor = clientOptions?.providerToolVendor;
 
   return {
     name: "ChatCompletions",
@@ -45,6 +54,7 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
+        providerToolVendor,
         ...params,
       });
     },
@@ -60,6 +70,7 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
+        providerToolVendor,
         ...params,
       });
     },

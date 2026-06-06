@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createAnthropicStreamingAdapter } from "../../../src/providers/anthropic/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -324,6 +324,12 @@ describe("createAnthropicStreamingAdapter", () => {
     test("should handle citations_delta", () => {
       const adapter = createAnthropicStreamingAdapter();
 
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "", citations: null },
+      } as any);
+
       const chunks = adapter.handleEvent({
         type: "content_block_delta",
         index: 0,
@@ -353,6 +359,34 @@ describe("createAnthropicStreamingAdapter", () => {
           },
         });
       }
+    });
+
+    test("warns when citations_delta arrives outside a text block", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = createAnthropicStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "content_block_delta",
+        index: 1,
+        delta: {
+          type: "citations_delta",
+          citation: {
+            type: "char_location",
+            cited_text: "source text",
+            document_index: 0,
+            document_title: "Doc",
+            start_char_index: 10,
+            end_char_index: 21,
+            file_id: "file_123",
+          },
+        },
+      } as any);
+
+      expect(warn).toHaveBeenCalledWith(
+        "[Anthropic] received citation delta outside a text block",
+        { index: 1, blockType: undefined },
+      );
+      warn.mockRestore();
     });
   });
 

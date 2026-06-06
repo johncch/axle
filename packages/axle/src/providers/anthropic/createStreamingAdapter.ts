@@ -192,6 +192,12 @@ export function createAnthropicStreamingAdapter() {
             },
           });
         } else if (event.delta.type === "citations_delta") {
+          if (blockTypes.get(event.index) !== "text") {
+            console.warn("[Anthropic] received citation delta outside a text block", {
+              index: event.index,
+              blockType: blockTypes.get(event.index),
+            });
+          }
           chunks.push({
             type: "text-citation",
             data: {

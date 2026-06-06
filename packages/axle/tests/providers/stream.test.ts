@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import type {
   AnyStreamChunk,
+  StreamCitationChunk,
   StreamCompleteChunk,
   StreamErrorChunk,
   StreamStartChunk,
@@ -73,6 +74,10 @@ function textChunk(index: number, text: string): StreamTextDeltaChunk {
 
 function textCompleteChunk(index: number): StreamTextCompleteChunk {
   return { type: "text-complete", data: { index } };
+}
+
+function citationChunk(index: number, citations: StreamCitationChunk["data"]["citations"]): StreamCitationChunk {
+  return { type: "citation", data: { index, citations } };
 }
 
 function thinkingStartChunk(index: number): StreamThinkingStartChunk {
@@ -257,6 +262,46 @@ describe("stream()", () => {
       expect(events.some((event) => event.type === "text:citation")).toBe(true);
       expect(events.some((event) => event.type === "thinking:summary-delta")).toBe(true);
       expect(events.some((event) => event.type === "thinking:update")).toBe(true);
+    });
+
+    test("accumulates unanchored citations as ordered citation parts", async () => {
+      const citation = {
+        source: { type: "web" as const, title: "Example", url: "https://example.com" },
+        providerMetadata: { type: "url_citation" },
+      };
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        thinkingDeltaChunk(0, "Checking sources"),
+        thinkingCompleteChunk(0),
+        citationChunk(1, [citation]),
+        textStartChunk(2),
+        textChunk(2, "Answer"),
+        textCompleteChunk(2),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toMatchObject([
+        { type: "thinking", text: "Checking sources" },
+        { type: "citation", citations: [citation] },
+        { type: "text", text: "Answer" },
+      ]);
+
+      expect(events.find((event) => event.type === "citation")).toMatchObject({
+        type: "citation",
+        index: 1,
+        citations: [citation],
+      });
     });
   });
 

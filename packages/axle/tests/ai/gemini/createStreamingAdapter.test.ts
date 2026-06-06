@@ -1,5 +1,5 @@
 import { FinishReason } from "@google/genai";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createGeminiStreamingAdapter } from "../../../src/providers/gemini/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -357,6 +357,36 @@ describe("createGeminiStreamingAdapter", () => {
           providerMetadata: { outputText: "The answer" },
         });
       }
+    });
+
+    test("warns when grounding metadata citation has no part index", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = createGeminiStreamingAdapter();
+
+      adapter.handleChunk(
+        makeChunk({
+          parts: [{ text: "The answer is grounded." }],
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: "Source", uri: "https://example.com" } }],
+            groundingSupports: [
+              {
+                groundingChunkIndices: [0],
+                segment: { startIndex: 0, endIndex: 10, text: "The answer" },
+              },
+            ],
+          },
+        }),
+      );
+
+      expect(warn).toHaveBeenCalledWith(
+        "[Gemini] received unanchored citation; falling back to current text part",
+        expect.objectContaining({
+          citation: expect.objectContaining({
+            source: { type: "web", title: "Source", url: "https://example.com" },
+          }),
+        }),
+      );
+      warn.mockRestore();
     });
   });
 });

@@ -56,7 +56,11 @@ export interface AxleAssistantMessage {
   model?: string;
   /** Assistant content parts in model order. */
   content: Array<
-    ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartProviderTool
+    | ContentPartText
+    | ContentPartThinking
+    | ContentPartToolCall
+    | ContentPartProviderTool
+    | ContentPartCitation
   >;
   /** Provider-normalized reason the assistant message stopped. */
   finishReason?: AxleStopReason;
@@ -96,7 +100,8 @@ export type ContentPart =
   | ContentPartFile
   | ContentPartToolCall
   | ContentPartThinking
-  | ContentPartProviderTool;
+  | ContentPartProviderTool
+  | ContentPartCitation;
 
 /**
  * Plain text content.
@@ -251,4 +256,19 @@ export interface ContentPartProviderTool {
   input?: unknown;
   /** Provider-specific tool output. */
   output?: unknown;
+}
+
+/**
+ * Unanchored provider citations or sources associated with the assistant output.
+ *
+ * Text-span citations remain attached to `ContentPartText.citations`. This part
+ * is for source lists that the provider emits as their own ordered stream item.
+ */
+export interface ContentPartCitation {
+  /** Part discriminator. */
+  type: "citation";
+  /** Source citations carried by this ordered part. */
+  citations: Citation[];
+  /** Provider-specific metadata that is not part of Axle's normalized contract. */
+  providerMetadata?: Record<string, unknown>;
 }

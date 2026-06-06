@@ -2,6 +2,7 @@ import {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  ContentPartCitation,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
@@ -15,9 +16,15 @@ import {
   convertAxleMessages,
   convertFinishReason,
   convertTools,
+  prepareProviderTools,
+  type ChatCompletionsProviderToolVendor,
   toChatCompletionsToolChoice,
   toReasoningEffort,
 } from "./utils.js";
+import {
+  isOpenRouterTextAnchoredCitation,
+  normalizeOpenRouterCitation,
+} from "./vendors/openrouter.js";
 
 export async function createGenerationRequest(
   params: ProviderGenerationParams &
@@ -25,6 +32,7 @@ export async function createGenerationRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
+      providerToolVendor?: ChatCompletionsProviderToolVendor;
     },
 ): Promise<ModelResult> {
   const {
@@ -36,6 +44,7 @@ export async function createGenerationRequest(
     providerTools,
     runtime,
     apiKey,
+    providerToolVendor,
     maxRetries,
     timeoutMs,
     reasoning,
@@ -60,16 +69,19 @@ export async function createGenerationRequest(
       signal,
     });
     const chatTools = convertTools(tools);
-    if (providerTools && providerTools.length > 0) {
-      tracer?.warn("providerTools not supported by ChatCompletions provider");
-    }
+    const chatProviderTools = prepareProviderTools(
+      providerTools,
+      providerToolVendor,
+      tracer?.warn.bind(tracer),
+    );
+    const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
     const requestBody: Record<string, any> = {
       model,
       messages: chatMessages,
 
       // Axle-normalized options.
-      ...(chatTools && { tools: chatTools }),
+      ...(requestTools.length > 0 ? { tools: requestTools } : {}),
       ...toReasoningEffort(reasoning),
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
@@ -155,7 +167,9 @@ function fromModelResponse(data: ChatCompletionResponse): ModelResult {
     };
   }
 
-  const content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
+  const content: Array<
+    ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartCitation
+  > = [];
 
   const reasoningText = choice.message.reasoning_content ?? choice.message.reasoning;
   if (reasoningText) {
@@ -165,10 +179,26 @@ function fromModelResponse(data: ChatCompletionResponse): ModelResult {
     });
   }
 
+  const citations = (choice.message.annotations ?? [])
+    .map(normalizeOpenRouterCitation)
+    .filter((citation) => citation !== null);
+  const textCitations = citations.filter(isOpenRouterTextAnchoredCitation);
+  const citationPartCitations = citations.filter(
+    (citation) => !isOpenRouterTextAnchoredCitation(citation),
+  );
+
   if (choice.message.content) {
     content.push({
       type: "text",
       text: choice.message.content,
+      ...(textCitations.length > 0 ? { citations: textCitations } : {}),
+    });
+  }
+
+  if (citationPartCitations.length > 0) {
+    content.push({
+      type: "citation",
+      citations: citationPartCitations,
     });
   }
 
