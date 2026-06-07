@@ -680,6 +680,41 @@ describe("createResponsesAPIStreamingAdapter", () => {
       }
     });
 
+    test("counts web_search_call items in completion usage", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: {
+          id: "ws_123",
+          type: "web_search_call",
+          status: "in_progress",
+        },
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 150,
+          },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks[0].type).toBe("complete");
+    });
+
     test("should emit provider-tool-complete on output_item.done", () => {
       const adapter = createStreamingAdapter();
 

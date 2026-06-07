@@ -47,6 +47,8 @@ for (const target of targets) {
   const provider = target.createProvider();
 
   for (const testCase of cases) {
+    if (testCase.providers && !testCase.providers.includes(target.id)) continue;
+
     total += 1;
     const startedAt = Date.now();
 

@@ -765,5 +765,6 @@ describe("createAnthropicStreamingAdapter", () => {
         expect(chunks[0].data.output).toBeDefined();
       }
     });
+
   });
 });

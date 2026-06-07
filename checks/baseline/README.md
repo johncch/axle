@@ -53,6 +53,7 @@ OPENROUTER_API_KEY=...
 - `stream-tool`
 - `agent-tool`
 - `reasoning-false`
+- `stream-web-search`
 - `instruct-text-reference`
 
 The runner writes JSONL records to `output/checks/` and exits non-zero if any

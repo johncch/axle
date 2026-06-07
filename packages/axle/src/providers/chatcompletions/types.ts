@@ -51,10 +51,6 @@ export interface ChatCompletionUsage {
   input_tokens_details?: ChatCompletionInputTokenDetails;
   completion_tokens_details?: ChatCompletionOutputTokenDetails;
   output_tokens_details?: ChatCompletionOutputTokenDetails;
-  server_tool_use?: {
-    web_search_requests?: number;
-    [key: string]: unknown;
-  };
 }
 
 export interface ChatCompletionInputTokenDetails {

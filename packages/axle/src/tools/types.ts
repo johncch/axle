@@ -23,6 +23,7 @@ export interface ExecutableTool<TSchema extends ZodObject<any> = ZodObject<any>>
 export interface ProviderTool {
   type: "provider";
   name: string;
+  /** Provider-specific passthrough config. Field names and placement are not portable. */
   config?: Record<string, unknown>;
 }
 

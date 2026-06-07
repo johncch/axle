@@ -103,4 +103,30 @@ describe("OpenAI createGenerationRequest", () => {
       continuity: { provider: "openai", encrypted: "encrypted-reasoning" },
     });
   });
+
+  test("leaves web search calls out of token usage", () => {
+    const result = fromModelResponse({
+      id: "resp_123",
+      model: "gpt-5.4-mini",
+      output: [
+        {
+          type: "web_search_call",
+          id: "ws_123",
+          status: "completed",
+        },
+        {
+          type: "message",
+          id: "msg_123",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Found current sources.", annotations: [] }],
+        },
+      ],
+      output_text: "Found current sources.",
+      usage: { input_tokens: 10, output_tokens: 5 },
+    } as any);
+
+    expect(result.type).toBe("success");
+    if (result.type !== "success") return;
+    expect(result.usage).toEqual({ in: 10, out: 5 });
+  });
 });

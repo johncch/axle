@@ -7,8 +7,10 @@ import {
   type AIProvider,
   type AxleAssistantMessage,
   type ExecutableTool,
+  type ProviderTool,
 } from "@fifthrevision/axle";
 import * as z from "zod";
+import type { BaselineProviderId } from "./providers.js";
 
 export interface BaselineCaseContext {
   provider: AIProvider;
@@ -24,6 +26,7 @@ export interface BaselineCaseResult {
 export interface BaselineCase {
   id: string;
   description: string;
+  providers?: BaselineProviderId[];
   run(context: BaselineCaseContext): Promise<BaselineCaseResult>;
 }
 
@@ -32,6 +35,8 @@ const answerSchema = z.object({
   count: z.number(),
   ok: z.boolean(),
 });
+
+const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
 export const baselineCases: BaselineCase[] = [
   {
@@ -327,6 +332,19 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    id: "stream-web-search",
+    description: "stream() with provider web search surfaces provider-specific search evidence.",
+    async run({ provider, model, providerId }) {
+      return runStreamingWebSearchCitationCase({
+        provider,
+        model,
+        providerId,
+        prompt:
+          "Use web search to find the current top headline on Reuters.com. Answer with only the headline.",
+      });
+    },
+  },
+  {
     id: "instruct-text-reference",
     description: "Instruct text references are included in the user turn.",
     async run({ provider, model }) {
@@ -399,6 +417,69 @@ export const baselineCases: BaselineCase[] = [
   },
 ];
 
+  async function runStreamingWebSearchCitationCase({
+  provider,
+  model,
+  providerId,
+  prompt,
+}: {
+  provider: AIProvider;
+  model: string;
+  providerId: string;
+  prompt: string;
+}): Promise<BaselineCaseResult> {
+  const eventTypes: string[] = [];
+  const handle = stream({
+    provider,
+    model,
+    providerTools: [webSearchTool],
+    messages: [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    maxOutputTokens: 1024,
+  });
+  handle.on((event) => eventTypes.push(event.type));
+
+  const result = await handle.final;
+  if (!result.ok) return fail({ error: result.error, eventTypes });
+
+  const text = getAssistantText(result.final);
+  const citationPartCount = countCitationParts(result.final);
+  const textCitationCount = countTextCitations(result.final);
+  const citationEventCount = eventTypes.filter((type) => type === "citation").length;
+  const providerToolPartCount = countProviderToolParts(result.final);
+  const providerToolEventCount = eventTypes.filter((type) => type.startsWith("provider-tool:"))
+    .length;
+  const expectedEvidence = getWebSearchExpectedEvidence(providerId);
+  return {
+    ok: expectedEvidence.every((evidence) => {
+      switch (evidence) {
+        case "citation-part":
+          return citationPartCount > 0;
+        case "text-citation":
+          return textCitationCount > 0;
+        case "provider-tool":
+          return providerToolPartCount > 0 || providerToolEventCount > 0;
+      }
+    }),
+    details: {
+      text,
+      finishReason: result.final.finishReason,
+      expectedEvidence,
+      citationPartCount,
+      textCitationCount,
+      citationEventCount,
+      providerToolPartCount,
+      providerToolEventCount,
+      eventTypes,
+      usage: result.usage,
+    },
+  };
+}
+
 const addNumbersTool: ExecutableTool<
   z.ZodObject<{
     a: z.ZodNumber;
@@ -426,6 +507,43 @@ function getAssistantText(message: AxleAssistantMessage | undefined): string {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("");
+}
+
+function countCitationParts(message: AxleAssistantMessage | undefined): number {
+  if (!message) return 0;
+  return message.content.reduce(
+    (total, part) => total + (part.type === "citation" ? part.citations.length : 0),
+    0,
+  );
+}
+
+function countTextCitations(message: AxleAssistantMessage | undefined): number {
+  if (!message) return 0;
+  return message.content.reduce(
+    (total, part) => total + (part.type === "text" ? (part.citations?.length ?? 0) : 0),
+    0,
+  );
+}
+
+function countProviderToolParts(message: AxleAssistantMessage | undefined): number {
+  if (!message) return 0;
+  return message.content.filter((part) => part.type === "provider-tool").length;
+}
+
+function getWebSearchExpectedEvidence(
+  providerId: string,
+): Array<"citation-part" | "text-citation" | "provider-tool"> {
+  switch (providerId) {
+    case "openrouter":
+      return ["citation-part"];
+    case "gemini":
+      return ["text-citation"];
+    case "openai":
+    case "anthropic":
+      return ["provider-tool", "text-citation"];
+    default:
+      return ["text-citation"];
+  }
 }
 
 function hasSuccessfulToolResult(messages: Array<{ role: string; content?: unknown }>): boolean {

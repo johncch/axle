@@ -34,7 +34,10 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
     id: "openrouter",
     model: ChatCompletionsModels.QWEN_3_6_PLUS,
     createProvider: () =>
-      chatCompletions("https://openrouter.ai/api/v1", getEnv("OPENROUTER_API_KEY")),
+      chatCompletions("https://openrouter.ai/api/v1", {
+        apiKey: getEnv("OPENROUTER_API_KEY"),
+        providerToolVendor: "openrouter",
+      }),
   },
 ];
 

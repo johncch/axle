@@ -1,7 +1,7 @@
 export type PlainObject = Record<string, unknown>;
 
 /**
- * Token usage reported by a provider response.
+ * Usage reported by a provider response.
  */
 export interface Stats {
   /** Total effective input tokens. Includes `cachedIn` and `cacheWriteIn` when reported. */

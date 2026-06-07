@@ -59,7 +59,10 @@ export function createAnthropicStreamingAdapter() {
               finishReason: convertStopReason(event.delta.stop_reason),
               usage: withUsageDetails(
                 { in: inputTokens, out: outputTokens },
-                { cachedIn: cacheReadInputTokens, cacheWriteIn: cacheWriteInputTokens },
+                {
+                  cachedIn: cacheReadInputTokens,
+                  cacheWriteIn: cacheWriteInputTokens,
+                },
               ),
             },
           });
