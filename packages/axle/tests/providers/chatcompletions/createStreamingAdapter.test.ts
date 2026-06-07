@@ -167,7 +167,8 @@ describe("createStreamingAdapter", () => {
                 type: "web",
                 title: "Example AI News",
                 url: "https://example.com/ai-news",
-                citedText: "Sanitized source excerpt from the captured OpenRouter web-search result.",
+                citedText:
+                  "Sanitized source excerpt from the captured OpenRouter web-search result.",
               },
               outputSpan: { start: 0, end: 0 },
               providerMetadata: { type: "url_citation" },
@@ -323,6 +324,30 @@ describe("createStreamingAdapter", () => {
       expect(completeChunks).toHaveLength(1);
       expect((completeChunks[0] as any).data.name).toBe("search");
     });
+
+    test("finalize reports incomplete buffered tool call arguments when stream ends", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(
+        makeChunk({
+          tool_calls: [
+            { index: 0, id: "call_1", function: { name: "search", arguments: '{"q":' } },
+          ],
+        }),
+      );
+
+      const final = adapter.finalize();
+
+      expect(final).toEqual([
+        {
+          type: "error",
+          data: {
+            type: "IncompleteStream",
+            message:
+              "Stream ended without a completion signal while tool call arguments were still buffering for search (call_1); arguments were likely truncated or incomplete.",
+          },
+        },
+      ]);
+    });
   });
 
   describe("completion", () => {
@@ -376,6 +401,16 @@ describe("createStreamingAdapter", () => {
 
       const complete = final.filter((c) => c.type === "complete");
       expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.FunctionCall);
+    });
+
+    test("converts error finish reason", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "Hi" }));
+      adapter.handleChunk(makeChunk({}, "error"));
+      const final = adapter.finalize();
+
+      const complete = final.filter((c) => c.type === "complete");
+      expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.Error);
     });
   });
 

@@ -3,10 +3,10 @@ import { AxleMessage, ContentPart } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
 import {
+  resolveFileSource,
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
-  resolveFileSource,
 } from "../../utils/file.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
@@ -140,6 +140,7 @@ export function convertFinishReason(reason: string | null): AxleStopReason {
     case "function_call":
       return AxleStopReason.FunctionCall;
     case "content_filter":
+    case "error":
       return AxleStopReason.Error;
     default:
       return AxleStopReason.Stop;

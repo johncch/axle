@@ -102,6 +102,14 @@ export interface ChatCompletionChunk {
   model: string;
   choices: ChatCompletionChunkChoice[];
   usage?: ChatCompletionUsage;
+  error?: ChatCompletionStreamError;
+}
+
+export interface ChatCompletionStreamError {
+  code?: string | number;
+  type?: string;
+  message?: string;
+  [key: string]: unknown;
 }
 
 export interface ChatCompletionChunkChoice {

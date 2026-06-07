@@ -3,14 +3,14 @@ import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { withRetry } from "./retry.js";
-import { ChatCompletionChunk } from "./types.js";
+import { ChatCompletionChunk, ChatCompletionStreamError } from "./types.js";
 import {
   convertAxleMessages,
   convertTools,
   prepareProviderTools,
-  type ChatCompletionsProviderToolVendor,
   toChatCompletionsToolChoice,
   toReasoningEffort,
+  type ChatCompletionsProviderToolVendor,
 } from "./utils.js";
 
 export async function* createStreamingRequest(
@@ -149,17 +149,33 @@ export async function* createStreamingRequest(
         const data = trimmed.slice(6);
         if (data === "[DONE]") continue;
 
+        let chunk: ChatCompletionChunk;
         try {
-          const chunk: ChatCompletionChunk = JSON.parse(data);
-          const streamChunks = adapter.handleChunk(chunk);
-          for (const streamChunk of streamChunks) {
-            yield streamChunk;
-          }
+          chunk = JSON.parse(data);
         } catch (e) {
           tracer?.error("Error parsing ChatCompletions stream chunk", {
             error: e instanceof Error ? e.message : String(e),
             line: trimmed,
           });
+          continue;
+        }
+
+        if (chunk.error) {
+          const upstreamError = normalizeStreamError(chunk.error);
+          yield {
+            type: "error",
+            data: {
+              type: upstreamError.type,
+              message: upstreamError.message,
+              raw: chunk.error,
+            },
+          };
+          return;
+        }
+
+        const streamChunks = adapter.handleChunk(chunk);
+        for (const streamChunk of streamChunks) {
+          yield streamChunk;
         }
       }
     }
@@ -182,4 +198,23 @@ export async function* createStreamingRequest(
       },
     };
   }
+}
+
+function normalizeStreamError(error: ChatCompletionStreamError | string): {
+  type: string;
+  message: string;
+} {
+  if (typeof error === "string") {
+    return { type: "UPSTREAM_STREAM_ERROR", message: error };
+  }
+
+  const type =
+    error.type ??
+    (error.code === undefined ? undefined : String(error.code)) ??
+    "UPSTREAM_STREAM_ERROR";
+
+  return {
+    type,
+    message: error.message ?? type,
+  };
 }

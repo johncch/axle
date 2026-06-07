@@ -2,10 +2,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { AxleStopReason } from "../types.js";
 import { ChatCompletionChunk } from "./types.js";
-import {
-  chatUsageToStats,
-  convertFinishReason,
-} from "./utils.js";
+import { chatUsageToStats, convertFinishReason } from "./utils.js";
 import {
   isOpenRouterTextAnchoredCitation,
   normalizeOpenRouterCitation,
@@ -204,6 +201,7 @@ export function createStreamingAdapter() {
           );
         }
       }
+      toolCallBuffers.clear();
 
       pendingFinishReason = convertFinishReason(choice.finish_reason);
     }
@@ -212,7 +210,27 @@ export function createStreamingAdapter() {
   }
 
   function finalize(): Array<AnyStreamChunk> {
-    if (pendingFinishReason === undefined) return [];
+    if (pendingFinishReason === undefined) {
+      if (toolCallBuffers.size === 0) return [];
+
+      const tools = [...toolCallBuffers.values()]
+        .map((buffer) => {
+          const label = buffer.name || "unknown tool";
+          return `${label} (${buffer.id})`;
+        })
+        .join(", ");
+
+      return [
+        {
+          type: "error",
+          data: {
+            type: "IncompleteStream",
+            message: `Stream ended without a completion signal while tool call arguments were still buffering for ${tools}; arguments were likely truncated or incomplete.`,
+          },
+        },
+      ];
+    }
+
     return [
       {
         type: "complete",

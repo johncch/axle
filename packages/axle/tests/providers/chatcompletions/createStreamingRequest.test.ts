@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { AnyStreamChunk } from "../../../src/messages/stream.js";
+import type { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/chatcompletions/createStreamingRequest.js";
+import { stream } from "../../../src/providers/stream.js";
+import type { AIProvider } from "../../../src/providers/types.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
 const BASE_URL = "http://localhost:11434/v1";
@@ -85,6 +87,182 @@ describe("createStreamingRequest", () => {
     // Should not throw or emit errors
     const errors = chunks.filter((c) => c.type === "error");
     expect(errors).toHaveLength(0);
+  });
+
+  test("skips a single malformed SSE data line and completes valid chunks", async () => {
+    const tracer = makeTracer();
+    const sseLines = [
+      "data: {this is not json}",
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { role: "assistant", content: "Recovered" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}`,
+      "",
+    ];
+
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: { tracer },
+        maxRetries: 0,
+      }),
+    );
+
+    expect(tracer.error).toHaveBeenCalledWith(
+      "Error parsing ChatCompletions stream chunk",
+      expect.objectContaining({ line: "data: {this is not json}" }),
+    );
+    expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    expect(chunks.find((chunk) => chunk.type === "text-delta")).toMatchObject({
+      type: "text-delta",
+      data: { text: "Recovered" },
+    });
+    expect(chunks.find((chunk) => chunk.type === "complete")).toMatchObject({
+      type: "complete",
+      data: { finishReason: AxleStopReason.Stop },
+    });
+  });
+
+  test("surfaces upstream SSE error frames through stream() as model errors", async () => {
+    const sseLines = [
+      `data: ${JSON.stringify({
+        id: "c-1",
+        object: "chat.completion.chunk",
+        model: MODEL,
+        error: { code: "server_error", message: "Provider disconnected unexpectedly" },
+        choices: [{ index: 0, delta: { content: "" }, finish_reason: "error" }],
+      })}`,
+      "",
+    ];
+
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    const handle = stream({
+      provider: makeProvider(),
+      model: MODEL,
+      messages: [{ role: "user", content: "Hi" }],
+    });
+
+    const result = await handle.final;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("model");
+      if (result.error.kind !== "model") throw new Error("Expected model error");
+      expect(result.error.error).toMatchObject({
+        type: "error",
+        error: {
+          type: "server_error",
+          message: "Provider disconnected unexpectedly",
+        },
+      });
+    }
+  });
+
+  test("surfaces truncated tool-call arguments through stream() with the tool name", async () => {
+    const sseLines = [
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  function: { name: "search", arguments: '{"query":' },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      })}`,
+      "",
+    ];
+
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    const handle = stream({
+      provider: makeProvider(),
+      model: MODEL,
+      messages: [{ role: "user", content: "Hi" }],
+    });
+
+    const result = await handle.final;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("model");
+      if (result.error.kind !== "model") throw new Error("Expected model error");
+      expect(result.error.error).toMatchObject({
+        type: "error",
+        error: {
+          type: "IncompleteStream",
+        },
+      });
+      expect(result.error.error.error.message).toContain("search");
+      expect(result.error.error.error.message).toContain("truncated or incomplete");
+    }
+  });
+
+  test("surfaces adapter errors instead of dropping the stream chunk", async () => {
+    const sseLines = [
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  function: { name: "search", arguments: '{"query":' },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      })}`,
+      "",
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+      })}`,
+      "",
+    ];
+
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 0,
+      }),
+    );
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: "error",
+      data: {
+        type: "STREAMING_ERROR",
+      },
+    });
+    expect((chunks.at(-1) as any).data.message).toContain(
+      "Failed to parse tool call arguments for search",
+    );
   });
 
   test("ignores SSE comment lines (starting with :)", async () => {
@@ -311,4 +489,21 @@ function makeTracer() {
     warn: vi.fn(),
     error: vi.fn(),
   } as any;
+}
+
+function makeProvider(): AIProvider {
+  return {
+    name: "chatcompletions-test",
+    async createGenerationRequest() {
+      throw new Error("Not implemented");
+    },
+    createStreamingRequest(_model, params) {
+      return createStreamingRequest({
+        ...params,
+        baseUrl: BASE_URL,
+        model: _model,
+        maxRetries: 0,
+      });
+    },
+  };
 }
