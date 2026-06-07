@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.22.1] - 2026-06-07
+
+- Improved handling of chat-completions streaming errors
+- Fixed Gemini citation handling
+
 ## [0.22.0] - 2026-06-06
 
 - Added support for OpenRouter web search citations
