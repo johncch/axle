@@ -173,15 +173,15 @@ export function createGeminiStreamingAdapter() {
     }
 
     for (const { partIndex, citation } of normalizeGeminiCitations(candidate)) {
-      if (partIndex === undefined) {
-        console.warn(
-          "[Gemini] received unanchored citation; falling back to current text part",
-          { citation },
-        );
-      }
       const streamPartIndex =
         partIndex !== undefined ? modelPartToStreamPart.get(partIndex) : currentPartIndex;
-      if (streamPartIndex === undefined || streamPartIndex < 0) continue;
+      if (streamPartIndex === undefined || streamPartIndex < 0) {
+        console.warn(
+          "[Gemini] received citation without a resolvable text part",
+          { citation },
+        );
+        continue;
+      }
       chunks.push({
         type: "text-citation",
         data: { index: streamPartIndex, citation },

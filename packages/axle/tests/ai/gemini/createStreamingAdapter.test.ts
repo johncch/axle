@@ -359,11 +359,11 @@ describe("createGeminiStreamingAdapter", () => {
       }
     });
 
-    test("warns when grounding metadata citation has no part index", () => {
+    test("falls back to the current text part when grounding metadata has no part index", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const adapter = createGeminiStreamingAdapter();
 
-      adapter.handleChunk(
+      const chunks = adapter.handleChunk(
         makeChunk({
           parts: [{ text: "The answer is grounded." }],
           groundingMetadata: {
@@ -378,8 +378,41 @@ describe("createGeminiStreamingAdapter", () => {
         }),
       );
 
+      const citation = chunks.find((c) => c.type === "text-citation");
+      expect(citation?.type).toBe("text-citation");
+      if (citation?.type === "text-citation") {
+        expect(citation.data.index).toBe(0);
+        expect(citation.data.citation).toMatchObject({
+          source: { type: "web", title: "Source", url: "https://example.com" },
+          outputSpan: { start: 0, end: 10 },
+          providerMetadata: { outputText: "The answer" },
+        });
+      }
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    test("warns when grounding metadata cannot be attached to a text part", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = createGeminiStreamingAdapter();
+
+      adapter.handleChunk(
+        makeChunk({
+          parts: [{ functionCall: { name: "search", args: {} } }],
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: "Source", uri: "https://example.com" } }],
+            groundingSupports: [
+              {
+                groundingChunkIndices: [0],
+                segment: { startIndex: 0, endIndex: 10, text: "The answer" },
+              },
+            ],
+          },
+        }),
+      );
+
       expect(warn).toHaveBeenCalledWith(
-        "[Gemini] received unanchored citation; falling back to current text part",
+        "[Gemini] received citation without a resolvable text part",
         expect.objectContaining({
           citation: expect.objectContaining({
             source: { type: "web", title: "Source", url: "https://example.com" },
