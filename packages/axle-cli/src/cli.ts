@@ -92,10 +92,10 @@ let serviceConfig: ServiceConfig;
 let jobConfig: JobConfig;
 try {
   serviceConfig = await getServiceConfig({
-    tracer: rootSpan,
+    span: rootSpan,
   });
   jobConfig = await getJobConfig(options.job, {
-    tracer: rootSpan,
+    span: rootSpan,
   });
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));

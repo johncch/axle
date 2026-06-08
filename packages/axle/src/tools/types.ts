@@ -1,13 +1,13 @@
 import type { z, ZodObject } from "zod";
 import type { ToolResultPart } from "../messages/message.js";
-import type { TracingContext } from "../tracer/types.js";
+import type { Span } from "../observability/types.js";
 import type { ToolRegistry } from "./registry.js";
 
 export interface ToolContext {
   registry: ToolRegistry;
   signal: AbortSignal;
   emit: (chunk: string) => void;
-  tracer?: TracingContext;
+  span?: Span;
 }
 
 export interface ExecutableTool<TSchema extends ZodObject<any> = ZodObject<any>> {

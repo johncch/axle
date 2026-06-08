@@ -1,20 +1,20 @@
-import { MCP, type TracingContext } from "@fifthrevision/axle";
+import { MCP, type Span } from "@fifthrevision/axle";
 import type { MCPConfigUse } from "./configs/schemas.js";
 
-export async function connectMcps(configs: MCPConfigUse[], tracer: TracingContext): Promise<MCP[]> {
+export async function connectMcps(configs: MCPConfigUse[], span: Span): Promise<MCP[]> {
   const instances: MCP[] = [];
   for (const config of configs) {
     const mcp = new MCP(config);
-    await mcp.connect({ tracer });
+    await mcp.connect({ span });
     instances.push(mcp);
   }
   return instances;
 }
 
-export async function closeMcps(instances: MCP[], tracer: TracingContext): Promise<void> {
+export async function closeMcps(instances: MCP[], span: Span): Promise<void> {
   for (const mcp of instances) {
     try {
-      await mcp.close({ tracer });
+      await mcp.close({ span });
     } catch {
       // swallow individual close errors
     }

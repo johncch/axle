@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SpanData } from "../../src/tracer/types.js";
-import { SimpleWriter } from "../../src/tracer/writers/simple.js";
+import type { SpanData } from "../../src/observability/types.js";
+import { SimpleWriter } from "../../src/observability/writers/simple.js";
 
 const span: SpanData = {
   traceId: "trace",

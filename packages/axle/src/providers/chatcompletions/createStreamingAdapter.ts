@@ -1,5 +1,6 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
+import { truncateMiddle } from "../../utils/truncate.js";
 import { AxleStopReason } from "../types.js";
 import { ChatCompletionChunk } from "./types.js";
 import { chatUsageToStats, convertFinishReason } from "./utils.js";
@@ -197,7 +198,7 @@ export function createStreamingAdapter() {
           });
         } catch (e) {
           throw new Error(
-            `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${buffer.argumentsBuffer}`,
+            `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${truncateMiddle(buffer.argumentsBuffer)}`,
           );
         }
       }

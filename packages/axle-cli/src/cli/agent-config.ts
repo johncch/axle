@@ -4,7 +4,7 @@ import type {
   AIProvider,
   MCP,
   ProviderDefinition,
-  TracingContext,
+  Span,
 } from "@fifthrevision/axle";
 import {
   Anthropic,
@@ -134,10 +134,10 @@ function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {
 export async function createCliAgentConfig(
   jobConfig: JobConfig,
   serviceConfig: ServiceConfig,
-  tracer: TracingContext,
+  span: Span,
 ): Promise<CliAgentConfig> {
   const definition = createAgentDefinition(jobConfig);
-  const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, tracer) : [];
+  const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
 
   const baseConfig = await createAgentConfig(definition, (definition) => {
     const resolvedProvider = resolveCliProvider(definition.provider, serviceConfig);

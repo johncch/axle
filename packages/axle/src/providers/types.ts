@@ -6,8 +6,8 @@ import {
   ContentPartToolCall,
 } from "../messages/message.js";
 import { AnyStreamChunk } from "../messages/stream.js";
+import type { Span } from "../observability/types.js";
 import type { ProviderTool, ToolDefinition } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
 import { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 
@@ -20,7 +20,7 @@ import type { FileResolver } from "../utils/file.js";
  */
 export interface ProviderRuntime {
   /** Request-scoped tracing span used by provider adapters. */
-  tracer?: TracingContext;
+  span?: Span;
   /** Resolves file references before provider-specific request conversion. */
   fileResolver?: FileResolver;
 }

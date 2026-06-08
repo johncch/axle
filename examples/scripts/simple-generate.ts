@@ -45,7 +45,7 @@ try {
         content: "success",
       };
     },
-    tracer: tracer.startSpan("generate"),
+    span: tracer.startSpan("generate"),
   });
 
   console.log(result.ok ? "success" : "error");

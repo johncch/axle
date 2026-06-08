@@ -16,15 +16,16 @@ import type {
   ContentPartToolCall,
   ThinkingContinuity,
 } from "../messages/message.js";
+import type { LLMResult, Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "../tools/types.js";
-import type { LLMResult, TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 import { addStats, createStats, toTokenUsage } from "../utils/stats.js";
 import {
   executeToolCalls,
   type GenerateError,
+  logTurnContent,
   resolveToolRegistry,
   type StreamResult,
   type ToolCallCallback,
@@ -120,7 +121,7 @@ export interface StreamParams extends AxleModelRequestOptions {
   registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
-  tracer?: TracingContext;
+  span?: Span;
   fileResolver?: FileResolver;
 }
 
@@ -249,7 +250,7 @@ async function run(
     system,
     onToolCall,
     maxIterations,
-    tracer,
+    span,
     fileResolver,
     reasoning,
     maxOutputTokens,
@@ -278,7 +279,7 @@ async function run(
     }
     const finalContent = result.ok ? result.final.content : null;
     const finishReason = result.ok ? result.final.finishReason : undefined;
-    tracer?.setResult({
+    span?.setResult({
       kind: "llm",
       model,
       request: { messages },
@@ -286,7 +287,7 @@ async function run(
       usage: toTokenUsage(result.usage),
       finishReason,
     });
-    tracer?.end(result.ok ? "ok" : "error");
+    span?.end(result.ok ? "ok" : "error");
     return result;
   };
 
@@ -313,7 +314,7 @@ async function run(
         }
       : undefined;
     if (partial) addMessage(partial);
-    tracer?.end("ok");
+    span?.end("ok");
     throw new AxleAbortError("Stream aborted", {
       reason: signal.reason,
       messages: newMessages,
@@ -347,7 +348,7 @@ async function run(
     }
 
     iterations += 1;
-    const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
+    const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
 
     const executable = registry?.executable() ?? [];
     const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
@@ -358,7 +359,7 @@ async function run(
       system,
       tools,
       providerTools: providerTools.length > 0 ? providerTools : undefined,
-      runtime: { tracer: turnSpan, fileResolver },
+      runtime: { span: turnSpan, fileResolver },
       signal,
       reasoning,
       maxOutputTokens,
@@ -707,6 +708,8 @@ async function run(
       usage: toTokenUsage(turnUsage),
       finishReason: turnFinishReason,
     };
+    logTurnContent(turnSpan, turnParts);
+
     turnSpan?.setResult(turnLLMResult);
     turnSpan?.end();
 
@@ -746,7 +749,7 @@ async function run(
 
     // Check 3: before tool execution
     if (signal.aborted) {
-      tracer?.end("ok");
+      span?.end("ok");
       throw new AxleAbortError("Stream aborted", {
         reason: signal.reason,
         messages: newMessages,
@@ -792,10 +795,10 @@ async function run(
 
     let results;
     try {
-      ({ results } = await executeToolCalls(toolCalls, emittingToolCall, signal, registry, tracer));
+      ({ results } = await executeToolCalls(toolCalls, emittingToolCall, signal, registry, span));
     } catch (error) {
       if (error instanceof AxleToolFatalError) {
-        tracer?.end("error");
+        span?.end("error");
         throw new AxleToolFatalError(error.message, {
           toolName: error.toolName,
           messages: error.messages ?? newMessages,
@@ -805,7 +808,7 @@ async function run(
         });
       }
       if (error instanceof AxleAbortError) {
-        tracer?.end("ok");
+        span?.end("ok");
         throw new AxleAbortError("Stream aborted", {
           reason: error.reason,
           messages: error.messages ?? newMessages,

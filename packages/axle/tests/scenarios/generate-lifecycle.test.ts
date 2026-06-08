@@ -42,7 +42,7 @@ describe("generate() happy paths", () => {
       provider,
       model: "test-model",
       messages: [{ role: "user", content: "Hi" }],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     expect(result.ok).toBe(true);
@@ -123,7 +123,7 @@ describe("generate() happy paths", () => {
       provider,
       model: "test-model",
       messages: [{ role: "user", content: "Look up item 42" }],
-      tracer: rootSpan,
+      span: rootSpan,
       onToolCall: async () => ({ type: "success", content: "Found item 42" }),
     });
 
@@ -249,7 +249,7 @@ describe("generate() error paths", () => {
       provider,
       model: "test-model",
       messages: [{ role: "user", content: "Hi" }],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     expect(result.ok).toBe(false);
@@ -289,7 +289,7 @@ describe("generate() error paths", () => {
       provider,
       model: "test-model",
       messages: [{ role: "user", content: "Search" }],
-      tracer: rootSpan,
+      span: rootSpan,
       maxIterations: 1,
       onToolCall: async () => ({ type: "success", content: "result" }),
     });
@@ -328,7 +328,7 @@ describe("generate() error paths", () => {
         provider,
         model: "test-model",
         messages: [{ role: "user", content: "Hi" }],
-        tracer: rootSpan,
+        span: rootSpan,
       }),
     ).rejects.toThrow("Network failure");
 
@@ -388,7 +388,7 @@ describe("generate() error paths", () => {
       provider,
       model: "test-model",
       messages: [{ role: "user", content: "Hi" }],
-      tracer: rootSpan,
+      span: rootSpan,
       signal: controller.signal,
     });
 
@@ -439,7 +439,7 @@ describe("generate() error paths", () => {
       provider,
       model: "test-model",
       messages: [{ role: "user", content: "Look up item 42" }],
-      tracer: rootSpan,
+      span: rootSpan,
       signal: controller.signal,
       onToolCall: async (_name, _params, ctx) => {
         markToolStarted();
@@ -489,7 +489,7 @@ describe("generate() error paths", () => {
         provider,
         model: "test-model",
         messages: [{ role: "user", content: "Hi" }],
-        tracer: rootSpan,
+        span: rootSpan,
         signal: controller.signal,
       }),
     );

@@ -46,7 +46,7 @@ export async function createGenerationRequest(
     providerOptions,
     signal,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   let result: ModelResult;
   try {
@@ -83,7 +83,7 @@ export async function createGenerationRequest(
       ...providerOptions,
     } as ResponseCreateParamsNonStreaming;
 
-    tracer?.debug("OpenAI ResponsesAPI request", { request: redactResolvedFileValues(request) });
+    span?.debug("OpenAI ResponsesAPI request", { request: redactResolvedFileValues(request) });
 
     const response = await raceWithSignal(
       client.responses.create(request, ...(signal ? [{ signal }] : [])),
@@ -94,11 +94,11 @@ export async function createGenerationRequest(
     result = fromModelResponse(response);
   } catch (e) {
     throwIfAborted(signal, "Generate aborted");
-    tracer?.error(e instanceof Error ? e.message : String(e));
+    span?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }
 
-  tracer?.debug("OpenAI ResponsesAPI response", { result });
+  span?.debug("OpenAI ResponsesAPI response", { result });
   return result;
 }
 
@@ -132,7 +132,9 @@ export function fromModelResponse(response: Response): ModelResult {
           ...(reasoning.content?.[0]?.text ? { text: reasoning.content[0].text } : {}),
           ...(reasoning.summary?.[0]?.text ? { summary: reasoning.summary[0].text } : {}),
           ...(reasoning.encrypted_content
-            ? { continuity: { provider: "openai" as const, encrypted: reasoning.encrypted_content } }
+            ? {
+                continuity: { provider: "openai" as const, encrypted: reasoning.encrypted_content },
+              }
             : {}),
         });
       }

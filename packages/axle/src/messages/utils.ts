@@ -3,9 +3,11 @@ import {
   ContentPart,
   ContentPartFile,
   ContentPartCitation,
+  ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  Citation,
 } from "./message.js";
 
 export function toContentParts(params: {
@@ -28,10 +30,18 @@ export function toContentParts(params: {
   return parts;
 }
 
-export function getTextContent(content: ContentPart[]): string {
+export function getTextContent(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
   return content
     .filter((item) => item.type === "text")
     .map((item) => (item as ContentPartText).text)
+    .join("\n\n");
+}
+
+export function getThinkingContent(content: ContentPart[]): string {
+  return content
+    .filter((item) => item.type === "thinking")
+    .map((item) => (item as ContentPartThinking).text ?? "")
     .join("\n\n");
 }
 
@@ -69,4 +79,20 @@ export function getToolCalls(
   content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartCitation>,
 ): ContentPartToolCall[] {
   return content.filter((item) => item.type === "tool-call") as ContentPartToolCall[];
+}
+
+export function getProviderTools(content: ContentPart[]): ContentPartProviderTool[] {
+  return content.filter((item) => item.type === "provider-tool") as ContentPartProviderTool[];
+}
+
+export function getCitations(content: ContentPart[]): Citation[] {
+  const citations: Citation[] = [];
+  for (const item of content) {
+    if (item.type === "text" && item.citations) {
+      citations.push(...item.citations);
+    } else if (item.type === "citation") {
+      citations.push(...item.citations);
+    }
+  }
+  return citations;
 }

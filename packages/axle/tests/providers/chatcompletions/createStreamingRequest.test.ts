@@ -90,7 +90,7 @@ describe("createStreamingRequest", () => {
   });
 
   test("skips a single malformed SSE data line and completes valid chunks", async () => {
-    const tracer = makeTracer();
+    const span = makeSpan();
     const sseLines = [
       "data: {this is not json}",
       "",
@@ -107,12 +107,12 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        runtime: { tracer },
+        runtime: { span },
         maxRetries: 0,
       }),
     );
 
-    expect(tracer.error).toHaveBeenCalledWith(
+    expect(span.error).toHaveBeenCalledWith(
       "Error parsing ChatCompletions stream chunk",
       expect.objectContaining({ line: "data: {this is not json}" }),
     );
@@ -387,7 +387,7 @@ describe("createStreamingRequest", () => {
   });
 
   test("drops provider tools and warns without a provider tool vendor", async () => {
-    const tracer = makeTracer();
+    const span = makeSpan();
     const sseLines = [
       `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
       "",
@@ -401,14 +401,14 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        runtime: { tracer },
+        runtime: { span },
         providerTools: [{ type: "provider", name: "web_search" }],
       }),
     );
 
     const body = JSON.parse((fetch as any).mock.calls[0][1].body);
     expect(body.tools).toBeUndefined();
-    expect(tracer.warn).toHaveBeenCalledWith(
+    expect(span.warn).toHaveBeenCalledWith(
       "providerTools not supported by ChatCompletions provider",
     );
   });
@@ -483,8 +483,9 @@ function makeSSEResponse(sseText: string) {
   };
 }
 
-function makeTracer() {
+function makeSpan() {
   return {
+    trace: vi.fn(),
     debug: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),

@@ -1,4 +1,4 @@
-import type { TracingContext } from "@fifthrevision/axle";
+import type { Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createCliAgentConfig } from "../../src/cli/agent-config.js";
 import type { ServiceConfig } from "../../src/cli/configs/schemas.js";
@@ -14,7 +14,7 @@ const tracer = {
   setAttribute: vi.fn(),
   setAttributes: vi.fn(),
   setResult: vi.fn(),
-} as unknown as TracingContext;
+} as unknown as Span;
 
 afterEach(() => {
   vi.unstubAllEnvs();

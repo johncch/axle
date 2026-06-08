@@ -1,4 +1,4 @@
-import type { AgentConfig, Stats, TracingContext } from "@fifthrevision/axle";
+import type { AgentConfig, Span, Stats } from "@fifthrevision/axle";
 import { addStats, Agent, Instruct, loadFileContent } from "@fifthrevision/axle";
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
@@ -25,7 +25,7 @@ export async function runSingle(
   variables: Record<string, any>,
   options: ProgramOptions,
   stats: Stats,
-  parentSpan: TracingContext,
+  parentSpan: Span,
 ) {
   const instruct = new Instruct({ prompt: input.task });
   if (input.files) {
@@ -37,7 +37,7 @@ export async function runSingle(
   const jobSpan = parentSpan.startSpan("job", { type: "workflow" });
   const agent = new Agent({
     ...agentConfig,
-    tracer: jobSpan,
+    observability: { trace: jobSpan },
   });
 
   try {
@@ -63,11 +63,7 @@ export async function runSingle(
   }
 }
 
-async function runInteractiveLoop(
-  agent: Agent,
-  stats: Stats,
-  tracer: TracingContext,
-): Promise<void> {
+async function runInteractiveLoop(agent: Agent, stats: Stats, span: Span): Promise<void> {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -95,11 +91,11 @@ async function runInteractiveLoop(
 
         if (result.response) {
           const text = result.response;
-          tracer.info(text, { markdown: true });
+          span.info(text, { markdown: true });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        tracer.error(msg);
+        span.error(msg);
       }
     }
   } finally {
@@ -114,7 +110,7 @@ export async function runBatch(
   variables: Record<string, any>,
   options: ProgramOptions,
   stats: Stats,
-  parentSpan: TracingContext,
+  parentSpan: Span,
 ) {
   const filePaths = await glob(batchConfig.files);
 
@@ -164,7 +160,7 @@ export async function runBatch(
 
       const agent = new Agent({
         ...agentConfig,
-        tracer: itemSpan,
+        observability: { trace: itemSpan },
       });
       const result = await agent.send(instruct.withInputs(itemVars)).final;
 

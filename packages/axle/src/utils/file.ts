@@ -2,14 +2,14 @@ import { glob } from "glob";
 import mime from "mime";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
-import type { TracingContext } from "../tracer/types.js";
+import type { Span } from "../observability/types.js";
 import type { FilePathInfo } from "./types.js";
 
-export async function loadManyFiles(filenames: string[], tracer?: TracingContext) {
+export async function loadManyFiles(filenames: string[], span?: Span) {
   let replacement = "";
   for (const name of filenames) {
     const files = await glob(name);
-    tracer?.debug(`many-files parser. For glob "${name}", found ${files.length} files.`);
+    span?.debug(`many-files parser. For glob "${name}", found ${files.length} files.`);
     const replacements = await Promise.all(
       files.map(async (name) => {
         const c = await readFile(name, "utf-8");

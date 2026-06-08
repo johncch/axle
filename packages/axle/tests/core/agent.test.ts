@@ -7,6 +7,8 @@ import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { AgentMemory } from "../../src/memory/types.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
+import type { LogEntry, SpanData } from "../../src/observability/index.js";
+import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 
@@ -95,6 +97,78 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
 }
 
 describe("Agent", () => {
+  test("threads a span hierarchy through a send (agent.send → stream → turn)", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const starts: SpanData[] = [];
+    const ends: SpanData[] = [];
+    const tracer = new Tracer();
+    tracer.addWriter({
+      onSpanStart: (span) => starts.push({ ...span }),
+      onSpanEnd: (span) => ends.push({ ...span }),
+    });
+    const agent = new Agent({
+      provider,
+      model: "mock",
+      sessionId: "session-1",
+      observability: { trace: tracer },
+    });
+
+    await agent.send("Hi").final;
+
+    expect(starts.map((span) => span.name)).toEqual(["agent.send", "stream", "turn-1"]);
+    expect(ends.map((span) => span.name)).toEqual(["turn-1", "stream", "agent.send"]);
+
+    const [agentSend, streamSpan, turnSpan] = starts;
+    expect(agentSend.attributes).toMatchObject({ sessionId: "session-1" });
+    expect(agentSend.parentSpanId).toBeUndefined();
+    expect(streamSpan.parentSpanId).toBe(agentSend.spanId);
+    expect(turnSpan.parentSpanId).toBe(streamSpan.spanId);
+    expect(ends.every((span) => span.status === "ok")).toBe(true);
+  });
+
+  test("nests a send under a provided span (trace: Span)", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const starts: SpanData[] = [];
+    const tracer = new Tracer();
+    tracer.addWriter({
+      onSpanStart: (span) => starts.push({ ...span }),
+      onSpanEnd: () => {},
+    });
+    const job = tracer.startSpan("job", { type: "workflow" });
+
+    const agent = new Agent({
+      provider,
+      model: "mock",
+      observability: { trace: job },
+    });
+    await agent.send("Hi").final;
+    job.end();
+
+    const jobSpan = starts.find((span) => span.name === "job");
+    const agentSend = starts.find((span) => span.name === "agent.send");
+    expect(agentSend?.parentSpanId).toBe(jobSpan?.spanId);
+    expect(agentSend?.traceId).toBe(jobSpan?.traceId);
+  });
+
+  test("projects the agent.send completion with status and tokens", async () => {
+    const provider = createMockStreamProvider(["ok"]);
+    const entries: LogEntry[] = [];
+    const agent = new Agent({
+      provider,
+      model: "mock",
+      observability: { log: (entry) => entries.push(entry) },
+    });
+
+    await agent.send("Hi").final;
+
+    const send = entries.find((entry) => entry.message === "agent.send");
+    expect(send).toMatchObject({
+      level: "info",
+      fields: { type: "workflow", status: "ok", inputTokens: 10, outputTokens: 20 },
+    });
+    expect(typeof send?.fields?.durationMs).toBe("number");
+  });
+
   test("send metadata is stored on user messages and copied to user turns", async () => {
     const provider = createMockStreamProvider(["ok"]);
     const agent = new Agent({ provider, model: "mock" });
@@ -1112,31 +1186,27 @@ describe("Agent", () => {
       expect(result.response).toBe("ok");
     });
 
-    test("record() failure is logged via tracer", async () => {
+    test("record() failure is logged through observability", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const memory = createMockMemory({
         record: vi.fn().mockRejectedValue(new Error("disk full")),
       });
 
-      const tracer = {
-        warn: vi.fn(),
-        debug: vi.fn(),
-        info: vi.fn(),
-        error: vi.fn(),
-        startSpan: vi.fn().mockReturnValue(null),
-        end: vi.fn(),
-        setAttribute: vi.fn(),
-        setAttributes: vi.fn(),
-        setResult: vi.fn(),
-      };
-
-      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory, tracer });
+      const entries: LogEntry[] = [];
+      const agent = new Agent({
+        provider,
+        model: "mock",
+        name: "test-agent",
+        memory,
+        observability: { log: (entry) => entries.push(entry) },
+      });
       await agent.send("Hi").final;
 
-      expect(tracer.warn).toHaveBeenCalledWith(
-        "memory record failed",
-        expect.objectContaining({ error: "disk full" }),
-      );
+      const warn = entries.find((entry) => entry.message === "memory record failed");
+      expect(warn).toMatchObject({
+        level: "warn",
+        fields: { error: "disk full" },
+      });
     });
 
     test("record() is not called on error", async () => {

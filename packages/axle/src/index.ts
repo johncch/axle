@@ -10,6 +10,7 @@ export type {
   AgentResult,
   AgentSession,
   MaybePromise,
+  ObservabilityOptions,
   ProviderDefinition,
   ProviderToolDefinitionRef,
   ResolvedAgentDefinition,
@@ -40,6 +41,7 @@ export {
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
+export type { ChatCompletionsOptions } from "./providers/chatcompletions/provider.js";
 export { estimateContextUsage } from "./providers/context.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
 export type {
@@ -68,7 +70,6 @@ export type {
   ProviderOptions,
   ToolChoice,
 } from "./providers/types.js";
-export type { ChatCompletionsOptions } from "./providers/chatcompletions/provider.js";
 
 // Tools
 export { ToolRegistry } from "./tools/registry.js";
@@ -89,7 +90,6 @@ export type {
   Citation,
   CitationOutputSpan,
   CitationSource,
-  DocumentLocator,
   ContentPart,
   ContentPartCitation,
   ContentPartFile,
@@ -97,6 +97,7 @@ export type {
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
+  DocumentLocator,
   MessageMetadata,
   ThinkingContinuity,
   ToolResultPart,
@@ -131,16 +132,27 @@ export type {
 } from "./turns/types.js";
 
 // Tracer
-export { SimpleWriter, Tracer } from "./tracer/index.js";
+export { LogWriter, SimpleWriter, Tracer } from "./observability/index.js";
 export type {
   EventLevel,
+  LLMRequest,
+  LLMResponse,
+  LLMResult,
+  LogEntry,
+  LogFn,
   SimpleWriterOptions,
+  Span,
   SpanData,
+  SpanEvent,
   SpanOptions,
+  SpanResult,
+  SpanStatus,
   SpanType,
+  TokenUsage,
+  ToolResult,
   TraceWriter,
-  TracingContext,
-} from "./tracer/index.js";
+  TracerOptions,
+} from "./observability/index.js";
 export type { Stats } from "./types.js";
 
 // Memory

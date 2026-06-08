@@ -45,7 +45,7 @@ try {
         content: "success",
       };
     },
-    tracer: tracer.startSpan("stream"),
+    span: tracer.startSpan("stream"),
   });
 
   result.on((event) => {

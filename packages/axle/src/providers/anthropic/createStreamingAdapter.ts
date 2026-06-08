@@ -1,6 +1,7 @@
 import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
+import { truncateMiddle } from "../../utils/truncate.js";
 import { convertStopReason, normalizeAnthropicCitation } from "./utils.js";
 
 export function createAnthropicStreamingAdapter() {
@@ -236,7 +237,7 @@ export function createAnthropicStreamingAdapter() {
               });
             } catch (e) {
               throw new Error(
-                `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${buffer.argumentsBuffer}`,
+                `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${truncateMiddle(buffer.argumentsBuffer)}`,
               );
             }
             toolCallBuffers.delete(event.index);

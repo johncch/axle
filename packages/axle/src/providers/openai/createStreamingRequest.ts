@@ -32,7 +32,7 @@ export async function* createStreamingRequest(
     parallelToolCalls,
     providerOptions,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   if (stop !== undefined) {
     throw new Error("OpenAI Responses does not support normalized stop sequences");
@@ -71,7 +71,7 @@ export async function* createStreamingRequest(
       ...providerOptions,
     };
 
-    tracer?.debug("OpenAI ResponsesAPI streaming request", {
+    span?.debug("OpenAI ResponsesAPI streaming request", {
       request: redactResolvedFileValues(request),
     });
 
@@ -85,7 +85,7 @@ export async function* createStreamingRequest(
     }
   } catch (error) {
     if (signal?.aborted) return;
-    tracer?.error(error instanceof Error ? error.message : String(error));
+    span?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
       data: {

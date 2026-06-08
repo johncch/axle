@@ -44,7 +44,7 @@ export async function* createStreamingRequest(
     parallelToolCalls,
     providerOptions,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   const adapter = createStreamingAdapter();
 
@@ -58,7 +58,7 @@ export async function* createStreamingRequest(
     const chatProviderTools = prepareProviderTools(
       providerTools,
       providerToolVendor,
-      tracer?.warn.bind(tracer),
+      span?.warn.bind(span),
     );
     const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
@@ -82,7 +82,13 @@ export async function* createStreamingRequest(
       ...providerOptions,
     };
 
-    tracer?.debug("ChatCompletions streaming request", {
+    span?.debug("ChatCompletions request", {
+      model: requestBody.model,
+      messages: requestBody.messages.length,
+      tools: requestBody.tools?.length ?? 0,
+      stream: true,
+    });
+    span?.trace("ChatCompletions request body", {
       request: redactResolvedFileValues(requestBody),
     });
 
@@ -106,7 +112,7 @@ export async function* createStreamingRequest(
         timeoutMs,
         signal,
         onRetry: (info) =>
-          tracer?.debug("ChatCompletions streaming request retry", {
+          span?.warn("ChatCompletions streaming request retry", {
             attempt: info.attempt,
             maxRetries,
             timeoutMs,
@@ -153,7 +159,7 @@ export async function* createStreamingRequest(
         try {
           chunk = JSON.parse(data);
         } catch (e) {
-          tracer?.error("Error parsing ChatCompletions stream chunk", {
+          span?.error("Error parsing ChatCompletions stream chunk", {
             error: e instanceof Error ? e.message : String(e),
             line: trimmed,
           });
@@ -186,7 +192,7 @@ export async function* createStreamingRequest(
     }
   } catch (error) {
     if (signal?.aborted) return;
-    tracer?.error("Error in ChatCompletions streaming request", {
+    span?.error("Error in ChatCompletions streaming request", {
       error: error instanceof Error ? error.message : String(error),
     });
     yield {

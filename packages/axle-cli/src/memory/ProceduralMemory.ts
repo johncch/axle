@@ -61,7 +61,7 @@ export class ProceduralMemory implements AgentMemory {
   }
 
   async recall(context: MemoryContext): Promise<RecallResult> {
-    const span = context.tracer?.startSpan("memory.recall", { type: "internal" });
+    const span = context.span?.startSpan("memory.recall", { type: "internal" });
 
     this.lastAgentName = context.agentName;
 
@@ -87,7 +87,7 @@ export class ProceduralMemory implements AgentMemory {
       return;
     }
 
-    const span = context.tracer?.startSpan("memory.record", { type: "internal" });
+    const span = context.span?.startSpan("memory.record", { type: "internal" });
 
     const conversationText = this.formatMessages(context.newMessages);
     if (!conversationText.trim()) {
@@ -102,7 +102,7 @@ export class ProceduralMemory implements AgentMemory {
       model: this.model,
       messages: [{ role: "user", content: conversationText }],
       system: EXTRACTION_SYSTEM,
-      tracer: extractSpan,
+      span: extractSpan,
     });
 
     if (!result.ok) {

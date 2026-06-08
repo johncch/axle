@@ -6,7 +6,7 @@ import {
   ContentPartToolCall,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { TracingContext } from "../../tracer/types.js";
+import type { Span } from "../../observability/types.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { withUsageDetails } from "../../utils/stats.js";
@@ -42,7 +42,7 @@ export async function createGenerationRequest(
     providerOptions,
     signal,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   const googleOptions: Record<string, any> = {
     // Axle-normalized options.
@@ -76,7 +76,7 @@ export async function createGenerationRequest(
       contents,
       config,
     };
-    tracer?.debug("Gemini request", { request: redactResolvedFileValues(request) });
+    span?.debug("Gemini request", { request: redactResolvedFileValues(request) });
 
     const response = await raceWithSignal(
       client.models.generateContent({
@@ -87,22 +87,22 @@ export async function createGenerationRequest(
       "Generate aborted",
     );
     throwIfAborted(signal, "Generate aborted");
-    result = fromModelResponse(response, { tracer });
+    result = fromModelResponse(response, { span: span });
   } catch (e) {
     throwIfAborted(signal, "Generate aborted");
-    tracer?.error(e instanceof Error ? e.message : String(e));
+    span?.error(e instanceof Error ? e.message : String(e));
     result = getUndefinedError(e);
   }
 
-  tracer?.debug("Gemini response", { result });
+  span?.debug("Gemini response", { result });
   return result;
 }
 
 export function fromModelResponse(
   response: GenerateContentResponse,
-  context: { tracer?: TracingContext },
+  context: { span?: Span },
 ): ModelResult {
-  const { tracer } = context;
+  const { span } = context;
 
   const inTokens = response.usageMetadata?.promptTokenCount ?? 0;
   const totalTokens = response.usageMetadata?.totalTokenCount ?? inTokens;
@@ -152,7 +152,7 @@ export function fromModelResponse(
   }
 
   if (response.candidates.length > 1) {
-    tracer?.warn(`We received ${response.candidates.length} response candidates`);
+    span?.warn(`We received ${response.candidates.length} response candidates`);
   }
 
   const candidate = response.candidates[0];
@@ -170,7 +170,12 @@ export function fromModelResponse(
           type: "thinking" as const,
           summary: part.text,
           ...(part.thoughtSignature
-            ? { continuity: { provider: "gemini" as const, thoughtSignature: part.thoughtSignature } }
+            ? {
+                continuity: {
+                  provider: "gemini" as const,
+                  thoughtSignature: part.thoughtSignature,
+                },
+              }
             : {}),
         });
       } else {
@@ -265,7 +270,10 @@ function pushTextPart(
   content.push(part);
 }
 
-function normalizeGeminiCitations(candidate: NonNullable<GenerateContentResponse["candidates"]>[number], partIndex: number): Citation[] {
+function normalizeGeminiCitations(
+  candidate: NonNullable<GenerateContentResponse["candidates"]>[number],
+  partIndex: number,
+): Citation[] {
   const citations: Citation[] = [];
   const groundingMetadata = candidate.groundingMetadata;
   const chunks = groundingMetadata?.groundingChunks ?? [];
@@ -353,6 +361,10 @@ function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
   return {
     source: { type: "unknown" },
     outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
-    providerMetadata: { chunk, outputText: segment?.text, confidenceScores: support.confidenceScores },
+    providerMetadata: {
+      chunk,
+      outputText: segment?.text,
+      confidenceScores: support.confidenceScores,
+    },
   };
 }

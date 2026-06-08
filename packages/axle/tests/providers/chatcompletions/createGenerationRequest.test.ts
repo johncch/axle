@@ -172,20 +172,20 @@ describe("createGenerationRequest", () => {
     });
 
     test("drops provider tools and warns without a provider tool vendor", async () => {
-      const tracer = makeTracer();
+      const span = makeSpan();
       (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
 
       await createGenerationRequest({
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        runtime: { tracer },
+        runtime: { span },
         providerTools: [{ type: "provider", name: "web_search" }],
       });
 
       const body = JSON.parse((fetch as any).mock.calls[0][1].body);
       expect(body.tools).toBeUndefined();
-      expect(tracer.warn).toHaveBeenCalledWith(
+      expect(span.warn).toHaveBeenCalledWith(
         "providerTools not supported by ChatCompletions provider",
       );
     });
@@ -222,14 +222,14 @@ describe("createGenerationRequest", () => {
     });
 
     test("drops unknown OpenRouter provider tools and warns", async () => {
-      const tracer = makeTracer();
+      const span = makeSpan();
       (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
 
       await createGenerationRequest({
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        runtime: { tracer },
+        runtime: { span },
         providerToolVendor: "openrouter",
         providerTools: [
           { type: "provider", name: "unknown_tool" },
@@ -239,7 +239,7 @@ describe("createGenerationRequest", () => {
 
       const body = JSON.parse((fetch as any).mock.calls[0][1].body);
       expect(body.tools).toEqual([{ type: "openrouter:web_search" }]);
-      expect(tracer.warn).toHaveBeenCalledWith(
+      expect(span.warn).toHaveBeenCalledWith(
         "providerTool not supported by ChatCompletions provider vendor",
         { vendor: "openrouter", name: "unknown_tool" },
       );
@@ -714,8 +714,9 @@ function makeErrorResponse(status: number, text: string, headers: Record<string,
   };
 }
 
-function makeTracer() {
+function makeSpan() {
   return {
+    trace: vi.fn(),
     debug: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),

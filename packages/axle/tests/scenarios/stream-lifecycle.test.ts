@@ -41,7 +41,7 @@ describe("stream() happy paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     const result = await handle.final;
@@ -119,7 +119,7 @@ describe("stream() happy paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
       onToolCall: async () => ({ type: "success", content: "search results" }),
     });
 
@@ -211,7 +211,7 @@ describe("stream() happy paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
       onToolCall: async () => ({ type: "success", content: "ok" }),
     });
 
@@ -269,7 +269,7 @@ describe("stream() happy paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     const result = await handle.final;
@@ -304,7 +304,7 @@ describe("stream() error paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     const result = await handle.final;
@@ -352,7 +352,7 @@ describe("stream() error paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     const result = await handle.final;
@@ -385,7 +385,7 @@ describe("stream() error paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     const result = await handle.final;
@@ -422,7 +422,7 @@ describe("stream() error paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
       maxIterations: 1,
       onToolCall: async () => ({ type: "success", content: "result" }),
     });
@@ -462,7 +462,7 @@ describe("stream() error paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     await expect(handle.final).rejects.toThrow("Connection refused");
@@ -501,7 +501,7 @@ describe("stream() cancellation paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     // Deterministic: stream() defers run() via Promise.resolve().then(),
@@ -533,7 +533,7 @@ describe("stream() cancellation paths", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
     });
 
     // Wait until the generator has actually paused at the gate
@@ -576,7 +576,7 @@ describe("stream() tool span details", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
       // Return null → tool not found
       onToolCall: async () => null,
     });
@@ -623,7 +623,7 @@ describe("stream() tool span details", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
       onToolCall: async () => ({
         type: "error",
         error: { type: "validation", message: "Invalid input" },
@@ -666,7 +666,7 @@ describe("stream() tool span details", () => {
       provider,
       model: "test-model",
       messages: [],
-      tracer: rootSpan,
+      span: rootSpan,
       onToolCall: async () => {
         throw new Error("Unexpected crash");
       },

@@ -4,7 +4,7 @@ Tests verifying the tracer span lifecycle for `stream()` and `generate()`.
 
 ## Span Lifecycle Model
 
-Both `stream()` and `generate()` create a tree of spans when given a `tracer` (TracingContext):
+Both `stream()` and `generate()` create a tree of spans when given a `tracer` (Span):
 
 ```
 root span (passed in by caller)

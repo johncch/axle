@@ -3,10 +3,11 @@ import { marked, type Token, type Tokens } from "marked";
 import type { EventLevel, SpanData, SpanEvent, TraceWriter } from "../types.js";
 
 const levelOrder: Record<EventLevel, number> = {
-  debug: 0,
-  info: 1,
-  warn: 2,
-  error: 3,
+  trace: 0,
+  debug: 1,
+  info: 2,
+  warn: 3,
+  error: 4,
 };
 
 export interface SimpleWriterOptions {

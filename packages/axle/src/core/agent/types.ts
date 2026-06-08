@@ -1,10 +1,12 @@
 import type { MCP, MCPConfig } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
 import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
+import type { LogFn } from "../../observability/log.js";
+import type { Tracer } from "../../observability/tracer.js";
+import type { EventLevel, Span } from "../../observability/types.js";
 import type { GenerateError } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
 import type { TurnEvent } from "../../turns/events.js";
 import type { Annotation, Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
@@ -37,10 +39,28 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   mcps?: MCP[];
   /** Optional memory implementation. */
   memory?: AgentMemory;
-  /** Optional tracing context. */
-  tracer?: TracingContext;
+  /** Observability: structured logging and optional span tracing. */
+  observability?: ObservabilityOptions;
   /** Optional file resolver for request file references. */
   fileResolver?: FileResolver;
+}
+
+/**
+ * Observability configuration for an `Agent`.
+ *
+ * Provide `log` for a structured, level-filtered log sink (the common case);
+ * Axle creates and owns a tracer behind the scenes. Provide `trace` to bring
+ * your own — a `Tracer` (each send is its own root) or a `Span` (sends nest
+ * under it); Axle attaches its spans but never ends or flushes what you pass.
+ * `level` governs only the tracer Axle creates from `log`.
+ */
+export interface ObservabilityOptions {
+  /** Minimum level emitted. Default "info"; use "debug" in development. */
+  level?: EventLevel;
+  /** Structured log sink. Axle creates and owns a tracer when `trace` is absent. */
+  log?: LogFn;
+  /** Bring your own: a Tracer (per-send roots) or a Span to nest sends under. */
+  trace?: Tracer | Span;
 }
 
 /**

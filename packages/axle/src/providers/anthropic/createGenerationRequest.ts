@@ -37,7 +37,7 @@ export async function createGenerationRequest(
     providerOptions,
     signal,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   let result: ModelResult;
   try {
@@ -71,7 +71,7 @@ export async function createGenerationRequest(
       // Raw provider options are applied last so they can override Axle mappings.
       ...providerOptions,
     };
-    tracer?.debug("Anthropic request", { request: redactResolvedFileValues(request) });
+    span?.debug("Anthropic request", { request: redactResolvedFileValues(request) });
 
     const completion = await raceWithSignal(
       client.messages.create(request, ...(signal ? [{ signal }] : [])),
@@ -85,7 +85,7 @@ export async function createGenerationRequest(
     result = getUndefinedError(e);
   }
 
-  tracer?.debug("Anthropic response", { result });
+  span?.debug("Anthropic response", { result });
   return result;
 }
 

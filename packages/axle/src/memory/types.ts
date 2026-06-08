@@ -1,6 +1,6 @@
 import type { AxleMessage } from "../messages/message.js";
+import type { Span } from "../observability/types.js";
 import type { ExecutableTool } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
 
 export interface MemoryContext {
   /** Optional agent name provided by the host. */
@@ -14,7 +14,7 @@ export interface MemoryContext {
   /** Newly produced messages to record after a turn completes. */
   newMessages?: AxleMessage[];
   /** Optional tracing context. */
-  tracer?: TracingContext;
+  span?: Span;
 }
 
 export interface RecallResult {

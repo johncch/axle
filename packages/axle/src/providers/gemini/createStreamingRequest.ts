@@ -32,7 +32,7 @@ export async function* createStreamingRequest(
     parallelToolCalls,
     providerOptions,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   const googleOptions: Record<string, any> = {
     // Axle-normalized options.
@@ -65,7 +65,7 @@ export async function* createStreamingRequest(
       contents,
       config,
     };
-    tracer?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
+    span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
 
     const stream = await client.models.generateContentStream({
       model,
@@ -80,7 +80,7 @@ export async function* createStreamingRequest(
     }
   } catch (error) {
     if (signal?.aborted) return;
-    tracer?.error(error instanceof Error ? error.message : String(error));
+    span?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
       data: {

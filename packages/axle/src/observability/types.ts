@@ -1,6 +1,6 @@
-export type SpanStatus = "ok" | "error";
+export type SpanStatus = "ok" | "error" | "cancelled";
 
-export type EventLevel = "debug" | "info" | "warn" | "error";
+export type EventLevel = "trace" | "debug" | "info" | "warn" | "error";
 
 // Open string for span types - these are conventions, not enforced
 // Common types: "workflow", "llm", "tool", "action", "internal"
@@ -29,6 +29,7 @@ export interface SpanData {
 
 export interface SpanOptions {
   type?: SpanType;
+  attributes?: Record<string, unknown>;
 }
 
 // Discriminated union for typed results
@@ -82,10 +83,11 @@ export interface TraceWriter {
  * Tracing context for a span. Created by Tracer.startSpan().
  * Can create child spans and log events within the span's scope.
  */
-export interface TracingContext {
-  startSpan(name: string, options?: SpanOptions): TracingContext;
+export interface Span {
+  startSpan(name: string, options?: SpanOptions): Span;
   end(status?: SpanStatus): void;
 
+  trace(message: string, attributes?: Record<string, unknown>): void;
   debug(message: string, attributes?: Record<string, unknown>): void;
   info(message: string, attributes?: Record<string, unknown>): void;
   warn(message: string, attributes?: Record<string, unknown>): void;

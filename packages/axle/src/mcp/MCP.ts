@@ -1,8 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Span } from "../observability/types.js";
 import type { ExecutableTool, ToolDefinition } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
 import { createMcpToolDefinitions, createMcpTools } from "./tools.js";
 
 export interface MCPStdioConfig {
@@ -47,10 +47,10 @@ export class MCP {
     return this._connected;
   }
 
-  async connect(options?: { tracer?: TracingContext; signal?: AbortSignal }): Promise<void> {
+  async connect(options?: { span?: Span; signal?: AbortSignal }): Promise<void> {
     if (this._connected) return;
 
-    const span = options?.tracer?.startSpan("mcp:connect", { type: "internal" });
+    const span = options?.span?.startSpan("mcp:connect", { type: "internal" });
 
     this.client = new Client({ name: "axle", version: "1.0.0" });
 
@@ -78,21 +78,21 @@ export class MCP {
 
   async listTools(options?: {
     prefix?: string;
-    tracer?: TracingContext;
+    span?: Span;
     signal?: AbortSignal;
   }): Promise<ExecutableTool[]> {
     const client = this.assertConnected();
-    const mcpTools = await this.fetchTools(client, options?.tracer, options?.signal);
+    const mcpTools = await this.fetchTools(client, options?.span, options?.signal);
     return createMcpTools(mcpTools, client, options?.prefix);
   }
 
   async listToolDefinitions(options?: {
     prefix?: string;
-    tracer?: TracingContext;
+    span?: Span;
     signal?: AbortSignal;
   }): Promise<ToolDefinition[]> {
     const client = this.assertConnected();
-    const mcpTools = await this.fetchTools(client, options?.tracer, options?.signal);
+    const mcpTools = await this.fetchTools(client, options?.span, options?.signal);
     return createMcpToolDefinitions(mcpTools, options?.prefix);
   }
 
@@ -102,9 +102,9 @@ export class MCP {
     return this.listTools();
   }
 
-  async close(options?: { tracer?: TracingContext }): Promise<void> {
+  async close(options?: { span?: Span }): Promise<void> {
     if (!this._connected) return;
-    options?.tracer?.debug("mcp:close");
+    options?.span?.debug("mcp:close");
     await this.client?.close();
     this._connected = false;
     this.client = undefined;
@@ -114,12 +114,12 @@ export class MCP {
 
   private async fetchTools(
     client: Client,
-    tracer?: TracingContext,
+    span?: Span,
     signal?: AbortSignal,
   ): Promise<McpToolInfo[]> {
     if (this.cachedMcpTools) return this.cachedMcpTools;
 
-    tracer?.debug("mcp:listTools");
+    span?.debug("mcp:listTools");
     const result = await client.listTools(undefined, { signal });
     this.cachedMcpTools = result.tools.map((tool) => ({
       name: tool.name,

@@ -6,9 +6,9 @@ import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import { getToolCalls } from "../messages/utils.js";
+import type { Span } from "../observability/types.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import { throwIfAborted } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
@@ -18,6 +18,7 @@ import {
   appendUsage,
   executeToolCalls,
   GenerateResult,
+  logTurnContent,
   resolveToolRegistry,
   ToolCallCallback,
 } from "./helpers.js";
@@ -41,7 +42,7 @@ export interface GenerateParams extends AxleModelRequestOptions {
   registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
-  tracer?: TracingContext;
+  span?: Span;
   fileResolver?: FileResolver;
 }
 
@@ -101,7 +102,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
     system,
     onToolCall,
     maxIterations,
-    tracer,
+    span,
     fileResolver,
     reasoning,
     maxOutputTokens,
@@ -127,7 +128,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
   };
 
   const endWithResult = (result: GenerateResult): GenerateResult => {
-    tracer?.setResult({
+    span?.setResult({
       kind: "llm",
       model,
       request: { messages },
@@ -135,11 +136,11 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
       usage: toTokenUsage(result.usage),
       finishReason: result.ok ? result.final.finishReason : undefined,
     });
-    tracer?.end(result.ok ? "ok" : "error");
+    span?.end(result.ok ? "ok" : "error");
     return result;
   };
 
-  const setTurnResult = (turnSpan: TracingContext | undefined, response: ModelResult): void => {
+  const setTurnResult = (turnSpan: Span | undefined, response: ModelResult): void => {
     if (!turnSpan || response.type === "error") {
       turnSpan?.end("error");
       return;
@@ -178,7 +179,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
       }
 
       iterations += 1;
-      const turnSpan = tracer?.startSpan(`turn-${iterations}`, { type: "llm" });
+      const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
 
       const executable = registry.executable();
       const tools =
@@ -195,7 +196,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
           system,
           tools,
           providerTools: providerTools.length > 0 ? providerTools : undefined,
-          tracer: turnSpan,
+          span: turnSpan,
           fileResolver,
           reasoning,
           maxOutputTokens,
@@ -217,6 +218,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
       }
 
       appendUsage(usage, response);
+      if (response.type !== "error") logTurnContent(turnSpan, response.content);
       setTurnResult(turnSpan, response);
 
       if (response.type === "error") {
@@ -259,7 +261,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
         });
       }
 
-      const { results } = await executeToolCalls(toolCalls, onToolCall, signal, registry, tracer);
+      const { results } = await executeToolCalls(toolCalls, onToolCall, signal, registry, span);
       throwIfAborted(signal, "Generate aborted");
       if (results.length > 0) {
         addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
@@ -267,7 +269,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
     }
   } catch (error) {
     if (error instanceof AxleToolFatalError) {
-      tracer?.end("error");
+      span?.end("error");
       throw new AxleToolFatalError(error.message, {
         toolName: error.toolName,
         messages: error.messages ?? newMessages,
@@ -277,7 +279,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
       });
     }
     if (error instanceof AxleAbortError) {
-      tracer?.end("ok");
+      span?.end("ok");
       throw new AxleAbortError("Generate aborted", {
         reason: error.reason,
         messages: error.messages ?? newMessages,
@@ -286,7 +288,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
       });
     }
     if (error instanceof Error && error.name === "AbortError") {
-      tracer?.end("ok");
+      span?.end("ok");
       throw new AxleAbortError("Generate aborted", {
         reason: signal.reason,
         messages: newMessages,

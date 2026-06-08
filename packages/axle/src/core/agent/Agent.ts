@@ -4,13 +4,16 @@ import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import type { MCP } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
+import { getTextContent } from "../../messages/utils.js";
+import { logContent } from "../../observability/log.js";
+import type { Tracer } from "../../observability/tracer.js";
+import type { Span, SpanStatus } from "../../observability/types.js";
 import { estimateContextUsage } from "../../providers/context.js";
 import type { StreamResult } from "../../providers/helpers.js";
 import { stream } from "../../providers/stream.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
-import type { TracingContext } from "../../tracer/types.js";
 import { TurnAccumulator } from "../../turns/accumulator.js";
 import { TurnEventBuilder } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
@@ -23,6 +26,7 @@ import { Instruct } from "../Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../parse.js";
 import { compileUserTurn, type CompiledUserTurn } from "../userTurn.js";
 import { History } from "./history.js";
+import { resolveObservability, spanStatusFromError } from "./observability.js";
 import type {
   AgentConfig,
   AgentErrorResult,
@@ -51,7 +55,6 @@ export class Agent {
   readonly provider: AIProvider;
   readonly model: string;
   readonly history: History;
-  readonly tracer?: TracingContext;
   readonly name?: string;
   readonly fileResolver?: FileResolver;
   readonly requestOptions: Omit<AxleModelRequestOptions, "signal">;
@@ -63,6 +66,8 @@ export class Agent {
   private mcps: MCP[] = [];
   private resolvedMcps = new WeakSet<MCP>();
   private memory?: AgentMemory;
+  private spanParent?: Tracer | Span;
+  private ownedTracer?: Tracer;
 
   private eventCallbacks: TurnEventCallback[] = [];
   private sendQueue: Promise<void> = Promise.resolve();
@@ -78,7 +83,9 @@ export class Agent {
     this.model = config.model;
     this.sessionId = config.sessionId ?? crypto.randomUUID();
     this.history = new History();
-    this.tracer = config.tracer;
+    const observability = resolveObservability(config.observability);
+    this.spanParent = observability.parent;
+    this.ownedTracer = observability.owned;
     this.system = config.system;
     this.name = config.name;
     this.fileResolver = config.fileResolver;
@@ -180,19 +187,49 @@ export class Agent {
     const userTurn = compileUserTurn(messageOrInstruct, { metadata });
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
 
-    const { handle, settled } = createHandle(
-      this.sendQueue,
-      (signal) => this.run(userTurn, signal, fileResolver, requestOptions),
-      modelOptions.signal,
-    );
+    const work = async (signal: AbortSignal) => {
+      const root = this.spanParent?.startSpan("agent.send", {
+        type: "workflow",
+        attributes: {
+          sessionId: this.sessionId,
+          ...(this.name ? { agentName: this.name } : {}),
+        },
+      });
+      logContent(root, "message", getTextContent(userTurn.message.content));
+      let status: SpanStatus = "ok";
+
+      try {
+        const result = await this.run(userTurn, {
+          signal,
+          fileResolver,
+          requestOptions,
+          span: root,
+        });
+        if (!result.ok) status = "error";
+        root?.setAttributes({
+          inputTokens: result.usage.in,
+          outputTokens: result.usage.out,
+        });
+        return result;
+      } catch (error) {
+        status = spanStatusFromError(error);
+        root?.error(error instanceof Error ? error.message : String(error));
+        throw error;
+      } finally {
+        root?.end(status);
+        await this.ownedTracer?.flush();
+      }
+    };
+
+    const { handle, settled } = createHandle(this.sendQueue, work, modelOptions.signal);
     this.sendQueue = settled;
     return handle;
   }
 
-  private async resolveMcpTools(signal: AbortSignal): Promise<void> {
+  private async resolveMcpTools(signal: AbortSignal, span?: Span): Promise<void> {
     for (const mcp of this.mcps) {
       if (this.resolvedMcps.has(mcp)) continue;
-      const tools = await mcp.listTools({ prefix: mcp.name, tracer: this.tracer, signal });
+      const tools = await mcp.listTools({ prefix: mcp.name, span: span, signal });
       this.registry.addMcp(tools);
       this.resolvedMcps.add(mcp);
     }
@@ -212,10 +249,15 @@ export class Agent {
 
   private async run(
     userTurn: CompiledUserTurn<any>,
-    signal: AbortSignal,
-    sendFileResolver?: FileResolver,
-    requestOptions?: AxleModelRequestOptions,
+    runtime: {
+      signal: AbortSignal;
+      fileResolver?: FileResolver;
+      requestOptions?: AxleModelRequestOptions;
+      span?: Span;
+    },
   ): Promise<AgentResult<any> | AgentErrorResult> {
+    const { signal, fileResolver: sendFileResolver, requestOptions } = runtime;
+    const span = runtime.span;
     const turnEventBuilder = new TurnEventBuilder();
     const turnAccumulator = new TurnAccumulator({
       turns: this.history.turns,
@@ -242,7 +284,7 @@ export class Agent {
     }
 
     try {
-      await this.resolveMcpTools(signal);
+      await this.resolveMcpTools(signal, span);
     } catch (error) {
       if (
         signal.aborted ||
@@ -265,7 +307,7 @@ export class Agent {
         sessionId: this.sessionId,
         system: this.system,
         messages: requestMessages,
-        tracer: this.tracer,
+        span: span,
       });
       if (recallResult.systemSuffix) {
         effectiveSystem = (effectiveSystem ?? "") + "\n\n" + recallResult.systemSuffix;
@@ -289,6 +331,7 @@ export class Agent {
     agentTurnId = startEvent.turnId;
     applyTurnEvent(startEvent);
 
+    const streamSpan = span?.startSpan("stream", { type: "internal" }) ?? undefined;
     const { signal: _requestSignal, ...streamRequestOptions } = requestOptions ?? {};
     const streamHandle = stream({
       provider: this.provider,
@@ -296,7 +339,7 @@ export class Agent {
       messages: requestMessages,
       system: effectiveSystem,
       registry: this.registry,
-      tracer: this.tracer,
+      span: streamSpan,
       fileResolver: sendFileResolver ?? this.fileResolver,
       ...streamRequestOptions,
       signal,
@@ -323,9 +366,12 @@ export class Agent {
     });
 
     let streamResult: StreamResult;
+    let streamSpanStatus: SpanStatus = "ok";
     try {
       streamResult = await streamHandle.final;
+      if (!streamResult.ok) streamSpanStatus = "error";
     } catch (error) {
+      streamSpanStatus = spanStatusFromError(error);
       if (error instanceof AxleToolFatalError) {
         if (error.messages && error.messages.length > 0) {
           this.history.appendToLog(error.messages);
@@ -359,9 +405,14 @@ export class Agent {
         });
       }
       throw error;
+    } finally {
+      streamSpan?.end(streamSpanStatus);
     }
 
     const outcome = streamResult.ok ? "complete" : "error";
+    if (streamResult.ok && streamResult.final?.finishReason) {
+      span?.setAttribute("finishReason", streamResult.final.finishReason);
+    }
 
     if (streamResult.messages.length > 0) {
       this.history.appendToLog(streamResult.messages);
@@ -410,10 +461,10 @@ export class Agent {
           system: this.system,
           messages: this.history.log,
           newMessages: streamResult.messages,
-          tracer: this.tracer,
+          span: span,
         });
       } catch (e) {
-        this.tracer?.warn("memory record failed", {
+        span?.warn("memory record failed", {
           error: e instanceof Error ? e.message : String(e),
         });
       }

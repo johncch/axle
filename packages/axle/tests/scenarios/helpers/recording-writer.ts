@@ -1,5 +1,5 @@
-import { Tracer } from "../../../src/tracer/tracer.js";
-import type { SpanData, SpanStatus, TraceWriter } from "../../../src/tracer/types.js";
+import { Tracer } from "../../../src/observability/tracer.js";
+import type { SpanData, SpanStatus, TraceWriter } from "../../../src/observability/types.js";
 
 export type LifecycleEvent =
   | { type: "span:start"; name: string; spanId: string; parentSpanId?: string; spanType?: string }

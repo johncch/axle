@@ -1,4 +1,4 @@
-import type { TracingContext } from "@fifthrevision/axle";
+import type { Span } from "@fifthrevision/axle";
 import { config as loadDotenv } from "dotenv";
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
@@ -9,10 +9,10 @@ import { JobConfig, JobConfigSchema, ServiceConfig } from "./schemas.js";
 export async function getJobConfig(
   path: string,
   context: {
-    tracer?: TracingContext;
+    span?: Span;
   },
 ): Promise<JobConfig> {
-  const { tracer } = context;
+  const { span } = context;
   const format = extname(path).slice(1);
   if (format !== "yaml" && format !== "yml") {
     throw new Error("Invalid job file format. Expected .yaml or .yml");
@@ -26,7 +26,7 @@ export async function getJobConfig(
   }
 
   const result = YAML.parse(content);
-  tracer?.debug("Job config: " + JSON.stringify(result, null, 2));
+  span?.debug("Job config: " + JSON.stringify(result, null, 2));
 
   const parsed = JobConfigSchema.safeParse(result);
   if (!parsed.success) {
@@ -40,14 +40,12 @@ export async function getJobConfig(
   return parsed.data;
 }
 
-export async function getServiceConfig(context: {
-  tracer?: TracingContext;
-}): Promise<ServiceConfig> {
-  const { tracer } = context;
+export async function getServiceConfig(context: { span?: Span }): Promise<ServiceConfig> {
+  const { span } = context;
   loadDotenv({ quiet: true });
 
   const envConfig = getEnvServiceConfig();
-  tracer?.debug("Service config: " + JSON.stringify(redactConfig(envConfig), null, 2));
+  span?.debug("Service config: " + JSON.stringify(redactConfig(envConfig), null, 2));
   return envConfig;
 }
 

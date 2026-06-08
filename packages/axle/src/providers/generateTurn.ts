@@ -1,6 +1,6 @@
 import { AxleMessage } from "../messages/message.js";
+import type { Span } from "../observability/types.js";
 import type { ProviderTool, ToolDefinition } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
 import type { FileResolver } from "../utils/file.js";
 import { AIProvider, AxleModelRequestOptions, ModelResult } from "./types.js";
 
@@ -11,7 +11,7 @@ interface GenerateTurnParams extends AxleModelRequestOptions {
   system?: string;
   tools?: Array<ToolDefinition>;
   providerTools?: Array<ProviderTool>;
-  tracer?: TracingContext;
+  span?: Span;
   fileResolver?: FileResolver;
 }
 
@@ -23,7 +23,7 @@ export async function generateTurn(props: GenerateTurnParams): Promise<ModelResu
     system,
     tools,
     providerTools,
-    tracer,
+    span,
     fileResolver,
     ...requestOptions
   } = props;
@@ -32,7 +32,7 @@ export async function generateTurn(props: GenerateTurnParams): Promise<ModelResu
     system,
     tools,
     providerTools,
-    runtime: { tracer, fileResolver },
+    runtime: { span, fileResolver },
     ...requestOptions,
   });
 }

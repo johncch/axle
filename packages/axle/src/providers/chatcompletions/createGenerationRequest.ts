@@ -1,8 +1,8 @@
 import {
+  ContentPartCitation,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-  ContentPartCitation,
 } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
@@ -17,9 +17,9 @@ import {
   convertFinishReason,
   convertTools,
   prepareProviderTools,
-  type ChatCompletionsProviderToolVendor,
   toChatCompletionsToolChoice,
   toReasoningEffort,
+  type ChatCompletionsProviderToolVendor,
 } from "./utils.js";
 import {
   isOpenRouterTextAnchoredCitation,
@@ -57,7 +57,7 @@ export async function createGenerationRequest(
     providerOptions,
     signal,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   let result: ModelResult;
   try {
@@ -72,7 +72,7 @@ export async function createGenerationRequest(
     const chatProviderTools = prepareProviderTools(
       providerTools,
       providerToolVendor,
-      tracer?.warn.bind(tracer),
+      span?.warn.bind(span),
     );
     const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
@@ -94,7 +94,14 @@ export async function createGenerationRequest(
       ...providerOptions,
     };
 
-    tracer?.debug("ChatCompletions request", { request: redactResolvedFileValues(requestBody) });
+    span?.debug("ChatCompletions request", {
+      model: requestBody.model,
+      messages: requestBody.messages.length,
+      tools: requestBody.tools?.length ?? 0,
+    });
+    span?.trace("ChatCompletions request body", {
+      request: redactResolvedFileValues(requestBody),
+    });
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -116,7 +123,7 @@ export async function createGenerationRequest(
         timeoutMs,
         signal,
         onRetry: (info) =>
-          tracer?.debug("ChatCompletions request retry", {
+          span?.warn("ChatCompletions request retry", {
             attempt: info.attempt,
             maxRetries,
             timeoutMs,
@@ -143,13 +150,13 @@ export async function createGenerationRequest(
     result = fromModelResponse(data);
   } catch (e) {
     throwIfAborted(signal, "Generate aborted");
-    tracer?.error("Error fetching ChatCompletions response", {
+    span?.error("Error fetching ChatCompletions response", {
       error: e instanceof Error ? e.message : String(e),
     });
     result = getUndefinedError(e);
   }
 
-  tracer?.debug("ChatCompletions response", { result });
+  span?.trace("ChatCompletions response", { result });
   return result;
 }
 

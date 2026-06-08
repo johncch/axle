@@ -5,12 +5,22 @@ import type {
   AxleAssistantMessage,
   AxleMessage,
   AxleToolCallResult,
+  Citation,
+  CitationSource,
+  ContentPart,
   ContentPartToolCall,
   ToolResultPart,
 } from "../messages/message.js";
+import {
+  getCitations,
+  getProviderTools,
+  getTextContent,
+  getThinkingContent,
+} from "../messages/utils.js";
+import { logContent } from "../observability/log.js";
+import type { Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import type { ExecutableTool, ProviderTool, ToolContext } from "../tools/types.js";
-import type { TracingContext } from "../tracer/types.js";
 import type { Stats } from "../types.js";
 import { addStats } from "../utils/stats.js";
 import type { ModelError, ModelResult } from "./types.js";
@@ -56,6 +66,70 @@ export function appendUsage(total: Stats, result: ModelResult): void {
   addStats(total, result.usage);
 }
 
+// Logs a turn's content (text/thinking/provider-tools/citations) onto its span,
+// so the streaming and non-streaming paths surface identical detail.
+export function logTurnContent(span: Span | undefined, content: ContentPart[]): void {
+  if (!span) return;
+  logContent(span, "text", getTextContent(content));
+  const thinking = getThinkingContent(content);
+  if (thinking) span.debug("thinking", { thinking });
+  for (const tool of getProviderTools(content)) {
+    span.info(tool.name, { type: "provider-tool", input: tool.input });
+    if (tool.output !== undefined) {
+      span.trace(tool.name, { type: "provider-tool", output: tool.output });
+    }
+  }
+  logCitations(span, getCitations(content));
+}
+
+const CITATION_PREVIEW = 8;
+
+function logCitations(span: Span, citations: Citation[]): void {
+  if (citations.length === 0) return;
+  const sources = uniqueSources(citations);
+  span.info("citations", {
+    count: citations.length,
+    sources: sources.slice(0, CITATION_PREVIEW),
+    ...(sources.length > CITATION_PREVIEW ? { more: sources.length - CITATION_PREVIEW } : {}),
+  });
+  if (sources.length > CITATION_PREVIEW) span.debug("citations", { sources });
+  span.setAttribute("citationCount", citations.length);
+}
+
+function uniqueSources(
+  citations: Citation[],
+): Array<{ type: string; title?: string; url?: string }> {
+  const seen = new Set<string>();
+  const sources: Array<{ type: string; title?: string; url?: string }> = [];
+  for (const { source } of citations) {
+    const url = sourceUrl(source);
+    const title = "title" in source ? source.title : undefined;
+    const key = url ?? title ?? source.type;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sources.push({
+      type: source.type,
+      ...(title ? { title } : {}),
+      ...(url ? { url } : {}),
+    });
+  }
+  return sources;
+}
+
+function sourceUrl(source: CitationSource): string | undefined {
+  switch (source.type) {
+    case "web":
+    case "search-result":
+      return source.url;
+    case "retrieved-context":
+      return source.uri;
+    case "document":
+      return source.fileId;
+    default:
+      return undefined;
+  }
+}
+
 export function serializeToolError(error: { type: string; message: string }): string {
   return JSON.stringify({ error });
 }
@@ -81,7 +155,7 @@ export async function executeToolCalls(
   onToolCall: ToolCallCallback = async () => null,
   signal: AbortSignal,
   registry: ToolRegistry,
-  tracer?: TracingContext,
+  span?: Span,
 ): Promise<{ results: AxleToolCallResult[] }> {
   const results: AxleToolCallResult[] = [];
 
@@ -93,25 +167,25 @@ export async function executeToolCalls(
     if (signal.aborted) {
       throwAbortError();
     }
-    const span = tracer?.startSpan(call.name, { type: "tool" });
-    const ctx: ToolContext = { signal, tracer: span, registry, emit: () => {} };
+    const toolSpan = span?.startSpan(call.name, { type: "tool" });
+    const ctx: ToolContext = { signal, span: toolSpan, registry, emit: () => {} };
     let resolved: ToolCallResult | null | undefined;
 
     try {
       resolved = await onToolCall(call.name, call.parameters, ctx);
       if (signal.aborted) {
-        span?.end("ok");
+        toolSpan?.end("ok");
         throwAbortError();
       }
     } catch (error) {
       if (error instanceof AxleToolFatalError) {
-        span?.setResult({
+        toolSpan?.setResult({
           kind: "tool",
           name: call.name,
           input: call.parameters,
           output: { type: "fatal", message: error.message },
         });
-        span?.end("error");
+        toolSpan?.end("error");
         throw error;
       }
       if (
@@ -119,7 +193,7 @@ export async function executeToolCalls(
         error instanceof AxleAbortError ||
         (error instanceof Error && error.name === "AbortError")
       ) {
-        span?.end("ok");
+        toolSpan?.end("ok");
         throwAbortError();
       }
       resolved = {
@@ -136,13 +210,13 @@ export async function executeToolCalls(
       if (tool) {
         try {
           const content = await tool.execute(call.parameters, ctx);
-          span?.setResult({
+          toolSpan?.setResult({
             kind: "tool",
             name: call.name,
             input: call.parameters,
             output: content,
           });
-          span?.end("ok");
+          toolSpan?.end("ok");
           results.push({
             id: call.id,
             name: call.name,
@@ -151,13 +225,13 @@ export async function executeToolCalls(
           continue;
         } catch (error) {
           if (error instanceof AxleToolFatalError) {
-            span?.setResult({
+            toolSpan?.setResult({
               kind: "tool",
               name: call.name,
               input: call.parameters,
               output: { type: "fatal", message: error.message },
             });
-            span?.end("error");
+            toolSpan?.end("error");
             throw error;
           }
           if (
@@ -165,7 +239,7 @@ export async function executeToolCalls(
             error instanceof AxleAbortError ||
             (error instanceof Error && error.name === "AbortError")
           ) {
-            span?.end("ok");
+            toolSpan?.end("ok");
             throwAbortError();
           }
           resolved = {
@@ -181,13 +255,13 @@ export async function executeToolCalls(
 
     if (resolved == null) {
       const message = `Tool not found: ${call.name}`;
-      span?.setResult({
+      toolSpan?.setResult({
         kind: "tool",
         name: call.name,
         input: call.parameters,
         output: { type: "not-found", message },
       });
-      span?.end("error");
+      toolSpan?.end("error");
       results.push({
         id: call.id,
         name: call.name,
@@ -198,26 +272,26 @@ export async function executeToolCalls(
     }
 
     if (resolved.type === "success") {
-      span?.setResult({
+      toolSpan?.setResult({
         kind: "tool",
         name: call.name,
         input: call.parameters,
         output: resolved.content,
       });
-      span?.end("ok");
+      toolSpan?.end("ok");
       results.push({
         id: call.id,
         name: call.name,
         content: resolved.content,
       });
     } else {
-      span?.setResult({
+      toolSpan?.setResult({
         kind: "tool",
         name: call.name,
         input: call.parameters,
         output: resolved.error,
       });
-      span?.end("error");
+      toolSpan?.end("error");
       results.push({
         id: call.id,
         name: call.name,

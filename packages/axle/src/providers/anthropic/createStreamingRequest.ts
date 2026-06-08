@@ -34,7 +34,7 @@ export async function* createStreamingRequest(
     parallelToolCalls,
     providerOptions,
   } = params;
-  const tracer = runtime?.tracer;
+  const span = runtime?.span;
 
   const apiTools: any[] = [
     ...(tools ? convertToAnthropicTools(tools) : []),
@@ -67,7 +67,7 @@ export async function* createStreamingRequest(
       // Raw provider options are applied last so they can override Axle mappings.
       ...providerOptions,
     };
-    tracer?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
+    span?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
 
     const stream = await client.messages.create(
       {
