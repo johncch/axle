@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.23.1] - 2026-06-08
+
+- Updated Anthropic thinking configuration support
+
 ## [0.23.0] - 2026-06-08
 
 - Improved observability with a simplified span-based tracing interface
