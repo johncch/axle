@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.23.0] - 2026-06-08
+
+- Improved observability with a simplified span-based tracing interface
+- Added richer trace events, span completion details, and token/content logging for agent and streaming runs
+- Added provider tool logging and support for routing observability data to multiple sinks
+
 ## [0.22.1] - 2026-06-07
 
 - Improved handling of chat-completions streaming errors
