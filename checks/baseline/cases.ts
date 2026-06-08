@@ -6,6 +6,7 @@ import {
   stream,
   type AIProvider,
   type AxleAssistantMessage,
+  type AxleModelRequestOptions,
   type ExecutableTool,
   type ProviderTool,
 } from "@fifthrevision/axle";
@@ -16,6 +17,7 @@ export interface BaselineCaseContext {
   provider: AIProvider;
   model: string;
   providerId: string;
+  requestOptions: AxleModelRequestOptions;
 }
 
 export interface BaselineCaseResult {
@@ -42,10 +44,11 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-basic",
     description: "Basic generate() text response.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const result = await generate({
         provider,
         model,
+        ...requestOptions,
         messages: [{ role: "user", content: "Reply with exactly: pong" }],
       });
 
@@ -60,11 +63,12 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "stream-basic",
     description: "Basic stream() text response.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const textDeltas: string[] = [];
       const handle = stream({
         provider,
         model,
+        ...requestOptions,
         messages: [{ role: "user", content: "Reply with exactly: pong" }],
       });
       handle.on((event) => {
@@ -83,10 +87,11 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-instruct-json",
     description: "generate() with Instruct structured JSON response.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const result = await generate({
         provider,
         model,
+        ...requestOptions,
         instruct: new Instruct({
           prompt: "Return answer='pong', count=3, ok=true.",
           schema: answerSchema,
@@ -107,10 +112,11 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "stream-instruct-json",
     description: "stream() with Instruct structured JSON response.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const handle = stream({
         provider,
         model,
+        ...requestOptions,
         instruct: new Instruct({
           prompt: "Return answer='pong', count=3, ok=true.",
           schema: answerSchema,
@@ -132,10 +138,11 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-instruct-history",
     description: "generate() uses historical messages plus latest Instruct turn.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const result = await generate({
         provider,
         model,
+        ...requestOptions,
         messages: [
           {
             role: "user",
@@ -163,8 +170,8 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "agent-basic",
     description: "Agent basic send() text response and history.",
-    async run({ provider, model }) {
-      const agent = new Agent({ provider, model });
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({ provider, model, ...requestOptions });
       const result = await agent.send("Reply with exactly: pong").final;
       const text = String(result.response ?? "");
 
@@ -181,8 +188,8 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "agent-instruct-json",
     description: "Agent send(Instruct) structured JSON response.",
-    async run({ provider, model }) {
-      const agent = new Agent({ provider, model });
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({ provider, model, ...requestOptions });
       const result = await agent.send(
         new Instruct({
           prompt: "Return answer='pong', count=3, ok=true.",
@@ -208,8 +215,8 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "agent-multiturn-history",
     description: "Agent preserves history across turns.",
-    async run({ provider, model }) {
-      const agent = new Agent({ provider, model });
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({ provider, model, ...requestOptions });
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
         .final;
       const result = await agent.send(
@@ -230,10 +237,11 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-tool",
     description: "generate() executes a local tool and reaches a final answer.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const result = await generate({
         provider,
         model,
+        ...requestOptions,
         messages: [
           {
             role: "user",
@@ -259,11 +267,12 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "stream-tool",
     description: "stream() executes a local tool and reaches a final answer.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       let toolRequestCount = 0;
       const handle = stream({
         provider,
         model,
+        ...requestOptions,
         messages: [
           {
             role: "user",
@@ -294,8 +303,8 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "agent-tool",
     description: "Agent executes a local tool and reaches a final answer.",
-    async run({ provider, model }) {
-      const agent = new Agent({ provider, model, tools: [addNumbersTool] });
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [addNumbersTool] });
       const result = await agent.send(
         "Use the add_numbers tool to add 17 and 25. Then answer with the result.",
       ).final;
@@ -334,11 +343,12 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "stream-web-search",
     description: "stream() with provider web search surfaces provider-specific search evidence.",
-    async run({ provider, model, providerId }) {
+    async run({ provider, model, providerId, requestOptions }) {
       return runStreamingWebSearchCitationCase({
         provider,
         model,
         providerId,
+        requestOptions,
         prompt:
           "Use web search to find the current top headline on Reuters.com. Answer with only the headline.",
       });
@@ -347,7 +357,7 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "instruct-text-reference",
     description: "Instruct text references are included in the user turn.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const instruct = new Instruct({
         prompt: "Return the project code from the reference.",
         schema: z.object({
@@ -356,7 +366,7 @@ export const baselineCases: BaselineCase[] = [
       });
       instruct.addFile("Project code: orchid-17", { name: "project-note" });
 
-      const result = await generate({ provider, model, instruct });
+      const result = await generate({ provider, model, ...requestOptions, instruct });
       if (!result.ok) return fail({ error: result.error });
       return {
         ok: result.response?.code.toLowerCase().includes("orchid-17") ?? false,
@@ -367,7 +377,7 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-image-file",
     description: "generate() with an Instruct image file attachment.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const image = await loadFileContent("./examples/data/economist-brainy-imports.png");
       const instruct = new Instruct({
         prompt: "Inspect the attached chart. Return the chart title and the top listed university.",
@@ -378,7 +388,7 @@ export const baselineCases: BaselineCase[] = [
       });
       instruct.addFile(image);
 
-      const result = await generate({ provider, model, instruct });
+      const result = await generate({ provider, model, ...requestOptions, instruct });
       if (!result.ok) return fail({ error: result.error });
 
       const title = result.response.title.toLowerCase();
@@ -394,7 +404,7 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-pdf-file",
     description: "generate() with an Instruct PDF file attachment.",
-    async run({ provider, model }) {
+    async run({ provider, model, requestOptions }) {
       const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
       const instruct = new Instruct({
         prompt:
@@ -406,7 +416,7 @@ export const baselineCases: BaselineCase[] = [
       });
       instruct.addFile(pdf);
 
-      const result = await generate({ provider, model, instruct });
+      const result = await generate({ provider, model, ...requestOptions, instruct });
       if (!result.ok) return fail({ error: result.error });
 
       return {
@@ -417,21 +427,24 @@ export const baselineCases: BaselineCase[] = [
   },
 ];
 
-  async function runStreamingWebSearchCitationCase({
+async function runStreamingWebSearchCitationCase({
   provider,
   model,
   providerId,
+  requestOptions,
   prompt,
 }: {
   provider: AIProvider;
   model: string;
   providerId: string;
+  requestOptions: AxleModelRequestOptions;
   prompt: string;
 }): Promise<BaselineCaseResult> {
   const eventTypes: string[] = [];
   const handle = stream({
     provider,
     model,
+    ...requestOptions,
     providerTools: [webSearchTool],
     messages: [
       {
@@ -439,7 +452,7 @@ export const baselineCases: BaselineCase[] = [
         content: prompt,
       },
     ],
-    maxOutputTokens: 1024,
+    maxOutputTokens: requestOptions.reasoning === true ? 12000 : 1024,
   });
   handle.on((event) => eventTypes.push(event.type));
 
@@ -451,8 +464,9 @@ export const baselineCases: BaselineCase[] = [
   const textCitationCount = countTextCitations(result.final);
   const citationEventCount = eventTypes.filter((type) => type === "citation").length;
   const providerToolPartCount = countProviderToolParts(result.final);
-  const providerToolEventCount = eventTypes.filter((type) => type.startsWith("provider-tool:"))
-    .length;
+  const providerToolEventCount = eventTypes.filter((type) =>
+    type.startsWith("provider-tool:"),
+  ).length;
   const expectedEvidence = getWebSearchExpectedEvidence(providerId);
   return {
     ok: expectedEvidence.every((evidence) => {

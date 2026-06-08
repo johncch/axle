@@ -173,6 +173,34 @@ describe("createGenerationRequest (Anthropic)", () => {
       );
     });
 
+    test("should use adaptive thinking with effort for Opus 4.8 reasoning", async () => {
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_123",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        model: "claude-opus-4-8",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 20 },
+      });
+
+      await createGenerationRequest({
+        client: mockClient,
+        model: "claude-opus-4-8",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        runtime: {},
+        reasoning: true,
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thinking: { type: "adaptive" },
+          output_config: { effort: "high" },
+        }),
+      );
+      expect(mockCreate.mock.calls[0][0].thinking).not.toHaveProperty("budget_tokens");
+    });
+
     test("should include system message when provided", async () => {
       (mockCreate.mockResolvedValue as any)({
         id: "msg_123",

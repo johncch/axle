@@ -63,7 +63,7 @@ export async function createGenerationRequest(
           ...convertToAnthropicProviderTools(providerTools),
         ],
       }),
-      ...toAnthropicThinking(reasoning),
+      ...toAnthropicThinking(reasoning, model),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { top_p: topP } : {}),
       ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),

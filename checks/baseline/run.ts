@@ -8,6 +8,7 @@ import { resolveProviderTargets } from "./providers.js";
 interface RunOptions {
   provider?: string;
   model?: string;
+  thinking: boolean;
   cases: string[];
   out: string;
 }
@@ -16,6 +17,7 @@ interface CheckRecord {
   timestamp: string;
   providerId: string;
   model: string;
+  thinking: boolean;
   caseId: string;
   caseDescription: string;
   status: "pass" | "fail" | "error";
@@ -57,6 +59,7 @@ for (const target of targets) {
         provider,
         model: target.model,
         providerId: target.id,
+        requestOptions: options.thinking ? { reasoning: true } : {},
       });
       const status = result.ok ? "pass" : "fail";
       if (result.ok) passed += 1;
@@ -65,6 +68,7 @@ for (const target of targets) {
         timestamp: new Date().toISOString(),
         providerId: target.id,
         model: target.model,
+        thinking: options.thinking,
         caseId: testCase.id,
         caseDescription: testCase.description,
         status,
@@ -79,6 +83,7 @@ for (const target of targets) {
         timestamp: new Date().toISOString(),
         providerId: target.id,
         model: target.model,
+        thinking: options.thinking,
         caseId: testCase.id,
         caseDescription: testCase.description,
         status: "error",
@@ -131,6 +136,7 @@ function formatDetails(value: unknown): string {
 
 function parseArgs(args: string[]): RunOptions {
   const parsed: RunOptions = {
+    thinking: false,
     cases: [],
     out: join("output", "checks", `baseline-${Date.now()}.jsonl`),
   };
@@ -156,6 +162,9 @@ function parseArgs(args: string[]): RunOptions {
         break;
       case "--out":
         parsed.out = next();
+        break;
+      case "--thinking":
+        parsed.thinking = true;
         break;
       case "--help":
       case "-h":
@@ -196,6 +205,7 @@ Usage:
 Options:
   --provider <id>    Provider id: openai, anthropic, gemini, openrouter.
   --model <model>    Override model for the selected provider. Requires --provider.
+  --thinking         Enable provider reasoning/thinking controls where supported.
   --case <id>        Case id. Repeat or comma-separate. Defaults to all cases.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.
 `);

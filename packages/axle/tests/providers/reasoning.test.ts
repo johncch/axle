@@ -14,6 +14,29 @@ describe("reasoning translation", () => {
         thinking: { type: "enabled", budget_tokens: 8192 },
       });
     });
+    test("true with Opus 4.8 → adaptive thinking with high effort", () => {
+      expect(toAnthropicThinking(true, "claude-opus-4-8")).toEqual({
+        thinking: { type: "adaptive" },
+        output_config: { effort: "high" },
+      });
+    });
+    test("true with Opus 4.7 → adaptive thinking with high effort", () => {
+      expect(toAnthropicThinking(true, "claude-opus-4-7")).toEqual({
+        thinking: { type: "adaptive" },
+        output_config: { effort: "high" },
+      });
+    });
+    test("true with Sonnet 4.6 → adaptive thinking with high effort", () => {
+      expect(toAnthropicThinking(true, "claude-sonnet-4-6")).toEqual({
+        thinking: { type: "adaptive" },
+        output_config: { effort: "high" },
+      });
+    });
+    test("true with Opus 4.5 → legacy enabled thinking budget", () => {
+      expect(toAnthropicThinking(true, "claude-opus-4-5-20251101")).toEqual({
+        thinking: { type: "enabled", budget_tokens: 8192 },
+      });
+    });
     test("false → no field (Anthropic defaults off)", () => {
       expect(toAnthropicThinking(false)).toEqual({});
     });

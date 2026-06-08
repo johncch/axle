@@ -43,8 +43,7 @@ async function convertMessage(
           text: part.text,
         });
       } else if (part.type === "thinking") {
-        const continuity =
-          part.continuity?.provider === "anthropic" ? part.continuity : undefined;
+        const continuity = part.continuity?.provider === "anthropic" ? part.continuity : undefined;
         if (part.redacted) {
           content.push({
             type: "redacted_thinking",
@@ -250,16 +249,36 @@ function toAnthropicPdfSource(
 
 /**
  * Translate Axle's normalized `reasoning` boolean into Anthropic's thinking
- * field. `true` enables extended thinking with a sensible default budget;
+ * field. Newer Claude 4.6+ adaptive-thinking models use effort instead of a
+ * manual thinking token budget; older models keep the legacy budget form.
  * `false` and `undefined` produce no field (Anthropic defaults to off).
- * Users wanting precise control set `providerOptions.thinking` directly, which spreads
- * after this and overrides.
+ * Users wanting precise control set `providerOptions.thinking` or
+ * `providerOptions.output_config` directly, which spreads after this and
+ * overrides.
  */
-export function toAnthropicThinking(reasoning: boolean | undefined) {
-  if (reasoning === true) {
-    return { thinking: { type: "enabled" as const, budget_tokens: 8192 } };
+export function toAnthropicThinking(reasoning: boolean | undefined, model = "") {
+  if (reasoning !== true) return {};
+  if (supportsAdaptiveThinking(model)) {
+    return {
+      thinking: { type: "adaptive" as const },
+      output_config: { effort: "high" as const },
+    };
   }
-  return {};
+  return { thinking: { type: "enabled" as const, budget_tokens: 8192 } };
+}
+
+function supportsAdaptiveThinking(model: string): boolean {
+  const match = model.toLowerCase().match(/claude-(opus|sonnet)-(\d+)-(\d+)/);
+  if (!match) return false;
+
+  const [, family, majorText, minorText] = match;
+  const major = Number(majorText);
+  const minor = Number(minorText);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
+
+  if (family === "opus") return major > 4 || (major === 4 && minor >= 6);
+  if (family === "sonnet") return major > 4 || (major === 4 && minor >= 6);
+  return false;
 }
 
 export function convertToAnthropicTools(

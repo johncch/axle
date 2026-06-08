@@ -24,6 +24,12 @@ Override the model for one provider:
 pnpm exec tsx checks/baseline/run.ts --provider openai --model gpt-5.4
 ```
 
+Enable provider reasoning/thinking controls where supported:
+
+```bash
+pnpm exec tsx checks/baseline/run.ts --provider anthropic --model claude-opus-4-8 --thinking
+```
+
 Run selected cases:
 
 ```bash
@@ -37,6 +43,20 @@ OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
+```
+
+Run specific configuration against a set of models
+
+```
+for model in claude-opus-4-8 claude-opus-4-7 claude-sonnet-4-6 claude-opus-4-6
+do
+  pnpm exec tsx checks/baseline/run.ts \
+    --provider anthropic \
+    --model "$model" \
+    --case generate-basic \
+    --thinking \
+    --out "output/checks/baseline-anthropic-${model}-thinking.jsonl"
+done
 ```
 
 ## Cases

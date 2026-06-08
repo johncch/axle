@@ -59,7 +59,7 @@ export async function* createStreamingRequest(
       // Axle-normalized options.
       ...(stop && { stop_sequences: arrayify(stop) }),
       ...(apiTools.length > 0 && { tools: apiTools }),
-      ...toAnthropicThinking(reasoning),
+      ...toAnthropicThinking(reasoning, model),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { top_p: topP } : {}),
       ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
