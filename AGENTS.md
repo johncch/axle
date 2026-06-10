@@ -1,5 +1,7 @@
 # Agent Guidance
 
+no narrating comments
+
 ## Feature Coverage
 
 Every major feature should include harness coverage in addition to focused unit

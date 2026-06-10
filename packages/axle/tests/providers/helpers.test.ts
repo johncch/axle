@@ -179,13 +179,13 @@ describe("executeToolCalls", () => {
       expect(results[1].content).toContain("not-found");
     });
 
-    test("runs unmarked tools sequentially", async () => {
+    test("runs tool calls sequentially in call order", async () => {
       let active = 0;
       let maxActive = 0;
       const schema = z.object({ input: z.string() });
       const serialTool: ExecutableTool<typeof schema> = {
-        name: "unmarked",
-        description: "Unmarked",
+        name: "serial",
+        description: "Serial",
         schema,
         async execute(input) {
           active += 1;
@@ -199,8 +199,8 @@ describe("executeToolCalls", () => {
 
       const { results } = await executeToolCalls(
         [
-          makeToolCallWithParams("unmarked", "a", { input: "a" }),
-          makeToolCallWithParams("unmarked", "b", { input: "b" }),
+          makeToolCallWithParams("serial", "a", { input: "a" }),
+          makeToolCallWithParams("serial", "b", { input: "b" }),
         ],
         undefined,
         testSignal,
@@ -211,161 +211,120 @@ describe("executeToolCalls", () => {
       expect(results.map((result) => result.content)).toEqual(["a", "b"]);
     });
 
-    test("runs contiguous parallel-safe tool calls concurrently and preserves result order", async () => {
-      let active = 0;
-      let maxActive = 0;
+    test("accumulates usage reported through ctx.reportUsage", async () => {
       const schema = z.object({ input: z.string() });
-      const parallelTool: ExecutableTool<typeof schema> = {
-        name: "parallel",
-        description: "Parallel",
+      const reportingTool: ExecutableTool<typeof schema> = {
+        name: "reporting",
+        description: "Reports child usage",
         schema,
-        execution: { parallel: true },
-        async execute(input) {
-          active += 1;
-          maxActive = Math.max(maxActive, active);
-          await delay(input.input === "first" ? 20 : 1);
-          active -= 1;
+        async execute(input, ctx) {
+          ctx.reportUsage?.({
+            in: 10,
+            out: 5,
+            breakdown: [{ provider: "anthropic", model: "claude-x", in: 10, out: 5 }],
+          });
           return input.input;
         },
       };
-      const registry = new ToolRegistry({
-        tools: [parallelTool],
-      });
+      const registry = new ToolRegistry({ tools: [reportingTool] });
+
+      const { usage } = await executeToolCalls(
+        [
+          makeToolCallWithParams("reporting", "a", { input: "a" }),
+          makeToolCallWithParams("reporting", "b", { input: "b" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(usage).toMatchObject({ in: 20, out: 10 });
+      expect(usage?.breakdown).toEqual([
+        { provider: "anthropic", model: "claude-x", in: 20, out: 10 },
+      ]);
+    });
+
+    test("treats a tool-thrown AbortError as recoverable while the signal is live", async () => {
+      const schema = z.object({ input: z.string() });
+      const timeoutTool: ExecutableTool<typeof schema> = {
+        name: "timeout",
+        description: "Internal timeout",
+        schema,
+        async execute() {
+          const error = new Error("fetch timed out");
+          error.name = "AbortError";
+          throw error;
+        },
+      };
+      const registry = new ToolRegistry({ tools: [timeoutTool] });
 
       const { results } = await executeToolCalls(
-        [
-          makeToolCallWithParams("parallel", "first", { input: "first" }),
-          makeToolCallWithParams("parallel", "second", { input: "second" }),
-        ],
+        [makeToolCall("timeout")],
         undefined,
         testSignal,
         registry,
       );
 
-      expect(maxActive).toBe(2);
-      expect(results.map((result) => result.content)).toEqual(["first", "second"]);
+      expect(results).toHaveLength(1);
+      expect(results[0].isError).toBe(true);
+      expect(results[0].content).toContain("fetch timed out");
     });
 
-    test("uses serial tool calls as barriers between parallel groups", async () => {
-      const events: string[] = [];
+    test("attaches usage from completed calls to a later terminal error", async () => {
       const schema = z.object({ input: z.string() });
-      const parallelTool: ExecutableTool<typeof schema> = {
-        name: "parallel",
-        description: "Parallel",
+      const reportingTool: ExecutableTool<typeof schema> = {
+        name: "reporting",
+        description: "Reports usage",
         schema,
-        execution: { parallel: true },
-        async execute(input) {
-          events.push(`start:${input.input}`);
-          await delay(5);
-          events.push(`end:${input.input}`);
+        async execute(input, ctx) {
+          ctx.reportUsage?.({ in: 10, out: 5 });
           return input.input;
         },
       };
-      const serialTool: ExecutableTool<typeof schema> = {
-        name: "serial",
-        description: "Serial",
+      const fatalTool: ExecutableTool<typeof schema> = {
+        name: "fatal",
+        description: "Fails fatally",
         schema,
-        async execute(input) {
-          events.push(`start:${input.input}`);
-          await delay(1);
-          events.push(`end:${input.input}`);
-          return input.input;
+        async execute() {
+          throw new AxleToolFatalError("boom", { toolName: "fatal" });
         },
       };
-      const registry = new ToolRegistry({
-        tools: [parallelTool, serialTool],
-      });
+      const registry = new ToolRegistry({ tools: [reportingTool, fatalTool] });
 
-      await executeToolCalls(
-        [
-          makeToolCallWithParams("parallel", "p1", { input: "p1" }),
-          makeToolCallWithParams("parallel", "p2", { input: "p2" }),
-          makeToolCallWithParams("serial", "s1", { input: "s1" }),
-          makeToolCallWithParams("parallel", "p3", { input: "p3" }),
-          makeToolCallWithParams("parallel", "p4", { input: "p4" }),
-        ],
-        undefined,
-        testSignal,
-        registry,
-      );
+      let thrown: unknown;
+      try {
+        await executeToolCalls(
+          [makeToolCall("reporting"), makeToolCall("fatal")],
+          undefined,
+          testSignal,
+          registry,
+        );
+      } catch (error) {
+        thrown = error;
+      }
 
-      expect(events.indexOf("start:s1")).toBeGreaterThan(events.indexOf("end:p1"));
-      expect(events.indexOf("start:s1")).toBeGreaterThan(events.indexOf("end:p2"));
-      expect(events.indexOf("start:p3")).toBeGreaterThan(events.indexOf("end:s1"));
-      expect(events.indexOf("start:p4")).toBeGreaterThan(events.indexOf("end:s1"));
+      expect(thrown).toBeInstanceOf(AxleToolFatalError);
+      expect((thrown as AxleToolFatalError).usage).toMatchObject({ in: 10, out: 5 });
     });
 
-    test("does not run conflicting parallel-safe calls at the same time", async () => {
-      let active = 0;
-      let maxActive = 0;
-      const schema = z.object({ path: z.string() });
-      const writeLikeTool: ExecutableTool<typeof schema> = {
-        name: "write_like",
-        description: "Write-like",
-        schema,
-        execution: {
-          parallel: true,
-          conflictKey: (input) => input.path,
-        },
-        async execute(input) {
-          active += 1;
-          maxActive = Math.max(maxActive, active);
-          await delay(5);
-          active -= 1;
-          return input.path;
-        },
-      };
-      const registry = new ToolRegistry({
-        tools: [writeLikeTool],
-      });
-
-      await executeToolCalls(
-        [
-          makeToolCallWithParams("write_like", "a", { path: "same.txt" }),
-          makeToolCallWithParams("write_like", "b", { path: "same.txt" }),
-        ],
-        undefined,
-        testSignal,
-        registry,
-      );
-
-      expect(maxActive).toBe(1);
-    });
-
-    test("honors maxConcurrency for parallel-safe groups", async () => {
-      let active = 0;
-      let maxActive = 0;
+    test("returns no usage when no tool reports any", async () => {
       const schema = z.object({ input: z.string() });
-      const limitedTool: ExecutableTool<typeof schema> = {
-        name: "limited",
-        description: "Limited",
+      const silentTool: ExecutableTool<typeof schema> = {
+        name: "silent",
+        description: "Silent",
         schema,
-        execution: { parallel: true, maxConcurrency: 2 },
-        async execute(input) {
-          active += 1;
-          maxActive = Math.max(maxActive, active);
-          await delay(5);
-          active -= 1;
-          return input.input;
-        },
+        execute: async (input) => input.input,
       };
-      const registry = new ToolRegistry({
-        tools: [limitedTool],
-      });
+      const registry = new ToolRegistry({ tools: [silentTool] });
 
-      await executeToolCalls(
-        [
-          makeToolCallWithParams("limited", "a", { input: "a" }),
-          makeToolCallWithParams("limited", "b", { input: "b" }),
-          makeToolCallWithParams("limited", "c", { input: "c" }),
-          makeToolCallWithParams("limited", "d", { input: "d" }),
-        ],
+      const { usage } = await executeToolCalls(
+        [makeToolCall("silent")],
         undefined,
         testSignal,
         registry,
       );
 
-      expect(maxActive).toBe(2);
+      expect(usage).toBeUndefined();
     });
   });
 });

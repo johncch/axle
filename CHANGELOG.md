@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+- Added `createAgentTool` for delegating bounded work to subagents exposed as tools
+- Added `parallelize` for wrapping a tool in a concurrent batch variant
+- Added `ctx.reportUsage` to `ToolContext` and a flat per-provider/model `Stats.breakdown` for cost reconstruction across models
+- Added child turn-event forwarding for subagent tools (`action:child-event`, rendered as agent action parts)
+- Added `tool:exec-error` stream event for fatal/aborted tool calls; `Agent.on()` now returns an unsubscribe function
+- **Behavior change:** in `stream()`, a user-provided `onToolCall` returning `null`/`undefined` now falls through to executing the matching registry tool (matching `generate()`'s existing semantics) instead of producing a `not-found` result. Return an explicit `{ type: "error", ... }` result to block a tool.
+- **Behavior change:** a tool throwing an error merely named `AbortError` (e.g. an internal fetch timeout) while the run's signal is live is now reported to the model as an ordinary tool error instead of aborting the run
+
 ## [0.23.1] - 2026-06-08
 
 - Updated Anthropic thinking configuration support

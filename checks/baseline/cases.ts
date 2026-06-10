@@ -413,6 +413,13 @@ export const baselineCases: BaselineCase[] = [
       return {
         ok:
           text.includes("subagent-orchid") &&
+          result.usage.breakdown?.some(
+            (entry) =>
+              entry.provider === provider.name &&
+              entry.model === model &&
+              entry.in > 0 &&
+              entry.out > 0,
+          ) === true &&
           toolResults.some(
             (toolResult) =>
               toolResult.name === "delegate_code_word" &&

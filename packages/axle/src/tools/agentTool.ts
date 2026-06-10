@@ -1,13 +1,9 @@
 import type { z, ZodObject } from "zod";
-import { Agent, type MaybePromise } from "../core/agent/index.js";
+import type { Agent, MaybePromise } from "../core/agent/index.js";
+import { AxleAbortError } from "../errors/AxleAbortError.js";
+import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { AxleModelRequestOptions } from "../providers/types.js";
-import type { Stats } from "../types.js";
 import type { ExecutableTool, ToolContext } from "./types.js";
-
-export interface AgentToolResult {
-  response: unknown;
-  usage: Stats;
-}
 
 export interface CreateAgentToolOptions<TSchema extends ZodObject<any>> {
   name: string;
@@ -22,15 +18,15 @@ export interface CreateAgentToolOptions<TSchema extends ZodObject<any>> {
   prompt?: string | ((input: z.infer<TSchema>) => string);
   /** Per-send request overrides for the child agent. */
   request?: AxleModelRequestOptions;
-  /** Return structured JSON with usage instead of only the child response. */
-  includeUsage?: boolean;
 }
 
 /**
  * Expose an Agent as a normal executable tool.
  *
  * This lets a parent model delegate bounded work to a child agent while only
- * receiving the child agent's final response.
+ * receiving the child agent's final response. The child's turn events are
+ * forwarded through `ctx.emit` and its token usage through `ctx.reportUsage`,
+ * so parents can render live progress and reconstruct cost.
  */
 export function createAgentTool<TSchema extends ZodObject<any>>(
   options: CreateAgentToolOptions<TSchema>,
@@ -50,22 +46,17 @@ export function createAgentTool<TSchema extends ZodObject<any>>(
           ...options.request,
           signal: ctx.signal,
         }).final;
+      } catch (error) {
+        throw stripChildConversation(error, options.name);
       } finally {
         unsubscribe();
       }
 
+      if (result.usage) ctx.reportUsage?.(result.usage);
       if (!result.ok) {
-        return JSON.stringify({ error: result.error, usage: result.usage });
+        throw new Error(`Subagent failed: ${JSON.stringify(result.error)}`);
       }
-
       const response = result.response;
-      if (options.includeUsage) {
-        return JSON.stringify({
-          response,
-          usage: result.usage,
-        } satisfies AgentToolResult);
-      }
-
       return typeof response === "string" ? response : JSON.stringify(response);
     },
   };
@@ -78,4 +69,26 @@ function resolvePrompt<TSchema extends ZodObject<any>>(
   if (typeof prompt === "function") return prompt(input);
   if (typeof prompt === "string") return prompt;
   return `Complete this delegated task. Input: ${JSON.stringify(input)}`;
+}
+
+// The child agent's terminal errors carry the CHILD conversation's
+// messages/partial; letting those cross the tool boundary makes the parent
+// adopt them as its own (stream's catch and Agent history appends use
+// error.messages). Rethrow with the conversation state stripped, keeping
+// usage so the parent's cost accounting still includes the child's tokens.
+function stripChildConversation(error: unknown, toolName: string): unknown {
+  if (error instanceof AxleToolFatalError) {
+    return new AxleToolFatalError(error.message, {
+      toolName,
+      usage: error.usage,
+      cause: error,
+    });
+  }
+  if (error instanceof AxleAbortError) {
+    return new AxleAbortError(error.message, {
+      reason: error.reason,
+      usage: error.usage,
+    });
+  }
+  return error;
 }

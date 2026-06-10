@@ -11,6 +11,7 @@ import type { LogEntry, SpanData } from "../../src/observability/index.js";
 import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
+import { createAgentTool } from "../../src/tools/agentTool.js";
 
 function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
@@ -428,7 +429,11 @@ describe("Agent", () => {
 
     expect(result.response).toBe("Hello world");
     expect(result.turn?.status).toBe("complete");
-    expect(result.usage).toEqual({ in: 10, out: 20 });
+    expect(result.usage).toEqual({
+      in: 10,
+      out: 20,
+      breakdown: [{ provider: "mock-stream", model: "mock", in: 10, out: 20 }],
+    });
   });
 
   test("send(instruct.withInputs()) substitutes into prompt", async () => {
@@ -812,7 +817,11 @@ describe("Agent", () => {
       expect((error as AxleAbortError).messages).toHaveLength(1);
       expect((error as AxleAbortError).messages![0].role).toBe("assistant");
       expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
-      expect((error as AxleAgentAbortError).turn?.usage).toEqual({ in: 1, out: 1 });
+      expect((error as AxleAgentAbortError).turn?.usage).toMatchObject({
+        in: 1,
+        out: 1,
+        breakdown: [{ provider: "mock-stream", model: "mock", in: 1, out: 1 }],
+      });
       expect(agent.history.log).toHaveLength(2);
       expect(agent.history.log[0]).toMatchObject({ role: "user" });
       expect(agent.history.log[1]).toMatchObject({ role: "assistant" });
@@ -955,7 +964,11 @@ describe("Agent", () => {
     expect(fatal.message).toBe("Sandbox terminated");
     expect(fatal.toolName).toBe("exec");
     expect(fatal.cause).toBe(fatalCause);
-    expect(fatal.usage).toEqual({ in: 1, out: 2 });
+    expect(fatal.usage).toMatchObject({
+      in: 1,
+      out: 2,
+      breakdown: [{ provider: "mock-tool-stream", model: "mock", in: 1, out: 2 }],
+    });
     expect(fatal.messages).toHaveLength(1);
     expect(fatal.partial?.role).toBe("assistant");
     expect(execTool.execute).toHaveBeenCalledTimes(1);
@@ -1470,52 +1483,37 @@ describe("Agent", () => {
         },
       };
 
-      const tool = {
-        kind: "agent" as const,
+      const childProvider: AIProvider = {
+        name: "child-provider",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          yield {
+            type: "start",
+            id: "child-response",
+            data: { model: "child-runtime-model", timestamp: 0 },
+          };
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "child text" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+      const tool = createAgentTool({
         name: "childish",
         description: "emits child event progress",
         schema: z.object({}),
-        async execute(_input: any, ctx: any) {
-          ctx.emit({
-            type: "turn-event",
-            event: {
-              type: "turn:start",
-              turnId: "child-turn",
-            },
-          });
-          ctx.emit({
-            type: "turn-event",
-            event: {
-              type: "part:start",
-              turnId: "child-turn",
-              part: {
-                id: "child-part",
-                type: "text",
-                text: "",
-              },
-            },
-          });
-          ctx.emit({
-            type: "turn-event",
-            event: {
-              type: "text:delta",
-              turnId: "child-turn",
-              partId: "child-part",
-              delta: "child text",
-            },
-          });
-          ctx.emit({
-            type: "turn-event",
-            event: {
-              type: "turn:end",
-              turnId: "child-turn",
-              status: "complete",
-              usage: { in: 1, out: 1 },
-            },
-          });
-          return "done";
-        },
-      };
+        createAgent: () =>
+          new Agent({
+            name: "childish",
+            provider: childProvider,
+            model: "child-configured-model",
+          }),
+      });
 
       const agent = new Agent({ provider, model: "mock", tools: [tool] });
       const events: any[] = [];
@@ -1524,11 +1522,9 @@ describe("Agent", () => {
       await agent.send("hi").final;
 
       const childEvents = events.filter((event) => event.type === "action:child-event");
-      expect(childEvents).toHaveLength(4);
-      expect(childEvents[2].event).toMatchObject({
+      expect(childEvents.length).toBeGreaterThanOrEqual(4);
+      expect(childEvents.find((event) => event.event.type === "text:delta")?.event).toMatchObject({
         type: "text:delta",
-        turnId: "child-turn",
-        partId: "child-part",
         delta: "child text",
       });
       expect(events.some((event) => event.type === "action:progress")).toBe(false);
@@ -1539,12 +1535,20 @@ describe("Agent", () => {
       ) as any;
       expect(agentPart).toBeDefined();
       expect(agentPart.detail.name).toBe("childish");
-      expect(agentPart.detail.children).toHaveLength(1);
-      expect(agentPart.detail.children[0]).toMatchObject({
-        id: "child-turn",
+      expect(agentPart.detail.children).toHaveLength(2);
+      expect(agentPart.detail.children.find((turn: any) => turn.owner === "agent")).toMatchObject({
         owner: "agent",
         status: "complete",
-        parts: [{ id: "child-part", type: "text", text: "child text" }],
+        usage: { in: 1, out: 1 },
+        parts: [{ type: "text", text: "child text" }],
+      });
+      expect(agentTurn.usage).toMatchObject({
+        in: 3,
+        out: 3,
+        breakdown: [
+          { provider: "mock", model: "mock", in: 2, out: 2 },
+          { provider: "child-provider", model: "child-runtime-model", in: 1, out: 1 },
+        ],
       });
     });
   });

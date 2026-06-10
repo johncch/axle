@@ -73,7 +73,7 @@ done
 - `stream-tool`
 - `agent-tool`
 - `generate-parallelized-tool`
-- `agent-subagent-tool`
+- `agent-subagent-tool` (including child usage attribution)
 - `reasoning-false`
 - `stream-web-search`
 - `instruct-text-reference`

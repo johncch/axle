@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import type { ExecutableTool, ToolContext } from "../../src/tools/types.js";
@@ -28,7 +30,6 @@ describe("parallelize", () => {
     );
 
     expect(batch.name).toBe("lookup_batch");
-    expect(batch.execution?.parallel).toBe(true);
     expect(result.results).toEqual([
       { index: 0, input: { id: "a" }, ok: true, output: "value:a" },
       { index: 1, input: { id: "b" }, ok: true, output: "value:b" },
@@ -112,6 +113,71 @@ describe("parallelize", () => {
 
     expect(maxActive).toBe(2);
     expect(execute).toHaveBeenCalledTimes(4);
+  });
+
+  test("rethrows fatal errors instead of demoting them to per-item failures", async () => {
+    const schema = z.object({ id: z.string() });
+    const tool: ExecutableTool<typeof schema> = {
+      name: "fatal",
+      description: "Fatal",
+      schema,
+      async execute(input) {
+        if (input.id === "boom") {
+          throw new AxleToolFatalError("credentials revoked", { toolName: "fatal" });
+        }
+        return `ok:${input.id}`;
+      },
+    };
+
+    const batch = parallelize(tool, { maxConcurrency: 1 });
+
+    await expect(
+      batch.execute({ items: [{ id: "a" }, { id: "boom" }, { id: "c" }] }, testCtx),
+    ).rejects.toBeInstanceOf(AxleToolFatalError);
+  });
+
+  test("stops starting items once the signal aborts", async () => {
+    const controller = new AbortController();
+    const started: string[] = [];
+    const schema = z.object({ id: z.string() });
+    const tool: ExecutableTool<typeof schema> = {
+      name: "abortable",
+      description: "Abortable",
+      schema,
+      async execute(input) {
+        started.push(input.id);
+        if (input.id === "a") controller.abort("stop");
+        return input.id;
+      },
+    };
+    const ctx: ToolContext = { ...testCtx, signal: controller.signal };
+
+    const batch = parallelize(tool, { maxConcurrency: 1 });
+
+    await expect(
+      batch.execute({ items: [{ id: "a" }, { id: "b" }, { id: "c" }] }, ctx),
+    ).rejects.toBeInstanceOf(AxleAbortError);
+    expect(started).toEqual(["a"]);
+  });
+
+  test("inherits the wrapped tool's kind", () => {
+    const schema = z.object({ q: z.string() });
+    const agentBacked: ExecutableTool<typeof schema> = {
+      kind: "agent",
+      name: "research",
+      description: "Agent-backed",
+      schema,
+      execute: async () => "x",
+    };
+    const plain: ExecutableTool<typeof schema> = {
+      name: "lookup",
+      description: "Plain",
+      schema,
+      execute: async () => "x",
+    };
+
+    expect(parallelize(agentBacked).kind).toBe("agent");
+    expect(parallelize(plain).kind).toBeUndefined();
   });
 });
 

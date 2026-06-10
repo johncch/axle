@@ -34,7 +34,16 @@ export class TurnEventBuilder {
   private currentTurnTiming: TimingInfo | undefined;
   private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
   private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
-  private toolIdMap = new Map<string, { partId: string; turnId: string; timing?: TimingInfo }>();
+  private toolIdMap = new Map<
+    string,
+    {
+      partId: string;
+      turnId: string;
+      timing?: TimingInfo;
+      name?: string;
+      kind?: "tool" | "agent";
+    }
+  >();
   private accumulatedUsage: Stats = createStats();
 
   createUserTurn(message: AxleUserMessage): TurnEvent[] {
@@ -260,7 +269,13 @@ export class TurnEventBuilder {
                 timing,
                 detail: { name: event.name, parameters: {} },
               };
-        this.toolIdMap.set(event.id, { partId, turnId, timing });
+        this.toolIdMap.set(event.id, {
+          partId,
+          turnId,
+          timing,
+          name: event.name,
+          kind: event.kind,
+        });
         events.push({ type: "part:start", turnId, part });
         break;
       }
@@ -317,6 +332,7 @@ export class TurnEventBuilder {
       case "tool:exec-complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
+          addStats(this.accumulatedUsage, event.usage);
           const timing = completeTiming(mapping.timing);
           mapping.timing = timing;
           if (event.result.type === "success") {
@@ -336,6 +352,23 @@ export class TurnEventBuilder {
               timing,
             });
           }
+        }
+        break;
+      }
+
+      case "tool:exec-error": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          addStats(this.accumulatedUsage, event.usage);
+          const timing = completeTiming(mapping.timing);
+          mapping.timing = timing;
+          events.push({
+            type: "action:error",
+            turnId,
+            partId: mapping.partId,
+            error: event.error,
+            timing,
+          });
         }
         break;
       }
