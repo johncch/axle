@@ -267,6 +267,10 @@ operation's totals.
 
 ### Subagent Tools
 
+> **Experimental** — the API is usable today, but event and part shapes
+> (notably `SubagentAction`) may change in a minor release while this feature
+> is validated in real applications.
+
 `createAgentTool` exposes a child Agent as a normal tool, letting a parent
 model delegate bounded work and receive only the child's final response.
 
@@ -298,6 +302,9 @@ runs once per tool invocation.
 
 ### Parallelizing Tools
 
+> **Experimental** — the generated tool's result JSON (`ParallelToolResult`)
+> may change in a minor release.
+
 `parallelize` wraps a tool in a batch variant that runs many inputs
 concurrently in a single tool call. Combined with `createAgentTool`, this fans
 out subagents.
@@ -319,6 +326,10 @@ the wrapped tool's `kind`, so batched subagents still stream their child turns
 under the batch action (interleaved across items).
 
 ### Usage Stats
+
+> **Experimental** — the aggregate fields are stable; the `breakdown` entry
+> shape (`UsageEntry`) may gain dimensions (e.g. a per-agent name) in a minor
+> release.
 
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
 when reported). When an operation spans models — for example subagent tools on

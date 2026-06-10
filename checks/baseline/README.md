@@ -74,9 +74,16 @@ done
 - `agent-tool`
 - `generate-parallelized-tool`
 - `agent-subagent-tool` (including child usage attribution)
+- `agent-tool-fatal` (fatal tool error terminates the send with usage intact)
+- `agent-subagent-abort` (cancel mid-delegation; no child conversation leak)
+- `agent-parallel-subagents` (parallelize + createAgentTool fan-out)
 - `reasoning-false`
 - `stream-web-search`
 - `instruct-text-reference`
 
 The runner writes JSONL records to `output/checks/` and exits non-zero if any
-case fails or errors.
+case fails or errors. For every case that reports `usage` in its details, the
+runner additionally verifies usage conservation: the per-provider/model
+`breakdown` entries must sum exactly to the aggregate token fields. A
+`usageViolation` detail on a failed record means tokens were dropped or
+double-counted somewhere in the pipeline.

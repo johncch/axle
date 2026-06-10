@@ -33,5 +33,6 @@ export interface UsageEntry extends TokenStats {
  * again.
  */
 export interface Stats extends TokenStats {
+  /** @experimental The entry shape may gain dimensions in a minor release. */
   breakdown?: UsageEntry[];
 }

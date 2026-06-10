@@ -174,8 +174,7 @@ describe("createAgentTool", () => {
       ],
     });
     expect(parent.history.turns[1]?.usage).toEqual(fatal.usage);
-    // The child's conversation must not leak across the tool boundary: the
-    // error names the parent-facing tool and carries the parent's messages.
+    // The child's conversation must not leak across the tool boundary.
     expect(fatal.toolName).toBe("delegate");
     expect(fatal.messages).toHaveLength(1);
     expect(fatal.messages?.[0]?.role).toBe("assistant");
@@ -246,7 +245,6 @@ describe("createAgentTool", () => {
       ],
     });
     expect(parent.history.turns[1]?.usage).toEqual(abortError.usage);
-    // The child's conversation must not leak across the tool boundary.
     expect(abortError.messages).toHaveLength(1);
     expect(abortError.messages?.[0]?.role).toBe("assistant");
   });

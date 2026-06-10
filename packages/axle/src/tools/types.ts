@@ -19,6 +19,8 @@ export interface ToolContext {
   /**
    * Report model usage incurred while executing this tool (for example a
    * subagent's tokens) so it is rolled into the parent operation's totals.
+   *
+   * @experimental
    */
   reportUsage?: (usage: Stats) => void;
   span?: Span;

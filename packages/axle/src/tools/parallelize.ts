@@ -33,6 +33,9 @@ export interface ParallelToolResult<TInput = unknown> {
  * instead of failing the whole batch for ordinary execution errors. Fatal
  * and abort errors are not demoted: they propagate and terminate the run,
  * matching the unbatched tool contract.
+ *
+ * @experimental The generated tool's result JSON (`ParallelToolResult`) may
+ * change in a minor release.
  */
 export function parallelize<TSchema extends ZodObject<any>>(
   tool: ExecutableTool<TSchema>,

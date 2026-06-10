@@ -27,6 +27,9 @@ export interface CreateAgentToolOptions<TSchema extends ZodObject<any>> {
  * receiving the child agent's final response. The child's turn events are
  * forwarded through `ctx.emit` and its token usage through `ctx.reportUsage`,
  * so parents can render live progress and reconstruct cost.
+ *
+ * @experimental Shapes related to subagent rendering may change in a minor
+ * release.
  */
 export function createAgentTool<TSchema extends ZodObject<any>>(
   options: CreateAgentToolOptions<TSchema>,
@@ -71,11 +74,9 @@ function resolvePrompt<TSchema extends ZodObject<any>>(
   return `Complete this delegated task. Input: ${JSON.stringify(input)}`;
 }
 
-// The child agent's terminal errors carry the CHILD conversation's
-// messages/partial; letting those cross the tool boundary makes the parent
-// adopt them as its own (stream's catch and Agent history appends use
-// error.messages). Rethrow with the conversation state stripped, keeping
-// usage so the parent's cost accounting still includes the child's tokens.
+// Terminal errors from the child carry the child conversation's
+// messages/partial; strip them so the parent never adopts another
+// conversation's history. Usage is kept for cost accounting.
 function stripChildConversation(error: unknown, toolName: string): unknown {
   if (error instanceof AxleToolFatalError) {
     return new AxleToolFatalError(error.message, {

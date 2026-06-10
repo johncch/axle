@@ -61,8 +61,9 @@ for (const target of targets) {
         providerId: target.id,
         requestOptions: options.thinking ? { reasoning: true } : {},
       });
-      const status = result.ok ? "pass" : "fail";
-      if (result.ok) passed += 1;
+      const usageViolation = findUsageInvariantViolation(result.details?.usage);
+      const status = result.ok && !usageViolation ? "pass" : "fail";
+      if (status === "pass") passed += 1;
 
       const record: CheckRecord = {
         timestamp: new Date().toISOString(),
@@ -73,7 +74,7 @@ for (const target of targets) {
         caseDescription: testCase.description,
         status,
         durationMs: Date.now() - startedAt,
-        details: result.details,
+        details: usageViolation ? { ...result.details, usageViolation } : result.details,
       };
       await writeRecord(record);
       if (status !== "pass") failedRecords.push(record);
@@ -114,6 +115,28 @@ if (failedRecords.length > 0) process.exitCode = 1;
 
 async function writeRecord(record: CheckRecord): Promise<void> {
   await writeFile(options.out, `${JSON.stringify(record)}\n`, { flag: "a" });
+}
+
+// Every accumulation path attributes usage to a provider+model entry, so
+// breakdown entries must sum exactly to the aggregate fields; drift means
+// tokens were dropped or double-counted somewhere in the pipeline.
+function findUsageInvariantViolation(usage: unknown): string | undefined {
+  if (!usage || typeof usage !== "object") return undefined;
+  const stats = usage as Record<string, unknown>;
+  const breakdown = stats.breakdown;
+  if (!Array.isArray(breakdown) || breakdown.length === 0) return undefined;
+
+  const fields = ["in", "out", "cachedIn", "cacheWriteIn", "reasoningOut"] as const;
+  for (const field of fields) {
+    const total = typeof stats[field] === "number" ? (stats[field] as number) : 0;
+    const sum = breakdown.reduce((acc: number, entry: Record<string, unknown>) => {
+      return acc + (typeof entry[field] === "number" ? (entry[field] as number) : 0);
+    }, 0);
+    if (sum !== total) {
+      return `usage.${field} is ${total} but breakdown entries sum to ${sum}`;
+    }
+  }
+  return undefined;
 }
 
 function formatStatus(status: CheckRecord["status"]): string {
