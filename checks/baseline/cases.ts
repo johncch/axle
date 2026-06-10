@@ -1,8 +1,10 @@
 import {
   Agent,
   Instruct,
+  createAgentTool,
   generate,
   loadFileContent,
+  parallelize,
   stream,
   type AIProvider,
   type AxleAssistantMessage,
@@ -315,6 +317,110 @@ export const baselineCases: BaselineCase[] = [
         details: {
           response: result.response,
           toolResults: getToolResultDetails(agent.history.log),
+          turnCount: agent.history.turns.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "generate-parallelized-tool",
+    description: "generate() executes a generated batch tool and reaches a final answer.",
+    async run({ provider, model, requestOptions }) {
+      const lookupTool: ExecutableTool<
+        z.ZodObject<{
+          id: z.ZodString;
+        }>
+      > = {
+        name: "lookup_code",
+        description: "Lookup a fixed code by id.",
+        schema: z.object({
+          id: z.string(),
+        }),
+        async execute(input) {
+          if (input.id === "alpha") return "alpha=orchid";
+          if (input.id === "beta") return "beta=violet";
+          return `${input.id}=unknown`;
+        },
+      };
+      const lookupBatchTool = parallelize(lookupTool, {
+        name: "lookup_codes",
+        description: "Lookup multiple fixed codes by id.",
+      });
+
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages: [
+          {
+            role: "user",
+            content:
+              "Use the lookup_codes tool once to look up ids alpha and beta. Then answer with both code words.",
+          },
+        ],
+        tools: [lookupBatchTool],
+      });
+
+      if (!result.ok) return fail({ error: result.error });
+      const text = getAssistantText(result.final);
+      const toolResults = getToolResultDetails(result.messages);
+      return {
+        ok:
+          text.toLowerCase().includes("orchid") &&
+          text.toLowerCase().includes("violet") &&
+          toolResults.some(
+            (toolResult) =>
+              toolResult.name === "lookup_codes" &&
+              toolResult.content.includes("orchid") &&
+              toolResult.content.includes("violet"),
+          ),
+        details: {
+          text,
+          toolResults,
+          messageCount: result.messages.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-subagent-tool",
+    description: "Agent delegates to a child agent exposed as a tool.",
+    async run({ provider, model, requestOptions }) {
+      const subagentTool = createAgentTool({
+        name: "delegate_code_word",
+        description: "Delegate a code-word lookup task to a child agent.",
+        schema: z.object({
+          task: z.string(),
+        }),
+        createAgent: () =>
+          new Agent({
+            provider,
+            model,
+            ...requestOptions,
+            system: "You are a child agent. Reply with exactly the requested code word.",
+          }),
+        prompt: () => "Reply with exactly: subagent-orchid",
+      });
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [subagentTool] });
+      const result = await agent.send(
+        "Use delegate_code_word to get the code word. Then answer with only that code word.",
+      ).final;
+      const text = String(result.response ?? "");
+      const toolResults = getToolResultDetails(agent.history.log);
+
+      return {
+        ok:
+          text.includes("subagent-orchid") &&
+          toolResults.some(
+            (toolResult) =>
+              toolResult.name === "delegate_code_word" &&
+              toolResult.content.includes("subagent-orchid"),
+          ),
+        details: {
+          response: result.response,
+          toolResults,
           turnCount: agent.history.turns.length,
           usage: result.usage,
         },

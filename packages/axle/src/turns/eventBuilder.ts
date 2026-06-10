@@ -6,6 +6,7 @@ import type { TurnEvent } from "./events.js";
 import type {
   CitationPart,
   ProviderToolAction,
+  SubagentAction,
   TextPart,
   ThinkingPart,
   TimingInfo,
@@ -241,14 +242,24 @@ export class TurnEventBuilder {
         this.closeOpenParts(events);
         const partId = crypto.randomUUID();
         const timing = startTiming();
-        const part: ToolAction = {
-          id: partId,
-          type: "action",
-          kind: "tool",
-          status: "pending",
-          timing,
-          detail: { name: event.name, parameters: {} },
-        };
+        const part: ToolAction | SubagentAction =
+          event.kind === "agent"
+            ? {
+                id: partId,
+                type: "action",
+                kind: "agent",
+                status: "pending",
+                timing,
+                detail: { name: event.name, children: [] },
+              }
+            : {
+                id: partId,
+                type: "action",
+                kind: "tool",
+                status: "pending",
+                timing,
+                detail: { name: event.name, parameters: {} },
+              };
         this.toolIdMap.set(event.id, { partId, turnId, timing });
         events.push({ type: "part:start", turnId, part });
         break;
@@ -284,12 +295,21 @@ export class TurnEventBuilder {
       case "tool:exec-delta": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          events.push({
-            type: "action:progress",
-            turnId,
-            partId: mapping.partId,
-            chunk: event.chunk,
-          });
+          if (typeof event.chunk === "string") {
+            events.push({
+              type: "action:progress",
+              turnId,
+              partId: mapping.partId,
+              chunk: event.chunk,
+            });
+          } else if (event.chunk.type === "turn-event") {
+            events.push({
+              type: "action:child-event",
+              turnId,
+              partId: mapping.partId,
+              event: event.chunk.event,
+            });
+          }
         }
         break;
       }

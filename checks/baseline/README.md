@@ -72,6 +72,8 @@ done
 - `generate-tool`
 - `stream-tool`
 - `agent-tool`
+- `generate-parallelized-tool`
+- `agent-subagent-tool`
 - `reasoning-false`
 - `stream-web-search`
 - `instruct-text-reference`

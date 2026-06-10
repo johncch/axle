@@ -159,147 +159,225 @@ export async function executeToolCalls(
 ): Promise<{ results: AxleToolCallResult[] }> {
   const results: AxleToolCallResult[] = [];
 
+  for (let index = 0; index < toolCalls.length; ) {
+    const group = collectParallelGroup(toolCalls, index, registry);
+    if (group.length === 1) {
+      results.push(await executeOneToolCall(group[0], onToolCall, signal, registry, span));
+      index += 1;
+      continue;
+    }
+
+    results.push(...(await runParallelToolCallGroup(group, onToolCall, signal, registry, span)));
+    index += group.length;
+  }
+
+  return { results };
+}
+
+async function executeOneToolCall(
+  call: ContentPartToolCall,
+  onToolCall: ToolCallCallback,
+  signal: AbortSignal,
+  registry: ToolRegistry,
+  span?: Span,
+): Promise<AxleToolCallResult> {
   const throwAbortError = (): never => {
     throw new AxleAbortError("Operation aborted", { reason: signal.reason });
   };
 
-  for (const call of toolCalls) {
+  if (signal.aborted) {
+    throwAbortError();
+  }
+  const toolSpan = span?.startSpan(call.name, { type: "tool" });
+  const ctx: ToolContext = { signal, span: toolSpan, registry, emit: () => {} };
+  let resolved: ToolCallResult | null | undefined;
+
+  try {
+    resolved = await onToolCall(call.name, call.parameters, ctx);
     if (signal.aborted) {
+      toolSpan?.end("ok");
       throwAbortError();
     }
-    const toolSpan = span?.startSpan(call.name, { type: "tool" });
-    const ctx: ToolContext = { signal, span: toolSpan, registry, emit: () => {} };
-    let resolved: ToolCallResult | null | undefined;
+  } catch (error) {
+    if (error instanceof AxleToolFatalError) {
+      toolSpan?.setResult({
+        kind: "tool",
+        name: call.name,
+        input: call.parameters,
+        output: { type: "fatal", message: error.message },
+      });
+      toolSpan?.end("error");
+      throw error;
+    }
+    if (
+      signal.aborted ||
+      error instanceof AxleAbortError ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
+      toolSpan?.end("ok");
+      throwAbortError();
+    }
+    resolved = {
+      type: "error",
+      error: {
+        type: "exception",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 
-    try {
-      resolved = await onToolCall(call.name, call.parameters, ctx);
-      if (signal.aborted) {
-        toolSpan?.end("ok");
-        throwAbortError();
-      }
-    } catch (error) {
-      if (error instanceof AxleToolFatalError) {
+  if (resolved == null) {
+    const tool = registry.get(call.name);
+    if (tool) {
+      try {
+        const content = await tool.execute(call.parameters, ctx);
         toolSpan?.setResult({
           kind: "tool",
           name: call.name,
           input: call.parameters,
-          output: { type: "fatal", message: error.message },
+          output: content,
         });
-        toolSpan?.end("error");
-        throw error;
-      }
-      if (
-        signal.aborted ||
-        error instanceof AxleAbortError ||
-        (error instanceof Error && error.name === "AbortError")
-      ) {
         toolSpan?.end("ok");
-        throwAbortError();
-      }
-      resolved = {
-        type: "error",
-        error: {
-          type: "exception",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-
-    if (resolved == null) {
-      const tool = registry.get(call.name);
-      if (tool) {
-        try {
-          const content = await tool.execute(call.parameters, ctx);
+        return {
+          id: call.id,
+          name: call.name,
+          content,
+        };
+      } catch (error) {
+        if (error instanceof AxleToolFatalError) {
           toolSpan?.setResult({
             kind: "tool",
             name: call.name,
             input: call.parameters,
-            output: content,
+            output: { type: "fatal", message: error.message },
           });
-          toolSpan?.end("ok");
-          results.push({
-            id: call.id,
-            name: call.name,
-            content,
-          });
-          continue;
-        } catch (error) {
-          if (error instanceof AxleToolFatalError) {
-            toolSpan?.setResult({
-              kind: "tool",
-              name: call.name,
-              input: call.parameters,
-              output: { type: "fatal", message: error.message },
-            });
-            toolSpan?.end("error");
-            throw error;
-          }
-          if (
-            signal.aborted ||
-            error instanceof AxleAbortError ||
-            (error instanceof Error && error.name === "AbortError")
-          ) {
-            toolSpan?.end("ok");
-            throwAbortError();
-          }
-          resolved = {
-            type: "error",
-            error: {
-              type: "execution",
-              message: error instanceof Error ? error.message : String(error),
-            },
-          };
+          toolSpan?.end("error");
+          throw error;
         }
+        if (
+          signal.aborted ||
+          error instanceof AxleAbortError ||
+          (error instanceof Error && error.name === "AbortError")
+        ) {
+          toolSpan?.end("ok");
+          throwAbortError();
+        }
+        resolved = {
+          type: "error",
+          error: {
+            type: "execution",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
       }
-    }
-
-    if (resolved == null) {
-      const message = `Tool not found: ${call.name}`;
-      toolSpan?.setResult({
-        kind: "tool",
-        name: call.name,
-        input: call.parameters,
-        output: { type: "not-found", message },
-      });
-      toolSpan?.end("error");
-      results.push({
-        id: call.id,
-        name: call.name,
-        content: serializeToolError({ type: "not-found", message }),
-        isError: true,
-      });
-      continue;
-    }
-
-    if (resolved.type === "success") {
-      toolSpan?.setResult({
-        kind: "tool",
-        name: call.name,
-        input: call.parameters,
-        output: resolved.content,
-      });
-      toolSpan?.end("ok");
-      results.push({
-        id: call.id,
-        name: call.name,
-        content: resolved.content,
-      });
-    } else {
-      toolSpan?.setResult({
-        kind: "tool",
-        name: call.name,
-        input: call.parameters,
-        output: resolved.error,
-      });
-      toolSpan?.end("error");
-      results.push({
-        id: call.id,
-        name: call.name,
-        content: serializeToolError(resolved.error),
-        isError: true,
-      });
     }
   }
 
-  return { results };
+  if (resolved == null) {
+    const message = `Tool not found: ${call.name}`;
+    toolSpan?.setResult({
+      kind: "tool",
+      name: call.name,
+      input: call.parameters,
+      output: { type: "not-found", message },
+    });
+    toolSpan?.end("error");
+    return {
+      id: call.id,
+      name: call.name,
+      content: serializeToolError({ type: "not-found", message }),
+      isError: true,
+    };
+  }
+
+  if (resolved.type === "success") {
+    toolSpan?.setResult({
+      kind: "tool",
+      name: call.name,
+      input: call.parameters,
+      output: resolved.content,
+    });
+    toolSpan?.end("ok");
+    return {
+      id: call.id,
+      name: call.name,
+      content: resolved.content,
+    };
+  }
+
+  toolSpan?.setResult({
+    kind: "tool",
+    name: call.name,
+    input: call.parameters,
+    output: resolved.error,
+  });
+  toolSpan?.end("error");
+  return {
+    id: call.id,
+    name: call.name,
+    content: serializeToolError(resolved.error),
+    isError: true,
+  };
+}
+
+function collectParallelGroup(
+  calls: ContentPartToolCall[],
+  startIndex: number,
+  registry: ToolRegistry,
+): ContentPartToolCall[] {
+  const first = calls[startIndex];
+  if (!isParallelSafe(first, registry)) return [first];
+
+  const group: ContentPartToolCall[] = [];
+  const conflictKeys = new Set<string>();
+
+  for (let index = startIndex; index < calls.length; index++) {
+    const call = calls[index];
+    if (!isParallelSafe(call, registry)) break;
+
+    const conflictKey = getConflictKey(call, registry);
+    if (conflictKey && conflictKeys.has(conflictKey)) break;
+    if (conflictKey) conflictKeys.add(conflictKey);
+    group.push(call);
+  }
+
+  return group;
+}
+
+function isParallelSafe(call: ContentPartToolCall, registry: ToolRegistry): boolean {
+  return registry.get(call.name)?.execution?.parallel === true;
+}
+
+function getConflictKey(call: ContentPartToolCall, registry: ToolRegistry): string | undefined {
+  const tool = registry.get(call.name);
+  return tool?.execution?.conflictKey?.(call.parameters);
+}
+
+async function runParallelToolCallGroup(
+  calls: ContentPartToolCall[],
+  onToolCall: ToolCallCallback,
+  signal: AbortSignal,
+  registry: ToolRegistry,
+  span?: Span,
+): Promise<AxleToolCallResult[]> {
+  const maxConcurrency = Math.max(
+    1,
+    Math.min(
+      calls.length,
+      ...calls.map((call) => registry.get(call.name)?.execution?.maxConcurrency ?? calls.length),
+    ),
+  );
+  const results = new Array<AxleToolCallResult>(calls.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: maxConcurrency }, async () => {
+      while (nextIndex < calls.length) {
+        const index = nextIndex++;
+        results[index] = await executeOneToolCall(calls[index], onToolCall, signal, registry, span);
+      }
+    }),
+  );
+
+  return results;
 }

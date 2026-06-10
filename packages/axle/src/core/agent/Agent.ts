@@ -130,6 +130,10 @@ export class Agent {
 
   on(callback: TurnEventCallback) {
     this.eventCallbacks.push(callback);
+    return () => {
+      const index = this.eventCallbacks.indexOf(callback);
+      if (index >= 0) this.eventCallbacks.splice(index, 1);
+    };
   }
 
   context(): ContextUsage {

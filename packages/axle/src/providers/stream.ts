@@ -18,7 +18,13 @@ import type {
 } from "../messages/message.js";
 import type { LLMResult, Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
-import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "../tools/types.js";
+import type {
+  ExecutableTool,
+  ProviderTool,
+  ToolContext,
+  ToolDefinition,
+  ToolProgressChunk,
+} from "../tools/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 import { addStats, createStats, toTokenUsage } from "../utils/stats.js";
@@ -73,7 +79,7 @@ export type StreamEvent =
     }
   | { type: "thinking:end"; index: number; final: string }
   // Tool calls
-  | { type: "tool:request"; index: number; id: string; name: string }
+  | { type: "tool:request"; index: number; id: string; name: string; kind?: "tool" | "agent" }
   | {
       type: "tool:args-delta";
       index: number;
@@ -94,7 +100,7 @@ export type StreamEvent =
       index: number;
       id: string;
       name: string;
-      chunk: string;
+      chunk: ToolProgressChunk;
     }
   | {
       type: "tool:exec-complete";
@@ -574,7 +580,13 @@ async function run(
           chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
           chunkIndexToGlobalIndex.set(chunk.data.index, idx);
           toolCallIndexMap.set(chunk.data.id, idx);
-          emit(cbs, { type: "tool:request", index: idx, id: chunk.data.id, name: chunk.data.name });
+          emit(cbs, {
+            type: "tool:request",
+            index: idx,
+            id: chunk.data.id,
+            name: chunk.data.name,
+            kind: registry.get(chunk.data.name)?.kind ?? "tool",
+          });
           break;
         }
 
@@ -769,7 +781,7 @@ async function run(
 
       const wrappedCtx: ToolContext = {
         ...ctx,
-        emit: (chunk: string) => {
+        emit: (chunk: ToolProgressChunk) => {
           emit(cbs, { type: "tool:exec-delta", index: idx, id: call.id, name, chunk });
         },
       };

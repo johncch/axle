@@ -72,8 +72,20 @@ export type {
 } from "./providers/types.js";
 
 // Tools
+export { createAgentTool, parallelize } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
-export type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "./tools/types.js";
+export type {
+  AgentToolResult,
+  CreateAgentToolOptions,
+  ExecutableTool,
+  ParallelToolResult,
+  ParallelizeOptions,
+  ProviderTool,
+  ToolContext,
+  ToolDefinition,
+  ToolExecutionOptions,
+  ToolProgressChunk,
+} from "./tools/index.js";
 
 // MCP
 export { MCP } from "./mcp/index.js";

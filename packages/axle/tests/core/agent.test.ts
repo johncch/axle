@@ -1428,5 +1428,124 @@ describe("Agent", () => {
       expect(toolPart?.detail.result?.type).toBe("success");
       expect(toolPart?.detail.result?.content).toBe("done");
     });
+
+    test("structured ctx.emit turn events accumulate under agent action children", async () => {
+      const { z } = await import("zod");
+
+      let callIndex = 0;
+      const provider: AIProvider = {
+        name: "mock",
+        async createGenerationRequest() {
+          throw new Error("not used");
+        },
+        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          callIndex++;
+          yield {
+            type: "start",
+            id: `mock-${callIndex}`,
+            data: { model: "mock", timestamp: 0 },
+          };
+          if (callIndex === 1) {
+            yield {
+              type: "tool-call-start",
+              data: { index: 0, id: "tc1", name: "childish" },
+            };
+            yield {
+              type: "tool-call-complete",
+              data: { index: 0, id: "tc1", name: "childish", arguments: {} },
+            };
+            yield {
+              type: "complete",
+              data: { finishReason: AxleStopReason.FunctionCall, usage: { in: 1, out: 1 } },
+            };
+          } else {
+            yield { type: "text-start", data: { index: 0 } };
+            yield { type: "text-delta", data: { index: 0, text: "ok" } };
+            yield { type: "text-complete", data: { index: 0 } };
+            yield {
+              type: "complete",
+              data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+            };
+          }
+        },
+      };
+
+      const tool = {
+        kind: "agent" as const,
+        name: "childish",
+        description: "emits child event progress",
+        schema: z.object({}),
+        async execute(_input: any, ctx: any) {
+          ctx.emit({
+            type: "turn-event",
+            event: {
+              type: "turn:start",
+              turnId: "child-turn",
+            },
+          });
+          ctx.emit({
+            type: "turn-event",
+            event: {
+              type: "part:start",
+              turnId: "child-turn",
+              part: {
+                id: "child-part",
+                type: "text",
+                text: "",
+              },
+            },
+          });
+          ctx.emit({
+            type: "turn-event",
+            event: {
+              type: "text:delta",
+              turnId: "child-turn",
+              partId: "child-part",
+              delta: "child text",
+            },
+          });
+          ctx.emit({
+            type: "turn-event",
+            event: {
+              type: "turn:end",
+              turnId: "child-turn",
+              status: "complete",
+              usage: { in: 1, out: 1 },
+            },
+          });
+          return "done";
+        },
+      };
+
+      const agent = new Agent({ provider, model: "mock", tools: [tool] });
+      const events: any[] = [];
+      agent.on((event) => events.push(event));
+
+      await agent.send("hi").final;
+
+      const childEvents = events.filter((event) => event.type === "action:child-event");
+      expect(childEvents).toHaveLength(4);
+      expect(childEvents[2].event).toMatchObject({
+        type: "text:delta",
+        turnId: "child-turn",
+        partId: "child-part",
+        delta: "child text",
+      });
+      expect(events.some((event) => event.type === "action:progress")).toBe(false);
+
+      const agentTurn = agent.history.turns[1];
+      const agentPart = agentTurn.parts.find(
+        (part) => part.type === "action" && part.kind === "agent",
+      ) as any;
+      expect(agentPart).toBeDefined();
+      expect(agentPart.detail.name).toBe("childish");
+      expect(agentPart.detail.children).toHaveLength(1);
+      expect(agentPart.detail.children[0]).toMatchObject({
+        id: "child-turn",
+        owner: "agent",
+        status: "complete",
+        parts: [{ id: "child-part", type: "text", text: "child text" }],
+      });
+    });
   });
 });

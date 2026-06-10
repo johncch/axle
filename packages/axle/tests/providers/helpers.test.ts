@@ -4,6 +4,7 @@ import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { executeToolCalls } from "../../src/providers/helpers.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
+import type { ExecutableTool } from "../../src/tools/types.js";
 
 const testSignal = new AbortController().signal;
 const testRegistry = new ToolRegistry();
@@ -14,6 +15,19 @@ function makeToolCall(name: string, id?: string): ContentPartToolCall {
     id: id ?? `call-${name}`,
     name,
     parameters: { input: "test" },
+  };
+}
+
+function makeToolCallWithParams(
+  name: string,
+  id: string,
+  parameters: Record<string, unknown>,
+): ContentPartToolCall {
+  return {
+    type: "tool-call",
+    id,
+    name,
+    parameters,
   };
 }
 
@@ -164,5 +178,198 @@ describe("executeToolCalls", () => {
       expect(results[1].isError).toBe(true);
       expect(results[1].content).toContain("not-found");
     });
+
+    test("runs unmarked tools sequentially", async () => {
+      let active = 0;
+      let maxActive = 0;
+      const schema = z.object({ input: z.string() });
+      const serialTool: ExecutableTool<typeof schema> = {
+        name: "unmarked",
+        description: "Unmarked",
+        schema,
+        async execute(input) {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await delay(5);
+          active -= 1;
+          return input.input;
+        },
+      };
+      const registry = new ToolRegistry({ tools: [serialTool] });
+
+      const { results } = await executeToolCalls(
+        [
+          makeToolCallWithParams("unmarked", "a", { input: "a" }),
+          makeToolCallWithParams("unmarked", "b", { input: "b" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(maxActive).toBe(1);
+      expect(results.map((result) => result.content)).toEqual(["a", "b"]);
+    });
+
+    test("runs contiguous parallel-safe tool calls concurrently and preserves result order", async () => {
+      let active = 0;
+      let maxActive = 0;
+      const schema = z.object({ input: z.string() });
+      const parallelTool: ExecutableTool<typeof schema> = {
+        name: "parallel",
+        description: "Parallel",
+        schema,
+        execution: { parallel: true },
+        async execute(input) {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await delay(input.input === "first" ? 20 : 1);
+          active -= 1;
+          return input.input;
+        },
+      };
+      const registry = new ToolRegistry({
+        tools: [parallelTool],
+      });
+
+      const { results } = await executeToolCalls(
+        [
+          makeToolCallWithParams("parallel", "first", { input: "first" }),
+          makeToolCallWithParams("parallel", "second", { input: "second" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(maxActive).toBe(2);
+      expect(results.map((result) => result.content)).toEqual(["first", "second"]);
+    });
+
+    test("uses serial tool calls as barriers between parallel groups", async () => {
+      const events: string[] = [];
+      const schema = z.object({ input: z.string() });
+      const parallelTool: ExecutableTool<typeof schema> = {
+        name: "parallel",
+        description: "Parallel",
+        schema,
+        execution: { parallel: true },
+        async execute(input) {
+          events.push(`start:${input.input}`);
+          await delay(5);
+          events.push(`end:${input.input}`);
+          return input.input;
+        },
+      };
+      const serialTool: ExecutableTool<typeof schema> = {
+        name: "serial",
+        description: "Serial",
+        schema,
+        async execute(input) {
+          events.push(`start:${input.input}`);
+          await delay(1);
+          events.push(`end:${input.input}`);
+          return input.input;
+        },
+      };
+      const registry = new ToolRegistry({
+        tools: [parallelTool, serialTool],
+      });
+
+      await executeToolCalls(
+        [
+          makeToolCallWithParams("parallel", "p1", { input: "p1" }),
+          makeToolCallWithParams("parallel", "p2", { input: "p2" }),
+          makeToolCallWithParams("serial", "s1", { input: "s1" }),
+          makeToolCallWithParams("parallel", "p3", { input: "p3" }),
+          makeToolCallWithParams("parallel", "p4", { input: "p4" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(events.indexOf("start:s1")).toBeGreaterThan(events.indexOf("end:p1"));
+      expect(events.indexOf("start:s1")).toBeGreaterThan(events.indexOf("end:p2"));
+      expect(events.indexOf("start:p3")).toBeGreaterThan(events.indexOf("end:s1"));
+      expect(events.indexOf("start:p4")).toBeGreaterThan(events.indexOf("end:s1"));
+    });
+
+    test("does not run conflicting parallel-safe calls at the same time", async () => {
+      let active = 0;
+      let maxActive = 0;
+      const schema = z.object({ path: z.string() });
+      const writeLikeTool: ExecutableTool<typeof schema> = {
+        name: "write_like",
+        description: "Write-like",
+        schema,
+        execution: {
+          parallel: true,
+          conflictKey: (input) => input.path,
+        },
+        async execute(input) {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await delay(5);
+          active -= 1;
+          return input.path;
+        },
+      };
+      const registry = new ToolRegistry({
+        tools: [writeLikeTool],
+      });
+
+      await executeToolCalls(
+        [
+          makeToolCallWithParams("write_like", "a", { path: "same.txt" }),
+          makeToolCallWithParams("write_like", "b", { path: "same.txt" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(maxActive).toBe(1);
+    });
+
+    test("honors maxConcurrency for parallel-safe groups", async () => {
+      let active = 0;
+      let maxActive = 0;
+      const schema = z.object({ input: z.string() });
+      const limitedTool: ExecutableTool<typeof schema> = {
+        name: "limited",
+        description: "Limited",
+        schema,
+        execution: { parallel: true, maxConcurrency: 2 },
+        async execute(input) {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await delay(5);
+          active -= 1;
+          return input.input;
+        },
+      };
+      const registry = new ToolRegistry({
+        tools: [limitedTool],
+      });
+
+      await executeToolCalls(
+        [
+          makeToolCallWithParams("limited", "a", { input: "a" }),
+          makeToolCallWithParams("limited", "b", { input: "b" }),
+          makeToolCallWithParams("limited", "c", { input: "c" }),
+          makeToolCallWithParams("limited", "d", { input: "d" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(maxActive).toBe(2);
+    });
   });
 });
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
