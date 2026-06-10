@@ -130,6 +130,10 @@ export class Agent {
 
   on(callback: TurnEventCallback) {
     this.eventCallbacks.push(callback);
+    return () => {
+      const index = this.eventCallbacks.indexOf(callback);
+      if (index >= 0) this.eventCallbacks.splice(index, 1);
+    };
   }
 
   context(): ContextUsage {
@@ -343,20 +347,6 @@ export class Agent {
       fileResolver: sendFileResolver ?? this.fileResolver,
       ...streamRequestOptions,
       signal,
-      onToolCall: async (name, params, ctx) => {
-        const tool = this.registry.get(name);
-        if (!tool) return null;
-        try {
-          const result = await tool.execute(params, ctx);
-          return { type: "success", content: result };
-        } catch (error) {
-          if (error instanceof AxleToolFatalError) {
-            throw error;
-          }
-          const msg = error instanceof Error ? error.message : String(error);
-          return { type: "error", error: { type: "execution", message: msg } };
-        }
-      },
     });
 
     // Translate StreamEvents → TurnEvents

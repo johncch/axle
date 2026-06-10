@@ -6,6 +6,7 @@ import type { TurnEvent } from "./events.js";
 import type {
   CitationPart,
   ProviderToolAction,
+  SubagentAction,
   TextPart,
   ThinkingPart,
   TimingInfo,
@@ -33,7 +34,16 @@ export class TurnEventBuilder {
   private currentTurnTiming: TimingInfo | undefined;
   private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
   private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
-  private toolIdMap = new Map<string, { partId: string; turnId: string; timing?: TimingInfo }>();
+  private toolIdMap = new Map<
+    string,
+    {
+      partId: string;
+      turnId: string;
+      timing?: TimingInfo;
+      name?: string;
+      kind?: "tool" | "agent";
+    }
+  >();
   private accumulatedUsage: Stats = createStats();
 
   createUserTurn(message: AxleUserMessage): TurnEvent[] {
@@ -241,15 +251,31 @@ export class TurnEventBuilder {
         this.closeOpenParts(events);
         const partId = crypto.randomUUID();
         const timing = startTiming();
-        const part: ToolAction = {
-          id: partId,
-          type: "action",
-          kind: "tool",
-          status: "pending",
+        const part: ToolAction | SubagentAction =
+          event.kind === "agent"
+            ? {
+                id: partId,
+                type: "action",
+                kind: "agent",
+                status: "pending",
+                timing,
+                detail: { name: event.name, children: [] },
+              }
+            : {
+                id: partId,
+                type: "action",
+                kind: "tool",
+                status: "pending",
+                timing,
+                detail: { name: event.name, parameters: {} },
+              };
+        this.toolIdMap.set(event.id, {
+          partId,
+          turnId,
           timing,
-          detail: { name: event.name, parameters: {} },
-        };
-        this.toolIdMap.set(event.id, { partId, turnId, timing });
+          name: event.name,
+          kind: event.kind,
+        });
         events.push({ type: "part:start", turnId, part });
         break;
       }
@@ -284,12 +310,21 @@ export class TurnEventBuilder {
       case "tool:exec-delta": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
-          events.push({
-            type: "action:progress",
-            turnId,
-            partId: mapping.partId,
-            chunk: event.chunk,
-          });
+          if (typeof event.chunk === "string") {
+            events.push({
+              type: "action:progress",
+              turnId,
+              partId: mapping.partId,
+              chunk: event.chunk,
+            });
+          } else if (event.chunk.type === "turn-event") {
+            events.push({
+              type: "action:child-event",
+              turnId,
+              partId: mapping.partId,
+              event: event.chunk.event,
+            });
+          }
         }
         break;
       }
@@ -297,6 +332,7 @@ export class TurnEventBuilder {
       case "tool:exec-complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
+          addStats(this.accumulatedUsage, event.usage);
           const timing = completeTiming(mapping.timing);
           mapping.timing = timing;
           if (event.result.type === "success") {
@@ -316,6 +352,23 @@ export class TurnEventBuilder {
               timing,
             });
           }
+        }
+        break;
+      }
+
+      case "tool:exec-error": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          addStats(this.accumulatedUsage, event.usage);
+          const timing = completeTiming(mapping.timing);
+          mapping.timing = timing;
+          events.push({
+            type: "action:error",
+            turnId,
+            partId: mapping.partId,
+            error: event.error,
+            timing,
+          });
         }
         break;
       }

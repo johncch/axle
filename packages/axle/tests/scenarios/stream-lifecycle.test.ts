@@ -181,7 +181,11 @@ describe("stream() happy paths", () => {
       // final points to the last assistant message
       expect(result.final).toBe(result.messages[2]);
       // Usage accumulates across both turns (default 10 in / 20 out each)
-      expect(result.usage).toEqual({ in: 20, out: 40 });
+      expect(result.usage).toMatchObject({
+        in: 20,
+        out: 40,
+        breakdown: [{ provider: "test", model: "test-model", in: 20, out: 40 }],
+      });
     }
   });
 

@@ -1,17 +1,35 @@
 import type { z, ZodObject } from "zod";
 import type { ToolResultPart } from "../messages/message.js";
 import type { Span } from "../observability/types.js";
+import type { TurnEvent } from "../turns/events.js";
+import type { Stats } from "../types.js";
 import type { ToolRegistry } from "./registry.js";
+
+export type ToolProgressChunk =
+  | string
+  | {
+      type: "turn-event";
+      event: TurnEvent;
+    };
 
 export interface ToolContext {
   registry: ToolRegistry;
   signal: AbortSignal;
-  emit: (chunk: string) => void;
+  emit: (chunk: ToolProgressChunk) => void;
+  /**
+   * Report model usage incurred while executing this tool (for example a
+   * subagent's tokens) so it is rolled into the parent operation's totals.
+   *
+   * @experimental
+   */
+  reportUsage?: (usage: Stats) => void;
   span?: Span;
 }
 
 export interface ExecutableTool<TSchema extends ZodObject<any> = ZodObject<any>> {
   type?: "function";
+  /** Presentation metadata. Agent-backed tools set "agent"; execution is identical. */
+  kind?: "tool" | "agent";
   name: string;
   description: string;
   schema: TSchema;

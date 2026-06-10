@@ -72,8 +72,18 @@ export type {
 } from "./providers/types.js";
 
 // Tools
+export { createAgentTool, parallelize } from "./tools/index.js";
+export type {
+  CreateAgentToolOptions,
+  ExecutableTool,
+  ParallelToolResult,
+  ParallelizeOptions,
+  ProviderTool,
+  ToolContext,
+  ToolDefinition,
+  ToolProgressChunk,
+} from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
-export type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "./tools/types.js";
 
 // MCP
 export { MCP } from "./mcp/index.js";
@@ -153,7 +163,7 @@ export type {
   TraceWriter,
   TracerOptions,
 } from "./observability/index.js";
-export type { Stats } from "./types.js";
+export type { Stats, TokenStats, UsageEntry } from "./types.js";
 
 // Memory
 export type { AgentMemory, MemoryContext, RecallResult } from "./memory/index.js";
@@ -173,6 +183,6 @@ export type {
   FileResolver,
   ResolvedFileSource,
 } from "./utils/file.js";
-export { addStats, createStats } from "./utils/stats.js";
+export { addStats, createStats, mergeStats } from "./utils/stats.js";
 export { createHandle } from "./utils/utils.js";
 export type { Handle } from "./utils/utils.js";

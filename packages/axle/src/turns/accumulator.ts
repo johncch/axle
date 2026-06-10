@@ -1,5 +1,5 @@
-import type { Stats } from "../types.js";
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
+import type { Stats } from "../types.js";
 import type { TurnEvent } from "./events.js";
 import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
 
@@ -140,7 +140,9 @@ export class TurnAccumulator<
             if (part.type !== "thinking") return part;
             return {
               ...part,
-              ...(rawEvent.redacted !== undefined ? { redacted: rawEvent.redacted as boolean } : {}),
+              ...(rawEvent.redacted !== undefined
+                ? { redacted: rawEvent.redacted as boolean }
+                : {}),
               ...(rawEvent.continuity
                 ? { continuity: rawEvent.continuity as ThinkingContinuity }
                 : {}),
@@ -281,8 +283,28 @@ export class TurnAccumulator<
         return this.replaceAnnotation(event, true);
 
       case "error":
-      case "action:child-event":
         return this.handled(event);
+
+      case "action:child-event":
+        return this.updatePart(
+          rawEvent.turnId as string,
+          rawEvent.partId as string,
+          event,
+          (part) => {
+            if (part.type !== "action" || part.kind !== "agent") return part;
+            const childAccumulator = new TurnAccumulator<TAnnotation>({
+              turns: part.detail.children,
+            });
+            const result = childAccumulator.apply(rawEvent.event as TurnEvent<TAnnotation>);
+            return {
+              ...part,
+              detail: {
+                ...part.detail,
+                children: result.state.turns,
+              },
+            };
+          },
+        );
 
       default:
         return { handled: false, state: this._state, event: event as THostEvent };

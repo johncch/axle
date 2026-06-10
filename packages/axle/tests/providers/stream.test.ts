@@ -76,7 +76,10 @@ function textCompleteChunk(index: number): StreamTextCompleteChunk {
   return { type: "text-complete", data: { index } };
 }
 
-function citationChunk(index: number, citations: StreamCitationChunk["data"]["citations"]): StreamCitationChunk {
+function citationChunk(
+  index: number,
+  citations: StreamCitationChunk["data"]["citations"],
+): StreamCitationChunk {
   return { type: "citation", data: { index, citations } };
 }
 
@@ -414,6 +417,44 @@ describe("stream()", () => {
       });
     });
 
+    test("defers tool:request until a late-arriving tool name resolves the kind", async () => {
+      const { z } = await import("zod");
+      const agentTool = {
+        kind: "agent" as const,
+        name: "delegate",
+        description: "Agent-backed tool",
+        schema: z.object({ q: z.string() }),
+        execute: async () => "child done",
+      };
+      // Chat-completions vendors can stream tool-call-start before the
+      // function name is known.
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", ""),
+        toolCallCompleteChunk(0, "call_1", "delegate", { q: "x" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const handle = stream({ provider, model: "test-model", messages: [], tools: [agentTool] });
+      handle.on(callback);
+      await handle.final;
+
+      const requests = events.filter((e) => e.type === "tool:request");
+      expect(requests).toHaveLength(1);
+      expect(requests[0].type === "tool:request" && requests[0].name).toBe("delegate");
+      expect(requests[0].type === "tool:request" && requests[0].kind).toBe("agent");
+    });
+
     test("executes a local tool without onToolCall", async () => {
       const { z } = await import("zod");
       const execute = async () => "local result";
@@ -517,7 +558,10 @@ describe("stream()", () => {
         textStartChunk(1),
         textChunk(1, "searching the web"),
         textCompleteChunk(1),
-        { type: "provider-tool-complete", data: { index: 0, id: "ps_1", name: "web_search", output } },
+        {
+          type: "provider-tool-complete",
+          data: { index: 0, id: "ps_1", name: "web_search", output },
+        },
         completeChunk(),
       ];
 
@@ -1108,7 +1152,11 @@ describe("stream()", () => {
       expect(error.messages).toHaveLength(1);
       expect(error.messages![0].role).toBe("assistant");
       expect(error.partial).toBeUndefined();
-      expect(error.usage).toEqual({ in: 10, out: 5 });
+      expect(error.usage).toMatchObject({
+        in: 10,
+        out: 5,
+        breakdown: [{ provider: "test", model: "test-model" }],
+      });
     });
 
     test("cancel after completion is a no-op", async () => {

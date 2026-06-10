@@ -18,10 +18,15 @@ import type {
 } from "../messages/message.js";
 import type { LLMResult, Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
-import type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "../tools/types.js";
+import type {
+  ExecutableTool,
+  ProviderTool,
+  ToolDefinition,
+  ToolProgressChunk,
+} from "../tools/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
-import { addStats, createStats, toTokenUsage } from "../utils/stats.js";
+import { addStats, attributeStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.js";
 import {
   executeToolCalls,
   type GenerateError,
@@ -30,6 +35,7 @@ import {
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
+  type ToolExecutionOutcome,
 } from "./helpers.js";
 import type { AIProvider, AxleModelRequestOptions } from "./types.js";
 import { AxleStopReason } from "./types.js";
@@ -73,7 +79,7 @@ export type StreamEvent =
     }
   | { type: "thinking:end"; index: number; final: string }
   // Tool calls
-  | { type: "tool:request"; index: number; id: string; name: string }
+  | { type: "tool:request"; index: number; id: string; name: string; kind?: "tool" | "agent" }
   | {
       type: "tool:args-delta";
       index: number;
@@ -94,7 +100,7 @@ export type StreamEvent =
       index: number;
       id: string;
       name: string;
-      chunk: string;
+      chunk: ToolProgressChunk;
     }
   | {
       type: "tool:exec-complete";
@@ -102,6 +108,15 @@ export type StreamEvent =
       id: string;
       name: string;
       result: ToolCallResult;
+      usage?: Stats;
+    }
+  | {
+      type: "tool:exec-error";
+      index: number;
+      id: string;
+      name: string;
+      error: { type: "fatal" | "aborted"; message: string };
+      usage?: Stats;
     }
   // Provider tools (provider-managed: web search, code interpreter, etc.)
   | { type: "provider-tool:start"; index: number; id: string; name: string }
@@ -154,16 +169,6 @@ export interface StreamInstructHandle<TSchema extends OutputSchema | undefined> 
 
 function emit(callbacks: StreamEventCallback[], event: StreamEvent) {
   for (const cb of callbacks) cb(event);
-}
-
-function makeNotFoundToolResult(name: string): ToolCallResult {
-  return {
-    type: "error",
-    error: {
-      type: "not-found",
-      message: `Tool not found: ${name}`,
-    },
-  };
 }
 
 function toToolDefinition(tool: ExecutableTool): ToolDefinition {
@@ -393,6 +398,20 @@ async function run(
     const chunkIndexToPartIndex = new Map<number, number>();
     const chunkIndexToGlobalIndex = new Map<number, number>();
 
+    // Some chat-completions vendors stream the first tool_call delta before
+    // the function name is known. tool:request carries the name and the
+    // registry-resolved kind, so its emission is deferred until then.
+    const pendingToolRequests = new Set<string>();
+    const emitToolRequest = (id: string, name: string) => {
+      emit(cbs, {
+        type: "tool:request",
+        index: toolCallIndexMap.get(id) ?? -1,
+        id,
+        name,
+        kind: registry.get(name)?.kind ?? "tool",
+      });
+    };
+
     // Index of the most recently pushed turnParts entry.
     // Provider block indices can have gaps (e.g. web_search_tool_result), but
     // blocks stream sequentially so the current part is always the last pushed.
@@ -574,11 +593,19 @@ async function run(
           chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
           chunkIndexToGlobalIndex.set(chunk.data.index, idx);
           toolCallIndexMap.set(chunk.data.id, idx);
-          emit(cbs, { type: "tool:request", index: idx, id: chunk.data.id, name: chunk.data.name });
+          if (chunk.data.name) {
+            emitToolRequest(chunk.data.id, chunk.data.name);
+          } else {
+            pendingToolRequests.add(chunk.data.id);
+          }
           break;
         }
 
         case "tool-call-args-delta": {
+          if (pendingToolRequests.has(chunk.data.id) && chunk.data.name) {
+            pendingToolRequests.delete(chunk.data.id);
+            emitToolRequest(chunk.data.id, chunk.data.name);
+          }
           const idx = toolCallIndexMap.get(chunk.data.id) ?? -1;
           emit(cbs, {
             type: "tool:args-delta",
@@ -599,6 +626,10 @@ async function run(
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
           if (chunk.data.providerMetadata) part.providerMetadata = chunk.data.providerMetadata;
+          if (pendingToolRequests.has(part.id) && part.name) {
+            pendingToolRequests.delete(part.id);
+            emitToolRequest(part.id, part.name);
+          }
           break;
         }
 
@@ -648,7 +679,15 @@ async function run(
 
         case "error": {
           closePart();
-          addStats(usage, chunk.data.usage);
+          if (chunk.data.usage) {
+            addStats(
+              usage,
+              attributeStats(chunk.data.usage, {
+                provider: provider.name,
+                model: turnModel || model,
+              }),
+            );
+          }
           turnSpan?.end("error");
           return endWithResult({
             ok: false,
@@ -698,7 +737,11 @@ async function run(
       });
     }
 
-    addStats(usage, turnUsage);
+    const attributedTurnUsage = attributeStats(turnUsage, {
+      provider: provider.name,
+      model: turnModel || model,
+    });
+    addStats(usage, attributedTurnUsage);
 
     const turnLLMResult: LLMResult = {
       kind: "llm",
@@ -722,7 +765,11 @@ async function run(
       finishReason: turnFinishReason,
     };
     addMessage(assistantMessage);
-    emit(cbs, { type: "turn:complete", message: assistantMessage, usage: turnUsage });
+    emit(cbs, {
+      type: "turn:complete",
+      message: assistantMessage,
+      usage: attributedTurnUsage,
+    });
 
     // If not a function call, we're done
     if (turnFinishReason !== AxleStopReason.FunctionCall) {
@@ -760,42 +807,65 @@ async function run(
     const toolResultsId = crypto.randomUUID();
     emit(cbs, { type: "tool-results:start", id: toolResultsId });
 
-    let toolExecIndex = 0;
-    const emittingToolCall: ToolCallCallback = async (name, parameters, ctx) => {
-      const call = toolCalls[toolExecIndex++];
-      const idx = toolCallIndexMap.get(call.id) ?? -1;
-
-      emit(cbs, { type: "tool:exec-start", index: idx, id: call.id, name, parameters });
-
-      const wrappedCtx: ToolContext = {
-        ...ctx,
-        emit: (chunk: string) => {
-          emit(cbs, { type: "tool:exec-delta", index: idx, id: call.id, name, chunk });
-        },
-      };
-
-      const tool = registry.get(name);
-      const rawResult = onToolCall
-        ? await onToolCall(name, parameters, wrappedCtx)
-        : tool
-          ? { type: "success" as const, content: await tool.execute(parameters, wrappedCtx) }
-          : null;
-      const result = rawResult ?? makeNotFoundToolResult(name);
-
-      emit(cbs, {
-        type: "tool:exec-complete",
-        index: idx,
-        id: call.id,
-        name,
-        result,
-      });
-
-      return result;
+    const executionObserver = {
+      onStart(call: ContentPartToolCall) {
+        const idx = toolCallIndexMap.get(call.id) ?? -1;
+        emit(cbs, {
+          type: "tool:exec-start",
+          index: idx,
+          id: call.id,
+          name: call.name,
+          parameters: call.parameters,
+        });
+      },
+      onDelta(call: ContentPartToolCall, chunk: ToolProgressChunk) {
+        const idx = toolCallIndexMap.get(call.id) ?? -1;
+        emit(cbs, {
+          type: "tool:exec-delta",
+          index: idx,
+          id: call.id,
+          name: call.name,
+          chunk,
+        });
+      },
+      onComplete(call: ContentPartToolCall, outcome: ToolExecutionOutcome) {
+        const idx = toolCallIndexMap.get(call.id) ?? -1;
+        emit(cbs, {
+          type: "tool:exec-complete",
+          index: idx,
+          id: call.id,
+          name: call.name,
+          result: outcome.result,
+          usage: outcome.usage,
+        });
+      },
+      onError(call: ContentPartToolCall, error: AxleAbortError | AxleToolFatalError) {
+        const idx = toolCallIndexMap.get(call.id) ?? -1;
+        emit(cbs, {
+          type: "tool:exec-error",
+          index: idx,
+          id: call.id,
+          name: call.name,
+          error: {
+            type: error instanceof AxleToolFatalError ? "fatal" : "aborted",
+            message: error.message,
+          },
+          usage: error.usage,
+        });
+      },
     };
 
     let results;
+    let toolUsage: Stats | undefined;
     try {
-      ({ results } = await executeToolCalls(toolCalls, emittingToolCall, signal, registry, span));
+      ({ results, usage: toolUsage } = await executeToolCalls(
+        toolCalls,
+        onToolCall,
+        signal,
+        registry,
+        span,
+        executionObserver,
+      ));
     } catch (error) {
       if (error instanceof AxleToolFatalError) {
         span?.end("error");
@@ -803,7 +873,7 @@ async function run(
           toolName: error.toolName,
           messages: error.messages ?? newMessages,
           partial: error.partial ?? assistantMessage,
-          usage: error.usage ?? usage,
+          usage: mergeStats(usage, error.usage),
           cause: error.cause,
         });
       }
@@ -813,11 +883,13 @@ async function run(
           reason: error.reason,
           messages: error.messages ?? newMessages,
           partial: error.partial,
-          usage: error.usage ?? usage,
+          usage: mergeStats(usage, error.usage),
         });
       }
       throw error;
     }
+
+    addStats(usage, toolUsage);
 
     if (results.length > 0) {
       const toolResultsMessage: AxleToolCallMessage = {

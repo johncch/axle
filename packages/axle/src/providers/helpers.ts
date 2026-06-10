@@ -20,9 +20,14 @@ import {
 import { logContent } from "../observability/log.js";
 import type { Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
-import type { ExecutableTool, ProviderTool, ToolContext } from "../tools/types.js";
+import type {
+  ExecutableTool,
+  ProviderTool,
+  ToolContext,
+  ToolProgressChunk,
+} from "../tools/types.js";
 import type { Stats } from "../types.js";
-import { addStats } from "../utils/stats.js";
+import { addStats, attributeStats, createStats, mergeStats } from "../utils/stats.js";
 import type { ModelError, ModelResult } from "./types.js";
 
 export type ToolCallResult =
@@ -37,6 +42,18 @@ export type ToolCallCallback = (
   parameters: Record<string, unknown>,
   ctx: ToolContext,
 ) => Promise<ToolCallResult | null | undefined>;
+
+export interface ToolExecutionObserver {
+  onStart?(call: ContentPartToolCall): void;
+  onDelta?(call: ContentPartToolCall, chunk: ToolProgressChunk): void;
+  onComplete?(call: ContentPartToolCall, outcome: ToolExecutionOutcome): void;
+  onError?(call: ContentPartToolCall, error: AxleAbortError | AxleToolFatalError): void;
+}
+
+export interface ToolExecutionOutcome {
+  result: ToolCallResult;
+  usage?: Stats;
+}
 
 export type GenerateError =
   | { kind: "model"; error: ModelError }
@@ -62,8 +79,13 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
 
 export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TResponse>;
 
-export function appendUsage(total: Stats, result: ModelResult): void {
-  addStats(total, result.usage);
+export function appendUsage(
+  total: Stats,
+  result: ModelResult,
+  source?: { provider: string; model: string },
+): void {
+  if (!result.usage) return;
+  addStats(total, source ? attributeStats(result.usage, source) : result.usage);
 }
 
 // Logs a turn's content (text/thinking/provider-tools/citations) onto its span,
@@ -156,150 +178,167 @@ export async function executeToolCalls(
   signal: AbortSignal,
   registry: ToolRegistry,
   span?: Span,
-): Promise<{ results: AxleToolCallResult[] }> {
+  observer?: ToolExecutionObserver,
+): Promise<{ results: AxleToolCallResult[]; usage?: Stats }> {
   const results: AxleToolCallResult[] = [];
-
-  const throwAbortError = (): never => {
-    throw new AxleAbortError("Operation aborted", { reason: signal.reason });
-  };
+  const usage = createStats();
+  let hasUsage = false;
 
   for (const call of toolCalls) {
-    if (signal.aborted) {
-      throwAbortError();
-    }
-    const toolSpan = span?.startSpan(call.name, { type: "tool" });
-    const ctx: ToolContext = { signal, span: toolSpan, registry, emit: () => {} };
-    let resolved: ToolCallResult | null | undefined;
-
+    let executed: ExecutedToolCall;
     try {
-      resolved = await onToolCall(call.name, call.parameters, ctx);
-      if (signal.aborted) {
-        toolSpan?.end("ok");
-        throwAbortError();
-      }
+      executed = await executeOneToolCall(call, onToolCall, signal, registry, span, observer);
     } catch (error) {
-      if (error instanceof AxleToolFatalError) {
-        toolSpan?.setResult({
-          kind: "tool",
-          name: call.name,
-          input: call.parameters,
-          output: { type: "fatal", message: error.message },
-        });
-        toolSpan?.end("error");
-        throw error;
-      }
-      if (
-        signal.aborted ||
-        error instanceof AxleAbortError ||
-        (error instanceof Error && error.name === "AbortError")
-      ) {
-        toolSpan?.end("ok");
-        throwAbortError();
-      }
-      resolved = {
-        type: "error",
-        error: {
-          type: "exception",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
+      // A terminal throw must still account for usage already reported by
+      // completed calls earlier in this batch.
+      throw hasUsage ? attachUsage(error, usage) : error;
     }
-
-    if (resolved == null) {
-      const tool = registry.get(call.name);
-      if (tool) {
-        try {
-          const content = await tool.execute(call.parameters, ctx);
-          toolSpan?.setResult({
-            kind: "tool",
-            name: call.name,
-            input: call.parameters,
-            output: content,
-          });
-          toolSpan?.end("ok");
-          results.push({
-            id: call.id,
-            name: call.name,
-            content,
-          });
-          continue;
-        } catch (error) {
-          if (error instanceof AxleToolFatalError) {
-            toolSpan?.setResult({
-              kind: "tool",
-              name: call.name,
-              input: call.parameters,
-              output: { type: "fatal", message: error.message },
-            });
-            toolSpan?.end("error");
-            throw error;
-          }
-          if (
-            signal.aborted ||
-            error instanceof AxleAbortError ||
-            (error instanceof Error && error.name === "AbortError")
-          ) {
-            toolSpan?.end("ok");
-            throwAbortError();
-          }
-          resolved = {
-            type: "error",
-            error: {
-              type: "execution",
-              message: error instanceof Error ? error.message : String(error),
-            },
-          };
-        }
-      }
-    }
-
-    if (resolved == null) {
-      const message = `Tool not found: ${call.name}`;
-      toolSpan?.setResult({
-        kind: "tool",
-        name: call.name,
-        input: call.parameters,
-        output: { type: "not-found", message },
-      });
-      toolSpan?.end("error");
-      results.push({
-        id: call.id,
-        name: call.name,
-        content: serializeToolError({ type: "not-found", message }),
-        isError: true,
-      });
-      continue;
-    }
-
-    if (resolved.type === "success") {
-      toolSpan?.setResult({
-        kind: "tool",
-        name: call.name,
-        input: call.parameters,
-        output: resolved.content,
-      });
-      toolSpan?.end("ok");
-      results.push({
-        id: call.id,
-        name: call.name,
-        content: resolved.content,
-      });
-    } else {
-      toolSpan?.setResult({
-        kind: "tool",
-        name: call.name,
-        input: call.parameters,
-        output: resolved.error,
-      });
-      toolSpan?.end("error");
-      results.push({
-        id: call.id,
-        name: call.name,
-        content: serializeToolError(resolved.error),
-        isError: true,
-      });
+    results.push(executed.result);
+    if (executed.usage) {
+      addStats(usage, executed.usage);
+      hasUsage = true;
     }
   }
 
-  return { results };
+  return { results, ...(hasUsage ? { usage } : {}) };
+}
+
+function attachUsage(error: unknown, usage: Stats): unknown {
+  if (error instanceof AxleToolFatalError) {
+    return new AxleToolFatalError(error.message, {
+      toolName: error.toolName,
+      messages: error.messages,
+      partial: error.partial,
+      usage: mergeStats(usage, error.usage),
+      cause: error.cause,
+    });
+  }
+  if (error instanceof AxleAbortError) {
+    return new AxleAbortError(error.message, {
+      reason: error.reason,
+      messages: error.messages,
+      partial: error.partial,
+      usage: mergeStats(usage, error.usage),
+    });
+  }
+  return error;
+}
+
+interface ExecutedToolCall {
+  result: AxleToolCallResult;
+  usage?: Stats;
+}
+
+async function executeOneToolCall(
+  call: ContentPartToolCall,
+  onToolCall: ToolCallCallback,
+  signal: AbortSignal,
+  registry: ToolRegistry,
+  span?: Span,
+  observer?: ToolExecutionObserver,
+): Promise<ExecutedToolCall> {
+  if (signal.aborted) throw new AxleAbortError("Operation aborted", { reason: signal.reason });
+
+  const tool = registry.get(call.name);
+  const toolSpan = span?.startSpan(call.name, { type: "tool" });
+  let usage: Stats | undefined;
+  const ctx: ToolContext = {
+    signal,
+    span: toolSpan,
+    registry,
+    emit: (chunk) => observer?.onDelta?.(call, chunk),
+    reportUsage: (reported) => {
+      usage ??= createStats();
+      addStats(usage, reported);
+    },
+  };
+  observer?.onStart?.(call);
+
+  let resolved: ToolCallResult | null | undefined;
+  let errorType = "exception";
+
+  try {
+    resolved = await onToolCall(call.name, call.parameters, ctx);
+    if (resolved == null && tool) {
+      errorType = "execution";
+      const content = await tool.execute(call.parameters, ctx);
+      resolved = { type: "success", content };
+    }
+
+    if (signal.aborted) {
+      throw new AxleAbortError("Operation aborted", { reason: signal.reason });
+    }
+  } catch (error) {
+    const terminal = normalizeTerminalToolError(error, signal);
+    if (terminal) {
+      toolSpan?.setResult({
+        kind: "tool",
+        name: call.name,
+        input: call.parameters,
+        output: {
+          type: terminal instanceof AxleToolFatalError ? "fatal" : "aborted",
+          message: terminal.message,
+        },
+      });
+      toolSpan?.end(terminal instanceof AxleToolFatalError ? "error" : "ok");
+      const withCallUsage = usage
+        ? (attachUsage(terminal, usage) as AxleAbortError | AxleToolFatalError)
+        : terminal;
+      observer?.onError?.(call, withCallUsage);
+      throw withCallUsage;
+    }
+    resolved = {
+      type: "error",
+      error: {
+        type: errorType,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+
+  if (resolved == null) {
+    const message = `Tool not found: ${call.name}`;
+    resolved = { type: "error", error: { type: "not-found", message } };
+  }
+
+  const outcome: ToolExecutionOutcome = {
+    result: resolved,
+    ...(usage ? { usage } : {}),
+  };
+  observer?.onComplete?.(call, outcome);
+
+  const output =
+    resolved.type === "success" ? resolved.content : serializeToolError(resolved.error);
+  toolSpan?.setResult({
+    kind: "tool",
+    name: call.name,
+    input: call.parameters,
+    output: resolved.type === "success" ? resolved.content : resolved.error,
+  });
+  toolSpan?.end(resolved.type === "success" ? "ok" : "error");
+
+  return {
+    result: {
+      id: call.id,
+      name: call.name,
+      content: output,
+      ...(resolved.type === "error" ? { isError: true } : {}),
+    },
+    ...(usage ? { usage } : {}),
+  };
+}
+
+function normalizeTerminalToolError(
+  error: unknown,
+  signal: AbortSignal,
+): AxleAbortError | AxleToolFatalError | undefined {
+  if (error instanceof AxleToolFatalError) return error;
+  if (error instanceof AxleAbortError) return error;
+  // A bare AbortError (e.g. a tool's internal fetch timeout) is only terminal
+  // when the run's own signal aborted; otherwise it is an ordinary tool error
+  // the model can react to.
+  if (signal.aborted) {
+    return new AxleAbortError("Operation aborted", { reason: signal.reason });
+  }
+  return undefined;
 }

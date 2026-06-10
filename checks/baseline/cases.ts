@@ -1,8 +1,12 @@
 import {
   Agent,
+  AxleAgentAbortError,
+  AxleToolFatalError,
   Instruct,
+  createAgentTool,
   generate,
   loadFileContent,
+  parallelize,
   stream,
   type AIProvider,
   type AxleAssistantMessage,
@@ -316,6 +320,291 @@ export const baselineCases: BaselineCase[] = [
           response: result.response,
           toolResults: getToolResultDetails(agent.history.log),
           turnCount: agent.history.turns.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "generate-parallelized-tool",
+    description: "generate() executes a generated batch tool and reaches a final answer.",
+    async run({ provider, model, requestOptions }) {
+      const lookupTool: ExecutableTool<
+        z.ZodObject<{
+          id: z.ZodString;
+        }>
+      > = {
+        name: "lookup_code",
+        description: "Lookup a fixed code by id.",
+        schema: z.object({
+          id: z.string(),
+        }),
+        async execute(input) {
+          if (input.id === "alpha") return "alpha=orchid";
+          if (input.id === "beta") return "beta=violet";
+          return `${input.id}=unknown`;
+        },
+      };
+      const lookupBatchTool = parallelize(lookupTool, {
+        name: "lookup_codes",
+        description: "Lookup multiple fixed codes by id.",
+      });
+
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages: [
+          {
+            role: "user",
+            content:
+              "Use the lookup_codes tool once to look up ids alpha and beta. Then answer with both code words.",
+          },
+        ],
+        tools: [lookupBatchTool],
+      });
+
+      if (!result.ok) return fail({ error: result.error });
+      const text = getAssistantText(result.final);
+      const toolResults = getToolResultDetails(result.messages);
+      return {
+        ok:
+          text.toLowerCase().includes("orchid") &&
+          text.toLowerCase().includes("violet") &&
+          toolResults.some(
+            (toolResult) =>
+              toolResult.name === "lookup_codes" &&
+              toolResult.content.includes("orchid") &&
+              toolResult.content.includes("violet"),
+          ),
+        details: {
+          text,
+          toolResults,
+          messageCount: result.messages.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-subagent-tool",
+    description: "Agent delegates to a child agent exposed as a tool.",
+    async run({ provider, model, requestOptions }) {
+      const subagentTool = createAgentTool({
+        name: "delegate_code_word",
+        description: "Delegate a code-word lookup task to a child agent.",
+        schema: z.object({
+          task: z.string(),
+        }),
+        createAgent: () =>
+          new Agent({
+            provider,
+            model,
+            ...requestOptions,
+            system: "You are a child agent. Reply with exactly the requested code word.",
+          }),
+        prompt: () => "Reply with exactly: subagent-orchid",
+      });
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [subagentTool] });
+      const result = await agent.send(
+        "Use delegate_code_word to get the code word. Then answer with only that code word.",
+      ).final;
+      const text = String(result.response ?? "");
+      const toolResults = getToolResultDetails(agent.history.log);
+
+      return {
+        ok:
+          text.includes("subagent-orchid") &&
+          result.usage.breakdown?.some(
+            (entry) =>
+              entry.provider === provider.name &&
+              // Attribution uses the runtime model, which may be a dated
+              // snapshot of the requested one (e.g. gpt-5.4-mini-2026-03-17).
+              entry.model.startsWith(model) &&
+              entry.in > 0 &&
+              entry.out > 0,
+          ) === true &&
+          toolResults.some(
+            (toolResult) =>
+              toolResult.name === "delegate_code_word" &&
+              toolResult.content.includes("subagent-orchid"),
+          ),
+        details: {
+          response: result.response,
+          toolResults,
+          turnCount: agent.history.turns.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-tool-fatal",
+    description: "Fatal tool error terminates the send with usage and intact history.",
+    async run({ provider, model, requestOptions }) {
+      const fatalTool: ExecutableTool<z.ZodObject<{ id: z.ZodString }>> = {
+        name: "fetch_record",
+        description: "Fetch a record from the datastore by id.",
+        schema: z.object({ id: z.string() }),
+        async execute() {
+          throw new AxleToolFatalError("datastore credentials revoked", {
+            toolName: "fetch_record",
+          });
+        },
+      };
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [fatalTool] });
+
+      let thrown: unknown;
+      try {
+        await agent.send("Call fetch_record with id 'r-123' and report what it returns.").final;
+      } catch (error) {
+        thrown = error;
+      }
+
+      const fatal = thrown instanceof AxleToolFatalError ? thrown : undefined;
+      const logRoles = agent.history.log.map((message) => message.role);
+      return {
+        ok: Boolean(
+          fatal &&
+          fatal.usage &&
+          fatal.usage.in > 0 &&
+          fatal.usage.out > 0 &&
+          logRoles.length === 2 &&
+          logRoles[0] === "user" &&
+          logRoles[1] === "assistant",
+        ),
+        details: {
+          error: serializeError(thrown),
+          logRoles,
+          usage: fatal?.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-subagent-abort",
+    description: "Cancelling mid-delegation aborts cleanly without leaking the child conversation.",
+    async run({ provider, model, requestOptions }) {
+      const subagentTool = createAgentTool({
+        name: "delegate_essay",
+        description: "Delegate a long writing task to a child agent.",
+        schema: z.object({ topic: z.string() }),
+        createAgent: () =>
+          new Agent({
+            provider,
+            model,
+            ...requestOptions,
+            system: "You are a thorough writer.",
+          }),
+        prompt: (input) => `Write a 500-word essay about ${input.topic}.`,
+      });
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [subagentTool] });
+
+      let sawChildEvent = false;
+      let handleRef: { cancel: (reason?: unknown) => void } | undefined;
+      agent.on((event) => {
+        if (event.type === "action:child-event" && !sawChildEvent) {
+          sawChildEvent = true;
+          handleRef?.cancel("baseline-abort");
+        }
+      });
+
+      const handle = agent.send(
+        "Use delegate_essay to write an essay about typography, then summarize it in one line.",
+      );
+      handleRef = handle;
+
+      let thrown: unknown;
+      try {
+        await handle.final;
+      } catch (error) {
+        thrown = error;
+      }
+
+      const aborted = thrown instanceof AxleAgentAbortError ? thrown : undefined;
+      const messageRoles = aborted?.messages?.map((message) => message.role) ?? [];
+      // A leaked child conversation would contain the delegated user prompt.
+      const noChildLeak = messageRoles.length === 1 && messageRoles[0] === "assistant";
+      return {
+        ok: Boolean(
+          aborted && sawChildEvent && noChildLeak && aborted.usage && aborted.usage.in > 0,
+        ),
+        details: {
+          sawChildEvent,
+          messageRoles,
+          error: serializeError(thrown),
+          usage: aborted?.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-parallel-subagents",
+    description:
+      "parallelize(createAgentTool) fans out subagents with per-item results and merged usage.",
+    async run({ provider, model, requestOptions }) {
+      const codeWords: Record<string, string> = {
+        alpha: "obsidian",
+        beta: "lantern",
+        gamma: "meridian",
+      };
+      const subagentTool = createAgentTool({
+        name: "lookup_code_word",
+        description: "Delegate a code-word lookup to a child agent.",
+        schema: z.object({ key: z.string() }),
+        createAgent: () =>
+          new Agent({
+            provider,
+            model,
+            ...requestOptions,
+            system: "Reply with exactly the requested code word and nothing else.",
+          }),
+        prompt: (input) => `Reply with exactly: ${codeWords[input.key] ?? "unknown"}`,
+      });
+      const batch = parallelize(subagentTool, { maxConcurrency: 3 });
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [batch] });
+
+      let childEvents = 0;
+      agent.on((event) => {
+        if (event.type === "action:child-event") childEvents += 1;
+      });
+
+      const result = await agent.send(
+        "Call lookup_code_word_batch once with items for the keys alpha, beta, and gamma. " +
+          "Then reply with the three code words.",
+      ).final;
+      if (!result.ok) return fail({ error: result.error });
+
+      const text = String(result.response ?? "").toLowerCase();
+      const batchResult = getToolResultDetails(agent.history.log).find(
+        (toolResult) => toolResult.name === "lookup_code_word_batch",
+      );
+      let itemsOk = false;
+      if (batchResult) {
+        try {
+          const parsed = JSON.parse(batchResult.content) as {
+            results: Array<{ input: { key: string }; ok: boolean; output?: string }>;
+          };
+          itemsOk =
+            parsed.results.length === 3 &&
+            parsed.results.every(
+              (item) => item.ok && String(item.output ?? "").includes(codeWords[item.input.key]),
+            );
+        } catch {
+          itemsOk = false;
+        }
+      }
+
+      return {
+        ok: Boolean(
+          itemsOk &&
+          childEvents > 0 &&
+          Object.values(codeWords).every((word) => text.includes(word)),
+        ),
+        details: {
+          text,
+          childEvents,
+          batchResult: batchResult?.content,
           usage: result.usage,
         },
       };

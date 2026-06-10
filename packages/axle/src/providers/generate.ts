@@ -12,7 +12,7 @@ import type { ExecutableTool, ProviderTool } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import { throwIfAborted } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
-import { createStats, toTokenUsage } from "../utils/stats.js";
+import { addStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.js";
 import { generateTurn } from "./generateTurn.js";
 import {
   appendUsage,
@@ -217,7 +217,10 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
         throw error;
       }
 
-      appendUsage(usage, response);
+      appendUsage(usage, response, {
+        provider: provider.name,
+        model: response.type === "error" ? model : (response.model ?? model),
+      });
       if (response.type !== "error") logTurnContent(turnSpan, response.content);
       setTurnResult(turnSpan, response);
 
@@ -261,7 +264,14 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
         });
       }
 
-      const { results } = await executeToolCalls(toolCalls, onToolCall, signal, registry, span);
+      const { results, usage: toolUsage } = await executeToolCalls(
+        toolCalls,
+        onToolCall,
+        signal,
+        registry,
+        span,
+      );
+      addStats(usage, toolUsage);
       throwIfAborted(signal, "Generate aborted");
       if (results.length > 0) {
         addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
@@ -274,7 +284,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
         toolName: error.toolName,
         messages: error.messages ?? newMessages,
         partial: error.partial ?? finalMessage,
-        usage: error.usage ?? usage,
+        usage: mergeStats(usage, error.usage),
         cause: error.cause,
       });
     }
@@ -284,7 +294,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
         reason: error.reason,
         messages: error.messages ?? newMessages,
         partial: error.partial,
-        usage: error.usage ?? usage,
+        usage: mergeStats(usage, error.usage),
       });
     }
     if (error instanceof Error && error.name === "AbortError") {

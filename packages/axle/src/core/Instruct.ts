@@ -97,7 +97,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     if (this.textReferences.length > 0) {
       for (const [index, ref] of this.textReferences.entries()) {
         const referenceTitle = ref.name ? `: ${ref.name}` : "";
-        message += `\n\n## Reference ${index + 1}${referenceTitle}\n\n\`\`\`${ref.content}'''`;
+        message += `\n\n## Reference ${index + 1}${referenceTitle}\n\n\`\`\`${ref.content}\`\`\``;
       }
     }
 

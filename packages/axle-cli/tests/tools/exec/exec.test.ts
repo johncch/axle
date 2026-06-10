@@ -1,4 +1,4 @@
-import { ToolRegistry } from "@fifthrevision/axle";
+import { ToolRegistry, type ToolProgressChunk } from "@fifthrevision/axle";
 import { beforeEach, describe, expect, it } from "vitest";
 import execTool from "../../../src/tools/exec/index.js";
 
@@ -76,7 +76,7 @@ describe("ExecTool", () => {
       const streamingCtx = {
         signal: new AbortController().signal,
         registry: new ToolRegistry(),
-        emit: (chunk: string) => chunks.push(chunk),
+        emit: (chunk: ToolProgressChunk) => chunks.push(String(chunk)),
       };
 
       const result = await execTool.execute(

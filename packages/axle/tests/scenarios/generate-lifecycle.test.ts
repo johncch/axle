@@ -461,7 +461,11 @@ describe("generate() error paths", () => {
     expect(error.reason).toEqual({ type: "tool-timeout" });
     expect(error.messages).toHaveLength(1);
     expect(error.messages![0].role).toBe("assistant");
-    expect(error.usage).toEqual({ in: 10, out: 15 });
+    expect(error.usage).toMatchObject({
+      in: 10,
+      out: 15,
+      breakdown: [{ provider: "test", model: "test-model" }],
+    });
 
     const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
     expect(rootSpanData.status).toBe("ok");

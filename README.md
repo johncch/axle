@@ -260,6 +260,94 @@ The core package does not ship concrete local tools. Define application tools
 directly, or use the CLI package's job-file tool names when running jobs through
 `axle`.
 
+`execute` receives a `ToolContext` as its second argument. Long-running tools
+can stream progress with `ctx.emit(...)`, and tools that call models can report
+their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
+operation's totals.
+
+### Subagent Tools
+
+> **Experimental** — the API is usable today, but event and part shapes
+> (notably `SubagentAction`) may change in a minor release while this feature
+> is validated in real applications.
+
+`createAgentTool` exposes a child Agent as a normal tool, letting a parent
+model delegate bounded work and receive only the child's final response.
+
+```typescript
+import { Agent, createAgentTool } from "@fifthrevision/axle";
+import { z } from "zod";
+
+const researcher = createAgentTool({
+  name: "research",
+  description: "Delegate a research question to a focused subagent",
+  schema: z.object({ question: z.string() }),
+  createAgent: () =>
+    new Agent({
+      provider: anthropic({ apiKey }),
+      model: "claude-haiku-4-5-20251001",
+      system: "You are a focused researcher. Answer concisely.",
+    }),
+  prompt: (input) => input.question,
+});
+
+const agent = new Agent({ provider, model, tools: [researcher] });
+```
+
+The child's turn events are forwarded through the parent's event stream
+(rendered as an `agent` action part with nested child turns), and its token
+usage is reported into the parent's totals with per-model attribution (see
+[Usage stats](#usage-stats)). Create a fresh child Agent per call — `createAgent`
+runs once per tool invocation.
+
+### Parallelizing Tools
+
+> **Experimental** — the generated tool's result JSON (`ParallelToolResult`)
+> may change in a minor release.
+
+`parallelize` wraps a tool in a batch variant that runs many inputs
+concurrently in a single tool call. Combined with `createAgentTool`, this fans
+out subagents.
+
+```typescript
+import { parallelize } from "@fifthrevision/axle";
+
+const batchResearch = parallelize(researcher, { maxConcurrency: 4 });
+// → tool "research_batch" accepting { items: [{ question }, ...] }
+
+const agent = new Agent({ provider, model, tools: [batchResearch] });
+```
+
+The generated tool preserves input order and reports per-item failures instead
+of failing the whole batch; fatal (`AxleToolFatalError`) and abort errors still
+terminate the run like an unbatched tool. Options: `name`, `description`,
+`maxItems` (default 50), `maxConcurrency` (default 8). The batch tool inherits
+the wrapped tool's `kind`, so batched subagents still stream their child turns
+under the batch action (interleaved across items).
+
+### Usage Stats
+
+> **Experimental** — the aggregate fields are stable; the `breakdown` entry
+> shape (`UsageEntry`) may gain dimensions (e.g. a per-agent name) in a minor
+> release.
+
+Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
+when reported). When an operation spans models — for example subagent tools on
+different providers — `usage.breakdown` holds one entry per provider+model pair
+so cost can be reconstructed:
+
+```typescript
+const result = await agent.send("...").final;
+// result.usage.breakdown:
+// [
+//   { provider: "anthropic", model: "claude-sonnet-4-6", in: 1200, out: 340 },
+//   { provider: "openai", model: "gpt-5", in: 800, out: 120 },
+// ]
+```
+
+Breakdown entries explain the aggregate totals; they are attribution metadata,
+not additional usage.
+
 ### Provider Tools
 
 Provider tools are tools that execute on the LLM provider's side (e.g. web

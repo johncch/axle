@@ -1,9 +1,6 @@
 export type PlainObject = Record<string, unknown>;
 
-/**
- * Usage reported by a provider response.
- */
-export interface Stats {
+export interface TokenStats {
   /** Total effective input tokens. Includes `cachedIn` and `cacheWriteIn` when reported. */
   in: number;
 
@@ -18,4 +15,24 @@ export interface Stats {
 
   /** Output tokens spent on reasoning/thinking. Included in `out`. */
   reasoningOut?: number;
+}
+
+export interface UsageEntry extends TokenStats {
+  /** Provider identifier. */
+  provider: string;
+  /** Model identifier. */
+  model: string;
+}
+
+/**
+ * Aggregate usage reported by an Axle operation.
+ *
+ * `breakdown` holds one entry per provider+model pair so cost can be
+ * reconstructed when an operation spans models (for example subagent tools).
+ * Entries explain the aggregate numeric fields and must not be added to them
+ * again.
+ */
+export interface Stats extends TokenStats {
+  /** @experimental The entry shape may gain dimensions in a minor release. */
+  breakdown?: UsageEntry[];
 }
