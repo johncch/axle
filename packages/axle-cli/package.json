@@ -1,6 +1,6 @@
 {
   "name": "@fifthrevision/axle-cli",
-  "version": "0.23.2",
+  "version": "0.24.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/johncch/axle.git"
