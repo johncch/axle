@@ -27,6 +27,7 @@ interface ChatCompletionsConversionContext {
   model: string;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
+  warn?: (message: string, fields?: Record<string, unknown>) => void;
 }
 
 export async function convertAxleMessages(
@@ -268,7 +269,13 @@ async function convertToolResultContent(
       );
       continue;
     }
-    throw new Error("ChatCompletions tool results do not support file parts other than text");
+    context.warn?.("ChatCompletions omitted unsupported tool-result file", {
+      model: context.model,
+      kind: part.file.kind,
+      name: part.file.name,
+      mimeType: part.file.mimeType,
+    });
+    output.push(formatUnsupportedToolResultFile(part.file));
   }
   return output.join("\n");
 }
@@ -358,4 +365,14 @@ function formatTextFileContent(
   mimeType?: string,
 ): string {
   return `File: ${name ?? file.name}\nMIME type: ${mimeType ?? file.mimeType}\n\n${content}`;
+}
+
+function formatUnsupportedToolResultFile(file: FileInfo): string {
+  return [
+    "Tool result attachment unavailable.",
+    `File: ${file.name}`,
+    `MIME type: ${file.mimeType}`,
+    "",
+    `This tool returned a file of kind "${file.kind}", but Chat Completions tool-result messages support text only. The file content was not included. Continue without the file or ask for it to be attached in a user message.`,
+  ].join("\n");
 }

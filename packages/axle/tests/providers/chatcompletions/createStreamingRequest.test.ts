@@ -265,6 +265,88 @@ describe("createStreamingRequest", () => {
     );
   });
 
+  test("continues after a tool returns an unsupported binary file", async () => {
+    const toolCallSse = [
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  function: { name: "capture_image", arguments: "{}" },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      })}`,
+      "",
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+      })}`,
+      "",
+    ];
+    const finalSse = [
+      `data: ${JSON.stringify({
+        id: "c-2",
+        model: MODEL,
+        choices: [{ index: 0, delta: { content: "Attachment unavailable" }, finish_reason: null }],
+      })}`,
+      "",
+      `data: ${JSON.stringify({
+        id: "c-2",
+        model: MODEL,
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      })}`,
+      "",
+    ];
+    (fetch as any)
+      .mockResolvedValueOnce(makeSSEResponse(toolCallSse.join("\n")))
+      .mockResolvedValueOnce(makeSSEResponse(finalSse.join("\n")));
+
+    const handle = stream({
+      provider: makeProvider(),
+      model: MODEL,
+      messages: [{ role: "user", content: "Capture an image." }],
+      onToolCall: async () => ({
+        type: "success",
+        content: [
+          { type: "text", text: "Captured image:" },
+          {
+            type: "file",
+            file: {
+              kind: "image",
+              mimeType: "image/png",
+              name: "capture.png",
+              source: { type: "base64", data: "iVBORw0KGgo=" },
+            },
+          },
+        ],
+      }),
+    });
+
+    const result = await handle.final;
+
+    expect(result.ok).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse((fetch as any).mock.calls[1][1].body);
+    expect(secondBody.messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "call_1",
+    });
+    expect(secondBody.messages.at(-1).content).toContain("Captured image:");
+    expect(secondBody.messages.at(-1).content).toContain("Tool result attachment unavailable.");
+    expect(secondBody.messages.at(-1).content).toContain("File: capture.png");
+  });
+
   test("ignores SSE comment lines (starting with :)", async () => {
     const sseLines = [
       ": this is a comment",

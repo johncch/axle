@@ -67,6 +67,7 @@ export async function createGenerationRequest(
       model,
       fileResolver: runtime?.fileResolver,
       signal,
+      warn: span?.warn.bind(span),
     });
     const chatTools = convertTools(tools);
     const chatProviderTools = prepareProviderTools(

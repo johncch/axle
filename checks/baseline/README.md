@@ -71,6 +71,7 @@ done
 - `agent-multiturn-history`
 - `generate-tool`
 - `generate-deferred-tool-file`
+- `generate-unsupported-tool-file` (Chat Completions binary tool-result fallback)
 - `stream-tool`
 - `agent-tool`
 - `generate-parallelized-tool`

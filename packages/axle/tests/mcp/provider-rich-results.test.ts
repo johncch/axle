@@ -103,6 +103,32 @@ describe("Provider rich tool result conversion", () => {
     });
   });
 
+  describe("ChatCompletions", () => {
+    test("converts binary tool-result files to model-visible compatibility errors", async () => {
+      const warn = vi.fn();
+
+      const result = await convertAxleMessages([richToolMsg], undefined, {
+        model: "chat-test",
+        warn,
+      });
+
+      expect(result).toEqual([
+        {
+          role: "tool",
+          tool_call_id: "call_1",
+          content:
+            'Here is the image:\nTool result attachment unavailable.\nFile: tool-image.png\nMIME type: image/png\n\nThis tool returned a file of kind "image", but Chat Completions tool-result messages support text only. The file content was not included. Continue without the file or ask for it to be attached in a user message.',
+        },
+      ]);
+      expect(warn).toHaveBeenCalledWith("ChatCompletions omitted unsupported tool-result file", {
+        model: "chat-test",
+        kind: "image",
+        name: "tool-image.png",
+        mimeType: "image/png",
+      });
+    });
+  });
+
   describe("deferred file sources", () => {
     const deferredImageToolMsg: AxleToolCallMessage = {
       role: "tool",
@@ -239,6 +265,23 @@ describe("Provider rich tool result conversion", () => {
         role: "tool",
         tool_call_id: "call_deferred_text",
         content: "File: deferred.txt\nMIME type: text/plain\n\nresolved text",
+      });
+    });
+
+    test("ChatCompletions does not resolve unsupported deferred tool-result images", async () => {
+      const resolver = createImageResolver();
+
+      const result = await convertAxleMessages([deferredImageToolMsg], undefined, {
+        model: "chat-test",
+        fileResolver: resolver,
+      });
+
+      expect(resolver).not.toHaveBeenCalled();
+      expect(result[0]).toEqual({
+        role: "tool",
+        tool_call_id: "call_deferred_image",
+        content:
+          'Tool result attachment unavailable.\nFile: deferred.png\nMIME type: image/png\n\nThis tool returned a file of kind "image", but Chat Completions tool-result messages support text only. The file content was not included. Continue without the file or ask for it to be attached in a user message.',
       });
     });
   });

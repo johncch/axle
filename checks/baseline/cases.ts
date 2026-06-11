@@ -360,6 +360,58 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    id: "generate-unsupported-tool-file",
+    description: "Chat Completions continues when a local tool returns an unsupported binary file.",
+    providers: ["openrouter"],
+    async run({ provider, model, requestOptions }) {
+      const schema = z.object({});
+      const captureImage: ExecutableTool<typeof schema> = {
+        name: "capture_image",
+        description: "Capture and return an image attachment.",
+        schema,
+        async execute() {
+          return [
+            { type: "text", text: "Captured image:" },
+            {
+              type: "file",
+              file: {
+                kind: "image",
+                mimeType: "image/png",
+                name: "capture.png",
+                source: { type: "base64", data: "iVBORw0KGgo=" },
+              },
+            },
+          ];
+        },
+      };
+
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages: [
+          {
+            role: "user",
+            content:
+              "Call capture_image. If its result says the attachment was not included, reply exactly: attachment unavailable.",
+          },
+        ],
+        tools: [captureImage],
+      });
+
+      if (!result.ok) return fail({ error: result.error });
+      const text = getAssistantText(result.final).toLowerCase();
+      return {
+        ok: text.includes("attachment unavailable") && hasSuccessfulToolResult(result.messages),
+        details: {
+          text,
+          toolResults: getToolResultDetails(result.messages),
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
     id: "stream-tool",
     description: "stream() executes a local tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
