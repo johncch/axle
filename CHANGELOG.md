@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.0] - 2026-06-11
+
+- Added experimental subagent tools for delegating bounded work to other agents.
+- Added experimental parallel tool execution for running batched tool calls concurrently.
+- Added tool context helpers for reporting usage and adding contextual information during runs.
+- Improved streaming/tool-call behavior and error reporting for more consistent agent runs.
+- Fixed output fencing in generated content.
+
 ## [Unreleased]
 
 - Added `createAgentTool` for delegating bounded work to subagents exposed as tools (experimental)
