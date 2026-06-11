@@ -295,6 +295,16 @@ console.log("code block");
       expect(compiled).toContain("```javascript");
     });
 
+    it("uses a longer matching fence when reference content contains backticks", () => {
+      const content = "Before\n```ts\nconst answer = 42;\n```\nAfter";
+      const instruct = new Instruct({ prompt: "Process this reference" });
+      instruct.addFile(content, { name: "code sample" });
+
+      expect(instruct.render()).toContain(
+        `## Reference 1: code sample\n\n\`\`\`\`\n${content}\n\`\`\`\``,
+      );
+    });
+
     it("should handle empty text files", async () => {
       const filePath = join(TEST_DIR, "empty.txt");
       await writeFile(filePath, "");

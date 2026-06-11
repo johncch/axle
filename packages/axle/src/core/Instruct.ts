@@ -97,7 +97,8 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     if (this.textReferences.length > 0) {
       for (const [index, ref] of this.textReferences.entries()) {
         const referenceTitle = ref.name ? `: ${ref.name}` : "";
-        message += `\n\n## Reference ${index + 1}${referenceTitle}\n\n\`\`\`${ref.content}\`\`\``;
+        const fence = getReferenceFence(ref.content);
+        message += `\n\n## Reference ${index + 1}${referenceTitle}\n\n${fence}\n${ref.content}\n${fence}`;
       }
     }
 
@@ -113,4 +114,12 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
 
     return instructions + message;
   }
+}
+
+function getReferenceFence(content: string): string {
+  const longestBacktickRun = Math.max(
+    0,
+    ...Array.from(content.matchAll(/`+/g), (match) => match[0].length),
+  );
+  return "`".repeat(Math.max(3, longestBacktickRun + 1));
 }

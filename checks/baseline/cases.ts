@@ -12,6 +12,7 @@ import {
   type AxleAssistantMessage,
   type AxleModelRequestOptions,
   type ExecutableTool,
+  type FileResolver,
   type ProviderTool,
 } from "@fifthrevision/axle";
 import * as z from "zod";
@@ -263,6 +264,80 @@ export const baselineCases: BaselineCase[] = [
           text,
           toolResults: getToolResultDetails(result.messages),
           messageCount: result.messages.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "generate-deferred-tool-file",
+    description: "generate() resolves a deferred text file returned by a local tool.",
+    async run({ provider, model, requestOptions }) {
+      const schema = z.object({});
+      const readProjectNote: ExecutableTool<typeof schema> = {
+        name: "read_project_note",
+        description: "Read the project note containing the project code.",
+        schema,
+        async execute() {
+          return [
+            {
+              type: "file",
+              file: {
+                kind: "text",
+                mimeType: "text/plain",
+                name: "project-note.txt",
+                source: { type: "ref", ref: { id: "project-note" } },
+              },
+            },
+          ];
+        },
+      };
+
+      let resolutionCount = 0;
+      const fileResolver: FileResolver = async ({ ref, accepted }) => {
+        resolutionCount += 1;
+        if (!accepted.includes("text")) {
+          throw new Error(`Expected text resolution, received: ${accepted.join(", ")}`);
+        }
+        if (
+          typeof ref !== "object" ||
+          ref === null ||
+          !("id" in ref) ||
+          ref.id !== "project-note"
+        ) {
+          throw new Error("Unexpected deferred file ref");
+        }
+        return { type: "text", content: "Project code: deferred-orchid-17" };
+      };
+
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages: [
+          {
+            role: "user",
+            content:
+              "Use read_project_note to read the project note. Then answer with the project code.",
+          },
+        ],
+        tools: [readProjectNote],
+        fileResolver,
+      });
+
+      if (!result.ok) return fail({ error: result.error });
+      const text = getAssistantText(result.final).toLowerCase();
+      const toolResults = getToolResultDetails(result.messages);
+      const deferredResult = toolResults.find((item) => item.name === "read_project_note");
+      return {
+        ok:
+          text.includes("deferred-orchid-17") &&
+          resolutionCount > 0 &&
+          deferredResult?.content.includes('"type":"ref"') === true,
+        details: {
+          text,
+          resolutionCount,
+          toolResults,
           usage: result.usage,
         },
       };

@@ -1,5 +1,5 @@
 import { AxleStopReason } from "../providers/types.js";
-import { ConcreteFileInfo, FileInfo } from "../utils/file.js";
+import type { FileInfo } from "../utils/file.js";
 
 /**
  * Model-facing conversation message.
@@ -22,11 +22,10 @@ export type MessageMetadata = Record<string, unknown>;
  * Content returned by a tool call.
  *
  * Tool results may be simple text or structured parts when the result includes
- * file data.
+ * file data. Deferred file sources remain authored in history and are resolved
+ * at each provider conversion boundary so expiring URLs are not persisted.
  */
-export type ToolResultPart =
-  | { type: "text"; text: string }
-  | { type: "file"; file: ConcreteFileInfo };
+export type ToolResultPart = { type: "text"; text: string } | { type: "file"; file: FileInfo };
 
 /**
  * Message authored by the user or host application.

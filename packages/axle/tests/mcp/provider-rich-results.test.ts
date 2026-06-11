@@ -1,7 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { AxleToolCallMessage } from "../../src/messages/message.js";
 import { convertToProviderMessages } from "../../src/providers/anthropic/utils.js";
+import { convertAxleMessages } from "../../src/providers/chatcompletions/utils.js";
+import { convertAxleMessagesToGemini } from "../../src/providers/gemini/utils.js";
 import { convertAxleMessageToResponseInput } from "../../src/providers/openai/utils.js";
+import type { FileResolver } from "../../src/utils/file.js";
 
 describe("Provider rich tool result conversion", () => {
   const textOnlyToolMsg: AxleToolCallMessage = {
@@ -99,4 +102,151 @@ describe("Provider rich tool result conversion", () => {
       });
     });
   });
+
+  describe("deferred file sources", () => {
+    const deferredImageToolMsg: AxleToolCallMessage = {
+      role: "tool",
+      id: "tool-msg-deferred-image",
+      content: [
+        {
+          id: "call_deferred_image",
+          name: "read_file",
+          content: [
+            {
+              type: "file",
+              file: {
+                kind: "image",
+                mimeType: "image/png",
+                name: "deferred.png",
+                source: { type: "ref", ref: { id: "image-1" } },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    test("Anthropic resolves deferred tool-result images", async () => {
+      const resolver = createImageResolver();
+
+      const result = await convertToProviderMessages([deferredImageToolMsg], {
+        model: "claude-test",
+        fileResolver: resolver,
+      });
+
+      expect(resolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "anthropic",
+          model: "claude-test",
+          ref: { id: "image-1" },
+        }),
+      );
+      expect((result[0] as any).content[0].content[0]).toEqual({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "resolved-image",
+        },
+      });
+    });
+
+    test("OpenAI resolves deferred tool-result images", async () => {
+      const resolver = createImageResolver();
+
+      const result = await convertAxleMessageToResponseInput([deferredImageToolMsg], {
+        model: "gpt-test",
+        fileResolver: resolver,
+      });
+
+      expect(resolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "openai",
+          model: "gpt-test",
+          ref: { id: "image-1" },
+        }),
+      );
+      expect((result[0] as any).output[0]).toEqual({
+        type: "input_image",
+        image_url: "data:image/png;base64,resolved-image",
+        detail: "auto",
+      });
+    });
+
+    test("Gemini resolves deferred tool-result images", async () => {
+      const resolver = createImageResolver();
+
+      const result = await convertAxleMessagesToGemini([deferredImageToolMsg], {
+        model: "gemini-test",
+        fileResolver: resolver,
+      });
+
+      expect(resolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "gemini",
+          model: "gemini-test",
+          ref: { id: "image-1" },
+        }),
+      );
+      expect(result[0].parts?.[1]).toEqual({
+        inlineData: {
+          mimeType: "image/png",
+          data: "resolved-image",
+        },
+      });
+    });
+
+    test("ChatCompletions resolves deferred text tool-result files", async () => {
+      const resolver = vi.fn(async (request: Parameters<FileResolver>[0]) => {
+        expect(request.accepted).toEqual(["text"]);
+        return { type: "text" as const, content: "resolved text" };
+      });
+      const deferredTextToolMsg: AxleToolCallMessage = {
+        role: "tool",
+        id: "tool-msg-deferred-text",
+        content: [
+          {
+            id: "call_deferred_text",
+            name: "read_file",
+            content: [
+              {
+                type: "file",
+                file: {
+                  kind: "text",
+                  mimeType: "text/plain",
+                  name: "deferred.txt",
+                  source: { type: "ref", ref: { id: "text-1" } },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = await convertAxleMessages([deferredTextToolMsg], undefined, {
+        model: "chat-test",
+        fileResolver: resolver,
+      });
+
+      expect(resolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "chatcompletions",
+          model: "chat-test",
+          ref: { id: "text-1" },
+        }),
+      );
+      expect(result[0]).toEqual({
+        role: "tool",
+        tool_call_id: "call_deferred_text",
+        content: "File: deferred.txt\nMIME type: text/plain\n\nresolved text",
+      });
+    });
+  });
 });
+
+function createImageResolver() {
+  return vi.fn(async (request: Parameters<FileResolver>[0]) => {
+    expect(request.accepted).toContain("base64");
+    return { type: "base64" as const, data: "resolved-image" };
+  });
+}

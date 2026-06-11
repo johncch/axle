@@ -70,6 +70,7 @@ done
 - `agent-instruct-json`
 - `agent-multiturn-history`
 - `generate-tool`
+- `generate-deferred-tool-file`
 - `stream-tool`
 - `agent-tool`
 - `generate-parallelized-tool`
