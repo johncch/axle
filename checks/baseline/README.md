@@ -88,4 +88,6 @@ case fails or errors. For every case that reports `usage` in its details, the
 runner additionally verifies usage conservation: the per-provider/model
 `breakdown` entries must sum exactly to the aggregate token fields. A
 `usageViolation` detail on a failed record means tokens were dropped or
-double-counted somewhere in the pipeline.
+double-counted somewhere in the pipeline. Failed cases can also return
+`failureReasons`; the runner prints these inline, includes them in the final
+failure summary, and writes them to the JSONL record.

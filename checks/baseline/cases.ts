@@ -27,6 +27,7 @@ export interface BaselineCaseContext {
 
 export interface BaselineCaseResult {
   ok: boolean;
+  failureReasons?: string[];
   details?: Record<string, unknown>;
 }
 
@@ -329,14 +330,29 @@ export const baselineCases: BaselineCase[] = [
       const text = getAssistantText(result.final).toLowerCase();
       const toolResults = getToolResultDetails(result.messages);
       const deferredResult = toolResults.find((item) => item.name === "read_project_note");
+      const expectedCode = "deferred-orchid-17";
+      const checks = {
+        finalAnswerContainsExpectedCode: text.includes(expectedCode),
+        resolverWasCalled: resolutionCount > 0,
+        historyPreservedDeferredRef: deferredResult?.content.includes('"type":"ref"') === true,
+      };
+      const failureReasons = [
+        ...(!checks.finalAnswerContainsExpectedCode
+          ? [`Final assistant text did not contain expected code '${expectedCode}'.`]
+          : []),
+        ...(!checks.resolverWasCalled ? ["FileResolver was not called."] : []),
+        ...(!checks.historyPreservedDeferredRef
+          ? ["Tool-result history did not preserve the deferred ref source."]
+          : []),
+      ];
       return {
-        ok:
-          text.includes("deferred-orchid-17") &&
-          resolutionCount > 0 &&
-          deferredResult?.content.includes('"type":"ref"') === true,
+        ok: failureReasons.length === 0,
+        failureReasons,
         details: {
+          expectedCode,
           text,
           resolutionCount,
+          checks,
           toolResults,
           usage: result.usage,
         },

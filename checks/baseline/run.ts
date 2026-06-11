@@ -2,7 +2,7 @@ import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
-import { baselineCases } from "./cases.js";
+import { baselineCases, type BaselineCaseResult } from "./cases.js";
 import { resolveProviderTargets } from "./providers.js";
 
 interface RunOptions {
@@ -22,6 +22,7 @@ interface CheckRecord {
   caseDescription: string;
   status: "pass" | "fail" | "error";
   durationMs: number;
+  failureReasons?: string[];
   details?: Record<string, unknown>;
   error?: unknown;
 }
@@ -62,7 +63,8 @@ for (const target of targets) {
         requestOptions: options.thinking ? { reasoning: true } : {},
       });
       const usageViolation = findUsageInvariantViolation(result.details?.usage);
-      const status = result.ok && !usageViolation ? "pass" : "fail";
+      const failureReasons = deriveFailureReasons(result, usageViolation);
+      const status = result.ok && failureReasons.length === 0 ? "pass" : "fail";
       if (status === "pass") passed += 1;
 
       const record: CheckRecord = {
@@ -74,12 +76,17 @@ for (const target of targets) {
         caseDescription: testCase.description,
         status,
         durationMs: Date.now() - startedAt,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: usageViolation ? { ...result.details, usageViolation } : result.details,
       };
       await writeRecord(record);
       if (status !== "pass") failedRecords.push(record);
-      console.log(`  ${formatStatus(status)} [${testCase.id}]`);
+      console.log(
+        `  ${formatStatus(status)} [${testCase.id}]${formatInlineFailureReasons(failureReasons)}`,
+      );
     } catch (error) {
+      const serializedError = serializeError(error);
+      const failureReasons = [`Case threw: ${getErrorMessage(error) ?? "unknown error"}`];
       const record: CheckRecord = {
         timestamp: new Date().toISOString(),
         providerId: target.id,
@@ -89,11 +96,14 @@ for (const target of targets) {
         caseDescription: testCase.description,
         status: "error",
         durationMs: Date.now() - startedAt,
-        error: serializeError(error),
+        failureReasons,
+        error: serializedError,
       };
       await writeRecord(record);
       failedRecords.push(record);
-      console.log(`  ${formatStatus("error")} [${testCase.id}]`);
+      console.log(
+        `  ${formatStatus("error")} [${testCase.id}]${formatInlineFailureReasons(failureReasons)}`,
+      );
     }
   }
 }
@@ -106,6 +116,9 @@ if (failedRecords.length > 0) {
     console.log(
       `${formatStatus(record.status)} ${record.providerId}:${record.model} ${record.caseId}`,
     );
+    if (record.failureReasons && record.failureReasons.length > 0) {
+      console.log(formatFailureReasons(record.failureReasons));
+    }
     console.log(formatDetails(record.details ?? record.error));
   }
 }
@@ -139,6 +152,18 @@ function findUsageInvariantViolation(usage: unknown): string | undefined {
   return undefined;
 }
 
+function deriveFailureReasons(
+  result: BaselineCaseResult,
+  usageViolation: string | undefined,
+): string[] {
+  const reasons = [...(result.failureReasons ?? []), ...(usageViolation ? [usageViolation] : [])];
+  if (result.ok || reasons.length > 0) return reasons;
+
+  const errorMessage = getErrorMessage(result.details?.error);
+  if (errorMessage) return [`Model or workflow error: ${errorMessage}`];
+  return ["Case returned ok: false without a diagnostic reason."];
+}
+
 function formatStatus(status: CheckRecord["status"]): string {
   if (status === "pass") return color("green", "✓ pass");
   if (status === "fail") return color("red", "✗ fail");
@@ -155,6 +180,15 @@ function formatDetails(value: unknown): string {
     .split("\n")
     .map((line) => `    ${line}`)
     .join("\n");
+}
+
+function formatInlineFailureReasons(reasons: string[]): string {
+  if (reasons.length === 0) return "";
+  return `: ${reasons.join(" ")}`;
+}
+
+function formatFailureReasons(reasons: string[]): string {
+  return reasons.map((reason) => `    Reason: ${reason}`).join("\n");
 }
 
 function parseArgs(args: string[]): RunOptions {
@@ -217,6 +251,18 @@ function serializeError(error: unknown): unknown {
     return { name: error.name, message: error.message, stack: error.stack };
   }
   return error;
+}
+
+function getErrorMessage(error: unknown): string | undefined {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  if (!error || typeof error !== "object") {
+    return typeof error === "string" ? error : undefined;
+  }
+
+  const record = error as Record<string, unknown>;
+  if (typeof record.message === "string") return record.message;
+  if ("error" in record) return getErrorMessage(record.error);
+  return undefined;
 }
 
 function printHelp(): void {
