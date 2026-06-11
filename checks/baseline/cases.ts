@@ -739,6 +739,28 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    id: "instruct-context",
+    description: "Instruct supporting context is included separately from the authored prompt.",
+    async run({ provider, model, requestOptions }) {
+      const instruct = new Instruct({
+        prompt: "Return the sandbox entry point from the supplied context.",
+        schema: z.object({
+          entryPoint: z.string(),
+        }),
+      });
+      instruct.addContext("Sandbox files:\n- src/main.ts\n- package.json", {
+        title: "File manifest",
+      });
+
+      const result = await generate({ provider, model, ...requestOptions, instruct });
+      if (!result.ok) return fail({ error: result.error });
+      return {
+        ok: result.response?.entryPoint.includes("src/main.ts") ?? false,
+        details: { response: result.response },
+      };
+    },
+  },
+  {
     id: "generate-image-file",
     description: "generate() with an Instruct image file attachment.",
     async run({ provider, model, requestOptions }) {

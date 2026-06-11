@@ -8,6 +8,11 @@ import { zodToExample, zodToFieldDescriptions } from "./parse.js";
 export type InstructInputs = Record<string, unknown>;
 export type InstructVarsMode = "required" | "optional";
 
+export interface InstructContextSection {
+  content: string;
+  title?: string;
+}
+
 export interface InstructOptions<
   TSchema extends OutputSchema | undefined = OutputSchema | undefined,
 > {
@@ -22,6 +27,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   inputs: InstructInputs = {};
   files: FileInfo[] = [];
   textReferences: Array<{ content: string; name?: string }> = [];
+  contextSections: InstructContextSection[] = [];
   vars: InstructVarsMode;
   metadata?: MessageMetadata;
 
@@ -44,6 +50,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     instruct.inputs = { ...this.inputs };
     instruct.files = [...this.files];
     instruct.textReferences = this.textReferences.map((reference) => ({ ...reference }));
+    instruct.contextSections = this.contextSections.map((section) => ({ ...section }));
     return instruct;
   }
 
@@ -77,6 +84,15 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     this.files.push(options?.name ? { ...file, name: options.name } : file);
   }
 
+  /** Append host-supplied supporting material without modifying the authored prompt. */
+  addContext(content: string, options?: { title?: string }): this {
+    this.contextSections.push({
+      content,
+      ...(options?.title ? { title: options.title } : {}),
+    });
+    return this;
+  }
+
   hasFiles(): boolean {
     return this.files.length > 0;
   }
@@ -97,9 +113,15 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     if (this.textReferences.length > 0) {
       for (const [index, ref] of this.textReferences.entries()) {
         const referenceTitle = ref.name ? `: ${ref.name}` : "";
-        const fence = getReferenceFence(ref.content);
+        const fence = getMarkdownFence(ref.content);
         message += `\n\n## Reference ${index + 1}${referenceTitle}\n\n${fence}\n${ref.content}\n${fence}`;
       }
+    }
+
+    for (const [index, section] of this.contextSections.entries()) {
+      const contextTitle = section.title ? `: ${section.title}` : "";
+      const fence = getMarkdownFence(section.content);
+      message += `\n\n## Context ${index + 1}${contextTitle}\n\n${fence}\n${section.content}\n${fence}`;
     }
 
     if (!this.schema) return message;
@@ -116,7 +138,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   }
 }
 
-function getReferenceFence(content: string): string {
+function getMarkdownFence(content: string): string {
   const longestBacktickRun = Math.max(
     0,
     ...Array.from(content.matchAll(/`+/g), (match) => match[0].length),

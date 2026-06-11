@@ -63,7 +63,7 @@ const agent = new Agent({
 ### Instruct
 
 Instruct is a rich message. Use it when you need structured output, file
-attachments, bound template inputs, or additional instructions.
+attachments, bound template inputs, or host-supplied supporting context.
 
 ```typescript
 import * as z from "zod";
@@ -75,6 +75,9 @@ const instruct = new Instruct({
     keyPoints: z.array(z.string()),
   }),
 }).withInputs({ topic: "document" });
+instruct.addContext("Files available: report.pdf", {
+  title: "Sandbox manifest",
+});
 instruct.addFile(await loadFileContent("./report.pdf"));
 
 const result = await agent.send(instruct).final;
@@ -232,6 +235,42 @@ result.response.moons; // string[]
 For one-shot structured calls without agent-managed history, pass the same
 `Instruct` directly to `generate()` or `stream()`.
 
+### Supporting Context and Files
+
+Use `addContext` for host-supplied information that should remain separate from
+the user-authored prompt until final rendering. Typical examples include a
+sandbox file manifest, environment details, retrieved records, or application
+state:
+
+```typescript
+const instruct = new Instruct({
+  prompt: "Review the sandbox and propose the next change.",
+});
+
+instruct
+  .addContext("src/index.ts\nsrc/server.ts\npackage.json", {
+    title: "Sandbox files",
+  })
+  .addContext("Node.js 24\nPackage manager: pnpm", {
+    title: "Environment",
+  });
+```
+
+Context sections are ordered, preserved by `clone()`/`withInputs()`, and do not
+perform `{{variable}}` substitution. They still become part of the same final
+user-message text, so `addContext` is a composition boundary, not a separate
+model instruction priority.
+
+Use `addFile` for actual file content or attachments:
+
+```typescript
+instruct.addFile("Inline reference text", { name: "notes.txt" });
+instruct.addFile(await loadFileContent("./chart.png"));
+```
+
+Inline text files render as reference sections. Images and PDFs remain file
+parts and are converted to the selected provider's native input format.
+
 ### Tools
 
 A tool is an object with a name, description, Zod schema, and an `execute`
@@ -264,6 +303,64 @@ directly, or use the CLI package's job-file tool names when running jobs through
 can stream progress with `ctx.emit(...)`, and tools that call models can report
 their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
 operation's totals.
+
+#### File results and deferred references
+
+Tools can return structured text/file parts. A file may be inline, a URL, or a
+host-owned deferred reference resolved only when a provider request needs it:
+
+```typescript
+import type { ExecutableTool, FileResolver } from "@fifthrevision/axle";
+import { z } from "zod";
+
+const readFileSchema = z.object({ id: z.string() });
+
+const readFile: ExecutableTool<typeof readFileSchema> = {
+  name: "read_file",
+  description: "Read a file from the sandbox",
+  schema: readFileSchema,
+  async execute({ id }) {
+    return [
+      {
+        type: "file",
+        file: {
+          kind: "text",
+          mimeType: "text/plain",
+          name: "result.txt",
+          source: { type: "ref", ref: { id } },
+        },
+      },
+    ];
+  },
+};
+
+const fileResolver: FileResolver = async ({ ref, accepted }) => {
+  // Authorize the opaque host ref and return one of the requested formats.
+  if (!accepted.includes("text")) {
+    throw new Error(`Text resolution is not supported here: ${accepted.join(", ")}`);
+  }
+  return {
+    type: "text",
+    content: await sandbox.readText((ref as { id: string }).id),
+  };
+};
+
+const agent = new Agent({
+  provider,
+  model,
+  tools: [readFile],
+  fileResolver,
+});
+```
+
+Deferred refs remain in message history and session snapshots. Axle resolves
+them again on every provider conversion, which avoids persisting expiring
+signed URLs. Persisted `ref` values should therefore be JSON-serializable, and
+the host must restore a compatible `FileResolver` when resuming a session.
+
+Anthropic, OpenAI Responses, and Gemini accept tool-result files within their
+normal image/PDF/text constraints. Chat Completions currently accepts text
+tool-result files only.
 
 ### Subagent Tools
 

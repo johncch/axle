@@ -81,6 +81,7 @@ done
 - `reasoning-false`
 - `stream-web-search`
 - `instruct-text-reference`
+- `instruct-context`
 
 The runner writes JSONL records to `output/checks/` and exits non-zero if any
 case fails or errors. For every case that reports `usage` in its details, the

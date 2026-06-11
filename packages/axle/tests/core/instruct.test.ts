@@ -179,6 +179,65 @@ describe("Instruct", () => {
     });
   });
 
+  describe("context sections", () => {
+    test("addContext stores supporting context separately and is chainable", () => {
+      const instruct = new Instruct({ prompt: "Review the sandbox" });
+
+      const result = instruct.addContext("src/index.ts\npackage.json", {
+        title: "Sandbox files",
+      });
+
+      expect(result).toBe(instruct);
+      expect(instruct.prompt).toBe("Review the sandbox");
+      expect(instruct.contextSections).toEqual([
+        {
+          content: "src/index.ts\npackage.json",
+          title: "Sandbox files",
+        },
+      ]);
+    });
+
+    test("render appends context sections in insertion order without replacing variables", () => {
+      const instruct = new Instruct({ prompt: "Inspect {{target}}" }).withInput(
+        "target",
+        "the project",
+      );
+      instruct.addContext("First context with {{literal}}", { title: "Manifest" });
+      instruct.addContext("Second context");
+
+      expect(instruct.render()).toBe(
+        "Inspect the project" +
+          "\n\n## Context 1: Manifest\n\n```\nFirst context with {{literal}}\n```" +
+          "\n\n## Context 2\n\n```\nSecond context\n```",
+      );
+    });
+
+    test("clone and withInputs preserve independent context sections", () => {
+      const template = new Instruct({ prompt: "Inspect {{target}}" });
+      template.addContext("original", { title: "Environment" });
+
+      const bound = template.withInput("target", "workspace");
+      bound.addContext("bound only");
+
+      expect(template.contextSections).toEqual([{ content: "original", title: "Environment" }]);
+      expect(bound.contextSections).toEqual([
+        { content: "original", title: "Environment" },
+        { content: "bound only" },
+      ]);
+    });
+
+    test("uses a longer matching fence for context containing backticks", () => {
+      const content = "Files:\n```text\nsrc/index.ts\n```";
+      const instruct = new Instruct({ prompt: "Inspect" }).addContext(content, {
+        title: "Manifest",
+      });
+
+      expect(instruct.render()).toContain(
+        `## Context 1: Manifest\n\n\`\`\`\`\n${content}\n\`\`\`\``,
+      );
+    });
+  });
+
   describe("with text references", () => {
     beforeEach(async () => {
       await mkdir(TEST_DIR, { recursive: true });

@@ -21,6 +21,7 @@ export type {
 } from "./core/agent/index.js";
 export { Instruct } from "./core/index.js";
 export type {
+  InstructContextSection,
   InstructInputs,
   InstructOptions,
   InstructResponse,
