@@ -19,6 +19,7 @@ import {
   prepareProviderTools,
   toChatCompletionsToolChoice,
   toReasoningEffort,
+  type ChatCompletionsProviderDialect,
   type ChatCompletionsProviderToolVendor,
 } from "./utils.js";
 import {
@@ -32,6 +33,7 @@ export async function createGenerationRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
+      providerDialect?: ChatCompletionsProviderDialect;
       providerToolVendor?: ChatCompletionsProviderToolVendor;
     },
 ): Promise<ModelResult> {
@@ -44,6 +46,7 @@ export async function createGenerationRequest(
     providerTools,
     runtime,
     apiKey,
+    providerDialect,
     providerToolVendor,
     maxRetries,
     timeoutMs,
@@ -65,6 +68,7 @@ export async function createGenerationRequest(
 
     const chatMessages = await convertAxleMessages(messages, system, {
       model,
+      providerDialect,
       fileResolver: runtime?.fileResolver,
       signal,
       warn: span?.warn.bind(span),
@@ -83,7 +87,7 @@ export async function createGenerationRequest(
 
       // Axle-normalized options.
       ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-      ...toReasoningEffort(reasoning),
+      ...toReasoningEffort(reasoning, providerDialect),
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { top_p: topP } : {}),

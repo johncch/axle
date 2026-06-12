@@ -1,5 +1,5 @@
 import type { Citation } from "../../../messages/message.js";
-import type { ProviderTool } from "../../../tools/types.js";
+import type { ResolvedProviderTool } from "../../types.js";
 import type { ChatCompletionAnnotation } from "../types.js";
 
 export type ChatCompletionsProviderToolVendor = "openrouter";
@@ -8,14 +8,18 @@ const OPENROUTER_SERVER_TOOL_MAP: Record<string, string> = {
   web_search: "openrouter:web_search",
 };
 
+export function resolveOpenRouterProviderToolName(name: string): string | undefined {
+  return OPENROUTER_SERVER_TOOL_MAP[name];
+}
+
 export function prepareOpenRouterProviderTools(
-  providerTools: Array<ProviderTool>,
+  providerTools: Array<ResolvedProviderTool>,
   warn?: (message: string, attributes?: Record<string, unknown>) => void,
 ): any[] | undefined {
   const mappedTools: any[] = [];
 
   for (const tool of providerTools) {
-    const mappedType = OPENROUTER_SERVER_TOOL_MAP[tool.name];
+    const mappedType = tool.nativeName ?? resolveOpenRouterProviderToolName(tool.name);
     if (!mappedType) {
       warn?.("providerTool not supported by ChatCompletions provider vendor", {
         vendor: "openrouter",

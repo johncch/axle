@@ -1,8 +1,8 @@
 import { AxleMessage } from "../messages/message.js";
 import type { Span } from "../observability/types.js";
-import type { ProviderTool, ToolDefinition } from "../tools/types.js";
+import type { ToolDefinition } from "../tools/types.js";
 import type { FileResolver } from "../utils/file.js";
-import { AIProvider, AxleModelRequestOptions, ModelResult } from "./types.js";
+import { AIProvider, AxleModelRequestOptions, ModelResult, ResolvedProviderTool } from "./types.js";
 
 interface GenerateTurnParams extends AxleModelRequestOptions {
   provider: AIProvider;
@@ -10,7 +10,7 @@ interface GenerateTurnParams extends AxleModelRequestOptions {
   messages: Array<AxleMessage>;
   system?: string;
   tools?: Array<ToolDefinition>;
-  providerTools?: Array<ProviderTool>;
+  providerTools?: Array<ResolvedProviderTool>;
   span?: Span;
   fileResolver?: FileResolver;
 }

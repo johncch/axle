@@ -1,4 +1,6 @@
 // Core
+export { configureAxle } from "./config.js";
+export type { AxleConfiguration } from "./config.js";
 export { Agent, createAgentConfig } from "./core/agent/index.js";
 export type {
   AgentConfig,
@@ -73,8 +75,9 @@ export type {
 } from "./providers/types.js";
 
 // Tools
-export { createAgentTool, parallelize } from "./tools/index.js";
+export { braveWebSearch, createAgentTool, parallelize } from "./tools/index.js";
 export type {
+  BraveWebSearchOptions,
   CreateAgentToolOptions,
   ExecutableTool,
   ParallelToolResult,
@@ -83,6 +86,11 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolProgressChunk,
+  WebSearchBackend,
+  WebSearchBackendContext,
+  WebSearchRequest,
+  WebSearchResponse,
+  WebSearchResult,
 } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
 

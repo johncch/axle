@@ -287,4 +287,26 @@ describe("deferred file resolution", () => {
       ],
     });
   });
+
+  test("rejects PDF file parts before sending them to Together", async () => {
+    const file: FileInfo = {
+      kind: "document",
+      mimeType: "application/pdf",
+      name: "paper.pdf",
+      source: { type: "url", url: "https://example.com/paper.pdf" },
+    };
+
+    await expect(
+      convertAxleMessages(
+        [
+          {
+            role: "user",
+            content: [{ type: "file", file }],
+          },
+        ],
+        undefined,
+        { model: "test-model", providerDialect: "together" },
+      ),
+    ).rejects.toThrow("Together Chat Completions does not support PDF file parts");
+  });
 });

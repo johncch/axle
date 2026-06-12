@@ -3,13 +3,14 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import {
   AIProvider,
   ModelResult,
-  ProviderGenerationParams,
   ProviderClientOptions,
+  ProviderGenerationParams,
   ProviderStreamParams,
 } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
+import { resolveAnthropicProviderToolName } from "./utils.js";
 export const NAME = "anthropic" as const;
 
 export function anthropic(apiKey: string, options: ProviderClientOptions = {}): AIProvider {
@@ -23,6 +24,9 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
 
   return {
     name: NAME,
+    resolveProviderToolName(name) {
+      return resolveAnthropicProviderToolName(name);
+    },
 
     /** @internal */
     async createGenerationRequest(

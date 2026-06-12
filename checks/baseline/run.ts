@@ -1,13 +1,15 @@
+import { braveWebSearch, configureAxle } from "@fifthrevision/axle";
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
-import { baselineCases, type BaselineCaseResult } from "./cases.js";
-import { resolveProviderTargets } from "./providers.js";
+import { baselineCases, type BaselineCase, type BaselineCaseResult } from "./cases.js";
+import { resolveProviderTargets, type BaselineProviderId } from "./providers.js";
 
 interface RunOptions {
   provider?: string;
   model?: string;
+  all: boolean;
   thinking: boolean;
   cases: string[];
   out: string;
@@ -20,15 +22,20 @@ interface CheckRecord {
   thinking: boolean;
   caseId: string;
   caseDescription: string;
-  status: "pass" | "fail" | "error";
+  status: "pass" | "fail" | "error" | "skip";
   durationMs: number;
+  skipReason?: string;
   failureReasons?: string[];
   details?: Record<string, unknown>;
   error?: unknown;
 }
 
 const options = parseArgs(process.argv.slice(2));
-const targets = resolveProviderTargets({ provider: options.provider, model: options.model });
+const targets = resolveProviderTargets({
+  provider: options.provider,
+  model: options.model,
+  all: options.all,
+});
 const cases =
   options.cases.length === 0
     ? baselineCases
@@ -38,11 +45,16 @@ if (cases.length === 0) {
   throw new Error(`No cases matched: ${options.cases.join(", ")}`);
 }
 
+configureAxle({
+  webSearchFallback: braveWebSearch({ apiKey: getEnv("BRAVE_API_KEY") }),
+});
+
 await mkdir(dirname(options.out), { recursive: true });
 await writeFile(options.out, "");
 
 let passed = 0;
 let total = 0;
+let skipped = 0;
 const failedRecords: CheckRecord[] = [];
 
 for (const target of targets) {
@@ -50,7 +62,23 @@ for (const target of targets) {
   const provider = target.createProvider();
 
   for (const testCase of cases) {
-    if (testCase.providers && !testCase.providers.includes(target.id)) continue;
+    const skipReason = getSkipReason(testCase, target.id, target.model);
+    if (skipReason) {
+      skipped += 1;
+      await writeRecord({
+        timestamp: new Date().toISOString(),
+        providerId: target.id,
+        model: target.model,
+        thinking: options.thinking,
+        caseId: testCase.id,
+        caseDescription: testCase.description,
+        status: "skip",
+        durationMs: 0,
+        skipReason,
+      });
+      console.log(`  ${formatStatus("skip")} [${testCase.id}]: ${skipReason}`);
+      continue;
+    }
 
     total += 1;
     const startedAt = Date.now();
@@ -109,7 +137,9 @@ for (const target of targets) {
 }
 
 const rate = total === 0 ? 0 : (passed / total) * 100;
-console.log(`\n[Summary] ${passed}/${total} passed (${rate.toFixed(1)}%)`);
+console.log(
+  `\n[Summary] ${passed}/${total} passed (${rate.toFixed(1)}%)${skipped > 0 ? `, ${skipped} skipped` : ""}`,
+);
 if (failedRecords.length > 0) {
   console.log("\n[Failures]");
   for (const record of failedRecords) {
@@ -166,13 +196,30 @@ function deriveFailureReasons(
 
 function formatStatus(status: CheckRecord["status"]): string {
   if (status === "pass") return color("green", "✓ pass");
+  if (status === "skip") return color("gray", "- skip");
   if (status === "fail") return color("red", "✗ fail");
   return color("red", "✗ error");
 }
 
-function color(colorName: "green" | "red", value: string): string {
-  const code = colorName === "green" ? 32 : 31;
+function color(colorName: "green" | "red" | "gray", value: string): string {
+  const code = colorName === "green" ? 32 : colorName === "red" ? 31 : 90;
   return `\x1b[${code}m${value}\x1b[0m`;
+}
+
+function getSkipReason(
+  testCase: BaselineCase,
+  providerId: BaselineProviderId,
+  model: string,
+): string | undefined {
+  if (testCase.providers && !testCase.providers.includes(providerId)) {
+    return `Case is not enabled for provider ${providerId}.`;
+  }
+
+  return testCase.exclusions?.find(
+    (exclusion) =>
+      exclusion.provider === providerId &&
+      (exclusion.model === undefined || exclusion.model.test(model)),
+  )?.reason;
 }
 
 function formatDetails(value: unknown): string {
@@ -193,6 +240,7 @@ function formatFailureReasons(reasons: string[]): string {
 
 function parseArgs(args: string[]): RunOptions {
   const parsed: RunOptions = {
+    all: false,
     thinking: false,
     cases: [],
     out: join("output", "checks", `baseline-${Date.now()}.jsonl`),
@@ -209,6 +257,9 @@ function parseArgs(args: string[]): RunOptions {
     switch (arg) {
       case "--provider":
         parsed.provider = next();
+        break;
+      case "--all":
+        parsed.all = true;
         break;
       case "--model":
         parsed.model = next();
@@ -234,6 +285,10 @@ function parseArgs(args: string[]): RunOptions {
         }
         throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+
+  if (parsed.provider && parsed.all) {
+    throw new Error("Cannot specify both --provider and --all");
   }
 
   return parsed;
@@ -272,10 +327,17 @@ Usage:
   pnpm exec tsx checks/baseline/run.ts [provider] [options]
 
 Options:
-  --provider <id>    Provider id: openai, anthropic, gemini, openrouter.
+  --provider <id>    Provider id: openai, anthropic, gemini, openrouter, together.
+  --all              Include non-default providers such as OpenRouter.
   --model <model>    Override model for the selected provider. Requires --provider.
   --thinking         Enable provider reasoning/thinking controls where supported.
   --case <id>        Case id. Repeat or comma-separate. Defaults to all cases.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.
 `);
+}
+
+function getEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }

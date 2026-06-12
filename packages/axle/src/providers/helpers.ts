@@ -1,3 +1,4 @@
+import type { AxleConfiguration } from "../config.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
@@ -26,9 +27,10 @@ import type {
   ToolContext,
   ToolProgressChunk,
 } from "../tools/types.js";
+import { createWebSearchFallbackTool } from "../tools/webSearch.js";
 import type { Stats } from "../types.js";
 import { addStats, attributeStats, createStats, mergeStats } from "../utils/stats.js";
-import type { ModelError, ModelResult } from "./types.js";
+import type { AIProvider, ModelError, ModelResult, ResolvedProviderTool } from "./types.js";
 
 export type ToolCallResult =
   | { type: "success"; content: string | ToolResultPart[] }
@@ -168,15 +170,97 @@ export function resolveToolRegistry(options: {
       { code: "TOOL_OPTIONS_CONFLICT" },
     );
   }
-  if (options.registry) return options.registry;
-  return new ToolRegistry({ tools: options.tools, providerTools: options.providerTools });
+  return (
+    options.registry ??
+    new ToolRegistry({ tools: options.tools, providerTools: options.providerTools })
+  );
 }
+
+export interface ResolvedTools {
+  registry: ToolRegistry;
+  executable(): ExecutableTool[];
+  provider(): ResolvedProviderTool[];
+  get(name: string): ExecutableTool | undefined;
+}
+
+export function resolveTools(
+  registry: ToolRegistry,
+  options: {
+    provider: AIProvider;
+    model: string;
+    span?: Span;
+    configuration: AxleConfiguration;
+  },
+): ResolvedTools {
+  const requestedWebSearch = registry.getProvider("web_search");
+  const resolveProviderToolName = options.provider.resolveProviderToolName?.bind(options.provider);
+  if (!resolveProviderToolName) {
+    return {
+      registry,
+      executable: () => registry.executable(),
+      provider: () => registry.provider(),
+      get: (name) => registry.get(name),
+    };
+  }
+
+  const resolveProviderTools = (): ResolvedProviderTool[] =>
+    registry.provider().map((tool) => {
+      const resolvedName = resolveProviderToolName(tool.name, options.model);
+      return resolvedName === undefined ? tool : { ...tool, nativeName: resolvedName };
+    });
+
+  if (!requestedWebSearch || resolveProviderToolName("web_search", options.model) !== undefined) {
+    return {
+      registry,
+      executable: () => registry.executable(),
+      provider: resolveProviderTools,
+      get: (name) => registry.get(name),
+    };
+  }
+
+  const fallback = options.configuration.webSearchFallback;
+  if (!fallback) {
+    throw new AxleError(
+      `Provider ${options.provider.name} does not support native web_search and no Axle webSearchFallback is configured`,
+      {
+        code: "WEB_SEARCH_FALLBACK_NOT_CONFIGURED",
+        details: { provider: options.provider.name, model: options.model },
+      },
+    );
+  }
+
+  if (requestedWebSearch.config) {
+    options.span?.warn("web_search provider config ignored by fallback backend", {
+      provider: options.provider.name,
+      model: options.model,
+      backend: fallback.name,
+    });
+  }
+  options.span?.info("Using web search fallback backend", {
+    provider: options.provider.name,
+    model: options.model,
+    backend: fallback.name,
+  });
+
+  const fallbackTool = createWebSearchFallbackTool(fallback);
+  return {
+    registry,
+    executable: () => [
+      ...registry.executable().filter((tool) => tool.name !== "web_search"),
+      fallbackTool,
+    ],
+    provider: () => resolveProviderTools().filter((tool) => tool.name !== "web_search"),
+    get: (name) => (name === "web_search" ? fallbackTool : registry.get(name)),
+  };
+}
+
+type ToolExecutionSource = ToolRegistry | ResolvedTools;
 
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
   onToolCall: ToolCallCallback = async () => null,
   signal: AbortSignal,
-  registry: ToolRegistry,
+  source: ToolExecutionSource,
   span?: Span,
   observer?: ToolExecutionObserver,
 ): Promise<{ results: AxleToolCallResult[]; usage?: Stats }> {
@@ -187,7 +271,7 @@ export async function executeToolCalls(
   for (const call of toolCalls) {
     let executed: ExecutedToolCall;
     try {
-      executed = await executeOneToolCall(call, onToolCall, signal, registry, span, observer);
+      executed = await executeOneToolCall(call, onToolCall, signal, source, span, observer);
     } catch (error) {
       // A terminal throw must still account for usage already reported by
       // completed calls earlier in this batch.
@@ -233,13 +317,14 @@ async function executeOneToolCall(
   call: ContentPartToolCall,
   onToolCall: ToolCallCallback,
   signal: AbortSignal,
-  registry: ToolRegistry,
+  source: ToolExecutionSource,
   span?: Span,
   observer?: ToolExecutionObserver,
 ): Promise<ExecutedToolCall> {
   if (signal.aborted) throw new AxleAbortError("Operation aborted", { reason: signal.reason });
 
-  const tool = registry.get(call.name);
+  const registry = source instanceof ToolRegistry ? source : source.registry;
+  const tool = source.get(call.name);
   const toolSpan = span?.startSpan(call.name, { type: "tool" });
   let usage: Stats | undefined;
   const ctx: ToolContext = {

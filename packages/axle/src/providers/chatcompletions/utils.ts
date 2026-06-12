@@ -1,6 +1,6 @@
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
-import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
+import type { ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
 import {
   resolveFileSource,
@@ -9,7 +9,7 @@ import {
   type ResolvedFileSource,
 } from "../../utils/file.js";
 import { withUsageDetails } from "../../utils/stats.js";
-import { AxleStopReason, ToolChoice } from "../types.js";
+import { AxleStopReason, ToolChoice, type ResolvedProviderTool } from "../types.js";
 import {
   ChatCompletionContentPart,
   ChatCompletionMessage,
@@ -18,13 +18,28 @@ import {
 } from "./types.js";
 import {
   prepareOpenRouterProviderTools,
+  resolveOpenRouterProviderToolName,
   type ChatCompletionsProviderToolVendor,
 } from "./vendors/openrouter.js";
 
 export type { ChatCompletionsProviderToolVendor } from "./vendors/openrouter.js";
+export type ChatCompletionsProviderDialect = "together";
+
+export function resolveChatCompletionsProviderToolName(
+  name: string,
+  vendor?: ChatCompletionsProviderToolVendor,
+): string | undefined {
+  switch (vendor) {
+    case "openrouter":
+      return resolveOpenRouterProviderToolName(name);
+    default:
+      return undefined;
+  }
+}
 
 interface ChatCompletionsConversionContext {
   model: string;
+  providerDialect?: ChatCompletionsProviderDialect;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
   warn?: (message: string, fields?: Record<string, unknown>) => void;
@@ -47,12 +62,18 @@ export async function convertAxleMessages(
 }
 
 /**
- * Translate Axle's normalized `reasoning` boolean into Chat Completions
- * `reasoning_effort`. `true` → "high"; `false` → "none"; `undefined` → omit.
- * Users who need a specific tier set `providerOptions.reasoning_effort` directly,
- * which overrides this.
+ * Translate Axle's normalized `reasoning` boolean into provider controls.
+ * Raw provider options are applied later and may override this mapping.
  */
-export function toReasoningEffort(reasoning: boolean | undefined) {
+export function toReasoningEffort(
+  reasoning: boolean | undefined,
+  providerDialect?: ChatCompletionsProviderDialect,
+) {
+  if (providerDialect === "together") {
+    if (reasoning === true) return { reasoning: { enabled: true } };
+    if (reasoning === false) return { reasoning: { enabled: false } };
+    return {};
+  }
   if (reasoning === true) return { reasoning_effort: "high" as const };
   if (reasoning === false) return { reasoning_effort: "none" as const };
   return {};
@@ -94,7 +115,7 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
 }
 
 export function prepareProviderTools(
-  providerTools?: Array<ProviderTool>,
+  providerTools?: Array<ResolvedProviderTool>,
   vendor?: ChatCompletionsProviderToolVendor,
   warn?: (message: string, attributes?: Record<string, unknown>) => void,
 ): any[] | undefined {
@@ -114,7 +135,7 @@ export function prepareProviderTools(
 export function toChatCompletionsToolChoice(
   choice: ToolChoice | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ProviderTool>,
+  providerTools?: Array<ResolvedProviderTool>,
 ) {
   if (choice === undefined) return {};
   if (choice === "auto" || choice === "none" || choice === "required")
@@ -304,6 +325,9 @@ async function convertFilePart(
   }
 
   if (file.kind === "document") {
+    if (context.providerDialect === "together") {
+      throw new Error("Together Chat Completions does not support PDF file parts");
+    }
     if (file.mimeType !== "application/pdf") {
       throw new Error(
         `ChatCompletions document file inputs currently support PDF only. Received ${file.mimeType}`,

@@ -6,16 +6,25 @@ benchmarks.
 
 ## Usage
 
-Run all configured providers at their default smoke models:
+Run the default provider set at their default smoke models:
 
 ```bash
 pnpm exec tsx checks/baseline/run.ts
 ```
 
+The default set is OpenAI, Anthropic, Gemini, and Together. OpenRouter is
+available as an explicit alternative Chat Completions provider.
+
 Run one provider:
 
 ```bash
 pnpm exec tsx checks/baseline/run.ts --provider openai
+```
+
+Run every provider, including OpenRouter:
+
+```bash
+pnpm exec tsx checks/baseline/run.ts --all
 ```
 
 Override the model for one provider:
@@ -43,6 +52,31 @@ OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
+TOGETHER_API_KEY=...
+BRAVE_API_KEY=...
+```
+
+`BRAVE_API_KEY` is required for baseline runs. The fallback is configured once
+at runner startup so native web-search providers are exercised while a fallback
+is present, and fallback providers such as Together use Brave automatically.
+The PDF attachment case is excluded because Together's Chat Completions API
+does not accept PDF file parts. Override Together's default smoke model with
+`TOGETHER_MODEL`.
+
+Run the native OpenRouter search path:
+
+```bash
+pnpm exec tsx checks/baseline/run.ts \
+  --provider openrouter \
+  --case stream-web-search
+```
+
+Run the Together + Brave fallback path:
+
+```bash
+pnpm exec tsx checks/baseline/run.ts \
+  --provider together \
+  --case stream-web-search
 ```
 
 Run specific configuration against a set of models
@@ -91,4 +125,6 @@ runner additionally verifies usage conservation: the per-provider/model
 `usageViolation` detail on a failed record means tokens were dropped or
 double-counted somewhere in the pipeline. Failed cases can also return
 `failureReasons`; the runner prints these inline, includes them in the final
-failure summary, and writes them to the JSONL record.
+failure summary, and writes them to the JSONL record. Cases may declare
+provider/model exclusions for known capability gaps; these are recorded as
+skips with the exclusion reason.

@@ -1,3 +1,4 @@
+import { getAxleConfiguration, type AxleConfiguration } from "../config.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema } from "../core/parse.js";
 import type { InstructResponse } from "../core/userTurn.js";
@@ -20,6 +21,7 @@ import {
   GenerateResult,
   logTurnContent,
   resolveToolRegistry,
+  resolveTools,
   ToolCallCallback,
 } from "./helpers.js";
 import { AIProvider, AxleModelRequestOptions, AxleStopReason, ModelResult } from "./types.js";
@@ -68,10 +70,13 @@ export async function generate(
   if ("instruct" in options) {
     const { instruct, messages, ...rest } = options;
     const userTurn = compileUserTurn(instruct);
-    const result = await runGenerate({
-      ...rest,
-      messages: [...(messages ?? []), userTurn.message],
-    });
+    const result = await runGenerate(
+      {
+        ...rest,
+        messages: [...(messages ?? []), userTurn.message],
+      },
+      getAxleConfiguration(),
+    );
 
     if (!result.ok) return result;
     try {
@@ -91,10 +96,13 @@ export async function generate(
     }
   }
 
-  return runGenerate(options);
+  return runGenerate(options, getAxleConfiguration());
 }
 
-async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
+async function runGenerate(
+  options: GenerateParams,
+  configuration: AxleConfiguration,
+): Promise<GenerateResult> {
   const {
     provider,
     model,
@@ -115,6 +123,12 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
     signal = new AbortController().signal,
   } = options;
   const registry = resolveToolRegistry(options);
+  const resolvedTools = resolveTools(registry, {
+    provider,
+    model,
+    span,
+    configuration,
+  });
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
@@ -181,12 +195,12 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
       iterations += 1;
       const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
 
-      const executable = registry.executable();
+      const executable = resolvedTools.executable();
       const tools =
         executable.length > 0
           ? executable.map((t) => ({ name: t.name, description: t.description, schema: t.schema }))
           : undefined;
-      const providerTools = registry.provider();
+      const providerTools = resolvedTools.provider();
       let response: ModelResult;
       try {
         response = await generateTurn({
@@ -268,7 +282,7 @@ async function runGenerate(options: GenerateParams): Promise<GenerateResult> {
         toolCalls,
         onToolCall,
         signal,
-        registry,
+        resolvedTools,
         span,
       );
       addStats(usage, toolUsage);

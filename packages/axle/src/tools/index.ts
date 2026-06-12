@@ -10,3 +10,12 @@ export type {
   ToolDefinition,
   ToolProgressChunk,
 } from "./types.js";
+export { braveWebSearch } from "./webSearch.js";
+export type {
+  BraveWebSearchOptions,
+  WebSearchBackend,
+  WebSearchBackendContext,
+  WebSearchRequest,
+  WebSearchResponse,
+  WebSearchResult,
+} from "./webSearch.js";

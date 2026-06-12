@@ -89,6 +89,25 @@ describe("createStreamingRequest", () => {
     expect(errors).toHaveLength(0);
   });
 
+  test("maps normalized reasoning to Together's streaming request shape", async () => {
+    (fetch as any).mockResolvedValue(makeSSEResponse("data: [DONE]\n\n"));
+
+    await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        providerDialect: "together",
+        reasoning: true,
+      }),
+    );
+
+    const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+    expect(body.reasoning).toEqual({ enabled: true });
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
   test("skips a single malformed SSE data line and completes valid chunks", async () => {
     const span = makeSpan();
     const sseLines = [

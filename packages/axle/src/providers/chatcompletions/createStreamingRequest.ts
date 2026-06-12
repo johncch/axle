@@ -10,6 +10,7 @@ import {
   prepareProviderTools,
   toChatCompletionsToolChoice,
   toReasoningEffort,
+  type ChatCompletionsProviderDialect,
   type ChatCompletionsProviderToolVendor,
 } from "./utils.js";
 
@@ -19,6 +20,7 @@ export async function* createStreamingRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
+      providerDialect?: ChatCompletionsProviderDialect;
       providerToolVendor?: ChatCompletionsProviderToolVendor;
     },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
@@ -32,6 +34,7 @@ export async function* createStreamingRequest(
     runtime,
     signal,
     apiKey,
+    providerDialect,
     providerToolVendor,
     maxRetries,
     timeoutMs,
@@ -51,6 +54,7 @@ export async function* createStreamingRequest(
   try {
     const chatMessages = await convertAxleMessages(messages, system, {
       model,
+      providerDialect,
       fileResolver: runtime?.fileResolver,
       signal,
       warn: span?.warn.bind(span),
@@ -71,7 +75,7 @@ export async function* createStreamingRequest(
 
       // Axle-normalized options.
       ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-      ...toReasoningEffort(reasoning),
+      ...toReasoningEffort(reasoning, providerDialect),
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { top_p: topP } : {}),

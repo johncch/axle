@@ -116,6 +116,30 @@ describe("createGenerationRequest (OpenAI)", () => {
     });
   });
 
+  test("serializes a finalized provider tool without resolving its name again", async () => {
+    mockCreate.mockResolvedValue(makeTextResponse("Hello"));
+
+    await createGenerationRequest({
+      client: mockClient,
+      model: MODEL,
+      messages: [{ role: "user", content: "Hello" }],
+      runtime: {},
+      providerTools: [
+        {
+          type: "provider",
+          name: "web_search",
+          nativeName: "resolved_web_search",
+        },
+      ],
+      toolChoice: { type: "tool", name: "web_search" },
+    });
+
+    expect(mockCreate.mock.calls[0][0]).toMatchObject({
+      tools: [expect.objectContaining({ type: "resolved_web_search" })],
+      tool_choice: { type: "resolved_web_search" },
+    });
+  });
+
   test("throws AxleAbortError when aborted during an in-flight SDK request", async () => {
     const controller = new AbortController();
     mockCreate.mockImplementation(() => new Promise(() => {}));

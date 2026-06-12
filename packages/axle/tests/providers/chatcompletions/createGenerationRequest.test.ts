@@ -153,6 +153,23 @@ describe("createGenerationRequest", () => {
       expect(body.reasoning_effort).toBe("medium");
     });
 
+    test("maps normalized reasoning to Together's request shape", async () => {
+      (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
+
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        providerDialect: "together",
+        reasoning: false,
+      });
+
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.reasoning).toEqual({ enabled: false });
+      expect(body.reasoning_effort).toBeUndefined();
+    });
+
     test("maps named tool choice and parallel tool calls", async () => {
       (fetch as any).mockResolvedValue(makeOkResponse(makeTextResponse("Hi")));
 

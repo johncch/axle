@@ -71,6 +71,15 @@ export interface AxleModelRequestOptions {
 export interface AIProvider {
   get name(): string;
 
+  /**
+   * Resolves a portable provider-tool name to the provider-native name.
+   * Returning undefined marks the tool unsupported. When omitted, Axle
+   * preserves the provider's existing passthrough behavior.
+   *
+   * @internal
+   */
+  resolveProviderToolName?(name: string, model: string): string | undefined;
+
   /** @internal */
   createGenerationRequest(model: string, params: ProviderGenerationParams): Promise<ModelResult>;
 
@@ -79,6 +88,10 @@ export interface AIProvider {
     model: string,
     params: ProviderStreamParams,
   ): AsyncGenerator<AnyStreamChunk, void, unknown>;
+}
+
+export interface ResolvedProviderTool extends ProviderTool {
+  nativeName?: string;
 }
 
 /**
@@ -92,7 +105,7 @@ export interface ProviderGenerationParams extends AxleModelRequestOptions {
   /** Executable tools exposed as provider function tools. */
   tools?: Array<ToolDefinition>;
   /** Provider-managed tools such as web search or code execution. */
-  providerTools?: Array<ProviderTool>;
+  providerTools?: Array<ResolvedProviderTool>;
   /** Internal services available during provider request creation. */
   runtime: ProviderRuntime;
 }

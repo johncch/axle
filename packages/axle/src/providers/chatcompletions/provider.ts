@@ -2,16 +2,21 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import {
   AIProvider,
   ModelResult,
-  ProviderGenerationParams,
   ProviderClientOptions,
+  ProviderGenerationParams,
   ProviderStreamParams,
 } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
+import {
+  resolveChatCompletionsProviderToolName,
+  type ChatCompletionsProviderDialect,
+} from "./utils.js";
 
 export interface ChatCompletionsOptions extends ProviderClientOptions {
   apiKey?: string;
+  providerDialect?: ChatCompletionsProviderDialect;
   providerToolVendor?: "openrouter";
 }
 
@@ -29,19 +34,19 @@ export function chatCompletions(
 ): AIProvider {
   const apiKey = typeof apiKeyOrOptions === "string" ? apiKeyOrOptions : apiKeyOrOptions?.apiKey;
   const clientOptions = typeof apiKeyOrOptions === "string" ? options : apiKeyOrOptions;
-  const maxRetries = requireInteger(
-    clientOptions?.maxRetries ?? 2,
-    "maxRetries",
-    { min: 0 },
-  );
+  const maxRetries = requireInteger(clientOptions?.maxRetries ?? 2, "maxRetries", { min: 0 });
   const timeoutMs =
     clientOptions?.timeoutMs === undefined
       ? undefined
       : requireInteger(clientOptions.timeoutMs, "timeoutMs", { min: 1 });
   const providerToolVendor = clientOptions?.providerToolVendor;
+  const providerDialect = clientOptions?.providerDialect;
 
   return {
     name: "ChatCompletions",
+    resolveProviderToolName(name) {
+      return resolveChatCompletionsProviderToolName(name, providerToolVendor);
+    },
 
     /** @internal */
     async createGenerationRequest(
@@ -54,6 +59,7 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
+        providerDialect,
         providerToolVendor,
         ...params,
       });
@@ -70,6 +76,7 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
+        providerDialect,
         providerToolVendor,
         ...params,
       });

@@ -78,5 +78,21 @@ describe("reasoning translation", () => {
     test("false → reasoning_effort: none", () => {
       expect(toReasoningEffort(false)).toEqual({ reasoning_effort: "none" });
     });
+
+    test("Together true → reasoning enabled", () => {
+      expect(toReasoningEffort(true, "together")).toEqual({
+        reasoning: { enabled: true },
+      });
+    });
+
+    test("Together false → reasoning disabled", () => {
+      expect(toReasoningEffort(false, "together")).toEqual({
+        reasoning: { enabled: false },
+      });
+    });
+
+    test("Together undefined → no field", () => {
+      expect(toReasoningEffort(undefined, "together")).toEqual({});
+    });
   });
 });

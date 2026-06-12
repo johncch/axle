@@ -3,13 +3,14 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import {
   AIProvider,
   ModelResult,
-  ProviderGenerationParams,
   ProviderClientOptions,
+  ProviderGenerationParams,
   ProviderStreamParams,
 } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
+import { resolveGeminiProviderToolName } from "./utils.js";
 export const NAME = "Gemini" as const;
 
 export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIProvider {
@@ -25,6 +26,9 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
 
   return {
     name: NAME,
+    resolveProviderToolName(name) {
+      return resolveGeminiProviderToolName(name);
+    },
 
     /** @internal */
     async createGenerationRequest(

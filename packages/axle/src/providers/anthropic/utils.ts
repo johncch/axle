@@ -8,14 +8,14 @@ import {
   ContentPartToolCall,
   type ToolResultPart,
 } from "../../messages/message.js";
-import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
+import type { ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { AxleStopReason, ToolChoice } from "../types.js";
+import { AxleStopReason, type ResolvedProviderTool, ToolChoice } from "../types.js";
 
 interface AnthropicConversionContext {
   model: string;
@@ -301,9 +301,15 @@ const PROVIDER_TOOL_MAP: Record<string, string> = {
   web_search: "web_search_20250305",
 };
 
-export function convertToAnthropicProviderTools(providerTools?: Array<ProviderTool>): any[] {
+export function resolveAnthropicProviderToolName(name: string): string {
+  return PROVIDER_TOOL_MAP[name] ?? name;
+}
+
+export function convertToAnthropicProviderTools(
+  providerTools?: Array<ResolvedProviderTool>,
+): any[] {
   return (providerTools ?? []).map((tool) => ({
-    type: PROVIDER_TOOL_MAP[tool.name] ?? tool.name,
+    type: tool.nativeName ?? resolveAnthropicProviderToolName(tool.name),
     name: tool.name,
     ...tool.config,
   }));
@@ -313,7 +319,7 @@ export function toAnthropicToolChoice(
   choice: ToolChoice | undefined,
   parallelToolCalls: boolean | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ProviderTool>,
+  providerTools?: Array<ResolvedProviderTool>,
 ) {
   if (choice === undefined && parallelToolCalls !== false) return {};
 

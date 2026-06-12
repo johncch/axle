@@ -6,14 +6,14 @@ import {
 } from "@google/genai";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
-import type { ProviderTool, ToolDefinition } from "../../tools/index.js";
+import type { ToolDefinition } from "../../tools/index.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { AxleStopReason, ToolChoice } from "../types.js";
+import { AxleStopReason, type ResolvedProviderTool, ToolChoice } from "../types.js";
 
 /* To Request */
 
@@ -55,14 +55,18 @@ const PROVIDER_TOOL_MAP: Record<string, string> = {
   code_execution: "codeExecution",
 };
 
+export function resolveGeminiProviderToolName(name: string): string {
+  return PROVIDER_TOOL_MAP[name] ?? name;
+}
+
 export function addGeminiProviderTools(
   config: GenerateContentConfig,
-  providerTools?: ProviderTool[],
+  providerTools?: ResolvedProviderTool[],
 ) {
   if (!providerTools || providerTools.length === 0) return;
   if (!config.tools) config.tools = [];
   for (const tool of providerTools) {
-    const key = PROVIDER_TOOL_MAP[tool.name] ?? tool.name;
+    const key = tool.nativeName ?? resolveGeminiProviderToolName(tool.name);
     config.tools.push({ [key]: tool.config ?? {} } as any);
   }
 }
@@ -71,7 +75,7 @@ export function toGeminiToolConfig(
   choice: ToolChoice | undefined,
   parallelToolCalls: boolean | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ProviderTool>,
+  providerTools?: Array<ResolvedProviderTool>,
 ) {
   if (parallelToolCalls === false) {
     throw new Error("Gemini does not support disabling parallel tool calls");

@@ -1,3 +1,4 @@
+import { getAxleConfiguration, type AxleConfiguration } from "../config.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema } from "../core/parse.js";
 import type { InstructResponse } from "../core/userTurn.js";
@@ -29,9 +30,10 @@ import type { FileResolver } from "../utils/file.js";
 import { addStats, attributeStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.js";
 import {
   executeToolCalls,
-  type GenerateError,
   logTurnContent,
   resolveToolRegistry,
+  resolveTools,
+  type GenerateError,
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -202,10 +204,11 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
     : controller.signal;
 
   const { promise: finalPromise, resolve, reject } = Promise.withResolvers<any>();
+  const configuration = getAxleConfiguration();
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
-    run(streamOptions, effectiveSignal, callbacks).then((result) => {
+    run(streamOptions, effectiveSignal, callbacks, configuration).then((result) => {
       if (parse && result.ok) {
         try {
           resolve({ ...result, response: parse(result.final) });
@@ -247,6 +250,7 @@ async function run(
   options: StreamParams,
   signal: AbortSignal,
   cbs: StreamEventCallback[],
+  configuration: AxleConfiguration,
 ): Promise<StreamResult> {
   const {
     provider,
@@ -267,6 +271,12 @@ async function run(
     providerOptions,
   } = options;
   const registry = resolveToolRegistry(options);
+  const resolvedTools = resolveTools(registry, {
+    provider,
+    model,
+    span,
+    configuration,
+  });
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
@@ -355,9 +365,9 @@ async function run(
     iterations += 1;
     const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
 
-    const executable = registry?.executable() ?? [];
+    const executable = resolvedTools.executable();
     const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
-    const providerTools = registry?.provider() ?? [];
+    const providerTools = resolvedTools.provider();
 
     const streamSource = provider.createStreamingRequest(model, {
       messages: workingMessages,
@@ -408,7 +418,7 @@ async function run(
         index: toolCallIndexMap.get(id) ?? -1,
         id,
         name,
-        kind: registry.get(name)?.kind ?? "tool",
+        kind: resolvedTools.get(name)?.kind ?? "tool",
       });
     };
 
@@ -862,7 +872,7 @@ async function run(
         toolCalls,
         onToolCall,
         signal,
-        registry,
+        resolvedTools,
         span,
         executionObserver,
       ));

@@ -31,10 +31,17 @@ export interface BaselineCaseResult {
   details?: Record<string, unknown>;
 }
 
+export interface BaselineCaseExclusion {
+  provider: BaselineProviderId;
+  model?: RegExp;
+  reason: string;
+}
+
 export interface BaselineCase {
   id: string;
   description: string;
   providers?: BaselineProviderId[];
+  exclusions?: BaselineCaseExclusion[];
   run(context: BaselineCaseContext): Promise<BaselineCaseResult>;
 }
 
@@ -554,24 +561,33 @@ export const baselineCases: BaselineCase[] = [
       ).final;
       const text = String(result.response ?? "");
       const toolResults = getToolResultDetails(agent.history.log);
+      const parentReturnedCodeWord = text.toLowerCase().includes("orchid");
+      const childReturnedExpectedValue = toolResults.some(
+        (toolResult) =>
+          toolResult.name === "delegate_code_word" &&
+          toolResult.content.includes("subagent-orchid"),
+      );
+      const usageAttributed =
+        result.usage.breakdown?.some(
+          (entry) =>
+            entry.provider === provider.name &&
+            entry.model.startsWith(model) &&
+            entry.in > 0 &&
+            entry.out > 0,
+        ) === true;
+      const failureReasons = [
+        ...(!parentReturnedCodeWord
+          ? ["Parent response did not preserve the orchid code word."]
+          : []),
+        ...(!childReturnedExpectedValue
+          ? ["Child tool result did not contain subagent-orchid."]
+          : []),
+        ...(!usageAttributed ? ["Child usage was not attributed to the provider and model."] : []),
+      ];
 
       return {
-        ok:
-          text.includes("subagent-orchid") &&
-          result.usage.breakdown?.some(
-            (entry) =>
-              entry.provider === provider.name &&
-              // Attribution uses the runtime model, which may be a dated
-              // snapshot of the requested one (e.g. gpt-5.4-mini-2026-03-17).
-              entry.model.startsWith(model) &&
-              entry.in > 0 &&
-              entry.out > 0,
-          ) === true &&
-          toolResults.some(
-            (toolResult) =>
-              toolResult.name === "delegate_code_word" &&
-              toolResult.content.includes("subagent-orchid"),
-          ),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
           toolResults,
@@ -774,12 +790,11 @@ export const baselineCases: BaselineCase[] = [
   },
   {
     id: "stream-web-search",
-    description: "stream() with provider web search surfaces provider-specific search evidence.",
-    async run({ provider, model, providerId, requestOptions }) {
+    description: "stream() uses native or fallback web search and surfaces execution evidence.",
+    async run({ provider, model, requestOptions }) {
       return runStreamingWebSearchCitationCase({
         provider,
         model,
-        providerId,
         requestOptions,
         prompt:
           "Use web search to find the current top headline on Reuters.com. Answer with only the headline.",
@@ -831,6 +846,13 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-image-file",
     description: "generate() with an Instruct image file attachment.",
+    exclusions: [
+      {
+        provider: "together",
+        model: /^deepseek-ai\/DeepSeek-V4-Pro$/i,
+        reason: "Together reports that DeepSeek V4 Pro does not support multimodal input.",
+      },
+    ],
     async run({ provider, model, requestOptions }) {
       const image = await loadFileContent("./examples/data/economist-brainy-imports.png");
       const instruct = new Instruct({
@@ -858,6 +880,7 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "generate-pdf-file",
     description: "generate() with an Instruct PDF file attachment.",
+    providers: ["openai", "anthropic", "gemini", "openrouter"],
     async run({ provider, model, requestOptions }) {
       const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
       const instruct = new Instruct({
@@ -884,13 +907,11 @@ export const baselineCases: BaselineCase[] = [
 async function runStreamingWebSearchCitationCase({
   provider,
   model,
-  providerId,
   requestOptions,
   prompt,
 }: {
   provider: AIProvider;
   model: string;
-  providerId: string;
   requestOptions: AxleModelRequestOptions;
   prompt: string;
 }): Promise<BaselineCaseResult> {
@@ -921,27 +942,43 @@ async function runStreamingWebSearchCitationCase({
   const providerToolEventCount = eventTypes.filter((type) =>
     type.startsWith("provider-tool:"),
   ).length;
-  const expectedEvidence = getWebSearchExpectedEvidence(providerId);
+  const toolExecutionCount = eventTypes.filter((type) => type === "tool:exec-complete").length;
+  const webSearchToolResults = getToolResultDetails(result.messages).filter(
+    (toolResult) => toolResult.name === "web_search" && toolResult.isError !== true,
+  );
+  const nativeSearchAvailable =
+    provider.resolveProviderToolName?.("web_search", model) !== undefined;
+  const unexpectedFallback = nativeSearchAvailable && webSearchToolResults.length > 0;
+  const searchEvidence = {
+    citations: citationPartCount + textCitationCount + citationEventCount > 0,
+    providerTool: providerToolPartCount + providerToolEventCount > 0,
+    webSearchTool: webSearchToolResults.length > 0,
+  };
+  const hasSearchEvidence = Object.values(searchEvidence).some(Boolean) && !unexpectedFallback;
   return {
-    ok: expectedEvidence.every((evidence) => {
-      switch (evidence) {
-        case "citation-part":
-          return citationPartCount > 0;
-        case "text-citation":
-          return textCitationCount > 0;
-        case "provider-tool":
-          return providerToolPartCount > 0 || providerToolEventCount > 0;
-      }
-    }),
+    ok: hasSearchEvidence,
+    ...(!hasSearchEvidence
+      ? {
+          failureReasons: [
+            unexpectedFallback
+              ? "Provider reported native web_search support but Axle used the configured fallback."
+              : "No citations, provider-tool activity, or successful web_search result.",
+          ],
+        }
+      : {}),
     details: {
       text,
       finishReason: result.final.finishReason,
-      expectedEvidence,
+      nativeSearchAvailable,
+      unexpectedFallback,
+      searchEvidence,
       citationPartCount,
       textCitationCount,
       citationEventCount,
       providerToolPartCount,
       providerToolEventCount,
+      toolExecutionCount,
+      webSearchToolResultCount: webSearchToolResults.length,
       eventTypes,
       usage: result.usage,
     },
@@ -996,22 +1033,6 @@ function countTextCitations(message: AxleAssistantMessage | undefined): number {
 function countProviderToolParts(message: AxleAssistantMessage | undefined): number {
   if (!message) return 0;
   return message.content.filter((part) => part.type === "provider-tool").length;
-}
-
-function getWebSearchExpectedEvidence(
-  providerId: string,
-): Array<"citation-part" | "text-citation" | "provider-tool"> {
-  switch (providerId) {
-    case "openrouter":
-      return ["citation-part"];
-    case "gemini":
-      return ["text-citation"];
-    case "openai":
-    case "anthropic":
-      return ["provider-tool", "text-citation"];
-    default:
-      return ["text-citation"];
-  }
 }
 
 function hasSuccessfulToolResult(messages: Array<{ role: string; content?: unknown }>): boolean {

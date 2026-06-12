@@ -2,14 +2,14 @@ import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
+import type { ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import type { ToolChoice } from "../types.js";
+import type { ResolvedProviderTool, ToolChoice } from "../types.js";
 
 /* To Request */
 
@@ -31,9 +31,15 @@ const PROVIDER_TOOL_MAP: Record<string, string> = {
   code_execution: "code_interpreter",
 };
 
-export function prepareProviderTools(providerTools?: Array<ProviderTool>): any[] | undefined {
+export function resolveOpenAIProviderToolName(name: string): string {
+  return PROVIDER_TOOL_MAP[name] ?? name;
+}
+
+export function prepareProviderTools(
+  providerTools?: Array<ResolvedProviderTool>,
+): any[] | undefined {
   return providerTools?.map((tool) => ({
-    type: PROVIDER_TOOL_MAP[tool.name] ?? tool.name,
+    type: tool.nativeName ?? resolveOpenAIProviderToolName(tool.name),
     ...tool.config,
   }));
 }
@@ -41,7 +47,7 @@ export function prepareProviderTools(providerTools?: Array<ProviderTool>): any[]
 export function toOpenAIToolChoice(
   choice: ToolChoice | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ProviderTool>,
+  providerTools?: Array<ResolvedProviderTool>,
 ): Record<string, any> {
   if (choice === undefined) return {};
   if (choice === "auto" || choice === "none" || choice === "required")
@@ -53,7 +59,11 @@ export function toOpenAIToolChoice(
 
   const providerTool = providerTools?.find((tool) => tool.name === choice.name);
   if (providerTool) {
-    return { tool_choice: { type: PROVIDER_TOOL_MAP[providerTool.name] ?? providerTool.name } };
+    return {
+      tool_choice: {
+        type: providerTool.nativeName ?? resolveOpenAIProviderToolName(providerTool.name),
+      },
+    };
   }
 
   throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
