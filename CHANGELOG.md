@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.25.0] - 2026-06-12
+
+- Added a web search fallback for more reliable search behavior.
+- Improved handling of non-text tool results.
+
 ## [0.24.0] - 2026-06-11
 
 - Added experimental subagent tools for delegating bounded work to other agents.
