@@ -7,7 +7,7 @@ import { baselineCases, type BaselineCase, type BaselineCaseResult } from "./cas
 import { resolveProviderTargets, type BaselineProviderId } from "./providers.js";
 
 interface RunOptions {
-  provider?: string;
+  providers: string[];
   model?: string;
   all: boolean;
   thinking: boolean;
@@ -32,7 +32,7 @@ interface CheckRecord {
 
 const options = parseArgs(process.argv.slice(2));
 const targets = resolveProviderTargets({
-  provider: options.provider,
+  providers: options.providers,
   model: options.model,
   all: options.all,
 });
@@ -240,6 +240,7 @@ function formatFailureReasons(reasons: string[]): string {
 
 function parseArgs(args: string[]): RunOptions {
   const parsed: RunOptions = {
+    providers: [],
     all: false,
     thinking: false,
     cases: [],
@@ -256,7 +257,7 @@ function parseArgs(args: string[]): RunOptions {
 
     switch (arg) {
       case "--provider":
-        parsed.provider = next();
+        parsed.providers.push(...splitList(next()));
         break;
       case "--all":
         parsed.all = true;
@@ -280,14 +281,14 @@ function parseArgs(args: string[]): RunOptions {
         process.exit(0);
       default:
         if (!arg.startsWith("-")) {
-          parsed.provider = arg;
+          parsed.providers.push(...splitList(arg));
           break;
         }
         throw new Error(`Unknown argument: ${arg}`);
     }
   }
 
-  if (parsed.provider && parsed.all) {
+  if (parsed.providers.length > 0 && parsed.all) {
     throw new Error("Cannot specify both --provider and --all");
   }
 
@@ -327,9 +328,9 @@ Usage:
   pnpm exec tsx checks/baseline/run.ts [provider] [options]
 
 Options:
-  --provider <id>    Provider id: openai, anthropic, gemini, openrouter, together.
+  --provider <id>    Provider id. Repeat or comma-separate to run multiple providers.
   --all              Include non-default providers such as OpenRouter.
-  --model <model>    Override model for the selected provider. Requires --provider.
+  --model <model>    Override model for one selected provider.
   --thinking         Enable provider reasoning/thinking controls where supported.
   --case <id>        Case id. Repeat or comma-separate. Defaults to all cases.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.

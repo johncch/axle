@@ -8,10 +8,9 @@ import {
   convertAxleMessages,
   convertTools,
   prepareProviderTools,
+  toChatCompletionsReasoning,
   toChatCompletionsToolChoice,
-  toReasoningEffort,
-  type ChatCompletionsProviderDialect,
-  type ChatCompletionsProviderToolVendor,
+  type ChatCompletionsVendor,
 } from "./utils.js";
 
 export async function* createStreamingRequest(
@@ -20,8 +19,7 @@ export async function* createStreamingRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
-      providerDialect?: ChatCompletionsProviderDialect;
-      providerToolVendor?: ChatCompletionsProviderToolVendor;
+      vendor?: ChatCompletionsVendor;
     },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const {
@@ -34,8 +32,7 @@ export async function* createStreamingRequest(
     runtime,
     signal,
     apiKey,
-    providerDialect,
-    providerToolVendor,
+    vendor,
     maxRetries,
     timeoutMs,
     reasoning,
@@ -54,17 +51,13 @@ export async function* createStreamingRequest(
   try {
     const chatMessages = await convertAxleMessages(messages, system, {
       model,
-      providerDialect,
+      vendor,
       fileResolver: runtime?.fileResolver,
       signal,
       warn: span?.warn.bind(span),
     });
     const chatTools = convertTools(tools);
-    const chatProviderTools = prepareProviderTools(
-      providerTools,
-      providerToolVendor,
-      span?.warn.bind(span),
-    );
+    const chatProviderTools = prepareProviderTools(providerTools, vendor, span?.warn.bind(span));
     const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
     const requestBody: Record<string, any> = {
@@ -75,7 +68,7 @@ export async function* createStreamingRequest(
 
       // Axle-normalized options.
       ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-      ...toReasoningEffort(reasoning, providerDialect),
+      ...toChatCompletionsReasoning(reasoning, vendor),
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { top_p: topP } : {}),

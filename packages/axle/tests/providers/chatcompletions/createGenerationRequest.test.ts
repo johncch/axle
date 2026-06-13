@@ -161,7 +161,7 @@ describe("createGenerationRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        providerDialect: "together",
+        vendor: "together",
         reasoning: false,
       });
 
@@ -215,7 +215,7 @@ describe("createGenerationRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        providerToolVendor: "openrouter",
+        vendor: "openrouter",
         tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
         providerTools: [
           {
@@ -247,7 +247,7 @@ describe("createGenerationRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: { span },
-        providerToolVendor: "openrouter",
+        vendor: "openrouter",
         providerTools: [
           { type: "provider", name: "unknown_tool" },
           { type: "provider", name: "web_search" },

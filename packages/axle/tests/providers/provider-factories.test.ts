@@ -126,21 +126,27 @@ describe("provider client factory options", () => {
     );
   });
 
-  test("reports native web search support for ChatCompletions vendors", async () => {
+  test("detects ChatCompletions vendors from official endpoint hostnames", async () => {
     const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
 
     const generic = chatCompletions("http://example.test");
-    const openrouter = chatCompletions("http://example.test", {
-      providerToolVendor: "openrouter",
+    const similarHostname = chatCompletions("https://openrouter.example.test/v1");
+    const inferredOpenRouter = chatCompletions("https://openrouter.ai/api/v1");
+    const explicitOpenRouter = chatCompletions("http://gateway.example.test", {
+      vendor: "openrouter",
     });
 
     expect(generic.resolveProviderToolName?.("web_search", "test-model")).toBeUndefined();
-    expect(openrouter.resolveProviderToolName?.("web_search", "test-model")).toBe(
+    expect(similarHostname.resolveProviderToolName?.("web_search", "test-model")).toBeUndefined();
+    expect(inferredOpenRouter.resolveProviderToolName?.("web_search", "test-model")).toBe(
+      "openrouter:web_search",
+    );
+    expect(explicitOpenRouter.resolveProviderToolName?.("web_search", "test-model")).toBe(
       "openrouter:web_search",
     );
   });
 
-  test("passes the Together dialect through the ChatCompletions provider", async () => {
+  test("detects Together from its official endpoint hostname", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -163,9 +169,7 @@ describe("provider client factory options", () => {
     );
 
     const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
-    const together = chatCompletions("https://api.together.ai/v1", {
-      providerDialect: "together",
-    });
+    const together = chatCompletions("https://api.together.ai/v1");
 
     await together.createGenerationRequest("test-model", {
       messages: [{ role: "user", content: "Hi" }],

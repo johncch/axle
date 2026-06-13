@@ -19,15 +19,14 @@ import {
 import {
   prepareOpenRouterProviderTools,
   resolveOpenRouterProviderToolName,
-  type ChatCompletionsProviderToolVendor,
 } from "./vendors/openrouter.js";
+import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
-export type { ChatCompletionsProviderToolVendor } from "./vendors/openrouter.js";
-export type ChatCompletionsProviderDialect = "together";
+export type ChatCompletionsVendor = "openrouter" | "together";
 
 export function resolveChatCompletionsProviderToolName(
   name: string,
-  vendor?: ChatCompletionsProviderToolVendor,
+  vendor?: ChatCompletionsVendor,
 ): string | undefined {
   switch (vendor) {
     case "openrouter":
@@ -39,7 +38,7 @@ export function resolveChatCompletionsProviderToolName(
 
 interface ChatCompletionsConversionContext {
   model: string;
-  providerDialect?: ChatCompletionsProviderDialect;
+  vendor?: ChatCompletionsVendor;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
   warn?: (message: string, fields?: Record<string, unknown>) => void;
@@ -65,15 +64,15 @@ export async function convertAxleMessages(
  * Translate Axle's normalized `reasoning` boolean into provider controls.
  * Raw provider options are applied later and may override this mapping.
  */
-export function toReasoningEffort(
+export function toChatCompletionsReasoning(
   reasoning: boolean | undefined,
-  providerDialect?: ChatCompletionsProviderDialect,
+  vendor?: ChatCompletionsVendor,
 ) {
-  if (providerDialect === "together") {
-    if (reasoning === true) return { reasoning: { enabled: true } };
-    if (reasoning === false) return { reasoning: { enabled: false } };
-    return {};
-  }
+  if (vendor === "together") return toTogetherReasoning(reasoning);
+  return toReasoningEffort(reasoning);
+}
+
+export function toReasoningEffort(reasoning: boolean | undefined) {
   if (reasoning === true) return { reasoning_effort: "high" as const };
   if (reasoning === false) return { reasoning_effort: "none" as const };
   return {};
@@ -116,7 +115,7 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
 
 export function prepareProviderTools(
   providerTools?: Array<ResolvedProviderTool>,
-  vendor?: ChatCompletionsProviderToolVendor,
+  vendor?: ChatCompletionsVendor,
   warn?: (message: string, attributes?: Record<string, unknown>) => void,
 ): any[] | undefined {
   if (!providerTools || providerTools.length === 0) return undefined;
@@ -306,6 +305,10 @@ async function convertFilePart(
   context: ChatCompletionsConversionContext,
   purpose: "user-message" | "tool-result",
 ): Promise<ChatCompletionContentPart> {
+  if (context.vendor === "together") {
+    assertTogetherFilePartSupported(file);
+  }
+
   if (file.kind === "text") {
     const resolved = await resolveFileSource(file, {
       provider: "chatcompletions",
@@ -325,9 +328,6 @@ async function convertFilePart(
   }
 
   if (file.kind === "document") {
-    if (context.providerDialect === "together") {
-      throw new Error("Together Chat Completions does not support PDF file parts");
-    }
     if (file.mimeType !== "application/pdf") {
       throw new Error(
         `ChatCompletions document file inputs currently support PDF only. Received ${file.mimeType}`,

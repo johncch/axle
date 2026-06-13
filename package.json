@@ -15,7 +15,8 @@
     "update-models": "pnpm start -j ./jobs/bootstrap-models.job.yml",
     "release": "node scripts/release.mjs",
     "cut-release": "node scripts/cut-release.mjs",
-    "smoke-test": "pnpm exec tsx checks/baseline/run.ts"
+    "smoke-test": "pnpm exec tsx checks/baseline/run.ts",
+    "experiment:openrouter-tool-results": "pnpm exec tsx checks/openrouter-tool-results/run.ts"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.3",

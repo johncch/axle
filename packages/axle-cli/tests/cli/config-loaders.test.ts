@@ -60,6 +60,30 @@ describe("config loaders", () => {
     });
   });
 
+  it("accepts a ChatCompletions vendor override", async () => {
+    const path = join(TEST_DIR, "openrouter.yml");
+    await writeFile(
+      path,
+      [
+        "provider:",
+        "  type: chatcompletions",
+        "  base-url: https://gateway.example.test/v1",
+        "  model: test-model",
+        "  vendor: openrouter",
+        "task: Run",
+      ].join("\n"),
+    );
+
+    const config = await getJobConfig(path, {});
+
+    expect(config.provider).toMatchObject({
+      type: "chatcompletions",
+      "base-url": "https://gateway.example.test/v1",
+      model: "test-model",
+      vendor: "openrouter",
+    });
+  });
+
   it("rejects non-YAML job files", async () => {
     const path = join(TEST_DIR, "summarize.json");
     await writeFile(path, JSON.stringify({ provider: { type: "openai" }, task: "test" }));

@@ -2,8 +2,6 @@ import type { Citation } from "../../../messages/message.js";
 import type { ResolvedProviderTool } from "../../types.js";
 import type { ChatCompletionAnnotation } from "../types.js";
 
-export type ChatCompletionsProviderToolVendor = "openrouter";
-
 const OPENROUTER_SERVER_TOOL_MAP: Record<string, string> = {
   web_search: "openrouter:web_search",
 };

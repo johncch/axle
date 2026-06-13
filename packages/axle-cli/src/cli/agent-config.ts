@@ -95,6 +95,7 @@ function resolveCliProvider(
           apiKey: resolveApiKey(config),
           maxRetries: config.maxRetries,
           timeoutMs: config.timeoutMs,
+          vendor: config.vendor,
         }),
         model: providerModel,
       };

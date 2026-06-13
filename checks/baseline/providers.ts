@@ -41,7 +41,6 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
     createProvider: () =>
       chatCompletions("https://openrouter.ai/api/v1", {
         apiKey: getEnv("OPENROUTER_API_KEY"),
-        providerToolVendor: "openrouter",
       }),
   },
   {
@@ -51,29 +50,30 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
     createProvider: () =>
       chatCompletions("https://api.together.ai/v1", {
         apiKey: getEnv("TOGETHER_API_KEY"),
-        providerDialect: "together",
       }),
   },
 ];
 
 export function resolveProviderTargets(options: {
-  provider?: string;
+  providers?: string[];
   model?: string;
   all?: boolean;
 }): BaselineProviderTarget[] {
-  const targets = options.provider
-    ? baselineProviderTargets.filter((target) => target.id === options.provider)
-    : options.all
-      ? baselineProviderTargets
-      : baselineProviderTargets.filter((target) => target.default);
-
-  if (targets.length === 0) {
-    throw new Error(`Unknown provider: ${options.provider}`);
-  }
+  const providerIds = [...new Set(options.providers ?? [])];
+  const targets =
+    providerIds.length > 0
+      ? providerIds.map((providerId) => {
+          const target = baselineProviderTargets.find((candidate) => candidate.id === providerId);
+          if (!target) throw new Error(`Unknown provider: ${providerId}`);
+          return target;
+        })
+      : options.all
+        ? baselineProviderTargets
+        : baselineProviderTargets.filter((target) => target.default);
 
   if (!options.model) return targets;
-  if (!options.provider && targets.length > 1) {
-    throw new Error("--model requires --provider so the override is unambiguous");
+  if (targets.length !== 1) {
+    throw new Error("--model requires exactly one --provider so the override is unambiguous");
   }
 
   return targets.map((target) => ({

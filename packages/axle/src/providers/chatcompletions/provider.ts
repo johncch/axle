@@ -9,16 +9,21 @@ import {
 import { requireInteger } from "../utils.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import {
-  resolveChatCompletionsProviderToolName,
-  type ChatCompletionsProviderDialect,
-} from "./utils.js";
+import { resolveChatCompletionsProviderToolName, type ChatCompletionsVendor } from "./utils.js";
 
 export interface ChatCompletionsOptions extends ProviderClientOptions {
   apiKey?: string;
-  providerDialect?: ChatCompletionsProviderDialect;
-  providerToolVendor?: "openrouter";
+  vendor?: ChatCompletionsVendor;
 }
+
+export type { ChatCompletionsVendor } from "./utils.js";
+
+const CHAT_COMPLETIONS_VENDOR_HOSTS: Partial<Record<string, ChatCompletionsVendor>> = {
+  "api.openrouter.ai": "openrouter",
+  "api.together.ai": "together",
+  "api.together.xyz": "together",
+  "openrouter.ai": "openrouter",
+};
 
 export function chatCompletions(baseUrl: string, options?: ChatCompletionsOptions): AIProvider;
 export function chatCompletions(baseUrl: string, apiKey?: string): AIProvider;
@@ -39,13 +44,12 @@ export function chatCompletions(
     clientOptions?.timeoutMs === undefined
       ? undefined
       : requireInteger(clientOptions.timeoutMs, "timeoutMs", { min: 1 });
-  const providerToolVendor = clientOptions?.providerToolVendor;
-  const providerDialect = clientOptions?.providerDialect;
+  const vendor = clientOptions?.vendor ?? inferChatCompletionsVendor(baseUrl);
 
   return {
     name: "ChatCompletions",
     resolveProviderToolName(name) {
-      return resolveChatCompletionsProviderToolName(name, providerToolVendor);
+      return resolveChatCompletionsProviderToolName(name, vendor);
     },
 
     /** @internal */
@@ -59,8 +63,7 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
-        providerDialect,
-        providerToolVendor,
+        vendor,
         ...params,
       });
     },
@@ -76,10 +79,17 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
-        providerDialect,
-        providerToolVendor,
+        vendor,
         ...params,
       });
     },
   };
+}
+
+function inferChatCompletionsVendor(baseUrl: string): ChatCompletionsVendor | undefined {
+  try {
+    return CHAT_COMPLETIONS_VENDOR_HOSTS[new URL(baseUrl).hostname.toLowerCase()];
+  } catch {
+    return undefined;
+  }
 }

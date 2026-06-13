@@ -507,15 +507,17 @@ interface WebSearchResult {
 }
 ```
 
-Together uses a different reasoning request shape from generic OpenAI-compatible
-providers. Select its dialect once when constructing the provider:
+Axle recognizes the official OpenRouter and Together endpoint hostnames and
+applies their request differences automatically:
 
 ```typescript
 const together = chatCompletions("https://api.together.ai/v1", {
   apiKey: process.env.TOGETHER_API_KEY!,
-  providerDialect: "together",
 });
 ```
+
+Set `vendor: "openrouter"` or `vendor: "together"` explicitly when using a
+proxy or gateway with a different hostname.
 
 Application code continues to request the provider-neutral capability:
 

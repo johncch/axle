@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { toAnthropicThinking } from "../../src/providers/anthropic/utils.js";
 import { toReasoningEffort } from "../../src/providers/chatcompletions/utils.js";
+import { toTogetherReasoning } from "../../src/providers/chatcompletions/vendors/together.js";
 import { toGeminiThinkingConfig } from "../../src/providers/gemini/utils.js";
 import { toOpenAIReasoning } from "../../src/providers/openai/utils.js";
 
@@ -80,19 +81,19 @@ describe("reasoning translation", () => {
     });
 
     test("Together true → reasoning enabled", () => {
-      expect(toReasoningEffort(true, "together")).toEqual({
+      expect(toTogetherReasoning(true)).toEqual({
         reasoning: { enabled: true },
       });
     });
 
     test("Together false → reasoning disabled", () => {
-      expect(toReasoningEffort(false, "together")).toEqual({
+      expect(toTogetherReasoning(false)).toEqual({
         reasoning: { enabled: false },
       });
     });
 
     test("Together undefined → no field", () => {
-      expect(toReasoningEffort(undefined, "together")).toEqual({});
+      expect(toTogetherReasoning(undefined)).toEqual({});
     });
   });
 });

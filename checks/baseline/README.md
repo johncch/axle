@@ -21,6 +21,16 @@ Run one provider:
 pnpm exec tsx checks/baseline/run.ts --provider openai
 ```
 
+Run a selected provider set:
+
+```bash
+pnpm exec tsx checks/baseline/run.ts \
+  --provider openrouter \
+  --provider together
+```
+
+Provider flags may also be comma-separated.
+
 Run every provider, including OpenRouter:
 
 ```bash

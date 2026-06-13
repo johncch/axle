@@ -236,11 +236,27 @@ export const baselineCases: BaselineCase[] = [
         "Using the previous message in this conversation, what is the code word?",
       ).final;
       const text = String(result.response ?? "");
+      const lastMessage = agent.history.log.at(-1);
+      const finishReason = lastMessage?.role === "assistant" ? lastMessage.finishReason : undefined;
+      const failureReasons = [
+        ...(!text.toLowerCase().includes("lavender")
+          ? [
+              text.length === 0 && finishReason === "length"
+                ? "Second turn reached the provider output limit without producing visible text."
+                : "Second turn did not recall the lavender code word.",
+            ]
+          : []),
+        ...(agent.history.turns.length !== 4
+          ? [`Expected 4 history turns, received ${agent.history.turns.length}.`]
+          : []),
+      ];
 
       return {
-        ok: text.toLowerCase().includes("lavender") && agent.history.turns.length === 4,
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
+          finishReason,
           turnCount: agent.history.turns.length,
           usage: result.usage,
         },
@@ -408,11 +424,29 @@ export const baselineCases: BaselineCase[] = [
 
       if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final).toLowerCase();
+      const toolResults = getToolResultDetails(result.messages);
+      const captureResult = toolResults.find((toolResult) => toolResult.name === "capture_image");
+      const checks = {
+        finalAnswerAcknowledgedUnavailableAttachment: text.includes("attachment unavailable"),
+        captureToolSucceeded:
+          captureResult?.isError !== true &&
+          captureResult?.content.includes('"name":"capture.png"') === true,
+      };
+      const failureReasons = [
+        ...(!checks.finalAnswerAcknowledgedUnavailableAttachment
+          ? ["Final assistant text did not acknowledge the unavailable attachment."]
+          : []),
+        ...(!checks.captureToolSucceeded
+          ? ["capture_image did not return a successful capture.png tool result."]
+          : []),
+      ];
       return {
-        ok: text.includes("attachment unavailable") && hasSuccessfulToolResult(result.messages),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           text,
-          toolResults: getToolResultDetails(result.messages),
+          checks,
+          toolResults,
           usage: result.usage,
         },
       };

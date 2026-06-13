@@ -44,7 +44,10 @@ export {
 // AI Providers
 export { Anthropic, anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
-export type { ChatCompletionsOptions } from "./providers/chatcompletions/provider.js";
+export type {
+  ChatCompletionsOptions,
+  ChatCompletionsVendor,
+} from "./providers/chatcompletions/provider.js";
 export { estimateContextUsage } from "./providers/context.js";
 export { Gemini, gemini } from "./providers/gemini/index.js";
 export type {

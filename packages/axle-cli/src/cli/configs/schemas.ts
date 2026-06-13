@@ -37,6 +37,7 @@ const ChatCompletionsProviderUseSchema = z.strictObject({
   type: z.literal("chatcompletions"),
   "base-url": z.string().optional(),
   model: z.string().optional(),
+  vendor: z.enum(["openrouter", "together"]).optional(),
   ...ApiKeyFieldsSchema,
   ...ProviderClientFieldsSchema,
 });
@@ -83,6 +84,7 @@ export interface ProviderServiceConfig {
 
 export interface ChatCompletionsServiceConfig extends ProviderServiceConfig {
   "base-url"?: string;
+  vendor?: "openrouter" | "together";
 }
 
 export interface ServiceConfig {

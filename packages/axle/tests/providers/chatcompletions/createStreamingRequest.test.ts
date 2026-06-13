@@ -98,7 +98,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        providerDialect: "together",
+        vendor: "together",
         reasoning: true,
       }),
     );
@@ -529,7 +529,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        providerToolVendor: "openrouter",
+        vendor: "openrouter",
         tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
         providerTools: [{ type: "provider", name: "web_search", config: { max_results: 3 } }],
       }),
