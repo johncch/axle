@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.25.1] - 2026-06-13
+
+- Consolidate vendor options for ChatCompletions
+
 ## [0.25.0] - 2026-06-12
 
 - Added a web search fallback for more reliable search behavior.
