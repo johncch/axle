@@ -308,6 +308,34 @@ describe("createStreamingAdapter", () => {
       expect((completeChunks[0] as any).data.arguments).toEqual({ query: "test" });
     });
 
+    test("emits tool-call-complete with invalid-arguments when argument parsing fails", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(
+        makeChunk({
+          tool_calls: [
+            { index: 0, id: "call_1", function: { name: "search", arguments: '{"query":' } },
+          ],
+        }),
+      );
+
+      const chunks = adapter.handleChunk(makeChunk({}, "tool_calls"));
+
+      const completeChunks = chunks.filter((c) => c.type === "tool-call-complete");
+      expect(completeChunks).toHaveLength(1);
+      expect((completeChunks[0] as any).data).toMatchObject({
+        id: "call_1",
+        name: "search",
+        arguments: {},
+        error: {
+          type: "invalid-arguments",
+        },
+      });
+      expect((completeChunks[0] as any).data.error.message).toContain(
+        "Failed to parse tool call arguments for search",
+      );
+      expect((completeChunks[0] as any).data.error.raw).toBe('{"query":');
+    });
+
     test("flushes tool calls on completion", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(

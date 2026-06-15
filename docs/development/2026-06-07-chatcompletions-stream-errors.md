@@ -11,6 +11,8 @@ checks cannot reliably force OpenAI-compatible providers or OpenRouter to emit
 those failure modes on demand.
 
 The request tests still exercise the public `stream()` API for upstream error
-frames and truncated tool-call argument streams, so the caller-visible
-`ok: false` model error result is covered without depending on live provider
-fault injection.
+frames and truncated tool-call argument streams without depending on live
+provider fault injection. Tool-call argument JSON parse failures with a
+`tool_calls` finish are covered as a recoverable tool error result, while
+transport drops that end without a completion signal remain covered as
+caller-visible `ok: false` model errors.

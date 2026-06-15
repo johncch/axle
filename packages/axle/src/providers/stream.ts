@@ -33,6 +33,7 @@ import {
   logTurnContent,
   resolveToolRegistry,
   resolveTools,
+  serializeToolError,
   type GenerateError,
   type StreamResult,
   type ToolCallCallback,
@@ -171,6 +172,23 @@ export interface StreamInstructHandle<TSchema extends OutputSchema | undefined> 
 
 function emit(callbacks: StreamEventCallback[], event: StreamEvent) {
   for (const cb of callbacks) cb(event);
+}
+
+type ToolCallArgumentError = {
+  type: string;
+  message: string;
+  raw?: string;
+};
+
+function toArgumentErrorResult(error: ToolCallArgumentError): ToolCallResult {
+  const message = error.raw ? `${error.message}\nRaw buffer: ${error.raw}` : error.message;
+  return {
+    type: "error",
+    error: {
+      type: error.type,
+      message,
+    },
+  };
 }
 
 function toToolDefinition(tool: ExecutableTool): ToolDefinition {
@@ -405,6 +423,7 @@ async function run(
 
     // Track tool call id → globalIndex for tool execution events
     const toolCallIndexMap = new Map<string, number>();
+    const toolCallArgumentErrors = new Map<string, ToolCallArgumentError>();
     const chunkIndexToPartIndex = new Map<number, number>();
     const chunkIndexToGlobalIndex = new Map<number, number>();
 
@@ -636,6 +655,7 @@ async function run(
           if (chunk.data.name) part.name = chunk.data.name;
           part.parameters = chunk.data.arguments;
           if (chunk.data.providerMetadata) part.providerMetadata = chunk.data.providerMetadata;
+          if (chunk.data.error) toolCallArgumentErrors.set(part.id, chunk.data.error);
           if (pendingToolRequests.has(part.id) && part.name) {
             pendingToolRequests.delete(part.id);
             emitToolRequest(part.id, part.name);
@@ -817,6 +837,30 @@ async function run(
     const toolResultsId = crypto.randomUUID();
     emit(cbs, { type: "tool-results:start", id: toolResultsId });
 
+    const executableToolCalls: ContentPartToolCall[] = [];
+    const syntheticResults = new Map<string, AxleToolCallMessage["content"][number]>();
+    for (const call of toolCalls) {
+      const argumentError = toolCallArgumentErrors.get(call.id);
+      if (!argumentError) {
+        executableToolCalls.push(call);
+        continue;
+      }
+      const result = toArgumentErrorResult(argumentError);
+      syntheticResults.set(call.id, {
+        id: call.id,
+        name: call.name,
+        content: serializeToolError(result.error),
+        isError: true,
+      });
+      emit(cbs, {
+        type: "tool:exec-complete",
+        index: toolCallIndexMap.get(call.id) ?? -1,
+        id: call.id,
+        name: call.name,
+        result,
+      });
+    }
+
     const executionObserver = {
       onStart(call: ContentPartToolCall) {
         const idx = toolCallIndexMap.get(call.id) ?? -1;
@@ -865,17 +909,19 @@ async function run(
       },
     };
 
-    let results;
+    let executedResults: AxleToolCallMessage["content"] = [];
     let toolUsage: Stats | undefined;
     try {
-      ({ results, usage: toolUsage } = await executeToolCalls(
-        toolCalls,
-        onToolCall,
-        signal,
-        resolvedTools,
-        span,
-        executionObserver,
-      ));
+      if (executableToolCalls.length > 0) {
+        ({ results: executedResults, usage: toolUsage } = await executeToolCalls(
+          executableToolCalls,
+          onToolCall,
+          signal,
+          resolvedTools,
+          span,
+          executionObserver,
+        ));
+      }
     } catch (error) {
       if (error instanceof AxleToolFatalError) {
         span?.end("error");
@@ -900,6 +946,14 @@ async function run(
     }
 
     addStats(usage, toolUsage);
+
+    const executedResultsById = new Map(executedResults.map((result) => [result.id, result]));
+    const results = toolCalls.flatMap((call) => {
+      const synthetic = syntheticResults.get(call.id);
+      if (synthetic) return [synthetic];
+      const executed = executedResultsById.get(call.id);
+      return executed ? [executed] : [];
+    });
 
     if (results.length > 0) {
       const toolResultsMessage: AxleToolCallMessage = {

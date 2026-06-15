@@ -179,6 +179,11 @@ export interface StreamToolCallCompleteChunk extends StreamChunk {
     id: string;
     name: string;
     arguments: any;
+    error?: {
+      type: string;
+      message: string;
+      raw?: string;
+    };
     providerMetadata?: Record<string, unknown>;
   };
 }

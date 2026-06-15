@@ -231,7 +231,7 @@ describe("createStreamingRequest", () => {
     }
   });
 
-  test("surfaces adapter errors instead of dropping the stream chunk", async () => {
+  test("emits invalid-arguments tool call completion when argument parsing fails", async () => {
     const sseLines = [
       `data: ${JSON.stringify({
         id: "c-1",
@@ -273,15 +273,103 @@ describe("createStreamingRequest", () => {
       }),
     );
 
-    expect(chunks.at(-1)).toMatchObject({
-      type: "error",
+    expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    expect(chunks.find((chunk) => chunk.type === "tool-call-complete")).toMatchObject({
+      type: "tool-call-complete",
       data: {
-        type: "STREAMING_ERROR",
+        id: "call_1",
+        name: "search",
+        arguments: {},
+        error: {
+          type: "invalid-arguments",
+        },
       },
     });
-    expect((chunks.at(-1) as any).data.message).toContain(
+    const toolCall = chunks.find((chunk) => chunk.type === "tool-call-complete") as any;
+    expect(toolCall.data.error.message).toContain(
       "Failed to parse tool call arguments for search",
     );
+    expect(chunks.at(-1)).toMatchObject({
+      type: "complete",
+      data: { finishReason: AxleStopReason.FunctionCall },
+    });
+  });
+
+  test("feeds invalid tool-call arguments back as a tool error result", async () => {
+    const malformedToolCallSse = [
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  function: { name: "search", arguments: '{"query":' },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      })}`,
+      "",
+      `data: ${JSON.stringify({
+        id: "c-1",
+        model: MODEL,
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+      })}`,
+      "",
+    ];
+    const finalSse = [
+      `data: ${JSON.stringify({
+        id: "c-2",
+        model: MODEL,
+        choices: [
+          { index: 0, delta: { role: "assistant", content: "Recovered" }, finish_reason: null },
+        ],
+      })}`,
+      "",
+      `data: ${JSON.stringify({
+        id: "c-2",
+        model: MODEL,
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      })}`,
+      "",
+    ];
+
+    (fetch as any)
+      .mockResolvedValueOnce(makeSSEResponse(malformedToolCallSse.join("\n")))
+      .mockResolvedValueOnce(makeSSEResponse(finalSse.join("\n")));
+
+    const onToolCall = vi.fn();
+    const handle = stream({
+      provider: makeProvider(),
+      model: MODEL,
+      messages: [{ role: "user", content: "Search." }],
+      onToolCall,
+    });
+
+    const result = await handle.final;
+
+    expect(result.ok).toBe(true);
+    expect(onToolCall).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse((fetch as any).mock.calls[1][1].body);
+    expect(secondBody.messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "call_1",
+    });
+    expect(secondBody.messages.at(-1).content).toContain("invalid-arguments");
+    expect(secondBody.messages.at(-1).content).toContain(
+      "Failed to parse tool call arguments for search",
+    );
+    if (result.ok) {
+      expect(result.response.content).toEqual([{ type: "text", text: "Recovered" }]);
+    }
   });
 
   test("continues after a tool returns an unsupported binary file", async () => {
