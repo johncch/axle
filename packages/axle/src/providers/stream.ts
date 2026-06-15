@@ -180,7 +180,7 @@ type ToolCallArgumentError = {
   raw?: string;
 };
 
-function toArgumentErrorResult(error: ToolCallArgumentError): ToolCallResult {
+function toArgumentErrorResult(error: ToolCallArgumentError): Extract<ToolCallResult, { type: "error" }> {
   const message = error.raw ? `${error.message}\nRaw buffer: ${error.raw}` : error.message;
   return {
     type: "error",
