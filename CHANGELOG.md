@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.25.2] - 2026-06-15
+
+- Fixed tool calls with syntactically invalid JSON parameters so they are handled gracefully instead of failing.
+
 ## [0.25.1] - 2026-06-13
 
 - Consolidate vendor options for ChatCompletions
