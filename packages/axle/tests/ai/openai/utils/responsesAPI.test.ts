@@ -293,16 +293,14 @@ describe("responsesAPI utils", () => {
 
       const result = await convertAxleMessageToResponseInput(messages);
 
-      expect(result[0]).toMatchObject({
-        role: "user",
-        content: [
-          {
-            type: "input_file",
-            filename: "doc.pdf",
-            file_url: "https://example.com/doc.pdf",
-          },
-        ],
+      // file_url and filename are mutually exclusive in the Responses API, so
+      // a URL-sourced document must carry file_url alone.
+      const part = (result[0] as { content: unknown[] }).content[0];
+      expect(part).toEqual({
+        type: "input_file",
+        file_url: "https://example.com/doc.pdf",
       });
+      expect(part).not.toHaveProperty("filename");
     });
 
     test("should handle mixed conversation with thinking (thinking skipped)", async () => {

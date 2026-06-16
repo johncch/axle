@@ -288,6 +288,31 @@ describe("deferred file resolution", () => {
     });
   });
 
+  test("emits OpenAI input_file with file_url and no filename for url-sourced PDFs", async () => {
+    const file: FileInfo = {
+      kind: "document",
+      mimeType: "application/pdf",
+      name: "paper.pdf",
+      source: { type: "url", url: "https://example.com/paper.pdf" },
+    };
+
+    const result = await convertAxleMessageToResponseInput([
+      {
+        role: "user",
+        content: [{ type: "file", file }],
+      },
+    ]);
+
+    // file_url and filename are mutually exclusive in the Responses API; the
+    // URL fetch supplies the name, so the part must carry file_url alone.
+    const part = (result[0] as { content: unknown[] }).content[0];
+    expect(part).toEqual({
+      type: "input_file",
+      file_url: "https://example.com/paper.pdf",
+    });
+    expect(part).not.toHaveProperty("filename");
+  });
+
   test("rejects PDF file parts before sending them to Together", async () => {
     const file: FileInfo = {
       kind: "document",

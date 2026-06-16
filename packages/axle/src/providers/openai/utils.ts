@@ -280,7 +280,6 @@ function resolvedToInputFile(resolved: ResolvedFileSource, file: FileInfo) {
   if (resolved.type === "url") {
     return {
       type: "input_file" as const,
-      filename: resolved.name ?? file.name,
       file_url: resolved.url,
     };
   }
