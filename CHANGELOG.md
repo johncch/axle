@@ -1,5 +1,10 @@
 # Changelog
 
+
+## [0.25.3] - 2026-06-16
+
+- Fixed OpenAI file handling so filenames and URLs are resolved correctly.
+
 ## [0.25.2] - 2026-06-15
 
 - Fixed tool calls with syntactically invalid JSON parameters so they are handled gracefully instead of failing.
