@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.25.4] - 2026-06-17
+
+- Improved `parallelize` handling for more reliable batched tool execution.
 
 ## [0.25.3] - 2026-06-16
 
