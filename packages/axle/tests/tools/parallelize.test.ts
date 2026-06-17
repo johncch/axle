@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
+import type { ToolResultPart } from "../../src/messages/message.js";
 import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import type { ExecutableTool, ToolContext } from "../../src/tools/types.js";
@@ -25,14 +26,14 @@ describe("parallelize", () => {
     };
 
     const batch = parallelize(tool);
-    const result = JSON.parse(
-      String(await batch.execute({ items: [{ id: "a" }, { id: "b" }] }, testCtx)),
-    );
+    const result = await batch.execute({ items: [{ id: "a" }, { id: "b" }] }, testCtx);
 
     expect(batch.name).toBe("lookup_batch");
-    expect(result.results).toEqual([
-      { index: 0, input: { id: "a" }, ok: true, output: "value:a" },
-      { index: 1, input: { id: "b" }, ok: true, output: "value:b" },
+    expect(result).toEqual([
+      textPart('<<result {"index":0,"ok":true}>>\n'),
+      textPart("value:a"),
+      textPart('<<result {"index":1,"ok":true}>>\n'),
+      textPart("value:b"),
     ]);
   });
 
@@ -49,21 +50,22 @@ describe("parallelize", () => {
     };
 
     const batch = parallelize(tool, { maxConcurrency: 2 });
-    const result = JSON.parse(
-      String(
-        await batch.execute(
-          {
-            items: [
-              { id: "slow", delay: 20 },
-              { id: "fast", delay: 1 },
-            ],
-          },
-          testCtx,
-        ),
-      ),
+    const result = await batch.execute(
+      {
+        items: [
+          { id: "slow", delay: 20 },
+          { id: "fast", delay: 1 },
+        ],
+      },
+      testCtx,
     );
 
-    expect(result.results.map((item: { output: string }) => item.output)).toEqual(["slow", "fast"]);
+    expect(textParts(result)).toEqual([
+      '<<result {"index":0,"ok":true}>>\n',
+      "slow",
+      '<<result {"index":1,"ok":true}>>\n',
+      "fast",
+    ]);
   });
 
   test("returns per-item errors without failing the whole batch", async () => {
@@ -79,15 +81,161 @@ describe("parallelize", () => {
     };
 
     const batch = parallelize(tool);
-    const result = JSON.parse(
-      String(await batch.execute({ items: [{ id: "good" }, { id: "bad" }] }, testCtx)),
+    const result = await batch.execute({ items: [{ id: "good" }, { id: "bad" }] }, testCtx);
+
+    expect(result).toEqual([
+      textPart('<<result {"index":0,"ok":true}>>\n'),
+      textPart("ok:good"),
+      textPart(
+        '<<result {"index":1,"ok":false,"error":{"type":"execution","message":"bad item"}}>>\n',
+      ),
+    ]);
+  });
+
+  test("preserves structured file parts returned by child tools", async () => {
+    const schema = z.object({ id: z.string() });
+    const filePart: ToolResultPart = {
+      type: "file",
+      file: {
+        kind: "image",
+        mimeType: "image/png",
+        name: "pixel.png",
+        size: 4,
+        source: { type: "base64", data: "abcd" },
+      },
+    };
+    const tool: ExecutableTool<typeof schema> = {
+      name: "read_image",
+      description: "Read an image",
+      schema,
+      async execute() {
+        return [textPart("image:"), filePart];
+      },
+    };
+
+    const batch = parallelize(tool);
+    const result = await batch.execute({ items: [{ id: "a" }] }, testCtx);
+
+    expect(result).toEqual([
+      textPart('<<result {"index":0,"ok":true}>>\n'),
+      textPart("image:"),
+      filePart,
+    ]);
+  });
+
+  test("omits structured child output when it exceeds maxResultBytes", async () => {
+    const schema = z.object({ id: z.string() });
+    const filePart: ToolResultPart = {
+      type: "file",
+      file: {
+        kind: "document",
+        mimeType: "application/pdf",
+        name: "large.pdf",
+        size: 100,
+        source: { type: "base64", data: "x".repeat(100) },
+      },
+    };
+    const tool: ExecutableTool<typeof schema> = {
+      name: "read_pdf",
+      description: "Read a PDF",
+      schema,
+      async execute() {
+        return [filePart];
+      },
+    };
+
+    const batch = parallelize(tool, { maxResultBytes: 90 });
+    const result = await batch.execute({ items: [{ id: "a" }] }, testCtx);
+
+    expect(result).toEqual([
+      textPart('<<result {"index":0,"ok":true}>>\n'),
+      textPart(
+        '<<result 0 omitted: output 100 bytes exceeds remaining budget 57 bytes of 90 bytes; input {"id":"a"}>>',
+      ),
+    ]);
+  });
+
+  test("continues after omitting an oversized child output", async () => {
+    const schema = z.object({ id: z.string() });
+    const filePart: ToolResultPart = {
+      type: "file",
+      file: {
+        kind: "document",
+        mimeType: "application/pdf",
+        name: "large.pdf",
+        size: 100,
+        source: { type: "base64", data: "x".repeat(100) },
+      },
+    };
+    const tool: ExecutableTool<typeof schema> = {
+      name: "read_mixed",
+      description: "Read mixed output sizes",
+      schema,
+      async execute(input) {
+        if (input.id === "big") return [filePart];
+        return input.id;
+      },
+    };
+
+    const batch = parallelize(tool, { maxResultBytes: 101 });
+    const result = await batch.execute(
+      { items: [{ id: "a" }, { id: "big" }, { id: "c" }] },
+      testCtx,
     );
 
-    expect(result.results[0]).toMatchObject({ ok: true, output: "ok:good" });
-    expect(result.results[1]).toMatchObject({
-      ok: false,
-      error: { type: "execution", message: "bad item" },
-    });
+    expect(result).toEqual([
+      textPart('<<result {"index":0,"ok":true}>>\n'),
+      textPart("a"),
+      textPart('<<result {"index":1,"ok":true}>>\n'),
+      textPart(
+        '<<result 1 omitted: output 100 bytes exceeds remaining budget 34 bytes of 101 bytes; input {"id":"big"}>>',
+      ),
+      textPart('<<result {"index":2,"ok":true}>>\n'),
+      textPart("c"),
+    ]);
+  });
+
+  test("omits text output when it exceeds maxResultBytes", async () => {
+    const schema = z.object({ id: z.string() });
+    const tool: ExecutableTool<typeof schema> = {
+      name: "large_text",
+      description: "Large text",
+      schema,
+      async execute() {
+        return "abcdef";
+      },
+    };
+
+    const batch = parallelize(tool, { maxResultBytes: 34 });
+    const result = await batch.execute({ items: [{ id: "a" }] }, testCtx);
+
+    expect(result).toEqual([
+      textPart('<<result {"index":0,"ok":true}>>\n'),
+      textPart(
+        '<<result 0 omitted: output 6 bytes exceeds remaining budget 1 byte of 34 bytes; input {"id":"a"}>>',
+      ),
+    ]);
+  });
+
+  test("omits a result when its header exceeds maxResultBytes", async () => {
+    const schema = z.object({ id: z.string() });
+    const tool: ExecutableTool<typeof schema> = {
+      name: "tiny_budget",
+      description: "Tiny budget",
+      schema,
+      async execute(input) {
+        return input.id;
+      },
+    };
+
+    const batch = parallelize(tool, { maxResultBytes: 1 });
+    const result = await batch.execute({ items: [{ id: "a" }] }, testCtx);
+
+    expect(result).toEqual([
+      textPart(
+        '<<result 0 omitted: header 33 bytes exceeds remaining budget 1 byte of 1 byte; input {"id":"a"}>>',
+      ),
+    ]);
   });
 
   test("respects maxConcurrency", async () => {
@@ -183,4 +331,13 @@ describe("parallelize", () => {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function textPart(text: string): ToolResultPart {
+  return { type: "text", text };
+}
+
+function textParts(result: string | ToolResultPart[]): string[] {
+  if (typeof result === "string") return [result];
+  return result.filter((part) => part.type === "text").map((part) => part.text);
 }

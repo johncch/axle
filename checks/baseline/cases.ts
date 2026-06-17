@@ -772,21 +772,13 @@ export const baselineCases: BaselineCase[] = [
       const batchResult = getToolResultDetails(agent.history.log).find(
         (toolResult) => toolResult.name === "lookup_code_word_batch",
       );
-      let itemsOk = false;
-      if (batchResult) {
-        try {
-          const parsed = JSON.parse(batchResult.content) as {
-            results: Array<{ input: { key: string }; ok: boolean; output?: string }>;
-          };
-          itemsOk =
-            parsed.results.length === 3 &&
-            parsed.results.every(
-              (item) => item.ok && String(item.output ?? "").includes(codeWords[item.input.key]),
-            );
-        } catch {
-          itemsOk = false;
-        }
-      }
+      const batchContent = batchResult?.content ?? "";
+      const itemsOk =
+        Boolean(batchResult) &&
+        [0, 1, 2].every((index) =>
+          batchContent.includes(`<<result {\\"index\\":${index},\\"ok\\":true}>>`),
+        ) &&
+        Object.values(codeWords).every((word) => batchContent.includes(word));
 
       return {
         ok: Boolean(

@@ -399,7 +399,7 @@ runs once per tool invocation.
 
 ### Parallelizing Tools
 
-> **Experimental** — the generated tool's result JSON (`ParallelToolResult`)
+> **Experimental** — the generated tool's result parts (`ParallelToolResult`)
 > may change in a minor release.
 
 `parallelize` wraps a tool in a batch variant that runs many inputs
@@ -417,10 +417,15 @@ const agent = new Agent({ provider, model, tools: [batchResearch] });
 
 The generated tool preserves input order and reports per-item failures instead
 of failing the whole batch; fatal (`AxleToolFatalError`) and abort errors still
-terminate the run like an unbatched tool. Options: `name`, `description`,
-`maxItems` (default 50), `maxConcurrency` (default 8). The batch tool inherits
-the wrapped tool's `kind`, so batched subagents still stream their child turns
-under the batch action (interleaved across items).
+terminate the run like an unbatched tool. It returns ordered tool-result parts:
+each item starts with a text marker containing `index` and `ok`/`error`,
+followed by the child's text or file parts. Options: `name`, `description`,
+`maxItems` (default 50), `maxConcurrency` (default 8), and `maxResultBytes`
+(default 20 MiB). Over-budget child output is omitted per item with a marker
+that includes the item index, input, output size, remaining budget, and total
+limit; later items still render if they fit. The batch tool inherits the wrapped
+tool's `kind`, so batched subagents still stream their child turns under the
+batch action (interleaved across items).
 
 ### Usage Stats
 
