@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.25.5] - 2026-07-03
+
+- Add Claude Fable, Sonnet 5; Gemini 3.5 models
+
 ## [0.25.4] - 2026-06-17
 
 - Improved `parallelize` handling for more reliable batched tool execution.
