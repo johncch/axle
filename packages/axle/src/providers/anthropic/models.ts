@@ -1,4 +1,7 @@
 export const Models = {
+  CLAUDE_SONNET_5: "claude-sonnet-5",
+  CLAUDE_FABLE_5: "claude-fable-5",
+
   CLAUDE_OPUS_4_8: "claude-opus-4-8",
 
   CLAUDE_OPUS_4_7: "claude-opus-4-7",
@@ -26,6 +29,8 @@ export const Models = {
 } as const;
 
 export const MULTIMODAL_MODELS = [
+  Models.CLAUDE_SONNET_5,
+  Models.CLAUDE_FABLE_5,
   Models.CLAUDE_OPUS_4_8,
   Models.CLAUDE_OPUS_4_7,
   Models.CLAUDE_SONNET_4_6,
@@ -39,6 +44,8 @@ export const MULTIMODAL_MODELS = [
 ] as const;
 
 export const MAX_OUTPUT_TOKENS: Record<string, number> = {
+  [Models.CLAUDE_SONNET_5]: 128_000,
+  [Models.CLAUDE_FABLE_5]: 128_000,
   [Models.CLAUDE_OPUS_4_8]: 128_000,
   [Models.CLAUDE_OPUS_4_7]: 128_000,
   [Models.CLAUDE_OPUS_4_6]: 128_000,
