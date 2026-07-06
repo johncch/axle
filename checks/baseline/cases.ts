@@ -283,6 +283,9 @@ export const baselineCases: BaselineCase[] = [
           provider,
           model,
           ...caseOptions,
+          // Summarization needs visible text, not thinking; reasoning models
+          // otherwise spend the output on reasoning and emit an empty summary.
+          reasoning: false,
           signal,
           messages: [
             {
