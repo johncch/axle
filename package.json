@@ -19,17 +19,17 @@
     "experiment:openrouter-tool-results": "pnpm exec tsx checks/openrouter-tool-results/run.ts"
   },
   "devDependencies": {
-    "@arethetypeswrong/core": "^0.18.3",
+    "@arethetypeswrong/core": "^0.18.4",
     "@fifthrevision/axle": "workspace:*",
-    "@google/genai": "^2.8.0",
+    "@google/genai": "^2.10.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.4",
     "prettier-plugin-organize-imports": "^4.3.0",
     "publint": "^0.3.21",
-    "tsdown": "^0.22.2",
-    "tsx": "^4.22.4",
+    "tsdown": "^0.22.3",
+    "tsx": "^4.23.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9",
     "zod": "^4.4.3"
