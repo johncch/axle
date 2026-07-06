@@ -1,5 +1,6 @@
 import type { MCP, MCPConfig } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
+import type { CompactionRecord } from "../../messages/compaction.js";
 import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -163,7 +164,7 @@ export type AgentDefinitionResolver = (
  * renderable turn state. It intentionally does not include executable runtime
  * objects such as providers, tools, MCP clients, memory implementations, file
  * resolvers, or tracers. Recreate those from host-owned configuration, then
- * call `agent.restore(session)`.
+ * construct a new agent with the session: `new Agent(config, session)`.
  *
  * @typeParam TAnnotation - Annotation union supported by the host renderer.
  */
@@ -172,8 +173,12 @@ export interface AgentSession<TAnnotation extends Annotation = Annotation> {
   version: 1;
   /** Stable conversation/session id. */
   sessionId: string;
-  /** Canonical model-facing message history used for continuation. */
+  /** Active model-facing conversation used for continuation. */
   messages: AxleMessage[];
+  /** Complete chronological record of every appended message, untouched by compaction. May be empty; absent in pre-compaction snapshots. */
+  archive?: AxleMessage[];
+  /** Compaction records, in order. Empty when no compaction has run; absent in pre-compaction snapshots. */
+  compactions?: CompactionRecord[];
   /** Renderable turn state for exact UI restoration. */
   turns?: Turn<TAnnotation>[];
   /** Session-level annotations for generic renderer state. */
@@ -208,6 +213,21 @@ export interface AgentErrorResult {
 export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
 export type TurnEventCallback = (event: TurnEvent) => void;
+
+/**
+ * Caller-supplied compaction policy and strategy.
+ *
+ * The callback owns the decision: return `null` for "not now" (cheap — the
+ * usage estimate is local), or the complete new active conversation. The
+ * engine owns validation, record stamping, state processing, and event
+ * emission.
+ *
+ * @experimental Compaction is under active design and may change in any release.
+ */
+export type CompactionCallback = (
+  state: { messages: AxleMessage[] },
+  context: { usage: ContextUsage; signal?: AbortSignal },
+) => MaybePromise<AxleMessage[] | null>;
 
 export interface SendMessageOptions extends AxleModelRequestOptions {
   fileResolver?: FileResolver;

@@ -1,3 +1,4 @@
+import type { CompactionRecord } from "../messages/compaction.js";
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
@@ -103,7 +104,8 @@ export type TurnPart<TAnnotation extends Annotation = Annotation> =
   | CitationPart<TAnnotation>
   | FilePart<TAnnotation>
   | ThinkingPart<TAnnotation>
-  | ActionPart<TAnnotation>;
+  | ActionPart<TAnnotation>
+  | CompactionPart<TAnnotation>;
 
 /**
  * Assistant or user text content.
@@ -177,6 +179,29 @@ export interface ThinkingPart<TAnnotation extends Annotation = Annotation> {
   continuity?: ThinkingContinuity;
   /** Provider-specific metadata that is not part of Axle's normalized contract. */
   providerMetadata?: Record<string, unknown>;
+  /** Annotations attached to this part. */
+  annotations?: TAnnotation[];
+  /** Optional timing metadata. */
+  timing?: TimingInfo;
+}
+
+/**
+ * Part marking a compaction of the model-facing conversation.
+ *
+ * Compaction renders as an agent turn containing this single part. The turn's
+ * `status` carries the lifecycle: `"streaming"` while the compaction callback
+ * runs, `"complete"` once applied, `"error"` on failure. Skipped compactions
+ * are removed from the turns, not settled.
+ *
+ * @experimental Compaction is under active design and may change in any release.
+ */
+export interface CompactionPart<TAnnotation extends Annotation = Annotation> {
+  /** Stable part id. Shared with the compaction record. */
+  id: string;
+  /** Part discriminator. */
+  type: "compaction";
+  /** The applied record, present once the compaction completes. */
+  record?: CompactionRecord;
   /** Annotations attached to this part. */
   annotations?: TAnnotation[];
   /** Optional timing metadata. */

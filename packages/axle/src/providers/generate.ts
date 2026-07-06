@@ -17,12 +17,14 @@ import { addStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.
 import { generateTurn } from "./generateTurn.js";
 import {
   appendUsage,
+  checkLoopStop,
   executeToolCalls,
   GenerateResult,
   logTurnContent,
   resolveToolRegistry,
   resolveTools,
   ToolCallCallback,
+  validateLoopLimits,
 } from "./helpers.js";
 import { AIProvider, AxleModelRequestOptions, AxleStopReason, ModelResult } from "./types.js";
 
@@ -44,6 +46,13 @@ export interface GenerateParams extends AxleModelRequestOptions {
   registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   maxIterations?: number;
+  /**
+   * Context budget for the tool loop, in tokens. Checked at each request
+   * boundary against the previous model call's reported usage (effective
+   * input + output); when crossed, the loop returns `stopped: "token-limit"`
+   * with everything accumulated so far.
+   */
+  maxContextTokens?: number;
   span?: Span;
   fileResolver?: FileResolver;
 }
@@ -67,6 +76,7 @@ export async function generate(options: GenerateParams): Promise<GenerateResult>
 export async function generate(
   options: GenerateParams | GenerateInstructParams<any>,
 ): Promise<GenerateResult | GenerateInstructResult<any>> {
+  validateLoopLimits(options);
   if ("instruct" in options) {
     const { instruct, messages, ...rest } = options;
     const userTurn = compileUserTurn(instruct);
@@ -87,6 +97,10 @@ export async function generate(
         messages: result.messages,
         final: result.final,
         usage: result.usage,
+        // A limit stop usually ends on a tool-call turn with no parseable
+        // text; keep the stop marker so callers can distinguish "continuable,
+        // limit tripped" from genuinely malformed output.
+        ...(result.stopped ? { stopped: result.stopped } : {}),
         error: {
           kind: "parse",
           error: parseError,
@@ -110,6 +124,7 @@ async function runGenerate(
     system,
     onToolCall,
     maxIterations,
+    maxContextTokens,
     span,
     fileResolver,
     reasoning,
@@ -173,24 +188,6 @@ async function runGenerate(
   try {
     while (true) {
       throwIfAborted(signal, "Generate aborted");
-
-      if (maxIterations !== undefined && iterations >= maxIterations) {
-        return endWithResult({
-          ok: false,
-          messages: newMessages,
-          error: {
-            kind: "model",
-            error: {
-              type: "error",
-              error: {
-                type: "MaxIterations",
-                message: `Exceeded max iterations (${maxIterations})`,
-              },
-            },
-          },
-          usage,
-        });
-      }
 
       iterations += 1;
       const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
@@ -289,6 +286,22 @@ async function runGenerate(
       throwIfAborted(signal, "Generate aborted");
       if (results.length > 0) {
         addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
+      }
+
+      // Budget checks run after the turn settles so a limit stop always returns a complete exchange.
+      const stopped = checkLoopStop(iterations, response.usage, {
+        maxIterations,
+        maxContextTokens,
+      });
+      if (stopped) {
+        return endWithResult({
+          ok: true,
+          response: assistantMessage,
+          messages: newMessages,
+          final: assistantMessage,
+          usage,
+          stopped,
+        });
       }
     }
   } catch (error) {

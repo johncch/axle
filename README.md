@@ -174,6 +174,15 @@ Both handle the full tool-call loop automatically. Agent uses `stream()`
 internally and adds history management, system prompt, and callback wiring on
 top.
 
+Two options bound the tool loop. `maxIterations` caps the number of model
+turns; `maxContextTokens` caps the context budget, checked after each turn's
+tools are answered against that turn's reported usage (effective input +
+output). Crossing either limit is a stop, not an error: the loop returns
+`ok: true` with everything accumulated so far and `stopped` set to
+`"max-iterations"` or `"token-limit"`. The caller decides what happens next —
+e.g. compact the conversation and start a new call. Non-positive limits throw
+at call time.
+
 ### Results
 
 `generate(...)`, `stream(...).final`, and `agent.send(...).final` all resolve to
@@ -189,6 +198,7 @@ if (!result.ok) {
 }
 
 result.response; // always present when ok is true
+result.stopped; // "max-iterations" | "token-limit" when a loop limit ended the run
 ```
 
 For `generate()` and `stream()`, plain calls return the final assistant message.
@@ -641,7 +651,7 @@ try {
 `part:start`, `part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
 `action:running`, `action:progress`, `action:complete`, `action:error`,
 `action:child-event`, `annotation:start`, `annotation:update`,
-`annotation:end`, `error`.
+`annotation:end`, `compaction:start`, `compaction:end`, `error`.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"action"`). Action parts further discriminate on
@@ -656,6 +666,10 @@ to `TurnEvent` streams: text deltas are folded into text parts, tool call
 lifecycles become stable action parts, and tool results are collapsed back into
 the action part that produced them. `AxleMessage[]` remains the canonical model
 conversation state; turns do not affect model input or tool routing.
+
+Compaction (see below) appears in the turns as an ordinary agent turn
+containing a single `compaction` part; renderers that don't handle that part
+type simply render nothing for it.
 
 Hosts that transport Axle events over SSE, WebSockets, or another mixed event
 stream can use `TurnAccumulator` instead of reimplementing this reducer:
@@ -754,15 +768,63 @@ to the raw provider stream, with separate `start`/`end` events for each
 text and thinking block, and distinct events for tool request, execution,
 and completion.
 
-`StreamEvent` types: `text:start`, `text:delta`, `text:end`,
-`thinking:start`, `thinking:delta`, `thinking:end`, `tool:request`,
-`tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
-`provider-tool:start`, `provider-tool:complete`, `turn:complete`,
-`tool-results:start`, `tool-results:complete`, `error`.
+`StreamEvent` types: `turn:start`, `turn:complete`, `tool-results:start`,
+`tool-results:complete`, `text:start`, `text:delta`, `text:citation`,
+`text:end`, `citation`, `thinking:start`, `thinking:delta`,
+`thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
+`tool:args-delta`, `tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
+`tool:exec-error`, `provider-tool:start`, `provider-tool:complete`, `error`.
+
+Tool and provider-tool events correlate by `id`. Text and thinking parts
+stream sequentially within a turn, so their deltas belong to the most
+recently opened part.
 
 The `turn:complete` and `tool-results:complete` events carry complete
 `AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server
 architectures that need authoritative message boundaries.
+
+### Compaction (experimental)
+
+Compaction replaces the agent's active conversation with a shorter one — for
+example a summary — so long sessions can continue past the model's context
+limit. The API is experimental and may change in any release.
+
+The host owns the policy and the strategy in a single callback. The engine
+owns validation, receipt stamping, state processing, and event emission.
+
+```typescript
+agent.onCompaction(async ({ messages }, { usage, signal }) => {
+  if (usage.total < 100_000) return null; // not yet — cheap local estimate
+
+  const summary = await generate({
+    provider,
+    model,
+    signal,
+    messages: [{ role: "user", content: `Summarize:\n${render(messages)}` }],
+  });
+  if (!summary.ok) return null;
+  return [{ role: "user", content: `Summary so far: ${summaryText(summary)}` }];
+});
+
+const record = await agent.compact(); // CompactionRecord | null when declined
+```
+
+Compaction is destructive at the message layer: the returned messages become
+the entire active conversation. Nothing is lost, though — `agent.history`
+exposes both views:
+
+- `history.messages` — the active conversation sent to the model.
+- `history.archive` — the raw append-only log; compaction never touches it.
+- `history.compactions` — receipts (`{ id, at }`) for each compaction.
+
+Compaction runs on the agent's work queue, so it never interleaves with an
+in-flight `send()`. In the turn stream it appears as `compaction:start` /
+`compaction:end` events and lands in `history.turns` as an agent turn
+containing a single `compaction` part (carrying the record once complete).
+The turn's `status` covers the async lifecycle: `"streaming"` while the
+callback runs, then `"complete"` or `"error"`; a skipped compaction leaves no
+turn. `agent.context()` returns the current `ContextUsage` estimate if you
+want to decide outside the callback.
 
 ### Hosting / Sessions
 
@@ -770,6 +832,15 @@ Axle stops at the agent runtime boundary. If you need long-lived sessions,
 SSE transport, resumable cursors, or React client hooks, build those concerns
 in your host application on top of `Agent`, `agent.on(...)`, and the streamed
 turn events that Axle emits.
+
+To persist and resume an agent, snapshot it and construct a new agent with the
+session:
+
+```typescript
+const session = await agent.snapshot(); // waits for in-flight work to settle
+// ...store, then later:
+const resumed = new Agent(config, session);
+```
 
 ## Known Limitations
 

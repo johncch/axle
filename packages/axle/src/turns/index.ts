@@ -1,3 +1,10 @@
+export type {
+  Citation,
+  CitationOutputSpan,
+  CitationSource,
+  DocumentLocator,
+  ThinkingContinuity,
+} from "../messages/message.js";
 export { TurnAccumulator } from "./accumulator.js";
 export type {
   AccumulatableEvent,
@@ -7,19 +14,13 @@ export type {
 export { TurnEventBuilder } from "./eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./events.js";
 export type {
-  Citation,
-  CitationOutputSpan,
-  CitationSource,
-  DocumentLocator,
-  ThinkingContinuity,
-} from "../messages/message.js";
-export type {
   ActionPart,
   ActionResult,
   Annotation,
   AnnotationPlacement,
   AnnotationStatus,
   CitationPart,
+  CompactionPart,
   FilePart,
   ProviderToolAction,
   SubagentAction,

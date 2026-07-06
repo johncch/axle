@@ -1,3 +1,4 @@
+export type { CompactionRecord } from "./messages/compaction.js";
 export type {
   Citation,
   CitationOutputSpan,
@@ -20,6 +21,7 @@ export type {
   AnnotationPlacement,
   AnnotationStatus,
   CitationPart,
+  CompactionPart,
   FilePart,
   ProviderToolAction,
   SubagentAction,

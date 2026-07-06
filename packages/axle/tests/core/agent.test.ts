@@ -12,6 +12,7 @@ import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
+import type { Turn } from "../../src/turns/types.js";
 
 function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
@@ -178,7 +179,7 @@ describe("Agent", () => {
 
     await agent.send("Render this specially", { metadata: { source: "system-editor" } }).final;
 
-    expect(agent.history.log[0]).toMatchObject({
+    expect(agent.history.messages[0]).toMatchObject({
       role: "user",
       metadata: { source: "system-editor" },
     });
@@ -189,10 +190,11 @@ describe("Agent", () => {
     expect(events.find((event) => event.type === "turn:user")?.turn?.metadata).toEqual({
       source: "system-editor",
     });
-    expect(agent.snapshot().messages[0]).toMatchObject({
+    const session = await agent.snapshot();
+    expect(session.messages[0]).toMatchObject({
       metadata: { source: "system-editor" },
     });
-    expect(agent.snapshot().turns?.[0]).toMatchObject({
+    expect(session.turns?.[0]).toMatchObject({
       metadata: { source: "system-editor" },
     });
   });
@@ -207,7 +209,7 @@ describe("Agent", () => {
 
     await agent.send(instruct).final;
 
-    expect(agent.history.log[0]).toMatchObject({
+    expect(agent.history.messages[0]).toMatchObject({
       role: "user",
       metadata: { surface: "prompt-review" },
     });
@@ -244,7 +246,7 @@ describe("Agent", () => {
     const agent = new Agent({ provider, model: "mock" });
     await agent.send("one").final;
 
-    const session = agent.snapshot();
+    const session = await agent.snapshot();
     expect(session).toMatchObject({
       version: 1,
       sessionId: agent.sessionId,
@@ -252,21 +254,23 @@ describe("Agent", () => {
       turns: [{ owner: "user" }, { owner: "agent", status: "complete" }],
     });
 
-    const restored = new Agent({ provider, model: "mock" });
-    restored.restore({
-      ...session,
-      sessionAnnotations: [
-        { id: "session-note", kind: "note", label: "Restored session annotation" },
-      ],
-    });
+    const restored = new Agent(
+      { provider, model: "mock" },
+      {
+        ...session,
+        sessionAnnotations: [
+          { id: "session-note", kind: "note", label: "Restored session annotation" },
+        ],
+      },
+    );
 
-    expect(restored.history.log).toEqual(session.messages);
+    expect(restored.history.messages).toEqual(session.messages);
     expect(restored.history.turns).toEqual(session.turns);
     expect(restored.sessionId).toBe(session.sessionId);
     expect(restored.history.sessionAnnotations).toEqual([
       { id: "session-note", kind: "note", label: "Restored session annotation" },
     ]);
-    expect(restored.snapshot().sessionAnnotations).toEqual([
+    expect((await restored.snapshot()).sessionAnnotations).toEqual([
       { id: "session-note", kind: "note", label: "Restored session annotation" },
     ]);
 
@@ -276,15 +280,14 @@ describe("Agent", () => {
     expect(requests[1]).toMatchObject([{ role: "user" }, { role: "assistant" }, { role: "user" }]);
   });
 
-  test("restore rejects unsupported session versions", () => {
-    const agent = new Agent({ provider: createMockStreamProvider(["ok"]), model: "mock" });
-
-    expect(() =>
-      agent.restore({
-        version: 2,
-        sessionId: "session-1",
-        messages: [],
-      } as any),
+  test("constructor rejects unsupported session versions", () => {
+    expect(
+      () =>
+        new Agent({ provider: createMockStreamProvider(["ok"]), model: "mock" }, {
+          version: 2,
+          sessionId: "session-1",
+          messages: [],
+        } as any),
     ).toThrow("Unsupported agent session version: 2");
   });
 
@@ -327,7 +330,7 @@ describe("Agent", () => {
         model: "mock",
         system: "You are restored.",
       },
-      session: original.snapshot(),
+      session: await original.snapshot(),
     } as const;
 
     const config = await createAgentConfig(saved.definition, (definition) => {
@@ -337,7 +340,7 @@ describe("Agent", () => {
     const restored = new Agent({ ...config, sessionId: "runtime-session", memory }, saved.session);
 
     expect(restored.sessionId).toBe(saved.session.sessionId);
-    expect(restored.history.log).toEqual(saved.session.messages);
+    expect(restored.history.messages).toEqual(saved.session.messages);
     expect(restored.history.turns).toEqual(saved.session.turns);
 
     await restored.send("two").final;
@@ -474,10 +477,12 @@ describe("Agent", () => {
 
     // 2 user + 2 agent = 4 turns
     expect(agent.history.turns).toHaveLength(4);
-    expect(agent.history.turns[0].owner).toBe("user");
-    expect(agent.history.turns[1].owner).toBe("agent");
-    expect(agent.history.turns[2].owner).toBe("user");
-    expect(agent.history.turns[3].owner).toBe("agent");
+    expect(agent.history.turns.map((entry) => (entry as Turn).owner)).toEqual([
+      "user",
+      "agent",
+      "user",
+      "agent",
+    ]);
   });
 
   test("AgentResult.usage has correct token stats", async () => {
@@ -741,9 +746,9 @@ describe("Agent", () => {
       expect((secondError as AxleAgentAbortError).turn).toBeUndefined();
       expect(callCount).toBe(1);
       expect(agent.history.turns).toHaveLength(2);
-      expect(agent.history.log).toHaveLength(2);
-      expect(agent.history.log[0]).toMatchObject({ role: "user" });
-      expect(agent.history.log[1]).toMatchObject({ role: "assistant" });
+      expect(agent.history.messages).toHaveLength(2);
+      expect(agent.history.messages[0]).toMatchObject({ role: "user" });
+      expect(agent.history.messages[1]).toMatchObject({ role: "assistant" });
     });
 
     test("cancel during tool execution preserves assistant history and cancelled turn state", async () => {
@@ -822,9 +827,9 @@ describe("Agent", () => {
         out: 1,
         breakdown: [{ provider: "mock-stream", model: "mock", in: 1, out: 1 }],
       });
-      expect(agent.history.log).toHaveLength(2);
-      expect(agent.history.log[0]).toMatchObject({ role: "user" });
-      expect(agent.history.log[1]).toMatchObject({ role: "assistant" });
+      expect(agent.history.messages).toHaveLength(2);
+      expect(agent.history.messages[0]).toMatchObject({ role: "user" });
+      expect(agent.history.messages[1]).toMatchObject({ role: "assistant" });
       expect(agent.history.turns[1]?.status).toBe("cancelled");
     });
   });
@@ -1349,7 +1354,7 @@ describe("Agent", () => {
 
       await agent.send("Hi").final;
 
-      const userTurn = agent.history.turns[0];
+      const userTurn = agent.history.turns[0] as Turn;
       expect(userTurn.owner).toBe("user");
       expect(userTurn.id).toBeDefined();
       expect(typeof userTurn.id).toBe("string");
@@ -1413,7 +1418,7 @@ describe("Agent", () => {
       agent.on((e) => {
         events.push(e);
         if (e.type === "action:progress") {
-          const turn = agent.history.turns[1];
+          const turn = agent.history.turns[1] as Turn | undefined;
           const part = turn?.parts.find(
             (p) => p.type === "action" && (p as any).kind === "tool",
           ) as any;
@@ -1434,7 +1439,7 @@ describe("Agent", () => {
       ]);
 
       // After completion, the final success result replaces the in-progress state.
-      const agentTurn = agent.history.turns[1];
+      const agentTurn = agent.history.turns[1] as Turn;
       const toolPart = agentTurn.parts.find(
         (p) => p.type === "action" && (p as any).kind === "tool",
       ) as any;
@@ -1529,7 +1534,7 @@ describe("Agent", () => {
       });
       expect(events.some((event) => event.type === "action:progress")).toBe(false);
 
-      const agentTurn = agent.history.turns[1];
+      const agentTurn = agent.history.turns[1] as Turn;
       const agentPart = agentTurn.parts.find(
         (part) => part.type === "action" && part.kind === "agent",
       ) as any;

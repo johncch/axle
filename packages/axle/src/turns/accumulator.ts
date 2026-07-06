@@ -1,7 +1,5 @@
-import type { Citation, ThinkingContinuity } from "../messages/message.js";
-import type { Stats } from "../types.js";
-import type { TurnEvent } from "./events.js";
-import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
+import type { AnnotationEvent, TurnEvent } from "./events.js";
+import type { Annotation, Turn, TurnPart } from "./types.js";
 
 export interface TurnAccumulatorState<TAnnotation extends Annotation = Annotation> {
   turns: Turn<TAnnotation>[];
@@ -30,6 +28,45 @@ export type TurnAccumulatorResult<
       event: THostEvent;
     };
 
+/**
+ * The complete set of TurnEvent type discriminators. `Record<TurnEvent["type"], true>`
+ * makes this compile-checked in both directions: a missing key or an extra
+ * key is a type error, so the runtime guard cannot drift from the union.
+ */
+const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
+  "session:restore": true,
+  "turn:user": true,
+  "turn:start": true,
+  "turn:end": true,
+  "compaction:start": true,
+  "compaction:end": true,
+  "part:start": true,
+  "text:delta": true,
+  "text:citation": true,
+  "thinking:delta": true,
+  "thinking:summary-delta": true,
+  "thinking:update": true,
+  "part:end": true,
+  "action:args-delta": true,
+  "action:running": true,
+  "action:progress": true,
+  "action:complete": true,
+  "action:error": true,
+  "action:child-event": true,
+  "annotation:start": true,
+  "annotation:update": true,
+  "annotation:end": true,
+  error: true,
+};
+
+const TURN_EVENT_TYPE_SET = new Set<string>(Object.keys(TURN_EVENT_TYPES));
+
+function isTurnEvent<TAnnotation extends Annotation>(
+  event: UnknownEvent,
+): event is TurnEvent<TAnnotation> {
+  return TURN_EVENT_TYPE_SET.has(event.type);
+}
+
 export class TurnAccumulator<
   TAnnotation extends Annotation = Annotation,
   THostEvent extends UnknownEvent = UnknownEvent,
@@ -50,227 +87,207 @@ export class TurnAccumulator<
   apply(
     event: AccumulatableEvent<TAnnotation, THostEvent>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
-    const rawEvent = event as EventRecord;
+    if (!isTurnEvent<TAnnotation>(event)) {
+      return { handled: false, state: this._state, event: event as THostEvent };
+    }
+    return this.applyTurnEvent(event);
+  }
 
+  private applyTurnEvent(
+    event: TurnEvent<TAnnotation>,
+  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     switch (event.type) {
       case "session:restore":
         return this.replaceState(
           {
-            turns: (rawEvent.turns as Turn<TAnnotation>[] | undefined) ?? [],
-            sessionAnnotations: rawEvent.sessionAnnotations as TAnnotation[] | undefined,
+            turns: event.turns ?? [],
+            sessionAnnotations: event.sessionAnnotations,
           },
           event,
         );
 
       case "turn:user":
-        return this.replaceTurns([...this._state.turns, rawEvent.turn as Turn<TAnnotation>], event);
+        return this.replaceTurns([...this._state.turns, event.turn], event);
 
       case "turn:start": {
         const turn: Turn<TAnnotation> = {
-          id: rawEvent.turnId as string,
+          id: event.turnId,
           owner: "agent",
           parts: [],
           status: "streaming",
-          ...((rawEvent.timing as TimingInfo | undefined)
-            ? { timing: rawEvent.timing as TimingInfo }
-            : {}),
+          ...(event.timing ? { timing: event.timing } : {}),
         };
         return this.replaceTurns([...this._state.turns, turn], event);
       }
 
+      case "compaction:start": {
+        const turn: Turn<TAnnotation> = {
+          id: event.id,
+          owner: "agent",
+          parts: [{ id: event.id, type: "compaction" }],
+          status: "streaming",
+          ...(event.timing ? { timing: event.timing } : {}),
+        };
+        return this.replaceTurns([...this._state.turns, turn], event);
+      }
+
+      case "compaction:end": {
+        // A skipped compaction never happened; its running turn is removed
+        // rather than settled, so per-send polling policies leave no trace.
+        if (event.outcome === "skipped") {
+          const turns = this._state.turns.filter((turn) => turn.id !== event.id);
+          if (turns.length === this._state.turns.length) return this.handled(event);
+          return this.replaceTurns(turns, event);
+        }
+
+        const status = event.outcome === "complete" ? ("complete" as const) : ("error" as const);
+        let updated = false;
+        const turns = this._state.turns.map((turn) => {
+          if (turn.id !== event.id) return turn;
+          updated = true;
+          return {
+            ...turn,
+            status,
+            parts: turn.parts.map((part) =>
+              part.type === "compaction" && event.record ? { ...part, record: event.record } : part,
+            ),
+            timing: event.timing ?? turn.timing,
+          };
+        });
+        if (!updated) return this.handled(event);
+        return this.replaceTurns(turns, event);
+      }
+
       case "part:start":
-        return this.updateTurn(rawEvent.turnId as string, event, (turn) => ({
+        return this.updateTurn(event.turnId, event, (turn) => ({
           ...turn,
-          parts: [...turn.parts, rawEvent.part as TurnPart<TAnnotation>],
+          parts: [...turn.parts, event.part],
         }));
 
       case "text:delta":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "text") return part;
-            return { ...part, text: part.text + (rawEvent.delta as string) };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "text") return part;
+          return { ...part, text: part.text + event.delta };
+        });
 
       case "text:citation":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "text") return part;
-            return {
-              ...part,
-              citations: [...(part.citations ?? []), rawEvent.citation as Citation],
-            };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "text") return part;
+          return {
+            ...part,
+            citations: [...(part.citations ?? []), event.citation],
+          };
+        });
 
       case "thinking:delta":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "thinking") return part;
-            return { ...part, text: (part.text ?? "") + (rawEvent.delta as string) };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "thinking") return part;
+          return { ...part, text: (part.text ?? "") + event.delta };
+        });
 
       case "thinking:summary-delta":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "thinking") return part;
-            return { ...part, summary: (part.summary ?? "") + (rawEvent.delta as string) };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "thinking") return part;
+          return { ...part, summary: (part.summary ?? "") + event.delta };
+        });
 
       case "thinking:update":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "thinking") return part;
-            return {
-              ...part,
-              ...(rawEvent.redacted !== undefined
-                ? { redacted: rawEvent.redacted as boolean }
-                : {}),
-              ...(rawEvent.continuity
-                ? { continuity: rawEvent.continuity as ThinkingContinuity }
-                : {}),
-              ...(rawEvent.providerMetadata
-                ? { providerMetadata: rawEvent.providerMetadata as Record<string, unknown> }
-                : {}),
-            };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "thinking") return part;
+          return {
+            ...part,
+            ...(event.redacted !== undefined ? { redacted: event.redacted } : {}),
+            ...(event.continuity ? { continuity: event.continuity } : {}),
+            ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
+          };
+        });
 
       case "part:end":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => ({
-            ...part,
-            timing: (rawEvent.timing as TimingInfo | undefined) ?? part.timing,
-          }),
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => ({
+          ...part,
+          timing: event.timing ?? part.timing,
+        }));
 
       case "action:args-delta":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "action" || part.kind !== "tool") return part;
-            return {
-              ...part,
-              detail: {
-                ...part.detail,
-                pendingArgs: rawEvent.accumulated as string,
-              },
-            };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action" || part.kind !== "tool") return part;
+          return {
+            ...part,
+            detail: {
+              ...part.detail,
+              pendingArgs: event.accumulated,
+            },
+          };
+        });
 
       case "action:running":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "action") return part;
-            if (part.kind === "tool") {
-              const { pendingArgs: _pendingArgs, ...detail } = part.detail;
-              return {
-                ...part,
-                status: "running",
-                detail: rawEvent.parameters
-                  ? { ...detail, parameters: rawEvent.parameters as Record<string, unknown> }
-                  : detail,
-              };
-            }
-            return { ...part, status: "running" };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action") return part;
+          if (part.kind === "tool") {
+            const { pendingArgs: _pendingArgs, ...detail } = part.detail;
+            return {
+              ...part,
+              status: "running",
+              detail: event.parameters ? { ...detail, parameters: event.parameters } : detail,
+            };
+          }
+          return { ...part, status: "running" };
+        });
 
       case "action:progress":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "action") return part;
-            const previous = part.detail.result;
-            const content = previous?.type === "in-progress" ? previous.content : "";
-            return {
-              ...part,
-              detail: {
-                ...part.detail,
-                result: {
-                  type: "in-progress",
-                  content: content + (rawEvent.chunk as string),
-                },
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action") return part;
+          const previous = part.detail.result;
+          const content = previous?.type === "in-progress" ? previous.content : "";
+          return {
+            ...part,
+            detail: {
+              ...part.detail,
+              result: {
+                type: "in-progress",
+                content: content + event.chunk,
               },
-            } as TurnPart<TAnnotation>;
-          },
-        );
+            },
+          } as TurnPart<TAnnotation>;
+        });
 
       case "action:complete":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "action") return part;
-            return {
-              ...part,
-              status: "complete",
-              detail: {
-                ...part.detail,
-                result: rawEvent.result as ActionResult,
-              },
-              timing: (rawEvent.timing as TimingInfo | undefined) ?? part.timing,
-            } as TurnPart<TAnnotation>;
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action") return part;
+          return {
+            ...part,
+            status: "complete",
+            detail: {
+              ...part.detail,
+              result: event.result,
+            },
+            timing: event.timing ?? part.timing,
+          } as TurnPart<TAnnotation>;
+        });
 
       case "action:error":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "action") return part;
-            return {
-              ...part,
-              status: "error",
-              detail: {
-                ...part.detail,
-                result: {
-                  type: "error",
-                  error: rawEvent.error as { type: string; message: string },
-                },
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action") return part;
+          return {
+            ...part,
+            status: "error",
+            detail: {
+              ...part.detail,
+              result: {
+                type: "error",
+                error: event.error,
               },
-              timing: (rawEvent.timing as TimingInfo | undefined) ?? part.timing,
-            } as TurnPart<TAnnotation>;
-          },
-        );
+            },
+            timing: event.timing ?? part.timing,
+          } as TurnPart<TAnnotation>;
+        });
 
       case "turn:end":
-        return this.updateTurn(rawEvent.turnId as string, event, (turn) => ({
+        return this.updateTurn(event.turnId, event, (turn) => ({
           ...turn,
-          status: rawEvent.status as TurnStatus,
-          usage: rawEvent.usage as Stats,
-          timing: (rawEvent.timing as TimingInfo | undefined) ?? turn.timing,
+          status: event.status,
+          usage: event.usage,
+          timing: event.timing ?? turn.timing,
         }));
 
       case "annotation:start":
@@ -286,34 +303,31 @@ export class TurnAccumulator<
         return this.handled(event);
 
       case "action:child-event":
-        return this.updatePart(
-          rawEvent.turnId as string,
-          rawEvent.partId as string,
-          event,
-          (part) => {
-            if (part.type !== "action" || part.kind !== "agent") return part;
-            const childAccumulator = new TurnAccumulator<TAnnotation>({
-              turns: part.detail.children,
-            });
-            const result = childAccumulator.apply(rawEvent.event as TurnEvent<TAnnotation>);
-            return {
-              ...part,
-              detail: {
-                ...part.detail,
-                children: result.state.turns,
-              },
-            };
-          },
-        );
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action" || part.kind !== "agent") return part;
+          const childAccumulator = new TurnAccumulator<TAnnotation>({
+            turns: part.detail.children,
+          });
+          const result = childAccumulator.apply(event.event);
+          return {
+            ...part,
+            detail: {
+              ...part.detail,
+              children: result.state.turns,
+            },
+          };
+        });
 
-      default:
-        return { handled: false, state: this._state, event: event as THostEvent };
+      default: {
+        event satisfies never;
+        return this.handled(event);
+      }
     }
   }
 
   private replaceState(
     state: TurnAccumulatorState<TAnnotation>,
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
+    event: TurnEvent<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     this._state = state;
     return this.handled(event);
@@ -321,21 +335,21 @@ export class TurnAccumulator<
 
   private replaceTurns(
     turns: Turn<TAnnotation>[],
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
+    event: TurnEvent<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     return this.replaceState({ ...this._state, turns }, event);
   }
 
   private updateTurn(
     turnId: string,
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
+    event: TurnEvent<TAnnotation>,
     updater: (turn: Turn<TAnnotation>) => Turn<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     let updated = false;
-    const turns = this._state.turns.map((turn) => {
-      if (turn.id !== turnId) return turn;
-      const next = updater(turn);
-      if (next === turn) return turn;
+    const turns = this._state.turns.map((entry) => {
+      if (entry.id !== turnId) return entry;
+      const next = updater(entry);
+      if (next === entry) return entry;
       updated = true;
       return next;
     });
@@ -347,7 +361,7 @@ export class TurnAccumulator<
   private updatePart(
     turnId: string,
     partId: string,
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
+    event: TurnEvent<TAnnotation>,
     updater: (part: TurnPart<TAnnotation>) => TurnPart<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     return this.updateTurn(turnId, event, (turn) => {
@@ -365,12 +379,11 @@ export class TurnAccumulator<
   }
 
   private addAnnotation(
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
+    event: AnnotationEvent<TAnnotation> & { type: "annotation:start" },
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
-    const rawEvent = event as EventRecord;
-    const target = rawEvent.target as AnnotationTargetLike | undefined;
-    const annotation = normalizeAnnotation(rawEvent.annotation as TAnnotation);
-    if (!target || !annotation) return this.handled(event);
+    const target = event.target;
+    const annotation = normalizeAnnotation(event.annotation);
+    if (!annotation) return this.handled(event);
 
     if (target.type === "session") {
       return this.replaceState(
@@ -389,24 +402,19 @@ export class TurnAccumulator<
       }));
     }
 
-    if (target.type === "part") {
-      return this.updatePart(target.turnId, target.partId, event, (part) => ({
-        ...part,
-        annotations: [...(part.annotations ?? []), annotation],
-      }));
-    }
-
-    return this.handled(event);
+    return this.updatePart(target.turnId, target.partId, event, (part) => ({
+      ...part,
+      annotations: [...(part.annotations ?? []), annotation],
+    }));
   }
 
   private replaceAnnotation(
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
+    event: AnnotationEvent<TAnnotation> & { type: "annotation:update" | "annotation:end" },
     completeWhenMissing: boolean,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
-    const rawEvent = event as EventRecord;
-    const target = rawEvent.target as AnnotationTargetLike | undefined;
-    const annotation = normalizeAnnotation(rawEvent.annotation as TAnnotation, completeWhenMissing);
-    if (!target || !annotation) return this.handled(event);
+    const target = event.target;
+    const annotation = normalizeAnnotation(event.annotation, completeWhenMissing);
+    if (!annotation) return this.handled(event);
 
     if (target.type === "session") {
       const next = replaceAnnotationInList(this._state.sessionAnnotations, annotation);
@@ -421,33 +429,20 @@ export class TurnAccumulator<
       });
     }
 
-    if (target.type === "part") {
-      return this.updatePart(target.turnId, target.partId, event, (part) => {
-        const next = replaceAnnotationInList(part.annotations, annotation);
-        return next ? { ...part, annotations: next } : part;
-      });
-    }
-
-    return this.handled(event);
+    return this.updatePart(target.turnId, target.partId, event, (part) => {
+      const next = replaceAnnotationInList(part.annotations, annotation);
+      return next ? { ...part, annotations: next } : part;
+    });
   }
 
-  private handled(
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  private handled(event: TurnEvent<TAnnotation>): TurnAccumulatorResult<TAnnotation, THostEvent> {
     return {
       handled: true,
       state: this._state,
-      event: event as TurnEvent<TAnnotation>,
+      event,
     };
   }
 }
-
-type AnnotationTargetLike =
-  | { type: "session" }
-  | { type: "turn"; turnId: string }
-  | { type: "part"; turnId: string; partId: string };
-
-type EventRecord = { type: string; [key: string]: unknown };
 
 function normalizeAnnotation<TAnnotation extends Annotation>(
   annotation: TAnnotation | undefined,

@@ -168,13 +168,13 @@ describe("stream() happy paths", () => {
     // Messages accumulate correctly across turns
     if (result.ok) {
       expect(result.messages).toHaveLength(3);
-      // Turn 1: assistant with tool call
+      // Round 1: assistant with tool call
       expect(result.messages[0].role).toBe("assistant");
       expect((result.messages[0] as any).content[0].type).toBe("tool-call");
       expect((result.messages[0] as any).content[0].name).toBe("web_search");
       // Tool result
       expect(result.messages[1].role).toBe("tool");
-      // Turn 2: assistant with text
+      // Round 2: assistant with text
       expect(result.messages[2].role).toBe("assistant");
       expect((result.messages[2] as any).content[0].type).toBe("text");
       expect((result.messages[2] as any).content[0].text).toBe("Results");
@@ -432,17 +432,51 @@ describe("stream() error paths", () => {
     });
 
     const result = await handle.final;
-    expect(result.ok).toBe(false);
-    if (!result.ok && result.error.kind === "model") {
-      const inner = result.error.error.error;
-      expect(inner.type).toBe("MaxIterations");
-      expect(inner.message).toContain("max iterations");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.stopped).toBe("max-iterations");
+      expect(result.final.finishReason).toBe(AxleStopReason.FunctionCall);
+      expect(result.messages).toHaveLength(2);
     }
 
     const { spans } = writer;
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "stream")!;
-    expect(rootSpanData.status).toBe("error");
+    expect(rootSpanData.status).toBe("ok");
+  });
+
+  test("2.6 token limit reached stops the loop with everything accumulated", async () => {
+    const { tracer } = createTracerAndWriter();
+    const rootSpan = tracer.startSpan("stream", { type: "workflow" });
+
+    // Turn 1 wants a tool and reports 400 in + 150 out — past the 500 budget,
+    // so the loop stops at the next request boundary instead of calling again.
+    const turn1Chunks: AnyStreamChunk[] = [
+      startChunk("msg_1"),
+      toolCallStartChunk(0, "call_1", "search"),
+      toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+      completeChunk(AxleStopReason.FunctionCall, { in: 400, out: 150 }),
+    ];
+
+    const provider = makeStreamingProvider([turn1Chunks]);
+    const handle = stream({
+      provider,
+      model: "test-model",
+      messages: [],
+      span: rootSpan,
+      maxContextTokens: 500,
+      onToolCall: async () => ({ type: "success", content: "result" }),
+    });
+
+    const result = await handle.final;
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.stopped).toBe("token-limit");
+      expect(result.final.finishReason).toBe(AxleStopReason.FunctionCall);
+      // The assistant turn and its answered tool results are both preserved,
+      // so the conversation is continuable after the caller compacts.
+      expect(result.messages.map((m) => m.role)).toEqual(["assistant", "tool"]);
+    }
   });
 
   test("2.5 provider generator throws rejects promise and leaks spans", async () => {

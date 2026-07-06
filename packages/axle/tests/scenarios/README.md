@@ -48,7 +48,8 @@ span:start → span:update (setResult) → span:end
 | 2.1  | Error chunk (no prior text)        | Turn and root spans both end with `"error"`, root result has no finishReason             |
 | 2.2  | Error after partial text           | Both turn and root spans marked error                                                    |
 | 2.3  | Stream ends without complete chunk | Produces `IncompleteStream` error, both spans error                                      |
-| 2.4  | maxIterations exceeded             | First turn completes tool call, second iteration blocked, produces `MaxIterations` error |
+| 2.4  | maxIterations reached              | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-iterations"` |
+| 2.6  | token limit reached                | Turn 1 usage crosses `maxContextTokens`, loop stops at boundary, returns ok with `stopped: "token-limit"`, messages preserved |
 | 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**             |
 
 ### stream() — Cancellation
@@ -78,7 +79,7 @@ span:start → span:update (setResult) → span:end
 | Test | Scenario                    | Key assertions                                                                     |
 | ---- | --------------------------- | ---------------------------------------------------------------------------------- |
 | 6.1  | Provider returns ModelError | Turn span ends with `"error"` (via `setTurnResult`), root span ends with `"error"` |
-| 6.2  | maxIterations exceeded      | Same as stream 2.4 but via generate path                                           |
+| 6.2  | maxIterations reached       | Same as stream 2.4 but via generate path                                           |
 | 6.3  | Provider throws             | Promise rejects, **turn and root spans are leaked** (same gap as 2.5)              |
 
 ## Adding a New Test

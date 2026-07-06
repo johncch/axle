@@ -51,19 +51,19 @@ try {
   result.on((event) => {
     switch (event.type) {
       case "text:start":
-        console.log(`[Start] ${event.index} text`);
+        console.log(`[Start] text`);
         break;
       case "thinking:start":
-        console.log(`[Start] ${event.index} thinking`);
+        console.log(`[Start] thinking`);
         break;
       case "text:delta":
         process.stdout.write(`${event.delta}`);
         break;
       case "text:end":
-        console.log(`\n[End] ${event.index} text`);
+        console.log(`\n[End] text`);
         break;
       case "thinking:end":
-        console.log(`\n[End] ${event.index} thinking`);
+        console.log(`\n[End] thinking`);
         break;
       case "error":
         console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);

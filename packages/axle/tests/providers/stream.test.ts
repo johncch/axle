@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import * as z from "zod";
+import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import type {
   AnyStreamChunk,
@@ -167,7 +169,6 @@ describe("stream()", () => {
 
       const starts = events.filter((e) => e.type === "text:start");
       expect(starts).toHaveLength(1);
-      expect(starts[0].type === "text:start" && starts[0].index).toBe(0);
 
       const deltas = events.filter((e) => e.type === "text:delta");
       expect(deltas).toHaveLength(2);
@@ -178,7 +179,6 @@ describe("stream()", () => {
 
       const ends = events.filter((e) => e.type === "text:end");
       expect(ends).toHaveLength(1);
-      expect(ends[0].type === "text:end" && ends[0].index).toBe(0);
       expect(ends[0].type === "text:end" && ends[0].final).toBe("Hello world");
     });
 
@@ -203,21 +203,12 @@ describe("stream()", () => {
       const final = await result.final;
       expect(final.ok).toBe(true);
 
-      const thinkingStarts = events.filter((e) => e.type === "thinking:start");
-      expect(thinkingStarts).toHaveLength(1);
-      expect(thinkingStarts[0].type === "thinking:start" && thinkingStarts[0].index).toBe(0);
-
-      const textStarts = events.filter((e) => e.type === "text:start");
-      expect(textStarts).toHaveLength(1);
-      expect(textStarts[0].type === "text:start" && textStarts[0].index).toBe(1);
-
-      const thinkingEnds = events.filter((e) => e.type === "thinking:end");
-      expect(thinkingEnds).toHaveLength(1);
-      expect(thinkingEnds[0].type === "thinking:end" && thinkingEnds[0].index).toBe(0);
-
-      const textEnds = events.filter((e) => e.type === "text:end");
-      expect(textEnds).toHaveLength(1);
-      expect(textEnds[0].type === "text:end" && textEnds[0].index).toBe(1);
+      const partEvents = events
+        .filter((e) =>
+          ["thinking:start", "thinking:end", "text:start", "text:end"].includes(e.type),
+        )
+        .map((e) => e.type);
+      expect(partEvents).toEqual(["thinking:start", "thinking:end", "text:start", "text:end"]);
     });
 
     test("accumulates citations and thinking summary metadata", async () => {
@@ -302,7 +293,6 @@ describe("stream()", () => {
 
       expect(events.find((event) => event.type === "citation")).toMatchObject({
         type: "citation",
-        index: 1,
         citations: [citation],
       });
     });
@@ -395,7 +385,6 @@ describe("stream()", () => {
       expect(toolRequests).toHaveLength(1);
       expect(toolRequests[0].type === "tool:request" && toolRequests[0].id).toBe("call_1");
       expect(toolRequests[0].type === "tool:request" && toolRequests[0].name).toBe("web_search");
-      expect(toolRequests[0].type === "tool:request" && toolRequests[0].index).toBe(0);
 
       const toolExecStarts = events.filter((e) => e.type === "tool:exec-start");
       expect(toolExecStarts).toHaveLength(1);
@@ -405,7 +394,6 @@ describe("stream()", () => {
       expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].parameters).toEqual({
         q: "test",
       });
-      expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].index).toBe(0);
 
       const toolExecCompletes = events.filter((e) => e.type === "tool:exec-complete");
       expect(toolExecCompletes).toHaveLength(1);
@@ -841,17 +829,45 @@ describe("stream()", () => {
     });
   });
 
-  describe("max iterations exceeded", () => {
-    test("returns error when maxIterations is reached", async () => {
+  describe("loop limits", () => {
+    test("throws on a non-positive maxIterations", () => {
       const provider = makeProvider({ streamChunks: [] });
 
-      const result = stream({ provider, model: "test-model", messages: [], maxIterations: 0 });
+      expect(() =>
+        stream({ provider, model: "test-model", messages: [], maxIterations: 0 }),
+      ).toThrow("maxIterations must be at least 1");
+    });
+
+    test("throws on a non-positive maxContextTokens", () => {
+      const provider = makeProvider({ streamChunks: [] });
+
+      expect(() =>
+        stream({ provider, model: "test-model", messages: [], maxContextTokens: 0 }),
+      ).toThrow("maxContextTokens must be at least 1");
+    });
+
+    test("a limit stop on an Instruct call keeps the stopped marker through the parse failure", async () => {
+      const turn: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "x" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn] });
+      const result = stream({
+        provider,
+        model: "test-model",
+        instruct: new Instruct({ prompt: "answer", schema: z.object({ answer: z.string() }) }),
+        maxIterations: 1,
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
 
       const final = await result.final;
-
       expect(final.ok).toBe(false);
       if (final.ok) return;
-      expect(final.error.kind).toBe("model");
+      expect(final.error.kind).toBe("parse");
+      expect(final.stopped).toBe("max-iterations");
     });
   });
 
@@ -891,26 +907,19 @@ describe("stream()", () => {
       result.on((event) => {
         switch (event.type) {
           case "text:start":
-            order.push(`text:start:${event.index}`);
-            break;
           case "text:delta":
-            order.push(`text:delta:${event.index}`);
-            break;
           case "text:end":
-            order.push(`text:end:${event.index}`);
+            order.push(event.type);
             break;
         }
       });
 
       await result.final;
 
-      expect(order).toEqual(["text:start:0", "text:delta:0", "text:end:0"]);
+      expect(order).toEqual(["text:start", "text:delta", "text:end"]);
     });
-  });
 
-  describe("global index", () => {
-    test("index increments across LLM turns including tool calls", async () => {
-      // Turn 1: text(0) + tool-call(1) → Turn 2: text(2)
+    test("part events stay ordered across model turns", async () => {
       const turn1: AnyStreamChunk[] = [
         startChunk("msg_1"),
         textStartChunk(0),
@@ -930,8 +939,7 @@ describe("stream()", () => {
       ];
 
       const provider = makeProvider({ streamChunks: [turn1, turn2] });
-      const startIndices: number[] = [];
-      const endIndices: number[] = [];
+      const order: string[] = [];
 
       const result = stream({
         provider,
@@ -940,15 +948,23 @@ describe("stream()", () => {
         onToolCall: async () => ({ type: "success", content: "ok" }),
       });
       result.on((event) => {
-        if (event.type === "text:start") startIndices.push(event.index);
-        if (event.type === "text:end") endIndices.push(event.index);
+        if (event.type === "turn:start") order.push(`turn:start:${event.id}`);
+        if (event.type === "text:start") order.push("text:start");
+        if (event.type === "text:end") order.push("text:end");
+        if (event.type === "tool:request") order.push(`tool:request:${event.id}`);
       });
 
       await result.final;
 
-      // text(0), tool-call increments to 1, turn 2 text starts at 2
-      expect(startIndices).toEqual([0, 2]);
-      expect(endIndices).toEqual([0, 2]);
+      expect(order).toEqual([
+        "turn:start:msg_1",
+        "text:start",
+        "text:end",
+        "tool:request:call_1",
+        "turn:start:msg_2",
+        "text:start",
+        "text:end",
+      ]);
     });
   });
 
@@ -1103,7 +1119,7 @@ describe("stream()", () => {
       turn2Gate();
 
       const error = await expectAbortError(handle.final);
-      // Turn 1 assistant + tool results should be in messages
+      // Round 1 assistant + tool results should be in messages
       expect(error.messages).toHaveLength(2);
       expect(error.messages![0].role).toBe("assistant");
       expect(error.messages![1].role).toBe("tool");

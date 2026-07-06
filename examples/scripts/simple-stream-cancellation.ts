@@ -20,20 +20,20 @@ const handle = stream({
 handle.on((event) => {
   switch (event.type) {
     case "text:start":
-      console.log(`[Start] part ${event.index} (text)`);
+      console.log(`[Start] text`);
       break;
     case "thinking:start":
-      console.log(`[Start] part ${event.index} (thinking)`);
+      console.log(`[Start] thinking`);
       break;
     case "text:delta":
     case "thinking:delta":
       process.stdout.write(event.delta);
       break;
     case "text:end":
-      console.log(`\n[End] part ${event.index} (text)`);
+      console.log(`\n[End] text`);
       break;
     case "thinking:end":
-      console.log(`\n[End] part ${event.index} (thinking)`);
+      console.log(`\n[End] thinking`);
       break;
     case "error":
       console.log(`\n[Stream error event] ${JSON.stringify(event.error)}`);

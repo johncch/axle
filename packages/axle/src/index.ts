@@ -125,6 +125,11 @@ export type {
   ToolResultPart,
 } from "./messages/message.js";
 
+// Compaction (@experimental)
+export type { CompactionCallback } from "./core/agent/index.js";
+export { validateCompactedMessages } from "./messages/compaction.js";
+export type { CompactionRecord } from "./messages/compaction.js";
+
 // Turns (public format)
 export { TurnAccumulator } from "./turns/accumulator.js";
 export type {
@@ -141,6 +146,7 @@ export type {
   AnnotationPlacement,
   AnnotationStatus,
   CitationPart,
+  CompactionPart,
   FilePart,
   ProviderToolAction,
   SubagentAction,
@@ -196,5 +202,4 @@ export type {
   ResolvedFileSource,
 } from "./utils/file.js";
 export { addStats, createStats, mergeStats } from "./utils/stats.js";
-export { createHandle } from "./utils/utils.js";
 export type { Handle } from "./utils/utils.js";

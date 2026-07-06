@@ -26,6 +26,10 @@
 - **Error Handling**: Use descriptive error messages, utilize custom error classes in `src/errors/`
 - **Testing**: Vitest with descriptive test names, organize with nested describe blocks
 
+# Commenting style guides
+- No narrating comments
+- Only create JSDoc style comments for exported main objects
+
 # Repository Structure
 
 - `packages/axle/`: Core runtime package

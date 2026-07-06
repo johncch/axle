@@ -168,13 +168,13 @@ describe("generate() happy paths", () => {
     // Messages accumulate correctly across turns
     if (result.ok) {
       expect(result.messages).toHaveLength(3);
-      // Turn 1: assistant with tool call
+      // Round 1: assistant with tool call
       expect(result.messages[0].role).toBe("assistant");
       expect((result.messages[0] as any).content[0].type).toBe("tool-call");
       expect((result.messages[0] as any).content[0].name).toBe("lookup");
       // Tool result
       expect(result.messages[1].role).toBe("tool");
-      // Turn 2: assistant with text
+      // Round 2: assistant with text
       expect(result.messages[2].role).toBe("assistant");
       expect((result.messages[2] as any).content[0].text).toBe("Here are the results");
       // final points to the last assistant message
@@ -294,17 +294,17 @@ describe("generate() error paths", () => {
       onToolCall: async () => ({ type: "success", content: "result" }),
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok && result.error.kind === "model") {
-      const inner = result.error.error.error;
-      expect(inner.type).toBe("MaxIterations");
-      expect(inner.message).toContain("max iterations");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.stopped).toBe("max-iterations");
+      expect(result.final.finishReason).toBe(AxleStopReason.FunctionCall);
+      expect(result.messages).toHaveLength(2);
     }
 
     const { spans } = writer;
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "generate")!;
-    expect(rootSpanData.status).toBe("error");
+    expect(rootSpanData.status).toBe("ok");
   });
 
   test("6.3 provider throws rejects promise and leaks spans", async () => {

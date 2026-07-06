@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0] - 2026-07-06
+
+- Added experimental context compaction: `agent.onCompaction(callback)` supplies the policy and strategy, `await agent.compact()` triggers it. Active history is replaced; `agent.history` now exposes `messages` (active), `archive` (raw append-only), and `compactions` (receipts). Compaction renders as an agent turn containing a new `compaction` part and emits `compaction:start`/`compaction:end` turn events.
+- Added `maxContextTokens` to `stream()`/`generate()`: a token budget for the tool loop, checked after each turn settles.
+- **Behavior change:** loop limits are stops, not errors. `maxIterations` and `maxContextTokens` return `ok: true` with `stopped: "max-iterations" | "token-limit"` instead of an error result. Non-positive limits throw at call time.
+- **Breaking:** `agent.history.log` is now `agent.history.messages`.
+- **Breaking:** `agent.snapshot()` is now async; it waits for in-flight work to settle so snapshots are always at rest.
+- **Breaking:** removed `Agent.restore()`; resume with `new Agent(config, session)`.
+- **Breaking:** removed `index` from `StreamEvent`. Correlate tool events by `id`; text/thinking deltas belong to the most recently opened part.
+- **Breaking:** removed the `createHandle` export.
+- Added an `agent-compaction` baseline check exercising compaction end to end against live providers.
+
 ## [0.25.5] - 2026-07-03
 
 - Add Claude Fable, Sonnet 5; Gemini 3.5 models
@@ -27,21 +39,13 @@
 
 ## [0.24.0] - 2026-06-11
 
-- Added experimental subagent tools for delegating bounded work to other agents.
+- Added experimental subagent tools for delegating bounded work to other agents, with child turn-event forwarding (`action:child-event`).
 - Added experimental parallel tool execution for running batched tool calls concurrently.
-- Added tool context helpers for reporting usage and adding contextual information during runs.
-- Improved streaming/tool-call behavior and error reporting for more consistent agent runs.
+- Added tool context helpers for reporting usage and adding contextual information during runs, including a flat per-provider/model `Stats.breakdown`.
+- Added the `tool:exec-error` stream event for fatal/aborted tool calls; `Agent.on()` now returns an unsubscribe function.
+- **Behavior change:** in `stream()`, a user-provided `onToolCall` returning `null`/`undefined` now falls through to executing the matching registry tool (matching `generate()`'s existing semantics) instead of producing a `not-found` result.
+- **Behavior change:** a tool throwing an error merely named `AbortError` while the run's signal is live is reported to the model as an ordinary tool error instead of aborting the run.
 - Fixed output fencing in generated content.
-
-## [Unreleased]
-
-- Added `createAgentTool` for delegating bounded work to subagents exposed as tools (experimental)
-- Added `parallelize` for wrapping a tool in a concurrent batch variant (experimental)
-- Added `ctx.reportUsage` to `ToolContext` and a flat per-provider/model `Stats.breakdown` for cost reconstruction across models (experimental)
-- Added child turn-event forwarding for subagent tools (`action:child-event`, rendered as agent action parts) (experimental)
-- Added `tool:exec-error` stream event for fatal/aborted tool calls (experimental); `Agent.on()` now returns an unsubscribe function
-- **Behavior change:** in `stream()`, a user-provided `onToolCall` returning `null`/`undefined` now falls through to executing the matching registry tool (matching `generate()`'s existing semantics) instead of producing a `not-found` result. Return an explicit `{ type: "error", ... }` result to block a tool.
-- **Behavior change:** a tool throwing an error merely named `AbortError` (e.g. an internal fetch timeout) while the run's signal is live is now reported to the model as an ordinary tool error instead of aborting the run
 
 ## [0.23.1] - 2026-06-08
 

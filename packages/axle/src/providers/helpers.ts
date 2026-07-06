@@ -69,6 +69,13 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
       messages: AxleMessage[];
       final: AxleAssistantMessage;
       usage?: Stats;
+      /**
+       * Present when a configured limit ended the tool loop at a request
+       * boundary. The conversation is well-formed and continuable;
+       * `final.finishReason` keeps the provider's own reason for the last
+       * message (typically `FunctionCall` — the model wanted to continue).
+       */
+      stopped?: "max-iterations" | "token-limit";
     }
   | {
       ok: false;
@@ -77,9 +84,55 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
       messages: AxleMessage[];
       error: GenerateError;
       usage?: Stats;
+      /**
+       * Present on a `parse` error when a loop limit ended an Instruct call
+       * before the model produced parseable output. The conversation is still
+       * well-formed and continuable.
+       */
+      stopped?: "max-iterations" | "token-limit";
     };
 
 export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TResponse>;
+
+/**
+ * Validate tool-loop limit options at the call boundary. Non-positive limits
+ * are caller bugs, not runtime conditions — they fail loudly here so the
+ * loop can assume a limit trip always has at least one completed turn.
+ */
+export function validateLoopLimits(options: {
+  maxIterations?: number;
+  maxContextTokens?: number;
+}): void {
+  if (options.maxIterations !== undefined && options.maxIterations < 1) {
+    throw new AxleError(`maxIterations must be at least 1 (got ${options.maxIterations})`, {
+      code: "INVALID_OPTIONS",
+    });
+  }
+  if (options.maxContextTokens !== undefined && options.maxContextTokens < 1) {
+    throw new AxleError(`maxContextTokens must be at least 1 (got ${options.maxContextTokens})`, {
+      code: "INVALID_OPTIONS",
+    });
+  }
+}
+
+/**
+ * Decide whether a configured limit ends the tool loop after a settled turn.
+ * Shared by stream() and generate() so the two loops cannot drift.
+ */
+export function checkLoopStop(
+  iterations: number,
+  usage: { in: number; out: number } | undefined,
+  limits: { maxIterations?: number; maxContextTokens?: number },
+): "max-iterations" | "token-limit" | undefined {
+  if (limits.maxIterations !== undefined && iterations >= limits.maxIterations) {
+    return "max-iterations";
+  }
+  const contextTokens = usage ? usage.in + usage.out : 0;
+  if (limits.maxContextTokens !== undefined && contextTokens >= limits.maxContextTokens) {
+    return "token-limit";
+  }
+  return undefined;
+}
 
 export function appendUsage(
   total: Stats,

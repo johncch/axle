@@ -1,5 +1,6 @@
-import type { Stats } from "../types.js";
+import type { CompactionRecord } from "../messages/compaction.js";
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
+import type { Stats } from "../types.js";
 import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
 
 export type AnnotationTarget =
@@ -24,6 +25,15 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "turn:user"; turn: Turn<TAnnotation> }
   | { type: "turn:start"; turnId: string; timing?: TimingInfo }
   | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats; timing?: TimingInfo }
+  // Compaction lifecycle — a compaction is a turn-level entry (@experimental)
+  | { type: "compaction:start"; id: string; timing?: TimingInfo }
+  | {
+      type: "compaction:end";
+      id: string;
+      outcome: "complete" | "skipped" | "error";
+      record?: CompactionRecord;
+      timing?: TimingInfo;
+    }
   // Part streaming
   | { type: "part:start"; turnId: string; part: TurnPart<TAnnotation> }
   | { type: "text:delta"; turnId: string; partId: string; delta: string }

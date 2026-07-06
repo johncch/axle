@@ -6,82 +6,51 @@ import type { Turn } from "../../src/turns/types.js";
 import { FileInfo } from "../../src/utils/file.js";
 
 describe("History", () => {
-  describe("turn management", () => {
-    test("addTurn adds a user turn", () => {
+  describe("state management", () => {
+    test("turns are set through replaceTurns", () => {
       const history = new History();
-      const turn: Turn = {
-        id: "t1",
-        owner: "user",
-        parts: [{ id: "p1", type: "text", text: "Hello" }],
-        status: "complete",
-      };
-      history.addTurn(turn);
+      const turns: Turn[] = [
+        {
+          id: "t1",
+          owner: "user",
+          parts: [{ id: "p1", type: "text", text: "Hello" }],
+          status: "complete",
+        },
+        {
+          id: "t2",
+          owner: "agent",
+          parts: [{ id: "p2", type: "text", text: "Hi" }],
+          status: "complete",
+        },
+      ];
+      history.replaceTurns(turns, []);
 
-      expect(history.turns).toHaveLength(1);
-      expect(history.turns[0].owner).toBe("user");
+      expect(history.turns).toHaveLength(2);
+      expect(history.turns[1].id).toBe("t2");
     });
 
-    test("addTurn adds an agent turn", () => {
+    test("append adds to the active conversation and the archive", () => {
       const history = new History();
-      const turn: Turn = {
-        id: "t1",
-        owner: "agent",
-        parts: [{ id: "p1", type: "text", text: "Hi there" }],
-        status: "complete",
-      };
-      history.addTurn(turn);
-
-      expect(history.turns).toHaveLength(1);
-      expect(history.turns[0].owner).toBe("agent");
-    });
-
-    test("latestTurn returns the most recent turn", () => {
-      const history = new History();
-      history.addTurn({
-        id: "t1",
-        owner: "user",
-        parts: [{ id: "p1", type: "text", text: "Hello" }],
-        status: "complete",
-      });
-      history.addTurn({
-        id: "t2",
-        owner: "agent",
-        parts: [{ id: "p2", type: "text", text: "Hi" }],
-        status: "complete",
+      history.append({ role: "user", content: "Hello" });
+      history.append({
+        role: "assistant",
+        id: "a1",
+        content: [{ type: "text", text: "Hi" }],
       });
 
-      expect(history.latestTurn()?.id).toBe("t2");
-    });
-  });
-
-  describe("log management", () => {
-    test("appendToLog adds a single message", () => {
-      const history = new History();
-      history.appendToLog({ role: "user", content: "Hello" });
-
-      expect(history.log).toHaveLength(1);
-      expect(history.log[0].role).toBe("user");
+      expect(history.messages).toHaveLength(2);
+      expect(history.messages[0].role).toBe("user");
+      expect(history.messages[1].role).toBe("assistant");
+      expect(history.archive).toHaveLength(2);
     });
 
-    test("appendToLog adds multiple messages", () => {
-      const history = new History();
-      history.appendToLog([
-        { role: "user", content: "Hello" },
-        { role: "assistant", id: "a1", content: [{ type: "text", text: "Hi" }] },
-      ]);
-
-      expect(history.log).toHaveLength(2);
-      expect(history.log[0].role).toBe("user");
-      expect(history.log[1].role).toBe("assistant");
-    });
-
-    test("constructor accepts initial turns and log", () => {
+    test("constructor accepts initial turns and messages", () => {
       const turns: Turn[] = [{ id: "t1", owner: "user", parts: [], status: "complete" }];
-      const log = [{ role: "user" as const, content: "Hello" }];
-      const history = new History({ turns, log });
+      const messages = [{ role: "user" as const, content: "Hello" }];
+      const history = new History({ turns, messages });
 
       expect(history.turns).toHaveLength(1);
-      expect(history.log).toHaveLength(1);
+      expect(history.messages).toHaveLength(1);
     });
   });
 
@@ -134,23 +103,6 @@ describe("History", () => {
       expect(files).toHaveLength(2);
       expect(files[0]).toBe(imageFile);
       expect(files[1]).toBe(documentFile);
-    });
-  });
-
-  describe("toString", () => {
-    test("serializes conversation to JSON string", () => {
-      const history = new History();
-      history.addTurn({
-        id: "t1",
-        owner: "user",
-        parts: [{ id: "p1", type: "text", text: "User message" }],
-        status: "complete",
-      });
-
-      const result = history.toString();
-      const parsed = JSON.parse(result);
-
-      expect(parsed.turns).toHaveLength(1);
     });
   });
 });

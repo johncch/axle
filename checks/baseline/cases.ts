@@ -236,7 +236,7 @@ export const baselineCases: BaselineCase[] = [
         "Using the previous message in this conversation, what is the code word?",
       ).final;
       const text = String(result.response ?? "");
-      const lastMessage = agent.history.log.at(-1);
+      const lastMessage = agent.history.messages.at(-1);
       const finishReason = lastMessage?.role === "assistant" ? lastMessage.finishReason : undefined;
       const failureReasons = [
         ...(!text.toLowerCase().includes("lavender")
@@ -258,6 +258,89 @@ export const baselineCases: BaselineCase[] = [
           response: result.response,
           finishReason,
           turnCount: agent.history.turns.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-compaction",
+    description:
+      "Agent compacts history via a model-written summary and the compacted conversation continues.",
+    async run({ provider, model, requestOptions }) {
+      // Reasoning smoke models (e.g. Together's Qwen) can spend the provider's
+      // default output budget on thinking; give the whole case headroom.
+      const caseOptions = { ...requestOptions, maxOutputTokens: 8192 };
+      const agent = new Agent({ provider, model, ...caseOptions });
+      await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
+        .final;
+      await agent.send("Also remember: the magic number is 7. Reply exactly: stored.").final;
+
+      const messagesBefore = agent.history.messages.length;
+
+      agent.onCompaction(async ({ messages }, { signal }) => {
+        const summary = await generate({
+          provider,
+          model,
+          ...caseOptions,
+          signal,
+          messages: [
+            {
+              role: "user",
+              content:
+                "Summarize this conversation for a fresh assistant taking over. " +
+                "Preserve any code words and numbers verbatim.\n\n" +
+                JSON.stringify(messages),
+            },
+          ],
+        });
+        if (!summary.ok) return null;
+        const text = getAssistantText(summary.final);
+        if (!text) return null;
+        return [{ role: "user", content: `Summary of the conversation so far: ${text}` }];
+      });
+
+      const record = await agent.compact();
+      const activeAfter = agent.history.messages.length;
+      const archiveAfter = agent.history.archive.length;
+      const compactionTurn = agent.history.turns.find((turn) =>
+        turn.parts.some((part) => part.type === "compaction"),
+      );
+
+      const result = await agent.send("Using only our conversation so far, what is the code word?")
+        .final;
+      const text = String(result.response ?? "");
+
+      const failureReasons = [
+        ...(record == null
+          ? ["compact() returned null; the callback declined or was skipped."]
+          : []),
+        ...(agent.history.compactions.length !== 1
+          ? [`Expected 1 compaction record, got ${agent.history.compactions.length}.`]
+          : []),
+        ...(activeAfter >= messagesBefore
+          ? [`Active history did not shrink: ${messagesBefore} -> ${activeAfter}.`]
+          : []),
+        ...(archiveAfter !== messagesBefore
+          ? [`Archive should retain the ${messagesBefore} raw messages, got ${archiveAfter}.`]
+          : []),
+        ...(compactionTurn?.status !== "complete"
+          ? [`Expected a complete compaction turn, got ${compactionTurn?.status ?? "none"}.`]
+          : []),
+        ...(!text.toLowerCase().includes("lavender")
+          ? ["Post-compaction turn did not recall the lavender code word."]
+          : []),
+      ];
+
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          response: result.response,
+          record,
+          messagesBefore,
+          activeAfter,
+          archiveAfter,
           usage: result.usage,
         },
       };
@@ -499,10 +582,10 @@ export const baselineCases: BaselineCase[] = [
       const text = String(result.response ?? "");
 
       return {
-        ok: text.includes("42") && hasSuccessfulToolResult(agent.history.log),
+        ok: text.includes("42") && hasSuccessfulToolResult(agent.history.messages),
         details: {
           response: result.response,
-          toolResults: getToolResultDetails(agent.history.log),
+          toolResults: getToolResultDetails(agent.history.messages),
           turnCount: agent.history.turns.length,
           usage: result.usage,
         },
@@ -594,7 +677,7 @@ export const baselineCases: BaselineCase[] = [
         "Use delegate_code_word to get the code word. Then answer with only that code word.",
       ).final;
       const text = String(result.response ?? "");
-      const toolResults = getToolResultDetails(agent.history.log);
+      const toolResults = getToolResultDetails(agent.history.messages);
       const parentReturnedCodeWord = text.toLowerCase().includes("orchid");
       const childReturnedExpectedValue = toolResults.some(
         (toolResult) =>
@@ -655,7 +738,7 @@ export const baselineCases: BaselineCase[] = [
       }
 
       const fatal = thrown instanceof AxleToolFatalError ? thrown : undefined;
-      const logRoles = agent.history.log.map((message) => message.role);
+      const logRoles = agent.history.messages.map((message) => message.role);
       return {
         ok: Boolean(
           fatal &&
@@ -769,7 +852,7 @@ export const baselineCases: BaselineCase[] = [
       if (!result.ok) return fail({ error: result.error });
 
       const text = String(result.response ?? "").toLowerCase();
-      const batchResult = getToolResultDetails(agent.history.log).find(
+      const batchResult = getToolResultDetails(agent.history.messages).find(
         (toolResult) => toolResult.name === "lookup_code_word_batch",
       );
       const batchContent = batchResult?.content ?? "";

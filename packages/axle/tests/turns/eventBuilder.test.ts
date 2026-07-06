@@ -48,16 +48,15 @@ describe("TurnEventBuilder", () => {
     const start = builder.startAgentTurn();
 
     const events: TurnEvent[] = [];
-    events.push(...builder.handleStreamEvent({ type: "text:start", index: 0 }));
+    events.push(...builder.handleStreamEvent({ type: "text:start" }));
     events.push(
       ...builder.handleStreamEvent({
         type: "text:delta",
-        index: 0,
         delta: "Hello",
         accumulated: "Hello",
       }),
     );
-    events.push(...builder.handleStreamEvent({ type: "text:end", index: 0, final: "Hello" }));
+    events.push(...builder.handleStreamEvent({ type: "text:end", final: "Hello" }));
 
     expect(events.map((event) => event.type)).toEqual(["part:start", "text:delta", "part:end"]);
     expect(events[0]).toMatchObject({
@@ -83,7 +82,6 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "tool:request",
-        index: 0,
         id: "tc1",
         name: "calculator",
       }),
@@ -91,7 +89,6 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "tool:args-delta",
-        index: 0,
         id: "tc1",
         name: "calculator",
         delta: '{"expression":',
@@ -101,7 +98,6 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "tool:exec-start",
-        index: 0,
         id: "tc1",
         name: "calculator",
         parameters: { expression: "2+2" },
@@ -111,7 +107,6 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "tool:exec-complete",
-        index: 0,
         id: "tc1",
         name: "calculator",
         result: { type: "success", content: "4" },
@@ -138,11 +133,10 @@ describe("TurnEventBuilder", () => {
   test("tool errors emit action:error", () => {
     const builder = new TurnEventBuilder();
     builder.startAgentTurn();
-    builder.handleStreamEvent({ type: "tool:request", index: 0, id: "tc1", name: "calculator" });
+    builder.handleStreamEvent({ type: "tool:request", id: "tc1", name: "calculator" });
 
     const events = builder.handleStreamEvent({
       type: "tool:exec-complete",
-      index: 0,
       id: "tc1",
       name: "calculator",
       result: { type: "error", error: { type: "runtime", message: "fail" } },
@@ -163,7 +157,6 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "provider-tool:start",
-        index: 0,
         id: "it1",
         name: "web_search",
       }),
@@ -171,7 +164,6 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "provider-tool:complete",
-        index: 0,
         id: "it1",
         name: "web_search",
         output: "search results",
@@ -194,7 +186,6 @@ describe("TurnEventBuilder", () => {
     };
     const events = builder.handleStreamEvent({
       type: "citation",
-      index: 0,
       citations: [citation],
     });
 
@@ -264,6 +255,6 @@ describe("TurnEventBuilder", () => {
     const builder = new TurnEventBuilder();
 
     expect(builder.finalizeTurn()).toEqual([]);
-    expect(builder.handleStreamEvent({ type: "text:start", index: 0 })).toEqual([]);
+    expect(builder.handleStreamEvent({ type: "text:start" })).toEqual([]);
   });
 });

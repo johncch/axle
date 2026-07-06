@@ -3,8 +3,8 @@ import type {
   Annotation,
   FileInfo,
   Stats,
-  TimingInfo,
   Turn,
+  TimingInfo,
   TurnEvent,
   TurnMetadata,
 } from "../src/ui.js";

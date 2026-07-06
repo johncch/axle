@@ -17,11 +17,11 @@ describe("TurnAccumulator", () => {
       turnId: "t1",
       part: { id: "p1", type: "text", text: "" },
     });
-    expect(result.state.turns[0].parts).toEqual([{ id: "p1", type: "text", text: "" }]);
+    expect((result.state.turns[0] as Turn).parts).toEqual([{ id: "p1", type: "text", text: "" }]);
 
     accumulator.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "Hello" });
     result = accumulator.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: " world" });
-    expect(result.state.turns[0].parts[0]).toEqual({
+    expect((result.state.turns[0] as Turn).parts[0]).toEqual({
       id: "p1",
       type: "text",
       text: "Hello world",
@@ -77,7 +77,7 @@ describe("TurnAccumulator", () => {
       result: { type: "success", content: "done" },
     });
 
-    const part = result.state.turns[0].parts[0];
+    const part = (result.state.turns[0] as Turn).parts[0];
     expect(part).toMatchObject({
       type: "action",
       kind: "tool",
@@ -124,12 +124,12 @@ describe("TurnAccumulator", () => {
       continuity: { provider: "openai", encrypted: "encrypted" },
     });
 
-    expect(result.state.turns[0].parts[0]).toMatchObject({
+    expect((result.state.turns[0] as Turn).parts[0]).toMatchObject({
       type: "text",
       text: "OpenAI",
       citations: [{ source: { type: "web", title: "OpenAI", url: "https://openai.com" } }],
     });
-    expect(result.state.turns[0].parts[1]).toMatchObject({
+    expect((result.state.turns[0] as Turn).parts[1]).toMatchObject({
       type: "thinking",
       summary: "Checked sources.",
       redacted: false,
@@ -150,7 +150,7 @@ describe("TurnAccumulator", () => {
       part: { id: "p1", type: "citation", citations: [citation] },
     });
 
-    expect(result.state.turns[0].parts[0]).toMatchObject({
+    expect((result.state.turns[0] as Turn).parts[0]).toMatchObject({
       type: "citation",
       citations: [citation],
     });
@@ -221,7 +221,7 @@ describe("TurnAccumulator", () => {
         data: { value: 1 },
       },
     ]);
-    expect(result.state.turns[0].annotations).toEqual([
+    expect((result.state.turns[0] as Turn).annotations).toEqual([
       {
         id: "a2",
         kind: "metric",
@@ -230,7 +230,7 @@ describe("TurnAccumulator", () => {
         data: { value: 2 },
       },
     ]);
-    expect(result.state.turns[0].parts[0].annotations).toEqual([
+    expect((result.state.turns[0] as Turn).parts[0].annotations).toEqual([
       {
         id: "a3",
         kind: "metric",
@@ -279,7 +279,7 @@ describe("TurnAccumulator", () => {
       },
     });
 
-    expect(result.state.turns[0].annotations).toEqual([
+    expect((result.state.turns[0] as Turn).annotations).toEqual([
       {
         id: "eval-1",
         kind: "eval",
@@ -366,7 +366,7 @@ describe("TurnAccumulator", () => {
       },
     };
 
-    expect(subagent.detail.children[0].annotations?.[0].kind).toBe("eval");
+    expect((subagent.detail.children[0] as Turn<AppAnnotation>).annotations?.[0].kind).toBe("eval");
 
     // @ts-expect-error label is required by the base annotation render contract.
     const _missingLabel: AppAnnotation = { id: "bad", kind: "sandbox", data: { image: "node" } };

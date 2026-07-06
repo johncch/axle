@@ -62,7 +62,7 @@ describe("deferred file resolution", () => {
     await agent.send(instruct).final;
 
     expect(JSON.stringify(providerInput)).toContain(resolvedUrl);
-    expect(JSON.stringify(agent.history.log)).not.toContain(resolvedUrl);
+    expect(JSON.stringify(agent.history.messages)).not.toContain(resolvedUrl);
     expect(JSON.stringify(agent.history.turns)).not.toContain(resolvedUrl);
     expect(JSON.stringify(events)).not.toContain(resolvedUrl);
   });
@@ -158,7 +158,7 @@ describe("deferred file resolution", () => {
     expect(JSON.stringify(providerInputs[1])).toContain("resolved-content-1");
     expect(JSON.stringify(providerInputs[2])).toContain("resolved-content-2");
 
-    const snapshotJson = JSON.stringify(agent.snapshot());
+    const snapshotJson = JSON.stringify(await agent.snapshot());
     expect(snapshotJson).toContain('"type":"ref"');
     expect(snapshotJson).toContain('"id":"note-1"');
     expect(snapshotJson).not.toContain("resolved-content-");
