@@ -198,6 +198,7 @@ export interface SavedAgent<TAnnotation extends Annotation = Annotation> {
 export interface AgentResult<T = string> {
   ok: true;
   response: T;
+  error?: undefined;
   turn: Turn;
   usage: Stats;
 }

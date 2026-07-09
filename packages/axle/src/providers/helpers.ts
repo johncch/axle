@@ -71,6 +71,7 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
       response: TResponse;
       messages: AxleMessage[];
       final: AxleAssistantMessage;
+      error?: undefined;
       usage?: Stats;
       /**
        * Present when a configured limit ended the tool loop at a request

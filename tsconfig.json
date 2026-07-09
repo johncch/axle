@@ -3,15 +3,13 @@
     "target": "es2024",
     "module": "node16",
     "moduleResolution": "node16",
-    "baseUrl": ".",
     "paths": {
-      "@fifthrevision/axle": ["packages/axle/src/index.ts"],
-      "@fifthrevision/axle/ui": ["packages/axle/src/ui.ts"],
-      "@fifthrevision/axle/models": ["packages/axle/src/providers/models.ts"]
+      "@fifthrevision/axle": ["./packages/axle/src/index.ts"],
+      "@fifthrevision/axle/ui": ["./packages/axle/src/ui.ts"],
+      "@fifthrevision/axle/models": ["./packages/axle/src/providers/models.ts"]
     },
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "ignoreDeprecations": "6.0",
     "skipLibCheck": true
   },
   "exclude": ["**/dist/**", "node_modules"]
