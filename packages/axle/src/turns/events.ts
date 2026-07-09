@@ -78,4 +78,4 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   // Annotations
   | AnnotationEvent<TAnnotation>
   // Error
-  | { type: "error"; error: { type: string; message: string } };
+  | { type: "error"; turnId?: string; error: { type: string; message: string } };

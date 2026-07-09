@@ -29,6 +29,7 @@ import {
 import { AIProvider, AxleModelRequestOptions, AxleStopReason, ModelResult } from "./types.js";
 
 export type {
+  AxleFailure,
   GenerateError,
   GenerateResult,
   StreamResult,
@@ -239,7 +240,7 @@ async function runGenerate(
         return endWithResult({
           ok: false,
           messages: newMessages,
-          error: { kind: "model", error: response },
+          error: { kind: "model", error: response, message: response.error.message },
           usage,
         });
       }

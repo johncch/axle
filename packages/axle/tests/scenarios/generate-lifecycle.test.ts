@@ -255,6 +255,7 @@ describe("generate() error paths", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe("model");
+      expect(result.error.message).toBe("Internal server error");
     }
 
     const { spans } = writer;

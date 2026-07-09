@@ -5,7 +5,7 @@ import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { EventLevel, Span } from "../../observability/types.js";
-import type { GenerateError } from "../../providers/helpers.js";
+import type { AxleFailure } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";
@@ -205,7 +205,7 @@ export interface AgentResult<T = string> {
 export interface AgentErrorResult {
   ok: false;
   response?: undefined;
-  error: GenerateError;
+  error: AxleFailure;
   turn: Turn | undefined;
   usage: Stats;
 }

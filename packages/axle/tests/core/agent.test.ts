@@ -1252,6 +1252,13 @@ describe("Agent", () => {
       const result = await agent.send("Hi").final;
 
       expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toBe("Something broke");
+      expect(result.turn?.error).toEqual({ type: "model", message: "Something broke" });
+      expect(agent.history.turns.at(-1)?.error).toEqual({
+        type: "model",
+        message: "Something broke",
+      });
       expect(memory.record).not.toHaveBeenCalled();
     });
 
@@ -1312,8 +1319,7 @@ describe("Agent", () => {
         turn: { parts: Array<{ type: string; text?: string }> };
       };
       const textPart = userEvent.turn.parts.find((p: { type: string }) => p.type === "text") as
-        | { text: string }
-        | undefined;
+        { text: string } | undefined;
       expect(textPart?.text).toContain("cats");
     });
 

@@ -94,6 +94,8 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   timing?: TimingInfo;
   /** Token usage accumulated for this turn, when available. */
   usage?: Stats;
+  /** Terminal model or provider error associated with this turn. */
+  error?: { type: string; message: string };
 }
 
 /**
@@ -288,9 +290,7 @@ export interface ProviderToolAction<
  * Any action part in a turn.
  */
 export type ActionPart<TAnnotation extends Annotation = Annotation> =
-  | ToolAction<TAnnotation>
-  | SubagentAction<TAnnotation>
-  | ProviderToolAction<TAnnotation>;
+  ToolAction<TAnnotation> | SubagentAction<TAnnotation> | ProviderToolAction<TAnnotation>;
 
 /**
  * Renderable result for an action.

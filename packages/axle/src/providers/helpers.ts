@@ -57,10 +57,13 @@ export interface ToolExecutionOutcome {
   usage?: Stats;
 }
 
-export type GenerateError =
-  | { kind: "model"; error: ModelError }
-  | { kind: "tool"; error: { name: string; message: string } }
+export type AxleFailure =
+  | { kind: "model"; error: ModelError; message: string }
+  | { kind: "tool"; error: { name: string; message: string }; message: string }
   | { kind: "parse"; error: unknown; message: string };
+
+/** @deprecated Use AxleFailure. */
+export type GenerateError = AxleFailure;
 
 export type GenerateResult<TResponse = AxleAssistantMessage> =
   | {
@@ -82,7 +85,7 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
       response?: undefined;
       final?: AxleAssistantMessage;
       messages: AxleMessage[];
-      error: GenerateError;
+      error: AxleFailure;
       usage?: Stats;
       /**
        * Present on a `parse` error when a loop limit ended an Instruct call

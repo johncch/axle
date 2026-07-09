@@ -419,15 +419,10 @@ export class TurnEventBuilder {
 
       case "error": {
         const error = event.error;
-        const msg =
-          error.kind === "model"
-            ? error.error.error.message
-            : error.kind === "tool"
-              ? `Tool error (${error.error.name}): ${error.error.message}`
-              : `Parse error: ${error.message}`;
         events.push({
           type: "error",
-          error: { type: error.kind, message: msg },
+          turnId,
+          error: { type: error.kind, message: error.message },
         });
         break;
       }

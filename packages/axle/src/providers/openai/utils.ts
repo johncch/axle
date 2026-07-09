@@ -15,15 +15,44 @@ import type { ResolvedProviderTool, ToolChoice } from "../types.js";
 
 export function prepareTools(tools?: Array<ToolDefinition>) {
   if (tools && tools.length > 0) {
-    return tools.map((tool) => ({
-      type: "function" as const,
-      strict: true,
-      name: tool.name,
-      description: tool.description,
-      parameters: z.toJSONSchema(tool.schema),
-    }));
+    return tools.map((tool) => {
+      const parameters = z.toJSONSchema(tool.schema);
+      return {
+        type: "function" as const,
+        strict: allPropertiesRequired(parameters),
+        name: tool.name,
+        description: tool.description,
+        parameters,
+      };
+    });
   }
   return undefined;
+}
+
+/* Chong Han: Jul 9, 2026
+ This function exists to provide conditional strict mode on the tool-call schema.
+ Any optional field will toggle it to off, because strict mode wants the parameter to
+ be nullable as opposed to not be in the required array.
+ This works to lower our strict requiremen and is a candidate for future simplification
+ if we choose to remove strict.
+ */
+function allPropertiesRequired(schema: unknown): boolean {
+  if (!schema || typeof schema !== "object") return true;
+  if (Array.isArray(schema)) return schema.every(allPropertiesRequired);
+
+  const node = schema as Record<string, unknown>;
+  if (node.properties && typeof node.properties === "object" && !Array.isArray(node.properties)) {
+    if (node.additionalProperties !== false) return false;
+    const properties = Object.keys(node.properties);
+    const required = new Set(Array.isArray(node.required) ? node.required : []);
+    if (properties.some((property) => !required.has(property))) return false;
+
+    if (!Object.values(node.properties).every(allPropertiesRequired)) return false;
+  }
+
+  return ["items", "prefixItems", "anyOf", "oneOf", "allOf", "$defs", "definitions"].every((key) =>
+    allPropertiesRequired(node[key]),
+  );
 }
 
 const PROVIDER_TOOL_MAP: Record<string, string> = {

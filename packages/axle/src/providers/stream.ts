@@ -29,7 +29,7 @@ import {
   resolveToolRegistry,
   resolveTools,
   validateLoopLimits,
-  type GenerateError,
+  type AxleFailure,
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -113,7 +113,7 @@ export type StreamEvent =
   | { type: "provider-tool:start"; id: string; name: string }
   | { type: "provider-tool:complete"; id: string; name: string; output?: unknown }
   // Error
-  | { type: "error"; error: GenerateError };
+  | { type: "error"; error: AxleFailure };
 
 export type StreamEventCallback = (event: StreamEvent) => void;
 
@@ -388,6 +388,7 @@ async function run(
         messages: newMessages,
         error: {
           kind: "model",
+          message: outcome.message,
           error: {
             type: "error",
             error: { type: outcome.errorType, message: outcome.message },
@@ -404,6 +405,7 @@ async function run(
         messages: newMessages,
         error: {
           kind: "model",
+          message: "Stream ended without a completion signal",
           error: {
             type: "error",
             error: {

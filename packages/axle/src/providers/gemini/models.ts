@@ -1,6 +1,4 @@
 export const Models = {
-  GEMINI_3_5_PRO: "gemini-3.5-pro",
-
   GEMINI_3_5_FLASH: "gemini-3.5-flash",
 
   GEMINI_3_1_PRO_PREVIEW: "gemini-3.1-pro-preview",
@@ -29,7 +27,6 @@ export const Models = {
 } as const;
 
 export const MULTIMODAL_MODELS = [
-  Models.GEMINI_3_5_PRO,
   Models.GEMINI_3_5_FLASH,
   Models.GEMINI_3_1_PRO,
   Models.GEMINI_3_1_PRO_PREVIEW_CUSTOMTOOLS,

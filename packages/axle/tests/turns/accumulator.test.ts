@@ -41,6 +41,22 @@ describe("TurnAccumulator", () => {
     });
   });
 
+  test("retains model errors on their turn", () => {
+    const accumulator = new TurnAccumulator();
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+
+    const result = accumulator.apply({
+      type: "error",
+      turnId: "t1",
+      error: { type: "model", message: "Rate limit exceeded" },
+    });
+
+    expect(result.state.turns[0]).toMatchObject({
+      id: "t1",
+      error: { type: "model", message: "Rate limit exceeded" },
+    });
+  });
+
   test("accumulates action events", () => {
     const accumulator = new TurnAccumulator();
 

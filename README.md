@@ -191,9 +191,7 @@ a two-state result:
 ```typescript
 if (!result.ok) {
   result.error.kind; // "model" | "tool" | "parse"
-  if (result.error.kind === "parse") {
-    result.error.message;
-  }
+  result.error.message; // present for every error kind
   return;
 }
 
@@ -666,6 +664,8 @@ to `TurnEvent` streams: text deltas are folded into text parts, tool call
 lifecycles become stable action parts, and tool results are collapsed back into
 the action part that produced them. `AxleMessage[]` remains the canonical model
 conversation state; turns do not affect model input or tool routing.
+Model and provider failures are retained on the agent turn as `turn.error`, so
+accumulated and restored render state includes the terminal error message.
 
 Compaction (see below) appears in the turns as an ordinary agent turn
 containing a single `compaction` part; renderers that don't handle that part

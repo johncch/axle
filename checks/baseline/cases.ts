@@ -1101,13 +1101,16 @@ const addNumbersTool: ExecutableTool<
   z.ZodObject<{
     a: z.ZodNumber;
     b: z.ZodNumber;
+    note: z.ZodOptional<z.ZodString>;
   }>
 > = {
   name: "add_numbers",
-  description: "Add two numbers and return their sum.",
+  description:
+    "Add two numbers and return their sum. An optional note may describe the calculation.",
   schema: z.object({
     a: z.number(),
     b: z.number(),
+    note: z.string().optional(),
   }),
   async execute(input) {
     return String(input.a + input.b);

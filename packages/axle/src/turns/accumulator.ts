@@ -300,7 +300,9 @@ export class TurnAccumulator<
         return this.replaceAnnotation(event, true);
 
       case "error":
-        return this.handled(event);
+        return event.turnId
+          ? this.updateTurn(event.turnId, event, (turn) => ({ ...turn, error: event.error }))
+          : this.handled(event);
 
       case "action:child-event":
         return this.updatePart(event.turnId, event.partId, event, (part) => {

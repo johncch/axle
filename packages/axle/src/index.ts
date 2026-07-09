@@ -55,7 +55,7 @@ export type {
   GenerateInstructResult,
   GenerateParams,
 } from "./providers/generate.js";
-export type { StreamResult } from "./providers/helpers.js";
+export type { AxleFailure, GenerateError, StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
 export { OpenAI, openai } from "./providers/openai/index.js";
 export type {
