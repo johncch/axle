@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1] - 2026-07-09
+
+- Fixed OpenAI tool schemas so optional properties are accepted correctly.
+- Improved generation failure handling and exposed the clearer `AxleFailure` name while keeping `GenerateError` as an alias.
+- Improved stream turn accumulation error handling for more reliable failures.
+- Removed the Gemini 3.5 Pro model option.
+
 ## [0.26.0] - 2026-07-06
 
 - Added experimental context compaction: `agent.onCompaction(callback)` supplies the policy and strategy, `await agent.compact()` triggers it. Active history is replaced; `agent.history` now exposes `messages` (active), `archive` (raw append-only), and `compactions` (receipts). Compaction renders as an agent turn containing a new `compaction` part and emits `compaction:start`/`compaction:end` turn events.
