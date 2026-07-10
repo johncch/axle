@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.27.0] - 2026-07-10
+
+- Improved model registry support for clearer model selection.
+- Updated TypeScript support and improved type narrowing definitions.
+
 ## [0.26.1] - 2026-07-09
 
 - Fixed OpenAI tool schemas so optional properties are accepted correctly.
