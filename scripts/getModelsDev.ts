@@ -1,0 +1,319 @@
+import { writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+interface ModelsDevModel {
+  id: string;
+  status?: string;
+  release_date?: string;
+  modalities?: {
+    input?: string[];
+    output?: string[];
+  };
+  limit?: {
+    context?: number;
+    output?: number;
+  };
+}
+
+interface ModelsDevProvider {
+  models: Record<string, ModelsDevModel>;
+}
+
+type ModelsDevCatalog = Record<string, ModelsDevProvider>;
+
+interface Source {
+  namespace: string;
+  provider: string;
+  publisher: string;
+  prefix?: string;
+  releasedSince?: string;
+  modelIds?: readonly string[];
+  /**
+   * The author prefix OpenRouter uses for this publisher, when the models are
+   * routed through OpenRouter and its slug differs from the canonical identity
+   * (e.g. Z.AI's `zai/` publisher is `z-ai/` on OpenRouter). Set it to have the
+   * generator emit an entry in OpenRouterModelAliases for any divergent model.
+   */
+  openrouterAuthor?: string;
+}
+
+interface ModelRecord {
+  namespace: string;
+  constant: string;
+  id: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  multimodal: boolean;
+}
+
+const mistralModels = [
+  "magistral-medium-latest",
+  "magistral-small",
+  "ministral-3b-latest",
+  "ministral-8b-latest",
+  "mistral-large-latest",
+  "mistral-medium-latest",
+  "mistral-small-latest",
+];
+
+const sources: Source[] = [
+  { namespace: "OpenAI", provider: "openai", publisher: "openai" },
+  { namespace: "Anthropic", provider: "anthropic", publisher: "anthropic" },
+  { namespace: "Google", provider: "google", publisher: "google" },
+  {
+    namespace: "Qwen",
+    provider: "openrouter",
+    publisher: "qwen",
+    prefix: "qwen/",
+    releasedSince: "2026-02-15",
+  },
+  { namespace: "Mistral", provider: "mistral", publisher: "mistral", modelIds: mistralModels },
+  {
+    namespace: "DeepSeek",
+    provider: "deepseek",
+    publisher: "deepseek",
+    openrouterAuthor: "deepseek",
+    releasedSince: "2026-04-24",
+  },
+  {
+    namespace: "MiniMax",
+    provider: "minimax",
+    publisher: "minimax",
+    openrouterAuthor: "minimax",
+    releasedSince: "2026-03-18",
+  },
+  {
+    namespace: "Moonshot",
+    provider: "moonshotai",
+    publisher: "moonshotai",
+    openrouterAuthor: "moonshotai",
+    releasedSince: "2026-04-21",
+  },
+  {
+    namespace: "ZAI",
+    provider: "zai",
+    publisher: "zai",
+    openrouterAuthor: "z-ai",
+    releasedSince: "2026-04-07",
+  },
+];
+
+const releaseDateCutoff = new Date();
+releaseDateCutoff.setMonth(releaseDateCutoff.getMonth() - 24);
+
+async function main() {
+  const response = await fetch("https://models.dev/api.json");
+  if (!response.ok) throw new Error(`Models.dev request failed: ${response.status}`);
+
+  const catalog = (await response.json()) as ModelsDevCatalog;
+  const records = assignConstants(sources.flatMap((source) => selectModels(catalog, source)));
+  assertUnique(records);
+
+  const output = resolve(process.cwd(), "packages/axle/src/models.ts");
+  await writeFile(output, render(records));
+  console.log(`Generated ${records.length} models at ${output}`);
+
+  const aliases = buildOpenRouterAliases(catalog, records);
+  const aliasOutput = resolve(
+    process.cwd(),
+    "packages/axle/src/providers/chatcompletions/vendors/openrouter/models.generated.ts",
+  );
+  await writeFile(aliasOutput, renderOpenRouterAliases(aliases));
+  console.log(`Generated ${Object.keys(aliases).length} OpenRouter aliases at ${aliasOutput}`);
+}
+
+function buildOpenRouterAliases(
+  catalog: ModelsDevCatalog,
+  records: ModelRecord[],
+): Record<string, string> {
+  const openRouterModelIds = Object.keys(catalog.openrouter?.models ?? {});
+  const authorByNamespace = new Map(
+    sources
+      .filter((source) => source.openrouterAuthor)
+      .map((source) => [source.namespace, source.openrouterAuthor!] as const),
+  );
+
+  const aliases: Record<string, string> = {};
+  for (const record of records) {
+    const author = authorByNamespace.get(record.namespace);
+    if (!author) continue;
+
+    const identitySlug = record.id.slice(record.id.indexOf("/") + 1).toLowerCase();
+    const wireIds = openRouterModelIds.filter((id) => {
+      const separator = id.indexOf("/");
+      if (separator === -1) return false;
+      return (
+        id.slice(0, separator).toLowerCase() === author.toLowerCase() &&
+        id.slice(separator + 1).toLowerCase() === identitySlug
+      );
+    });
+
+    if (wireIds.length === 0) continue;
+    if (wireIds.length > 1) {
+      throw new Error(`Ambiguous OpenRouter slug for ${record.id}: ${wireIds.join(", ")}`);
+    }
+    if (wireIds[0] !== record.id) aliases[record.id] = wireIds[0];
+  }
+
+  return aliases;
+}
+
+function renderOpenRouterAliases(aliases: Record<string, string>): string {
+  const entries = Object.keys(aliases)
+    .sort()
+    .map((identity) => `  ${JSON.stringify(identity)}: ${JSON.stringify(aliases[identity])},`);
+
+  return [
+    "// Generated by scripts/getModelsDev.ts. Do not edit by hand.",
+    "//",
+    "// Maps a publisher-qualified model identity (as exported from Models) to the",
+    "// slug OpenRouter's API expects, for models whose OpenRouter author/casing",
+    "// differs from the publisher's canonical form.",
+    "export const OpenRouterModelAliases: Record<string, string> = {",
+    ...entries,
+    "};",
+    "",
+  ].join("\n");
+}
+
+function selectModels(catalog: ModelsDevCatalog, source: Source): ModelRecord[] {
+  const provider = catalog[source.provider];
+  if (!provider) throw new Error(`Models.dev is missing provider ${source.provider}`);
+
+  return Object.values(provider.models)
+    .filter((model) => !source.prefix || model.id.startsWith(source.prefix))
+    .filter(isTextGenerationModel)
+    .filter((model) => meetsSourcePolicy(source, model))
+    .map((model) => ({
+      namespace: source.namespace,
+      constant: constantName(source.prefix ? model.id.slice(source.prefix.length) : model.id),
+      id: qualifyModelId(source, model.id),
+      contextWindow: model.limit?.context,
+      maxOutputTokens: model.limit?.output,
+      multimodal: model.modalities?.input?.some((modality) => modality !== "text") ?? false,
+    }));
+}
+
+function qualifyModelId(source: Source, id: string): string {
+  return id.startsWith(`${source.publisher}/`) ? id : `${source.publisher}/${id}`;
+}
+
+function meetsSourcePolicy(source: Source, model: ModelsDevModel): boolean {
+  if (source.modelIds && !source.modelIds.includes(model.id)) return false;
+  if (!source.releasedSince) return true;
+
+  const releaseDate = model.release_date ? new Date(model.release_date) : undefined;
+  return (
+    releaseDate !== undefined &&
+    !Number.isNaN(releaseDate.valueOf()) &&
+    releaseDate >= new Date(source.releasedSince)
+  );
+}
+
+function isTextGenerationModel(model: ModelsDevModel): boolean {
+  const releaseDate = model.release_date ? new Date(model.release_date) : undefined;
+
+  return (
+    model.status !== "deprecated" &&
+    releaseDate !== undefined &&
+    !Number.isNaN(releaseDate.valueOf()) &&
+    releaseDate >= releaseDateCutoff &&
+    model.modalities?.input?.includes("text") === true &&
+    model.modalities.output?.includes("text") === true &&
+    !/(?:embed|embedding|image|tts|whisper|audio|realtime|moderation)/i.test(model.id)
+  );
+}
+
+function assignConstants(records: ModelRecord[]): ModelRecord[] {
+  const seen = new Map<string, number>();
+
+  return [...records]
+    .sort((a, b) => a.namespace.localeCompare(b.namespace) || a.id.localeCompare(b.id))
+    .map((record) => {
+      const key = `${record.namespace}.${record.constant}`;
+      const occurrence = seen.get(key) ?? 0;
+      seen.set(key, occurrence + 1);
+      return occurrence === 0
+        ? record
+        : { ...record, constant: `${record.constant}_${occurrence + 1}` };
+    });
+}
+
+function constantName(id: string): string {
+  return id
+    .replace(/[^a-zA-Z0-9]/g, "_")
+    .replace(/^\d/, "_$&")
+    .toUpperCase();
+}
+
+function assertUnique(records: ModelRecord[]) {
+  const constants = new Set<string>();
+  const ids = new Set<string>();
+
+  for (const record of records) {
+    const constant = `${record.namespace}.${record.constant}`;
+    if (constants.has(constant)) throw new Error(`Duplicate model constant ${constant}`);
+    if (ids.has(record.id)) throw new Error(`Duplicate model ID ${record.id}`);
+    constants.add(constant);
+    ids.add(record.id);
+  }
+}
+
+function render(records: ModelRecord[]): string {
+  const namespaces = new Map<string, ModelRecord[]>();
+  for (const record of records) {
+    const models = namespaces.get(record.namespace) ?? [];
+    models.push(record);
+    namespaces.set(record.namespace, models);
+  }
+
+  for (const models of namespaces.values()) {
+    models.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  const lines = [
+    "export interface ModelMetadata {",
+    "  contextWindow?: number;",
+    "  maxOutputTokens?: number;",
+    "  multimodal: boolean;",
+    "}",
+    "",
+    "export const Models = {",
+  ];
+
+  for (const [namespace, models] of namespaces) {
+    lines.push(`  ${namespace}: {`);
+    for (const model of models) {
+      lines.push(`    ${model.constant}: ${JSON.stringify(model.id)},`);
+    }
+    lines.push("  },");
+  }
+
+  lines.push(
+    "} as const;",
+    "",
+    "export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {",
+  );
+
+  for (const [namespace, models] of namespaces) {
+    for (const model of models) {
+      lines.push(`  [Models.${namespace}.${model.constant}]: {`);
+      if (model.contextWindow !== undefined) {
+        lines.push(`    contextWindow: ${formatNumber(model.contextWindow)},`);
+      }
+      if (model.maxOutputTokens !== undefined) {
+        lines.push(`    maxOutputTokens: ${formatNumber(model.maxOutputTokens)},`);
+      }
+      lines.push(`    multimodal: ${model.multimodal},`, "  },");
+    }
+  }
+
+  lines.push("};", "");
+  return lines.join("\n");
+}
+
+function formatNumber(value: number): string {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "_");
+}
+
+await main();

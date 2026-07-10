@@ -24,7 +24,7 @@ import {
 import {
   isOpenRouterTextAnchoredCitation,
   normalizeOpenRouterCitation,
-} from "./vendors/openrouter.js";
+} from "./vendors/openrouter/index.js";
 
 export async function createGenerationRequest(
   params: ProviderGenerationParams &

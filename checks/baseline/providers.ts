@@ -1,10 +1,5 @@
 import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
-import {
-  AnthropicModels,
-  ChatCompletionsModels,
-  GeminiModels,
-  OpenAIModels,
-} from "@fifthrevision/axle/models";
+import { Models } from "@fifthrevision/axle/models";
 
 export type BaselineProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together";
 
@@ -18,25 +13,25 @@ export interface BaselineProviderTarget {
 export const baselineProviderTargets: BaselineProviderTarget[] = [
   {
     id: "openai",
-    model: OpenAIModels.GPT_5_4_MINI,
+    model: Models.OpenAI.GPT_5_4_MINI,
     default: true,
     createProvider: () => openai(getEnv("OPENAI_API_KEY")),
   },
   {
     id: "anthropic",
-    model: AnthropicModels.CLAUDE_HAIKU_4_5,
+    model: Models.Anthropic.CLAUDE_HAIKU_4_5,
     default: true,
     createProvider: () => anthropic(getEnv("ANTHROPIC_API_KEY")),
   },
   {
     id: "gemini",
-    model: GeminiModels.GEMINI_3_FLASH,
+    model: Models.Google.GEMINI_3_FLASH_PREVIEW,
     default: true,
     createProvider: () => gemini(getEnv("GEMINI_API_KEY")),
   },
   {
     id: "openrouter",
-    model: ChatCompletionsModels.QWEN_3_6_PLUS,
+    model: Models.Qwen.QWEN3_6_PLUS,
     default: false,
     createProvider: () =>
       chatCompletions("https://openrouter.ai/api/v1", {
@@ -45,7 +40,7 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
   },
   {
     id: "together",
-    model: process.env.TOGETHER_MODEL ?? "Qwen/Qwen3.5-9B",
+    model: process.env.TOGETHER_MODEL ?? "deepseek-ai/DeepSeek-V4-Pro",
     default: true,
     createProvider: () =>
       chatCompletions("https://api.together.ai/v1", {

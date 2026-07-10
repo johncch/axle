@@ -12,7 +12,7 @@
     "build-dev": "pnpm -r --filter @fifthrevision/axle --filter @fifthrevision/axle-cli build-dev",
     "test": "vitest run",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
-    "update-models": "pnpm start -j ./jobs/bootstrap-models.job.yml",
+    "update-models": "pnpm exec tsx scripts/getModelsDev.ts",
     "release": "node scripts/release.mjs",
     "cut-release": "node scripts/cut-release.mjs",
     "smoke-test": "pnpm exec tsx checks/baseline/run.ts",

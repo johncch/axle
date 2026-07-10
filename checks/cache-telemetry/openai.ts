@@ -1,11 +1,11 @@
 import type { Stats } from "@fifthrevision/axle";
 import { generate, openai } from "@fifthrevision/axle";
-import { OpenAIModels } from "@fifthrevision/axle/models";
+import { Models } from "@fifthrevision/axle/models";
 import "dotenv/config";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("OPENAI_API_KEY");
-const model = env.OPENAI_CACHE_MODEL ?? OpenAIModels.GPT_5_4_MINI;
+const model = env.OPENAI_CACHE_MODEL ?? Models.OpenAI.GPT_5_4_MINI;
 const provider = openai(apiKey);
 const cacheKey = env.OPENAI_CACHE_KEY ?? "axle-cache-telemetry-openai";
 const prompt = [

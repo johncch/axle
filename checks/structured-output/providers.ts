@@ -1,11 +1,6 @@
 import type { AIProvider } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, gemini, openai } from "@fifthrevision/axle";
-import {
-  AnthropicModels,
-  ChatCompletionsModels,
-  GeminiModels,
-  OpenAIModels,
-} from "@fifthrevision/axle/models";
+import { Models } from "@fifthrevision/axle/models";
 
 export type StructuredOutputProviderKind = "openai" | "anthropic" | "gemini" | "chatcompletions";
 
@@ -23,27 +18,27 @@ export const structuredOutputTargets: StructuredOutputTarget[] = [
   {
     id: "gpt-5-4-mini",
     provider: "openai",
-    model: OpenAIModels.GPT_5_4_MINI,
+    model: Models.OpenAI.GPT_5_4_MINI,
     apiKeyEnv: "OPENAI_API_KEY",
   },
   {
     id: "haiku-4-5",
     provider: "anthropic",
-    model: AnthropicModels.CLAUDE_HAIKU_4_5,
+    model: Models.Anthropic.CLAUDE_HAIKU_4_5,
     apiKeyEnv: "ANTHROPIC_API_KEY",
   },
   {
     id: "gemini-3-flash",
     provider: "gemini",
-    model: GeminiModels.GEMINI_3_FLASH,
+    model: Models.Google.GEMINI_3_FLASH_PREVIEW,
     apiKeyEnv: "GEMINI_API_KEY",
   },
-  openRouterTarget("qwen-3-6-35b-a3b", ChatCompletionsModels.QWEN_3_6_35B_A3B),
-  openRouterTarget("gemma-4-26b-a4b-it", ChatCompletionsModels.GEMMA_4_26B_A4B_IT),
-  openRouterTarget("ministral-3-8b", ChatCompletionsModels.MINISTRAL_3_8B),
-  openRouterTarget("mistral-small-4", ChatCompletionsModels.MISTRAL_SMALL_4),
-  openRouterTarget("deepseek-v4-flash", ChatCompletionsModels.DEEPSEEK_V4_FLASH),
-  openRouterTarget("minimax-m2", ChatCompletionsModels.MINIMAX_M2),
+  openRouterTarget("qwen-3-6-35b-a3b", Models.Qwen.QWEN3_6_35B_A3B),
+  openRouterTarget("gemma-4-26b-a4b-it", Models.Google.GEMMA_4_26B_A4B_IT),
+  openRouterTarget("ministral-8b", Models.Mistral.MINISTRAL_8B_LATEST),
+  openRouterTarget("mistral-small-latest", Models.Mistral.MISTRAL_SMALL_LATEST),
+  openRouterTarget("deepseek-v4-flash", Models.DeepSeek.DEEPSEEK_V4_FLASH),
+  openRouterTarget("minimax-m2-7", Models.MiniMax.MINIMAX_M2_7),
 ];
 
 export function createStructuredOutputProvider(target: StructuredOutputTarget): AIProvider {

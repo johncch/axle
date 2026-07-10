@@ -915,6 +915,10 @@ batch:
   resume: true
 ```
 
+For first-party providers, the CLI supplies a model when one is omitted:
+`openai/gpt-5.4-mini`, `anthropic/claude-haiku-4-5`, or
+`google/gemini-3.5-flash`. Configure `provider.model` to override it.
+
 - `files` — glob pattern for input files
 - `concurrency` — max parallel runs (default 3)
 - `resume` — skip files already processed in a previous run

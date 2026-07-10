@@ -1,12 +1,12 @@
 import type { Stats } from "@fifthrevision/axle";
 import { gemini, generate } from "@fifthrevision/axle";
-import { GeminiModels } from "@fifthrevision/axle/models";
+import { Models } from "@fifthrevision/axle/models";
 import { GoogleGenAI } from "@google/genai";
 import "dotenv/config";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("GEMINI_API_KEY");
-const model = env.GEMINI_CACHE_MODEL ?? GeminiModels.GEMINI_2_5_FLASH;
+const model = env.GEMINI_CACHE_MODEL ?? Models.Google.GEMINI_2_5_FLASH;
 const client = new GoogleGenAI({ apiKey });
 const provider = gemini(apiKey);
 

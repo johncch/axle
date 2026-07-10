@@ -7,15 +7,13 @@ import type {
   Span,
 } from "@fifthrevision/axle";
 import {
-  Anthropic,
   anthropic,
   chatCompletions,
   createAgentConfig,
-  Gemini,
   gemini,
-  OpenAI,
   openai,
 } from "@fifthrevision/axle";
+import { Models } from "@fifthrevision/axle/models";
 import { ProceduralMemory } from "../memory/index.js";
 import { LocalFileStore } from "../store/index.js";
 import type { JobConfig, ServiceConfig } from "./configs/schemas.js";
@@ -26,6 +24,12 @@ export interface CliAgentConfig {
   agentConfig: AgentConfig;
   mcps: MCP[];
 }
+
+const defaultModels = {
+  anthropic: Models.Anthropic.CLAUDE_HAIKU_4_5,
+  gemini: Models.Google.GEMINI_3_5_FLASH,
+  openai: Models.OpenAI.GPT_5_4_MINI,
+};
 
 function resolveCliProvider(
   definition: ProviderDefinition,
@@ -45,7 +49,7 @@ function resolveCliProvider(
           maxRetries: config.maxRetries,
           timeoutMs: config.timeoutMs,
         }),
-        model: config.model || OpenAI.DefaultModel,
+        model: resolveModel(config, defaultModels.openai),
       };
     }
 
@@ -62,7 +66,7 @@ function resolveCliProvider(
           maxRetries: config.maxRetries,
           timeoutMs: config.timeoutMs,
         }),
-        model: config.model || Anthropic.DefaultModel,
+        model: resolveModel(config, defaultModels.anthropic),
       };
     }
 
@@ -77,7 +81,7 @@ function resolveCliProvider(
           maxRetries: config.maxRetries,
           timeoutMs: config.timeoutMs,
         }),
-        model: config.model || Gemini.DefaultModel,
+        model: resolveModel(config, defaultModels.gemini),
       };
     }
 
@@ -113,6 +117,11 @@ function resolveApiKey(config: Record<string, any>): string | undefined {
   }
 
   return config["api-key"];
+}
+
+function resolveModel(config: Record<string, any>, defaultModel: string): string {
+  if (typeof config.model === "string" && config.model.length > 0) return config.model;
+  return defaultModel;
 }
 
 function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {

@@ -8,6 +8,7 @@ import {
   ProviderStreamParams,
 } from "../types.js";
 import { requireInteger } from "../utils.js";
+import { resolveFirstPartyModel } from "../model.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { resolveGeminiProviderToolName } from "./utils.js";
@@ -35,7 +36,11 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
       model: string,
       params: ProviderGenerationParams,
     ): Promise<ModelResult> {
-      return await createGenerationRequest({ client, model, ...params });
+      return await createGenerationRequest({
+        client,
+        model: resolveFirstPartyModel(model, ["gemini", "google"]),
+        ...params,
+      });
     },
 
     /** @internal */
@@ -43,7 +48,11 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
       model: string,
       params: ProviderStreamParams,
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      return createStreamingRequest({ client, model, ...params });
+      return createStreamingRequest({
+        client,
+        model: resolveFirstPartyModel(model, ["gemini", "google"]),
+        ...params,
+      });
     },
   };
 }

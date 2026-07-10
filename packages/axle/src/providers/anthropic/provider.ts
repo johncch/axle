@@ -8,6 +8,7 @@ import {
   ProviderStreamParams,
 } from "../types.js";
 import { requireInteger } from "../utils.js";
+import { resolveFirstPartyModel } from "../model.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { resolveAnthropicProviderToolName } from "./utils.js";
@@ -33,7 +34,7 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
       model: string,
       params: ProviderGenerationParams,
     ): Promise<ModelResult> {
-      return await createGenerationRequest({ client, model, ...params });
+      return await createGenerationRequest({ client, model: resolveFirstPartyModel(model, ["anthropic"]), ...params });
     },
 
     /** @internal */
@@ -41,7 +42,7 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
       model: string,
       params: ProviderStreamParams,
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      return createStreamingRequest({ client, model, ...params });
+      return createStreamingRequest({ client, model: resolveFirstPartyModel(model, ["anthropic"]), ...params });
     },
   };
 }

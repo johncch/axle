@@ -9,7 +9,11 @@ import {
 import { requireInteger } from "../utils.js";
 import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { resolveChatCompletionsProviderToolName, type ChatCompletionsVendor } from "./utils.js";
+import {
+  resolveChatCompletionsModel,
+  resolveChatCompletionsProviderToolName,
+  type ChatCompletionsVendor,
+} from "./utils.js";
 
 export interface ChatCompletionsOptions extends ProviderClientOptions {
   apiKey?: string;
@@ -59,7 +63,7 @@ export function chatCompletions(
     ): Promise<ModelResult> {
       return await createGenerationRequest({
         baseUrl,
-        model,
+        model: resolveChatCompletionsModel(model, vendor),
         apiKey,
         maxRetries,
         timeoutMs,
@@ -75,7 +79,7 @@ export function chatCompletions(
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
       return createStreamingRequest({
         baseUrl,
-        model,
+        model: resolveChatCompletionsModel(model, vendor),
         apiKey,
         maxRetries,
         timeoutMs,

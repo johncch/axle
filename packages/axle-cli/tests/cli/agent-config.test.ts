@@ -54,7 +54,7 @@ describe("createCliAgentConfig", () => {
         provider: {
           type: "openai",
           apiKeyEnv: "AXLE_TEST_OPENAI_KEY",
-          model: "gpt-test",
+          model: "openai/gpt-test",
         },
         task: "Run",
       },
@@ -63,6 +63,24 @@ describe("createCliAgentConfig", () => {
     );
 
     expect(agentConfig.provider.name).toBe("OpenAI");
-    expect(agentConfig.model).toBe("gpt-test");
+    expect(agentConfig.model).toBe("openai/gpt-test");
+  });
+
+  test("uses the CLI default model for first-party providers", async () => {
+    const defaults = [
+      [{ type: "openai", "api-key": "openai-key" }, "openai/gpt-5.4-mini"],
+      [{ type: "anthropic", "api-key": "anthropic-key" }, "anthropic/claude-haiku-4-5"],
+      [{ type: "gemini", "api-key": "gemini-key" }, "google/gemini-3.5-flash"],
+    ] as const;
+
+    for (const [provider, model] of defaults) {
+      const { agentConfig } = await createCliAgentConfig(
+        { provider, task: "Run" },
+        {},
+        tracer,
+      );
+
+      expect(agentConfig.model).toBe(model);
+    }
   });
 });

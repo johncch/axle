@@ -1,6 +1,7 @@
-import type { Citation } from "../../../messages/message.js";
-import type { ResolvedProviderTool } from "../../types.js";
-import type { ChatCompletionAnnotation } from "../types.js";
+import type { Citation } from "../../../../messages/message.js";
+import type { ResolvedProviderTool } from "../../../types.js";
+import type { ChatCompletionAnnotation } from "../../types.js";
+import { OpenRouterModelAliases } from "./models.generated.js";
 
 const OPENROUTER_SERVER_TOOL_MAP: Record<string, string> = {
   web_search: "openrouter:web_search",
@@ -8,6 +9,17 @@ const OPENROUTER_SERVER_TOOL_MAP: Record<string, string> = {
 
 export function resolveOpenRouterProviderToolName(name: string): string | undefined {
   return OPENROUTER_SERVER_TOOL_MAP[name];
+}
+
+/**
+ * Translate a publisher-qualified model identity into the slug OpenRouter's API
+ * expects. Mirrors how first-party providers call resolveFirstPartyModel: the
+ * catalog holds identity, the provider normalizes to its own wire id at request
+ * time. Unknown ids (already OpenRouter slugs, or models we don't catalog) pass
+ * through unchanged.
+ */
+export function resolveOpenRouterModel(model: string): string {
+  return OpenRouterModelAliases[model] ?? model;
 }
 
 export function prepareOpenRouterProviderTools(

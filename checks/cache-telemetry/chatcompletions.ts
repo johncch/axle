@@ -1,12 +1,12 @@
 import type { Stats } from "@fifthrevision/axle";
 import { chatCompletions, generate } from "@fifthrevision/axle";
-import { ChatCompletionsModels } from "@fifthrevision/axle/models";
+import { Models } from "@fifthrevision/axle/models";
 import "dotenv/config";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("OPENROUTER_API_KEY");
 const baseUrl = env.CHAT_COMPLETIONS_CACHE_BASE_URL ?? "https://openrouter.ai/api/v1";
-const model = env.CHAT_COMPLETIONS_CACHE_MODEL ?? ChatCompletionsModels.QWEN_3_6_35B_A3B;
+const model = env.CHAT_COMPLETIONS_CACHE_MODEL ?? Models.Qwen.QWEN3_6_35B_A3B;
 const requireCachedIn = env.CHAT_COMPLETIONS_CACHE_REQUIRE === "true";
 const provider = chatCompletions(baseUrl, apiKey);
 const prompt = [

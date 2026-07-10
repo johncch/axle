@@ -42,14 +42,14 @@ export {
 } from "./errors/index.js";
 
 // AI Providers
-export { Anthropic, anthropic } from "./providers/anthropic/index.js";
+export { anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
 export type {
   ChatCompletionsOptions,
   ChatCompletionsVendor,
 } from "./providers/chatcompletions/provider.js";
 export { estimateContextUsage } from "./providers/context.js";
-export { Gemini, gemini } from "./providers/gemini/index.js";
+export { gemini } from "./providers/gemini/index.js";
 export type {
   GenerateInstructParams,
   GenerateInstructResult,
@@ -57,7 +57,7 @@ export type {
 } from "./providers/generate.js";
 export type { AxleFailure, GenerateError, GenerateResult, StreamResult } from "./providers/helpers.js";
 export { generate, generateTurn, stream } from "./providers/index.js";
-export { OpenAI, openai } from "./providers/openai/index.js";
+export { openai } from "./providers/openai/index.js";
 export type {
   StreamEvent,
   StreamEventCallback,

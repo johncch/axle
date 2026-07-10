@@ -7,7 +7,7 @@ import { chatUsageToStats, convertFinishReason } from "./utils.js";
 import {
   isOpenRouterTextAnchoredCitation,
   normalizeOpenRouterCitation,
-} from "./vendors/openrouter.js";
+} from "./vendors/openrouter/index.js";
 
 export function createStreamingAdapter() {
   const toolCallBuffers = new Map<

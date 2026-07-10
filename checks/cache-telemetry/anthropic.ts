@@ -1,11 +1,11 @@
 import type { Stats } from "@fifthrevision/axle";
 import { anthropic, generate } from "@fifthrevision/axle";
-import { AnthropicModels } from "@fifthrevision/axle/models";
+import { Models } from "@fifthrevision/axle/models";
 import "dotenv/config";
 import { env, print, requiredEnv } from "./runtime.js";
 
 const apiKey = requiredEnv("ANTHROPIC_API_KEY");
-const model = env.ANTHROPIC_CACHE_MODEL ?? AnthropicModels.CLAUDE_HAIKU_4_5;
+const model = env.ANTHROPIC_CACHE_MODEL ?? Models.Anthropic.CLAUDE_HAIKU_4_5;
 const provider = anthropic(apiKey);
 const prompt = [
   stableContext("anthropic"),

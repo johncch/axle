@@ -17,8 +17,8 @@
       "import": "./dist/ui.js"
     },
     "./models": {
-      "types": "./dist/providers/models.d.ts",
-      "import": "./dist/providers/models.js"
+      "types": "./dist/models.d.ts",
+      "import": "./dist/models.js"
     }
   },
   "files": [

@@ -4,7 +4,7 @@ import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
 import { ProviderStreamParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
-import { MAX_OUTPUT_TOKENS } from "./models.js";
+import { ModelInfo } from "../../models.js";
 import {
   convertToAnthropicProviderTools,
   convertToAnthropicTools,
@@ -97,7 +97,8 @@ export async function* createStreamingRequest(
 }
 
 export function getMaxTokens(model: string): number {
-  if (model in MAX_OUTPUT_TOKENS) return MAX_OUTPUT_TOKENS[model];
+  const maxOutputTokens = ModelInfo[model]?.maxOutputTokens;
+  if (maxOutputTokens !== undefined) return maxOutputTokens;
 
   if (model.includes("opus")) {
     // Opus 4.6+ trend: 128K

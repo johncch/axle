@@ -21,7 +21,7 @@ import type { BaselineProviderId } from "./providers.js";
 export interface BaselineCaseContext {
   provider: AIProvider;
   model: string;
-  providerId: string;
+  providerId: BaselineProviderId;
   requestOptions: AxleModelRequestOptions;
 }
 
@@ -49,6 +49,11 @@ const answerSchema = z.object({
   answer: z.string(),
   count: z.number(),
   ok: z.boolean(),
+});
+
+const compactionSummarySchema = z.object({
+  codeWord: z.string(),
+  magicNumber: z.number(),
 });
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
@@ -210,6 +215,8 @@ export const baselineCases: BaselineCase[] = [
         }),
       ).final;
 
+      if (!result.ok) return fail({ error: result.error, usage: result.usage });
+
       return {
         ok: Boolean(
           result.response?.answer.toLowerCase().includes("pong") &&
@@ -268,39 +275,40 @@ export const baselineCases: BaselineCase[] = [
     description:
       "Agent compacts history via a model-written summary and the compacted conversation continues.",
     async run({ provider, model, requestOptions }) {
-      // Reasoning smoke models (e.g. Together's Qwen) can spend the provider's
-      // default output budget on thinking; give the whole case headroom.
-      const caseOptions = { ...requestOptions, maxOutputTokens: 8192 };
-      const agent = new Agent({ provider, model, ...caseOptions });
+      const agent = new Agent({ provider, model, ...requestOptions });
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
         .final;
       await agent.send("Also remember: the magic number is 7. Reply exactly: stored.").final;
 
       const messagesBefore = agent.history.messages.length;
+      let compactionSummary: z.infer<typeof compactionSummarySchema> | undefined;
 
       agent.onCompaction(async ({ messages }, { signal }) => {
         const summary = await generate({
           provider,
           model,
-          ...caseOptions,
-          // Summarization needs visible text, not thinking; reasoning models
-          // otherwise spend the output on reasoning and emit an empty summary.
+          ...requestOptions,
           reasoning: false,
           signal,
-          messages: [
-            {
-              role: "user",
-              content:
-                "Summarize this conversation for a fresh assistant taking over. " +
-                "Preserve any code words and numbers verbatim.\n\n" +
-                JSON.stringify(messages),
-            },
-          ],
+          instruct: new Instruct({
+            prompt:
+              "Summarize this conversation for a fresh assistant taking over. " +
+              "Preserve the code word and magic number exactly.\n\n" +
+              JSON.stringify(messages),
+            schema: compactionSummarySchema,
+          }),
         });
         if (!summary.ok) return null;
-        const text = getAssistantText(summary.final);
-        if (!text) return null;
-        return [{ role: "user", content: `Summary of the conversation so far: ${text}` }];
+        compactionSummary = summary.response;
+        return [
+          {
+            role: "user",
+            content:
+              "Summary of the conversation so far: " +
+              `the code word is ${compactionSummary.codeWord}; ` +
+              `the magic number is ${compactionSummary.magicNumber}.`,
+          },
+        ];
       });
 
       const record = await agent.compact();
@@ -340,6 +348,7 @@ export const baselineCases: BaselineCase[] = [
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
+          compactionSummary,
           record,
           messagesBefore,
           activeAfter,
@@ -691,7 +700,7 @@ export const baselineCases: BaselineCase[] = [
         result.usage.breakdown?.some(
           (entry) =>
             entry.provider === provider.name &&
-            entry.model.startsWith(model) &&
+            entry.model === model &&
             entry.in > 0 &&
             entry.out > 0,
         ) === true;

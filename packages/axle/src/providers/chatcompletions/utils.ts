@@ -18,8 +18,9 @@ import {
 } from "./types.js";
 import {
   prepareOpenRouterProviderTools,
+  resolveOpenRouterModel,
   resolveOpenRouterProviderToolName,
-} from "./vendors/openrouter.js";
+} from "./vendors/openrouter/index.js";
 import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
 export type ChatCompletionsVendor = "openrouter" | "together";
@@ -33,6 +34,18 @@ export function resolveChatCompletionsProviderToolName(
       return resolveOpenRouterProviderToolName(name);
     default:
       return undefined;
+  }
+}
+
+export function resolveChatCompletionsModel(
+  model: string,
+  vendor?: ChatCompletionsVendor,
+): string {
+  switch (vendor) {
+    case "openrouter":
+      return resolveOpenRouterModel(model);
+    default:
+      return model;
   }
 }
 
