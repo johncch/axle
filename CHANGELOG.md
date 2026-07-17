@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.27.1] - 2026-07-17
+
+- Added support for the Kimi K3 model.
+
 ## [0.27.0] - 2026-07-10
 
 - Improved model registry support for clearer model selection.
