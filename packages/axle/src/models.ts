@@ -55,6 +55,7 @@ export const Models = {
     KIMI_K2_6: "moonshotai/kimi-k2.6",
     KIMI_K2_7_CODE: "moonshotai/kimi-k2.7-code",
     KIMI_K2_7_CODE_HIGHSPEED: "moonshotai/kimi-k2.7-code-highspeed",
+    KIMI_K3: "moonshotai/kimi-k3",
   },
   OpenAI: {
     GPT_4_1: "openai/gpt-4.1",
@@ -317,6 +318,11 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 262_144,
     multimodal: true,
   },
+  [Models.Moonshot.KIMI_K3]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 131_072,
+    multimodal: true,
+  },
   [Models.OpenAI.GPT_4_1]: {
     contextWindow: 1_047_576,
     maxOutputTokens: 32_768,
@@ -519,7 +525,7 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_5_122B_A10B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 262_144,
+    maxOutputTokens: 65_536,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_27B]: {
@@ -529,12 +535,12 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_5_35B_A3B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 81_920,
+    maxOutputTokens: 262_144,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_397B_A17B]: {
-    contextWindow: 131_072,
-    maxOutputTokens: 64_000,
+    contextWindow: 262_144,
+    maxOutputTokens: 65_536,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_9B]: {
@@ -558,8 +564,8 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     multimodal: true,
   },
   [Models.Qwen.QWEN3_6_27B]: {
-    contextWindow: 262_140,
-    maxOutputTokens: 262_140,
+    contextWindow: 262_144,
+    maxOutputTokens: 65_536,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_6_35B_A3B]: {
