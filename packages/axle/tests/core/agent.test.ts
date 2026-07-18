@@ -7,6 +7,7 @@ import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { AgentMemory } from "../../src/memory/types.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
+import { getTextContent } from "../../src/messages/utils.js";
 import type { LogEntry, SpanData } from "../../src/observability/index.js";
 import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
@@ -98,7 +99,194 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
   };
 }
 
+function createEchoStreamProvider(requests: string[]): AIProvider {
+  let callCount = 0;
+  return {
+    name: "mock-echo-stream",
+    async createGenerationRequest() {
+      throw new Error("not used");
+    },
+    async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
+      callCount += 1;
+      const userMessage = messages.findLast((message) => message.role === "user");
+      const text = userMessage ? getTextContent(userMessage.content) : "";
+      requests.push(text);
+      yield {
+        type: "start",
+        id: `mock-${callCount}`,
+        data: { model: "mock", timestamp: 0 },
+      };
+      yield { type: "text-start", data: { index: 0 } };
+      yield { type: "text-delta", data: { index: 0, text } };
+      yield { type: "text-complete", data: { index: 0 } };
+      yield {
+        type: "complete",
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+      };
+    },
+  };
+}
+
 describe("Agent", () => {
+  describe("queue and steer", () => {
+    test("runs steering work FIFO before normal queued work", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+
+      const first = agent.queue("first");
+      const second = agent.steer("second");
+      const third = agent.queue("third");
+      const fourth = agent.steer("fourth");
+
+      const results = await Promise.all([
+        first.final,
+        second.final,
+        third.final,
+        fourth.final,
+      ]);
+
+      expect(requests).toEqual(["first", "second", "fourth", "third"]);
+      expect(results.map((result) => result.response)).toEqual([
+        "first",
+        "second",
+        "third",
+        "fourth",
+      ]);
+      expect(
+        agent.history.messages
+          .filter((message) => message.role === "user")
+          .map((message) => getTextContent(message.content)),
+      ).toEqual(["first", "second", "fourth", "third"]);
+    });
+
+    test("finishes the complete tool batch before handing off to a steer", async () => {
+      const toolStream = createToolThenTextProvider(
+        ["first_tool", "second_tool"],
+        "steered",
+      );
+      const firstTool = {
+        name: "first_tool",
+        description: "First tool",
+        schema: z.object({ input: z.string() }),
+        execute: vi.fn().mockResolvedValue("first result"),
+      };
+      const secondTool = {
+        name: "second_tool",
+        description: "Second tool",
+        schema: z.object({ input: z.string() }),
+        execute: vi.fn().mockResolvedValue("second result"),
+      };
+      const agent = new Agent({
+        provider: toolStream.provider,
+        model: "mock",
+        tools: [firstTool, secondTool],
+      });
+
+      const first = agent.queue("run both tools");
+      const steered = agent.steer("take over");
+      const [firstResult, steeredResult] = await Promise.all([
+        first.final,
+        steered.final,
+      ]);
+
+      expect(firstResult.ok).toBe(true);
+      expect(firstResult.turn?.status).toBe("complete");
+      expect(steeredResult.response).toBe("steered");
+      expect(firstTool.execute).toHaveBeenCalledTimes(1);
+      expect(secondTool.execute).toHaveBeenCalledTimes(1);
+      expect(toolStream.callCount).toBe(2);
+      expect(
+        toolStream.requests[1]?.map((message: any) => message.role),
+      ).toEqual(["user", "assistant", "tool", "user"]);
+      expect(agent.history.messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "user",
+        "assistant",
+      ]);
+    });
+
+    test("cancelling a queued steer removes it without appending a user turn", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+
+      const first = agent.queue("first");
+      const steered = agent.steer("withdrawn");
+      const third = agent.queue("third");
+      const reason = "withdraw-steer";
+      const steeredFinal = steered.final.catch((error) => error);
+      steered.cancel(reason);
+
+      await Promise.all([first.final, third.final]);
+      const error = await steeredFinal;
+
+      expect(error).toBeInstanceOf(AxleAgentAbortError);
+      expect((error as AxleAbortError).reason).toBe(reason);
+      expect((error as AxleAgentAbortError).turn).toBeUndefined();
+      expect(requests).toEqual(["first", "third"]);
+      expect(
+        agent.history.messages
+          .filter((message) => message.role === "user")
+          .map((message) => getTextContent(message.content)),
+      ).toEqual(["first", "third"]);
+    });
+
+    test("cancelling a claimed steer preserves its committed user turn", async () => {
+      const toolStream = createToolThenTextProvider(["first_tool"], "unused");
+      const firstTool = {
+        name: "first_tool",
+        description: "First tool",
+        schema: z.object({ input: z.string() }),
+        execute: vi.fn().mockResolvedValue("first result"),
+      };
+      const agent = new Agent({
+        provider: toolStream.provider,
+        model: "mock",
+        tools: [firstTool],
+      });
+      const reason = "cancel-claimed-steer";
+      let steered: ReturnType<typeof agent.steer> | undefined;
+      agent.on((event) => {
+        if (event.type === "turn:end" && event.status === "complete") {
+          steered?.cancel(reason);
+        }
+      });
+
+      const first = agent.queue("run the tool");
+      steered = agent.steer("committed steer");
+      const steeredFinal = steered.final.catch((error) => error);
+
+      const firstResult = await first.final;
+      const error = await steeredFinal;
+
+      expect(firstResult.ok).toBe(true);
+      expect(error).toBeInstanceOf(AxleAgentAbortError);
+      expect((error as AxleAbortError).reason).toBe(reason);
+      expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect(toolStream.callCount).toBe(1);
+      expect(agent.history.messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "user",
+      ]);
+      const committedMessage = agent.history.messages.at(-1);
+      expect(
+        committedMessage?.role === "user"
+          ? getTextContent(committedMessage.content)
+          : undefined,
+      ).toBe("committed steer");
+      expect(agent.history.turns.at(-1)?.status).toBe("cancelled");
+    });
+  });
+
   test("threads a span hierarchy through a send (agent.send → stream → turn)", async () => {
     const provider = createMockStreamProvider(["ok"]);
     const starts: SpanData[] = [];
