@@ -66,6 +66,7 @@ export type {
   StreamInstructParams,
   StreamInstructResult,
   StreamParams,
+  ToolBatchCompleteCallback,
 } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type {

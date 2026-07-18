@@ -352,6 +352,56 @@ describe("stream()", () => {
       expect(events.filter((e) => e.type === "text:end")).toHaveLength(1);
     });
 
+    test("awaits the tool batch callback and finishes before another provider turn", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "web_search"),
+        toolCallCompleteChunk(0, "call_1", "web_search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      let providerCalls = 0;
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          providerCalls += 1;
+          if (providerCalls > 1) throw new Error("Unexpected second provider turn");
+          for (const chunk of turn1Chunks) yield chunk;
+        },
+      });
+      let markBoundaryReached!: () => void;
+      const boundaryReached = new Promise<void>((resolve) => {
+        markBoundaryReached = resolve;
+      });
+      let releaseBoundary!: () => void;
+      const boundaryGate = new Promise<void>((resolve) => {
+        releaseBoundary = resolve;
+      });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      handle.onToolBatchComplete(async (message) => {
+        expect(message.role).toBe("tool");
+        markBoundaryReached();
+        await boundaryGate;
+        return "finish" as const;
+      });
+
+      await boundaryReached;
+      expect(providerCalls).toBe(1);
+      releaseBoundary();
+      const final = await handle.final;
+
+      expect(final.ok).toBe(true);
+      expect(final.messages.map((message) => message.role)).toEqual([
+        "assistant",
+        "tool",
+      ]);
+      expect(providerCalls).toBe(1);
+    });
+
     test("emits tool:request, tool:exec-start, tool:exec-complete events", async () => {
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),

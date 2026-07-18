@@ -605,6 +605,83 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    id: "agent-steering",
+    description: "Agent hands off to a steer after completing the active tool batch.",
+    async run({ provider, model, requestOptions }) {
+      let toolCalls = 0;
+      const steeringMarkerTool: ExecutableTool<
+        z.ZodObject<{
+          marker: z.ZodString;
+        }>
+      > = {
+        name: "record_steering_marker",
+        description: "Record a marker before a steering handoff.",
+        schema: z.object({ marker: z.string() }),
+        async execute(input) {
+          toolCalls += 1;
+          return `recorded:${input.marker}`;
+        },
+      };
+      const agent = new Agent({
+        provider,
+        model,
+        ...requestOptions,
+        tools: [steeringMarkerTool],
+      });
+
+      const first = agent.send(
+        "Call record_steering_marker once with marker='initial'.",
+        {
+          toolChoice: { type: "tool", name: "record_steering_marker" },
+        },
+      );
+      const steered = agent.steer(
+        "The steering message has taken over. Reply with exactly: steer-saffron",
+        { toolChoice: "none" },
+      );
+
+      const firstResult = await first.final;
+      const steeredResult = await steered.final;
+      const response = String(steeredResult.response ?? "");
+      const roles = agent.history.messages.map((message) => message.role);
+      const toolResults = getToolResultDetails(agent.history.messages);
+      const toolBatchCompleted =
+        toolCalls === 1 &&
+        toolResults.some(
+          (toolResult) =>
+            toolResult.name === "record_steering_marker" &&
+            toolResult.content.includes("recorded:"),
+        );
+      const transcriptIsLinear =
+        roles.join(",") === "user,assistant,tool,user,assistant";
+      const failureReasons = [
+        ...(!firstResult.ok ? ["The original handle did not settle successfully."] : []),
+        ...(!toolBatchCompleted
+          ? ["The original handle did not complete exactly one tool batch."]
+          : []),
+        ...(!transcriptIsLinear
+          ? [`Unexpected steering transcript roles: ${roles.join(",")}`]
+          : []),
+        ...(!response.toLowerCase().includes("steer-saffron")
+          ? ["The steering handle did not produce the expected response."]
+          : []),
+      ];
+
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          response,
+          roles,
+          toolCalls,
+          toolResults,
+          firstUsage: firstResult.usage,
+          steeredUsage: steeredResult.usage,
+        },
+      };
+    },
+  },
+  {
     id: "generate-parallelized-tool",
     description: "generate() executes a generated batch tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
@@ -669,6 +746,10 @@ export const baselineCases: BaselineCase[] = [
     id: "agent-subagent-tool",
     description: "Agent delegates to a child agent exposed as a tool.",
     async run({ provider, model, requestOptions }) {
+      const childProvider: AIProvider = {
+        ...provider,
+        name: `${provider.name}:child`,
+      };
       const subagentTool = createAgentTool({
         name: "delegate_code_word",
         description: "Delegate a code-word lookup task to a child agent.",
@@ -677,7 +758,7 @@ export const baselineCases: BaselineCase[] = [
         }),
         createAgent: () =>
           new Agent({
-            provider,
+            provider: childProvider,
             model,
             ...requestOptions,
             system: "You are a child agent. Reply with exactly the requested code word.",
@@ -699,8 +780,8 @@ export const baselineCases: BaselineCase[] = [
       const usageAttributed =
         result.usage.breakdown?.some(
           (entry) =>
-            entry.provider === provider.name &&
-            entry.model === model &&
+            entry.provider === childProvider.name &&
+            entry.model.length > 0 &&
             entry.in > 0 &&
             entry.out > 0,
         ) === true;
@@ -711,7 +792,9 @@ export const baselineCases: BaselineCase[] = [
         ...(!childReturnedExpectedValue
           ? ["Child tool result did not contain subagent-orchid."]
           : []),
-        ...(!usageAttributed ? ["Child usage was not attributed to the provider and model."] : []),
+        ...(!usageAttributed
+          ? ["Child usage did not appear as a distinct provider/model breakdown entry."]
+          : []),
       ];
 
       return {
@@ -721,6 +804,7 @@ export const baselineCases: BaselineCase[] = [
           response: result.response,
           toolResults,
           turnCount: agent.history.turns.length,
+          childProvider: childProvider.name,
           usage: result.usage,
         },
       };

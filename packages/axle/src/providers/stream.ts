@@ -117,6 +117,10 @@ export type StreamEvent =
 
 export type StreamEventCallback = (event: StreamEvent) => void;
 
+export type ToolBatchCompleteCallback = (
+  message: AxleToolCallMessage,
+) => "continue" | "finish" | Promise<"continue" | "finish">;
+
 export interface StreamParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;
@@ -141,6 +145,7 @@ export interface StreamParams extends AxleModelRequestOptions {
 
 export interface StreamHandle {
   on(callback: StreamEventCallback): void;
+  onToolBatchComplete(callback: ToolBatchCompleteCallback): void;
   cancel(reason?: unknown): void;
   readonly final: Promise<StreamResult>;
 }
@@ -204,10 +209,11 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
 
   const { promise: finalPromise, resolve, reject } = Promise.withResolvers<any>();
   const configuration = getAxleConfiguration();
+  const control: { onToolBatchComplete?: ToolBatchCompleteCallback } = {};
 
   // Kick off processing on next microtask so callers can register callbacks first
   Promise.resolve().then(() =>
-    run(streamOptions, effectiveSignal, callbacks, configuration).then((result) => {
+    run(streamOptions, effectiveSignal, callbacks, configuration, control).then((result) => {
       if (parse && result.ok) {
         try {
           resolve({ ...result, response: parse(result.final) });
@@ -238,6 +244,9 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
     on(cb) {
       callbacks.push(cb);
     },
+    onToolBatchComplete(callback) {
+      control.onToolBatchComplete = callback;
+    },
     cancel(reason?: unknown) {
       controller.abort(reason);
     },
@@ -254,6 +263,7 @@ async function run(
   signal: AbortSignal,
   cbs: StreamEventCallback[],
   configuration: AxleConfiguration,
+  control: { onToolBatchComplete?: ToolBatchCompleteCallback },
 ): Promise<StreamResult> {
   const {
     provider,
@@ -489,7 +499,44 @@ async function run(
       });
     }
 
-    await executeTurnTools(toolCalls, outcome, assistantMessage, loop);
+    const toolResultsMessage = await executeTurnTools(
+      toolCalls,
+      outcome,
+      assistantMessage,
+      loop,
+    );
+
+    if (signal.aborted) {
+      span?.end("ok");
+      throw new AxleAbortError("Stream aborted", {
+        reason: signal.reason,
+        messages: newMessages,
+        usage,
+      });
+    }
+
+    const boundaryDecision = toolResultsMessage
+      ? await control.onToolBatchComplete?.(toolResultsMessage)
+      : undefined;
+
+    if (signal.aborted) {
+      span?.end("ok");
+      throw new AxleAbortError("Stream aborted", {
+        reason: signal.reason,
+        messages: newMessages,
+        usage,
+      });
+    }
+
+    if (boundaryDecision === "finish") {
+      return endWithResult({
+        ok: true,
+        response: assistantMessage,
+        messages: newMessages,
+        final: assistantMessage,
+        usage,
+      });
+    }
 
     // Budget checks run after the turn settles so a limit stop always returns a complete exchange.
     const stopped = checkLoopStop(iterations, turnUsage, { maxIterations, maxContextTokens });

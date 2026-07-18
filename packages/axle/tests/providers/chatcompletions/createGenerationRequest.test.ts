@@ -180,12 +180,12 @@ describe("createGenerationRequest", () => {
         runtime: {},
         tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
         toolChoice: { type: "tool", name: "lookup" },
-        parallelToolCalls: false,
+        parallelToolCalls: true,
       });
 
       const body = JSON.parse((fetch as any).mock.calls[0][1].body);
       expect(body.tool_choice).toEqual({ type: "function", function: { name: "lookup" } });
-      expect(body.parallel_tool_calls).toBe(false);
+      expect(body.parallel_tool_calls).toBe(true);
     });
 
     test("drops provider tools and warns without a provider tool vendor", async () => {

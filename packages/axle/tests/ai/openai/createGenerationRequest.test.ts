@@ -103,7 +103,7 @@ describe("createGenerationRequest (OpenAI)", () => {
       tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
       providerTools: [{ type: "provider", name: "web_search" }],
       toolChoice: { type: "tool", name: "web_search" },
-      parallelToolCalls: false,
+      parallelToolCalls: true,
     });
 
     expect(mockCreate.mock.calls[0][0]).toMatchObject({
@@ -112,7 +112,7 @@ describe("createGenerationRequest (OpenAI)", () => {
         expect.objectContaining({ type: "web_search_preview" }),
       ]),
       tool_choice: { type: "web_search_preview" },
-      parallel_tool_calls: false,
+      parallel_tool_calls: true,
     });
   });
 

@@ -60,7 +60,7 @@ export async function executeTurnTools(
   turn: CompletedTurn,
   assistantMessage: AxleAssistantMessage,
   loop: LoopContext,
-): Promise<void> {
+): Promise<AxleToolCallMessage | undefined> {
   const { toolCallArgumentErrors } = turn;
   const { emit, signal, resolvedTools, span, onToolCall, newMessages, usage, addMessage } = loop;
 
@@ -184,5 +184,7 @@ export async function executeTurnTools(
     };
     addMessage(toolResultsMessage);
     emit({ type: "tool-results:complete", message: toolResultsMessage });
+    return toolResultsMessage;
   }
+  return undefined;
 }

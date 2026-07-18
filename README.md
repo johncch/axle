@@ -49,8 +49,9 @@ fixed pipelines.
 ### Agent
 
 Agent is the primary interface. It owns the provider, model, system prompt,
-tools, and conversation history. `send()` is the only verb — it accepts either a
-plain string or an Instruct.
+tools, and conversation history. `send()` starts immediately when the agent is
+idle and otherwise joins the normal FIFO lane. It accepts either a plain string
+or an Instruct.
 
 ```typescript
 const agent = new Agent({
@@ -59,6 +60,26 @@ const agent = new Agent({
   system: "You are a helpful assistant.",
 });
 ```
+
+`steer()` joins a priority FIFO lane. At the next safe model boundary, Axle
+finishes the active tool batch, settles the active handle, and transfers
+ownership to the next steering handle. Normal queued work resumes after the
+steering lane empties.
+
+```typescript
+const h1 = agent.send("Build the feature.");
+const h2 = agent.steer("Make the button blue.");
+const h3 = agent.send("Also add a sidebar.");
+const h4 = agent.steer("Label the button Send.");
+
+// Execution order: h1 → h2 → h4 → h3
+```
+
+Every handle owns one linear transcript segment. A pending steer can be
+cancelled before it is committed. Once committed, its user message remains in
+history and cancellation stops its active work without restoring the preceding
+handle. Steering never interrupts a running tool batch; use cancellation when a
+hard stop is required.
 
 ### Instruct
 
@@ -207,8 +228,11 @@ still throw.
 
 Cancellation follows standard JavaScript abort semantics:
 
-- `handle.cancel(reason)` aborts a `stream()` or `agent.send()` handle.
-- `stream().final`, `generate(...)`, and `agent.send(...).final` reject with an error whose `name` is `"AbortError"`.
+- `handle.cancel(reason)` aborts a stream, queued send, or steering handle.
+- `streamHandle.onToolBatchComplete(callback)` installs an awaited boundary
+  callback. Return `"finish"` to resolve normally after the complete tool batch
+  without starting another provider request, or `"continue"` to keep looping.
+- `stream().final`, `generate(...)`, and Agent handle finals reject with an error whose `name` is `"AbortError"`.
 - Axle abort errors preserve `reason`, `usage`, and partial state where available (`messages`, `partial`, and for `Agent.send`, `turn`).
 
 ## Details
@@ -655,7 +679,8 @@ try {
 `"thinking"`, `"file"`, `"action"`). Action parts further discriminate on
 `part.kind` (`"tool" | "agent" | "provider-tool"`).
 
-Callbacks are registered once and fire on every subsequent `send()`.
+Callbacks are registered once and fire on every subsequent queued or steering
+operation.
 
 #### Turn accumulator
 
