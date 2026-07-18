@@ -128,7 +128,7 @@ function createEchoStreamProvider(requests: string[]): AIProvider {
 }
 
 describe("Agent", () => {
-  describe("queue and steer", () => {
+  describe("send and steer", () => {
     test("runs steering work FIFO before normal queued work", async () => {
       const requests: string[] = [];
       const agent = new Agent({
@@ -136,9 +136,9 @@ describe("Agent", () => {
         model: "mock",
       });
 
-      const first = agent.queue("first");
+      const first = agent.send("first");
       const second = agent.steer("second");
-      const third = agent.queue("third");
+      const third = agent.send("third");
       const fourth = agent.steer("fourth");
 
       const results = await Promise.all([
@@ -185,7 +185,7 @@ describe("Agent", () => {
         tools: [firstTool, secondTool],
       });
 
-      const first = agent.queue("run both tools");
+      const first = agent.send("run both tools");
       const steered = agent.steer("take over");
       const [firstResult, steeredResult] = await Promise.all([
         first.final,
@@ -217,9 +217,9 @@ describe("Agent", () => {
         model: "mock",
       });
 
-      const first = agent.queue("first");
+      const first = agent.send("first");
       const steered = agent.steer("withdrawn");
-      const third = agent.queue("third");
+      const third = agent.send("third");
       const reason = "withdraw-steer";
       const steeredFinal = steered.final.catch((error) => error);
       steered.cancel(reason);
@@ -259,7 +259,7 @@ describe("Agent", () => {
         }
       });
 
-      const first = agent.queue("run the tool");
+      const first = agent.send("run the tool");
       steered = agent.steer("committed steer");
       const steeredFinal = steered.final.catch((error) => error);
 

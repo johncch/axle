@@ -49,9 +49,9 @@ fixed pipelines.
 ### Agent
 
 Agent is the primary interface. It owns the provider, model, system prompt,
-tools, and conversation history. `queue()` starts immediately when the agent is
-idle and otherwise joins the normal FIFO lane. `send()` is an alias for
-`queue()`. Both accept either a plain string or an Instruct.
+tools, and conversation history. `send()` starts immediately when the agent is
+idle and otherwise joins the normal FIFO lane. It accepts either a plain string
+or an Instruct.
 
 ```typescript
 const agent = new Agent({
@@ -67,9 +67,9 @@ ownership to the next steering handle. Normal queued work resumes after the
 steering lane empties.
 
 ```typescript
-const h1 = agent.queue("Build the feature.");
+const h1 = agent.send("Build the feature.");
 const h2 = agent.steer("Make the button blue.");
-const h3 = agent.queue("Also add a sidebar.");
+const h3 = agent.send("Also add a sidebar.");
 const h4 = agent.steer("Label the button Send.");
 
 // Execution order: h1 → h2 → h4 → h3

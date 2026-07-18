@@ -629,7 +629,7 @@ export const baselineCases: BaselineCase[] = [
         tools: [steeringMarkerTool],
       });
 
-      const first = agent.queue(
+      const first = agent.send(
         "Call record_steering_marker once with marker='initial'.",
         {
           toolChoice: { type: "tool", name: "record_steering_marker" },

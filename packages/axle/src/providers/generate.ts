@@ -28,15 +28,6 @@ import {
 } from "./helpers.js";
 import { AIProvider, AxleModelRequestOptions, AxleStopReason, ModelResult } from "./types.js";
 
-export type {
-  AxleFailure,
-  GenerateError,
-  GenerateResult,
-  StreamResult,
-  ToolCallCallback,
-  ToolCallResult,
-} from "./helpers.js";
-
 export interface GenerateParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;

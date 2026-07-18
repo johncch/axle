@@ -299,23 +299,13 @@ export class Agent {
     return this.scheduler.schedule(() => work()).final;
   }
 
-  /** Alias for queue(). */
+  /** Schedule a normal FIFO conversation turn. */
   send(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
     options?: SendMessageOptions,
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
-    return this.scheduleSend(messageOrInstruct, options);
-  }
-
-  /** Schedule a normal FIFO conversation turn. */
-  queue(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
-  queue<TSchema extends OutputSchema>(
-    instruct: Instruct<TSchema>,
-    options?: SendMessageOptions,
-  ): AgentHandle<ParsedSchema<TSchema>>;
-  queue(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
     return this.scheduleSend(messageOrInstruct, options);
   }
 
