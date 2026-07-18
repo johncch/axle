@@ -6,7 +6,7 @@ import type { MCP } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
 import type { CompactionRecord } from "../../messages/compaction.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
-import type { AxleMessage } from "../../messages/message.js";
+import type { AxleAssistantMessage, AxleMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -24,12 +24,12 @@ import type { Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
-import { type Handle } from "../../utils/utils.js";
 import { Instruct } from "../Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../parse.js";
 import { compileUserTurn, type CompiledUserTurn } from "../userTurn.js";
 import { History } from "./history.js";
 import { resolveObservability, spanStatusFromError } from "./observability.js";
+import { AgentScheduler } from "./scheduler.js";
 import type {
   AgentConfig,
   AgentErrorResult,
@@ -75,7 +75,7 @@ export class Agent {
 
   private eventCallbacks: TurnEventCallback[] = [];
   private compactionCallback?: CompactionCallback;
-  private workQueue: Promise<void> = Promise.resolve();
+  private scheduler = new AgentScheduler();
   private accumulator: TurnAccumulator;
 
   /**
@@ -267,7 +267,7 @@ export class Agent {
       }
     };
 
-    return this.queue(work, options?.signal).final;
+    return this.scheduler.schedule(({ signal }) => work(signal), options?.signal).final;
   }
 
   /**
@@ -296,87 +296,86 @@ export class Agent {
         sessionAnnotations,
       };
     };
-    return this.queue(work).final;
+    return this.scheduler.schedule(() => work()).final;
   }
 
+  /** Alias for queue(). */
   send(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
     options?: SendMessageOptions,
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
+    return this.scheduleSend(messageOrInstruct, options);
+  }
+
+  /** Schedule a normal FIFO conversation turn. */
+  queue(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
+  queue<TSchema extends OutputSchema>(
+    instruct: Instruct<TSchema>,
+    options?: SendMessageOptions,
+  ): AgentHandle<ParsedSchema<TSchema>>;
+  queue(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
+    return this.scheduleSend(messageOrInstruct, options);
+  }
+
+  /** Schedule a priority turn at the next complete model/tool boundary. */
+  steer(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
+  steer<TSchema extends OutputSchema>(
+    instruct: Instruct<TSchema>,
+    options?: SendMessageOptions,
+  ): AgentHandle<ParsedSchema<TSchema>>;
+  steer(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
+    return this.scheduleSend(messageOrInstruct, options, true);
+  }
+
+  private scheduleSend(
+    messageOrInstruct: string | Instruct<any>,
+    options: SendMessageOptions | undefined,
+    steer = false,
+  ): AgentHandle<any> {
     const { fileResolver, metadata, ...modelOptions } = options ?? {};
     const userTurn = compileUserTurn(messageOrInstruct, { metadata });
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
 
-    const work = async (signal: AbortSignal) => {
-      const root = this.spanParent?.startSpan("agent.send", {
-        type: "workflow",
-        attributes: {
-          sessionId: this.sessionId,
-          ...(this.name ? { agentName: this.name } : {}),
-        },
-      });
-      logContent(root, "message", getTextContent(userTurn.message.content));
-      let status: SpanStatus = "ok";
-
-      try {
-        const result = await this.run(userTurn, {
-          signal,
-          fileResolver,
-          requestOptions,
-          span: root,
+    return this.scheduler.schedule(
+      async ({ signal }) => {
+        const root = this.spanParent?.startSpan(steer ? "agent.steer" : "agent.send", {
+          type: "workflow",
+          attributes: {
+            sessionId: this.sessionId,
+            steer,
+            ...(this.name ? { agentName: this.name } : {}),
+          },
         });
-        if (!result.ok) status = "error";
-        root?.setAttributes({
-          inputTokens: result.usage.in,
-          outputTokens: result.usage.out,
-        });
-        return result;
-      } catch (error) {
-        status = spanStatusFromError(error);
-        root?.error(error instanceof Error ? error.message : String(error));
-        throw error;
-      } finally {
-        root?.end(status);
-        await this.ownedTracer?.flush();
-      }
-    };
+        logContent(root, "message", getTextContent(userTurn.message.content));
+        let status: SpanStatus = "ok";
 
-    return this.queue(work, modelOptions.signal);
-  }
-
-  /**
-   * Enqueue work behind everything already queued on this agent. Sends and
-   * compactions share one queue, so they never overlap.
-   *
-   * The work is exposed as two promises: `final` carries the outcome to the
-   * caller; `workQueue` carries only sequencing, with the outcome stripped —
-   * a rejected `final` in the queue would poison the chain and block all
-   * later work. Cancelled work still runs in order, but with an
-   * already-aborted signal.
-   */
-  private queue<T>(
-    work: (signal: AbortSignal) => Promise<T>,
-    externalSignal?: AbortSignal,
-  ): Handle<T> {
-    // Per-work controller so handle.cancel() aborts only this work.
-    const abort = new AbortController();
-    const signal = externalSignal ? AbortSignal.any([externalSignal, abort.signal]) : abort.signal;
-
-    // Chained onto the end of the current queue; work runs once the current tail settles.
-    const final = this.workQueue.then(() => work(signal));
-
-    // The queue has to resolve cleanly so the next task can start, hence noops on both resolve and reject
-    this.workQueue = final.then(
-      () => {},
-      () => {},
+        try {
+          const result = await this.run(userTurn, {
+            signal,
+            fileResolver,
+            requestOptions,
+            span: root,
+          });
+          if (!result.ok) status = "error";
+          root?.setAttributes({
+            inputTokens: result.usage.in,
+            outputTokens: result.usage.out,
+          });
+          return result;
+        } catch (error) {
+          status = spanStatusFromError(error);
+          root?.error(error instanceof Error ? error.message : String(error));
+          throw error;
+        } finally {
+          root?.end(status);
+          await this.ownedTracer?.flush();
+        }
+      },
+      modelOptions.signal,
+      steer,
     );
-
-    return {
-      cancel: (reason?: unknown) => abort.abort(reason),
-      final,
-    };
   }
 
   private async resolveMcpTools(signal: AbortSignal, span?: Span): Promise<void> {
@@ -422,70 +421,69 @@ export class Agent {
     const { signal, fileResolver: sendFileResolver, requestOptions } = runtime;
     const span = runtime.span;
     const turnEventBuilder = new TurnEventBuilder();
-    let agentTurnId: string | undefined;
-    // agentTurnId only ever names the Turn created by startAgentTurn.
-    const currentAgentTurn = (): Turn | undefined =>
-      agentTurnId
-        ? (this.accumulator.state.turns.find((entry) => entry.id === agentTurnId) as
-            | Turn
-            | undefined)
-        : undefined;
     const emptyUsage: Stats = createStats();
+    const finalize = (outcome: "complete" | "cancelled" | "error"): void => {
+      for (const event of turnEventBuilder.finalizeTurn(outcome)) this.emitEvent(event);
+    };
 
-    if (signal.aborted) {
-      throw new AxleAgentAbortError("Agent send aborted", {
-        reason: signal.reason,
-        usage: emptyUsage,
-      });
+    this.history.append(userTurn.message);
+    for (const event of turnEventBuilder.createUserTurn(userTurn.message)) {
+      this.emitEvent(event);
     }
+    const startEvent = turnEventBuilder.startAgentTurn();
+    this.emitEvent(startEvent);
+    const currentAgentTurn = (): Turn | undefined =>
+      this.accumulator.state.turns.find((entry) => entry.id === startEvent.turnId) as
+        | Turn
+        | undefined;
+    const abortError = (
+      reason: unknown,
+      options: {
+        messages?: AxleMessage[];
+        partial?: AxleAssistantMessage;
+        usage?: Stats;
+      } = {},
+    ): AxleAgentAbortError => {
+      finalize("cancelled");
+      return new AxleAgentAbortError("Agent send aborted", {
+        reason,
+        ...options,
+        turn: currentAgentTurn(),
+        usage: options.usage ?? emptyUsage,
+      });
+    };
 
+    let effectiveSystem = this.system;
+    const requestMessages = this.history.messages;
     try {
+      if (signal.aborted) throw abortError(signal.reason);
       await this.resolveMcpTools(signal, span);
+      if (this.memory) {
+        const recallResult = await this.memory.recall({
+          agentName: this.name,
+          sessionId: this.sessionId,
+          system: this.system,
+          messages: requestMessages,
+          span: span,
+        });
+        if (recallResult.systemSuffix) {
+          effectiveSystem = (effectiveSystem ?? "") + "\n\n" + recallResult.systemSuffix;
+        }
+      }
+
+      if (signal.aborted) throw abortError(signal.reason);
     } catch (error) {
+      if (error instanceof AxleAgentAbortError) throw error;
       if (
         signal.aborted ||
         error instanceof AxleAbortError ||
         (error instanceof Error && error.name === "AbortError")
       ) {
-        throw new AxleAgentAbortError("Agent send aborted", {
-          reason: error instanceof AxleAbortError ? error.reason : signal.reason,
-          usage: emptyUsage,
-        });
+        throw abortError(error instanceof AxleAbortError ? error.reason : signal.reason);
       }
+      finalize("error");
       throw error;
     }
-
-    let effectiveSystem = this.system;
-    const requestMessages = [...this.history.messages, userTurn.message];
-    if (this.memory) {
-      const recallResult = await this.memory.recall({
-        agentName: this.name,
-        sessionId: this.sessionId,
-        system: this.system,
-        messages: requestMessages,
-        span: span,
-      });
-      if (recallResult.systemSuffix) {
-        effectiveSystem = (effectiveSystem ?? "") + "\n\n" + recallResult.systemSuffix;
-      }
-    }
-
-    if (signal.aborted) {
-      throw new AxleAgentAbortError("Agent send aborted", {
-        reason: signal.reason,
-        usage: emptyUsage,
-      });
-    }
-
-    this.history.append(userTurn.message);
-    for (const evt of turnEventBuilder.createUserTurn(userTurn.message)) {
-      this.emitEvent(evt);
-    }
-
-    // Start agent turn
-    const startEvent = turnEventBuilder.startAgentTurn();
-    agentTurnId = startEvent.turnId;
-    this.emitEvent(startEvent);
 
     const streamSpan = span?.startSpan("stream", { type: "internal" }) ?? undefined;
     const { signal: _requestSignal, ...streamRequestOptions } = requestOptions ?? {};
@@ -501,11 +499,13 @@ export class Agent {
       signal,
     });
 
-    // Translate StreamEvents → TurnEvents
     streamHandle.on((streamEvent) => {
       const turnEvents = turnEventBuilder.handleStreamEvent(streamEvent);
       for (const evt of turnEvents) this.emitEvent(evt);
     });
+    streamHandle.onToolBatchComplete(() =>
+      this.scheduler.claimSteer() ? "finish" : "continue",
+    );
 
     let streamResult: StreamResult;
     let streamSpanStatus: SpanStatus = "ok";
@@ -519,8 +519,7 @@ export class Agent {
           this.history.append(error.messages);
         }
 
-        const finalizeEvents = turnEventBuilder.finalizeTurn("error");
-        for (const evt of finalizeEvents) this.emitEvent(evt);
+        finalize("error");
 
         throw new AxleToolFatalError(error.message, {
           toolName: error.toolName,
@@ -535,17 +534,13 @@ export class Agent {
           this.history.append(error.messages);
         }
 
-        const finalizeEvents = turnEventBuilder.finalizeTurn("cancelled");
-        for (const evt of finalizeEvents) this.emitEvent(evt);
-
-        throw new AxleAgentAbortError("Agent send aborted", {
-          reason: error.reason,
+        throw abortError(error.reason, {
           messages: error.messages,
           partial: error.partial,
-          turn: currentAgentTurn(),
-          usage: error.usage ?? emptyUsage,
+          usage: error.usage,
         });
       }
+      finalize("error");
       throw error;
     } finally {
       streamSpan?.end(streamSpanStatus);
@@ -555,13 +550,11 @@ export class Agent {
     if (streamResult.ok && streamResult.final?.finishReason) {
       span?.setAttribute("finishReason", streamResult.final.finishReason);
     }
-
     if (streamResult.messages.length > 0) {
       this.history.append(streamResult.messages);
     }
 
-    const finalizeEvents = turnEventBuilder.finalizeTurn(outcome);
-    for (const evt of finalizeEvents) this.emitEvent(evt);
+    finalize(outcome);
 
     const usage = streamResult.usage ?? emptyUsage;
     const agentTurn = currentAgentTurn();
