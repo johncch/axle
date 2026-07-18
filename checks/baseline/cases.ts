@@ -669,6 +669,10 @@ export const baselineCases: BaselineCase[] = [
     id: "agent-subagent-tool",
     description: "Agent delegates to a child agent exposed as a tool.",
     async run({ provider, model, requestOptions }) {
+      const childProvider: AIProvider = {
+        ...provider,
+        name: `${provider.name}:child`,
+      };
       const subagentTool = createAgentTool({
         name: "delegate_code_word",
         description: "Delegate a code-word lookup task to a child agent.",
@@ -677,7 +681,7 @@ export const baselineCases: BaselineCase[] = [
         }),
         createAgent: () =>
           new Agent({
-            provider,
+            provider: childProvider,
             model,
             ...requestOptions,
             system: "You are a child agent. Reply with exactly the requested code word.",
@@ -699,8 +703,8 @@ export const baselineCases: BaselineCase[] = [
       const usageAttributed =
         result.usage.breakdown?.some(
           (entry) =>
-            entry.provider === provider.name &&
-            entry.model === model &&
+            entry.provider === childProvider.name &&
+            entry.model.length > 0 &&
             entry.in > 0 &&
             entry.out > 0,
         ) === true;
@@ -711,7 +715,9 @@ export const baselineCases: BaselineCase[] = [
         ...(!childReturnedExpectedValue
           ? ["Child tool result did not contain subagent-orchid."]
           : []),
-        ...(!usageAttributed ? ["Child usage was not attributed to the provider and model."] : []),
+        ...(!usageAttributed
+          ? ["Child usage did not appear as a distinct provider/model breakdown entry."]
+          : []),
       ];
 
       return {
@@ -721,6 +727,7 @@ export const baselineCases: BaselineCase[] = [
           response: result.response,
           toolResults,
           turnCount: agent.history.turns.length,
+          childProvider: childProvider.name,
           usage: result.usage,
         },
       };
