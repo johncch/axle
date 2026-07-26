@@ -1,4 +1,5 @@
 import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
+import { AxleError } from "../../errors/AxleError.js";
 import { createStats } from "../../utils/stats.js";
 import type { Handle } from "../../utils/utils.js";
 
@@ -13,12 +14,23 @@ export class AgentScheduler {
   private current?: ScheduledWork;
   private normal: ScheduledWork[] = [];
   private steering: ScheduledWork[] = [];
+  private activeCallback?: string;
 
   schedule<T>(
     run: (context: { signal: AbortSignal }) => Promise<T>,
     externalSignal?: AbortSignal,
     steer = false,
   ): Handle<T> {
+    if (this.activeCallback) {
+      throw new AxleError(
+        `Cannot schedule Agent work while ${this.activeCallback} callback is active`,
+        {
+          code: "AGENT_CALLBACK_REENTRANCY",
+          details: { callback: this.activeCallback },
+        },
+      );
+    }
+
     const abort = new AbortController();
     const signal = externalSignal ? AbortSignal.any([externalSignal, abort.signal]) : abort.signal;
     const { promise: final, resolve, reject } = Promise.withResolvers<T>();
@@ -61,6 +73,25 @@ export class AgentScheduler {
       cancel: (reason?: unknown) => abort.abort(reason),
       final,
     };
+  }
+
+  async invokeCallback<T>(name: string, callback: () => Promise<T> | T): Promise<T> {
+    if (this.activeCallback) {
+      throw new AxleError(`Cannot run ${name} while ${this.activeCallback} callback is active`, {
+        code: "AGENT_CALLBACK_REENTRANCY",
+        details: {
+          callback: this.activeCallback,
+          requestedCallback: name,
+        },
+      });
+    }
+
+    this.activeCallback = name;
+    try {
+      return await callback();
+    } finally {
+      this.activeCallback = undefined;
+    }
   }
 
   claimSteer(): boolean {

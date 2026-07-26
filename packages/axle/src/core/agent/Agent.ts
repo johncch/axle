@@ -37,6 +37,8 @@ import type {
   AgentResult,
   AgentSession,
   CompactionCallback,
+  CompactionConfig,
+  CompactionTrigger,
   SendMessageOptions,
   TurnEventCallback,
 } from "./types.js";
@@ -74,7 +76,7 @@ export class Agent {
   private ownedTracer?: Tracer;
 
   private eventCallbacks: TurnEventCallback[] = [];
-  private compactionCallback?: CompactionCallback;
+  private compaction?: CompactionConfig;
   private scheduler = new AgentScheduler();
   private accumulator: TurnAccumulator;
 
@@ -171,12 +173,11 @@ export class Agent {
   }
 
   /**
-   * Register the compaction callback: the policy and strategy for shrinking
-   * the active conversation. One callback per agent; registering again
-   * replaces it.
+   * Set the compaction implementation and its optional automatic triggers.
+   * Setting another configuration replaces it.
    */
-  onCompaction(callback: CompactionCallback): void {
-    this.compactionCallback = callback;
+  setCompaction(config: CompactionConfig): void {
+    this.compaction = config;
   }
 
   /**
@@ -188,86 +189,94 @@ export class Agent {
    * cancellation also resolves `null`. Errors propagate — a manual compact
    * was explicitly requested.
    *
-   * Do not await this from inside a running send (a tool's `execute`,
-   * `onToolCall`, or a compaction callback): the send holds the queue, so the
-   * nested call deadlocks.
+   * Scheduling Agent work from the compaction callback fails immediately.
+   * Do not await this from inside a running send's tool callback: the send
+   * holds the queue, so the nested call cannot start.
    */
   compact(options?: { signal?: AbortSignal }): Promise<CompactionRecord | null> {
-    const callback = this.compactionCallback;
+    const callback = this.compaction?.compact;
     if (!callback) return Promise.resolve(null);
 
-    const work = async (signal: AbortSignal): Promise<CompactionRecord | null> => {
-      if (signal.aborted) return null;
+    return this.scheduler.schedule(
+      ({ signal }) => this.runCompaction(callback, signal, "manual"),
+      options?.signal,
+    ).final;
+  }
 
-      const root = this.spanParent?.startSpan("agent.compact", {
-        type: "workflow",
-        attributes: {
-          sessionId: this.sessionId,
-          ...(this.name ? { agentName: this.name } : {}),
-        },
+  private async runCompaction(
+    callback: CompactionCallback,
+    signal: AbortSignal,
+    trigger: CompactionTrigger,
+  ): Promise<CompactionRecord | null> {
+    if (signal.aborted) return null;
+
+    const root = this.spanParent?.startSpan("agent.compact", {
+      type: "workflow",
+      attributes: {
+        sessionId: this.sessionId,
+        trigger,
+        ...(this.name ? { agentName: this.name } : {}),
+      },
+    });
+    let status: SpanStatus = "ok";
+
+    const id = crypto.randomUUID();
+    const start = new Date().toISOString();
+    this.emitEvent({ type: "compaction:start", id, timing: { start } });
+
+    const end = (outcome: "complete" | "skipped" | "error", record?: CompactionRecord): void => {
+      root?.setAttribute("outcome", outcome);
+      this.emitEvent({
+        type: "compaction:end",
+        id,
+        outcome,
+        record,
+        timing: { start, end: new Date().toISOString() },
       });
-      let status: SpanStatus = "ok";
+    };
 
-      const id = crypto.randomUUID();
-      const start = new Date().toISOString();
-      this.emitEvent({ type: "compaction:start", id, timing: { start } });
-
-      const end = (outcome: "complete" | "skipped" | "error", record?: CompactionRecord): void => {
-        root?.setAttribute("outcome", outcome);
-        this.emitEvent({
-          type: "compaction:end",
-          id,
-          outcome,
-          record,
-          timing: { start, end: new Date().toISOString() },
-        });
-      };
-
-      try {
-        const before = this.context();
-        const messages = await callback(
+    try {
+      const before = this.context();
+      const messages = await this.scheduler.invokeCallback("compaction", () =>
+        callback(
           { messages: this.history.messages },
           {
             usage: before,
             signal,
+            trigger,
           },
-        );
+        ),
+      );
 
-        if (signal.aborted || messages == null) {
-          end("skipped");
-          return null;
-        }
-
-        validateCompactedMessages(messages);
-        const record: CompactionRecord = { id, at: start };
-        this.history.compact(messages, record);
-        if (root) {
-          root.setAttributes({
-            beforeTokens: before.total,
-            afterTokens: this.context().total,
-          });
-        }
-        end("complete", record);
-        return record;
-      } catch (error) {
-        // A cancelled compaction is a skip, not a failure — the callback
-        // forwarding the signal (and its inner call throwing on abort) is the
-        // expected shape, and nothing was changed.
-        if (signal.aborted) {
-          end("skipped");
-          return null;
-        }
-        status = spanStatusFromError(error);
-        root?.error(error instanceof Error ? error.message : String(error));
-        end("error");
-        throw error;
-      } finally {
-        root?.end(status);
-        await this.ownedTracer?.flush();
+      if (signal.aborted || messages == null) {
+        end("skipped");
+        return null;
       }
-    };
 
-    return this.scheduler.schedule(({ signal }) => work(signal), options?.signal).final;
+      validateCompactedMessages(messages);
+      const record: CompactionRecord = { id, at: start };
+      this.history.compact(messages, record);
+      if (root) {
+        root.setAttributes({
+          beforeTokens: before.total,
+          afterTokens: this.context().total,
+        });
+      }
+      end("complete", record);
+      return record;
+    } catch (error) {
+      if (signal.aborted) {
+        end("skipped");
+        return null;
+      }
+      status = spanStatusFromError(error);
+      root?.error(error instanceof Error ? error.message : String(error));
+      end("error");
+      throw error;
+    } finally {
+      root?.end(status);
+      await this.ownedTracer?.flush();
+    }
   }
 
   /**
@@ -279,9 +288,9 @@ export class Agent {
    * but not executable configuration such as providers, tools, MCP clients,
    * memory, or tracers.
    *
-   * Do not await this from inside a running send (a tool's `execute`,
-   * `onToolCall`, or a compaction callback): the send holds the queue, so the
-   * nested call deadlocks.
+   * Scheduling Agent work from the compaction callback fails immediately.
+   * Do not await this from inside a running send's tool callback: the send
+   * holds the queue, so the nested call cannot start.
    */
   snapshot(): Promise<AgentSession> {
     const work = async (): Promise<AgentSession> => {
@@ -342,12 +351,20 @@ export class Agent {
         let status: SpanStatus = "ok";
 
         try {
+          const beforeTurnCompaction = this.compaction;
+          if (beforeTurnCompaction?.triggers?.beforeTurn) {
+            await this.runCompaction(beforeTurnCompaction.compact, signal, "beforeTurn");
+          }
           const result = await this.run(userTurn, {
             signal,
             fileResolver,
             requestOptions,
             span: root,
           });
+          const afterTurnCompaction = this.compaction;
+          if (result.ok && afterTurnCompaction?.triggers?.afterTurn) {
+            await this.runCompaction(afterTurnCompaction.compact, signal, "afterTurn");
+          }
           if (!result.ok) status = "error";
           root?.setAttributes({
             inputTokens: result.usage.in,

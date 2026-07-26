@@ -225,10 +225,30 @@ export type TurnEventCallback = (event: TurnEvent) => void;
  *
  * @experimental Compaction is under active design and may change in any release.
  */
+export type CompactionTrigger = "manual" | "beforeTurn" | "afterTurn";
+
 export type CompactionCallback = (
   state: { messages: AxleMessage[] },
-  context: { usage: ContextUsage; signal?: AbortSignal },
+  context: {
+    usage: ContextUsage;
+    signal?: AbortSignal;
+    trigger: CompactionTrigger;
+  },
 ) => MaybePromise<AxleMessage[] | null>;
+
+/**
+ * Compaction implementation and the turn boundaries that invoke it
+ * automatically. Manual `agent.compact()` is always available.
+ *
+ * @experimental Compaction is under active design and may change in any release.
+ */
+export interface CompactionConfig {
+  compact: CompactionCallback;
+  triggers?: {
+    beforeTurn?: boolean;
+    afterTurn?: boolean;
+  };
+}
 
 export interface SendMessageOptions extends AxleModelRequestOptions {
   fileResolver?: FileResolver;

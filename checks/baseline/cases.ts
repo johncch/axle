@@ -3,6 +3,7 @@ import {
   AxleAgentAbortError,
   AxleToolFatalError,
   Instruct,
+  PromptCompactor,
   createAgentTool,
   generate,
   loadFileContent,
@@ -49,11 +50,6 @@ const answerSchema = z.object({
   answer: z.string(),
   count: z.number(),
   ok: z.boolean(),
-});
-
-const compactionSummarySchema = z.object({
-  codeWord: z.string(),
-  magicNumber: z.number(),
 });
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
@@ -273,7 +269,7 @@ export const baselineCases: BaselineCase[] = [
   {
     id: "agent-compaction",
     description:
-      "Agent compacts history via a model-written summary and the compacted conversation continues.",
+      "PromptCompactor replaces active history with a bounded summary and the conversation continues.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
@@ -281,39 +277,25 @@ export const baselineCases: BaselineCase[] = [
       await agent.send("Also remember: the magic number is 7. Reply exactly: stored.").final;
 
       const messagesBefore = agent.history.messages.length;
-      let compactionSummary: z.infer<typeof compactionSummarySchema> | undefined;
+      const compactor = new PromptCompactor({
+        provider,
+        model,
+        prompt:
+          "Summarize this conversation for a fresh assistant taking over. " +
+          "Preserve the code word and magic number exactly.",
+        thresholdTokens: 100_000,
+        targetTokens: 800,
+        recentUserMessages: 1,
+      });
 
-      agent.onCompaction(async ({ messages }, { signal }) => {
-        const summary = await generate({
-          provider,
-          model,
-          ...requestOptions,
-          reasoning: false,
-          signal,
-          instruct: new Instruct({
-            prompt:
-              "Summarize this conversation for a fresh assistant taking over. " +
-              "Preserve the code word and magic number exactly.\n\n" +
-              JSON.stringify(messages),
-            schema: compactionSummarySchema,
-          }),
-        });
-        if (!summary.ok) return null;
-        compactionSummary = summary.response;
-        return [
-          {
-            role: "user",
-            content:
-              "Summary of the conversation so far: " +
-              `the code word is ${compactionSummary.codeWord}; ` +
-              `the magic number is ${compactionSummary.magicNumber}.`,
-          },
-        ];
+      agent.setCompaction({
+        compact: compactor.compact,
       });
 
       const record = await agent.compact();
       const activeAfter = agent.history.messages.length;
       const archiveAfter = agent.history.archive.length;
+      const compactedContent = String(agent.history.messages[0]?.content ?? "");
       const compactionTurn = agent.history.turns.find((turn) =>
         turn.parts.some((part) => part.type === "compaction"),
       );
@@ -332,6 +314,12 @@ export const baselineCases: BaselineCase[] = [
         ...(activeAfter >= messagesBefore
           ? [`Active history did not shrink: ${messagesBefore} -> ${activeAfter}.`]
           : []),
+        ...(!compactedContent.includes("Recent 1 user message (oldest to newest):")
+          ? ["PromptCompactor did not append the chronological recent-message section."]
+          : []),
+        ...(!compactedContent.includes("magic number is 7")
+          ? ["PromptCompactor did not retain the latest user message verbatim."]
+          : []),
         ...(archiveAfter !== messagesBefore
           ? [`Archive should retain the ${messagesBefore} raw messages, got ${archiveAfter}.`]
           : []),
@@ -348,11 +336,72 @@ export const baselineCases: BaselineCase[] = [
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
-          compactionSummary,
+          compactedContent,
           record,
           messagesBefore,
           activeAfter,
           archiveAfter,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    id: "agent-compaction-triggers",
+    description:
+      "Agent invokes one compaction callback at configured beforeTurn and afterTurn boundaries.",
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({ provider, model, ...requestOptions });
+      const triggerOrder: string[] = [];
+      const messageCounts: number[] = [];
+
+      agent.setCompaction({
+        compact: async ({ messages }, { trigger }) => {
+          await Promise.resolve();
+          triggerOrder.push(trigger);
+          messageCounts.push(messages.length);
+          if (messages.length === 0) return null;
+          return [{ role: "user", content: "Automatic compaction completed." }];
+        },
+        triggers: {
+          beforeTurn: true,
+          afterTurn: true,
+        },
+      });
+
+      const result = await agent.send("Reply with exactly: compaction-triggers-ok").final;
+      const text = String(result.response ?? "");
+      const failureReasons = [
+        ...(!text.toLowerCase().includes("compaction-triggers-ok")
+          ? ["Agent did not return the requested compaction-triggers-ok marker."]
+          : []),
+        ...(triggerOrder.join(",") !== "beforeTurn,afterTurn"
+          ? [
+              `Expected trigger order beforeTurn,afterTurn; got ${
+                triggerOrder.join(",") || "none"
+              }.`,
+            ]
+          : []),
+        ...(messageCounts[0] !== 0 || messageCounts[1] !== 2
+          ? [`Expected trigger message counts 0,2; got ${messageCounts.join(",")}.`]
+          : []),
+        ...(agent.history.compactions.length !== 1
+          ? [`Expected one applied automatic compaction, got ${agent.history.compactions.length}.`]
+          : []),
+        ...(agent.history.messages.length !== 1
+          ? [`Expected one active compacted message, got ${agent.history.messages.length}.`]
+          : []),
+      ];
+
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          response: result.response,
+          triggerOrder,
+          messageCounts,
+          compactions: agent.history.compactions.length,
+          activeMessages: agent.history.messages.length,
           usage: result.usage,
         },
       };

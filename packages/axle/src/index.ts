@@ -32,6 +32,8 @@ export type {
   ParsedSchema,
 } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
+export { PromptCompactor } from "./compaction/index.js";
+export type { PromptCompactorOptions } from "./compaction/index.js";
 export {
   AxleAbortError,
   AxleAgentAbortError,
@@ -127,7 +129,11 @@ export type {
 } from "./messages/message.js";
 
 // Compaction (@experimental)
-export type { CompactionCallback } from "./core/agent/index.js";
+export type {
+  CompactionCallback,
+  CompactionConfig,
+  CompactionTrigger,
+} from "./core/agent/index.js";
 export { validateCompactedMessages } from "./messages/compaction.js";
 export type { CompactionRecord } from "./messages/compaction.js";
 

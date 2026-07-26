@@ -232,10 +232,13 @@ describe("Agent.compact", () => {
     agent.on((event) => events.push(event));
 
     const summary = [user("summary of the first four")];
-    agent.onCompaction((state, context) => {
-      expect(state.messages).toHaveLength(4);
-      expect(context.usage.total).toBeGreaterThan(0);
-      return summary;
+    agent.setCompaction({
+      compact: (state, context) => {
+        expect(state.messages).toHaveLength(4);
+        expect(context.usage.total).toBeGreaterThan(0);
+        expect(context.trigger).toBe("manual");
+        return summary;
+      },
     });
 
     const result = await agent.compact();
@@ -260,7 +263,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
-    agent.onCompaction(() => null);
+    agent.setCompaction({ compact: () => null });
 
     const events: TurnEvent[] = [];
     agent.on((event) => events.push(event));
@@ -292,7 +295,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
-    agent.onCompaction(() => [assistantToolCall("a1", "tc1")]);
+    agent.setCompaction({ compact: () => [assistantToolCall("a1", "tc1")] });
 
     await expect(agent.compact()).rejects.toThrowError(/unanswered tool calls/);
     expect(agent.history.messages).toEqual(FOUR_MESSAGES);
@@ -304,7 +307,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
-    agent.onCompaction(() => [user("summary")]);
+    agent.setCompaction({ compact: () => [user("summary")] });
     await agent.compact();
     agent.history.append(user("five"));
 
@@ -325,7 +328,7 @@ describe("Agent.compact", () => {
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
     const summary = [user("summary of the first four")];
-    agent.onCompaction(() => summary);
+    agent.setCompaction({ compact: () => summary });
     await agent.compact();
 
     const result = await agent.send("next question").final;
@@ -341,10 +344,52 @@ describe("Agent.compact", () => {
     expect(agent.history.archive).toHaveLength(6);
   });
 
+  test("beforeTurn compacts before committing and sending the next user message", async () => {
+    const { provider, requests } = createCapturingProvider();
+    const agent = new Agent({ provider, model: "mock" });
+    agent.history.append(FOUR_MESSAGES);
+    const summary = [user("summary before the next turn")];
+    agent.setCompaction({
+      compact: () => summary,
+      triggers: { beforeTurn: true },
+    });
+
+    await agent.send("next question").final;
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toHaveLength(2);
+    expect(requests[0][0]).toEqual(summary[0]);
+    expect(requests[0][1]).toMatchObject({ role: "user" });
+    expect(agent.history.compactions).toHaveLength(1);
+    expect(
+      agent.history.turns.map((turn) => (isCompactionTurn(turn) ? "compaction" : turn.owner)),
+    ).toEqual(["compaction", "user", "agent"]);
+  });
+
+  test("afterTurn compacts the completed conversation before the handle settles", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = new Agent({ provider, model: "mock" });
+    const summary = [user("summary after the turn")];
+    agent.setCompaction({
+      compact: () => summary,
+      triggers: { afterTurn: true },
+    });
+
+    const result = await agent.send("question").final;
+
+    expect(result.ok).toBe(true);
+    expect(agent.history.messages).toEqual(summary);
+    expect(agent.history.archive).toHaveLength(2);
+    expect(agent.history.compactions).toHaveLength(1);
+    expect(
+      agent.history.turns.map((turn) => (isCompactionTurn(turn) ? "compaction" : turn.owner)),
+    ).toEqual(["user", "agent", "compaction"]);
+  });
+
   test("turns stay coherent across send, compact, send", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
-    agent.onCompaction(() => [user("summary")]);
+    agent.setCompaction({ compact: () => [user("summary")] });
 
     await agent.send("first").final;
     await agent.compact();
@@ -360,7 +405,7 @@ describe("Agent.compact", () => {
   test("a consumer folding the event stream reproduces history.turns exactly", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
-    agent.onCompaction(() => [user("summary")]);
+    agent.setCompaction({ compact: () => [user("summary")] });
 
     const consumer = new TurnAccumulator();
     agent.on((event) => consumer.apply(event));
@@ -396,9 +441,11 @@ describe("Agent.compact", () => {
 
     const agent = new Agent({ provider, model: "mock" });
     const seenByCallback: number[] = [];
-    agent.onCompaction((state) => {
-      seenByCallback.push(state.messages.length);
-      return [user("summary")];
+    agent.setCompaction({
+      compact: (state) => {
+        seenByCallback.push(state.messages.length);
+        return [user("summary")];
+      },
     });
 
     const sendResult = agent.send("question").final;
@@ -425,9 +472,11 @@ describe("Agent.compact", () => {
     const controller = new AbortController();
     controller.abort("stop");
     let called = false;
-    agent.onCompaction(() => {
-      called = true;
-      return [user("summary")];
+    agent.setCompaction({
+      compact: () => {
+        called = true;
+        return [user("summary")];
+      },
     });
 
     await expect(agent.compact({ signal: controller.signal })).resolves.toBeNull();
@@ -443,9 +492,11 @@ describe("Agent.compact", () => {
     agent.history.append(FOUR_MESSAGES);
 
     const controller = new AbortController();
-    agent.onCompaction(() => {
-      controller.abort("changed my mind");
-      return [user("summary")];
+    agent.setCompaction({
+      compact: () => {
+        controller.abort("changed my mind");
+        return [user("summary")];
+      },
     });
 
     await expect(agent.compact({ signal: controller.signal })).resolves.toBeNull();
@@ -462,9 +513,11 @@ describe("Agent.compact", () => {
     const controller = new AbortController();
     const events: TurnEvent[] = [];
     agent.on((event) => events.push(event));
-    agent.onCompaction((_state, { signal }) => {
-      controller.abort("user cancelled");
-      throw new AxleAbortError("Generate aborted", { reason: signal?.reason });
+    agent.setCompaction({
+      compact: (_state, { signal }) => {
+        controller.abort("user cancelled");
+        throw new AxleAbortError("Generate aborted", { reason: signal?.reason });
+      },
     });
 
     await expect(agent.compact({ signal: controller.signal })).resolves.toBeNull();
@@ -479,7 +532,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
-    agent.onCompaction(() => undefined as any);
+    agent.setCompaction({ compact: () => undefined as any });
 
     await expect(agent.compact()).resolves.toBeNull();
     expect(agent.history.messages).toEqual(FOUR_MESSAGES);
@@ -520,7 +573,7 @@ describe("Agent.compact", () => {
   test("a restored agent keeps folding onto the restored turns", async () => {
     const { provider } = createCapturingProvider();
     const first = new Agent({ provider, model: "mock" });
-    first.onCompaction(() => [user("summary")]);
+    first.setCompaction({ compact: () => [user("summary")] });
     await first.send("first").final;
     await first.compact();
 
@@ -549,14 +602,18 @@ describe("Agent.compact", () => {
       observability: { trace: tracer },
     });
     agent.history.append(FOUR_MESSAGES);
-    agent.onCompaction(() => [user("summary")]);
+    agent.setCompaction({ compact: () => [user("summary")] });
 
     await agent.compact();
 
     const span = ends.find((s) => s.name === "agent.compact");
     expect(span).toBeDefined();
     expect(span?.status).toBe("ok");
-    expect(span?.attributes).toMatchObject({ sessionId: "session-1", outcome: "complete" });
+    expect(span?.attributes).toMatchObject({
+      sessionId: "session-1",
+      trigger: "manual",
+      outcome: "complete",
+    });
     expect(span?.attributes?.beforeTokens).toBeGreaterThan(0);
     expect(span?.attributes?.afterTokens).toBeGreaterThan(0);
   });
@@ -571,8 +628,10 @@ describe("Agent.compact", () => {
     });
     const agent = new Agent({ provider, model: "mock", observability: { trace: tracer } });
     agent.history.append(FOUR_MESSAGES);
-    agent.onCompaction(() => {
-      throw new Error("summarizer down");
+    agent.setCompaction({
+      compact: () => {
+        throw new Error("summarizer down");
+      },
     });
 
     await expect(agent.compact()).rejects.toThrow("summarizer down");

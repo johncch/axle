@@ -12,6 +12,8 @@ export type {
   AgentResult,
   AgentSession,
   CompactionCallback,
+  CompactionConfig,
+  CompactionTrigger,
   MaybePromise,
   ObservabilityOptions,
   ProviderDefinition,

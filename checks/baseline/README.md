@@ -113,7 +113,8 @@ done
 - `agent-basic`
 - `agent-instruct-json`
 - `agent-multiturn-history`
-- `agent-compaction` (model-written summary replaces active history; archive retained; conversation continues)
+- `agent-compaction` (`PromptCompactor` creates bounded history; archive retained; conversation continues)
+- `agent-compaction-triggers` (one callback invoked at configured before/after turn boundaries)
 - `generate-tool`
 - `generate-deferred-tool-file`
 - `generate-unsupported-tool-file` (Chat Completions binary tool-result fallback)

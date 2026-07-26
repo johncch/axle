@@ -128,6 +128,97 @@ function createEchoStreamProvider(requests: string[]): AIProvider {
 }
 
 describe("Agent", () => {
+  describe("automatic compaction", () => {
+    test("invokes the same callback at configured turn boundaries", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+      const order: string[] = [];
+      const beforeMessageCounts: number[] = [];
+      const afterMessageCounts: number[] = [];
+
+      agent.setCompaction({
+        compact: async ({ messages }, { usage, signal, trigger }) => {
+          await Promise.resolve();
+          order.push(trigger);
+          if (trigger === "beforeTurn") {
+            beforeMessageCounts.push(messages.length);
+          } else {
+            afterMessageCounts.push(messages.length);
+          }
+          expect(usage.total).toBeGreaterThanOrEqual(0);
+          expect(signal?.aborted).toBe(false);
+          return null;
+        },
+        triggers: {
+          beforeTurn: true,
+          afterTurn: true,
+        },
+      });
+
+      await agent.send("first").final;
+      await agent.steer("second").final;
+
+      expect(order).toEqual(["beforeTurn", "afterTurn", "beforeTurn", "afterTurn"]);
+      expect(beforeMessageCounts).toEqual([0, 2]);
+      expect(afterMessageCounts).toEqual([2, 4]);
+      expect(requests).toEqual(["first", "second"]);
+    });
+
+    test("setting compaction again replaces the previous configuration", async () => {
+      const agent = new Agent({
+        provider: createMockStreamProvider(["ok"]),
+        model: "mock",
+      });
+      const first = vi.fn();
+      const second = vi.fn();
+
+      agent.setCompaction({
+        compact: first,
+        triggers: { beforeTurn: true },
+      });
+      agent.setCompaction({
+        compact: second,
+        triggers: { beforeTurn: true },
+      });
+      await agent.send("hello").final;
+
+      expect(first).not.toHaveBeenCalled();
+      expect(second).toHaveBeenCalledTimes(1);
+    });
+
+    test("nested Agent work rejects immediately and releases the compaction callback", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+
+      agent.setCompaction({
+        compact: () => {
+          agent.send("nested");
+          return null;
+        },
+        triggers: { beforeTurn: true },
+      });
+
+      await expect(agent.send("outer").final).rejects.toMatchObject({
+        code: "AGENT_CALLBACK_REENTRANCY",
+        details: { callback: "compaction" },
+      });
+      expect(agent.history.messages).toEqual([]);
+      expect(requests).toEqual([]);
+
+      agent.setCompaction({ compact: () => null });
+      await expect(agent.send("recovered").final).resolves.toMatchObject({
+        ok: true,
+        response: "recovered",
+      });
+    });
+  });
+
   describe("send and steer", () => {
     test("runs steering work FIFO before normal queued work", async () => {
       const requests: string[] = [];

@@ -814,25 +814,45 @@ Compaction replaces the agent's active conversation with a shorter one — for
 example a summary — so long sessions can continue past the model's context
 limit. The API is experimental and may change in any release.
 
-The host owns the policy and the strategy in a single callback. The engine
-owns validation, receipt stamping, state processing, and event emission.
+Axle ships a prompt-based implementation for the common case:
 
 ```typescript
-agent.onCompaction(async ({ messages }, { usage, signal }) => {
-  if (usage.total < 100_000) return null; // not yet — cheap local estimate
+const compactor = new PromptCompactor({
+  provider,
+  model,
+  prompt:
+    "Create a continuation summary. Preserve decisions, constraints, completed work, and open tasks.",
+  thresholdTokens: 100_000,
+  targetTokens: 20_000,
+});
 
-  const summary = await generate({
-    provider,
-    model,
-    signal,
-    messages: [{ role: "user", content: `Summarize:\n${render(messages)}` }],
-  });
-  if (!summary.ok) return null;
-  return [{ role: "user", content: `Summary so far: ${summaryText(summary)}` }];
+agent.setCompaction({
+  compact: compactor.compact,
+  triggers: {
+    beforeTurn: true,
+  },
 });
 
 const record = await agent.compact(); // CompactionRecord | null when declined
 ```
+
+`PromptCompactor` returns one user message containing a model-written summary
+followed by the latest 10 user messages in oldest-to-newest order. The target
+is an approximate budget for that complete message, including the recent
+message appendix. Set `recentUserMessages` to change the count.
+
+Automatic triggers decline while usage is below `thresholdTokens`; a manual
+`agent.compact()` always runs. You can instead provide any `CompactionCallback`
+when you need a different policy or output format. The engine owns callback
+serialization, result validation, receipt stamping, state processing, and
+event emission.
+
+Omitting `triggers` makes compaction manual-only. `beforeTurn` invokes the
+callback before the next `send()` or `steer()` commits its user message;
+`afterTurn` invokes it after a successful turn is committed. Both automatic
+triggers are awaited and use the same callback as `compact()`. Calling a
+scheduling method on the same agent from inside that callback throws with code
+`AGENT_CALLBACK_REENTRANCY`.
 
 Compaction is destructive at the message layer: the returned messages become
 the entire active conversation. Nothing is lost, though — `agent.history`
