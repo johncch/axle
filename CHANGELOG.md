@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.0] - 2026-07-27
+
+- Added `agent.stop()` to stop an active turn at the next tool-batch boundary without interrupting in-flight work.
+- Added `agent.clear()` to cancel queued agent operations while leaving the active turn untouched.
+- Added `PromptCompactor` and automatic before/after-turn compaction triggers for easier long-session management.
+- Improved compaction cancellation, history handling, and messages for repeated compactions.
+- Updated available model definitions and fixed Gemini thinking configuration for newer Gemini 3.x models.
+
 ## [0.27.1] - 2026-07-17
 
 - Added support for the Kimi K3 model.
