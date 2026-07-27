@@ -46,7 +46,7 @@ export async function createGenerationRequest(
 
   const googleOptions: Record<string, any> = {
     // Axle-normalized options.
-    ...toGeminiThinkingConfig(reasoning),
+    ...toGeminiThinkingConfig(reasoning, model),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(temperature !== undefined ? { temperature } : {}),
     ...(topP !== undefined ? { topP } : {}),

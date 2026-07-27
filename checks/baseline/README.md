@@ -15,6 +15,13 @@ pnpm exec tsx checks/baseline/run.ts
 The default set is OpenAI, Anthropic, Gemini, and Together. OpenRouter is
 available as an explicit alternative Chat Completions provider.
 
+Providers run concurrently; cases within a provider run sequentially. Output
+is pytest-style: one dot row per provider (`.` pass, `F` fail, `E` error,
+`s` skip) with right-aligned progress, updated live on a TTY (each completed
+row prints once when piped), followed by a `FAILURES` section with reasons
+and details and a colored summary bar. JSONL records are appended in
+completion order and carry `providerId` for grouping.
+
 Run one provider:
 
 ```bash

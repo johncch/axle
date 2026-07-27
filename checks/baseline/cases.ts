@@ -1167,6 +1167,7 @@ async function runStreamingWebSearchCitationCase({
     provider,
     model,
     ...requestOptions,
+    reasoning: true,
     providerTools: [webSearchTool],
     messages: [
       {
@@ -1174,7 +1175,7 @@ async function runStreamingWebSearchCitationCase({
         content: prompt,
       },
     ],
-    maxOutputTokens: requestOptions.reasoning === true ? 12000 : 1024,
+    maxOutputTokens: 12000,
   });
   handle.on((event) => eventTypes.push(event.type));
 

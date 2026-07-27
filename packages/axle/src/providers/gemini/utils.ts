@@ -113,18 +113,41 @@ export function toGeminiToolConfig(
 }
 
 /**
- * Translate Axle's normalized `reasoning` boolean into Gemini's thinkingConfig.
- * `true` → enable thinking with a sensible budget; `false` → disable
- * (thinkingBudget: 0); `undefined` → omit (model uses its default, which on
- * 2.5+ is dynamic). Users wanting precise budgets or `includeThoughts: false`
- * set `providerOptions.thinkingConfig` directly, which spreads after this and overrides.
+ * Translate Axle's normalized `reasoning` boolean into Gemini's model-specific
+ * thinkingConfig. Raw provider options can override this mapping.
  */
-export function toGeminiThinkingConfig(reasoning: boolean | undefined) {
-  if (reasoning === true) {
-    return { thinkingConfig: { thinkingBudget: 8192, includeThoughts: true } };
+export function toGeminiThinkingConfig(reasoning: boolean | undefined, model = "") {
+  if (reasoning === undefined) return {};
+
+  if (isGemini3Model(model)) {
+    const thinkingLevel = reasoning ? "high" : model.includes("pro") ? "low" : "minimal";
+    return {
+      thinkingConfig: {
+        thinkingLevel,
+        ...(reasoning ? { includeThoughts: true } : {}),
+      },
+    };
   }
-  if (reasoning === false) return { thinkingConfig: { thinkingBudget: 0 } };
+
+  if (isGemini25Model(model)) {
+    const thinkingBudget = reasoning ? 8192 : model.includes("pro") ? 128 : 0;
+    return {
+      thinkingConfig: {
+        thinkingBudget,
+        ...(reasoning ? { includeThoughts: true } : {}),
+      },
+    };
+  }
+
   return {};
+}
+
+function isGemini3Model(model: string): boolean {
+  return /(?:^|\/)gemini-3(?:[.-]|$)/i.test(model);
+}
+
+function isGemini25Model(model: string): boolean {
+  return /(?:^|\/)gemini-2\.5(?:[.-]|$)/i.test(model);
 }
 
 interface GeminiConversionContext {

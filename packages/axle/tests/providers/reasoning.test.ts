@@ -57,15 +57,41 @@ describe("reasoning translation", () => {
 
   describe("Gemini", () => {
     test("undefined → no field", () => {
-      expect(toGeminiThinkingConfig(undefined)).toEqual({});
+      expect(toGeminiThinkingConfig(undefined, "gemini-3.5-flash-lite")).toEqual({});
     });
-    test("true → thinkingBudget 8192 with includeThoughts", () => {
-      expect(toGeminiThinkingConfig(true)).toEqual({
+    test("Gemini 3 true → high thinking with included thoughts", () => {
+      expect(toGeminiThinkingConfig(true, "gemini-3.5-flash-lite")).toEqual({
+        thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
+      });
+    });
+    test("Gemini 3 false → minimal thinking", () => {
+      expect(toGeminiThinkingConfig(false, "gemini-3.5-flash-lite")).toEqual({
+        thinkingConfig: { thinkingLevel: "minimal" },
+      });
+    });
+    test("Gemini 3 Pro false → low thinking", () => {
+      expect(toGeminiThinkingConfig(false, "gemini-3.1-pro-preview")).toEqual({
+        thinkingConfig: { thinkingLevel: "low" },
+      });
+    });
+    test("Gemini 2.5 true → thinkingBudget 8192 with included thoughts", () => {
+      expect(toGeminiThinkingConfig(true, "gemini-2.5-flash")).toEqual({
         thinkingConfig: { thinkingBudget: 8192, includeThoughts: true },
       });
     });
-    test("false → thinkingBudget 0", () => {
-      expect(toGeminiThinkingConfig(false)).toEqual({ thinkingConfig: { thinkingBudget: 0 } });
+    test("Gemini 2.5 Flash false → thinkingBudget 0", () => {
+      expect(toGeminiThinkingConfig(false, "gemini-2.5-flash")).toEqual({
+        thinkingConfig: { thinkingBudget: 0 },
+      });
+    });
+    test("Gemini 2.5 Pro false → minimum thinking budget", () => {
+      expect(toGeminiThinkingConfig(false, "gemini-2.5-pro")).toEqual({
+        thinkingConfig: { thinkingBudget: 128 },
+      });
+    });
+    test("models without thinking controls omit the field", () => {
+      expect(toGeminiThinkingConfig(true, "gemini-2.0-flash")).toEqual({});
+      expect(toGeminiThinkingConfig(false, "gemini-2.0-flash")).toEqual({});
     });
   });
 

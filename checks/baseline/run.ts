@@ -1,10 +1,15 @@
 import { braveWebSearch, configureAxle } from "@fifthrevision/axle";
 import "dotenv/config";
+import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
 import { baselineCases, type BaselineCase, type BaselineCaseResult } from "./cases.js";
-import { resolveProviderTargets, type BaselineProviderId } from "./providers.js";
+import {
+  resolveProviderTargets,
+  type BaselineProviderId,
+  type BaselineProviderTarget,
+} from "./providers.js";
 
 interface RunOptions {
   providers: string[];
@@ -52,13 +57,88 @@ configureAxle({
 await mkdir(dirname(options.out), { recursive: true });
 await writeFile(options.out, "");
 
+// Providers run concurrently and render pytest-style: one dot row per
+// provider (`.` pass, `F` fail, `E` error, `s` skip) with right-aligned
+// progress. On a TTY all rows update live via log-update; without one
+// (piped/CI), each provider's completed row prints when it finishes.
+class DotReporter {
+  private labels: string[];
+  private glyphs: string[][];
+  private finished: boolean[];
+  private readonly tty = process.stdout.isTTY === true;
+
+  constructor(
+    count: number,
+    private readonly casesPerProvider: number,
+  ) {
+    this.labels = Array.from({ length: count }, () => "");
+    this.glyphs = Array.from({ length: count }, () => []);
+    this.finished = Array.from({ length: count }, () => false);
+  }
+
+  start(index: number, label: string): void {
+    this.labels[index] = label;
+    if (this.tty) this.render();
+  }
+
+  caseDone(index: number, status: CheckRecord["status"]): void {
+    this.glyphs[index].push(glyphFor(status));
+    if (this.tty) this.render();
+  }
+
+  finish(index: number): void {
+    this.finished[index] = true;
+    if (!this.tty) {
+      console.log(this.row(index));
+      return;
+    }
+    this.render();
+    if (this.finished.every(Boolean)) logUpdate.done();
+  }
+
+  private render(): void {
+    logUpdate(this.labels.map((_, index) => this.row(index)).join("\n"));
+  }
+
+  private row(index: number): string {
+    const label = this.labels[index];
+    const dots = this.glyphs[index].join("");
+    const done = this.glyphs[index].length;
+    const percent = `[${String(Math.round((done / this.casesPerProvider) * 100)).padStart(3)}%]`;
+    const width = process.stdout.columns ?? 100;
+    const visibleLength = label.length + 1 + done;
+    const pad = Math.max(1, width - 1 - visibleLength - percent.length);
+    return `${label} ${dots}${" ".repeat(pad)}${percent}`;
+  }
+}
+
+function glyphFor(status: CheckRecord["status"]): string {
+  if (status === "pass") return color("green", ".");
+  if (status === "skip") return color("yellow", "s");
+  return color("red", status === "fail" ? "F" : "E");
+}
+
+function bar(text: string): string {
+  const width = process.stdout.columns ?? 80;
+  const inner = ` ${text} `;
+  const fill = Math.max(4, width - inner.length);
+  const left = Math.floor(fill / 2);
+  return `${"=".repeat(left)}${inner}${"=".repeat(fill - left)}`;
+}
+
 let passed = 0;
-let total = 0;
 let skipped = 0;
 const failedRecords: CheckRecord[] = [];
+const reporter = new DotReporter(targets.length, cases.length);
+const runStartedAt = Date.now();
 
-for (const target of targets) {
-  console.log(`[Provider] ${target.id}:${target.model}`);
+console.log(bar("baseline session starts"));
+console.log(`collected ${cases.length} cases, ${targets.length} providers\n`);
+
+await Promise.all(targets.map((target, index) => runTarget(target, index)));
+
+async function runTarget(target: BaselineProviderTarget, index: number): Promise<void> {
+  reporter.start(index, `${target.id}:${target.model}`);
   const provider = target.createProvider();
 
   for (const testCase of cases) {
@@ -76,11 +156,10 @@ for (const target of targets) {
         durationMs: 0,
         skipReason,
       });
-      console.log(`  ${formatStatus("skip")} [${testCase.id}]: ${skipReason}`);
+      reporter.caseDone(index, "skip");
       continue;
     }
 
-    total += 1;
     const startedAt = Date.now();
 
     try {
@@ -109,9 +188,7 @@ for (const target of targets) {
       };
       await writeRecord(record);
       if (status !== "pass") failedRecords.push(record);
-      console.log(
-        `  ${formatStatus(status)} [${testCase.id}]${formatInlineFailureReasons(failureReasons)}`,
-      );
+      reporter.caseDone(index, status);
     } catch (error) {
       const serializedError = serializeError(error);
       const failureReasons = [`Case threw: ${getErrorMessage(error) ?? "unknown error"}`];
@@ -129,22 +206,18 @@ for (const target of targets) {
       };
       await writeRecord(record);
       failedRecords.push(record);
-      console.log(
-        `  ${formatStatus("error")} [${testCase.id}]${formatInlineFailureReasons(failureReasons)}`,
-      );
+      reporter.caseDone(index, "error");
     }
   }
+
+  reporter.finish(index);
 }
 
-const rate = total === 0 ? 0 : (passed / total) * 100;
-console.log(
-  `\n[Summary] ${passed}/${total} passed (${rate.toFixed(1)}%)${skipped > 0 ? `, ${skipped} skipped` : ""}`,
-);
 if (failedRecords.length > 0) {
-  console.log("\n[Failures]");
+  console.log(`\n${bar("FAILURES")}`);
   for (const record of failedRecords) {
     console.log(
-      `${formatStatus(record.status)} ${record.providerId}:${record.model} ${record.caseId}`,
+      `\n${formatStatus(record.status)} ${record.providerId}:${record.model} ${record.caseId}`,
     );
     if (record.failureReasons && record.failureReasons.length > 0) {
       console.log(formatFailureReasons(record.failureReasons));
@@ -152,6 +225,18 @@ if (failedRecords.length > 0) {
     console.log(formatDetails(record.details ?? record.error));
   }
 }
+
+const failCount = failedRecords.filter((record) => record.status === "fail").length;
+const errorCount = failedRecords.filter((record) => record.status === "error").length;
+const summaryParts = [
+  ...(failCount > 0 ? [`${failCount} failed`] : []),
+  `${passed} passed`,
+  ...(skipped > 0 ? [`${skipped} skipped`] : []),
+  ...(errorCount > 0 ? [`${errorCount} errors`] : []),
+];
+const elapsed = ((Date.now() - runStartedAt) / 1000).toFixed(2);
+const summaryColor = failedRecords.length > 0 ? "red" : "green";
+console.log(`\n${color(summaryColor, bar(`${summaryParts.join(", ")} in ${elapsed}s`))}`);
 console.log(`[Output] ${options.out}`);
 
 if (failedRecords.length > 0) process.exitCode = 1;
@@ -201,8 +286,9 @@ function formatStatus(status: CheckRecord["status"]): string {
   return color("red", "✗ error");
 }
 
-function color(colorName: "green" | "red" | "gray", value: string): string {
-  const code = colorName === "green" ? 32 : colorName === "red" ? 31 : 90;
+function color(colorName: "green" | "red" | "yellow" | "gray", value: string): string {
+  const code =
+    colorName === "green" ? 32 : colorName === "red" ? 31 : colorName === "yellow" ? 33 : 90;
   return `\x1b[${code}m${value}\x1b[0m`;
 }
 
@@ -227,11 +313,6 @@ function formatDetails(value: unknown): string {
     .split("\n")
     .map((line) => `    ${line}`)
     .join("\n");
-}
-
-function formatInlineFailureReasons(reasons: string[]): string {
-  if (reasons.length === 0) return "";
-  return `: ${reasons.join(" ")}`;
 }
 
 function formatFailureReasons(reasons: string[]): string {

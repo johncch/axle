@@ -25,7 +25,7 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
   },
   {
     id: "gemini",
-    model: Models.Google.GEMINI_3_FLASH_PREVIEW,
+    model: Models.Google.GEMINI_3_5_FLASH_LITE,
     default: true,
     createProvider: () => gemini(getEnv("GEMINI_API_KEY")),
   },
