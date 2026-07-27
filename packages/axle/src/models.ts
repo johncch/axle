@@ -9,11 +9,16 @@ export const Models = {
     CLAUDE_FABLE_5: "anthropic/claude-fable-5",
     CLAUDE_HAIKU_4_5: "anthropic/claude-haiku-4-5",
     CLAUDE_HAIKU_4_5_20251001: "anthropic/claude-haiku-4-5-20251001",
+    /** @deprecated Deprecated by its publisher. */
+    CLAUDE_OPUS_4_1: "anthropic/claude-opus-4-1",
+    /** @deprecated Deprecated by its publisher. */
+    CLAUDE_OPUS_4_1_20250805: "anthropic/claude-opus-4-1-20250805",
     CLAUDE_OPUS_4_5: "anthropic/claude-opus-4-5",
     CLAUDE_OPUS_4_5_20251101: "anthropic/claude-opus-4-5-20251101",
     CLAUDE_OPUS_4_6: "anthropic/claude-opus-4-6",
     CLAUDE_OPUS_4_7: "anthropic/claude-opus-4-7",
     CLAUDE_OPUS_4_8: "anthropic/claude-opus-4-8",
+    CLAUDE_OPUS_5: "anthropic/claude-opus-5",
     CLAUDE_SONNET_4_5: "anthropic/claude-sonnet-4-5",
     CLAUDE_SONNET_4_5_20250929: "anthropic/claude-sonnet-4-5-20250929",
     CLAUDE_SONNET_4_6: "anthropic/claude-sonnet-4-6",
@@ -24,14 +29,24 @@ export const Models = {
     DEEPSEEK_V4_PRO: "deepseek/deepseek-v4-pro",
   },
   Google: {
+    /** @deprecated Deprecated by its publisher. */
+    GEMINI_2_0_FLASH: "google/gemini-2.0-flash",
+    /** @deprecated Deprecated by its publisher. */
+    GEMINI_2_0_FLASH_LITE: "google/gemini-2.0-flash-lite",
     GEMINI_2_5_FLASH: "google/gemini-2.5-flash",
     GEMINI_2_5_FLASH_LITE: "google/gemini-2.5-flash-lite",
     GEMINI_2_5_PRO: "google/gemini-2.5-pro",
     GEMINI_3_FLASH_PREVIEW: "google/gemini-3-flash-preview",
+    /** @deprecated Deprecated by its publisher. */
+    GEMINI_3_PRO_PREVIEW: "google/gemini-3-pro-preview",
     GEMINI_3_1_FLASH_LITE: "google/gemini-3.1-flash-lite",
+    /** @deprecated Deprecated by its publisher. */
+    GEMINI_3_1_FLASH_LITE_PREVIEW: "google/gemini-3.1-flash-lite-preview",
     GEMINI_3_1_PRO_PREVIEW: "google/gemini-3.1-pro-preview",
     GEMINI_3_1_PRO_PREVIEW_CUSTOMTOOLS: "google/gemini-3.1-pro-preview-customtools",
     GEMINI_3_5_FLASH: "google/gemini-3.5-flash",
+    GEMINI_3_5_FLASH_LITE: "google/gemini-3.5-flash-lite",
+    GEMINI_3_6_FLASH: "google/gemini-3.6-flash",
     GEMINI_FLASH_LATEST: "google/gemini-flash-latest",
     GEMINI_FLASH_LITE_LATEST: "google/gemini-flash-lite-latest",
     GEMMA_4_26B_A4B_IT: "google/gemma-4-26b-a4b-it",
@@ -60,24 +75,18 @@ export const Models = {
   OpenAI: {
     GPT_4_1: "openai/gpt-4.1",
     GPT_4_1_MINI: "openai/gpt-4.1-mini",
+    /** @deprecated Deprecated by its publisher. */
     GPT_4_1_NANO: "openai/gpt-4.1-nano",
     GPT_4O_2024_08_06: "openai/gpt-4o-2024-08-06",
     GPT_4O_2024_11_20: "openai/gpt-4o-2024-11-20",
     GPT_4O_MINI: "openai/gpt-4o-mini",
     GPT_5: "openai/gpt-5",
-    GPT_5_CHAT_LATEST: "openai/gpt-5-chat-latest",
-    GPT_5_CODEX: "openai/gpt-5-codex",
     GPT_5_MINI: "openai/gpt-5-mini",
     GPT_5_NANO: "openai/gpt-5-nano",
     GPT_5_PRO: "openai/gpt-5-pro",
     GPT_5_1: "openai/gpt-5.1",
-    GPT_5_1_CHAT_LATEST: "openai/gpt-5.1-chat-latest",
-    GPT_5_1_CODEX: "openai/gpt-5.1-codex",
-    GPT_5_1_CODEX_MAX: "openai/gpt-5.1-codex-max",
-    GPT_5_1_CODEX_MINI: "openai/gpt-5.1-codex-mini",
     GPT_5_2: "openai/gpt-5.2",
     GPT_5_2_CHAT_LATEST: "openai/gpt-5.2-chat-latest",
-    GPT_5_2_CODEX: "openai/gpt-5.2-codex",
     GPT_5_2_PRO: "openai/gpt-5.2-pro",
     GPT_5_3_CHAT_LATEST: "openai/gpt-5.3-chat-latest",
     GPT_5_3_CODEX: "openai/gpt-5.3-codex",
@@ -92,11 +101,15 @@ export const Models = {
     GPT_5_6_LUNA: "openai/gpt-5.6-luna",
     GPT_5_6_SOL: "openai/gpt-5.6-sol",
     GPT_5_6_TERRA: "openai/gpt-5.6-terra",
+    /** @deprecated Deprecated by its publisher. */
     O1: "openai/o1",
+    /** @deprecated Deprecated by its publisher. */
     O1_PRO: "openai/o1-pro",
     O3: "openai/o3",
+    /** @deprecated Deprecated by its publisher. */
     O3_MINI: "openai/o3-mini",
     O3_PRO: "openai/o3-pro",
+    /** @deprecated Deprecated by its publisher. */
     O4_MINI: "openai/o4-mini",
   },
   Qwen: {
@@ -138,6 +151,16 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 64_000,
     multimodal: true,
   },
+  [Models.Anthropic.CLAUDE_OPUS_4_1]: {
+    contextWindow: 200_000,
+    maxOutputTokens: 32_000,
+    multimodal: true,
+  },
+  [Models.Anthropic.CLAUDE_OPUS_4_1_20250805]: {
+    contextWindow: 200_000,
+    maxOutputTokens: 32_000,
+    multimodal: true,
+  },
   [Models.Anthropic.CLAUDE_OPUS_4_5]: {
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
@@ -159,6 +182,11 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     multimodal: true,
   },
   [Models.Anthropic.CLAUDE_OPUS_4_8]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    multimodal: true,
+  },
+  [Models.Anthropic.CLAUDE_OPUS_5]: {
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
     multimodal: true,
@@ -193,6 +221,16 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 384_000,
     multimodal: false,
   },
+  [Models.Google.GEMINI_2_0_FLASH]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 8_192,
+    multimodal: true,
+  },
+  [Models.Google.GEMINI_2_0_FLASH_LITE]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 8_192,
+    multimodal: true,
+  },
   [Models.Google.GEMINI_2_5_FLASH]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
@@ -213,7 +251,17 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 65_536,
     multimodal: true,
   },
+  [Models.Google.GEMINI_3_PRO_PREVIEW]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    multimodal: true,
+  },
   [Models.Google.GEMINI_3_1_FLASH_LITE]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    multimodal: true,
+  },
+  [Models.Google.GEMINI_3_1_FLASH_LITE_PREVIEW]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
     multimodal: true,
@@ -229,6 +277,16 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     multimodal: true,
   },
   [Models.Google.GEMINI_3_5_FLASH]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    multimodal: true,
+  },
+  [Models.Google.GEMINI_3_5_FLASH_LITE]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    multimodal: true,
+  },
+  [Models.Google.GEMINI_3_6_FLASH]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
     multimodal: true,
@@ -358,16 +416,6 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 128_000,
     multimodal: true,
   },
-  [Models.OpenAI.GPT_5_CHAT_LATEST]: {
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
-    multimodal: true,
-  },
-  [Models.OpenAI.GPT_5_CODEX]: {
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
-    multimodal: true,
-  },
   [Models.OpenAI.GPT_5_MINI]: {
     contextWindow: 400_000,
     maxOutputTokens: 128_000,
@@ -388,26 +436,6 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 128_000,
     multimodal: true,
   },
-  [Models.OpenAI.GPT_5_1_CHAT_LATEST]: {
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    multimodal: true,
-  },
-  [Models.OpenAI.GPT_5_1_CODEX]: {
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
-    multimodal: true,
-  },
-  [Models.OpenAI.GPT_5_1_CODEX_MAX]: {
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
-    multimodal: true,
-  },
-  [Models.OpenAI.GPT_5_1_CODEX_MINI]: {
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
-    multimodal: true,
-  },
   [Models.OpenAI.GPT_5_2]: {
     contextWindow: 400_000,
     maxOutputTokens: 128_000,
@@ -416,11 +444,6 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   [Models.OpenAI.GPT_5_2_CHAT_LATEST]: {
     contextWindow: 128_000,
     maxOutputTokens: 16_384,
-    multimodal: true,
-  },
-  [Models.OpenAI.GPT_5_2_CODEX]: {
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
     multimodal: true,
   },
   [Models.OpenAI.GPT_5_2_PRO]: {

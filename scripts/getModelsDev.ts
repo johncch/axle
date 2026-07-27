@@ -44,6 +44,7 @@ interface ModelRecord {
   contextWindow?: number;
   maxOutputTokens?: number;
   multimodal: boolean;
+  deprecated: boolean;
 }
 
 const mistralModels = [
@@ -98,8 +99,9 @@ const sources: Source[] = [
   },
 ];
 
-const releaseDateCutoff = new Date();
-releaseDateCutoff.setMonth(releaseDateCutoff.getMonth() - 24);
+// Fixed floor so output depends only on the catalog, never on the run date.
+// Bump deliberately when older generations should age out of the registry.
+const releaseDateFloor = new Date("2024-07-01");
 
 async function main() {
   const response = await fetch("https://models.dev/api.json");
@@ -111,7 +113,8 @@ async function main() {
 
   const output = resolve(process.cwd(), "packages/axle/src/models.ts");
   await writeFile(output, render(records));
-  console.log(`Generated ${records.length} models at ${output}`);
+  const deprecatedCount = records.filter((record) => record.deprecated).length;
+  console.log(`Generated ${records.length} models (${deprecatedCount} deprecated) at ${output}`);
 
   const aliases = buildOpenRouterAliases(catalog, records);
   const aliasOutput = resolve(
@@ -191,6 +194,7 @@ function selectModels(catalog: ModelsDevCatalog, source: Source): ModelRecord[] 
       contextWindow: model.limit?.context,
       maxOutputTokens: model.limit?.output,
       multimodal: model.modalities?.input?.some((modality) => modality !== "text") ?? false,
+      deprecated: model.status === "deprecated",
     }));
 }
 
@@ -214,13 +218,14 @@ function isTextGenerationModel(model: ModelsDevModel): boolean {
   const releaseDate = model.release_date ? new Date(model.release_date) : undefined;
 
   return (
-    model.status !== "deprecated" &&
     releaseDate !== undefined &&
     !Number.isNaN(releaseDate.valueOf()) &&
-    releaseDate >= releaseDateCutoff &&
+    releaseDate >= releaseDateFloor &&
     model.modalities?.input?.includes("text") === true &&
     model.modalities.output?.includes("text") === true &&
-    !/(?:embed|embedding|image|tts|whisper|audio|realtime|moderation)/i.test(model.id)
+    !/(?:embed|embedding|image|tts|whisper|audio|realtime|moderation|robotics|lyria|deep-research|computer-use|\blive\b)/i.test(
+      model.id,
+    )
   );
 }
 
@@ -284,6 +289,9 @@ function render(records: ModelRecord[]): string {
   for (const [namespace, models] of namespaces) {
     lines.push(`  ${namespace}: {`);
     for (const model of models) {
+      if (model.deprecated) {
+        lines.push("    /** @deprecated Deprecated by its publisher. */");
+      }
       lines.push(`    ${model.constant}: ${JSON.stringify(model.id)},`);
     }
     lines.push("  },");
