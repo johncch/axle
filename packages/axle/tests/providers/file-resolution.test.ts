@@ -170,6 +170,9 @@ describe("deferred file resolution", () => {
 
     const fileResolver: FileResolver = async ({ signal }) => {
       receivedSignal = signal;
+      expect(signal?.aborted).toBe(false);
+      controller.abort();
+      expect(signal?.aborted).toBe(true);
       return { type: "url", url: "https://example/x.png" };
     };
 
@@ -207,14 +210,11 @@ describe("deferred file resolution", () => {
     const instruct = new Instruct({ prompt: "Inspect" });
     instruct.addFile(file);
 
-    await agent.send(instruct, { signal: controller.signal }).final;
+    await expect(agent.send(instruct, { signal: controller.signal }).final).rejects.toMatchObject({
+      name: "AbortError",
+    });
 
     expect(receivedSignal).toBeInstanceOf(AbortSignal);
-    expect(receivedSignal!.aborted).toBe(false);
-
-    // Aborting the caller's controller propagates through the merged signal
-    // that was handed to the resolver.
-    controller.abort();
     expect(receivedSignal!.aborted).toBe(true);
   });
 

@@ -1,130 +1,100 @@
 import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
-import { AxleError } from "../../errors/AxleError.js";
 import { createStats } from "../../utils/stats.js";
 import type { Handle } from "../../utils/utils.js";
 
-interface ScheduledWork {
-  execute(): Promise<void>;
-  reject(reason?: unknown): void;
-  steer: boolean;
-  state: "queued" | "claimed" | "running" | "settled";
+class ScheduledTask<T> {
+  readonly final: Promise<T>;
+
+  private readonly controller = new AbortController();
+  private readonly resolveFinal: (value: T) => void;
+  private readonly rejectFinal: (reason?: unknown) => void;
+
+  constructor(
+    private readonly scheduler: AgentScheduler,
+    private readonly work: (context: { signal: AbortSignal }) => Promise<T>,
+    private readonly operation: string,
+    private readonly externalSignal: AbortSignal | undefined,
+  ) {
+    const { promise, resolve, reject } = Promise.withResolvers<T>();
+    this.final = promise;
+    this.resolveFinal = resolve;
+    this.rejectFinal = reject;
+  }
+
+  watchExternalSignal(): void {
+    if (!this.externalSignal) return;
+    if (this.externalSignal.aborted) {
+      this.cancel(this.externalSignal.reason);
+    } else {
+      this.externalSignal.addEventListener("abort", this.onExternalAbort, { once: true });
+    }
+  }
+
+  async execute(): Promise<void> {
+    try {
+      this.resolveFinal(await this.work({ signal: this.controller.signal }));
+    } catch (error) {
+      this.rejectFinal(error);
+    } finally {
+      this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
+    }
+  }
+
+  cancel(reason?: unknown): void {
+    this.controller.abort(reason);
+    if (this.scheduler.withdraw(this)) {
+      this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
+      this.rejectFinal(
+        new AxleAgentAbortError(`Agent ${this.operation} aborted`, {
+          reason: this.controller.signal.reason,
+          usage: createStats(),
+        }),
+      );
+    }
+  }
+
+  private onExternalAbort = (): void => this.cancel(this.externalSignal?.reason);
 }
 
 export class AgentScheduler {
-  private current?: ScheduledWork;
-  private normal: ScheduledWork[] = [];
-  private steering: ScheduledWork[] = [];
-  private activeCallback?: string;
+  private current?: ScheduledTask<any>;
+  private queue: ScheduledTask<any>[] = [];
 
   schedule<T>(
-    run: (context: { signal: AbortSignal }) => Promise<T>,
-    externalSignal?: AbortSignal,
-    steer = false,
+    work: (context: { signal: AbortSignal }) => Promise<T>,
+    options?: { signal?: AbortSignal; operation?: string },
   ): Handle<T> {
-    if (this.activeCallback) {
-      throw new AxleError(
-        `Cannot schedule Agent work while ${this.activeCallback} callback is active`,
-        {
-          code: "AGENT_CALLBACK_REENTRANCY",
-          details: { callback: this.activeCallback },
-        },
-      );
-    }
-
-    const abort = new AbortController();
-    const signal = externalSignal ? AbortSignal.any([externalSignal, abort.signal]) : abort.signal;
-    const { promise: final, resolve, reject } = Promise.withResolvers<T>();
-    const item: ScheduledWork = {
-      execute: async () => {
-        try {
-          resolve(await run({ signal }));
-        } catch (error) {
-          reject(error);
-        }
-      },
-      reject,
-      steer,
-      state: "queued",
-    };
+    const task = new ScheduledTask(this, work, options?.operation ?? "send", options?.signal);
 
     if (!this.current) {
-      this.activate(item);
-    } else if (steer) {
-      this.steering.push(item);
+      this.activate(task);
     } else {
-      this.normal.push(item);
+      this.queue.push(task);
     }
+    task.watchExternalSignal();
 
-    const withdraw = () => {
-      if (item.state === "queued" && this.removeQueued(item)) {
-        item.state = "settled";
-        reject(
-          new AxleAgentAbortError("Agent send aborted", {
-            reason: signal.reason,
-            usage: createStats(),
-          }),
-        );
-      }
-    };
-    signal.addEventListener("abort", withdraw, { once: true });
-    if (signal.aborted) withdraw();
-
-    return {
-      cancel: (reason?: unknown) => abort.abort(reason),
-      final,
-    };
+    return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
   }
 
-  async invokeCallback<T>(name: string, callback: () => Promise<T> | T): Promise<T> {
-    if (this.activeCallback) {
-      throw new AxleError(`Cannot run ${name} while ${this.activeCallback} callback is active`, {
-        code: "AGENT_CALLBACK_REENTRANCY",
-        details: {
-          callback: this.activeCallback,
-          requestedCallback: name,
-        },
-      });
-    }
-
-    this.activeCallback = name;
-    try {
-      return await callback();
-    } finally {
-      this.activeCallback = undefined;
-    }
-  }
-
-  claimSteer(): boolean {
-    const next = this.steering.find((item) => item.state === "queued");
-    if (!next) return false;
-    next.state = "claimed";
+  withdraw(task: ScheduledTask<any>): boolean {
+    const index = this.queue.indexOf(task);
+    if (index < 0) return false;
+    this.queue.splice(index, 1);
     return true;
   }
 
-  private activate(item: ScheduledWork): void {
-    if (item.state === "queued") item.state = "claimed";
-    this.current = item;
-    queueMicrotask(() => void this.run(item));
+  private activate(task: ScheduledTask<any>): void {
+    this.current = task;
+    queueMicrotask(() => void this.run(task));
   }
 
-  private async run(item: ScheduledWork): Promise<void> {
-    item.state = "running";
+  private async run(task: ScheduledTask<any>): Promise<void> {
     try {
-      await item.execute();
+      await task.execute();
     } finally {
-      item.state = "settled";
-      if (this.current !== item) return;
       this.current = undefined;
-      const next = this.steering.shift() ?? this.normal.shift();
+      const next = this.queue.shift();
       if (next) this.activate(next);
     }
-  }
-
-  private removeQueued(item: ScheduledWork): boolean {
-    const queue = item.steer ? this.steering : this.normal;
-    const index = queue.indexOf(item);
-    if (index < 0) return false;
-    queue.splice(index, 1);
-    return true;
   }
 }

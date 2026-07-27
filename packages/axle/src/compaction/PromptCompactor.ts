@@ -43,8 +43,9 @@ export class PromptCompactor {
     if (state.messages.length === 0) return null;
     if (context.trigger !== "manual" && context.usage.total < this.thresholdTokens) return null;
 
+    const carriedOverCount = context.lastCompaction?.messageCount ?? 0;
     const recent = fitRecentMessages(
-      collectRecentUserMessages(state.messages, this.recentUserMessages),
+      collectRecentUserMessages(state.messages.slice(carriedOverCount), this.recentUserMessages),
       Math.floor(this.targetTokens / 2),
     );
     const appendix = renderRecentMessages(recent);

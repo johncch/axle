@@ -159,7 +159,7 @@ describe("Agent", () => {
       });
 
       await agent.send("first").final;
-      await agent.steer("second").final;
+      await agent.send("second").final;
 
       expect(order).toEqual(["beforeTurn", "afterTurn", "beforeTurn", "afterTurn"]);
       expect(beforeMessageCounts).toEqual([0, 2]);
@@ -189,38 +189,40 @@ describe("Agent", () => {
       expect(second).toHaveBeenCalledTimes(1);
     });
 
-    test("nested Agent work rejects immediately and releases the compaction callback", async () => {
+    test("work scheduled while a compaction callback is in flight queues and completes", async () => {
       const requests: string[] = [];
       const agent = new Agent({
         provider: createEchoStreamProvider(requests),
         model: "mock",
       });
 
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
       agent.setCompaction({
-        compact: () => {
-          agent.send("nested");
+        compact: async () => {
+          started.resolve();
+          await release.promise;
           return null;
         },
         triggers: { beforeTurn: true },
       });
 
-      await expect(agent.send("outer").final).rejects.toMatchObject({
-        code: "AGENT_CALLBACK_REENTRANCY",
-        details: { callback: "compaction" },
-      });
-      expect(agent.history.messages).toEqual([]);
-      expect(requests).toEqual([]);
+      const first = agent.send("first");
+      await started.promise;
 
-      agent.setCompaction({ compact: () => null });
-      await expect(agent.send("recovered").final).resolves.toMatchObject({
-        ok: true,
-        response: "recovered",
-      });
+      const second = agent.send("second");
+      const third = agent.send("third");
+      release.resolve();
+
+      await expect(first.final).resolves.toMatchObject({ ok: true, response: "first" });
+      await expect(second.final).resolves.toMatchObject({ ok: true, response: "second" });
+      await expect(third.final).resolves.toMatchObject({ ok: true, response: "third" });
+      expect(requests).toEqual(["first", "second", "third"]);
     });
   });
 
-  describe("send and steer", () => {
-    test("runs steering work FIFO before normal queued work", async () => {
+  describe("send and stop", () => {
+    test("runs queued sends FIFO", async () => {
       const requests: string[] = [];
       const agent = new Agent({
         provider: createEchoStreamProvider(requests),
@@ -228,41 +230,31 @@ describe("Agent", () => {
       });
 
       const first = agent.send("first");
-      const second = agent.steer("second");
+      const second = agent.send("second");
       const third = agent.send("third");
-      const fourth = agent.steer("fourth");
 
-      const results = await Promise.all([
-        first.final,
-        second.final,
-        third.final,
-        fourth.final,
-      ]);
+      const results = await Promise.all([first.final, second.final, third.final]);
 
-      expect(requests).toEqual(["first", "second", "fourth", "third"]);
-      expect(results.map((result) => result.response)).toEqual([
-        "first",
-        "second",
-        "third",
-        "fourth",
-      ]);
+      expect(requests).toEqual(["first", "second", "third"]);
+      expect(results.map((result) => result.response)).toEqual(["first", "second", "third"]);
       expect(
         agent.history.messages
           .filter((message) => message.role === "user")
           .map((message) => getTextContent(message.content)),
-      ).toEqual(["first", "second", "fourth", "third"]);
+      ).toEqual(["first", "second", "third"]);
     });
 
-    test("finishes the complete tool batch before handing off to a steer", async () => {
-      const toolStream = createToolThenTextProvider(
-        ["first_tool", "second_tool"],
-        "steered",
-      );
+    test("stop() finishes the complete tool batch, settles the handle, and the queued send continues", async () => {
+      const toolStream = createToolThenTextProvider(["first_tool", "second_tool"], "taken over");
+      let stopResult: boolean | undefined;
       const firstTool = {
         name: "first_tool",
         description: "First tool",
         schema: z.object({ input: z.string() }),
-        execute: vi.fn().mockResolvedValue("first result"),
+        execute: vi.fn().mockImplementation(async () => {
+          stopResult = agent.stop();
+          return "first result";
+        }),
       };
       const secondTool = {
         name: "second_tool",
@@ -277,21 +269,22 @@ describe("Agent", () => {
       });
 
       const first = agent.send("run both tools");
-      const steered = agent.steer("take over");
-      const [firstResult, steeredResult] = await Promise.all([
-        first.final,
-        steered.final,
-      ]);
+      const next = agent.send("take over");
+      const [firstResult, nextResult] = await Promise.all([first.final, next.final]);
 
+      expect(stopResult).toBe(true);
       expect(firstResult.ok).toBe(true);
       expect(firstResult.turn?.status).toBe("complete");
-      expect(steeredResult.response).toBe("steered");
+      expect(nextResult.response).toBe("taken over");
       expect(firstTool.execute).toHaveBeenCalledTimes(1);
       expect(secondTool.execute).toHaveBeenCalledTimes(1);
       expect(toolStream.callCount).toBe(2);
-      expect(
-        toolStream.requests[1]?.map((message: any) => message.role),
-      ).toEqual(["user", "assistant", "tool", "user"]);
+      expect(toolStream.requests[1]?.map((message: any) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "user",
+      ]);
       expect(agent.history.messages.map((message) => message.role)).toEqual([
         "user",
         "assistant",
@@ -301,7 +294,7 @@ describe("Agent", () => {
       ]);
     });
 
-    test("cancelling a queued steer removes it without appending a user turn", async () => {
+    test("cancelling a queued send removes it without appending a user turn", async () => {
       const requests: string[] = [];
       const agent = new Agent({
         provider: createEchoStreamProvider(requests),
@@ -309,14 +302,14 @@ describe("Agent", () => {
       });
 
       const first = agent.send("first");
-      const steered = agent.steer("withdrawn");
+      const withdrawn = agent.send("withdrawn");
       const third = agent.send("third");
-      const reason = "withdraw-steer";
-      const steeredFinal = steered.final.catch((error) => error);
-      steered.cancel(reason);
+      const reason = "withdraw-send";
+      const withdrawnFinal = withdrawn.final.catch((error) => error);
+      withdrawn.cancel(reason);
 
       await Promise.all([first.final, third.final]);
-      const error = await steeredFinal;
+      const error = await withdrawnFinal;
 
       expect(error).toBeInstanceOf(AxleAgentAbortError);
       expect((error as AxleAbortError).reason).toBe(reason);
@@ -329,52 +322,86 @@ describe("Agent", () => {
       ).toEqual(["first", "third"]);
     });
 
-    test("cancelling a claimed steer preserves its committed user turn", async () => {
-      const toolStream = createToolThenTextProvider(["first_tool"], "unused");
-      const firstTool = {
-        name: "first_tool",
-        description: "First tool",
-        schema: z.object({ input: z.string() }),
-        execute: vi.fn().mockResolvedValue("first result"),
-      };
+    test("send with an already-aborted signal rejects without committing a user turn", async () => {
+      const requests: string[] = [];
       const agent = new Agent({
-        provider: toolStream.provider,
+        provider: createEchoStreamProvider(requests),
         model: "mock",
-        tools: [firstTool],
       });
-      const reason = "cancel-claimed-steer";
-      let steered: ReturnType<typeof agent.steer> | undefined;
+      const events: unknown[] = [];
+      agent.on((event) => events.push(event));
+
+      await expect(
+        agent.send("never sent", { signal: AbortSignal.abort("stop") }).final,
+      ).rejects.toMatchObject({ name: "AbortError", reason: "stop", turn: undefined });
+
+      expect(agent.history.messages).toEqual([]);
+      expect(agent.history.turns).toEqual([]);
+      expect(events).toEqual([]);
+      expect(requests).toEqual([]);
+    });
+
+    test("a setup failure rejects without committing and a retry does not duplicate the user turn", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+      const listTools = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("mcp unreachable"))
+        .mockResolvedValue([]);
+      agent.addMcp({ name: "flaky", listTools, connected: true } as any);
+
+      await expect(agent.send("hello").final).rejects.toThrow("mcp unreachable");
+      expect(agent.history.messages).toEqual([]);
+      expect(agent.history.turns).toEqual([]);
+
+      await expect(agent.send("hello").final).resolves.toMatchObject({
+        ok: true,
+        response: "hello",
+      });
+      expect(requests).toEqual(["hello"]);
+      expect(agent.history.messages.filter((message) => message.role === "user")).toHaveLength(1);
+    });
+
+    test("stop() returns false when no turn is active", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+
+      expect(agent.stop()).toBe(false);
+
+      await agent.send("hello").final;
+      expect(agent.stop()).toBe(false);
+    });
+
+    test("stop() during a turn without tool calls completes normally", async () => {
+      const requests: string[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider(requests),
+        model: "mock",
+      });
+      let stopResult: boolean | undefined;
       agent.on((event) => {
-        if (event.type === "turn:end" && event.status === "complete") {
-          steered?.cancel(reason);
+        if (event.type === "turn:start") {
+          stopResult = agent.stop();
         }
       });
 
-      const first = agent.send("run the tool");
-      steered = agent.steer("committed steer");
-      const steeredFinal = steered.final.catch((error) => error);
+      await expect(agent.send("hello").final).resolves.toMatchObject({
+        ok: true,
+        response: "hello",
+      });
+      expect(stopResult).toBe(true);
 
-      const firstResult = await first.final;
-      const error = await steeredFinal;
-
-      expect(firstResult.ok).toBe(true);
-      expect(error).toBeInstanceOf(AxleAgentAbortError);
-      expect((error as AxleAbortError).reason).toBe(reason);
-      expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
-      expect(toolStream.callCount).toBe(1);
-      expect(agent.history.messages.map((message) => message.role)).toEqual([
-        "user",
-        "assistant",
-        "tool",
-        "user",
-      ]);
-      const committedMessage = agent.history.messages.at(-1);
-      expect(
-        committedMessage?.role === "user"
-          ? getTextContent(committedMessage.content)
-          : undefined,
-      ).toBe("committed steer");
-      expect(agent.history.turns.at(-1)?.status).toBe("cancelled");
+      await expect(agent.send("again").final).resolves.toMatchObject({
+        ok: true,
+        response: "again",
+      });
+      expect(requests).toEqual(["hello", "again"]);
     });
   });
 

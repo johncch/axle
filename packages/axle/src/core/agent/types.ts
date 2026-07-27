@@ -233,6 +233,12 @@ export type CompactionCallback = (
     usage: ContextUsage;
     signal?: AbortSignal;
     trigger: CompactionTrigger;
+    /**
+     * Receipt of the most recent applied compaction, when one exists. Its
+     * `messageCount` marks how many leading messages of `state.messages` are
+     * carried-over compacted content rather than live conversation.
+     */
+    lastCompaction?: CompactionRecord;
   },
 ) => MaybePromise<AxleMessage[] | null>;
 

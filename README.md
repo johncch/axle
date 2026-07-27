@@ -5,6 +5,8 @@ small, focused API for building agentic applications.
 
 **Documentation:** https://axle.fifthrevision.com
 
+**Latest migration guide:** [Migrating to Axle 0.28.0](docs/0.28.0-migration.md)
+
 ## Quick Start
 
 ```typescript
@@ -50,8 +52,8 @@ fixed pipelines.
 
 Agent is the primary interface. It owns the provider, model, system prompt,
 tools, and conversation history. `send()` starts immediately when the agent is
-idle and otherwise joins the normal FIFO lane. It accepts either a plain string
-or an Instruct.
+idle and otherwise queues FIFO. It accepts either a plain string or an
+Instruct.
 
 ```typescript
 const agent = new Agent({
@@ -61,25 +63,39 @@ const agent = new Agent({
 });
 ```
 
-`steer()` joins a priority FIFO lane. At the next safe model boundary, Axle
-finishes the active tool batch, settles the active handle, and transfers
-ownership to the next steering handle. Normal queued work resumes after the
-steering lane empties.
+To interject while the agent is working, stop the active turn and send the
+follow-up:
 
 ```typescript
 const h1 = agent.send("Build the feature.");
-const h2 = agent.steer("Make the button blue.");
-const h3 = agent.send("Also add a sidebar.");
-const h4 = agent.steer("Label the button Send.");
 
-// Execution order: h1 → h2 → h4 → h3
+// later, from an event handler while h1 is executing:
+agent.stop(); // returns false if no turn is executing yet
+const h2 = agent.send("Make the button blue.");
 ```
 
-Every handle owns one linear transcript segment. A pending steer can be
-cancelled before it is committed. Once committed, its user message remains in
-history and cancellation stops its active work without restoring the preceding
-handle. Steering never interrupts a running tool batch; use cancellation when a
-hard stop is required.
+`agent.stop()` asks the active turn to finish at its next complete tool-batch
+boundary: every tool in the in-flight batch completes—including parallel
+calls—and commits, then the handle settles without another provider request.
+A turn whose response requests no tools completes normally. `stop()` returns
+`false` when no turn is executing, and never affects queued sends — cancel
+their handles instead. The transcript stays linear: the committed batch is
+visible to the follow-up turn.
+
+Each `final` resolves only that handle's result: `h1` settles at the stop
+boundary and does not absorb `h2`'s response. A stopped turn ends on its
+tool-call exchange, so a plain send resolves with whatever text that turn
+produced (often empty) and an Instruct send may resolve `ok: false` with a
+parse error — no final answer exists yet by design.
+
+Cancellation is handle-local, and the user message commits when the provider
+request is made. Cancelling a queued handle removes it without committing its
+user message; cancelling the running handle before its provider request (for
+example during setup or automatic compaction) also commits nothing; after
+that point the committed user message remains and the agent turn is marked
+cancelled. Other queued handles continue. `stop()` never interrupts a running
+provider request or tool batch; use cancellation when a hard stop is
+required.
 
 ### Instruct
 
@@ -206,8 +222,8 @@ at call time.
 
 ### Results
 
-`generate(...)`, `stream(...).final`, and `agent.send(...).final` all resolve to
-a two-state result:
+`generate(...)`, `stream(...).final`, and `agent.send(...).final` all resolve
+to a two-state result:
 
 ```typescript
 if (!result.ok) {
@@ -228,12 +244,14 @@ still throw.
 
 Cancellation follows standard JavaScript abort semantics:
 
-- `handle.cancel(reason)` aborts a stream, queued send, or steering handle.
-- `streamHandle.onToolBatchComplete(callback)` installs an awaited boundary
-  callback. Return `"finish"` to resolve normally after the complete tool batch
-  without starting another provider request, or `"continue"` to keep looping.
-- `stream().final`, `generate(...)`, and Agent handle finals reject with an error whose `name` is `"AbortError"`.
-- Axle abort errors preserve `reason`, `usage`, and partial state where available (`messages`, `partial`, and for `Agent.send`, `turn`).
+- `handle.cancel(reason)` aborts that stream or send handle only.
+- A cancelled Agent handle commits no user turn unless its provider request
+  was already made; after that point the committed user turn remains and the
+  agent turn is marked cancelled.
+- `stream().final`, `generate(...)`, and Agent handle finals reject with an
+  error whose `name` is `"AbortError"`.
+- Axle abort errors preserve `reason`, `usage`, and partial state where
+  available (`messages`, `partial`, and for Agent handles, `turn`).
 
 ## Details
 
@@ -569,8 +587,8 @@ const agent = new Agent({
 Axle snapshots global configuration when `generate()`, `stream()`, or
 `Agent.send()` starts. If the selected provider has no native search and no
 fallback is configured, the operation fails before sending a model request.
-Provider-specific `web_search.config` is ignored when the fallback is selected;
-configure fallback behavior on `braveWebSearch()` instead.
+Provider-specific `web_search.config` is ignored when the fallback is
+selected; configure fallback behavior on `braveWebSearch()` instead.
 
 The fallback is exposed to the model as an ordinary executable tool, so it
 produces `tool:*` events rather than `provider-tool:*` events. Applications that
@@ -679,8 +697,9 @@ try {
 `"thinking"`, `"file"`, `"action"`). Action parts further discriminate on
 `part.kind` (`"tool" | "agent" | "provider-tool"`).
 
-Callbacks are registered once and fire on every subsequent queued or steering
-operation.
+Callbacks are registered once and fire on every subsequent `send()`, and also
+receive `compaction:start` / `compaction:end` events — including from a
+manual `agent.compact()`.
 
 #### Turn accumulator
 
@@ -703,8 +722,7 @@ stream can use `TurnAccumulator` instead of reimplementing this reducer:
 import { TurnAccumulator, type Annotation } from "@fifthrevision/axle/ui";
 
 type AppAnnotation =
-  | Annotation<{ image: string }, "sandbox">
-  | Annotation<{ score: number; passed: boolean }, "eval">;
+  Annotation<{ image: string }, "sandbox"> | Annotation<{ score: number; passed: boolean }, "eval">;
 
 type HostEvent = { type: "run:terminal"; status: string };
 
@@ -808,6 +826,25 @@ The `turn:complete` and `tool-results:complete` events carry complete
 `AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server
 architectures that need authoritative message boundaries.
 
+`StreamHandle.onToolBatchComplete(callback)` installs one awaited callback
+after a complete tool batch has executed and its tool-result message has been
+committed:
+
+```typescript
+const handle = stream({ provider, model, messages, tools });
+
+handle.onToolBatchComplete(async (toolResultsMessage) => {
+  await persist(toolResultsMessage);
+  return shouldHandoff() ? "finish" : "continue";
+});
+```
+
+Return `"finish"` to resolve successfully without starting another provider
+request, or `"continue"` to resume the tool loop. The callback receives one
+`AxleToolCallMessage` containing the whole batch; it is an awaited control
+boundary, not a synthetic stream event. Agent uses this hook internally for
+`stop()`.
+
 ### Compaction (experimental)
 
 Compaction replaces the agent's active conversation with a shorter one — for
@@ -817,6 +854,8 @@ limit. The API is experimental and may change in any release.
 Axle ships a prompt-based implementation for the common case:
 
 ```typescript
+import { PromptCompactor } from "@fifthrevision/axle";
+
 const compactor = new PromptCompactor({
   provider,
   model,
@@ -836,23 +875,38 @@ agent.setCompaction({
 const record = await agent.compact(); // CompactionRecord | null when declined
 ```
 
+`agent.compact({ signal })` follows the same cancellation contract as every
+other operation: aborting rejects with an error whose `name` is
+`"AbortError"`. `null` strictly means no compaction happened by choice — no
+callback configured, or the callback declined.
+
 `PromptCompactor` returns one user message containing a model-written summary
 followed by the latest 10 user messages in oldest-to-newest order. The target
 is an approximate budget for that complete message, including the recent
-message appendix. Set `recentUserMessages` to change the count.
+message appendix. Set `recentUserMessages` to change the count. If the appendix
+must shrink, older recent messages are removed first. Messages carried over
+from a previous compaction are excluded from the appendix — the callback
+context's `lastCompaction.messageCount` marks that prefix — so repeated
+compactions never re-collect an earlier summary as a "recent" user message.
 
-Automatic triggers decline while usage is below `thresholdTokens`; a manual
-`agent.compact()` always runs. You can instead provide any `CompactionCallback`
-when you need a different policy or output format. The engine owns callback
-serialization, result validation, receipt stamping, state processing, and
-event emission.
+For `PromptCompactor`, automatic triggers decline while usage is below
+`thresholdTokens`, while a manual `agent.compact()` bypasses that threshold.
+You can instead provide any `CompactionCallback` when you need a different
+policy or output format. The engine owns callback serialization, result
+validation, receipt stamping, state processing, and event emission.
 
 Omitting `triggers` makes compaction manual-only. `beforeTurn` invokes the
-callback before the next `send()` or `steer()` commits its user message;
-`afterTurn` invokes it after a successful turn is committed. Both automatic
-triggers are awaited and use the same callback as `compact()`. Calling a
-scheduling method on the same agent from inside that callback throws with code
-`AGENT_CALLBACK_REENTRANCY`.
+callback before the next `send()` commits its user message;
+`afterTurn` invokes it after a successful turn is committed and before that
+handle resolves. Both automatic triggers are awaited and use the same callback
+as `compact()`. An automatic callback error rejects the corresponding handle;
+return `null` to decline compaction.
+
+Like tool callbacks, the compaction callback runs while the agent's scheduler
+is held: scheduling more work on the same agent from inside it queues behind
+the current operation, so awaiting that work from inside the callback
+deadlocks. Fire-and-forget scheduling is safe — the work runs after the
+current operation settles.
 
 Compaction is destructive at the message layer: the returned messages become
 the entire active conversation. Nothing is lost, though — `agent.history`
@@ -860,16 +914,21 @@ exposes both views:
 
 - `history.messages` — the active conversation sent to the model.
 - `history.archive` — the raw append-only log; compaction never touches it.
-- `history.compactions` — receipts (`{ id, at }`) for each compaction.
+- `history.compactions` — receipts (`{ id, at, messageCount }`) for each
+  compaction; `messageCount` marks how many leading messages of the active
+  conversation are carried-over compacted content.
 
-Compaction runs on the agent's work queue, so it never interleaves with an
-in-flight `send()`. In the turn stream it appears as `compaction:start` /
-`compaction:end` events and lands in `history.turns` as an agent turn
-containing a single `compaction` part (carrying the record once complete).
-The turn's `status` covers the async lifecycle: `"streaming"` while the
-callback runs, then `"complete"` or `"error"`; a skipped compaction leaves no
-turn. `agent.context()` returns the current `ContextUsage` estimate if you
-want to decide outside the callback.
+Compaction runs on the agent's work queue, so it never interleaves with
+in-flight Agent work. In the turn stream it appears as `compaction:start` /
+`compaction:end` events and lands in `history.turns` as an agent turn containing
+a single `compaction` part (carrying the record once complete). The turn's
+`status` covers the async lifecycle: `"streaming"` while the callback runs,
+then `"complete"` or `"error"`; a skipped compaction leaves no turn.
+`agent.context()` returns the current `ContextUsage` estimate if you want to
+decide outside the callback.
+
+See [Migrating to Axle 0.28.0](docs/0.28.0-migration.md) for the
+`onCompaction()` migration and detailed `stop()` semantics.
 
 ### Hosting / Sessions
 

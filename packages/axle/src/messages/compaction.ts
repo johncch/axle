@@ -13,6 +13,11 @@ export interface CompactionRecord {
   id: string;
   /** ISO timestamp for when the compaction ran. */
   at: string;
+  /**
+   * Number of messages the compaction produced — the carried-over prefix of
+   * the active conversation. Absent on records restored from older sessions.
+   */
+  messageCount?: number;
 }
 
 /**

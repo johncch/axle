@@ -120,7 +120,7 @@ done
 - `generate-unsupported-tool-file` (Chat Completions binary tool-result fallback)
 - `stream-tool`
 - `agent-tool`
-- `agent-steering` (tool-batch boundary handoff through the public Agent API)
+- `agent-stop` (stop() finishes the active tool batch; the queued send continues)
 - `generate-parallelized-tool`
 - `agent-subagent-tool` (including child usage attribution)
 - `agent-tool-fatal` (fatal tool error terminates the send with usage intact)

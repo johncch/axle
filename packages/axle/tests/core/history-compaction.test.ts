@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Agent, History } from "../../src/core/agent/index.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import type { CompactionRecord } from "../../src/messages/compaction.js";
 import { validateCompactedMessages } from "../../src/messages/compaction.js";
 import type {
@@ -462,7 +463,28 @@ describe("Agent.compact", () => {
     expect(kinds).toEqual(["user", "agent", "compaction"]);
   });
 
-  test("compact aborted before it starts is a no-op: no callback, no events, no entry", async () => {
+  test("the callback receives the previous compaction receipt as lastCompaction", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = new Agent({ provider, model: "mock" });
+    agent.history.append(FOUR_MESSAGES);
+
+    const seen: (CompactionRecord | undefined)[] = [];
+    agent.setCompaction({
+      compact: (_state, { lastCompaction }) => {
+        seen.push(lastCompaction);
+        return [user("summary"), user("kept")];
+      },
+    });
+
+    const first = await agent.compact();
+    const second = await agent.compact();
+
+    expect(seen).toEqual([undefined, first]);
+    expect(first?.messageCount).toBe(2);
+    expect(second?.messageCount).toBe(2);
+  });
+
+  test("compact aborted before it starts rejects without running the callback", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
@@ -479,14 +501,16 @@ describe("Agent.compact", () => {
       },
     });
 
-    await expect(agent.compact({ signal: controller.signal })).resolves.toBeNull();
+    const compaction = agent.compact({ signal: controller.signal });
+    await expect(compaction).rejects.toBeInstanceOf(AxleAgentAbortError);
+    await expect(compaction).rejects.toMatchObject({ name: "AbortError", reason: "stop" });
     expect(called).toBe(false);
     expect(events).toEqual([]);
     expect(agent.history.turns).toEqual([]);
     expect(agent.history.messages).toEqual(FOUR_MESSAGES);
   });
 
-  test("aborting during the callback discards its result", async () => {
+  test("aborting during the callback discards its result and rejects", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
@@ -499,13 +523,16 @@ describe("Agent.compact", () => {
       },
     });
 
-    await expect(agent.compact({ signal: controller.signal })).resolves.toBeNull();
+    await expect(agent.compact({ signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+      reason: "changed my mind",
+    });
     expect(agent.history.messages).toEqual(FOUR_MESSAGES);
     expect(agent.history.compactions).toEqual([]);
     expect(agent.history.turns.filter(isCompactionTurn)).toEqual([]);
   });
 
-  test("a callback that throws on a forwarded abort is a skip, not an error", async () => {
+  test("a callback that throws on a forwarded abort rejects and emits a skipped compaction", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     agent.history.append(FOUR_MESSAGES);
@@ -520,12 +547,62 @@ describe("Agent.compact", () => {
       },
     });
 
-    await expect(agent.compact({ signal: controller.signal })).resolves.toBeNull();
+    await expect(agent.compact({ signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+      reason: "user cancelled",
+    });
     expect(agent.history.messages).toEqual(FOUR_MESSAGES);
     expect(agent.history.compactions).toEqual([]);
     expect(agent.history.turns.filter(isCompactionTurn)).toEqual([]);
-    const endEvent = events.find((e) => e.type === "compaction:end");
-    expect(endEvent?.type === "compaction:end" && endEvent.outcome).toBe("skipped");
+    const endEvents = events.filter((e) => e.type === "compaction:end");
+    expect(endEvents).toHaveLength(1);
+    expect(endEvents[0].type === "compaction:end" && endEvents[0].outcome).toBe("skipped");
+  });
+
+  test("cancelling a compact queued behind a send rejects and leaves the send unaffected", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const provider: AIProvider = {
+      name: "gated",
+      async createGenerationRequest() {
+        throw new Error("not used");
+      },
+      async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
+        yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
+        await gate;
+        yield { type: "text-start", data: { index: 0 } };
+        yield { type: "text-delta", data: { index: 0, text: "answer" } };
+        yield { type: "text-complete", data: { index: 0 } };
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        };
+      },
+    };
+
+    const agent = new Agent({ provider, model: "mock" });
+    const events: TurnEvent[] = [];
+    agent.on((event) => events.push(event));
+    let called = false;
+    agent.setCompaction({
+      compact: () => {
+        called = true;
+        return null;
+      },
+    });
+
+    const send = agent.send("question").final;
+    const compaction = agent.compact({ signal: AbortSignal.abort("changed my mind") });
+    release();
+
+    await expect(compaction).rejects.toMatchObject({
+      message: "Agent compact aborted",
+      name: "AbortError",
+      reason: "changed my mind",
+    });
+    await expect(send).resolves.toMatchObject({ ok: true, response: "answer" });
+    expect(called).toBe(false);
+    expect(events.filter((e) => e.type === "compaction:start")).toEqual([]);
   });
 
   test("a callback returning undefined is treated as a skip, not an error", async () => {

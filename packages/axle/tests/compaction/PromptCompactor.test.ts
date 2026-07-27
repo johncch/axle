@@ -90,6 +90,32 @@ describe("PromptCompactor", () => {
     expect(content).toContain("Recent 3 user messages (oldest to newest):");
   });
 
+  test("excludes messages carried over from the previous compaction", async () => {
+    const { provider } = createProvider(success("Second summary."));
+    const compactor = createCompactor(provider, { recentUserMessages: 3 });
+    const messages: AxleMessage[] = [
+      user("previous summary with old recent messages"),
+      user("after-one"),
+      assistant("one"),
+      user("after-two"),
+    ];
+
+    const result = await compactor.compact(
+      { messages },
+      {
+        usage: usage(500),
+        trigger: "manual",
+        lastCompaction: { id: "c1", at: "2026-01-01T00:00:00.000Z", messageCount: 1 },
+      },
+    );
+    const content = String(result?.[0]?.content);
+
+    expect(content).not.toContain("previous summary with old recent messages");
+    expect(content).toContain("- after-one");
+    expect(content).toContain("- after-two");
+    expect(content).toContain("Recent 2 user messages (oldest to newest):");
+  });
+
   test("keeps ten recent user messages by default", async () => {
     const { provider } = createProvider(success("Summary."));
     const compactor = createCompactor(provider, { targetTokens: 1_000 });
