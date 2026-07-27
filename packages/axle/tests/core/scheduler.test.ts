@@ -40,6 +40,40 @@ describe("AgentScheduler", () => {
     expect(getEventListeners(seen!, "abort")).toHaveLength(0);
   });
 
+  test("clear() rejects all queued work, leaves the active task running, and drops listeners", async () => {
+    const scheduler = new AgentScheduler();
+    const controller = new AbortController();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+
+    const active = scheduler.schedule(async () => {
+      await gate;
+      return "active";
+    });
+    const queuedSend = scheduler.schedule(async () => "unreachable", {
+      signal: controller.signal,
+    });
+    const queuedCompact = scheduler.schedule(async () => "unreachable", {
+      operation: "compact",
+    });
+
+    expect(scheduler.clear()).toBe(2);
+
+    await expect(queuedSend.final).rejects.toMatchObject({
+      name: "AbortError",
+      message: "Agent send aborted",
+    });
+    await expect(queuedCompact.final).rejects.toMatchObject({
+      name: "AbortError",
+      message: "Agent compact aborted",
+    });
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+
+    release();
+    await expect(active.final).resolves.toBe("active");
+    expect(scheduler.clear()).toBe(0);
+  });
+
   test("withdrawing a queued item rejects it and leaves other work unaffected", async () => {
     const scheduler = new AgentScheduler();
     let release!: () => void;

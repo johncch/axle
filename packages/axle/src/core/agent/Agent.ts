@@ -204,6 +204,20 @@ export class Agent {
     return true;
   }
 
+  /**
+   * Cancel every queued operation without touching the active turn. Each
+   * cleared handle rejects with an `AxleAgentAbortError`, exactly as if it
+   * had been cancelled individually; nothing is committed to history.
+   * Returns the number of operations cleared.
+   *
+   * `agent.stop(); agent.clear(); agent.send(next)` interjects `next` as the
+   * next turn: the active turn settles at its tool-batch boundary, queued
+   * work is dropped, and `next` runs against the committed history.
+   */
+  clear(): number {
+    return this.scheduler.clear();
+  }
+
   private async executeTurn(
     userTurn: CompiledUserTurn<any>,
     runtime: {

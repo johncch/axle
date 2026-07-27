@@ -365,6 +365,58 @@ describe("Agent", () => {
       expect(agent.history.messages.filter((message) => message.role === "user")).toHaveLength(1);
     });
 
+    test("stop() + clear() + send() interjects the new message ahead of queued work", async () => {
+      const toolStream = createToolThenTextProvider(["first_tool"], "interjected");
+      let cleared: number | undefined;
+      const firstTool = {
+        name: "first_tool",
+        description: "First tool",
+        schema: z.object({ input: z.string() }),
+        execute: vi.fn().mockImplementation(async () => {
+          agent.stop();
+          cleared = agent.clear();
+          agent.send("urgent");
+          return "first result";
+        }),
+      };
+      const agent = new Agent({
+        provider: toolStream.provider,
+        model: "mock",
+        tools: [firstTool],
+      });
+
+      const first = agent.send("run the tool");
+      const stale = agent.send("stale");
+      const staleFinal = stale.final.catch((error) => error);
+
+      const firstResult = await first.final;
+      const staleError = await staleFinal;
+      await vi.waitFor(() => expect(toolStream.callCount).toBe(2));
+
+      expect(cleared).toBe(1);
+      expect(firstResult.ok).toBe(true);
+      expect(firstResult.turn?.status).toBe("complete");
+      expect(staleError).toBeInstanceOf(AxleAgentAbortError);
+      expect((staleError as AxleAgentAbortError).turn).toBeUndefined();
+      expect(
+        agent.history.messages
+          .filter((message) => message.role === "user")
+          .map((message) => getTextContent(message.content)),
+      ).toEqual(["run the tool", "urgent"]);
+    });
+
+    test("clear() returns 0 when nothing is queued", async () => {
+      const agent = new Agent({
+        provider: createEchoStreamProvider([]),
+        model: "mock",
+      });
+
+      expect(agent.clear()).toBe(0);
+
+      await agent.send("hello").final;
+      expect(agent.clear()).toBe(0);
+    });
+
     test("stop() returns false when no turn is active", async () => {
       const requests: string[] = [];
       const agent = new Agent({

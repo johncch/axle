@@ -76,6 +76,12 @@ export class AgentScheduler {
     return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
   }
 
+  clear(): number {
+    const queued = [...this.queue];
+    for (const task of queued) task.cancel();
+    return queued.length;
+  }
+
   withdraw(task: ScheduledTask<any>): boolean {
     const index = this.queue.indexOf(task);
     if (index < 0) return false;

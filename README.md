@@ -78,9 +78,13 @@ const h2 = agent.send("Make the button blue.");
 boundary: every tool in the in-flight batch completes—including parallel
 calls—and commits, then the handle settles without another provider request.
 A turn whose response requests no tools completes normally. `stop()` returns
-`false` when no turn is executing, and never affects queued sends — cancel
-their handles instead. The transcript stays linear: the committed batch is
-visible to the follow-up turn.
+`false` when no turn is executing, and never affects queued sends. To drop
+queued work as well, call `agent.clear()`: it cancels every queued operation
+(each cleared handle rejects with an `AxleAgentAbortError`, committing
+nothing) and returns the number cleared, leaving the active turn untouched.
+`stop(); clear(); send(next)` makes `next` the very next turn. The
+transcript stays linear: the committed batch is visible to the follow-up
+turn.
 
 Each `final` resolves only that handle's result: `h1` settles at the stop
 boundary and does not absorb `h2`'s response. A stopped turn ends on its
