@@ -1,8 +1,10 @@
 # Package Manager
 
 **This project uses pnpm, not npm.**
+
 - Always use `pnpm` commands instead of `npm`
 - Never commit `package-lock.json` (it's gitignored)
+- When building a new feature, always write a migration in docs/ Ask the user which version to use.
 
 # Build, Test & Lint Commands
 
@@ -27,6 +29,7 @@
 - **Testing**: Vitest with descriptive test names, organize with nested describe blocks
 
 # Commenting style guides
+
 - No narrating comments
 - Only create JSDoc style comments for exported main objects
 
