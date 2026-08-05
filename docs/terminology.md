@@ -81,7 +81,8 @@ their stored copy a transcript).
 - **turn** for an assistant message or provider request — the pre-0.29
   usage; renamed to *step* (`StreamEvent`'s former `turn:start` /
   `turn:complete` collided with `TurnEvent`'s render-layer `turn:start`).
-- **exchange** — host vocabulary (Sunnyday's message → judge → feedback
-  cycle). Core never uses it.
+- **run** — host vocabulary: Sunnyday's durable conversation, one level
+  above send. A run starts and stops per incoming message (state
+  transitions, not sub-entities). Core never uses it as a unit name.
 - **transcript** — host vocabulary for a persisted session. Core never uses
   it.
