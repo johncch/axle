@@ -126,8 +126,10 @@ export const Models = {
     QWEN3_6_FLASH: "qwen/qwen3.6-flash",
     QWEN3_6_MAX_PREVIEW: "qwen/qwen3.6-max-preview",
     QWEN3_6_PLUS: "qwen/qwen3.6-plus",
+    QWEN3_7_FLASH: "qwen/qwen3.7-flash",
     QWEN3_7_MAX: "qwen/qwen3.7-max",
     QWEN3_7_PLUS: "qwen/qwen3.7-plus",
+    QWEN3_8_MAX: "qwen/qwen3.8-max",
   },
   ZAI: {
     GLM_5_1: "zai/glm-5.1",
@@ -588,7 +590,7 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_6_27B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 65_536,
+    maxOutputTokens: 131_072,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_6_35B_A3B]: {
@@ -611,14 +613,24 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 65_536,
     multimodal: true,
   },
-  [Models.Qwen.QWEN3_7_MAX]: {
+  [Models.Qwen.QWEN3_7_FLASH]: {
     contextWindow: 1_000_000,
     maxOutputTokens: 65_536,
+    multimodal: true,
+  },
+  [Models.Qwen.QWEN3_7_MAX]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
     multimodal: false,
   },
   [Models.Qwen.QWEN3_7_PLUS]: {
     contextWindow: 1_000_000,
-    maxOutputTokens: 65_536,
+    maxOutputTokens: 131_072,
+    multimodal: true,
+  },
+  [Models.Qwen.QWEN3_8_MAX]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
     multimodal: true,
   },
   [Models.ZAI.GLM_5_1]: {
