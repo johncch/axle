@@ -20,7 +20,7 @@ export type ToolCallArgumentError = {
 
 export type AssistantContentPart = AxleAssistantMessage["content"][number];
 
-export interface TurnReaderContext {
+export interface StepReaderContext {
   /** Deliver a StreamEvent to the stream's subscribers. */
   emit(event: StreamEvent): void;
   /** Registry-resolved tools, for the kind on `tool:request` events. */
@@ -28,8 +28,8 @@ export interface TurnReaderContext {
   signal: AbortSignal;
 }
 
-/** A settled model turn: every content part closed, finish reason known. */
-export interface CompletedTurn {
+/** A settled model step: every content part closed, finish reason known. */
+export interface CompletedStep {
   kind: "complete";
   id: string;
   model: string;
@@ -40,28 +40,28 @@ export interface CompletedTurn {
   toolCallArgumentErrors: Map<string, ToolCallArgumentError>;
 }
 
-export type TurnReadOutcome =
-  | CompletedTurn
+export type StepReadOutcome =
+  | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
   | { kind: "incomplete" }
   | { kind: "provider-error"; errorType: string; message: string; usage?: Stats; model: string };
 
 /**
- * Consume one model turn from a provider chunk stream, translating chunks
- * into StreamEvents and accumulating the turn's content parts.
+ * Consume one model step from a provider chunk stream, translating chunks
+ * into StreamEvents and accumulating the step's content parts.
  *
- * This is a pure per-turn state machine: it owns no conversation state,
+ * This is a pure per-step state machine: it owns no conversation state,
  * touches no spans, and makes no decisions about what happens next. The
  * caller maps the outcome onto the tool loop — including wrapping `aborted`
  * partials and `provider-error` usage into its own accounting.
  */
-export async function readTurn(
+export async function readStep(
   source: AsyncIterable<AnyStreamChunk>,
-  ctx: TurnReaderContext,
-): Promise<TurnReadOutcome> {
+  ctx: StepReaderContext,
+): Promise<StepReadOutcome> {
   const parts: AssistantContentPart[] = [];
-  let turnId = "";
-  let turnModel = "";
+  let stepId = "";
+  let stepModel = "";
   let finishReason: AxleStopReason | null = null;
   let usage: Stats = createStats();
 
@@ -101,9 +101,9 @@ export async function readTurn(
   for await (const chunk of source) {
     switch (chunk.type) {
       case "start":
-        turnId = chunk.id;
-        turnModel = chunk.data.model;
-        ctx.emit({ type: "turn:start", id: turnId, model: turnModel });
+        stepId = chunk.id;
+        stepModel = chunk.data.model;
+        ctx.emit({ type: "step:start", id: stepId, model: stepModel });
         break;
 
       case "text-start": {
@@ -327,7 +327,7 @@ export async function readTurn(
           errorType: chunk.data.type,
           message: chunk.data.message,
           usage: chunk.data.usage,
-          model: turnModel,
+          model: stepModel,
         };
       }
 
@@ -343,8 +343,8 @@ export async function readTurn(
     const partial: AxleAssistantMessage | undefined = parts.length
       ? {
           role: "assistant",
-          id: turnId,
-          model: turnModel,
+          id: stepId,
+          model: stepModel,
           content: parts,
           finishReason: AxleStopReason.Cancelled,
         }
@@ -360,8 +360,8 @@ export async function readTurn(
 
   return {
     kind: "complete",
-    id: turnId,
-    model: turnModel,
+    id: stepId,
+    model: stepModel,
     parts,
     finishReason,
     usage,

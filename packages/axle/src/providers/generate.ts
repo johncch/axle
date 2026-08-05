@@ -14,13 +14,13 @@ import type { Stats } from "../types.js";
 import { throwIfAborted } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
 import { addStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.js";
-import { generateTurn } from "./generateTurn.js";
+import { generateStep } from "./generateStep.js";
 import {
   appendUsage,
   checkLoopStop,
   executeToolCalls,
   GenerateResult,
-  logTurnContent,
+  logStepContent,
   resolveToolRegistry,
   resolveTools,
   ToolCallCallback,
@@ -37,7 +37,7 @@ export interface GenerateParams extends AxleModelRequestOptions {
   providerTools?: ProviderTool[];
   registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
-  maxIterations?: number;
+  maxSteps?: number;
   /**
    * Context budget for the tool loop, in tokens. Checked at each request
    * boundary against the previous model call's reported usage (effective
@@ -89,7 +89,7 @@ export async function generate(
         messages: result.messages,
         final: result.final,
         usage: result.usage,
-        // A limit stop usually ends on a tool-call turn with no parseable
+        // A limit stop usually ends on a tool-call step with no parseable
         // text; keep the stop marker so callers can distinguish "continuable,
         // limit tripped" from genuinely malformed output.
         ...(result.stopped ? { stopped: result.stopped } : {}),
@@ -115,7 +115,7 @@ async function runGenerate(
     messages,
     system,
     onToolCall,
-    maxIterations,
+    maxSteps,
     maxContextTokens,
     span,
     fileResolver,
@@ -140,7 +140,7 @@ async function runGenerate(
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
 
-  let iterations = 0;
+  let steps = 0;
   let finalMessage: AxleAssistantMessage | undefined;
 
   const addMessage = (message: AxleMessage) => {
@@ -161,12 +161,12 @@ async function runGenerate(
     return result;
   };
 
-  const setTurnResult = (turnSpan: Span | undefined, response: ModelResult): void => {
-    if (!turnSpan || response.type === "error") {
-      turnSpan?.end("error");
+  const setStepResult = (stepSpan: Span | undefined, response: ModelResult): void => {
+    if (!stepSpan || response.type === "error") {
+      stepSpan?.end("error");
       return;
     }
-    turnSpan.setResult({
+    stepSpan.setResult({
       kind: "llm",
       model: response.model ?? model,
       request: { messages: workingMessages },
@@ -174,15 +174,15 @@ async function runGenerate(
       usage: toTokenUsage(response.usage),
       finishReason: response.finishReason,
     });
-    turnSpan.end();
+    stepSpan.end();
   };
 
   try {
     while (true) {
       throwIfAborted(signal, "Generate aborted");
 
-      iterations += 1;
-      const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
+      steps += 1;
+      const stepSpan = span?.startSpan(`step-${steps}`, { type: "llm" });
 
       const executable = resolvedTools.executable();
       const tools =
@@ -192,14 +192,14 @@ async function runGenerate(
       const providerTools = resolvedTools.provider();
       let response: ModelResult;
       try {
-        response = await generateTurn({
+        response = await generateStep({
           provider,
           model,
           messages: workingMessages,
           system,
           tools,
           providerTools: providerTools.length > 0 ? providerTools : undefined,
-          span: turnSpan,
+          span: stepSpan,
           fileResolver,
           reasoning,
           maxOutputTokens,
@@ -215,7 +215,7 @@ async function runGenerate(
         throwIfAborted(signal, "Generate aborted");
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          turnSpan?.end("ok");
+          stepSpan?.end("ok");
         }
         throw error;
       }
@@ -224,8 +224,8 @@ async function runGenerate(
         provider: provider.name,
         model: response.type === "error" ? model : (response.model ?? model),
       });
-      if (response.type !== "error") logTurnContent(turnSpan, response.content);
-      setTurnResult(turnSpan, response);
+      if (response.type !== "error") logStepContent(stepSpan, response.content);
+      setStepResult(stepSpan, response);
 
       if (response.type === "error") {
         return endWithResult({
@@ -280,9 +280,9 @@ async function runGenerate(
         addMessage({ role: "tool", id: crypto.randomUUID(), content: results });
       }
 
-      // Budget checks run after the turn settles so a limit stop always returns a complete exchange.
-      const stopped = checkLoopStop(iterations, response.usage, {
-        maxIterations,
+      // Budget checks run after the step settles so a limit stop always follows a completed step.
+      const stopped = checkLoopStop(steps, response.usage, {
+        maxSteps,
         maxContextTokens,
       });
       if (stopped) {

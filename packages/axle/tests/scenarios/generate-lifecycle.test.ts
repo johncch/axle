@@ -49,18 +49,18 @@ describe("generate() happy paths", () => {
 
     const { timeline, spans } = writer;
 
-    // Root + turn-1
+    // Root + step-1
     const spanStarts = timeline.filter((e) => e.type === "span:start");
     expect(spanStarts).toHaveLength(2);
     expect(spanStarts[0].name).toBe("generate");
-    expect(spanStarts[1].name).toBe("turn-1");
+    expect(spanStarts[1].name).toBe("step-1");
 
-    // turn-1 has at least one span:update (setResult)
-    const turn1Updates = timeline.filter((e) => e.type === "span:update" && e.name === "turn-1");
-    expect(turn1Updates.length).toBeGreaterThanOrEqual(1);
+    // step-1 has at least one span:update (setResult)
+    const step1Updates = timeline.filter((e) => e.type === "span:update" && e.name === "step-1");
+    expect(step1Updates.length).toBeGreaterThanOrEqual(1);
 
     // Final span states
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
+    const turn1Span = [...spans.values()].find((s) => s.name === "step-1")!;
     expect(turn1Span).toBeDefined();
     expect(turn1Span.result?.kind).toBe("llm");
     expect(turn1Span.status).toBe("ok");
@@ -82,9 +82,9 @@ describe("generate() happy paths", () => {
       expect(rootSpanData.result.finishReason).toBe(AxleStopReason.Stop);
     }
 
-    // Ordering: turn-1 start → turn-1 end → root end
-    const turn1StartIdx = eventIndex(timeline, "span:start", "turn-1");
-    const turn1EndIdx = eventIndex(timeline, "span:end", "turn-1");
+    // Ordering: step-1 start → step-1 end → root end
+    const turn1StartIdx = eventIndex(timeline, "span:start", "step-1");
+    const turn1EndIdx = eventIndex(timeline, "span:end", "step-1");
     const rootEndIdx = eventIndex(timeline, "span:end", "generate");
     expect(turn1StartIdx).toBeLessThan(turn1EndIdx);
     expect(turn1EndIdx).toBeLessThan(rootEndIdx);
@@ -131,15 +131,15 @@ describe("generate() happy paths", () => {
 
     const { timeline, spans } = writer;
 
-    // root + turn-1 + lookup (tool) + turn-2
+    // root + step-1 + lookup (tool) + step-2
     const spanStarts = timeline.filter((e) => e.type === "span:start");
     expect(spanStarts).toHaveLength(4);
-    expect(spanStarts.map((e) => e.name)).toEqual(["generate", "turn-1", "lookup", "turn-2"]);
+    expect(spanStarts.map((e) => e.name)).toEqual(["generate", "step-1", "lookup", "step-2"]);
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "generate")!;
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
+    const turn1Span = [...spans.values()].find((s) => s.name === "step-1")!;
     const toolSpan = [...spans.values()].find((s) => s.name === "lookup")!;
-    const turn2Span = [...spans.values()].find((s) => s.name === "turn-2")!;
+    const turn2Span = [...spans.values()].find((s) => s.name === "step-2")!;
 
     // Parent relationships
     expect(turn1Span.parentSpanId).toBe(rootSpanData.spanId);
@@ -151,11 +151,11 @@ describe("generate() happy paths", () => {
     expect(toolSpan.type).toBe("tool");
     expect(turn2Span.type).toBe("llm");
 
-    // Ordering: turn-1 end → tool start → tool end → turn-2 start
-    const turn1EndIdx = eventIndex(timeline, "span:end", "turn-1");
+    // Ordering: step-1 end → tool start → tool end → step-2 start
+    const turn1EndIdx = eventIndex(timeline, "span:end", "step-1");
     const toolStartIdx = eventIndex(timeline, "span:start", "lookup");
     const toolEndIdx = eventIndex(timeline, "span:end", "lookup");
-    const turn2StartIdx = eventIndex(timeline, "span:start", "turn-2");
+    const turn2StartIdx = eventIndex(timeline, "span:start", "step-2");
 
     expect(turn1EndIdx).toBeLessThan(toolStartIdx);
     expect(toolEndIdx).toBeLessThan(turn2StartIdx);
@@ -260,7 +260,7 @@ describe("generate() error paths", () => {
 
     const { spans } = writer;
 
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
+    const turn1Span = [...spans.values()].find((s) => s.name === "step-1")!;
     expect(turn1Span).toBeDefined();
     expect(turn1Span.status).toBe("error");
 
@@ -269,7 +269,7 @@ describe("generate() error paths", () => {
     expect(rootSpanData.status).toBe("error");
   });
 
-  test("6.2 max iterations exceeded", async () => {
+  test("6.2 max steps exceeded", async () => {
     const { writer, tracer } = createTracerAndWriter();
     const rootSpan = tracer.startSpan("generate", { type: "workflow" });
 
@@ -291,13 +291,13 @@ describe("generate() error paths", () => {
       model: "test-model",
       messages: [{ role: "user", content: "Search" }],
       span: rootSpan,
-      maxIterations: 1,
+      maxSteps: 1,
       onToolCall: async () => ({ type: "success", content: "result" }),
     });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.stopped).toBe("max-iterations");
+      expect(result.stopped).toBe("max-steps");
       expect(result.final.finishReason).toBe(AxleStopReason.FunctionCall);
       expect(result.messages).toHaveLength(2);
     }
@@ -335,9 +335,9 @@ describe("generate() error paths", () => {
 
     const { timeline } = writer;
 
-    // turn-1 span was started but never ended (leaked)
-    const turn1Starts = timeline.filter((e) => e.type === "span:start" && e.name === "turn-1");
-    const turn1Ends = timeline.filter((e) => e.type === "span:end" && e.name === "turn-1");
+    // step-1 span was started but never ended (leaked)
+    const turn1Starts = timeline.filter((e) => e.type === "span:start" && e.name === "step-1");
+    const turn1Ends = timeline.filter((e) => e.type === "span:end" && e.name === "step-1");
     expect(turn1Starts).toHaveLength(1);
     expect(turn1Ends).toHaveLength(0);
 
@@ -403,7 +403,7 @@ describe("generate() error paths", () => {
     expect(error.messages).toHaveLength(0);
     expect(error.usage).toEqual({ in: 0, out: 0 });
 
-    const turn1Span = [...writer.spans.values()].find((s) => s.name === "turn-1")!;
+    const turn1Span = [...writer.spans.values()].find((s) => s.name === "step-1")!;
     const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
     expect(turn1Span.status).toBe("ok");
     expect(rootSpanData.status).toBe("ok");

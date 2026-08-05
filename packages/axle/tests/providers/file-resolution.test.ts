@@ -35,7 +35,7 @@ describe("deferred file resolution", () => {
           signal: params.signal,
         });
 
-        yield { type: "start", id: "turn-1", data: { model, timestamp: Date.now() } };
+        yield { type: "start", id: "step-1", data: { model, timestamp: Date.now() } };
         yield { type: "text-start", data: { index: 0 } };
         yield { type: "text-delta", data: { text: "done", index: 0 } };
         yield { type: "text-complete", data: { text: "done", index: 0 } };
@@ -188,7 +188,7 @@ describe("deferred file resolution", () => {
           signal: params.signal,
         });
 
-        yield { type: "start", id: "turn-1", data: { model, timestamp: Date.now() } };
+        yield { type: "start", id: "step-1", data: { model, timestamp: Date.now() } };
         yield { type: "text-start", data: { index: 0 } };
         yield { type: "text-delta", data: { text: "done", index: 0 } };
         yield { type: "text-complete", data: { text: "done", index: 0 } };

@@ -49,19 +49,19 @@ describe("stream() happy paths", () => {
 
     const { timeline, spans } = writer;
 
-    // Root span + turn-1 span
+    // Root span + step-1 span
     const spanStarts = timeline.filter((e) => e.type === "span:start");
     expect(spanStarts).toHaveLength(2);
     expect(spanStarts[0].name).toBe("stream");
-    expect(spanStarts[1].name).toBe("turn-1");
+    expect(spanStarts[1].name).toBe("step-1");
 
-    // turn-1 lifecycle: start → update (setResult) → end
-    const turn1Start = eventIndex(timeline, "span:start", "turn-1");
-    const turn1Update = eventIndex(timeline, "span:update", "turn-1");
-    const turn1End = eventIndex(timeline, "span:end", "turn-1");
+    // step-1 lifecycle: start → update (setResult) → end
+    const step1Start = eventIndex(timeline, "span:start", "step-1");
+    const step1Update = eventIndex(timeline, "span:update", "step-1");
+    const step1End = eventIndex(timeline, "span:end", "step-1");
 
-    expect(turn1Start).toBeLessThan(turn1Update);
-    expect(turn1Update).toBeLessThan(turn1End);
+    expect(step1Start).toBeLessThan(step1Update);
+    expect(step1Update).toBeLessThan(step1End);
 
     // Root lifecycle: span:start → span:update(setResult) → span:end
     const rootStart = eventIndex(timeline, "span:start", "stream");
@@ -71,24 +71,24 @@ describe("stream() happy paths", () => {
     expect(rootUpdate).toBeLessThan(rootEnd);
 
     // Final span states
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
-    expect(turn1Span).toBeDefined();
-    expect(turn1Span.result?.kind).toBe("llm");
-    expect(turn1Span.status).toBe("ok");
-    expect(turn1Span.type).toBe("llm");
+    const step1Span = [...spans.values()].find((s) => s.name === "step-1")!;
+    expect(step1Span).toBeDefined();
+    expect(step1Span.result?.kind).toBe("llm");
+    expect(step1Span.status).toBe("ok");
+    expect(step1Span.type).toBe("llm");
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "stream")!;
     expect(rootSpanData).toBeDefined();
     expect(rootSpanData.result?.kind).toBe("llm");
     expect(rootSpanData.status).toBe("ok");
 
-    // turn-1 is a child of root
-    expect(turn1Span.parentSpanId).toBe(rootSpanData.spanId);
+    // step-1 is a child of root
+    expect(step1Span.parentSpanId).toBe(rootSpanData.spanId);
 
     // Result carries usage and finishReason
-    if (turn1Span.result?.kind === "llm") {
-      expect(turn1Span.result.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
-      expect(turn1Span.result.finishReason).toBe(AxleStopReason.Stop);
+    if (step1Span.result?.kind === "llm") {
+      expect(step1Span.result.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
+      expect(step1Span.result.finishReason).toBe(AxleStopReason.Stop);
     }
     if (rootSpanData.result?.kind === "llm") {
       expect(rootSpanData.result.finishReason).toBe(AxleStopReason.Stop);
@@ -128,23 +128,23 @@ describe("stream() happy paths", () => {
 
     const { timeline, spans } = writer;
 
-    // 4 span:start events: root + turn-1 + web_search (tool) + turn-2
+    // 4 span:start events: root + step-1 + web_search (tool) + step-2
     const spanStarts = timeline.filter((e) => e.type === "span:start");
     expect(spanStarts).toHaveLength(4);
-    expect(spanStarts.map((e) => e.name)).toEqual(["stream", "turn-1", "web_search", "turn-2"]);
+    expect(spanStarts.map((e) => e.name)).toEqual(["stream", "step-1", "web_search", "step-2"]);
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "stream")!;
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
+    const step1Span = [...spans.values()].find((s) => s.name === "step-1")!;
     const toolSpan = [...spans.values()].find((s) => s.name === "web_search")!;
-    const turn2Span = [...spans.values()].find((s) => s.name === "turn-2")!;
+    const step2Span = [...spans.values()].find((s) => s.name === "step-2")!;
 
-    expect(turn1Span.parentSpanId).toBe(rootSpanData.spanId);
+    expect(step1Span.parentSpanId).toBe(rootSpanData.spanId);
     expect(toolSpan.parentSpanId).toBe(rootSpanData.spanId);
-    expect(turn2Span.parentSpanId).toBe(rootSpanData.spanId);
+    expect(step2Span.parentSpanId).toBe(rootSpanData.spanId);
 
-    expect(turn1Span.type).toBe("llm");
+    expect(step1Span.type).toBe("llm");
     expect(toolSpan.type).toBe("tool");
-    expect(turn2Span.type).toBe("llm");
+    expect(step2Span.type).toBe("llm");
 
     expect(toolSpan.result?.kind).toBe("tool");
     if (toolSpan.result?.kind === "tool") {
@@ -152,17 +152,17 @@ describe("stream() happy paths", () => {
     }
     expect(toolSpan.status).toBe("ok");
 
-    // Ordering: turn-1 ends before tool starts, tool ends before turn-2 starts
-    const turn1EndIdx = eventIndex(timeline, "span:end", "turn-1");
+    // Ordering: step-1 ends before tool starts, tool ends before step-2 starts
+    const step1EndIdx = eventIndex(timeline, "span:end", "step-1");
     const toolStartIdx = eventIndex(timeline, "span:start", "web_search");
     const toolEndIdx = eventIndex(timeline, "span:end", "web_search");
-    const turn2StartIdx = eventIndex(timeline, "span:start", "turn-2");
+    const turn2StartIdx = eventIndex(timeline, "span:start", "step-2");
 
-    expect(turn1EndIdx).toBeLessThan(toolStartIdx);
+    expect(step1EndIdx).toBeLessThan(toolStartIdx);
     expect(toolEndIdx).toBeLessThan(turn2StartIdx);
 
-    expect(turn1Span.status).toBe("ok");
-    expect(turn2Span.status).toBe("ok");
+    expect(step1Span.status).toBe("ok");
+    expect(step2Span.status).toBe("ok");
     expect(rootSpanData.status).toBe("ok");
 
     // Messages accumulate correctly across turns
@@ -224,15 +224,15 @@ describe("stream() happy paths", () => {
 
     const { timeline, spans } = writer;
 
-    // root + turn-1 + search + calculator + turn-2
+    // root + step-1 + search + calculator + step-2
     const spanStarts = timeline.filter((e) => e.type === "span:start");
     expect(spanStarts).toHaveLength(5);
     expect(spanStarts.map((e) => e.name)).toEqual([
       "stream",
-      "turn-1",
+      "step-1",
       "search",
       "calculator",
-      "turn-2",
+      "step-2",
     ]);
 
     // Both tool spans are children of root
@@ -281,10 +281,10 @@ describe("stream() happy paths", () => {
 
     // Span result contains both thinking and text parts
     const { spans } = writer;
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
-    expect(turn1Span.result?.kind).toBe("llm");
-    if (turn1Span.result?.kind === "llm") {
-      const content = turn1Span.result.response.content as any[];
+    const step1Span = [...spans.values()].find((s) => s.name === "step-1")!;
+    expect(step1Span.result?.kind).toBe("llm");
+    if (step1Span.result?.kind === "llm") {
+      const content = step1Span.result.response.content as any[];
       expect(content).toHaveLength(2);
       expect(content[0].type).toBe("thinking");
       expect(content[0].text).toBe("Let me think... about this.");
@@ -319,9 +319,9 @@ describe("stream() error paths", () => {
     const spanStarts = timeline.filter((e) => e.type === "span:start");
     expect(spanStarts).toHaveLength(2);
 
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
-    expect(turn1Span).toBeDefined();
-    expect(turn1Span.status).toBe("error");
+    const step1Span = [...spans.values()].find((s) => s.name === "step-1")!;
+    expect(step1Span).toBeDefined();
+    expect(step1Span.status).toBe("error");
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "stream")!;
     expect(rootSpanData).toBeDefined();
@@ -331,12 +331,12 @@ describe("stream() error paths", () => {
       expect(rootSpanData.result.finishReason).toBeUndefined();
     }
 
-    // turn-1 ends with error before root ends with error
-    const turn1End = timeline.find((e) => e.type === "span:end" && e.name === "turn-1");
+    // step-1 ends with error before root ends with error
+    const step1End = timeline.find((e) => e.type === "span:end" && e.name === "step-1");
     const rootEnd = timeline.find((e) => e.type === "span:end" && e.name === "stream");
-    expect(turn1End).toBeDefined();
+    expect(step1End).toBeDefined();
     expect(rootEnd).toBeDefined();
-    expect((turn1End as any).status).toBe("error");
+    expect((step1End as any).status).toBe("error");
     expect((rootEnd as any).status).toBe("error");
   });
 
@@ -365,8 +365,8 @@ describe("stream() error paths", () => {
     const { spans } = writer;
 
     // Both turn and root marked error
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
-    expect(turn1Span.status).toBe("error");
+    const step1Span = [...spans.values()].find((s) => s.name === "step-1")!;
+    expect(step1Span.status).toBe("error");
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "stream")!;
     expect(rootSpanData.status).toBe("error");
@@ -403,18 +403,18 @@ describe("stream() error paths", () => {
 
     const { spans } = writer;
 
-    const turn1Span = [...spans.values()].find((s) => s.name === "turn-1")!;
-    expect(turn1Span.status).toBe("error");
+    const step1Span = [...spans.values()].find((s) => s.name === "step-1")!;
+    expect(step1Span.status).toBe("error");
 
     const rootSpanData = [...spans.values()].find((s) => s.name === "stream")!;
     expect(rootSpanData.status).toBe("error");
   });
 
-  test("2.4 max iterations exceeded", async () => {
+  test("2.4 max steps exceeded", async () => {
     const { writer, tracer } = createTracerAndWriter();
     const rootSpan = tracer.startSpan("stream", { type: "workflow" });
 
-    // First turn returns a tool call → loop would continue, but maxIterations=1
+    // First turn returns a tool call → loop would continue, but maxSteps=1
     const turn1Chunks: AnyStreamChunk[] = [
       startChunk("msg_1"),
       toolCallStartChunk(0, "call_1", "search"),
@@ -428,14 +428,14 @@ describe("stream() error paths", () => {
       model: "test-model",
       messages: [],
       span: rootSpan,
-      maxIterations: 1,
+      maxSteps: 1,
       onToolCall: async () => ({ type: "success", content: "result" }),
     });
 
     const result = await handle.final;
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.stopped).toBe("max-iterations");
+      expect(result.stopped).toBe("max-steps");
       expect(result.final.finishReason).toBe(AxleStopReason.FunctionCall);
       expect(result.messages).toHaveLength(2);
     }
@@ -508,11 +508,11 @@ describe("stream() error paths", () => {
 
     const { timeline } = writer;
 
-    // turn-1 span was started but never ended (leaked)
-    const turn1Starts = timeline.filter((e) => e.type === "span:start" && e.name === "turn-1");
-    const turn1Ends = timeline.filter((e) => e.type === "span:end" && e.name === "turn-1");
-    expect(turn1Starts).toHaveLength(1);
-    expect(turn1Ends).toHaveLength(0);
+    // step-1 span was started but never ended (leaked)
+    const step1Starts = timeline.filter((e) => e.type === "span:start" && e.name === "step-1");
+    const step1Ends = timeline.filter((e) => e.type === "span:end" && e.name === "step-1");
+    expect(step1Starts).toHaveLength(1);
+    expect(step1Ends).toHaveLength(0);
 
     // Root span also never ended
     const rootEnds = timeline.filter((e) => e.type === "span:end" && e.name === "stream");

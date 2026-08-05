@@ -638,14 +638,14 @@ describe("stream()", () => {
       const final = await result.final;
       expect(final.ok).toBe(true);
 
-      const turnStarts = events.filter((e) => e.type === "turn:start");
+      const turnStarts = events.filter((e) => e.type === "step:start");
       expect(turnStarts).toHaveLength(1);
-      expect(turnStarts[0].type === "turn:start" && turnStarts[0].id).toBe("msg_1");
-      expect(turnStarts[0].type === "turn:start" && turnStarts[0].model).toBe("test-model");
+      expect(turnStarts[0].type === "step:start" && turnStarts[0].id).toBe("msg_1");
+      expect(turnStarts[0].type === "step:start" && turnStarts[0].model).toBe("test-model");
 
-      const turnCompletes = events.filter((e) => e.type === "turn:complete");
+      const turnCompletes = events.filter((e) => e.type === "step:complete");
       expect(turnCompletes).toHaveLength(1);
-      if (turnCompletes[0].type === "turn:complete") {
+      if (turnCompletes[0].type === "step:complete") {
         expect(turnCompletes[0].message.role).toBe("assistant");
         expect(turnCompletes[0].message.id).toBe("msg_1");
       }
@@ -680,10 +680,10 @@ describe("stream()", () => {
 
       await result.final;
 
-      const turnStarts = events.filter((e) => e.type === "turn:start");
+      const turnStarts = events.filter((e) => e.type === "step:start");
       expect(turnStarts).toHaveLength(2);
 
-      const turnCompletes = events.filter((e) => e.type === "turn:complete");
+      const turnCompletes = events.filter((e) => e.type === "step:complete");
       expect(turnCompletes).toHaveLength(2);
 
       const toolResultsStarts = events.filter((e) => e.type === "tool-results:start");
@@ -801,8 +801,8 @@ describe("stream()", () => {
       });
       result.on((event) => {
         if (
-          event.type === "turn:start" ||
-          event.type === "turn:complete" ||
+          event.type === "step:start" ||
+          event.type === "step:complete" ||
           event.type === "tool-results:start" ||
           event.type === "tool-results:complete"
         ) {
@@ -813,12 +813,12 @@ describe("stream()", () => {
       await result.final;
 
       expect(boundaryOrder).toEqual([
-        "turn:start",
-        "turn:complete",
+        "step:start",
+        "step:complete",
         "tool-results:start",
         "tool-results:complete",
-        "turn:start",
-        "turn:complete",
+        "step:start",
+        "step:complete",
       ]);
     });
   });
@@ -880,12 +880,12 @@ describe("stream()", () => {
   });
 
   describe("loop limits", () => {
-    test("throws on a non-positive maxIterations", () => {
+    test("throws on a non-positive maxSteps", () => {
       const provider = makeProvider({ streamChunks: [] });
 
       expect(() =>
-        stream({ provider, model: "test-model", messages: [], maxIterations: 0 }),
-      ).toThrow("maxIterations must be at least 1");
+        stream({ provider, model: "test-model", messages: [], maxSteps: 0 }),
+      ).toThrow("maxSteps must be at least 1");
     });
 
     test("throws on a non-positive maxContextTokens", () => {
@@ -909,7 +909,7 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         instruct: new Instruct({ prompt: "answer", schema: z.object({ answer: z.string() }) }),
-        maxIterations: 1,
+        maxSteps: 1,
         onToolCall: async () => ({ type: "success", content: "ok" }),
       });
 
@@ -917,7 +917,7 @@ describe("stream()", () => {
       expect(final.ok).toBe(false);
       if (final.ok) return;
       expect(final.error.kind).toBe("parse");
-      expect(final.stopped).toBe("max-iterations");
+      expect(final.stopped).toBe("max-steps");
     });
   });
 
@@ -999,7 +999,7 @@ describe("stream()", () => {
         onToolCall: async () => ({ type: "success", content: "ok" }),
       });
       result.on((event) => {
-        if (event.type === "turn:start") order.push(`turn:start:${event.id}`);
+        if (event.type === "step:start") order.push(`turn:start:${event.id}`);
         if (event.type === "text:start") order.push("text:start");
         if (event.type === "text:end") order.push("text:end");
         if (event.type === "tool:request") order.push(`tool:request:${event.id}`);

@@ -4,7 +4,7 @@ import type { ToolDefinition } from "../tools/types.js";
 import type { FileResolver } from "../utils/file.js";
 import { AIProvider, AxleModelRequestOptions, ModelResult, ResolvedProviderTool } from "./types.js";
 
-interface GenerateTurnParams extends AxleModelRequestOptions {
+interface GenerateStepParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;
   messages: Array<AxleMessage>;
@@ -15,7 +15,7 @@ interface GenerateTurnParams extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
 }
 
-export async function generateTurn(props: GenerateTurnParams): Promise<ModelResult> {
+export async function generateStep(props: GenerateStepParams): Promise<ModelResult> {
   const {
     provider,
     model,

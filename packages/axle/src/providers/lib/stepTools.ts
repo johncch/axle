@@ -18,7 +18,7 @@ import type {
 } from "../helpers.js";
 import { executeToolCalls, serializeToolError } from "../helpers.js";
 import type { StreamEvent } from "../stream.js";
-import type { CompletedTurn, ToolCallArgumentError } from "./turnReader.js";
+import type { CompletedStep, ToolCallArgumentError } from "./stepReader.js";
 
 /**
  * Per-run state the tool loop shares with its helpers: event delivery,
@@ -49,19 +49,19 @@ function toArgumentErrorResult(
 }
 
 /**
- * Answer a completed turn's tool calls: synthesize results for calls whose
+ * Answer a completed step's tool calls: synthesize results for calls whose
  * arguments failed to parse, execute the rest, and append the tool results
  * message. Mutates the loop's shared `usage` and, via `addMessage`, its
  * working conversation. Abort and fatal errors are rethrown enriched with
  * the loop's accumulated messages and usage so callers can preserve state.
  */
-export async function executeTurnTools(
+export async function executeStepTools(
   toolCalls: ContentPartToolCall[],
-  turn: CompletedTurn,
+  step: CompletedStep,
   assistantMessage: AxleAssistantMessage,
   loop: LoopContext,
 ): Promise<AxleToolCallMessage | undefined> {
-  const { toolCallArgumentErrors } = turn;
+  const { toolCallArgumentErrors } = step;
   const { emit, signal, resolvedTools, span, onToolCall, newMessages, usage, addMessage } = loop;
 
   const toolResultsId = crypto.randomUUID();

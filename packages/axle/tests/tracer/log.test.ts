@@ -69,17 +69,17 @@ describe("LogWriter", () => {
     tracer.addWriter(new LogWriter((entry) => entries.push(entry)));
 
     const root = tracer.startSpan("agent.send", { type: "workflow" });
-    const turn = root.startSpan("turn-1", { type: "llm" });
+    const turn = root.startSpan("step-1", { type: "llm" });
     turn.startSpan("exec", { type: "tool" }).end("ok");
     turn.end("ok");
     root.end("ok");
 
     const exec = entries.find((e) => e.message === "exec");
-    const turnEntry = entries.find((e) => e.message === "turn-1");
+    const stepEntry = entries.find((e) => e.message === "step-1");
     const rootEntry = entries.find((e) => e.message === "agent.send");
 
     expect(rootEntry?.fields?.parentSpanId).toBeUndefined();
-    expect(turnEntry?.fields?.parentSpanId).toBe(rootEntry?.fields?.spanId);
-    expect(exec?.fields?.parentSpanId).toBe(turnEntry?.fields?.spanId);
+    expect(stepEntry?.fields?.parentSpanId).toBe(rootEntry?.fields?.spanId);
+    expect(exec?.fields?.parentSpanId).toBe(stepEntry?.fields?.spanId);
   });
 });

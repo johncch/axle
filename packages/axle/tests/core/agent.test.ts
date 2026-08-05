@@ -475,8 +475,8 @@ describe("Agent", () => {
 
     await agent.send("Hi").final;
 
-    expect(starts.map((span) => span.name)).toEqual(["agent.send", "stream", "turn-1"]);
-    expect(ends.map((span) => span.name)).toEqual(["turn-1", "stream", "agent.send"]);
+    expect(starts.map((span) => span.name)).toEqual(["agent.send", "stream", "step-1"]);
+    expect(ends.map((span) => span.name)).toEqual(["step-1", "stream", "agent.send"]);
 
     const [agentSend, streamSpan, turnSpan] = starts;
     expect(agentSend.attributes).toMatchObject({ sessionId: "session-1" });

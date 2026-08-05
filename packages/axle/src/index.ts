@@ -58,7 +58,7 @@ export type {
   GenerateParams,
 } from "./providers/generate.js";
 export type { AxleFailure, GenerateError, GenerateResult, StreamResult } from "./providers/helpers.js";
-export { generate, generateTurn, stream } from "./providers/index.js";
+export { generate, generateStep, stream } from "./providers/index.js";
 export { openai } from "./providers/openai/index.js";
 export type {
   StreamEvent,

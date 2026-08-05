@@ -199,12 +199,12 @@ describe("TurnEventBuilder", () => {
     });
   });
 
-  test("turn:complete accumulates usage for finalizeTurn", () => {
+  test("step:complete accumulates usage for finalizeTurn", () => {
     const builder = new TurnEventBuilder();
     const start = builder.startAgentTurn();
 
     builder.handleStreamEvent({
-      type: "turn:complete",
+      type: "step:complete",
       message: {
         role: "assistant",
         id: "a1",
@@ -215,7 +215,7 @@ describe("TurnEventBuilder", () => {
       usage: { in: 10, out: 20 },
     });
     builder.handleStreamEvent({
-      type: "turn:complete",
+      type: "step:complete",
       message: {
         role: "assistant",
         id: "a2",

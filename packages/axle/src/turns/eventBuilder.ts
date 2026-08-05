@@ -111,9 +111,9 @@ export class TurnEventBuilder {
     const events: TurnEvent[] = [];
 
     switch (event.type) {
-      case "turn:start":
-        // stream emits turn:start per provider round-trip, but the
-        // agent presents the entire tool loop as one turn.
+      case "step:start":
+        // The stream emits step:start per model request, but the agent
+        // presents the entire tool loop as one turn.
         break;
 
       case "text:start": {
@@ -407,7 +407,7 @@ export class TurnEventBuilder {
         break;
       }
 
-      case "turn:complete": {
+      case "step:complete": {
         this.closeOpenParts(events);
         addStats(this.accumulatedUsage, event.usage);
         break;

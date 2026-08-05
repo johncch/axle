@@ -193,7 +193,7 @@ async function runSchemaCase(
           ...requestOptions,
           messages,
           tools: [tool],
-          maxIterations: 2,
+          maxSteps: 2,
           maxOutputTokens: 512,
         }).final
       : await generate({
@@ -202,7 +202,7 @@ async function runSchemaCase(
           ...requestOptions,
           messages,
           tools: [tool],
-          maxIterations: 2,
+          maxSteps: 2,
           maxOutputTokens: 512,
         });
 

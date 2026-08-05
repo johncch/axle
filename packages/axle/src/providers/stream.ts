@@ -25,7 +25,7 @@ import type { FileResolver } from "../utils/file.js";
 import { addStats, attributeStats, createStats, toTokenUsage } from "../utils/stats.js";
 import {
   checkLoopStop,
-  logTurnContent,
+  logStepContent,
   resolveToolRegistry,
   resolveTools,
   validateLoopLimits,
@@ -34,8 +34,8 @@ import {
   type ToolCallCallback,
   type ToolCallResult,
 } from "./helpers.js";
-import { readTurn } from "./lib/turnReader.js";
-import { executeTurnTools, type LoopContext } from "./lib/turnTools.js";
+import { readStep } from "./lib/stepReader.js";
+import { executeStepTools, type LoopContext } from "./lib/stepTools.js";
 import type { AIProvider, AxleModelRequestOptions } from "./types.js";
 import { AxleStopReason } from "./types.js";
 
@@ -43,8 +43,8 @@ import { AxleStopReason } from "./types.js";
 
 export type StreamEvent =
   // Message boundaries
-  | { type: "turn:start"; id: string; model: string }
-  | { type: "turn:complete"; message: AxleAssistantMessage; usage?: Stats }
+  | { type: "step:start"; id: string; model: string }
+  | { type: "step:complete"; message: AxleAssistantMessage; usage?: Stats }
   | { type: "tool-results:start"; id: string }
   | { type: "tool-results:complete"; message: AxleToolCallMessage }
   // Text streaming (parts stream sequentially; deltas belong to the last opened part)
@@ -130,10 +130,10 @@ export interface StreamParams extends AxleModelRequestOptions {
   providerTools?: ProviderTool[];
   registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
-  maxIterations?: number;
+  maxSteps?: number;
   /**
-   * Context budget for the tool loop, in tokens. Checked after each turn's
-   * tools are answered, against that turn's reported usage (effective input
+   * Context budget for the tool loop, in tokens. Checked after each step's
+   * tools are answered, against that step's reported usage (effective input
    * + output); when crossed, the loop returns `stopped: "token-limit"` with
    * everything accumulated so far. The caller decides what to do — e.g.
    * compact the conversation and start a new stream.
@@ -223,7 +223,7 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
             messages: result.messages,
             final: result.final,
             usage: result.usage,
-            // A limit stop usually ends on a tool-call turn with no parseable
+            // A limit stop usually ends on a tool-call step with no parseable
             // text; keep the stop marker so callers can distinguish
             // "continuable, limit tripped" from genuinely malformed output.
             ...(result.stopped ? { stopped: result.stopped } : {}),
@@ -271,7 +271,7 @@ async function run(
     messages,
     system,
     onToolCall,
-    maxIterations,
+    maxSteps,
     maxContextTokens,
     span,
     fileResolver,
@@ -294,7 +294,7 @@ async function run(
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
-  let iterations = 0;
+  let steps = 0;
 
   const addMessage = (message: AxleMessage) => {
     workingMessages.push(message);
@@ -340,8 +340,8 @@ async function run(
       });
     }
 
-    iterations += 1;
-    const turnSpan = span?.startSpan(`turn-${iterations}`, { type: "llm" });
+    steps += 1;
+    const stepSpan = span?.startSpan(`step-${steps}`, { type: "llm" });
 
     const executable = resolvedTools.executable();
     const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
@@ -352,7 +352,7 @@ async function run(
       system,
       tools,
       providerTools: providerTools.length > 0 ? providerTools : undefined,
-      runtime: { span: turnSpan, fileResolver },
+      runtime: { span: stepSpan, fileResolver },
       signal,
       reasoning,
       maxOutputTokens,
@@ -364,14 +364,14 @@ async function run(
       providerOptions,
     });
 
-    const outcome = await readTurn(streamSource, {
+    const outcome = await readStep(streamSource, {
       emit: (event) => emit(cbs, event),
       tools: resolvedTools,
       signal,
     });
 
     if (outcome.kind === "aborted") {
-      turnSpan?.end("ok");
+      stepSpan?.end("ok");
       if (outcome.partial) addMessage(outcome.partial);
       span?.end("ok");
       throw new AxleAbortError("Stream aborted", {
@@ -392,7 +392,7 @@ async function run(
           }),
         );
       }
-      turnSpan?.end("error");
+      stepSpan?.end("error");
       return endWithResult({
         ok: false,
         messages: newMessages,
@@ -409,7 +409,7 @@ async function run(
     }
 
     if (outcome.kind === "incomplete") {
-      turnSpan?.end("error");
+      stepSpan?.end("error");
       return endWithResult({
         ok: false,
         messages: newMessages,
@@ -429,47 +429,47 @@ async function run(
     }
 
     const {
-      id: turnId,
-      model: turnModel,
-      parts: turnParts,
-      finishReason: turnFinishReason,
-      usage: turnUsage,
+      id: stepId,
+      model: stepModel,
+      parts: stepParts,
+      finishReason: stepFinishReason,
+      usage: stepUsage,
     } = outcome;
 
-    const attributedTurnUsage = attributeStats(turnUsage, {
+    const attributedStepUsage = attributeStats(stepUsage, {
       provider: provider.name,
-      model: turnModel || model,
+      model: stepModel || model,
     });
-    addStats(usage, attributedTurnUsage);
+    addStats(usage, attributedStepUsage);
 
-    const turnLLMResult: LLMResult = {
+    const stepLLMResult: LLMResult = {
       kind: "llm",
-      model: turnModel,
+      model: stepModel,
       request: { messages: workingMessages },
-      response: { content: turnParts },
-      usage: toTokenUsage(turnUsage),
-      finishReason: turnFinishReason,
+      response: { content: stepParts },
+      usage: toTokenUsage(stepUsage),
+      finishReason: stepFinishReason,
     };
-    logTurnContent(turnSpan, turnParts);
+    logStepContent(stepSpan, stepParts);
 
-    turnSpan?.setResult(turnLLMResult);
-    turnSpan?.end();
+    stepSpan?.setResult(stepLLMResult);
+    stepSpan?.end();
 
     const assistantMessage: AxleAssistantMessage = {
       role: "assistant",
-      id: turnId,
-      model: turnModel,
-      content: turnParts,
-      finishReason: turnFinishReason,
+      id: stepId,
+      model: stepModel,
+      content: stepParts,
+      finishReason: stepFinishReason,
     };
     addMessage(assistantMessage);
     emit(cbs, {
-      type: "turn:complete",
+      type: "step:complete",
       message: assistantMessage,
-      usage: attributedTurnUsage,
+      usage: attributedStepUsage,
     });
 
-    if (turnFinishReason !== AxleStopReason.FunctionCall) {
+    if (stepFinishReason !== AxleStopReason.FunctionCall) {
       return endWithResult({
         ok: true,
         response: assistantMessage,
@@ -479,7 +479,7 @@ async function run(
       });
     }
 
-    const toolCalls = turnParts.filter((p): p is ContentPartToolCall => p.type === "tool-call");
+    const toolCalls = stepParts.filter((p): p is ContentPartToolCall => p.type === "tool-call");
     if (toolCalls.length === 0) {
       return endWithResult({
         ok: true,
@@ -499,7 +499,7 @@ async function run(
       });
     }
 
-    const toolResultsMessage = await executeTurnTools(
+    const toolResultsMessage = await executeStepTools(
       toolCalls,
       outcome,
       assistantMessage,
@@ -538,8 +538,8 @@ async function run(
       });
     }
 
-    // Budget checks run after the turn settles so a limit stop always returns a complete exchange.
-    const stopped = checkLoopStop(iterations, turnUsage, { maxIterations, maxContextTokens });
+    // Budget checks run after the step settles so a limit stop always follows a completed step.
+    const stopped = checkLoopStop(steps, stepUsage, { maxSteps, maxContextTokens });
     if (stopped) {
       return endWithResult({
         ok: true,

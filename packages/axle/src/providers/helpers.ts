@@ -79,7 +79,7 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
        * `final.finishReason` keeps the provider's own reason for the last
        * message (typically `FunctionCall` — the model wanted to continue).
        */
-      stopped?: "max-iterations" | "token-limit";
+      stopped?: "max-steps" | "token-limit";
     }
   | {
       ok: false;
@@ -93,7 +93,7 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
        * before the model produced parseable output. The conversation is still
        * well-formed and continuable.
        */
-      stopped?: "max-iterations" | "token-limit";
+      stopped?: "max-steps" | "token-limit";
     };
 
 export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TResponse>;
@@ -101,14 +101,14 @@ export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TRes
 /**
  * Validate tool-loop limit options at the call boundary. Non-positive limits
  * are caller bugs, not runtime conditions — they fail loudly here so the
- * loop can assume a limit trip always has at least one completed turn.
+ * loop can assume a limit trip always has at least one completed step.
  */
 export function validateLoopLimits(options: {
-  maxIterations?: number;
+  maxSteps?: number;
   maxContextTokens?: number;
 }): void {
-  if (options.maxIterations !== undefined && options.maxIterations < 1) {
-    throw new AxleError(`maxIterations must be at least 1 (got ${options.maxIterations})`, {
+  if (options.maxSteps !== undefined && options.maxSteps < 1) {
+    throw new AxleError(`maxSteps must be at least 1 (got ${options.maxSteps})`, {
       code: "INVALID_OPTIONS",
     });
   }
@@ -120,16 +120,16 @@ export function validateLoopLimits(options: {
 }
 
 /**
- * Decide whether a configured limit ends the tool loop after a settled turn.
+ * Decide whether a configured limit ends the tool loop after a settled step.
  * Shared by stream() and generate() so the two loops cannot drift.
  */
 export function checkLoopStop(
-  iterations: number,
+  steps: number,
   usage: { in: number; out: number } | undefined,
-  limits: { maxIterations?: number; maxContextTokens?: number },
-): "max-iterations" | "token-limit" | undefined {
-  if (limits.maxIterations !== undefined && iterations >= limits.maxIterations) {
-    return "max-iterations";
+  limits: { maxSteps?: number; maxContextTokens?: number },
+): "max-steps" | "token-limit" | undefined {
+  if (limits.maxSteps !== undefined && steps >= limits.maxSteps) {
+    return "max-steps";
   }
   const contextTokens = usage ? usage.in + usage.out : 0;
   if (limits.maxContextTokens !== undefined && contextTokens >= limits.maxContextTokens) {
@@ -147,9 +147,9 @@ export function appendUsage(
   addStats(total, source ? attributeStats(result.usage, source) : result.usage);
 }
 
-// Logs a turn's content (text/thinking/provider-tools/citations) onto its span,
+// Logs a step's content (text/thinking/provider-tools/citations) onto its span,
 // so the streaming and non-streaming paths surface identical detail.
-export function logTurnContent(span: Span | undefined, content: ContentPart[]): void {
+export function logStepContent(span: Span | undefined, content: ContentPart[]): void {
   if (!span) return;
   logContent(span, "text", getTextContent(content));
   const thinking = getThinkingContent(content);
