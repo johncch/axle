@@ -5,7 +5,23 @@ small, focused API for building agentic applications.
 
 **Documentation:** https://axle.fifthrevision.com
 
-**Latest migration guide:** [Migrating to Axle 0.28.0](docs/0.28.0-migration.md)
+## Introduction
+
+I built Axle while working on a command line AI task runner. I wanted a TypeScript-native library that would work across different inference providers.
+
+It started as a workflow runner inspired by the composability of DSPy. As models got better with reasoning and tool use, many of the early abstractions, such as workflow shapes and expilicit chain-of-thought constructs became unnecessary.
+
+Today, Axle focuses on bringing modern agentic patterns to TypeScript with sensible defaults and minimal setup.
+
+This library is for you if:
+
+- You want a TypeScript-native library.
+- You want to build multi-turn LLM agents without wiring up a framework.
+- You want an ergonomic API with thoughtful defaults.
+- You want to switch inference providers without rewriting your agents.
+
+Axle powers [Sunnyday](https://www.sunnyday.run), a hosted
+AI Agent platform. It also forms the core of [Axle CLI](https://www.npmjs.com/package/@fifthrevision/axle-cli) and other experiments such as [Axle Code](https://github.com/johncch/axle-code)
 
 ## Quick Start
 
@@ -23,28 +39,6 @@ console.log(r1.response); // "Paris is the capital of France."
 const r2 = await agent.send("And what about Germany?").final;
 if (!r2.ok) throw new Error(r2.error.kind);
 ```
-
-## Philosophy
-
-Axle has two big goals
-
-1. A small, focused, and ergonomic interface for building agents. The Agent,
-   Instruct, and other APIs are the entire surface, and there is a lot of thought
-   to make them distinct and composable.
-2. Systematic prompt improvement. Log what was sent, validate what came back, feed
-   learnings into the next run. (This is where the roadmap is headed.)
-
-Axle started as a DSPy-inspired workflow tool. As models got better with reasoning
-and tool use, rigid workflow graphs felt unnecessary — but the goals behind them
-(structured output, verification, multi-step reasoning) didn't go away. The project
-shifted toward making those capabilities composable primitives rather than
-fixed pipelines.
-
-### Roadmap
-
-- **Memory:** Ways to remember previous runs to retrieve them and add them back
-  into the prompt for future runs.
-- **Verification:** Automatic and manual ways to verify the output hits goals
 
 ## Core Concepts
 
