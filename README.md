@@ -685,19 +685,25 @@ try {
 }
 ```
 
-`TurnEvent` types: `session:restore`, `turn:user`, `turn:start`, `turn:end`,
-`part:start`, `part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
+`TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
+`part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
 `action:running`, `action:progress`, `action:complete`, `action:error`,
-`action:child-event`, `annotation:start`, `annotation:update`,
-`annotation:end`, `compaction:start`, `compaction:end`, `error`.
+`action:child-event`, `compaction:delta`, `compaction:complete`,
+`compaction:error`, `annotation:start`, `annotation:update`,
+`annotation:end`, `error`.
+
+The `compaction:*` events mirror the action lifecycle: a compaction part
+arrives `running` via `part:start`, `compaction:delta` streams progressive
+summary text onto it, and exactly one of `compaction:complete` /
+`compaction:error` settles it.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
-`"thinking"`, `"file"`, `"action"`). Action parts further discriminate on
-`part.kind` (`"tool" | "agent" | "provider-tool"`).
+`"thinking"`, `"file"`, `"action"`, `"compaction"`). Action parts further
+discriminate on `part.kind` (`"tool" | "agent" | "provider-tool"`).
 
 Callbacks are registered once and fire on every subsequent `send()`, and also
-receive `compaction:start` / `compaction:end` events — including from a
-manual `agent.compact()`.
+receive the events of a manual `agent.compact()` (an engine-opened turn
+wrapping the compaction part).
 
 #### Turn accumulator
 
@@ -709,8 +715,11 @@ conversation state; turns do not affect model input or tool routing.
 Model and provider failures are retained on the agent turn as `turn.error`, so
 accumulated and restored render state includes the terminal error message.
 
-Compaction (see below) appears in the turns as an ordinary agent turn
-containing a single `compaction` part; renderers that don't handle that part
+The Agent holds no turns: it emits events, and whoever wants a transcript
+folds and stores them. Attach a `TurnAccumulator`, persist its `state`
+alongside `agent.snapshot()`, and re-seed it on restore
+(`new TurnAccumulator(savedState)`). Compaction (see below) appears in the
+fold as an ordinary `compaction` part; renderers that don't handle that part
 type simply render nothing for it.
 
 Hosts that transport Axle events over SSE, WebSockets, or another mixed event
@@ -864,69 +873,73 @@ const compactor = new PromptCompactor({
 });
 
 agent.setCompaction({
+  shouldCompact: compactor.shouldCompact,
   compact: compactor.compact,
   triggers: {
     beforeTurn: true,
   },
 });
 
-const record = await agent.compact(); // CompactionRecord | null when declined
+const applied = await agent.compact(); // true when a compaction applied, false when declined
 ```
 
-`agent.compact({ signal })` follows the same cancellation contract as every
-other operation: aborting rejects with an error whose `name` is
-`"AbortError"`. `null` strictly means no compaction happened by choice — no
-callback configured, or the callback declined.
+Compaction is split into three layers, each with one job. `triggers` say
+*when to ask*: omitting them makes compaction manual-only; `beforeTurn` asks
+at the start of the next `send()`'s turn, `afterTurn` after the model work of
+a successful turn, before it settles. `shouldCompact` says *whether* — it is
+consulted at every boundary, including manual (`ctx.trigger` is the input;
+"a manual request always compacts" is `PromptCompactor` policy, not an engine
+rule), and a `false` is the only silent path: nothing emitted, nothing ran.
+Omitting `shouldCompact` means always-willing. `compact` does *the work* and
+always produces the complete new conversation — there is no decline return;
+failures throw.
 
-`PromptCompactor` returns one user message containing a model-written summary
-followed by the latest 10 user messages in oldest-to-newest order. The target
-is an approximate budget for that complete message, including the recent
-message appendix. Set `recentUserMessages` to change the count. If the appendix
-must shrink, older recent messages are removed first. Messages carried over
-from a previous compaction are excluded from the appendix — the callback
-context's `lastCompaction.messageCount` marks that prefix — so repeated
-compactions never re-collect an earlier summary as a "recent" user message.
+Once `shouldCompact` says yes, the compaction is ordinary fallible turn work,
+streamed like a tool call: a `running` compaction part lands in the natural
+turn — head of the send's turn for `beforeTurn`, tail for `afterTurn`, its
+own engine-opened turn for `manual` — `ctx.emit(...)` streams progressive
+summary text onto it (liveness for long summarizations, and real traffic for
+idle-timeout-prone transports), and it settles `complete` or `error`.
+**Failures are non-fatal for automatic triggers**: the errored part is the
+record, and the send continues on the uncompacted conversation — if that
+genuinely overflows the context, the provider failure surfaces as the turn's
+model error. A failed `manual` compact rejects, since it was explicitly
+requested. `agent.compact({ signal })` follows the same cancellation contract
+as every other operation: aborting rejects with an error whose `name` is
+`"AbortError"`.
 
-For `PromptCompactor`, automatic triggers decline while usage is below
-`thresholdTokens`, while a manual `agent.compact()` bypasses that threshold.
-You can instead provide any `CompactionCallback` when you need a different
-policy or output format. The engine owns callback serialization, result
-validation, receipt stamping, state processing, and event emission.
+`PromptCompactor` returns two user messages: a model-written summary, and an
+appendix of the latest 10 user messages in oldest-to-newest order. The target
+is an approximate budget for both together. Set `recentUserMessages` to change
+the count. If the appendix must shrink, older recent messages are removed
+first. Both messages are stamped via metadata
+(`axleCompaction: { id, role: "summary" | "appendix" }`, see
+`CompactionStamp`): the stamp is how the compactor recognizes its own prior
+output — carried-over messages are excluded from the appendix, so repeated
+compactions never re-collect an earlier summary as a "recent" user message —
+and how the engine knows which text settles the compaction part's `summary`.
+Custom `CompactionCallback`s that don't stamp are valid; their compaction
+part settles without a summary and renders as a bare divider.
 
-Omitting `triggers` makes compaction manual-only. `beforeTurn` invokes the
-callback before the next `send()` commits its user message;
-`afterTurn` invokes it after a successful turn is committed and before that
-handle resolves. Both automatic triggers are awaited and use the same callback
-as `compact()`. An automatic callback error rejects the corresponding handle;
-return `null` to decline compaction.
-
-Like tool callbacks, the compaction callback runs while the agent's scheduler
-is held: scheduling more work on the same agent from inside it queues behind
-the current operation, so awaiting that work from inside the callback
+Like tool callbacks, the compaction callbacks run while the agent's scheduler
+is held: scheduling more work on the same agent from inside them queues behind
+the current operation, so awaiting that work from inside a callback
 deadlocks. Fire-and-forget scheduling is safe — the work runs after the
 current operation settles.
 
 Compaction is destructive at the message layer: the returned messages become
-the entire active conversation. Nothing is lost, though — `agent.history`
-exposes both views:
+the entire active conversation, and the old messages cease to exist the
+moment the part settles `complete` (settle ⇔ applied, atomically). Hosts
+wanting the pre-compaction messages (undo, audit) copy them in their own
+wrapper before returning. Compaction runs on the agent's work queue, so it
+never interleaves with in-flight Agent work. `agent.context()` returns the
+current `ContextUsage` estimate if you want to decide outside the callbacks.
 
-- `history.messages` — the active conversation sent to the model.
-- `history.archive` — the raw append-only log; compaction never touches it.
-- `history.compactions` — receipts (`{ id, at, messageCount }`) for each
-  compaction; `messageCount` marks how many leading messages of the active
-  conversation are carried-over compacted content.
-
-Compaction runs on the agent's work queue, so it never interleaves with
-in-flight Agent work. In the turn stream it appears as `compaction:start` /
-`compaction:end` events and lands in `history.turns` as an agent turn containing
-a single `compaction` part (carrying the record once complete). The turn's
-`status` covers the async lifecycle: `"streaming"` while the callback runs,
-then `"complete"` or `"error"`; a skipped compaction leaves no turn.
-`agent.context()` returns the current `ContextUsage` estimate if you want to
-decide outside the callback.
-
-See [Migrating to Axle 0.28.0](docs/0.28.0-migration.md) for the
-`onCompaction()` migration and detailed `stop()` semantics.
+The normative design — invariants, rationale, and rejected alternatives —
+lives in [docs/architecture/compaction.md](docs/architecture/compaction.md)
+and [docs/architecture/agent-state.md](docs/architecture/agent-state.md).
+See [Migrating to Axle 0.30.0](docs/0.30.0-migration.md) for the turn
+ownership and compaction protocol changes.
 
 ### Hosting / Sessions
 
@@ -936,12 +949,16 @@ in your host application on top of `Agent`, `agent.on(...)`, and the streamed
 turn events that Axle emits.
 
 To persist and resume an agent, snapshot it and construct a new agent with the
-session:
+session. The snapshot is the pure continuation (`{ sessionId, messages }`) —
+persist your tape's state next to it if you want the transcript back:
 
 ```typescript
 const session = await agent.snapshot(); // waits for in-flight work to settle
-// ...store, then later:
+const transcript = tape.state;
+// ...store both, then later:
 const resumed = new Agent(config, session);
+const resumedTape = new TurnAccumulator(transcript);
+resumed.on((event) => resumedTape.apply(event));
 ```
 
 ## Known Limitations

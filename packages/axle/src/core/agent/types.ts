@@ -1,6 +1,5 @@
 import type { MCP, MCPConfig } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
-import type { CompactionRecord } from "../../messages/compaction.js";
 import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -9,7 +8,7 @@ import type { AxleFailure } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";
-import type { Annotation, Turn } from "../../turns/types.js";
+import type { Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import type { Handle } from "../../utils/utils.js";
@@ -158,41 +157,32 @@ export type AgentDefinitionResolver = (
 ) => MaybePromise<ResolvedAgentDefinition>;
 
 /**
- * Serializable continuation and presentation state for an `Agent`.
+ * Serializable continuation state for an `Agent`: the pure model-facing
+ * conversation, nothing else.
  *
- * This is the data needed to continue a model conversation and restore the
- * renderable turn state. It intentionally does not include executable runtime
- * objects such as providers, tools, MCP clients, memory implementations, file
- * resolvers, or tracers. Recreate those from host-owned configuration, then
- * construct a new agent with the session: `new Agent(config, session)`.
- *
- * @typeParam TAnnotation - Annotation union supported by the host renderer.
+ * It intentionally does not include executable runtime objects (providers,
+ * tools, MCP clients, memory, file resolvers, tracers) or renderable turn
+ * state — transcripts are folds of the event stream owned by the host; persist
+ * your `TurnAccumulator` state alongside this if you want one back. Recreate
+ * runtime objects from host-owned configuration, then construct a new agent
+ * with the session: `new Agent(config, session)`. Unknown keys in stored
+ * sessions from older versions are ignored.
  */
-export interface AgentSession<TAnnotation extends Annotation = Annotation> {
-  /** Agent session schema version. */
-  version: 1;
+export interface AgentSession {
   /** Stable conversation/session id. */
   sessionId: string;
   /** Active model-facing conversation used for continuation. */
   messages: AxleMessage[];
-  /** Complete chronological record of every appended message, untouched by compaction. May be empty; absent in pre-compaction snapshots. */
-  archive?: AxleMessage[];
-  /** Compaction records, in order. Empty when no compaction has run; absent in pre-compaction snapshots. */
-  compactions?: CompactionRecord[];
-  /** Renderable turn state for exact UI restoration. */
-  turns?: Turn<TAnnotation>[];
-  /** Session-level annotations for generic renderer state. */
-  sessionAnnotations?: TAnnotation[];
 }
 
 /**
  * Serializable saved agent payload: definition plus continuation state.
  */
-export interface SavedAgent<TAnnotation extends Annotation = Annotation> {
+export interface SavedAgent {
   /** Serializable recipe used to reconstruct runtime config. */
   definition: AgentDefinition;
-  /** Serializable continuation and presentation state. */
-  session: AgentSession<TAnnotation>;
+  /** Serializable continuation state. */
+  session: AgentSession;
 }
 
 export interface AgentResult<T = string> {
@@ -216,40 +206,70 @@ export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 export type TurnEventCallback = (event: TurnEvent) => void;
 
 /**
- * Caller-supplied compaction policy and strategy.
+ * Compaction is split into three layers, each with one job: `triggers` say
+ * *when to ask*, `shouldCompact` says *whether*, and `compact` does the work.
  *
- * The callback owns the decision: return `null` for "not now" (cheap — the
- * usage estimate is local), or the complete new active conversation. The
- * engine owns validation, record stamping, state processing, and event
- * emission.
+ * A `false` from `shouldCompact` is the only silent path — nothing is emitted,
+ * nothing ran. Once it returns `true`, the compaction is ordinary turn work:
+ * the engine emits a running `CompactionPart` into the natural turn (head of
+ * the send's turn for `beforeTurn`, tail for `afterTurn`, its own turn for
+ * `manual`), streams `ctx.emit(...)` deltas into it, and settles it
+ * `complete` or `error`. Compaction failures are non-fatal for automatic
+ * triggers — the part records the error and the send continues on the
+ * uncompacted conversation.
  *
  * @experimental Compaction is under active design and may change in any release.
  */
 export type CompactionTrigger = "manual" | "beforeTurn" | "afterTurn";
 
+/**
+ * The decision: should a compaction run now? Consulted at every trigger
+ * boundary, including `manual` — "a manual request always compacts" is policy
+ * (`ctx.trigger` is the input), not an engine carve-out. Omitted on the
+ * config, the engine assumes always-yes. Keep it cheap; it runs on every
+ * triggered boundary.
+ */
+export type ShouldCompactCallback = (
+  state: { messages: AxleMessage[] },
+  context: {
+    usage: ContextUsage;
+    trigger: CompactionTrigger;
+  },
+) => MaybePromise<boolean>;
+
+/**
+ * The work: produce the complete new active conversation. There is no decline
+ * path — declining is `shouldCompact`'s job — and failures throw. Stream
+ * progressive summary text through `ctx.emit`; it renders live on the part
+ * and keeps the event stream flowing during long summarizations. Stamp output
+ * messages via `MessageMetadata` (`axleCompaction: { id, role }`, see
+ * `CompactionStamp`) so prior output is recognized on later runs and the
+ * engine can surface the summary text on the settled part.
+ */
 export type CompactionCallback = (
   state: { messages: AxleMessage[] },
   context: {
     usage: ContextUsage;
     signal?: AbortSignal;
     trigger: CompactionTrigger;
-    /**
-     * Receipt of the most recent applied compaction, when one exists. Its
-     * `messageCount` marks how many leading messages of `state.messages` are
-     * carried-over compacted content rather than live conversation.
-     */
-    lastCompaction?: CompactionRecord;
+    /** Engine-generated id for this compaction; the emitted part shares it. */
+    id: string;
+    /** Stream progressive summary text onto the running part. */
+    emit: (delta: string) => void;
   },
-) => MaybePromise<AxleMessage[] | null>;
+) => MaybePromise<AxleMessage[]>;
 
 /**
- * Compaction implementation and the turn boundaries that invoke it
- * automatically. Manual `agent.compact()` is always available.
+ * Compaction wiring: the work, the optional decision policy, and the turn
+ * boundaries that invoke them automatically. Manual `agent.compact()` is
+ * always available.
  *
  * @experimental Compaction is under active design and may change in any release.
  */
 export interface CompactionConfig {
   compact: CompactionCallback;
+  /** Decision policy. Absent = always willing (`() => true`). */
+  shouldCompact?: ShouldCompactCallback;
   triggers?: {
     beforeTurn?: boolean;
     afterTurn?: boolean;

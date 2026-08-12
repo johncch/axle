@@ -57,7 +57,12 @@ export type {
   GenerateInstructResult,
   GenerateParams,
 } from "./providers/generate.js";
-export type { AxleFailure, GenerateError, GenerateResult, StreamResult } from "./providers/helpers.js";
+export type {
+  AxleFailure,
+  GenerateError,
+  GenerateResult,
+  StreamResult,
+} from "./providers/helpers.js";
 export { generate, generateStep, stream } from "./providers/index.js";
 export { openai } from "./providers/openai/index.js";
 export type {
@@ -105,7 +110,6 @@ export { MCP } from "./mcp/index.js";
 export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";
 
 // Messages (internal — kept for advanced/direct stream() users)
-export { History } from "./core/agent/index.js";
 export type {
   AxleAssistantMessage,
   AxleMessage,
@@ -131,11 +135,12 @@ export type {
 // Compaction (@experimental)
 export type {
   CompactionCallback,
+  ShouldCompactCallback,
   CompactionConfig,
   CompactionTrigger,
 } from "./core/agent/index.js";
-export { validateCompactedMessages } from "./messages/compaction.js";
-export type { CompactionRecord } from "./messages/compaction.js";
+export { getCompactionStamp, validateCompactedMessages } from "./messages/compaction.js";
+export type { CompactionStamp } from "./messages/compaction.js";
 
 // Turns (public format)
 export { TurnAccumulator } from "./turns/accumulator.js";

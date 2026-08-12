@@ -3,49 +3,87 @@ import { PromptCompactor } from "../../src/compaction/PromptCompactor.js";
 import type { AxleMessage } from "../../src/messages/message.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { estimateContextUsage } from "../../src/providers/context.js";
-import type {
-  AIProvider,
-  ModelResult,
-  ProviderGenerationParams,
-} from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 
 describe("PromptCompactor", () => {
-  test("skips automatic compaction below the threshold and runs at the threshold", async () => {
-    const { provider, requests } = createProvider(success("Summary."));
-    const compactor = createCompactor(provider, { thresholdTokens: 100 });
+  describe("shouldCompact", () => {
+    test("declines below the threshold and accepts at it for automatic triggers", () => {
+      const { provider } = createProvider({ text: "unused" });
+      const compactor = createCompactor(provider, { thresholdTokens: 100 });
 
-    const skipped = await compactor.compact(
-      { messages: [user("short conversation")] },
-      { usage: usage(99), trigger: "beforeTurn" },
-    );
-    const applied = await compactor.compact(
-      { messages: [user("short conversation")] },
-      { usage: usage(100), trigger: "beforeTurn" },
-    );
+      expect(
+        compactor.shouldCompact(
+          { messages: [user("short conversation")] },
+          { usage: usage(99), trigger: "beforeTurn" },
+        ),
+      ).toBe(false);
+      expect(
+        compactor.shouldCompact(
+          { messages: [user("short conversation")] },
+          { usage: usage(100), trigger: "afterTurn" },
+        ),
+      ).toBe(true);
+    });
 
-    expect(skipped).toBeNull();
-    expect(applied).not.toBeNull();
-    expect(requests).toHaveLength(1);
+    test("manual requests bypass the threshold", () => {
+      const { provider } = createProvider({ text: "unused" });
+      const compactor = createCompactor(provider, { thresholdTokens: 100 });
+
+      expect(
+        compactor.shouldCompact(
+          { messages: [user("short conversation")] },
+          { usage: usage(1), trigger: "manual" },
+        ),
+      ).toBe(true);
+    });
+
+    test("declines when there is no conversation to compact, even manually", () => {
+      const { provider, requests } = createProvider({ text: "unused" });
+      const compactor = createCompactor(provider);
+
+      expect(
+        compactor.shouldCompact({ messages: [] }, { usage: usage(500), trigger: "manual" }),
+      ).toBe(false);
+      expect(requests).toEqual([]);
+    });
   });
 
-  test("manual compaction bypasses the threshold and compact is safely detached", async () => {
-    const { provider, requests } = createProvider(success("Durable summary."));
+  test("compact is safely detached from the instance", async () => {
+    const { provider, requests } = createProvider({ text: "Durable summary." });
     const compactor = createCompactor(provider, { thresholdTokens: 100 });
     const compact = compactor.compact;
 
     const result = await compact(
       { messages: [user("short conversation")] },
-      { usage: usage(1), trigger: "manual" },
+      { usage: usage(1), trigger: "manual", id: "comp-1", emit: () => {} },
     );
 
     expect(requests).toHaveLength(1);
-    expect(result?.[0]).toMatchObject({ role: "user" });
-    expect(String(result?.[0]?.content)).toContain("Durable summary.");
+    expect(result[0]).toMatchObject({
+      role: "user",
+      metadata: { axleCompaction: { id: "comp-1", role: "summary" } },
+    });
+    expect(String(result[0]?.content)).toContain("Durable summary.");
+  });
+
+  test("streams summary text through ctx.emit as it generates", async () => {
+    const { provider } = createProvider({ text: "Streamed summary text." });
+    const compactor = createCompactor(provider);
+    const deltas: string[] = [];
+
+    const result = await compactor.compact(
+      { messages: [user("remember blue")] },
+      { usage: usage(500), trigger: "manual", id: "comp-1", emit: (delta) => deltas.push(delta) },
+    );
+
+    expect(deltas.length).toBeGreaterThan(1);
+    expect(deltas.join("")).toBe("Streamed summary text.");
+    expect(String(result[0]?.content)).toBe("Streamed summary text.");
   });
 
   test("uses the configured provider, model, prompt, and remaining output budget", async () => {
-    const { provider, requests, models } = createProvider(success("Summary."));
+    const { provider, requests, models } = createProvider({ text: "Summary." });
     const compactor = createCompactor(provider, {
       model: "summary-model",
       prompt: "Summarize precisely.",
@@ -54,7 +92,13 @@ describe("PromptCompactor", () => {
 
     await compactor.compact(
       { messages: [user("remember blue"), assistant("acknowledged")] },
-      { usage: usage(500), trigger: "afterTurn", signal: new AbortController().signal },
+      {
+        usage: usage(500),
+        trigger: "afterTurn",
+        signal: new AbortController().signal,
+        id: "comp-1",
+        emit: () => {},
+      },
     );
 
     expect(models).toEqual(["summary-model"]);
@@ -67,8 +111,8 @@ describe("PromptCompactor", () => {
     expect(requests[0].signal).toBeInstanceOf(AbortSignal);
   });
 
-  test("returns one user message with the latest user messages in chronological order", async () => {
-    const { provider } = createProvider(success("Earlier conversation summary."));
+  test("returns a stamped summary message and a stamped appendix of recent user messages", async () => {
+    const { provider } = createProvider({ text: "Earlier conversation summary." });
     const compactor = createCompactor(provider, { recentUserMessages: 3 });
     const messages: AxleMessage[] = [
       user("first"),
@@ -79,22 +123,46 @@ describe("PromptCompactor", () => {
       user("fourth"),
     ];
 
-    const result = await compactor.compact({ messages }, { usage: usage(500), trigger: "manual" });
-    const content = String(result?.[0]?.content);
+    const result = await compactor.compact(
+      { messages },
+      { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
+    );
 
-    expect(result).toHaveLength(1);
-    expect(result?.[0].role).toBe("user");
-    expect(content).not.toContain("- first");
-    expect(content.indexOf("- second")).toBeLessThan(content.indexOf("- third"));
-    expect(content.indexOf("- third")).toBeLessThan(content.indexOf("- fourth"));
-    expect(content).toContain("Recent 3 user messages (oldest to newest):");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      role: "user",
+      metadata: { axleCompaction: { id: "comp-1", role: "summary" } },
+    });
+    expect(result[1]).toMatchObject({
+      role: "user",
+      metadata: { axleCompaction: { id: "comp-1", role: "appendix" } },
+    });
+
+    const summary = String(result[0]?.content);
+    expect(summary).toContain("Earlier conversation summary.");
+    expect(summary).not.toContain("Recent 3 user messages");
+
+    const appendix = String(result[1]?.content);
+    expect(appendix).not.toContain("- first");
+    expect(appendix.indexOf("- second")).toBeLessThan(appendix.indexOf("- third"));
+    expect(appendix.indexOf("- third")).toBeLessThan(appendix.indexOf("- fourth"));
+    expect(appendix).toContain("Recent 3 user messages (oldest to newest):");
   });
 
-  test("excludes messages carried over from the previous compaction", async () => {
-    const { provider } = createProvider(success("Second summary."));
+  test("recognizes its own stamped output and never re-quotes it into the appendix", async () => {
+    const { provider } = createProvider({ text: "Second summary." });
     const compactor = createCompactor(provider, { recentUserMessages: 3 });
     const messages: AxleMessage[] = [
-      user("previous summary with old recent messages"),
+      {
+        role: "user",
+        content: "previous summary with old recent messages",
+        metadata: { axleCompaction: { id: "comp-old", role: "summary" } },
+      },
+      {
+        role: "user",
+        content: "Recent 1 user message (oldest to newest):\n- stale quoted message",
+        metadata: { axleCompaction: { id: "comp-old", role: "appendix" } },
+      },
       user("after-one"),
       assistant("one"),
       user("after-two"),
@@ -102,39 +170,36 @@ describe("PromptCompactor", () => {
 
     const result = await compactor.compact(
       { messages },
-      {
-        usage: usage(500),
-        trigger: "manual",
-        lastCompaction: { id: "c1", at: "2026-01-01T00:00:00.000Z", messageCount: 1 },
-      },
+      { usage: usage(500), trigger: "manual", id: "comp-new", emit: () => {} },
     );
-    const content = String(result?.[0]?.content);
+    const appendix = String(result[1]?.content);
 
-    expect(content).not.toContain("previous summary with old recent messages");
-    expect(content).toContain("- after-one");
-    expect(content).toContain("- after-two");
-    expect(content).toContain("Recent 2 user messages (oldest to newest):");
+    expect(appendix).not.toContain("previous summary with old recent messages");
+    expect(appendix).not.toContain("stale quoted message");
+    expect(appendix).toContain("- after-one");
+    expect(appendix).toContain("- after-two");
+    expect(appendix).toContain("Recent 2 user messages (oldest to newest):");
   });
 
   test("keeps ten recent user messages by default", async () => {
-    const { provider } = createProvider(success("Summary."));
+    const { provider } = createProvider({ text: "Summary." });
     const compactor = createCompactor(provider, { targetTokens: 1_000 });
     const messages = Array.from({ length: 12 }, (_, index) => user(`message-${index + 1}`));
 
     const result = await compactor.compact(
       { messages },
-      { usage: usage(2_000), trigger: "manual" },
+      { usage: usage(2_000), trigger: "manual", id: "comp-1", emit: () => {} },
     );
-    const content = String(result?.[0]?.content);
+    const appendix = String(result[1]?.content);
 
-    expect(content).not.toContain("- message-1\n");
-    expect(content).not.toContain("- message-2\n");
-    expect(content).toContain("Recent 10 user messages (oldest to newest):");
-    expect(content.indexOf("- message-3")).toBeLessThan(content.indexOf("- message-12"));
+    expect(appendix).not.toContain("- message-1\n");
+    expect(appendix).not.toContain("- message-2\n");
+    expect(appendix).toContain("Recent 10 user messages (oldest to newest):");
+    expect(appendix.indexOf("- message-3")).toBeLessThan(appendix.indexOf("- message-12"));
   });
 
   test("drops oldest recent messages first to keep the compacted message within target", async () => {
-    const { provider } = createProvider(success("S".repeat(300)));
+    const { provider } = createProvider({ text: "S".repeat(300) });
     const compactor = createCompactor(provider, {
       targetTokens: 90,
       recentUserMessages: 3,
@@ -145,51 +210,43 @@ describe("PromptCompactor", () => {
 
     const result = await compactor.compact(
       { messages: [user(oldest), user(middle), user(newest)] },
-      { usage: usage(500), trigger: "manual" },
+      { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
     );
-    const content = String(result?.[0]?.content);
+    const summary = String(result[0]?.content);
+    const appendix = String(result[1]?.content);
 
-    expect(content).not.toContain("oldest-");
-    expect(content).not.toContain("middle-");
-    expect(content).toContain(newest);
-    expect(
-      estimateContextUsage({ messages: [{ role: "user", content }] }).messages,
-    ).toBeLessThanOrEqual(90);
-  });
-
-  test("does nothing when there is no conversation to compact", async () => {
-    const { provider, requests } = createProvider(success("unused"));
-    const compactor = createCompactor(provider);
-
-    await expect(
-      compactor.compact({ messages: [] }, { usage: usage(500), trigger: "manual" }),
-    ).resolves.toBeNull();
-    expect(requests).toEqual([]);
+    expect(appendix).not.toContain("oldest-");
+    expect(appendix).not.toContain("middle-");
+    expect(appendix).toContain(newest);
+    const summaryTokens = estimateContextUsage({
+      messages: [{ role: "user", content: summary }],
+    }).messages;
+    const appendixTokens = estimateContextUsage({
+      messages: [{ role: "user", content: appendix }],
+    }).messages;
+    expect(summaryTokens + appendixTokens).toBeLessThanOrEqual(90);
   });
 
   test("throws a compaction error when generation fails or returns no text", async () => {
-    const failure = createProvider({
-      type: "error",
-      error: { type: "provider", message: "provider unavailable" },
-    });
-    const empty = createProvider(success(""));
+    const failure = createProvider({ error: "provider unavailable" });
+    const empty = createProvider({ text: "" });
 
     await expect(
       createCompactor(failure.provider).compact(
         { messages: [user("hello")] },
-        { usage: usage(500), trigger: "manual" },
+        { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
       ),
     ).rejects.toMatchObject({ code: "COMPACTION_GENERATION_FAILED" });
     await expect(
       createCompactor(empty.provider).compact(
         { messages: [user("hello")] },
-        { usage: usage(500), trigger: "manual" },
+        { usage: usage(500), trigger: "manual", id: "comp-2", emit: () => {} },
       ),
     ).rejects.toMatchObject({ code: "COMPACTION_EMPTY_SUMMARY" });
   });
 
   test("validates numeric and prompt options", () => {
-    const { provider } = createProvider(success("unused"));
+    const { provider } = createProvider({ text: "unused" });
 
     expect(() => createCompactor(provider, { prompt: " " })).toThrowError(/prompt/);
     expect(() => createCompactor(provider, { thresholdTokens: 0 })).toThrowError(/thresholdTokens/);
@@ -214,41 +271,57 @@ function createCompactor(
   });
 }
 
-function createProvider(result: ModelResult): {
+interface CapturedStreamRequest {
+  system?: string;
+  messages: AxleMessage[];
+  maxOutputTokens?: number;
+  reasoning?: unknown;
+  signal?: AbortSignal;
+}
+
+function createProvider(result: { text: string } | { error: string }): {
   provider: AIProvider;
-  requests: ProviderGenerationParams[];
+  requests: CapturedStreamRequest[];
   models: string[];
 } {
-  const requests: ProviderGenerationParams[] = [];
+  const requests: CapturedStreamRequest[] = [];
   const models: string[] = [];
   return {
     requests,
     models,
     provider: {
       name: "test",
-      async createGenerationRequest(model, params) {
-        models.push(model);
-        requests.push(params);
-        return result;
-      },
-      async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
+      async createGenerationRequest() {
         throw new Error("not used");
       },
+      async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void> {
+        models.push(model);
+        requests.push({
+          system: params.system,
+          messages: params.messages,
+          maxOutputTokens: params.maxOutputTokens,
+          reasoning: params.reasoning,
+          signal: params.signal,
+        });
+        yield { type: "start", id: "summary-1", data: { model, timestamp: 0 } };
+        if ("error" in result) {
+          yield { type: "error", data: { type: "server_error", message: result.error } };
+          return;
+        }
+        yield { type: "text-start", data: { index: 0 } };
+        // Two deltas so streaming consumers observe accumulation.
+        const split = Math.ceil(result.text.length / 2);
+        if (result.text) {
+          yield { type: "text-delta", data: { index: 0, text: result.text.slice(0, split) } };
+          yield { type: "text-delta", data: { index: 0, text: result.text.slice(split) } };
+        }
+        yield { type: "text-complete", data: { index: 0 } };
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 10 } },
+        };
+      },
     },
-  };
-}
-
-function success(text: string): ModelResult {
-  return {
-    type: "success",
-    role: "assistant",
-    id: "summary-1",
-    model: "test-model",
-    text,
-    content: text ? [{ type: "text", text }] : [],
-    finishReason: AxleStopReason.Stop,
-    usage: { in: 10, out: 10 },
-    raw: {},
   };
 }
 

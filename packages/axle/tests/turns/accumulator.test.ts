@@ -320,21 +320,85 @@ describe("TurnAccumulator", () => {
     expect(result.state).toBe(state);
   });
 
-  test("session restore replaces turns and session annotations", () => {
+  test("compaction parts stream deltas and settle complete with the authoritative summary", () => {
     const accumulator = new TurnAccumulator();
-    accumulator.apply({ type: "turn:start", turnId: "old" });
-
-    const result = accumulator.apply({
-      type: "session:restore",
-      turns: [{ id: "restored", owner: "user", parts: [], status: "complete" }],
-      sessionAnnotations: [{ id: "a1", kind: "note", label: "Restored" }],
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    accumulator.apply({ type: "compaction:delta", turnId: "t1", partId: "c1", delta: "draft " });
+    const streamed = accumulator.apply({
+      type: "compaction:delta",
+      turnId: "t1",
+      partId: "c1",
+      delta: "summary…",
+    });
+    expect((streamed.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "running",
+      summary: "draft summary…",
     });
 
-    expect(result.state.turns).toEqual([
-      { id: "restored", owner: "user", parts: [], status: "complete" },
-    ]);
-    expect(result.state.sessionAnnotations).toEqual([
-      { id: "a1", kind: "note", label: "Restored" },
+    const settled = accumulator.apply({
+      type: "compaction:complete",
+      turnId: "t1",
+      partId: "c1",
+      summary: "final stamped summary",
+      timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:30.000Z" },
+    });
+    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "complete",
+      summary: "final stamped summary",
+      timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:30.000Z" },
+    });
+  });
+
+  test("compaction parts settle error with the failure message, keeping streamed text", () => {
+    const accumulator = new TurnAccumulator();
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    accumulator.apply({ type: "compaction:delta", turnId: "t1", partId: "c1", delta: "partial" });
+
+    const settled = accumulator.apply({
+      type: "compaction:error",
+      turnId: "t1",
+      partId: "c1",
+      error: "summarizer down",
+    });
+
+    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "error",
+      summary: "partial",
+      error: "summarizer down",
+    });
+  });
+
+  test("constructor seeding restores persisted state and new events append to it", () => {
+    const saved = new TurnAccumulator();
+    saved.apply({
+      type: "turn:user",
+      turn: { id: "restored", owner: "user", parts: [], status: "complete" },
+    });
+    saved.apply({
+      type: "annotation:start",
+      target: { type: "session" },
+      annotation: { id: "a1", kind: "note", label: "Restored" },
+    });
+
+    const restored = new TurnAccumulator(saved.state);
+    restored.apply({ type: "turn:start", turnId: "next" });
+
+    expect(restored.state.turns.map((turn) => turn.id)).toEqual(["restored", "next"]);
+    expect(restored.state.sessionAnnotations).toEqual([
+      { id: "a1", kind: "note", label: "Restored", placement: "after" },
     ]);
   });
 

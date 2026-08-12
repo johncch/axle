@@ -34,12 +34,12 @@ export type TurnAccumulatorResult<
  * key is a type error, so the runtime guard cannot drift from the union.
  */
 const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
-  "session:restore": true,
   "turn:user": true,
   "turn:start": true,
   "turn:end": true,
-  "compaction:start": true,
-  "compaction:end": true,
+  "compaction:delta": true,
+  "compaction:complete": true,
+  "compaction:error": true,
   "part:start": true,
   "text:delta": true,
   "text:citation": true,
@@ -97,14 +97,34 @@ export class TurnAccumulator<
     event: TurnEvent<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     switch (event.type) {
-      case "session:restore":
-        return this.replaceState(
-          {
-            turns: event.turns ?? [],
-            sessionAnnotations: event.sessionAnnotations,
-          },
-          event,
-        );
+      case "compaction:delta":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return { ...part, summary: (part.summary ?? "") + event.delta };
+        });
+
+      case "compaction:complete":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return {
+            ...part,
+            status: "complete",
+            // The stamped-summary text is authoritative over accumulated deltas.
+            ...(event.summary !== undefined ? { summary: event.summary } : {}),
+            timing: event.timing ?? part.timing,
+          };
+        });
+
+      case "compaction:error":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return {
+            ...part,
+            status: "error",
+            error: event.error,
+            timing: event.timing ?? part.timing,
+          };
+        });
 
       case "turn:user":
         return this.replaceTurns([...this._state.turns, event.turn], event);
@@ -118,44 +138,6 @@ export class TurnAccumulator<
           ...(event.timing ? { timing: event.timing } : {}),
         };
         return this.replaceTurns([...this._state.turns, turn], event);
-      }
-
-      case "compaction:start": {
-        const turn: Turn<TAnnotation> = {
-          id: event.id,
-          owner: "agent",
-          parts: [{ id: event.id, type: "compaction" }],
-          status: "streaming",
-          ...(event.timing ? { timing: event.timing } : {}),
-        };
-        return this.replaceTurns([...this._state.turns, turn], event);
-      }
-
-      case "compaction:end": {
-        // A skipped compaction never happened; its running turn is removed
-        // rather than settled, so per-send polling policies leave no trace.
-        if (event.outcome === "skipped") {
-          const turns = this._state.turns.filter((turn) => turn.id !== event.id);
-          if (turns.length === this._state.turns.length) return this.handled(event);
-          return this.replaceTurns(turns, event);
-        }
-
-        const status = event.outcome === "complete" ? ("complete" as const) : ("error" as const);
-        let updated = false;
-        const turns = this._state.turns.map((turn) => {
-          if (turn.id !== event.id) return turn;
-          updated = true;
-          return {
-            ...turn,
-            status,
-            parts: turn.parts.map((part) =>
-              part.type === "compaction" && event.record ? { ...part, record: event.record } : part,
-            ),
-            timing: event.timing ?? turn.timing,
-          };
-        });
-        if (!updated) return this.handled(event);
-        return this.replaceTurns(turns, event);
       }
 
       case "part:start":

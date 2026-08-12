@@ -1,4 +1,3 @@
-import type { CompactionRecord } from "../messages/compaction.js";
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { Stats } from "../types.js";
 import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
@@ -14,26 +13,25 @@ export type AnnotationEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "annotation:end"; target: AnnotationTarget; annotation: TAnnotation };
 
 export type TurnEvent<TAnnotation extends Annotation = Annotation> =
-  // Session
-  | {
-      type: "session:restore";
-      turns: Turn<TAnnotation>[];
-      sessionAnnotations?: TAnnotation[];
-      config?: Record<string, unknown>;
-    }
   // Turn lifecycle
   | { type: "turn:user"; turn: Turn<TAnnotation> }
   | { type: "turn:start"; turnId: string; timing?: TimingInfo }
   | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats; timing?: TimingInfo }
-  // Compaction lifecycle — a compaction is a turn-level entry (@experimental)
-  | { type: "compaction:start"; id: string; timing?: TimingInfo }
+  // Compaction part lifecycle — mirrors the action lifecycle: the part
+  // arrives `running` via part:start, deltas stream progressive summary
+  // text, and exactly one of complete/error settles it. `complete` carries
+  // the authoritative stamped-summary text (replacing accumulated deltas)
+  // and means the message swap applied atomically; `error` records a failed
+  // attempt. (@experimental)
+  | { type: "compaction:delta"; turnId: string; partId: string; delta: string }
   | {
-      type: "compaction:end";
-      id: string;
-      outcome: "complete" | "skipped" | "error";
-      record?: CompactionRecord;
+      type: "compaction:complete";
+      turnId: string;
+      partId: string;
+      summary?: string;
       timing?: TimingInfo;
     }
+  | { type: "compaction:error"; turnId: string; partId: string; error: string; timing?: TimingInfo }
   // Part streaming
   | { type: "part:start"; turnId: string; part: TurnPart<TAnnotation> }
   | { type: "text:delta"; turnId: string; partId: string; delta: string }

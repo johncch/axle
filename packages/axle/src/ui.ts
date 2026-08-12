@@ -1,4 +1,4 @@
-export type { CompactionRecord } from "./messages/compaction.js";
+export type { CompactionStamp } from "./messages/compaction.js";
 export type {
   Citation,
   CitationOutputSpan,
