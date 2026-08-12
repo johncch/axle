@@ -3,6 +3,25 @@ import { TurnAccumulator } from "../../src/turns/accumulator.js";
 import type { Annotation, SubagentAction, Turn } from "../../src/turns/types.js";
 
 describe("TurnAccumulator", () => {
+  test("gets the current turn by id", () => {
+    const accumulator = new TurnAccumulator();
+
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "p1", type: "text", text: "current" },
+    });
+
+    expect(accumulator.getTurn("t1")).toEqual({
+      id: "t1",
+      owner: "agent",
+      parts: [{ id: "p1", type: "text", text: "current" }],
+      status: "streaming",
+    });
+    expect(accumulator.getTurn("missing")).toBeUndefined();
+  });
+
   test("accumulates turn events into render state", () => {
     const accumulator = new TurnAccumulator();
 

@@ -261,6 +261,24 @@ describe("Agent.compact", () => {
     expect(tape.state.turns).toEqual([]);
   });
 
+  test("a throwing beforeTurn policy rejects the send and closes the agent turn", async () => {
+    const { provider, requests } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    const tape = attachTape(agent);
+    agent.setCompaction({
+      shouldCompact: () => {
+        throw new Error("broken policy");
+      },
+      compact: () => ({ messages: [] }),
+      triggers: { beforeTurn: true },
+    });
+
+    await expect(agent.send("next question").final).rejects.toThrow("broken policy");
+    expect(requests).toEqual([]);
+    expect(tape.state.turns.map((turn) => turn.status)).toEqual(["complete", "error"]);
+    expect(tape.state.turns[1]?.parts).toEqual([]);
+  });
+
   test("is a no-op without a registered config", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);

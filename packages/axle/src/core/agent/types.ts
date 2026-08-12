@@ -218,7 +218,7 @@ export type CompactionTrigger = "manual" | "beforeTurn" | "afterTurn";
  * boundary, including `manual` — "a manual request always compacts" is policy
  * (`ctx.trigger` is the input), not an engine carve-out. Omitted on the
  * config, the engine assumes always-yes. Keep it cheap; it runs on every
- * triggered boundary.
+ * triggered boundary and must return its boolean synchronously.
  */
 export type ShouldCompactCallback = (
   state: { messages: AxleMessage[] },
@@ -226,7 +226,7 @@ export type ShouldCompactCallback = (
     usage: ContextUsage;
     trigger: CompactionTrigger;
   },
-) => MaybePromise<boolean>;
+) => boolean;
 
 /**
  * The work: produce the complete new active conversation, and optionally a

@@ -891,8 +891,9 @@ at the start of the next `send()`'s turn, `afterTurn` after the model work of
 a successful turn, before it settles. `shouldCompact` says _whether_ — it is
 consulted at every boundary, including manual (`ctx.trigger` is the input;
 "a manual request always compacts" is `PromptCompactor` policy, not an engine
-rule), and a `false` is the only silent path: nothing emitted, nothing ran.
-Omitting `shouldCompact` means always-willing. `compact` does _the work_ and
+rule), and a synchronous `false` is the only silent path: nothing emitted,
+nothing ran. A thrown policy error propagates as a client implementation
+error. Omitting `shouldCompact` means always-willing. `compact` does _the work_ and
 always returns `{ messages, summary? }` — the complete new conversation, plus
 an optional reader-facing summary for the transcript — there is no decline
 return; failures throw. The `summary` is a presentation choice, independent

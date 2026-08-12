@@ -364,8 +364,7 @@ export const baselineCases: BaselineCase[] = [
       const messageCounts: number[] = [];
 
       agent.setCompaction({
-        shouldCompact: async ({ messages }, { trigger }) => {
-          await Promise.resolve();
+        shouldCompact: ({ messages }, { trigger }) => {
           triggerOrder.push(trigger);
           messageCounts.push(messages.length);
           return messages.length > 0;

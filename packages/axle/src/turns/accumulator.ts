@@ -84,6 +84,10 @@ export class TurnAccumulator<
     return this._state;
   }
 
+  getTurn(turnId: string): Turn<TAnnotation> | undefined {
+    return this._state.turns.find((turn) => turn.id === turnId);
+  }
+
   apply(
     event: AccumulatableEvent<TAnnotation, THostEvent>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {

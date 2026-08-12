@@ -143,8 +143,7 @@ describe("Agent", () => {
       const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
-        shouldCompact: async ({ messages }, { usage, trigger }) => {
-          await Promise.resolve();
+        shouldCompact: ({ messages }, { usage, trigger }) => {
           order.push(trigger);
           if (trigger === "beforeTurn") {
             beforeMessageCounts.push(messages.length);
@@ -195,38 +194,6 @@ describe("Agent", () => {
       expect(first).not.toHaveBeenCalled();
       expect(second).toHaveBeenCalledTimes(1);
       expect(compact).not.toHaveBeenCalled();
-    });
-
-    test("work scheduled while a compaction decision is in flight queues and completes", async () => {
-      const requests: string[] = [];
-      const agent = new Agent({
-        provider: createEchoStreamProvider(requests),
-        model: "mock",
-      });
-
-      const started = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      agent.setCompaction({
-        shouldCompact: async () => {
-          started.resolve();
-          await release.promise;
-          return false;
-        },
-        compact: vi.fn(async () => ({ messages: [] })),
-        triggers: { beforeTurn: true },
-      });
-
-      const first = agent.send("first");
-      await started.promise;
-
-      const second = agent.send("second");
-      const third = agent.send("third");
-      release.resolve();
-
-      await expect(first.final).resolves.toMatchObject({ ok: true, response: "first" });
-      await expect(second.final).resolves.toMatchObject({ ok: true, response: "second" });
-      await expect(third.final).resolves.toMatchObject({ ok: true, response: "third" });
-      expect(requests).toEqual(["first", "second", "third"]);
     });
   });
 

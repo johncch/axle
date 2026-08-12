@@ -10,7 +10,7 @@ defined in [agent-state.md](./agent-state.md).
 
 1. **Three layers, one job each.** `triggers` say _when to ask_
    (`beforeTurn`, `afterTurn`; omitted = manual-only). `shouldCompact(state,
-{usage, trigger})` says _whether_ — consulted at every boundary including
+{usage, trigger})` synchronously says _whether_ — consulted at every boundary including
    `manual`; "a manual request always compacts" is compactor policy via
    `ctx.trigger`, never an engine carve-out; omitted = always willing.
    `compact(state, ctx)` does _the work_ — it returns `{ messages, summary? }`
@@ -18,7 +18,9 @@ defined in [agent-state.md](./agent-state.md).
    never declines (`null` is not a return), and throws on failure.
 2. **A `shouldCompact` decline is the only silent path.** Nothing is
    emitted, nothing ran, no id was allocated. Everything past a `true` is
-   visible turn work.
+   visible turn work. A thrown policy error propagates as a client
+   implementation error. If the send's turn is already open, the engine
+   settles it before propagating the error.
 3. **Compaction is ordinary, fallible, streamed turn work** — the lifecycle
    mirrors tool calls. `part:start` delivers `CompactionPart { id, type,
 status: "running" | "complete" | "error", summary?, error?, timing? }`
