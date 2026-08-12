@@ -1,5 +1,4 @@
 import type { MCP, MCPConfig } from "../../mcp/index.js";
-import type { AgentMemory } from "../../memory/types.js";
 import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -29,7 +28,7 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   sessionId?: string;
   /** Optional system/developer instruction. */
   system?: string;
-  /** Optional agent name passed to host services such as memory. */
+  /** Optional agent name. */
   name?: string;
   /** Executable tools available to the agent. */
   tools?: ExecutableTool[];
@@ -37,8 +36,6 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   providerTools?: ProviderTool[];
   /** MCP clients whose tools should be lazily resolved. */
   mcps?: MCP[];
-  /** Optional memory implementation. */
-  memory?: AgentMemory;
   /** Observability: structured logging and optional span tracing. */
   observability?: ObservabilityOptions;
   /** Optional file resolver for request file references. */
@@ -107,13 +104,13 @@ export interface AgentDefinitionRequestOptions extends Omit<AxleModelRequestOpti
  *
  * This is deliberately not executable by itself. Hosts resolve provider and
  * tool references into runtime objects using an `AgentDefinitionResolver`.
- * Harness concerns such as memory implementations, file resolvers, tracing,
- * transport, and stores should be modeled outside this core definition.
+ * Harness concerns such as file resolvers, tracing, transport, and stores
+ * should be modeled outside this core definition.
  */
 export interface AgentDefinition {
   /** Agent definition schema version. */
   version: 1;
-  /** Optional agent name passed to host services such as memory. */
+  /** Optional agent name. */
   name?: string;
   /** Provider reference resolved by the host. */
   provider: ProviderDefinition;
@@ -161,7 +158,7 @@ export type AgentDefinitionResolver = (
  * conversation, nothing else.
  *
  * It intentionally does not include executable runtime objects (providers,
- * tools, MCP clients, memory, file resolvers, tracers) or renderable turn
+ * tools, MCP clients, file resolvers, tracers) or renderable turn
  * state — transcripts are folds of the event stream owned by the host; persist
  * your `TurnAccumulator` state alongside this if you want one back. Recreate
  * runtime objects from host-owned configuration, then construct a new agent

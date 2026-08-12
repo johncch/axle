@@ -196,9 +196,6 @@ export type {
 } from "./observability/index.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
 
-// Memory
-export type { AgentMemory, MemoryContext, RecallResult } from "./memory/index.js";
-
 // Store
 export type { FileStore } from "./store/index.js";
 

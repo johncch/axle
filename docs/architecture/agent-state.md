@@ -9,7 +9,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 ## Invariants
 
 1. **The Agent is a continuation, not a record.** `AgentSession =
-   { sessionId, messages }` — the session id and the active model-facing
+{ sessionId, messages }` — the session id and the active model-facing
    conversation, nothing else. `agent.snapshot()` returns exactly this;
    `new Agent(config, session)` restores it. Unknown keys in stored
    sessions are ignored.
@@ -30,7 +30,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 5. **A user message commits together with its turn event.** Once `turn:user`
    is on the wire, the message is in the conversation — tape and messages
    cannot diverge. Nothing is committed or emitted before genuine setup
-   (MCP resolution, memory recall) succeeds.
+   (such as MCP resolution) succeeds.
 6. **Usage accounting is host-domain.** Every `turn:end` carries
    `turn.usage`; hosts accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none.
@@ -61,6 +61,12 @@ chapter boundaries for hosts that rotate storage; and there is deliberately
 no retrieval/paging API on the Agent — deep-history readers are host-storage
 readers, exactly as they already are for messages.
 
+Semantic memory follows the same ownership boundary. The Agent has no memory
+service or automatic recall/record lifecycle. Model-directed retrieval and
+writing are ordinary tools; deterministic host-directed context is supplied
+through `Instruct.addContext()`. Complete transcript persistence consumes the
+turn event stream instead of masquerading as semantic memory.
+
 ## Rejected alternatives
 
 - **Keeping `History.turns` as an in-RAM convenience mirror** (2026-08-12):
@@ -82,3 +88,7 @@ readers, exactly as they already are for messages.
   per-turn usage on `turn:end`.
 - **Turn retrieval/paging API on the Agent** (2026-08-11): deep-history
   readers are host-storage readers; messages already work this way.
+- **Injected semantic-memory lifecycle** (2026-08-12): automatic recall and
+  record mixed prompt augmentation, persistence, tool registration, and
+  failure policy into the Agent. Tools and host-supplied `Instruct` context
+  cover the actual behaviors without a memory-specific runtime contract.

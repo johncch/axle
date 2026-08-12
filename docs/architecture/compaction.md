@@ -43,9 +43,8 @@ status: "running" | "complete" | "error", summary?, progress?, error?, timing? }
    Cancellation during this work does not unwind the `turn:user` event or
    remove that message from the active conversation; the agent turn settles
    cancelled.
-   `afterTurn` → tail of the send's turn, before `turn:end`; memory records
-   the conversation as the turn committed it, before the rewrite. `manual` →
-   the engine opens a turn, streams the part, closes it.
+   `afterTurn` → tail of the send's turn, before `turn:end`; `manual` → the
+   engine opens a turn, streams the part, closes it.
 6. **Failures are non-fatal for automatic triggers**, like tool-part
    failures: the errored part is the record, the turn keeps its model
    outcome, and the send continues on the uncompacted conversation — a
@@ -109,7 +108,7 @@ text as the part's reader-facing final summary.
   retention is host storage policy, zero engine surface.
 - **Eviction API / engine-invariant turn eviction** (2026-08-10): compaction
   is the channel; the Agent makes no coherence promise between transcript
-  and memory, and once it holds no transcript there is nothing to evict.
+  and messages, and once it holds no transcript there is nothing to evict.
 - **Session turnover** (compaction rotates a session, old turns evicted as a
   closed chapter) (2026-08-11): an eviction API with lifecycle ceremony;
   chapters survive as a host storage pattern keyed off compaction parts.

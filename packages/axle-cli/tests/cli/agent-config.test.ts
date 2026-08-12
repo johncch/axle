@@ -2,7 +2,6 @@ import type { Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createCliAgentConfig } from "../../src/cli/agent-config.js";
 import type { ServiceConfig } from "../../src/cli/configs/schemas.js";
-import { ProceduralMemory } from "../../src/memory/ProceduralMemory.js";
 
 const tracer = {
   startSpan: vi.fn(),
@@ -42,7 +41,7 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.provider.name).toBe("ChatCompletions");
     expect(agentConfig.model).toBe("test-model");
     expect(agentConfig.tools?.map((tool) => tool.name)).toEqual(["calculator"]);
-    expect(agentConfig.memory).toBeInstanceOf(ProceduralMemory);
+    expect(agentConfig).not.toHaveProperty("memory");
     expect(mcps).toEqual([]);
   });
 
@@ -74,11 +73,7 @@ describe("createCliAgentConfig", () => {
     ] as const;
 
     for (const [provider, model] of defaults) {
-      const { agentConfig } = await createCliAgentConfig(
-        { provider, task: "Run" },
-        {},
-        tracer,
-      );
+      const { agentConfig } = await createCliAgentConfig({ provider, task: "Run" }, {}, tracer);
 
       expect(agentConfig.model).toBe(model);
     }

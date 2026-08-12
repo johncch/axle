@@ -3,7 +3,6 @@ import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import type { MCP } from "../../mcp/index.js";
-import type { AgentMemory } from "../../memory/types.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
 import type { AxleMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
@@ -65,7 +64,6 @@ export class Agent {
 
   private mcps: MCP[] = [];
   private resolvedMcps = new WeakSet<MCP>();
-  private memory?: AgentMemory;
   private spanParent?: Tracer | Span;
   private ownedTracer?: Tracer;
 
@@ -111,11 +109,6 @@ export class Agent {
     });
     if (config.mcps) {
       this.mcps = [...config.mcps];
-    }
-    if (config.memory) {
-      this.memory = config.memory;
-      const memoryTools = config.memory.tools?.();
-      if (memoryTools) this.registry.add(memoryTools);
     }
   }
 
@@ -238,19 +231,6 @@ export class Agent {
       }
 
       await this.resolveMcpTools(signal, root);
-      let effectiveSystem = this.system;
-      if (this.memory) {
-        const recallResult = await this.memory.recall({
-          agentName: this.name,
-          sessionId: this.sessionId,
-          system: this.system,
-          messages: [...this.messagesInternal, userTurn.message],
-          span: root,
-        });
-        if (recallResult.systemSuffix) {
-          effectiveSystem = (effectiveSystem ?? "") + "\n\n" + recallResult.systemSuffix;
-        }
-      }
 
       if (signal.aborted) {
         throw new AxleAbortError("Agent send aborted", { reason: signal.reason });
@@ -285,7 +265,7 @@ export class Agent {
         provider: this.provider,
         model: this.model,
         messages: [...this.messagesInternal],
-        system: effectiveSystem,
+        system: this.system,
         registry: this.registry,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
@@ -337,7 +317,6 @@ export class Agent {
         };
       }
 
-      const committedMessages = this.messages;
       const afterTurnCompaction = this.compaction;
       if (!parseFailure && afterTurnCompaction?.triggers?.afterTurn) {
         await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
@@ -356,24 +335,6 @@ export class Agent {
 
       if (!agentTurn) {
         throw new AxleError("Agent turn missing after send");
-      }
-
-      // Lifecycle: persist the completed turn to memory
-      if (this.memory) {
-        try {
-          await this.memory.record({
-            agentName: this.name,
-            sessionId: this.sessionId,
-            system: this.system,
-            messages: committedMessages,
-            newMessages: streamResult.messages,
-            span: root,
-          });
-        } catch (error) {
-          root?.warn("memory record failed", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
       }
 
       return { ok: true, response, turn: agentTurn, usage };
