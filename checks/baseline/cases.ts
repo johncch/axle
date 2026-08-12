@@ -330,7 +330,7 @@ export const baselineCases: BaselineCase[] = [
           ? [`Expected a complete compaction turn, got ${compactionTurn?.status ?? "none"}.`]
           : []),
         ...(compactionPart?.type === "compaction" && !compactionPart.summary
-          ? ["Compaction part did not carry the stamped summary."]
+          ? ["Compaction part did not carry the returned summary."]
           : []),
         ...(!text.toLowerCase().includes("lavender")
           ? ["Post-compaction turn did not recall the lavender code word."]
@@ -370,7 +370,9 @@ export const baselineCases: BaselineCase[] = [
           messageCounts.push(messages.length);
           return messages.length > 0;
         },
-        compact: async () => [{ role: "user", content: "Automatic compaction completed." }],
+        compact: async () => ({
+          messages: [{ role: "user", content: "Automatic compaction completed." }],
+        }),
         triggers: {
           beforeTurn: true,
           afterTurn: true,

@@ -4,7 +4,7 @@ import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import type { MCP } from "../../mcp/index.js";
 import type { AgentMemory } from "../../memory/types.js";
-import { getCompactionStamp, validateCompactedMessages } from "../../messages/compaction.js";
+import { validateCompactedMessages } from "../../messages/compaction.js";
 import type { AxleAssistantMessage, AxleMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { logContent } from "../../observability/log.js";
@@ -19,7 +19,7 @@ import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
 import { TurnAccumulator } from "../../turns/accumulator.js";
 import { TurnEventBuilder } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
-import type { CompactionPart, Turn } from "../../turns/types.js";
+import type { Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
@@ -34,7 +34,6 @@ import type {
   AgentHandle,
   AgentResult,
   AgentSession,
-  CompactionCallback,
   CompactionConfig,
   CompactionTrigger,
   SendMessageOptions,
@@ -77,9 +76,6 @@ export class Agent {
   private scheduler = new AgentScheduler();
   private turnActive = false;
   private stopRequested = false;
-  // Turn-scoped fold: exists only to assemble `result.turn` for the operation
-  // in flight, and is discarded when the operation settles. The Agent holds no
-  // transcript — hosts fold the event stream into their own TurnAccumulator.
   private accumulator = new TurnAccumulator();
   private messagesInternal: AxleMessage[];
 
@@ -306,8 +302,6 @@ export class Agent {
       for (const event of turnEventBuilder.finalizeTurn(outcome)) this.emitEvent(event);
     };
 
-    // The user message commits together with its turn event: once U is on the
-    // tape, it is in the conversation, so tape and messages cannot diverge.
     const priorMessages = this.messages;
     this.messagesInternal.push(userTurn.message);
     for (const event of turnEventBuilder.createUserTurn(userTurn.message)) {
@@ -316,27 +310,20 @@ export class Agent {
     const startEvent = turnEventBuilder.startAgentTurn();
     this.emitEvent(startEvent);
 
-    // beforeTurn compaction is turn work at the head of this turn. It sees
-    // the conversation as it stood before this send's user message, which is
-    // re-appended by the apply so it always survives verbatim. Failure is
-    // non-fatal: the part records the error and the send continues on the
-    // uncompacted conversation (if that genuinely overflows the context, the
-    // provider error surfaces as this turn's model error).
     const beforeTurnCompaction = this.compaction;
     if (beforeTurnCompaction?.triggers?.beforeTurn) {
       await this.runCompaction(beforeTurnCompaction, signal, "beforeTurn", {
         state: priorMessages,
         target: { turnId: startEvent.turnId },
-        apply: (compacted) => {
-          this.messagesInternal = [...compacted, userTurn.message];
+        onApplied: () => {
+          this.messagesInternal.push(userTurn.message);
         },
       });
     }
 
     const requestMessages = [...this.messagesInternal];
     const currentAgentTurn = (): Turn | undefined =>
-      this.accumulator.state.turns.find((entry) => entry.id === startEvent.turnId) as
-        Turn | undefined;
+      this.accumulator.state.turns.find((entry) => entry.id === startEvent.turnId);
     const abortError = (
       reason: unknown,
       options: {
@@ -445,21 +432,13 @@ export class Agent {
       };
     }
 
-    // Memory records the conversation as committed by this turn, before any
-    // afterTurn compaction rewrites it.
     const committedMessages = this.messages;
 
-    // afterTurn compaction is turn work at the tail of this turn, before
-    // turn:end. Failure is non-fatal: the part records the error, the turn
-    // settles with its model outcome, and the send resolves normally.
     const afterTurnCompaction = this.compaction;
     if (!parseFailure && afterTurnCompaction?.triggers?.afterTurn) {
       await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
         state: this.messages,
         target: { turnId: startEvent.turnId },
-        apply: (compacted) => {
-          this.messagesInternal = [...compacted];
-        },
       });
     }
 
@@ -537,9 +516,6 @@ export class Agent {
           const outcome = await this.runCompaction(config, signal, "manual", {
             state: this.messages,
             target: "self-wrapped",
-            apply: (compacted) => {
-              this.messagesInternal = [...compacted];
-            },
           });
           return outcome === "applied";
         } finally {
@@ -553,17 +529,6 @@ export class Agent {
     ).final;
   }
 
-  /**
-   * The compaction engine. Three layers, one job each: the caller's trigger
-   * decided *when to ask*; `shouldCompact` decides *whether* (a `false` is
-   * the only silent path — nothing emitted, nothing ran); `compact` does the
-   * work as ordinary fallible turn work — a running part streamed into the
-   * target turn (or a fresh engine-opened turn), settled `complete` when the
-   * message swap applies atomically via `apply`, or `error` when it fails.
-   *
-   * Failures are non-fatal for automatic triggers (the errored part is the
-   * record; the send continues uncompacted) and throw for `manual`.
-   */
   private async runCompaction(
     config: CompactionConfig,
     signal: AbortSignal,
@@ -571,7 +536,7 @@ export class Agent {
     run: {
       state: AxleMessage[];
       target: { turnId: string } | "self-wrapped";
-      apply: (compacted: AxleMessage[]) => void;
+      onApplied?: () => void;
     },
   ): Promise<"applied" | "declined" | "errored"> {
     const manualAbort = (): never => {
@@ -619,7 +584,7 @@ export class Agent {
       });
 
       try {
-        const messages = await config.compact(
+        const result = await config.compact(
           { messages: [...run.state] },
           {
             usage: before,
@@ -633,22 +598,16 @@ export class Agent {
         );
         if (signal.aborted)
           throw new AxleAbortError("Agent compact aborted", { reason: signal.reason });
-        if (!Array.isArray(messages)) {
-          throw new AxleError("Compaction callback must return the new message array", {
+        if (!result || !Array.isArray(result.messages)) {
+          throw new AxleError("Compaction callback must return { messages }", {
             code: "COMPACTION_INVALID_MESSAGES",
           });
         }
-        validateCompactedMessages(messages);
-        run.apply(messages);
+        validateCompactedMessages(result.messages);
+        this.messagesInternal = [...result.messages];
+        run.onApplied?.();
 
-        const summaryTexts: string[] = [];
-        for (const message of messages) {
-          const stamp = getCompactionStamp(message);
-          if (message.role === "user" && stamp?.id === id && stamp.role === "summary") {
-            summaryTexts.push(getTextContent(message.content));
-          }
-        }
-        const summary = summaryTexts.filter(Boolean).join("\n\n");
+        const summary = result.summary;
         const timing = { start, end: new Date().toISOString() };
         this.emitEvent({
           type: "compaction:complete",
@@ -721,11 +680,10 @@ export class Agent {
    * nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    const work = async (): Promise<AgentSession> => ({
+    return this.scheduler.schedule(async (): Promise<AgentSession> => ({
       sessionId: this.sessionId,
       messages: this.messages,
-    });
-    return this.scheduler.schedule(() => work()).final;
+    })).final;
   }
 
   private emitEvent(event: TurnEvent): void {

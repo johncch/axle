@@ -17,9 +17,6 @@ export interface PromptCompactorOptions {
 }
 
 export class PromptCompactor {
-  readonly shouldCompact: ShouldCompactCallback;
-  readonly compact: CompactionCallback;
-
   private readonly provider: AIProvider;
   private readonly model: string;
   private readonly prompt: string;
@@ -35,25 +32,14 @@ export class PromptCompactor {
     this.thresholdTokens = options.thresholdTokens;
     this.targetTokens = options.targetTokens;
     this.recentUserMessages = options.recentUserMessages ?? 10;
-    this.shouldCompact = this.decide.bind(this);
-    this.compact = this.run.bind(this);
   }
 
-  private decide(
-    state: { messages: AxleMessage[] },
-    context: Parameters<ShouldCompactCallback>[1],
-  ): boolean {
+  readonly shouldCompact: ShouldCompactCallback = (state, context) => {
     if (state.messages.length === 0) return false;
     return context.trigger === "manual" || context.usage.total >= this.thresholdTokens;
-  }
+  };
 
-  private async run(
-    state: { messages: AxleMessage[] },
-    context: Parameters<CompactionCallback>[1],
-  ): Promise<AxleMessage[]> {
-    // Messages up to and including the last stamped one are carried-over
-    // output of a previous compaction, not live conversation — quoting them
-    // into the appendix would echo a summary back as a user message.
+  readonly compact: CompactionCallback = async (state, context) => {
     let carriedOverCount = 0;
     for (let i = state.messages.length - 1; i >= 0; i--) {
       if (getCompactionStamp(state.messages[i])) {
@@ -125,8 +111,8 @@ export class PromptCompactor {
         metadata: { axleCompaction: { id: context.id, role: "appendix" } },
       });
     }
-    return compacted;
-  }
+    return { messages: compacted, summary };
+  };
 }
 
 function validateOptions(options: PromptCompactorOptions): void {

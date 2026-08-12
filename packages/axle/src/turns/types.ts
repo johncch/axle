@@ -209,10 +209,11 @@ export interface CompactionPart<TAnnotation extends Annotation = Annotation> {
   /** Lifecycle state. */
   status: "running" | "complete" | "error";
   /**
-   * What is remembered at the point of forgetting. Accumulates from
-   * `compaction:delta` while running; on `complete` the settle event's
-   * stamped-summary text is authoritative. Absent on a completed part when
-   * the compactor did not stamp its output — render a bare divider.
+   * Reader-facing text for the transcript. Accumulates from
+   * `compaction:delta` while running; on `complete` the compactor's returned
+   * summary is authoritative. What it says is the compactor's presentation
+   * choice — it need not mirror the model-facing messages. Absent on a
+   * completed part when the compactor returned none — render a bare divider.
    */
   summary?: string;
   /** Terminal error message, present once the part settles `error`. */

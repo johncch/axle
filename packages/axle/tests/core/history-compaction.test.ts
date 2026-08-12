@@ -186,7 +186,7 @@ describe("Agent.compact", () => {
         expect(context.usage.total).toBeGreaterThan(0);
         expect(context.trigger).toBe("manual");
         expect(typeof context.id).toBe("string");
-        return summary;
+        return { messages: summary };
       },
     });
 
@@ -210,7 +210,7 @@ describe("Agent.compact", () => {
     expect(part?.summary).toBeUndefined();
   });
 
-  test("ctx.emit streams deltas onto the running part; the stamped summary settles it", async () => {
+  test("ctx.emit streams deltas onto the running part; the returned summary settles it", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const tape = attachTape(agent);
@@ -221,18 +221,10 @@ describe("Agent.compact", () => {
       compact: (_state, context) => {
         context.emit("here is ");
         context.emit("what I remember");
-        return [
-          {
-            role: "user",
-            content: "here is what I remember",
-            metadata: { axleCompaction: { id: context.id, role: "summary" } },
-          },
-          {
-            role: "user",
-            content: "recent context, not part of the summary",
-            metadata: { axleCompaction: { id: context.id, role: "appendix" } },
-          },
-        ];
+        return {
+          messages: [user("internal continuation summary for the model")],
+          summary: "Reduced the context by 50%",
+        };
       },
     });
 
@@ -241,7 +233,7 @@ describe("Agent.compact", () => {
     expect(events.filter((e) => e.type === "compaction:delta")).toHaveLength(2);
     const part = compactionPartOf(tape.state.turns.find(isCompactionTurn));
     expect(part?.status).toBe("complete");
-    expect(part?.summary).toBe("here is what I remember");
+    expect(part?.summary).toBe("Reduced the context by 50%");
   });
 
   test("a shouldCompact decline is the silent path: false, nothing emitted, nothing ran", async () => {
@@ -253,7 +245,7 @@ describe("Agent.compact", () => {
       shouldCompact: () => false,
       compact: () => {
         compactRan = true;
-        return [user("never")];
+        return { messages: [user("never")] };
       },
     });
 
@@ -284,7 +276,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const tape = attachTape(agent);
-    agent.setCompaction({ compact: () => [assistantToolCall("a1", "tc1")] });
+    agent.setCompaction({ compact: () => ({ messages: [assistantToolCall("a1", "tc1")] }) });
 
     await expect(agent.compact()).rejects.toThrowError(/unanswered tool calls/);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
@@ -296,13 +288,13 @@ describe("Agent.compact", () => {
     expect(part?.error).toMatch(/unanswered tool calls/);
   });
 
-  test("a callback returning no message array is an errored compaction, not a skip", async () => {
+  test("a callback returning no messages is an errored compaction, not a skip", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const tape = attachTape(agent);
     agent.setCompaction({ compact: () => undefined as any });
 
-    await expect(agent.compact()).rejects.toThrowError(/must return the new message array/);
+    await expect(agent.compact()).rejects.toThrowError(/must return \{ messages \}/);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
     expect(compactionPartOf(tape.state.turns.find(isCompactionTurn))?.status).toBe("error");
   });
@@ -310,7 +302,7 @@ describe("Agent.compact", () => {
   test("snapshot and restore round-trip the compacted conversation", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    agent.setCompaction({ compact: () => [user("summary")] });
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
     await agent.compact();
 
     const session = await agent.snapshot();
@@ -325,7 +317,7 @@ describe("Agent.compact", () => {
     const { provider, requests } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const summary = [user("summary of the first four")];
-    agent.setCompaction({ compact: () => summary });
+    agent.setCompaction({ compact: () => ({ messages: summary }) });
     await agent.compact();
 
     const result = await agent.send("next question").final;
@@ -346,7 +338,7 @@ describe("Agent.compact", () => {
     const tape = attachTape(agent);
     const summary = [user("summary before the next turn")];
     agent.setCompaction({
-      compact: () => summary,
+      compact: () => ({ messages: summary }),
       triggers: { beforeTurn: true },
     });
 
@@ -396,7 +388,7 @@ describe("Agent.compact", () => {
     const tape = attachTape(agent);
     const summary = [user("summary after the turn")];
     agent.setCompaction({
-      compact: () => summary,
+      compact: () => ({ messages: summary }),
       triggers: { afterTurn: true },
     });
 
@@ -430,7 +422,6 @@ describe("Agent.compact", () => {
     expect(agentTurn.status).toBe("complete");
     expect(agentTurn.parts.map((part) => part.type)).toEqual(["text", "compaction"]);
     expect(compactionPartOf(agentTurn)?.status).toBe("error");
-    // The conversation stayed uncompacted.
     expect(agent.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 
@@ -438,7 +429,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     const tape = attachTape(agent);
-    agent.setCompaction({ compact: () => [user("summary")] });
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
 
     await agent.send("first").final;
     await agent.compact();
@@ -449,8 +440,6 @@ describe("Agent.compact", () => {
     );
     expect(kinds).toEqual(["user", "agent", "compaction", "user", "agent"]);
     expect(tape.state.turns.filter(isCompactionTurn)[0]?.status).toBe("complete");
-    // The engine's turn-scoped fold and the consumer's session-long fold agree
-    // on the settled turn because they run the same fold over the same events.
     expect(result.turn).toEqual(tape.state.turns.at(-1));
   });
 
@@ -481,7 +470,7 @@ describe("Agent.compact", () => {
     agent.setCompaction({
       compact: (state) => {
         seenByCallback.push(state.messages.length);
-        return [user("summary")];
+        return { messages: [user("summary")] };
       },
     });
 
@@ -508,7 +497,7 @@ describe("Agent.compact", () => {
     agent.setCompaction({
       compact: (_state, { id }) => {
         seen.push(id);
-        return [user("summary"), user("kept")];
+        return { messages: [user("summary"), user("kept")] };
       },
     });
 
@@ -517,7 +506,6 @@ describe("Agent.compact", () => {
 
     expect(seen).toHaveLength(2);
     expect(seen[0]).not.toBe(seen[1]);
-    // Each emitted part carries its compaction's id.
     const partIds = tape.state.turns.filter(isCompactionTurn).map((turn) => turn.parts[0]?.id);
     expect(partIds).toEqual(seen);
   });
@@ -534,7 +522,7 @@ describe("Agent.compact", () => {
     agent.setCompaction({
       compact: () => {
         called = true;
-        return [user("summary")];
+        return { messages: [user("summary")] };
       },
     });
 
@@ -555,7 +543,7 @@ describe("Agent.compact", () => {
     agent.setCompaction({
       compact: () => {
         controller.abort("changed my mind");
-        return [user("summary")];
+        return { messages: [user("summary")] };
       },
     });
 
@@ -620,7 +608,7 @@ describe("Agent.compact", () => {
     agent.setCompaction({
       compact: () => {
         called = true;
-        return [user("summary")];
+        return { messages: [user("summary")] };
       },
     });
 
@@ -668,7 +656,6 @@ describe("Agent.compact", () => {
     release();
     const [, session] = await Promise.all([sendResult, sessionPromise]);
 
-    // Captured after the send settled: the assistant answer is committed.
     expect(session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 
@@ -676,7 +663,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const first = new Agent({ provider, model: "mock" });
     const firstTape = attachTape(first);
-    first.setCompaction({ compact: () => [user("summary")] });
+    first.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
     await first.send("first").final;
     await first.compact();
 
@@ -708,7 +695,7 @@ describe("Agent.compact", () => {
       },
       { sessionId: "session-1", messages: FOUR_MESSAGES },
     );
-    agent.setCompaction({ compact: () => [user("summary")] });
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
 
     await agent.compact();
 

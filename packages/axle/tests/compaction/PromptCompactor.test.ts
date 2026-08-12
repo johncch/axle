@@ -60,11 +60,11 @@ describe("PromptCompactor", () => {
     );
 
     expect(requests).toHaveLength(1);
-    expect(result[0]).toMatchObject({
+    expect(result.messages[0]).toMatchObject({
       role: "user",
       metadata: { axleCompaction: { id: "comp-1", role: "summary" } },
     });
-    expect(String(result[0]?.content)).toContain("Durable summary.");
+    expect(String(result.messages[0]?.content)).toContain("Durable summary.");
   });
 
   test("streams summary text through ctx.emit as it generates", async () => {
@@ -79,7 +79,7 @@ describe("PromptCompactor", () => {
 
     expect(deltas.length).toBeGreaterThan(1);
     expect(deltas.join("")).toBe("Streamed summary text.");
-    expect(String(result[0]?.content)).toBe("Streamed summary text.");
+    expect(String(result.messages[0]?.content)).toBe("Streamed summary text.");
   });
 
   test("uses the configured provider, model, prompt, and remaining output budget", async () => {
@@ -128,21 +128,22 @@ describe("PromptCompactor", () => {
       { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
     );
 
-    expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]).toMatchObject({
       role: "user",
       metadata: { axleCompaction: { id: "comp-1", role: "summary" } },
     });
-    expect(result[1]).toMatchObject({
+    expect(result.messages[1]).toMatchObject({
       role: "user",
       metadata: { axleCompaction: { id: "comp-1", role: "appendix" } },
     });
 
-    const summary = String(result[0]?.content);
+    const summary = String(result.messages[0]?.content);
     expect(summary).toContain("Earlier conversation summary.");
     expect(summary).not.toContain("Recent 3 user messages");
+    expect(result.summary).toBe(summary);
 
-    const appendix = String(result[1]?.content);
+    const appendix = String(result.messages[1]?.content);
     expect(appendix).not.toContain("- first");
     expect(appendix.indexOf("- second")).toBeLessThan(appendix.indexOf("- third"));
     expect(appendix.indexOf("- third")).toBeLessThan(appendix.indexOf("- fourth"));
@@ -172,7 +173,7 @@ describe("PromptCompactor", () => {
       { messages },
       { usage: usage(500), trigger: "manual", id: "comp-new", emit: () => {} },
     );
-    const appendix = String(result[1]?.content);
+    const appendix = String(result.messages[1]?.content);
 
     expect(appendix).not.toContain("previous summary with old recent messages");
     expect(appendix).not.toContain("stale quoted message");
@@ -190,7 +191,7 @@ describe("PromptCompactor", () => {
       { messages },
       { usage: usage(2_000), trigger: "manual", id: "comp-1", emit: () => {} },
     );
-    const appendix = String(result[1]?.content);
+    const appendix = String(result.messages[1]?.content);
 
     expect(appendix).not.toContain("- message-1\n");
     expect(appendix).not.toContain("- message-2\n");
@@ -212,8 +213,8 @@ describe("PromptCompactor", () => {
       { messages: [user(oldest), user(middle), user(newest)] },
       { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
     );
-    const summary = String(result[0]?.content);
-    const appendix = String(result[1]?.content);
+    const summary = String(result.messages[0]?.content);
+    const appendix = String(result.messages[1]?.content);
 
     expect(appendix).not.toContain("oldest-");
     expect(appendix).not.toContain("middle-");

@@ -109,7 +109,6 @@ export class TurnAccumulator<
           return {
             ...part,
             status: "complete",
-            // The stamped-summary text is authoritative over accumulated deltas.
             ...(event.summary !== undefined ? { summary: event.summary } : {}),
             timing: event.timing ?? part.timing,
           };

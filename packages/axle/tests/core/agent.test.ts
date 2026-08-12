@@ -140,7 +140,7 @@ describe("Agent", () => {
       const order: string[] = [];
       const beforeMessageCounts: number[] = [];
       const afterMessageCounts: number[] = [];
-      const compact = vi.fn(async () => []);
+      const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
         shouldCompact: async ({ messages }, { usage, trigger }) => {
@@ -178,7 +178,7 @@ describe("Agent", () => {
       });
       const first = vi.fn(() => false);
       const second = vi.fn(() => false);
-      const compact = vi.fn(async () => []);
+      const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
         shouldCompact: first,
@@ -212,7 +212,7 @@ describe("Agent", () => {
           await release.promise;
           return false;
         },
-        compact: vi.fn(async () => []),
+        compact: vi.fn(async () => ({ messages: [] })),
         triggers: { beforeTurn: true },
       });
 

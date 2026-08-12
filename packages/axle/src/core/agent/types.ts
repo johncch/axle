@@ -209,15 +209,6 @@ export type TurnEventCallback = (event: TurnEvent) => void;
  * Compaction is split into three layers, each with one job: `triggers` say
  * *when to ask*, `shouldCompact` says *whether*, and `compact` does the work.
  *
- * A `false` from `shouldCompact` is the only silent path — nothing is emitted,
- * nothing ran. Once it returns `true`, the compaction is ordinary turn work:
- * the engine emits a running `CompactionPart` into the natural turn (head of
- * the send's turn for `beforeTurn`, tail for `afterTurn`, its own turn for
- * `manual`), streams `ctx.emit(...)` deltas into it, and settles it
- * `complete` or `error`. Compaction failures are non-fatal for automatic
- * triggers — the part records the error and the send continues on the
- * uncompacted conversation.
- *
  * @experimental Compaction is under active design and may change in any release.
  */
 export type CompactionTrigger = "manual" | "beforeTurn" | "afterTurn";
@@ -238,13 +229,18 @@ export type ShouldCompactCallback = (
 ) => MaybePromise<boolean>;
 
 /**
- * The work: produce the complete new active conversation. There is no decline
- * path — declining is `shouldCompact`'s job — and failures throw. Stream
- * progressive summary text through `ctx.emit`; it renders live on the part
- * and keeps the event stream flowing during long summarizations. Stamp output
- * messages via `MessageMetadata` (`axleCompaction: { id, role }`, see
- * `CompactionStamp`) so prior output is recognized on later runs and the
- * engine can surface the summary text on the settled part.
+ * The work: produce the complete new active conversation, and optionally a
+ * reader-facing `summary` for the transcript part. There is no decline path —
+ * declining is `shouldCompact`'s job — and failures throw. Stream progressive
+ * text through `ctx.emit`; it renders live on the part and keeps the event
+ * stream flowing during long summarizations.
+ *
+ * `summary` is a presentation choice, independent of the model-facing
+ * messages: it can be the summary text itself, or something else entirely
+ * ("Reduced the context by 50%"). Omitted, the part renders as a bare
+ * divider. Stamp output messages via `MessageMetadata`
+ * (`axleCompaction: { id, role }`, see `CompactionStamp`) so your own prior
+ * output is recognizable on later runs.
  */
 export type CompactionCallback = (
   state: { messages: AxleMessage[] },
@@ -257,7 +253,7 @@ export type CompactionCallback = (
     /** Stream progressive summary text onto the running part. */
     emit: (delta: string) => void;
   },
-) => MaybePromise<AxleMessage[]>;
+) => MaybePromise<{ messages: AxleMessage[]; summary?: string }>;
 
 /**
  * Compaction wiring: the work, the optional decision policy, and the turn

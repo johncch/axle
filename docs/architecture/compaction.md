@@ -13,9 +13,9 @@ defined in [agent-state.md](./agent-state.md).
    {usage, trigger})` says *whether* — consulted at every boundary including
    `manual`; "a manual request always compacts" is compactor policy via
    `ctx.trigger`, never an engine carve-out; omitted = always willing.
-   `compact(state, ctx)` does *the work* — it returns the complete new
-   `AxleMessage[]`, never declines (`null` is not a return), and throws on
-   failure.
+   `compact(state, ctx)` does *the work* — it returns `{ messages, summary? }`
+   (the complete new conversation plus an optional reader-facing summary),
+   never declines (`null` is not a return), and throws on failure.
 2. **A `shouldCompact` decline is the only silent path.** Nothing is
    emitted, nothing ran, no id was allocated. Everything past a `true` is
    visible turn work.
@@ -24,35 +24,41 @@ defined in [agent-state.md](./agent-state.md).
    status: "running" | "complete" | "error", summary?, error?, timing? }`
    into its turn; `compaction:delta` streams `ctx.emit(...)` text onto it;
    exactly one of `compaction:complete` / `compaction:error` settles it.
-   `complete` carries the authoritative stamped-summary text, replacing
+   `complete` carries the compactor's returned summary, replacing
    accumulated deltas.
 4. **Settle ⇔ applied.** A part that settles `complete` means the message
    swap applied, atomically. A `running` part means nothing has been
    committed yet. An `error` part records a failed attempt that changed
-   nothing.
+   nothing. The engine finishes every conversation-state update — including
+   the beforeTurn re-append of the pending user message — before emitting
+   the settle event, so no event callback ever observes a half-updated
+   conversation.
 5. **Placement: turns can be started or ended by compaction.**
    `beforeTurn` → head of the send's turn (`U A⟨compaction, …⟩`); the
-   callback sees the pre-send conversation and the apply re-appends the
-   pending user message so it survives verbatim. `afterTurn` → tail of the
-   send's turn, before `turn:end`. `manual` → the engine opens a turn,
-   streams the part, closes it.
+   callback sees the pre-send conversation and the engine re-appends the
+   pending user message once the swap applies, so it survives verbatim.
+   `afterTurn` → tail of the send's turn, before `turn:end`; memory records
+   the conversation as the turn committed it, before the rewrite. `manual` →
+   the engine opens a turn, streams the part, closes it.
 6. **Failures are non-fatal for automatic triggers**, like tool-part
    failures: the errored part is the record, the turn keeps its model
    outcome, and the send continues on the uncompacted conversation — a
    genuine context overflow then surfaces as the turn's model error.
    `manual` failures reject (explicitly requested) and still settle the
    errored part and turn on the tape.
-7. **The stamp is the correlation and recursion mechanism.** Compactors mark
-   output messages with `metadata.axleCompaction = { id: ctx.id, role:
-   "summary" | "appendix" }`. The engine surfaces `role: "summary"` text
-   (matching the current id) as the part's summary; compactors recognize
-   their own prior output by scanning for the stamp, so consecutive
-   compactions never re-quote an earlier summary or appendix. Unstamped
-   output is valid — the part settles without a summary (bare divider).
-8. **The summary exists twice on purpose**: the stamped message (for the
-   model; replaced by the next compaction) and the part summary (for the
-   reader; frozen in the tape). The shared id makes them two views of one
-   identified event.
+7. **The stamp is the compactor's recursion and correlation convention.**
+   Compactors mark output messages with `metadata.axleCompaction = { id:
+   ctx.id, role: "summary" | "appendix" }` so they recognize their own prior
+   output on later runs — consecutive compactions never re-quote an earlier
+   summary or appendix — and so a message correlates to the part that
+   produced it. The engine does not read stamps; stamping is optional.
+8. **The reader's summary and the model's summary are separate channels on
+   purpose.** `compact` returns `summary` for the part (for the reader;
+   frozen in the tape) independently of the messages it returns (for the
+   model; replaced by the next compaction). Carrying the same text in both
+   is the common case, but it is the compactor's presentation choice —
+   "Reduced the context by 50%" is as valid a part summary as the summary
+   text itself. Omitted, the part settles as a bare divider.
 
 ## Design rationale (2026-08-12)
 
@@ -82,8 +88,8 @@ model error when continuing genuinely no longer fits.
 `PromptCompactor` implements the policy pair: `shouldCompact` is
 empty → false, manual → true, else `usage.total >= thresholdTokens`;
 `compact` streams via `stream()` and returns two stamped messages (summary,
-recent-user-messages appendix) so the engine surfaces only the summary on
-the part.
+recent-user-messages appendix) plus the summary text as the part's
+reader-facing summary.
 
 ## Rejected alternatives
 
@@ -116,4 +122,12 @@ the part.
   need for compactor identity, or multi-compactor chains.
 - **`null` as a decline from `compact`** (2026-08-12): the decision belongs
   to `shouldCompact`; a work function that can silently refuse blurs both
-  jobs. Non-array results are errored compactions, not skips.
+  jobs. Malformed results are errored compactions, not skips.
+- **Engine-extracted part summary (stamp-scan)** (2026-08-12): the engine
+  copied the text of `role: "summary"` messages stamped with the current id
+  onto the part, guaranteeing the reader saw exactly the model-facing
+  summary. Replaced by the explicit `summary` return: the scan smuggled
+  presentation data through message metadata instead of the channel designed
+  for it, and the byte-identity guarantee forbade a legitimate compactor
+  choice — reader-facing text that differs from the model-facing messages
+  (e.g. "Reduced the context by 50%").

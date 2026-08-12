@@ -4,12 +4,12 @@ import type { AxleMessage } from "./message.js";
 /**
  * Stamp a compactor attaches to its output messages via `MessageMetadata`
  * under the `axleCompaction` key. Providers ignore metadata, so the stamp
- * rides inside `messages` through snapshot/restore. It serves two jobs: a
- * compactor recognizes its own prior output on the next run (so summaries are
- * never re-quoted), and the engine copies the text of `role: "summary"`
- * messages stamped with the current compaction's id onto the emitted
- * `CompactionPart.summary`. Unstamped compactor output is valid — the
- * compaction part then renders as a bare divider.
+ * rides inside `messages` through snapshot/restore. It is a compactor-side
+ * convention: a compactor recognizes its own prior output on the next run
+ * (so summaries are never re-quoted), and the shared id correlates a message
+ * with the `CompactionPart` that produced it. The engine does not read
+ * stamps — the part's reader-facing summary is returned directly from the
+ * compaction callback.
  *
  * @experimental Compaction is under active design and may change in any release.
  */

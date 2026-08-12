@@ -891,8 +891,12 @@ consulted at every boundary, including manual (`ctx.trigger` is the input;
 "a manual request always compacts" is `PromptCompactor` policy, not an engine
 rule), and a `false` is the only silent path: nothing emitted, nothing ran.
 Omitting `shouldCompact` means always-willing. `compact` does *the work* and
-always produces the complete new conversation — there is no decline return;
-failures throw.
+always returns `{ messages, summary? }` — the complete new conversation, plus
+an optional reader-facing summary for the transcript — there is no decline
+return; failures throw. The `summary` is a presentation choice, independent
+of the model-facing messages: it can be the summary text itself, or something
+else entirely ("Reduced the context by 50%"); omitted, the compaction part
+renders as a bare divider.
 
 Once `shouldCompact` says yes, the compaction is ordinary fallible turn work,
 streamed like a tool call: a `running` compaction part lands in the natural
@@ -912,14 +916,14 @@ as every other operation: aborting rejects with an error whose `name` is
 appendix of the latest 10 user messages in oldest-to-newest order. The target
 is an approximate budget for both together. Set `recentUserMessages` to change
 the count. If the appendix must shrink, older recent messages are removed
-first. Both messages are stamped via metadata
+first. It returns the summary text as the part's reader-facing `summary`,
+and both messages are stamped via metadata
 (`axleCompaction: { id, role: "summary" | "appendix" }`, see
-`CompactionStamp`): the stamp is how the compactor recognizes its own prior
-output — carried-over messages are excluded from the appendix, so repeated
-compactions never re-collect an earlier summary as a "recent" user message —
-and how the engine knows which text settles the compaction part's `summary`.
-Custom `CompactionCallback`s that don't stamp are valid; their compaction
-part settles without a summary and renders as a bare divider.
+`CompactionStamp`). The stamp is a compactor-side convention — it is how the
+compactor recognizes its own prior output, so carried-over messages are
+excluded from the appendix and repeated compactions never re-collect an
+earlier summary as a "recent" user message. The engine does not read stamps;
+custom `CompactionCallback`s that don't stamp are valid.
 
 Like tool callbacks, the compaction callbacks run while the agent's scheduler
 is held: scheduling more work on the same agent from inside them queues behind

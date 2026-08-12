@@ -17,12 +17,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "turn:user"; turn: Turn<TAnnotation> }
   | { type: "turn:start"; turnId: string; timing?: TimingInfo }
   | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats; timing?: TimingInfo }
-  // Compaction part lifecycle — mirrors the action lifecycle: the part
-  // arrives `running` via part:start, deltas stream progressive summary
-  // text, and exactly one of complete/error settles it. `complete` carries
-  // the authoritative stamped-summary text (replacing accumulated deltas)
-  // and means the message swap applied atomically; `error` records a failed
-  // attempt. (@experimental)
+  // Compaction part lifecycle (@experimental)
   | { type: "compaction:delta"; turnId: string; partId: string; delta: string }
   | {
       type: "compaction:complete";

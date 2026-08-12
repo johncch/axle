@@ -29,8 +29,16 @@
 
 # Commenting style guides
 
-- No narrating comments
-- Only create JSDoc style comments for exported main objects
+- No narrating comments — a comment that states what the code states goes
+- Only create JSDoc style comments for exported main objects; private
+  methods and internals get none
+- Caveats, invariants, and design rationale live in `docs/architecture/*`,
+  not inline. An inline comment that repeats what an architecture doc
+  records is a defect — delete it, or move the caveat into the doc if it
+  isn't recorded yet
+- In tests, comments exist only to decode magic values an assertion can't
+  explain on its own (e.g. why a length is 5); comments that restate the
+  test name or a readable assertion go
 
 # Repository Structure
 
