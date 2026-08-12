@@ -382,6 +382,34 @@ describe("Agent.compact", () => {
     expect(agent.messages).toHaveLength(6);
   });
 
+  test("cancelling during beforeTurn compaction retains the committed user message", async () => {
+    const { provider, requests } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    const tape = attachTape(agent);
+    const controller = new AbortController();
+    agent.setCompaction({
+      compact: () => {
+        controller.abort("cancel during compaction");
+        return { messages: [] };
+      },
+      triggers: { beforeTurn: true },
+    });
+
+    await expect(
+      agent.send("keep this message", { signal: controller.signal }).final,
+    ).rejects.toMatchObject({
+      name: "AbortError",
+      reason: "cancel during compaction",
+    });
+
+    expect(requests).toEqual([]);
+    expect(agent.messages).toHaveLength(5);
+    expect(agent.messages.at(-1)).toMatchObject({ role: "user" });
+    expect(JSON.stringify(agent.messages.at(-1)?.content)).toContain("keep this message");
+    expect(tape.state.turns.map((turn) => turn.status)).toEqual(["complete", "cancelled"]);
+    expect(compactionPartOf(tape.state.turns[1])?.status).toBe("error");
+  });
+
   test("afterTurn embeds the compaction at the tail of the send's turn", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });

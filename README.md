@@ -86,14 +86,15 @@ tool-call exchange, so a plain send resolves with whatever text that turn
 produced (often empty) and an Instruct send may resolve `ok: false` with a
 parse error — no final answer exists yet by design.
 
-Cancellation is handle-local, and the user message commits when the provider
-request is made. Cancelling a queued handle removes it without committing its
-user message; cancelling the running handle before its provider request (for
-example during setup or automatic compaction) also commits nothing; after
-that point the committed user message remains and the agent turn is marked
-cancelled. Other queued handles continue. `stop()` never interrupts a running
-provider request or tool batch; use cancellation when a hard stop is
-required.
+Cancellation is handle-local, and the user message commits when its
+`turn:user` event is emitted, after setup succeeds. Cancelling a queued handle
+or a running handle during setup removes it without committing its user
+message. Once `turn:user` is emitted, the committed message remains and the
+agent turn is marked cancelled. This includes cancellation during
+`beforeTurn` compaction: compaction is ordinary work inside the already-open
+turn and cancellation does not unwind the tape or active conversation. Other
+queued handles continue. `stop()` never interrupts a running provider request
+or tool batch; use cancellation when a hard stop is required.
 
 ### Instruct
 
@@ -243,9 +244,10 @@ still throw.
 Cancellation follows standard JavaScript abort semantics:
 
 - `handle.cancel(reason)` aborts that stream or send handle only.
-- A cancelled Agent handle commits no user turn unless its provider request
-  was already made; after that point the committed user turn remains and the
-  agent turn is marked cancelled.
+- A cancelled Agent handle commits no user turn unless its `turn:user` event
+  was already emitted. After that point the committed user turn remains and
+  the agent turn is marked cancelled, including when cancellation occurs
+  during `beforeTurn` compaction before a provider request is made.
 - `stream().final`, `generate(...)`, and Agent handle finals reject with an
   error whose `name` is `"AbortError"`.
 - Axle abort errors preserve `reason`, `usage`, and partial state where
@@ -884,13 +886,13 @@ const applied = await agent.compact(); // true when a compaction applied, false 
 ```
 
 Compaction is split into three layers, each with one job. `triggers` say
-*when to ask*: omitting them makes compaction manual-only; `beforeTurn` asks
+_when to ask_: omitting them makes compaction manual-only; `beforeTurn` asks
 at the start of the next `send()`'s turn, `afterTurn` after the model work of
-a successful turn, before it settles. `shouldCompact` says *whether* — it is
+a successful turn, before it settles. `shouldCompact` says _whether_ — it is
 consulted at every boundary, including manual (`ctx.trigger` is the input;
 "a manual request always compacts" is `PromptCompactor` policy, not an engine
 rule), and a `false` is the only silent path: nothing emitted, nothing ran.
-Omitting `shouldCompact` means always-willing. `compact` does *the work* and
+Omitting `shouldCompact` means always-willing. `compact` does _the work_ and
 always returns `{ messages, summary? }` — the complete new conversation, plus
 an optional reader-facing summary for the transcript — there is no decline
 return; failures throw. The `summary` is a presentation choice, independent

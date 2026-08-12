@@ -8,12 +8,12 @@ defined in [agent-state.md](./agent-state.md).
 
 ## Invariants
 
-1. **Three layers, one job each.** `triggers` say *when to ask*
+1. **Three layers, one job each.** `triggers` say _when to ask_
    (`beforeTurn`, `afterTurn`; omitted = manual-only). `shouldCompact(state,
-   {usage, trigger})` says *whether* — consulted at every boundary including
+{usage, trigger})` says _whether_ — consulted at every boundary including
    `manual`; "a manual request always compacts" is compactor policy via
    `ctx.trigger`, never an engine carve-out; omitted = always willing.
-   `compact(state, ctx)` does *the work* — it returns `{ messages, summary? }`
+   `compact(state, ctx)` does _the work_ — it returns `{ messages, summary? }`
    (the complete new conversation plus an optional reader-facing summary),
    never declines (`null` is not a return), and throws on failure.
 2. **A `shouldCompact` decline is the only silent path.** Nothing is
@@ -21,7 +21,7 @@ defined in [agent-state.md](./agent-state.md).
    visible turn work.
 3. **Compaction is ordinary, fallible, streamed turn work** — the lifecycle
    mirrors tool calls. `part:start` delivers `CompactionPart { id, type,
-   status: "running" | "complete" | "error", summary?, error?, timing? }`
+status: "running" | "complete" | "error", summary?, error?, timing? }`
    into its turn; `compaction:delta` streams `ctx.emit(...)` text onto it;
    exactly one of `compaction:complete` / `compaction:error` settles it.
    `complete` carries the compactor's returned summary, replacing
@@ -30,13 +30,16 @@ defined in [agent-state.md](./agent-state.md).
    swap applied, atomically. A `running` part means nothing has been
    committed yet. An `error` part records a failed attempt that changed
    nothing. The engine finishes every conversation-state update — including
-   the beforeTurn re-append of the pending user message — before emitting
+   the beforeTurn re-append of the committed user message — before emitting
    the settle event, so no event callback ever observes a half-updated
    conversation.
 5. **Placement: turns can be started or ended by compaction.**
    `beforeTurn` → head of the send's turn (`U A⟨compaction, …⟩`); the
    callback sees the pre-send conversation and the engine re-appends the
-   pending user message once the swap applies, so it survives verbatim.
+   committed user message once the swap applies, so it survives verbatim.
+   Cancellation during this work does not unwind the `turn:user` event or
+   remove that message from the active conversation; the agent turn settles
+   cancelled.
    `afterTurn` → tail of the send's turn, before `turn:end`; memory records
    the conversation as the turn committed it, before the rewrite. `manual` →
    the engine opens a turn, streams the part, closes it.
@@ -48,7 +51,7 @@ defined in [agent-state.md](./agent-state.md).
    errored part and turn on the tape.
 7. **The stamp is the compactor's recursion and correlation convention.**
    Compactors mark output messages with `metadata.axleCompaction = { id:
-   ctx.id, role: "summary" | "appendix" }` so they recognize their own prior
+ctx.id, role: "summary" | "appendix" }` so they recognize their own prior
    output on later runs — consecutive compactions never re-quote an earlier
    summary or appendix — and so a message correlates to the part that
    produced it. The engine does not read stamps; stamping is optional.
@@ -63,7 +66,7 @@ defined in [agent-state.md](./agent-state.md).
 ## Design rationale (2026-08-12)
 
 Compaction is the single channel through which the Agent's past changes
-form; how the *transcript* treats that moment is the consumer's business
+form; how the _transcript_ treats that moment is the consumer's business
 (see agent-state.md). What remained to design was the engine contract, and
 the pressure that shaped it was the skip: with `afterTurn`, the policy is
 consulted after every turn and almost always declines, so any design that
@@ -108,7 +111,7 @@ reader-facing summary.
   (2026-08-12): the skip-erasure rule existed only because the compaction
   announced itself before knowing its outcome.
 - **Advisory liveness events** (`compaction:checking`/`compaction:outcome`,
-  fold-ignored) (2026-08-12): brackets the work but is silent *during* it —
+  fold-ignored) (2026-08-12): brackets the work but is silent _during_ it —
   a spinner trigger, not liveness — and mints a second ontology of
   events-that-aren't-state that every consumer must learn.
 - **Announce-then-retract** and **emit-the-part-early without a decision
