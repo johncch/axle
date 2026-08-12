@@ -5,6 +5,7 @@ import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { estimateContextUsage } from "../../src/providers/context.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
+import type { CompactionUpdate } from "../../src/turns/types.js";
 
 describe("PromptCompactor", () => {
   describe("shouldCompact", () => {
@@ -67,18 +68,27 @@ describe("PromptCompactor", () => {
     expect(String(result.messages[0]?.content)).toContain("Durable summary.");
   });
 
-  test("streams summary text through ctx.emit as it generates", async () => {
+  test("reports estimated progress without exposing generated summary text", async () => {
     const { provider } = createProvider({ text: "Streamed summary text." });
     const compactor = createCompactor(provider);
-    const deltas: string[] = [];
+    const updates: CompactionUpdate[] = [];
 
     const result = await compactor.compact(
       { messages: [user("remember blue")] },
-      { usage: usage(500), trigger: "manual", id: "comp-1", emit: (delta) => deltas.push(delta) },
+      {
+        usage: usage(500),
+        trigger: "manual",
+        id: "comp-1",
+        emit: (update) => updates.push(update),
+      },
     );
 
-    expect(deltas.length).toBeGreaterThan(1);
-    expect(deltas.join("")).toBe("Streamed summary text.");
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.every((update) => update.summary === undefined)).toBe(true);
+    expect(updates.every((update) => update.progress! > 0 && update.progress! < 1)).toBe(true);
+    expect(updates.map((update) => update.progress)).toEqual(
+      [...updates].map((update) => update.progress).sort((a, b) => a! - b!),
+    );
     expect(String(result.messages[0]?.content)).toBe("Streamed summary text.");
   });
 

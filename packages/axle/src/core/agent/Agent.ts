@@ -546,8 +546,8 @@ export class Agent {
             signal,
             trigger,
             id,
-            emit: (delta) => {
-              if (delta) this.emitEvent({ type: "compaction:delta", turnId, partId: id, delta });
+            emit: (update) => {
+              this.emitEvent({ type: "compaction:update", turnId, partId: id, update });
             },
           },
         );

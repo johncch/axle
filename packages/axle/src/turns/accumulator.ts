@@ -37,7 +37,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "turn:user": true,
   "turn:start": true,
   "turn:end": true,
-  "compaction:delta": true,
+  "compaction:update": true,
   "compaction:complete": true,
   "compaction:error": true,
   "part:start": true,
@@ -101,10 +101,14 @@ export class TurnAccumulator<
     event: TurnEvent<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     switch (event.type) {
-      case "compaction:delta":
+      case "compaction:update":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
           if (part.type !== "compaction") return part;
-          return { ...part, summary: (part.summary ?? "") + event.delta };
+          return {
+            ...part,
+            ...(event.update.summary !== undefined ? { summary: event.update.summary } : {}),
+            ...(event.update.progress !== undefined ? { progress: event.update.progress } : {}),
+          };
         });
 
       case "compaction:complete":
@@ -113,6 +117,7 @@ export class TurnAccumulator<
           return {
             ...part,
             status: "complete",
+            progress: 1,
             ...(event.summary !== undefined ? { summary: event.summary } : {}),
             timing: event.timing ?? part.timing,
           };

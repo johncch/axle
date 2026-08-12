@@ -690,14 +690,15 @@ try {
 `TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
 `part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
 `action:running`, `action:progress`, `action:complete`, `action:error`,
-`action:child-event`, `compaction:delta`, `compaction:complete`,
+`action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:error`, `annotation:start`, `annotation:update`,
 `annotation:end`, `error`.
 
 The `compaction:*` events mirror the action lifecycle: a compaction part
-arrives `running` via `part:start`, `compaction:delta` streams progressive
-summary text onto it, and exactly one of `compaction:complete` /
-`compaction:error` settles it.
+arrives `running` via `part:start`, `compaction:update` replaces transient
+`summary` and `progress` fields, and exactly one of `compaction:complete` /
+`compaction:error` settles it. Completion sets `progress` to `1` and its
+returned summary replaces any transient summary.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"action"`, `"compaction"`). Action parts further
@@ -898,15 +899,17 @@ always returns `{ messages, summary? }` — the complete new conversation, plus
 an optional reader-facing summary for the transcript — there is no decline
 return; failures throw. The `summary` is a presentation choice, independent
 of the model-facing messages: it can be the summary text itself, or something
-else entirely ("Reduced the context by 50%"); omitted, the compaction part
-renders as a bare divider.
+else entirely ("Reduced the context by 50%"); omitted, the latest emitted
+summary remains, or the compaction part renders as a bare divider if none was
+emitted.
 
 Once `shouldCompact` says yes, the compaction is ordinary fallible turn work,
 streamed like a tool call: a `running` compaction part lands in the natural
 turn — head of the send's turn for `beforeTurn`, tail for `afterTurn`, its
-own engine-opened turn for `manual` — `ctx.emit(...)` streams progressive
-summary text onto it (liveness for long summarizations, and real traffic for
-idle-timeout-prone transports), and it settles `complete` or `error`.
+own engine-opened turn for `manual` — `ctx.emit({ progress, summary? })`
+replaces transient reader-facing state on it (liveness for long
+summarizations, and real traffic for idle-timeout-prone transports), and it
+settles `complete` or `error`.
 **Failures are non-fatal for automatic triggers**: the errored part is the
 record, and the send continues on the uncompacted conversation — if that
 genuinely overflows the context, the provider failure surfaces as the turn's
@@ -917,7 +920,9 @@ as every other operation: aborting rejects with an error whose `name` is
 
 `PromptCompactor` returns two user messages: a model-written summary, and an
 appendix of the latest 10 user messages in oldest-to-newest order. The target
-is an approximate budget for both together. Set `recentUserMessages` to change
+is an approximate budget for both together. While generating, it reports
+estimated progress without exposing the model's token stream; its returned
+summary becomes the reader-facing final summary. Set `recentUserMessages` to change
 the count. If the appendix must shrink, older recent messages are removed
 first. It returns the summary text as the part's reader-facing `summary`,
 and both messages are stamped via metadata

@@ -78,8 +78,13 @@ export class PromptCompactor {
         },
       ],
     });
+    let emittedProgress = 0;
     handle.on((event) => {
-      if (event.type === "text:delta") context.emit(event.delta);
+      if (event.type !== "text:delta") return;
+      const progress = Math.min(estimateTextTokens(event.accumulated) / summaryTokens, 0.99);
+      if (progress <= emittedProgress) return;
+      emittedProgress = progress;
+      context.emit({ progress });
     });
     const result = await handle.final;
 

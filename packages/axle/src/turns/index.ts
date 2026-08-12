@@ -21,6 +21,7 @@ export type {
   AnnotationStatus,
   CitationPart,
   CompactionPart,
+  CompactionUpdate,
   FilePart,
   ProviderToolAction,
   SubagentAction,

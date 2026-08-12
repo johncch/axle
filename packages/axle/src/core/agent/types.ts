@@ -8,7 +8,7 @@ import type { AxleFailure } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";
-import type { Turn } from "../../turns/types.js";
+import type { CompactionUpdate, Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import type { Handle } from "../../utils/utils.js";
@@ -231,14 +231,14 @@ export type ShouldCompactCallback = (
 /**
  * The work: produce the complete new active conversation, and optionally a
  * reader-facing `summary` for the transcript part. There is no decline path —
- * declining is `shouldCompact`'s job — and failures throw. Stream progressive
- * text through `ctx.emit`; it renders live on the part and keeps the event
- * stream flowing during long summarizations.
+ * declining is `shouldCompact`'s job — and failures throw. Publish transient
+ * display state through `ctx.emit`; updates replace fields on the
+ * running part and keep the event stream flowing during long summarizations.
  *
  * `summary` is a presentation choice, independent of the model-facing
  * messages: it can be the summary text itself, or something else entirely
- * ("Reduced the context by 50%"). Omitted, the part renders as a bare
- * divider. Stamp output messages via `MessageMetadata`
+ * ("Reduced the context by 50%"). Omitted, the latest emitted summary remains;
+ * without one, the part renders as a bare divider. Stamp output messages via `MessageMetadata`
  * (`axleCompaction: { id, role }`, see `CompactionStamp`) so your own prior
  * output is recognizable on later runs.
  */
@@ -250,8 +250,8 @@ export type CompactionCallback = (
     trigger: CompactionTrigger;
     /** Engine-generated id for this compaction; the emitted part shares it. */
     id: string;
-    /** Stream progressive summary text onto the running part. */
-    emit: (delta: string) => void;
+    /** Update transient reader-facing state on the running part. */
+    emit: (update: CompactionUpdate) => void;
   },
 ) => MaybePromise<{ messages: AxleMessage[]; summary?: string }>;
 

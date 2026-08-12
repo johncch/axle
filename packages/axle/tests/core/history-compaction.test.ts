@@ -210,7 +210,7 @@ describe("Agent.compact", () => {
     expect(part?.summary).toBeUndefined();
   });
 
-  test("ctx.emit streams deltas onto the running part; the returned summary settles it", async () => {
+  test("ctx.emit replaces transient state; the returned summary settles it", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const tape = attachTape(agent);
@@ -219,8 +219,8 @@ describe("Agent.compact", () => {
 
     agent.setCompaction({
       compact: (_state, context) => {
-        context.emit("here is ");
-        context.emit("what I remember");
+        context.emit({ summary: "Reading history…", progress: 0.25 });
+        context.emit({ summary: "Writing summary…", progress: 0.75 });
         return {
           messages: [user("internal continuation summary for the model")],
           summary: "Reduced the context by 50%",
@@ -230,10 +230,11 @@ describe("Agent.compact", () => {
 
     await agent.compact();
 
-    expect(events.filter((e) => e.type === "compaction:delta")).toHaveLength(2);
+    expect(events.filter((e) => e.type === "compaction:update")).toHaveLength(2);
     const part = compactionPartOf(tape.state.turns.find(isCompactionTurn));
     expect(part?.status).toBe("complete");
     expect(part?.summary).toBe("Reduced the context by 50%");
+    expect(part?.progress).toBe(1);
   });
 
   test("a shouldCompact decline is the silent path: false, nothing emitted, nothing ran", async () => {

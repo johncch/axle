@@ -23,11 +23,12 @@ defined in [agent-state.md](./agent-state.md).
    settles it before propagating the error.
 3. **Compaction is ordinary, fallible, streamed turn work** — the lifecycle
    mirrors tool calls. `part:start` delivers `CompactionPart { id, type,
-status: "running" | "complete" | "error", summary?, error?, timing? }`
-   into its turn; `compaction:delta` streams `ctx.emit(...)` text onto it;
+status: "running" | "complete" | "error", summary?, progress?, error?, timing? }`
+   into its turn; `compaction:update` applies `ctx.emit({ summary?, progress? })`
+   as replacement transient state;
    exactly one of `compaction:complete` / `compaction:error` settles it.
-   `complete` carries the compactor's returned summary, replacing
-   accumulated deltas.
+   `complete` sets progress to `1` and carries the compactor's returned
+   summary, replacing any transient summary.
 4. **Settle ⇔ applied.** A part that settles `complete` means the message
    swap applied, atomically. A `running` part means nothing has been
    committed yet. An `error` part records a failed attempt that changed
@@ -63,7 +64,8 @@ ctx.id, role: "summary" | "appendix" }` so they recognize their own prior
    model; replaced by the next compaction). Carrying the same text in both
    is the common case, but it is the compactor's presentation choice —
    "Reduced the context by 50%" is as valid a part summary as the summary
-   text itself. Omitted, the part settles as a bare divider.
+   text itself. Omitted, the latest transient summary remains; without one,
+   the part settles as a bare divider.
 
 ## Design rationale (2026-08-12)
 
@@ -78,11 +80,14 @@ the announced case honest — once the policy commits, the compaction is real
 work and gets the same treatment as a tool call: visible, streamed,
 fallible, recorded.
 
-Streaming (`ctx.emit` → `compaction:delta`) is not cosmetic. A long
+Streaming (`ctx.emit` → `compaction:update`) is not cosmetic. A long
 summarization is otherwise a dead-silent window on the wire — bad for users
 (no liveness, especially the `beforeTurn` window before the user's own turn
 renders) and bad for infrastructure (idle-timeout-prone transports like
-ALBs drop quiet connections). Real content is the heartbeat.
+ALBs drop quiet connections). Updates carry complete transient state rather
+than fragments. `PromptCompactor` emits estimated progress without mirroring
+its generated summary tokens; custom compactors may also publish an explicit
+reader-facing summary or status.
 
 The failure posture follows from "compaction is infrastructure": its
 failure must not destroy the user's completed work, so automatic failures
@@ -92,9 +97,9 @@ model error when continuing genuinely no longer fits.
 
 `PromptCompactor` implements the policy pair: `shouldCompact` is
 empty → false, manual → true, else `usage.total >= thresholdTokens`;
-`compact` streams via `stream()` and returns two stamped messages (summary,
-recent-user-messages appendix) plus the summary text as the part's
-reader-facing summary.
+`compact` streams via `stream()`, reports estimated progress, and returns two
+stamped messages (summary, recent-user-messages appendix) plus the summary
+text as the part's reader-facing final summary.
 
 ## Rejected alternatives
 

@@ -13,6 +13,7 @@ import {
   type AIProvider,
   type AxleAssistantMessage,
   type AxleModelRequestOptions,
+  type CompactionUpdate,
   type ExecutableTool,
   type FileResolver,
   type ProviderTool,
@@ -280,7 +281,11 @@ export const baselineCases: BaselineCase[] = [
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
       const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const compactionUpdates: CompactionUpdate[] = [];
+      agent.on((event) => {
+        tape.apply(event);
+        if (event.type === "compaction:update") compactionUpdates.push(event.update);
+      });
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
         .final;
       await agent.send("Also remember: the magic number is 7. Reply exactly: stored.").final;
@@ -310,6 +315,9 @@ export const baselineCases: BaselineCase[] = [
         turn.parts.some((part) => part.type === "compaction"),
       );
       const compactionPart = compactionTurn?.parts.find((part) => part.type === "compaction");
+      const progressUpdates = compactionUpdates
+        .map((update) => update.progress)
+        .filter((progress): progress is number => progress !== undefined);
 
       const result = await agent.send("Using only our conversation so far, what is the code word?")
         .final;
@@ -332,6 +340,24 @@ export const baselineCases: BaselineCase[] = [
         ...(compactionPart?.type === "compaction" && !compactionPart.summary
           ? ["Compaction part did not carry the returned summary."]
           : []),
+        ...(compactionPart?.type === "compaction" && compactionPart.progress !== 1
+          ? [`Expected completed compaction progress 1, got ${compactionPart.progress ?? "none"}.`]
+          : []),
+        ...(compactionUpdates.length === 0
+          ? ["PromptCompactor emitted no compaction:update progress events."]
+          : []),
+        ...(compactionUpdates.some((update) => update.summary !== undefined)
+          ? ["PromptCompactor exposed generated summary text in a transient update."]
+          : []),
+        ...(progressUpdates.length !== compactionUpdates.length ||
+        progressUpdates.some((progress) => progress <= 0 || progress >= 1)
+          ? ["PromptCompactor emitted progress outside the open interval 0..1."]
+          : []),
+        ...(progressUpdates.some(
+          (progress, index) => index > 0 && progress < progressUpdates[index - 1],
+        )
+          ? ["PromptCompactor progress updates were not monotonic."]
+          : []),
         ...(!text.toLowerCase().includes("lavender")
           ? ["Post-compaction turn did not recall the lavender code word."]
           : []),
@@ -347,6 +373,7 @@ export const baselineCases: BaselineCase[] = [
           applied,
           messagesBefore,
           activeAfter,
+          compactionUpdates,
           usage: result.usage,
         },
       };

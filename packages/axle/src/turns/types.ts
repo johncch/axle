@@ -191,9 +191,9 @@ export interface ThinkingPart<TAnnotation extends Annotation = Annotation> {
  * fallible turn work, streamed like a tool call. It lands in whatever turn
  * context is natural: the head of a send's turn (`beforeTurn`), the tail
  * (`afterTurn`), or its own engine-opened turn (`manual`). `part:start`
- * delivers it `running`; `compaction:delta` streams progressive summary text;
- * `compaction:complete` / `compaction:error` settle it. A compaction declined
- * by `shouldCompact` never appears at all.
+ * delivers it `running`; `compaction:update` replaces transient display
+ * fields; `compaction:complete` / `compaction:error` settle it. A compaction
+ * declined by `shouldCompact` never appears at all.
  *
  * A settled `complete` part means the message swap applied, atomically. An
  * `error` part records a failed attempt — non-fatal for automatic triggers;
@@ -209,19 +209,30 @@ export interface CompactionPart<TAnnotation extends Annotation = Annotation> {
   /** Lifecycle state. */
   status: "running" | "complete" | "error";
   /**
-   * Reader-facing text for the transcript. Accumulates from
-   * `compaction:delta` while running; on `complete` the compactor's returned
-   * summary is authoritative. What it says is the compactor's presentation
-   * choice — it need not mirror the model-facing messages. Absent on a
-   * completed part when the compactor returned none — render a bare divider.
+   * Reader-facing text for the transcript. Replaced by `compaction:update`
+   * while running; on `complete` the compactor's returned summary is
+   * authoritative. What it says is the compactor's presentation choice — it
+   * need not mirror the model-facing messages. If the compactor returns none,
+   * the latest transient summary remains; absent entirely, render a bare
+   * divider.
    */
   summary?: string;
+  /** Estimated completion from `0` to `1`; terminal completion sets it to `1`. */
+  progress?: number;
   /** Terminal error message, present once the part settles `error`. */
   error?: string;
   /** Annotations attached to this part. */
   annotations?: TAnnotation[];
   /** Optional timing metadata. */
   timing?: TimingInfo;
+}
+
+/** Transient fields to apply to a running compaction part. */
+export interface CompactionUpdate {
+  /** Replacement reader-facing summary or status text. */
+  summary?: string;
+  /** Estimated completion from `0` to `1`. */
+  progress?: number;
 }
 
 /**

@@ -1,6 +1,14 @@
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { Stats } from "../types.js";
-import type { ActionResult, Annotation, TimingInfo, Turn, TurnPart, TurnStatus } from "./types.js";
+import type {
+  ActionResult,
+  Annotation,
+  CompactionUpdate,
+  TimingInfo,
+  Turn,
+  TurnPart,
+  TurnStatus,
+} from "./types.js";
 
 export type AnnotationTarget =
   | { type: "session" }
@@ -18,7 +26,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "turn:start"; turnId: string; timing?: TimingInfo }
   | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats; timing?: TimingInfo }
   // Compaction part lifecycle (@experimental)
-  | { type: "compaction:delta"; turnId: string; partId: string; delta: string }
+  | { type: "compaction:update"; turnId: string; partId: string; update: CompactionUpdate }
   | {
       type: "compaction:complete";
       turnId: string;

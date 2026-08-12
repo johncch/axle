@@ -339,7 +339,7 @@ describe("TurnAccumulator", () => {
     expect(result.state).toBe(state);
   });
 
-  test("compaction parts stream deltas and settle complete with the authoritative summary", () => {
+  test("compaction updates replace transient state and completion supplies final state", () => {
     const accumulator = new TurnAccumulator();
     accumulator.apply({ type: "turn:start", turnId: "t1" });
     accumulator.apply({
@@ -347,17 +347,23 @@ describe("TurnAccumulator", () => {
       turnId: "t1",
       part: { id: "c1", type: "compaction", status: "running" },
     });
-    accumulator.apply({ type: "compaction:delta", turnId: "t1", partId: "c1", delta: "draft " });
-    const streamed = accumulator.apply({
-      type: "compaction:delta",
+    accumulator.apply({
+      type: "compaction:update",
       turnId: "t1",
       partId: "c1",
-      delta: "summary…",
+      update: { summary: "draft summary…" },
+    });
+    const streamed = accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "current summary", progress: 0.5 },
     });
     expect((streamed.state.turns[0] as Turn).parts[0]).toMatchObject({
       type: "compaction",
       status: "running",
-      summary: "draft summary…",
+      summary: "current summary",
+      progress: 0.5,
     });
 
     const settled = accumulator.apply({
@@ -371,11 +377,12 @@ describe("TurnAccumulator", () => {
       type: "compaction",
       status: "complete",
       summary: "final stamped summary",
+      progress: 1,
       timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:30.000Z" },
     });
   });
 
-  test("compaction parts settle error with the failure message, keeping streamed text", () => {
+  test("compaction parts settle error with the failure message, keeping transient state", () => {
     const accumulator = new TurnAccumulator();
     accumulator.apply({ type: "turn:start", turnId: "t1" });
     accumulator.apply({
@@ -383,7 +390,12 @@ describe("TurnAccumulator", () => {
       turnId: "t1",
       part: { id: "c1", type: "compaction", status: "running" },
     });
-    accumulator.apply({ type: "compaction:delta", turnId: "t1", partId: "c1", delta: "partial" });
+    accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "partial", progress: 0.4 },
+    });
 
     const settled = accumulator.apply({
       type: "compaction:error",
@@ -396,7 +408,37 @@ describe("TurnAccumulator", () => {
       type: "compaction",
       status: "error",
       summary: "partial",
+      progress: 0.4,
       error: "summarizer down",
+    });
+  });
+
+  test("compaction completion without a summary keeps the latest transient summary", () => {
+    const accumulator = new TurnAccumulator();
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "Compacting history…", progress: 0.5 },
+    });
+
+    const settled = accumulator.apply({
+      type: "compaction:complete",
+      turnId: "t1",
+      partId: "c1",
+    });
+
+    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "complete",
+      summary: "Compacting history…",
+      progress: 1,
     });
   });
 
