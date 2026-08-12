@@ -5,7 +5,7 @@ import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
-import type { AgentMemory } from "../../src/memory/types.js";
+import { InstructVariableError } from "../../src/errors/InstructVariableError.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { getTextContent } from "../../src/messages/utils.js";
 import type { LogEntry, SpanData } from "../../src/observability/index.js";
@@ -652,11 +652,6 @@ describe("Agent", () => {
         };
       },
     };
-    const memory: AgentMemory = {
-      recall: vi.fn(async () => ({})),
-      record: vi.fn(async () => {}),
-    };
-
     const original = new Agent({ provider, model: "mock" });
     await original.send("one").final;
 
@@ -675,7 +670,7 @@ describe("Agent", () => {
       expect(definition.provider.type).toBe("mock");
       return { provider };
     });
-    const restored = new Agent({ ...config, sessionId: "runtime-session", memory }, saved.session);
+    const restored = new Agent({ ...config, sessionId: "runtime-session" }, saved.session);
 
     expect(restored.sessionId).toBe(saved.session.sessionId);
     expect(restored.messages).toEqual(saved.session.messages);
@@ -683,13 +678,6 @@ describe("Agent", () => {
     await restored.send("two").final;
 
     expect(requests[1]).toMatchObject([{ role: "user" }, { role: "assistant" }, { role: "user" }]);
-    expect(memory.recall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentName: "restored-agent",
-        sessionId: saved.session.sessionId,
-        messages: expect.arrayContaining([expect.objectContaining({ role: "user" })]),
-      }),
-    );
   });
 
   test("context() estimates committed history as a synchronous snapshot", async () => {
@@ -786,6 +774,18 @@ describe("Agent", () => {
     const result = await agent.send(instruct).final;
 
     expect(result.response).toBe("Greeting sent");
+  });
+
+  test("invalid instruct throws before scheduling a turn", () => {
+    const provider = createMockStreamProvider(["unreachable"]);
+    const instruct = new Instruct({ prompt: "Say hello to {{name}}" });
+    const agent = new Agent({ provider, model: "mock" });
+    const events: TurnEvent[] = [];
+    agent.on((event) => events.push(event));
+
+    expect(() => agent.send(instruct)).toThrow(InstructVariableError);
+    expect(agent.messages).toEqual([]);
+    expect(events).toEqual([]);
   });
 
   test("send(instruct) with schema parses JSON response", async () => {
@@ -1410,218 +1410,6 @@ describe("Agent", () => {
 
     expect(loadTool.execute).toHaveBeenCalled();
     expect(agent.registry.get("late-tool")).toBeDefined();
-  });
-
-  describe("memory integration", () => {
-    function createMockMemory(overrides?: Partial<AgentMemory>): AgentMemory {
-      return {
-        recall: vi.fn().mockResolvedValue({}),
-        record: vi.fn().mockResolvedValue(undefined),
-        ...overrides,
-      };
-    }
-
-    test("recall() augments system prompt before execution", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory({
-        recall: vi.fn().mockResolvedValue({
-          systemSuffix: "## Learned Instructions\n\n1. Be concise",
-        }),
-      });
-
-      const agent = new Agent({
-        provider,
-        model: "mock",
-        name: "test-agent",
-        system: "You are helpful.",
-        memory,
-      });
-
-      await agent.send("Hi").final;
-
-      expect(memory.recall).toHaveBeenCalledOnce();
-      expect(agent.system).toBe("You are helpful.");
-    });
-
-    test("recall() works when agent has no system prompt", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory({
-        recall: vi.fn().mockResolvedValue({
-          systemSuffix: "## Learned Instructions\n\n1. Be concise",
-        }),
-      });
-
-      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
-
-      await agent.send("Hi").final;
-
-      expect(memory.recall).toHaveBeenCalledOnce();
-      expect(agent.system).toBeUndefined();
-    });
-
-    test("recall() sees the pending user message before history is committed", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory();
-
-      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
-      await agent.send("Hi").final;
-
-      expect(memory.recall).toHaveBeenCalledWith(
-        expect.objectContaining({
-          messages: expect.arrayContaining([expect.objectContaining({ role: "user" })]),
-        }),
-      );
-    });
-
-    test("agent name and session id are passed through to memory context", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory();
-
-      const agent = new Agent({
-        provider,
-        model: "mock",
-        name: "test-agent",
-        sessionId: "session-123",
-        memory,
-      });
-
-      await agent.send("Hi").final;
-
-      expect(memory.recall).toHaveBeenCalledWith(
-        expect.objectContaining({
-          agentName: "test-agent",
-          sessionId: "session-123",
-        }),
-      );
-      expect(memory.record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          agentName: "test-agent",
-          sessionId: "session-123",
-        }),
-      );
-    });
-
-    test("record() receives newMessages from the turn", async () => {
-      const provider = createMockStreamProvider(["response text"]);
-      const memory = createMockMemory();
-
-      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
-      await agent.send("Hi").final;
-
-      expect(memory.record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          newMessages: expect.arrayContaining([expect.objectContaining({ role: "assistant" })]),
-        }),
-      );
-    });
-
-    test("memory tools are registered on agent", async () => {
-      const { z } = await import("zod");
-      const mockTool = {
-        name: "add_instruction",
-        description: "Add instruction",
-        schema: z.object({ instruction: z.string() }),
-        execute: vi.fn().mockResolvedValue("ok"),
-      };
-
-      const memory = createMockMemory({
-        tools: () => [mockTool],
-      });
-
-      const provider = createMockStreamProvider(["ok"]);
-      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
-
-      expect(agent.registry.get("add_instruction")).toBeDefined();
-      expect(agent.hasTools()).toBe(true);
-    });
-
-    test("record() failure does not prevent result from being returned", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory({
-        record: vi.fn().mockRejectedValue(new Error("disk full")),
-      });
-
-      const agent = new Agent({ provider, model: "mock", name: "test-agent", memory });
-      const result = await agent.send("Hi").final;
-
-      expect(result.response).toBe("ok");
-    });
-
-    test("record() failure is logged through observability", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory({
-        record: vi.fn().mockRejectedValue(new Error("disk full")),
-      });
-
-      const entries: LogEntry[] = [];
-      const agent = new Agent({
-        provider,
-        model: "mock",
-        name: "test-agent",
-        memory,
-        observability: { log: (entry) => entries.push(entry) },
-      });
-      await agent.send("Hi").final;
-
-      const warn = entries.find((entry) => entry.message === "memory record failed");
-      expect(warn).toMatchObject({
-        level: "warn",
-        fields: { error: "disk full" },
-      });
-    });
-
-    test("record() is not called on error", async () => {
-      const errorProvider: AIProvider = {
-        name: "mock-error",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
-        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
-          yield {
-            type: "error",
-            data: { type: "server_error", message: "Something broke" },
-          };
-        },
-      };
-
-      const memory = createMockMemory();
-      const agent = new Agent({
-        provider: errorProvider,
-        model: "mock",
-        name: "test-agent",
-        memory,
-      });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
-
-      const result = await agent.send("Hi").final;
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.message).toBe("Something broke");
-      expect(result.turn?.error).toEqual({ type: "model", message: "Something broke" });
-      expect(tape.state.turns.at(-1)?.error).toEqual({
-        type: "model",
-        message: "Something broke",
-      });
-      expect(memory.record).not.toHaveBeenCalled();
-    });
-
-    test("memory can be provided without an agent name", async () => {
-      const provider = createMockStreamProvider(["ok"]);
-      const memory = createMockMemory();
-
-      const agent = new Agent({ provider, model: "mock", sessionId: "session-unnamed", memory });
-
-      await agent.send("Hi").final;
-
-      expect(memory.recall).toHaveBeenCalledWith(
-        expect.objectContaining({
-          agentName: undefined,
-          sessionId: "session-unnamed",
-        }),
-      );
-    });
   });
 
   describe("agent events", () => {

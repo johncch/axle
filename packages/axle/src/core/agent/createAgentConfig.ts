@@ -22,8 +22,8 @@ function defaultProviderTools(
  *
  * Core resolves only what it can safely construct from serializable data. The
  * host remains responsible for executable dependencies such as providers,
- * tools, and MCP clients. Harness runtime services such as memory and file
- * resolvers should be layered onto the returned config by the host.
+ * tools, and MCP clients. Harness runtime services such as file resolvers
+ * should be layered onto the returned config by the host.
  */
 export async function createAgentConfig(
   definition: AgentDefinition,

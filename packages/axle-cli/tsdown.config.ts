@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/cli.ts", "src/tools/index.ts", "src/memory/index.ts", "src/store/index.ts"],
+  entry: ["src/cli.ts", "src/tools/index.ts", "src/store/index.ts"],
   publint: true,
   attw: {
     profile: "esm-only",

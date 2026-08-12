@@ -3,9 +3,8 @@ import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import type { MCP } from "../../mcp/index.js";
-import type { AgentMemory } from "../../memory/types.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
-import type { AxleMessage } from "../../messages/message.js";
+import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -23,7 +22,6 @@ import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
 import { Instruct } from "../Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../parse.js";
-import { compileUserTurn, type CompiledUserTurn } from "../userTurn.js";
 import { resolveObservability, spanStatusFromError } from "./observability.js";
 import { AgentScheduler } from "./scheduler.js";
 import type {
@@ -65,7 +63,6 @@ export class Agent {
 
   private mcps: MCP[] = [];
   private resolvedMcps = new WeakSet<MCP>();
-  private memory?: AgentMemory;
   private spanParent?: Tracer | Span;
   private ownedTracer?: Tracer;
 
@@ -111,11 +108,6 @@ export class Agent {
     });
     if (config.mcps) {
       this.mcps = [...config.mcps];
-    }
-    if (config.memory) {
-      this.memory = config.memory;
-      const memoryTools = config.memory.tools?.();
-      if (memoryTools) this.registry.add(memoryTools);
     }
   }
 
@@ -166,11 +158,21 @@ export class Agent {
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
     const { fileResolver, metadata, ...modelOptions } = options ?? {};
-    const userTurn = compileUserTurn(messageOrInstruct, { metadata });
+    const instruct =
+      typeof messageOrInstruct === "string"
+        ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
+        : messageOrInstruct.clone();
+    instruct.validate();
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
 
     return this.scheduler.schedule(
-      ({ signal }) => this.executeTurn(userTurn, { signal, fileResolver, requestOptions }),
+      ({ signal }) =>
+        this.executeTurn(instruct, {
+          signal,
+          fileResolver,
+          metadata,
+          requestOptions,
+        }),
       { signal: modelOptions.signal },
     );
   }
@@ -203,14 +205,16 @@ export class Agent {
   }
 
   private async executeTurn(
-    userTurn: CompiledUserTurn<any>,
+    instruct: Instruct<any>,
     runtime: {
       signal: AbortSignal;
       fileResolver?: FileResolver;
+      metadata?: MessageMetadata;
       requestOptions?: AxleModelRequestOptions;
     },
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const { signal, fileResolver, requestOptions } = runtime;
+    const { signal, fileResolver, metadata, requestOptions } = runtime;
+    const message = instruct.toMessage({ metadata });
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
     let agentTurnId: string | undefined;
@@ -225,7 +229,7 @@ export class Agent {
         ...(this.name ? { agentName: this.name } : {}),
       },
     });
-    logContent(root, "message", getTextContent(userTurn.message.content));
+    logContent(root, "message", getTextContent(message.content));
     let status: SpanStatus = "ok";
     let streamSpan: Span | undefined;
 
@@ -238,19 +242,6 @@ export class Agent {
       }
 
       await this.resolveMcpTools(signal, root);
-      let effectiveSystem = this.system;
-      if (this.memory) {
-        const recallResult = await this.memory.recall({
-          agentName: this.name,
-          sessionId: this.sessionId,
-          system: this.system,
-          messages: [...this.messagesInternal, userTurn.message],
-          span: root,
-        });
-        if (recallResult.systemSuffix) {
-          effectiveSystem = (effectiveSystem ?? "") + "\n\n" + recallResult.systemSuffix;
-        }
-      }
 
       if (signal.aborted) {
         throw new AxleAbortError("Agent send aborted", { reason: signal.reason });
@@ -258,8 +249,8 @@ export class Agent {
 
       // Lifecycle: commit the user message and open the agent turn
       const priorMessages = this.messages;
-      this.messagesInternal.push(userTurn.message);
-      for (const event of turnEventBuilder.createUserTurn(userTurn.message)) {
+      this.messagesInternal.push(message);
+      for (const event of turnEventBuilder.createUserTurn(message)) {
         this.emitEvent(event);
       }
       const startEvent = turnEventBuilder.startAgentTurn();
@@ -273,7 +264,7 @@ export class Agent {
           state: priorMessages,
           target: { turnId: startEvent.turnId },
           onApplied: () => {
-            this.messagesInternal.push(userTurn.message);
+            this.messagesInternal.push(message);
           },
         });
       }
@@ -285,7 +276,7 @@ export class Agent {
         provider: this.provider,
         model: this.model,
         messages: [...this.messagesInternal],
-        system: effectiveSystem,
+        system: this.system,
         registry: this.registry,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
@@ -328,7 +319,7 @@ export class Agent {
       let response: any;
       let parseFailure: AgentErrorResult["error"] | undefined;
       try {
-        response = userTurn.parse(streamResult.final);
+        response = instruct.parse(streamResult.final);
       } catch (parseError) {
         parseFailure = {
           kind: "parse",
@@ -337,7 +328,6 @@ export class Agent {
         };
       }
 
-      const committedMessages = this.messages;
       const afterTurnCompaction = this.compaction;
       if (!parseFailure && afterTurnCompaction?.triggers?.afterTurn) {
         await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
@@ -356,24 +346,6 @@ export class Agent {
 
       if (!agentTurn) {
         throw new AxleError("Agent turn missing after send");
-      }
-
-      // Lifecycle: persist the completed turn to memory
-      if (this.memory) {
-        try {
-          await this.memory.record({
-            agentName: this.name,
-            sessionId: this.sessionId,
-            system: this.system,
-            messages: committedMessages,
-            newMessages: streamResult.messages,
-            span: root,
-          });
-        } catch (error) {
-          root?.warn("memory record failed", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
       }
 
       return { ok: true, response, turn: agentTurn, usage };

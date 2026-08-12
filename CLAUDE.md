@@ -57,7 +57,6 @@
   - `src/cli.ts`: CLI entrypoint
   - `src/cli/`: YAML loading, runners, tool factory, ledger
   - `src/tools/`: CLI local workflow tools (calculator, exec, read-file, write-file, patch-file)
-  - `src/memory/`: CLI memory implementation
   - `src/store/`: CLI local file store
   - `tests/`: CLI package tests
 - `examples/`: Sample job definitions and scripts

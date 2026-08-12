@@ -9,6 +9,58 @@ import { FileInfo, loadFileContent } from "../../src/utils/file.js";
 const TEST_DIR = join(process.cwd(), "test-temp", "instruct-test");
 
 describe("Instruct", () => {
+  describe("message boundary", () => {
+    test("validates required inputs", () => {
+      const instruct = new Instruct({ prompt: "Review {{target}}" });
+
+      expect(() => instruct.validate()).toThrow(InstructVariableError);
+      expect(instruct.validate({ vars: "optional" })).toBeUndefined();
+      expect(instruct.withInput("target", "this diff").validate()).toBeUndefined();
+    });
+
+    test("render validates with its effective variable mode", () => {
+      const instruct = new Instruct({
+        prompt: "Review {{target}}",
+        vars: "optional",
+      });
+
+      expect(instruct.render()).toBe("Review {{target}}");
+      expect(() => instruct.render({ vars: "required" })).toThrow(InstructVariableError);
+    });
+
+    test("creates a user message from the rendered instruction", () => {
+      const instruct = new Instruct({
+        prompt: "Review {{target}}",
+        metadata: { source: "instruct" },
+      }).withInput("target", "this diff");
+
+      const message = instruct.toMessage();
+
+      expect(message).toMatchObject({
+        role: "user",
+        content: [{ type: "text", text: "Review this diff" }],
+        metadata: { source: "instruct" },
+      });
+      expect(message.id).toBeTypeOf("string");
+    });
+
+    test("parses the assistant response with its schema", () => {
+      const instruct = new Instruct({
+        prompt: "Return a result",
+        schema: z.object({ answer: z.string() }),
+      });
+
+      expect(
+        instruct.parse({
+          role: "assistant",
+          id: "response-1",
+          content: [{ type: "text", text: '{"answer":"yes"}' }],
+        }),
+      ).toEqual({ answer: "yes" });
+      expect(instruct.parse(undefined)).toBeNull();
+    });
+  });
+
   describe("input binding", () => {
     test("withInputs returns a new instruct without mutating the original", () => {
       const template = new Instruct({ prompt: "Hello {{name}}" });

@@ -15,10 +15,6 @@
       "types": "./dist/tools/index.d.ts",
       "import": "./dist/tools/index.js"
     },
-    "./memory": {
-      "types": "./dist/memory/index.d.ts",
-      "import": "./dist/memory/index.js"
-    },
     "./store": {
       "types": "./dist/store/index.d.ts",
       "import": "./dist/store/index.js"

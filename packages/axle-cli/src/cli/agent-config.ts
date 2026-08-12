@@ -6,16 +6,8 @@ import type {
   ProviderDefinition,
   Span,
 } from "@fifthrevision/axle";
-import {
-  anthropic,
-  chatCompletions,
-  createAgentConfig,
-  gemini,
-  openai,
-} from "@fifthrevision/axle";
+import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
 import { Models } from "@fifthrevision/axle/models";
-import { ProceduralMemory } from "../memory/index.js";
-import { LocalFileStore } from "../store/index.js";
 import type { JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { createTools } from "./tools.js";
@@ -161,15 +153,5 @@ export async function createCliAgentConfig(
       mcps: mcps.length > 0 ? mcps : undefined,
     };
   });
-  return {
-    agentConfig: {
-      ...baseConfig,
-      memory: new ProceduralMemory({
-        provider: baseConfig.provider,
-        model: baseConfig.model,
-        store: new LocalFileStore(".axle"),
-      }),
-    },
-    mcps,
-  };
+  return { agentConfig: baseConfig, mcps };
 }

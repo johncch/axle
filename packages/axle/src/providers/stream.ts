@@ -1,8 +1,6 @@
 import { getAxleConfiguration, type AxleConfiguration } from "../config.js";
-import { Instruct } from "../core/Instruct.js";
+import { Instruct, type InstructResponse } from "../core/Instruct.js";
 import type { OutputSchema } from "../core/parse.js";
-import type { InstructResponse } from "../core/userTurn.js";
-import { compileUserTurn } from "../core/userTurn.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import type {
   AxleAssistantMessage,
@@ -190,11 +188,11 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
 
   if ("instruct" in options) {
     const { instruct, messages, ...rest } = options;
-    const userTurn = compileUserTurn(instruct);
-    parse = userTurn.parse;
+    const prepared = instruct.clone();
+    parse = (final) => prepared.parse(final);
     streamOptions = {
       ...rest,
-      messages: [...(messages ?? []), userTurn.message],
+      messages: [...(messages ?? []), prepared.toMessage()],
     };
   } else {
     streamOptions = options;
