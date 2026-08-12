@@ -5,6 +5,7 @@ import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
+import { InstructVariableError } from "../../src/errors/InstructVariableError.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { getTextContent } from "../../src/messages/utils.js";
 import type { LogEntry, SpanData } from "../../src/observability/index.js";
@@ -773,6 +774,18 @@ describe("Agent", () => {
     const result = await agent.send(instruct).final;
 
     expect(result.response).toBe("Greeting sent");
+  });
+
+  test("invalid instruct throws before scheduling a turn", () => {
+    const provider = createMockStreamProvider(["unreachable"]);
+    const instruct = new Instruct({ prompt: "Say hello to {{name}}" });
+    const agent = new Agent({ provider, model: "mock" });
+    const events: TurnEvent[] = [];
+    agent.on((event) => events.push(event));
+
+    expect(() => agent.send(instruct)).toThrow(InstructVariableError);
+    expect(agent.messages).toEqual([]);
+    expect(events).toEqual([]);
   });
 
   test("send(instruct) with schema parses JSON response", async () => {

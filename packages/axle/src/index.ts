@@ -26,6 +26,7 @@ export type {
   InstructContextSection,
   InstructInputs,
   InstructOptions,
+  InstructRenderOptions,
   InstructResponse,
   InstructVarsMode,
   OutputSchema,

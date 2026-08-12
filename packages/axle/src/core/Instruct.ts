@@ -1,12 +1,22 @@
 import { InstructVariableError } from "../errors/InstructVariableError.js";
-import type { MessageMetadata } from "../messages/message.js";
+import type {
+  AxleAssistantMessage,
+  AxleUserMessage,
+  MessageMetadata,
+} from "../messages/message.js";
+import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { FileInfo } from "../utils/file.js";
 import { MissingVariablesError, replaceVariables } from "../utils/replace.js";
-import type { OutputSchema } from "./parse.js";
-import { zodToExample, zodToFieldDescriptions } from "./parse.js";
+import type { OutputSchema, ParsedSchema } from "./parse.js";
+import { parseResponse, zodToExample, zodToFieldDescriptions } from "./parse.js";
 
 export type InstructInputs = Record<string, unknown>;
 export type InstructVarsMode = "required" | "optional";
+export interface InstructRenderOptions {
+  vars?: InstructVarsMode;
+}
+export type InstructResponse<TSchema extends OutputSchema | undefined> =
+  TSchema extends OutputSchema ? ParsedSchema<TSchema> : string;
 
 export interface InstructContextSection {
   content: string;
@@ -97,18 +107,38 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     return this.files.length > 0;
   }
 
-  render(options: { vars?: InstructVarsMode } = {}): string {
-    let message: string;
-    try {
-      message = replaceVariables(this.prompt, this.inputs, {
-        strict: (options.vars ?? this.vars) === "required",
-      });
-    } catch (error) {
-      if (error instanceof MissingVariablesError) {
-        throw new InstructVariableError(error.missingVariables);
+  toMessage(options: { metadata?: MessageMetadata } = {}): AxleUserMessage {
+    const metadata = options.metadata ?? this.metadata;
+    return {
+      role: "user",
+      id: crypto.randomUUID(),
+      content: toContentParts({ text: this.render(), files: this.files }),
+      ...(metadata ? { metadata } : {}),
+    };
+  }
+
+  parse(final: AxleAssistantMessage | undefined): InstructResponse<TSchema> | null {
+    if (!final) return null;
+    return parseResponse(getTextContent(final.content), this.schema) as InstructResponse<TSchema>;
+  }
+
+  validate(options: InstructRenderOptions = {}): void {
+    if ((options.vars ?? this.vars) === "required") {
+      try {
+        replaceVariables(this.prompt, this.inputs);
+      } catch (error) {
+        if (error instanceof MissingVariablesError) {
+          throw new InstructVariableError(error.missingVariables);
+        }
+        throw error;
       }
-      throw error;
     }
+    if (this.schema) zodToExample(this.schema);
+  }
+
+  render(options: InstructRenderOptions = {}): string {
+    this.validate(options);
+    let message = replaceVariables(this.prompt, this.inputs, { strict: false });
 
     if (this.textReferences.length > 0) {
       for (const [index, ref] of this.textReferences.entries()) {

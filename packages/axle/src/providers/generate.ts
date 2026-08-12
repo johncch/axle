@@ -1,8 +1,6 @@
 import { getAxleConfiguration, type AxleConfiguration } from "../config.js";
-import { Instruct } from "../core/Instruct.js";
+import { Instruct, type InstructResponse } from "../core/Instruct.js";
 import type { OutputSchema } from "../core/parse.js";
-import type { InstructResponse } from "../core/userTurn.js";
-import { compileUserTurn } from "../core/userTurn.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
@@ -71,18 +69,18 @@ export async function generate(
   validateLoopLimits(options);
   if ("instruct" in options) {
     const { instruct, messages, ...rest } = options;
-    const userTurn = compileUserTurn(instruct);
+    const prepared = instruct.clone();
     const result = await runGenerate(
       {
         ...rest,
-        messages: [...(messages ?? []), userTurn.message],
+        messages: [...(messages ?? []), prepared.toMessage()],
       },
       getAxleConfiguration(),
     );
 
     if (!result.ok) return result;
     try {
-      return { ...result, response: userTurn.parse(result.final) as InstructResponse<any> };
+      return { ...result, response: prepared.parse(result.final) as InstructResponse<any> };
     } catch (parseError) {
       return {
         ok: false,

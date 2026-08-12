@@ -30,7 +30,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 5. **A user message commits together with its turn event.** Once `turn:user`
    is on the wire, the message is in the conversation — tape and messages
    cannot diverge. Nothing is committed or emitted before genuine setup
-   (such as MCP resolution) succeeds.
+   (such as MCP resolution) succeeds. `Agent.send()` clones and validates its
+   `Instruct` synchronously before scheduling; execution materializes the
+   corresponding `AxleUserMessage` before opening the turn, then the same
+   `Instruct` parses the final assistant response.
 6. **Usage accounting is host-domain.** Every `turn:end` carries
    `turn.usage`; hosts accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none.
@@ -92,3 +95,7 @@ turn event stream instead of masquerading as semantic memory.
   record mixed prompt augmentation, persistence, tool registration, and
   failure policy into the Agent. Tools and host-supplied `Instruct` context
   cover the actual behaviors without a memory-specific runtime contract.
+- **`CompiledUserTurn` intermediate** (2026-08-12): paired an already-rendered
+  message with a response parser, but split knowledge of rendering and parsing
+  outside `Instruct`. `Instruct` now owns validation, message materialization,
+  and response parsing directly; the Agent schedules one cloned instruction.
