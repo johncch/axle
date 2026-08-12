@@ -4,6 +4,7 @@ import {
   AxleToolFatalError,
   Instruct,
   PromptCompactor,
+  TurnAccumulator,
   createAgentTool,
   generate,
   loadFileContent,
@@ -12,6 +13,7 @@ import {
   type AIProvider,
   type AxleAssistantMessage,
   type AxleModelRequestOptions,
+  type CompactionUpdate,
   type ExecutableTool,
   type FileResolver,
   type ProviderTool,
@@ -186,14 +188,16 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent basic send() text response and history.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       const result = await agent.send("Reply with exactly: pong").final;
       const text = String(result.response ?? "");
 
       return {
-        ok: text.toLowerCase().includes("pong") && agent.history.turns.length === 2,
+        ok: text.toLowerCase().includes("pong") && tape.state.turns.length === 2,
         details: {
           response: result.response,
-          turnCount: agent.history.turns.length,
+          turnCount: tape.state.turns.length,
           usage: result.usage,
         },
       };
@@ -204,6 +208,8 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent send(Instruct) structured JSON response.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       const result = await agent.send(
         new Instruct({
           prompt: "Return answer='pong', count=3, ok=true.",
@@ -218,11 +224,11 @@ export const baselineCases: BaselineCase[] = [
           result.response?.answer.toLowerCase().includes("pong") &&
           result.response.count === 3 &&
           result.response.ok === true &&
-          agent.history.turns.length === 2,
+          tape.state.turns.length === 2,
         ),
         details: {
           response: result.response,
-          turnCount: agent.history.turns.length,
+          turnCount: tape.state.turns.length,
           usage: result.usage,
         },
       };
@@ -233,13 +239,15 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent preserves history across turns.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
         .final;
       const result = await agent.send(
         "Using the previous message in this conversation, what is the code word?",
       ).final;
       const text = String(result.response ?? "");
-      const lastMessage = agent.history.messages.at(-1);
+      const lastMessage = agent.messages.at(-1);
       const finishReason = lastMessage?.role === "assistant" ? lastMessage.finishReason : undefined;
       const failureReasons = [
         ...(!text.toLowerCase().includes("lavender")
@@ -249,8 +257,8 @@ export const baselineCases: BaselineCase[] = [
                 : "Second turn did not recall the lavender code word.",
             ]
           : []),
-        ...(agent.history.turns.length !== 4
-          ? [`Expected 4 history turns, received ${agent.history.turns.length}.`]
+        ...(tape.state.turns.length !== 4
+          ? [`Expected 4 history turns, received ${tape.state.turns.length}.`]
           : []),
       ];
 
@@ -260,7 +268,7 @@ export const baselineCases: BaselineCase[] = [
         details: {
           response: result.response,
           finishReason,
-          turnCount: agent.history.turns.length,
+          turnCount: tape.state.turns.length,
           usage: result.usage,
         },
       };
@@ -272,11 +280,17 @@ export const baselineCases: BaselineCase[] = [
       "PromptCompactor replaces active history with a bounded summary and the conversation continues.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
+      const tape = new TurnAccumulator();
+      const compactionUpdates: CompactionUpdate[] = [];
+      agent.on((event) => {
+        tape.apply(event);
+        if (event.type === "compaction:update") compactionUpdates.push(event.update);
+      });
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
         .final;
       await agent.send("Also remember: the magic number is 7. Reply exactly: stored.").final;
 
-      const messagesBefore = agent.history.messages.length;
+      const messagesBefore = agent.messages.length;
       const compactor = new PromptCompactor({
         provider,
         model,
@@ -289,42 +303,60 @@ export const baselineCases: BaselineCase[] = [
       });
 
       agent.setCompaction({
+        shouldCompact: compactor.shouldCompact,
         compact: compactor.compact,
       });
 
-      const record = await agent.compact();
-      const activeAfter = agent.history.messages.length;
-      const archiveAfter = agent.history.archive.length;
-      const compactedContent = String(agent.history.messages[0]?.content ?? "");
-      const compactionTurn = agent.history.turns.find((turn) =>
+      const applied = await agent.compact();
+      const activeAfter = agent.messages.length;
+      const summaryContent = String(agent.messages[0]?.content ?? "");
+      const appendixContent = String(agent.messages[1]?.content ?? "");
+      const compactionTurn = tape.state.turns.find((turn) =>
         turn.parts.some((part) => part.type === "compaction"),
       );
+      const compactionPart = compactionTurn?.parts.find((part) => part.type === "compaction");
+      const progressUpdates = compactionUpdates
+        .map((update) => update.progress)
+        .filter((progress): progress is number => progress !== undefined);
 
       const result = await agent.send("Using only our conversation so far, what is the code word?")
         .final;
       const text = String(result.response ?? "");
 
       const failureReasons = [
-        ...(record == null
-          ? ["compact() returned null; the callback declined or was skipped."]
-          : []),
-        ...(agent.history.compactions.length !== 1
-          ? [`Expected 1 compaction record, got ${agent.history.compactions.length}.`]
-          : []),
+        ...(!applied ? ["compact() resolved false; the policy declined."] : []),
         ...(activeAfter >= messagesBefore
           ? [`Active history did not shrink: ${messagesBefore} -> ${activeAfter}.`]
           : []),
-        ...(!compactedContent.includes("Recent 1 user message (oldest to newest):")
+        ...(!appendixContent.includes("Recent 1 user message (oldest to newest):")
           ? ["PromptCompactor did not append the chronological recent-message section."]
           : []),
-        ...(!compactedContent.includes("magic number is 7")
+        ...(!appendixContent.includes("magic number is 7")
           ? ["PromptCompactor did not retain the latest user message verbatim."]
-          : []),
-        ...(archiveAfter !== messagesBefore
-          ? [`Archive should retain the ${messagesBefore} raw messages, got ${archiveAfter}.`]
           : []),
         ...(compactionTurn?.status !== "complete"
           ? [`Expected a complete compaction turn, got ${compactionTurn?.status ?? "none"}.`]
+          : []),
+        ...(compactionPart?.type === "compaction" && !compactionPart.summary
+          ? ["Compaction part did not carry the returned summary."]
+          : []),
+        ...(compactionPart?.type === "compaction" && compactionPart.progress !== 1
+          ? [`Expected completed compaction progress 1, got ${compactionPart.progress ?? "none"}.`]
+          : []),
+        ...(compactionUpdates.length === 0
+          ? ["PromptCompactor emitted no compaction:update progress events."]
+          : []),
+        ...(compactionUpdates.some((update) => update.summary !== undefined)
+          ? ["PromptCompactor exposed generated summary text in a transient update."]
+          : []),
+        ...(progressUpdates.length !== compactionUpdates.length ||
+        progressUpdates.some((progress) => progress <= 0 || progress >= 1)
+          ? ["PromptCompactor emitted progress outside the open interval 0..1."]
+          : []),
+        ...(progressUpdates.some(
+          (progress, index) => index > 0 && progress < progressUpdates[index - 1],
+        )
+          ? ["PromptCompactor progress updates were not monotonic."]
           : []),
         ...(!text.toLowerCase().includes("lavender")
           ? ["Post-compaction turn did not recall the lavender code word."]
@@ -336,11 +368,12 @@ export const baselineCases: BaselineCase[] = [
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
-          compactedContent,
-          record,
+          summaryContent,
+          appendixContent,
+          applied,
           messagesBefore,
           activeAfter,
-          archiveAfter,
+          compactionUpdates,
           usage: result.usage,
         },
       };
@@ -352,17 +385,20 @@ export const baselineCases: BaselineCase[] = [
       "Agent invokes one compaction callback at configured beforeTurn and afterTurn boundaries.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       const triggerOrder: string[] = [];
       const messageCounts: number[] = [];
 
       agent.setCompaction({
-        compact: async ({ messages }, { trigger }) => {
-          await Promise.resolve();
+        shouldCompact: ({ messages }, { trigger }) => {
           triggerOrder.push(trigger);
           messageCounts.push(messages.length);
-          if (messages.length === 0) return null;
-          return [{ role: "user", content: "Automatic compaction completed." }];
+          return messages.length > 0;
         },
+        compact: async () => ({
+          messages: [{ role: "user", content: "Automatic compaction completed." }],
+        }),
         triggers: {
           beforeTurn: true,
           afterTurn: true,
@@ -371,6 +407,10 @@ export const baselineCases: BaselineCase[] = [
 
       const result = await agent.send("Reply with exactly: compaction-triggers-ok").final;
       const text = String(result.response ?? "");
+      const appliedCompactions = tape.state.turns.filter(
+        (turn) =>
+          turn.status === "complete" && turn.parts.some((part) => part.type === "compaction"),
+      ).length;
       const failureReasons = [
         ...(!text.toLowerCase().includes("compaction-triggers-ok")
           ? ["Agent did not return the requested compaction-triggers-ok marker."]
@@ -385,11 +425,11 @@ export const baselineCases: BaselineCase[] = [
         ...(messageCounts[0] !== 0 || messageCounts[1] !== 2
           ? [`Expected trigger message counts 0,2; got ${messageCounts.join(",")}.`]
           : []),
-        ...(agent.history.compactions.length !== 1
-          ? [`Expected one applied automatic compaction, got ${agent.history.compactions.length}.`]
+        ...(appliedCompactions !== 1
+          ? [`Expected one applied automatic compaction, got ${appliedCompactions}.`]
           : []),
-        ...(agent.history.messages.length !== 1
-          ? [`Expected one active compacted message, got ${agent.history.messages.length}.`]
+        ...(agent.messages.length !== 1
+          ? [`Expected one active compacted message, got ${agent.messages.length}.`]
           : []),
       ];
 
@@ -400,8 +440,8 @@ export const baselineCases: BaselineCase[] = [
           response: result.response,
           triggerOrder,
           messageCounts,
-          compactions: agent.history.compactions.length,
-          activeMessages: agent.history.messages.length,
+          compactions: appliedCompactions,
+          activeMessages: agent.messages.length,
           usage: result.usage,
         },
       };
@@ -637,17 +677,19 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent executes a local tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, tools: [addNumbersTool] });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       const result = await agent.send(
         "Use the add_numbers tool to add 17 and 25. Then answer with the result.",
       ).final;
       const text = String(result.response ?? "");
 
       return {
-        ok: text.includes("42") && hasSuccessfulToolResult(agent.history.messages),
+        ok: text.includes("42") && hasSuccessfulToolResult(agent.messages),
         details: {
           response: result.response,
-          toolResults: getToolResultDetails(agent.history.messages),
-          turnCount: agent.history.turns.length,
+          toolResults: getToolResultDetails(agent.messages),
+          turnCount: tape.state.turns.length,
           usage: result.usage,
         },
       };
@@ -688,8 +730,8 @@ export const baselineCases: BaselineCase[] = [
       const firstResult = await first.final;
       const followUpResult = await followUp.final;
       const response = String(followUpResult.response ?? "");
-      const roles = agent.history.messages.map((message) => message.role);
-      const toolResults = getToolResultDetails(agent.history.messages);
+      const roles = agent.messages.map((message) => message.role);
+      const toolResults = getToolResultDetails(agent.messages);
       const toolBatchCompleted =
         toolCalls === 1 &&
         toolResults.some(
@@ -808,11 +850,13 @@ export const baselineCases: BaselineCase[] = [
         prompt: () => "Reply with exactly: subagent-orchid",
       });
       const agent = new Agent({ provider, model, ...requestOptions, tools: [subagentTool] });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       const result = await agent.send(
         "Use delegate_code_word to get the code word. Then answer with only that code word.",
       ).final;
       const text = String(result.response ?? "");
-      const toolResults = getToolResultDetails(agent.history.messages);
+      const toolResults = getToolResultDetails(agent.messages);
       const parentReturnedCodeWord = text.toLowerCase().includes("orchid");
       const childReturnedExpectedValue = toolResults.some(
         (toolResult) =>
@@ -845,7 +889,7 @@ export const baselineCases: BaselineCase[] = [
         details: {
           response: result.response,
           toolResults,
-          turnCount: agent.history.turns.length,
+          turnCount: tape.state.turns.length,
           childProvider: childProvider.name,
           usage: result.usage,
         },
@@ -876,7 +920,7 @@ export const baselineCases: BaselineCase[] = [
       }
 
       const fatal = thrown instanceof AxleToolFatalError ? thrown : undefined;
-      const logRoles = agent.history.messages.map((message) => message.role);
+      const logRoles = agent.messages.map((message) => message.role);
       return {
         ok: Boolean(
           fatal &&
@@ -990,7 +1034,7 @@ export const baselineCases: BaselineCase[] = [
       if (!result.ok) return fail({ error: result.error });
 
       const text = String(result.response ?? "").toLowerCase();
-      const batchResult = getToolResultDetails(agent.history.messages).find(
+      const batchResult = getToolResultDetails(agent.messages).find(
         (toolResult) => toolResult.name === "lookup_code_word_batch",
       );
       const batchContent = batchResult?.content ?? "";

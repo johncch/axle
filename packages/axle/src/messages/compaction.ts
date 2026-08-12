@@ -2,22 +2,37 @@ import { AxleError } from "../errors/AxleError.js";
 import type { AxleMessage } from "./message.js";
 
 /**
- * Record of one applied compaction: when it happened. Inspection only —
- * records carry no message content and cannot reconstruct the pre-compaction
- * conversation.
+ * Stamp a compactor attaches to its output messages via `MessageMetadata`
+ * under the `axleCompaction` key. Providers ignore metadata, so the stamp
+ * rides inside `messages` through snapshot/restore. It is a compactor-side
+ * convention: a compactor recognizes its own prior output on the next run
+ * (so summaries are never re-quoted), and the shared id correlates a message
+ * with the `CompactionPart` that produced it. The engine does not read
+ * stamps — the part's reader-facing summary is returned directly from the
+ * compaction callback.
  *
  * @experimental Compaction is under active design and may change in any release.
  */
-export interface CompactionRecord {
-  /** Stable record id. Shared with the compaction turn. */
+export interface CompactionStamp {
+  /** The compaction id, provided to the callback as `ctx.id`. */
   id: string;
-  /** ISO timestamp for when the compaction ran. */
-  at: string;
-  /**
-   * Number of messages the compaction produced — the carried-over prefix of
-   * the active conversation. Absent on records restored from older sessions.
-   */
-  messageCount?: number;
+  /** What this message carries: the summary itself, or appended recent context. */
+  role: "summary" | "appendix";
+}
+
+/**
+ * Read a message's compaction stamp, if it has a well-formed one.
+ *
+ * @experimental Compaction is under active design and may change in any release.
+ */
+export function getCompactionStamp(message: AxleMessage): CompactionStamp | undefined {
+  if (message.role !== "user") return undefined;
+  const stamp = message.metadata?.axleCompaction;
+  if (typeof stamp !== "object" || stamp === null) return undefined;
+  const { id, role } = stamp as { id?: unknown; role?: unknown };
+  if (typeof id !== "string") return undefined;
+  if (role !== "summary" && role !== "appendix") return undefined;
+  return { id, role };
 }
 
 /**

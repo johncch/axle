@@ -1,4 +1,3 @@
-import type { CompactionRecord } from "../messages/compaction.js";
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
@@ -188,26 +187,52 @@ export interface ThinkingPart<TAnnotation extends Annotation = Annotation> {
 }
 
 /**
- * Part marking a compaction of the model-facing conversation.
+ * Part recording a compaction of the model-facing conversation — ordinary,
+ * fallible turn work, streamed like a tool call. It lands in whatever turn
+ * context is natural: the head of a send's turn (`beforeTurn`), the tail
+ * (`afterTurn`), or its own engine-opened turn (`manual`). `part:start`
+ * delivers it `running`; `compaction:update` replaces transient display
+ * fields; `compaction:complete` / `compaction:error` settle it. A compaction
+ * declined by `shouldCompact` never appears at all.
  *
- * Compaction renders as an agent turn containing this single part. The turn's
- * `status` carries the lifecycle: `"streaming"` while the compaction callback
- * runs, `"complete"` once applied, `"error"` on failure. Skipped compactions
- * are removed from the turns, not settled.
+ * A settled `complete` part means the message swap applied, atomically. An
+ * `error` part records a failed attempt — non-fatal for automatic triggers;
+ * the conversation continued uncompacted.
  *
  * @experimental Compaction is under active design and may change in any release.
  */
 export interface CompactionPart<TAnnotation extends Annotation = Annotation> {
-  /** Stable part id. Shared with the compaction record. */
+  /** Stable part id: the compaction id (`ctx.id` in the callback). */
   id: string;
   /** Part discriminator. */
   type: "compaction";
-  /** The applied record, present once the compaction completes. */
-  record?: CompactionRecord;
+  /** Lifecycle state. */
+  status: "running" | "complete" | "error";
+  /**
+   * Reader-facing text for the transcript. Replaced by `compaction:update`
+   * while running; on `complete` the compactor's returned summary is
+   * authoritative. What it says is the compactor's presentation choice — it
+   * need not mirror the model-facing messages. If the compactor returns none,
+   * the latest transient summary remains; absent entirely, render a bare
+   * divider.
+   */
+  summary?: string;
+  /** Estimated completion from `0` to `1`; terminal completion sets it to `1`. */
+  progress?: number;
+  /** Terminal error message, present once the part settles `error`. */
+  error?: string;
   /** Annotations attached to this part. */
   annotations?: TAnnotation[];
   /** Optional timing metadata. */
   timing?: TimingInfo;
+}
+
+/** Transient fields to apply to a running compaction part. */
+export interface CompactionUpdate {
+  /** Replacement reader-facing summary or status text. */
+  summary?: string;
+  /** Estimated completion from `0` to `1`. */
+  progress?: number;
 }
 
 /**

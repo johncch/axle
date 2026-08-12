@@ -34,12 +34,12 @@ export type TurnAccumulatorResult<
  * key is a type error, so the runtime guard cannot drift from the union.
  */
 const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
-  "session:restore": true,
   "turn:user": true,
   "turn:start": true,
   "turn:end": true,
-  "compaction:start": true,
-  "compaction:end": true,
+  "compaction:update": true,
+  "compaction:complete": true,
+  "compaction:error": true,
   "part:start": true,
   "text:delta": true,
   "text:citation": true,
@@ -84,6 +84,10 @@ export class TurnAccumulator<
     return this._state;
   }
 
+  getTurn(turnId: string): Turn<TAnnotation> | undefined {
+    return this._state.turns.find((turn) => turn.id === turnId);
+  }
+
   apply(
     event: AccumulatableEvent<TAnnotation, THostEvent>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
@@ -97,14 +101,38 @@ export class TurnAccumulator<
     event: TurnEvent<TAnnotation>,
   ): TurnAccumulatorResult<TAnnotation, THostEvent> {
     switch (event.type) {
-      case "session:restore":
-        return this.replaceState(
-          {
-            turns: event.turns ?? [],
-            sessionAnnotations: event.sessionAnnotations,
-          },
-          event,
-        );
+      case "compaction:update":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return {
+            ...part,
+            ...(event.update.summary !== undefined ? { summary: event.update.summary } : {}),
+            ...(event.update.progress !== undefined ? { progress: event.update.progress } : {}),
+          };
+        });
+
+      case "compaction:complete":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return {
+            ...part,
+            status: "complete",
+            progress: 1,
+            ...(event.summary !== undefined ? { summary: event.summary } : {}),
+            timing: event.timing ?? part.timing,
+          };
+        });
+
+      case "compaction:error":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return {
+            ...part,
+            status: "error",
+            error: event.error,
+            timing: event.timing ?? part.timing,
+          };
+        });
 
       case "turn:user":
         return this.replaceTurns([...this._state.turns, event.turn], event);
@@ -118,44 +146,6 @@ export class TurnAccumulator<
           ...(event.timing ? { timing: event.timing } : {}),
         };
         return this.replaceTurns([...this._state.turns, turn], event);
-      }
-
-      case "compaction:start": {
-        const turn: Turn<TAnnotation> = {
-          id: event.id,
-          owner: "agent",
-          parts: [{ id: event.id, type: "compaction" }],
-          status: "streaming",
-          ...(event.timing ? { timing: event.timing } : {}),
-        };
-        return this.replaceTurns([...this._state.turns, turn], event);
-      }
-
-      case "compaction:end": {
-        // A skipped compaction never happened; its running turn is removed
-        // rather than settled, so per-send polling policies leave no trace.
-        if (event.outcome === "skipped") {
-          const turns = this._state.turns.filter((turn) => turn.id !== event.id);
-          if (turns.length === this._state.turns.length) return this.handled(event);
-          return this.replaceTurns(turns, event);
-        }
-
-        const status = event.outcome === "complete" ? ("complete" as const) : ("error" as const);
-        let updated = false;
-        const turns = this._state.turns.map((turn) => {
-          if (turn.id !== event.id) return turn;
-          updated = true;
-          return {
-            ...turn,
-            status,
-            parts: turn.parts.map((part) =>
-              part.type === "compaction" && event.record ? { ...part, record: event.record } : part,
-            ),
-            timing: event.timing ?? turn.timing,
-          };
-        });
-        if (!updated) return this.handled(event);
-        return this.replaceTurns(turns, event);
       }
 
       case "part:start":

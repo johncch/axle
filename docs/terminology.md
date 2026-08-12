@@ -12,9 +12,9 @@ comes from mixing units across them.
 
 | Layer     | Unit    | Contains                  | Lives at                          |
 | --------- | ------- | ------------------------- | --------------------------------- |
-| Wire      | Message | content parts             | `History.messages` / `archive`    |
+| Wire      | Message | content parts             | `agent.messages`                  |
 | Execution | Step    | one request + its fallout | the `send()` loop (`providers/`)  |
-| Render    | Turn    | parts (+ annotations)     | `History.turns`, the accumulator  |
+| Render    | Turn    | parts (+ annotations)     | the host's tape (`TurnAccumulator`) |
 
 One `send()` = one or more **steps** of the execution loop, producing one
 user **turn** and one agent **turn** built from streamed events, carried on
@@ -43,27 +43,33 @@ named `step-N`; stream events are `step:start` / `step:complete`. This
 matches the unit's industry usage (Vercel AI SDK `maxSteps`, OpenAI run
 steps).
 
-**Turn** — the render-layer unit only: one conversation entry in
-`History.turns` — a user turn, an agent turn, or a compaction marker. One
-send produces one user turn and one agent turn; the agent turn accumulates
-parts from every step of that send. "Turn" never refers to a single
-assistant message or to a provider request.
+**Turn** — the render-layer unit only: one conversation entry in a tape — a
+user turn or an agent turn. One send produces one user turn and one agent
+turn; the agent turn accumulates parts from every step of that send. Turns
+can also be started or ended by compaction: a manual compaction opens and
+closes its own agent turn around the compaction part. "Turn" never refers
+to a single assistant message or to a provider request.
 
 **Send** — the Agent API verb: one scheduled conversation exchange
 (`agent.send(...)`), executed as a FIFO queue item. The host-facing unit of
 "the agent took its turn."
 
-**History** — the Agent's in-memory conversation state: `messages` (active,
-model-facing), `archive` (complete chronological record, untouched by
-compaction), `turns` (render state), `compactions` (receipts).
+**Tape** — the append-only fold of the event stream into turns, owned by
+the consumer that folds it. `TurnAccumulator` is the shipped in-memory
+tape; hosts persist `tape.state` and re-seed it on restore. The Agent
+holds no tape — it emits events and keeps only the active `messages`
+(folded working memory, bounded by compaction). Lose the tape, lose the
+transcript.
 
 **Session** — the continuable identity of a conversation (`sessionId`).
-`AgentSession` is its serialized form — the payload `agent.snapshot()`
-captures and the `Agent` constructor restores.
+`AgentSession` is its serialized form — the pure continuation
+`{ sessionId, messages }` that `agent.snapshot()` captures and the `Agent`
+constructor restores. Transcripts are not part of it; hosts persist their
+tape alongside.
 
 **Compaction** — replacing the active conversation with a condensed
-rewrite, recorded with a receipt. Compaction touches `messages`, never
-`archive`.
+rewrite, recorded on the tape as a `compaction` turn part carrying the
+summary. Old messages cease to exist; lookback is served by the tape.
 
 **Trace** — observability only: the span tree produced by the tracer and
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means

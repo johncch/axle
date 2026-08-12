@@ -1,9 +1,10 @@
-import type { CompactionCallback } from "../core/agent/types.js";
+import type { CompactionCallback, ShouldCompactCallback } from "../core/agent/types.js";
 import { AxleError } from "../errors/AxleError.js";
+import { getCompactionStamp } from "../messages/compaction.js";
 import type { AxleMessage } from "../messages/message.js";
 import { getTextContent } from "../messages/utils.js";
 import { estimateContextUsage } from "../providers/context.js";
-import { generate } from "../providers/generate.js";
+import { stream } from "../providers/stream.js";
 import type { AIProvider } from "../providers/types.js";
 
 export interface PromptCompactorOptions {
@@ -16,8 +17,6 @@ export interface PromptCompactorOptions {
 }
 
 export class PromptCompactor {
-  readonly compact: CompactionCallback;
-
   private readonly provider: AIProvider;
   private readonly model: string;
   private readonly prompt: string;
@@ -33,17 +32,21 @@ export class PromptCompactor {
     this.thresholdTokens = options.thresholdTokens;
     this.targetTokens = options.targetTokens;
     this.recentUserMessages = options.recentUserMessages ?? 10;
-    this.compact = this.run.bind(this);
   }
 
-  private async run(
-    state: { messages: AxleMessage[] },
-    context: Parameters<CompactionCallback>[1],
-  ): Promise<AxleMessage[] | null> {
-    if (state.messages.length === 0) return null;
-    if (context.trigger !== "manual" && context.usage.total < this.thresholdTokens) return null;
+  readonly shouldCompact: ShouldCompactCallback = (state, context) => {
+    if (state.messages.length === 0) return false;
+    return context.trigger === "manual" || context.usage.total >= this.thresholdTokens;
+  };
 
-    const carriedOverCount = context.lastCompaction?.messageCount ?? 0;
+  readonly compact: CompactionCallback = async (state, context) => {
+    let carriedOverCount = 0;
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      if (getCompactionStamp(state.messages[i])) {
+        carriedOverCount = i + 1;
+        break;
+      }
+    }
     const recent = fitRecentMessages(
       collectRecentUserMessages(state.messages.slice(carriedOverCount), this.recentUserMessages),
       Math.floor(this.targetTokens / 2),
@@ -58,7 +61,7 @@ export class PromptCompactor {
       });
     }
 
-    const result = await generate({
+    const handle = stream({
       provider: this.provider,
       model: this.model,
       system: [
@@ -75,6 +78,15 @@ export class PromptCompactor {
         },
       ],
     });
+    let emittedProgress = 0;
+    handle.on((event) => {
+      if (event.type !== "text:delta") return;
+      const progress = Math.min(estimateTextTokens(event.accumulated) / summaryTokens, 0.99);
+      if (progress <= emittedProgress) return;
+      emittedProgress = progress;
+      context.emit({ progress });
+    });
+    const result = await handle.final;
 
     if (!result.ok) {
       throw new AxleError(`Prompt compaction failed: ${result.error.message}`, {
@@ -90,8 +102,22 @@ export class PromptCompactor {
       });
     }
 
-    return [{ role: "user", content: [summary, appendix].filter(Boolean).join("\n\n") }];
-  }
+    const compacted: AxleMessage[] = [
+      {
+        role: "user",
+        content: summary,
+        metadata: { axleCompaction: { id: context.id, role: "summary" } },
+      },
+    ];
+    if (appendix) {
+      compacted.push({
+        role: "user",
+        content: appendix,
+        metadata: { axleCompaction: { id: context.id, role: "appendix" } },
+      });
+    }
+    return { messages: compacted, summary };
+  };
 }
 
 function validateOptions(options: PromptCompactorOptions): void {

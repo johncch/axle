@@ -3,6 +3,25 @@ import { TurnAccumulator } from "../../src/turns/accumulator.js";
 import type { Annotation, SubagentAction, Turn } from "../../src/turns/types.js";
 
 describe("TurnAccumulator", () => {
+  test("gets the current turn by id", () => {
+    const accumulator = new TurnAccumulator();
+
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "p1", type: "text", text: "current" },
+    });
+
+    expect(accumulator.getTurn("t1")).toEqual({
+      id: "t1",
+      owner: "agent",
+      parts: [{ id: "p1", type: "text", text: "current" }],
+      status: "streaming",
+    });
+    expect(accumulator.getTurn("missing")).toBeUndefined();
+  });
+
   test("accumulates turn events into render state", () => {
     const accumulator = new TurnAccumulator();
 
@@ -320,21 +339,127 @@ describe("TurnAccumulator", () => {
     expect(result.state).toBe(state);
   });
 
-  test("session restore replaces turns and session annotations", () => {
+  test("compaction updates replace transient state and completion supplies final state", () => {
     const accumulator = new TurnAccumulator();
-    accumulator.apply({ type: "turn:start", turnId: "old" });
-
-    const result = accumulator.apply({
-      type: "session:restore",
-      turns: [{ id: "restored", owner: "user", parts: [], status: "complete" }],
-      sessionAnnotations: [{ id: "a1", kind: "note", label: "Restored" }],
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "draft summary…" },
+    });
+    const streamed = accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "current summary", progress: 0.5 },
+    });
+    expect((streamed.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "running",
+      summary: "current summary",
+      progress: 0.5,
     });
 
-    expect(result.state.turns).toEqual([
-      { id: "restored", owner: "user", parts: [], status: "complete" },
-    ]);
-    expect(result.state.sessionAnnotations).toEqual([
-      { id: "a1", kind: "note", label: "Restored" },
+    const settled = accumulator.apply({
+      type: "compaction:complete",
+      turnId: "t1",
+      partId: "c1",
+      summary: "final stamped summary",
+      timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:30.000Z" },
+    });
+    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "complete",
+      summary: "final stamped summary",
+      progress: 1,
+      timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:30.000Z" },
+    });
+  });
+
+  test("compaction parts settle error with the failure message, keeping transient state", () => {
+    const accumulator = new TurnAccumulator();
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "partial", progress: 0.4 },
+    });
+
+    const settled = accumulator.apply({
+      type: "compaction:error",
+      turnId: "t1",
+      partId: "c1",
+      error: "summarizer down",
+    });
+
+    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "error",
+      summary: "partial",
+      progress: 0.4,
+      error: "summarizer down",
+    });
+  });
+
+  test("compaction completion without a summary keeps the latest transient summary", () => {
+    const accumulator = new TurnAccumulator();
+    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    accumulator.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    accumulator.apply({
+      type: "compaction:update",
+      turnId: "t1",
+      partId: "c1",
+      update: { summary: "Compacting history…", progress: 0.5 },
+    });
+
+    const settled = accumulator.apply({
+      type: "compaction:complete",
+      turnId: "t1",
+      partId: "c1",
+    });
+
+    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+      type: "compaction",
+      status: "complete",
+      summary: "Compacting history…",
+      progress: 1,
+    });
+  });
+
+  test("constructor seeding restores persisted state and new events append to it", () => {
+    const saved = new TurnAccumulator();
+    saved.apply({
+      type: "turn:user",
+      turn: { id: "restored", owner: "user", parts: [], status: "complete" },
+    });
+    saved.apply({
+      type: "annotation:start",
+      target: { type: "session" },
+      annotation: { id: "a1", kind: "note", label: "Restored" },
+    });
+
+    const restored = new TurnAccumulator(saved.state);
+    restored.apply({ type: "turn:start", turnId: "next" });
+
+    expect(restored.state.turns.map((turn) => turn.id)).toEqual(["restored", "next"]);
+    expect(restored.state.sessionAnnotations).toEqual([
+      { id: "a1", kind: "note", label: "Restored", placement: "after" },
     ]);
   });
 

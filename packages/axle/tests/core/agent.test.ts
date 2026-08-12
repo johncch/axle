@@ -13,6 +13,8 @@ import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
+import { TurnAccumulator } from "../../src/turns/accumulator.js";
+import type { TurnEvent } from "../../src/turns/events.js";
 import type { Turn } from "../../src/turns/types.js";
 
 function createMockStreamProvider(responses: string[]): AIProvider {
@@ -129,7 +131,7 @@ function createEchoStreamProvider(requests: string[]): AIProvider {
 
 describe("Agent", () => {
   describe("automatic compaction", () => {
-    test("invokes the same callback at configured turn boundaries", async () => {
+    test("consults the decision policy at configured turn boundaries with pre/post state", async () => {
       const requests: string[] = [];
       const agent = new Agent({
         provider: createEchoStreamProvider(requests),
@@ -138,10 +140,10 @@ describe("Agent", () => {
       const order: string[] = [];
       const beforeMessageCounts: number[] = [];
       const afterMessageCounts: number[] = [];
+      const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
-        compact: async ({ messages }, { usage, signal, trigger }) => {
-          await Promise.resolve();
+        shouldCompact: ({ messages }, { usage, trigger }) => {
           order.push(trigger);
           if (trigger === "beforeTurn") {
             beforeMessageCounts.push(messages.length);
@@ -149,9 +151,9 @@ describe("Agent", () => {
             afterMessageCounts.push(messages.length);
           }
           expect(usage.total).toBeGreaterThanOrEqual(0);
-          expect(signal?.aborted).toBe(false);
-          return null;
+          return false;
         },
+        compact,
         triggers: {
           beforeTurn: true,
           afterTurn: true,
@@ -165,6 +167,7 @@ describe("Agent", () => {
       expect(beforeMessageCounts).toEqual([0, 2]);
       expect(afterMessageCounts).toEqual([2, 4]);
       expect(requests).toEqual(["first", "second"]);
+      expect(compact).not.toHaveBeenCalled();
     });
 
     test("setting compaction again replaces the previous configuration", async () => {
@@ -172,52 +175,25 @@ describe("Agent", () => {
         provider: createMockStreamProvider(["ok"]),
         model: "mock",
       });
-      const first = vi.fn();
-      const second = vi.fn();
+      const first = vi.fn(() => false);
+      const second = vi.fn(() => false);
+      const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
-        compact: first,
+        shouldCompact: first,
+        compact,
         triggers: { beforeTurn: true },
       });
       agent.setCompaction({
-        compact: second,
+        shouldCompact: second,
+        compact,
         triggers: { beforeTurn: true },
       });
       await agent.send("hello").final;
 
       expect(first).not.toHaveBeenCalled();
       expect(second).toHaveBeenCalledTimes(1);
-    });
-
-    test("work scheduled while a compaction callback is in flight queues and completes", async () => {
-      const requests: string[] = [];
-      const agent = new Agent({
-        provider: createEchoStreamProvider(requests),
-        model: "mock",
-      });
-
-      const started = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      agent.setCompaction({
-        compact: async () => {
-          started.resolve();
-          await release.promise;
-          return null;
-        },
-        triggers: { beforeTurn: true },
-      });
-
-      const first = agent.send("first");
-      await started.promise;
-
-      const second = agent.send("second");
-      const third = agent.send("third");
-      release.resolve();
-
-      await expect(first.final).resolves.toMatchObject({ ok: true, response: "first" });
-      await expect(second.final).resolves.toMatchObject({ ok: true, response: "second" });
-      await expect(third.final).resolves.toMatchObject({ ok: true, response: "third" });
-      expect(requests).toEqual(["first", "second", "third"]);
+      expect(compact).not.toHaveBeenCalled();
     });
   });
 
@@ -238,7 +214,7 @@ describe("Agent", () => {
       expect(requests).toEqual(["first", "second", "third"]);
       expect(results.map((result) => result.response)).toEqual(["first", "second", "third"]);
       expect(
-        agent.history.messages
+        agent.messages
           .filter((message) => message.role === "user")
           .map((message) => getTextContent(message.content)),
       ).toEqual(["first", "second", "third"]);
@@ -285,7 +261,7 @@ describe("Agent", () => {
         "tool",
         "user",
       ]);
-      expect(agent.history.messages.map((message) => message.role)).toEqual([
+      expect(agent.messages.map((message) => message.role)).toEqual([
         "user",
         "assistant",
         "tool",
@@ -316,7 +292,7 @@ describe("Agent", () => {
       expect((error as AxleAgentAbortError).turn).toBeUndefined();
       expect(requests).toEqual(["first", "third"]);
       expect(
-        agent.history.messages
+        agent.messages
           .filter((message) => message.role === "user")
           .map((message) => getTextContent(message.content)),
       ).toEqual(["first", "third"]);
@@ -335,8 +311,7 @@ describe("Agent", () => {
         agent.send("never sent", { signal: AbortSignal.abort("stop") }).final,
       ).rejects.toMatchObject({ name: "AbortError", reason: "stop", turn: undefined });
 
-      expect(agent.history.messages).toEqual([]);
-      expect(agent.history.turns).toEqual([]);
+      expect(agent.messages).toEqual([]);
       expect(events).toEqual([]);
       expect(requests).toEqual([]);
     });
@@ -354,15 +329,14 @@ describe("Agent", () => {
       agent.addMcp({ name: "flaky", listTools, connected: true } as any);
 
       await expect(agent.send("hello").final).rejects.toThrow("mcp unreachable");
-      expect(agent.history.messages).toEqual([]);
-      expect(agent.history.turns).toEqual([]);
+      expect(agent.messages).toEqual([]);
 
       await expect(agent.send("hello").final).resolves.toMatchObject({
         ok: true,
         response: "hello",
       });
       expect(requests).toEqual(["hello"]);
-      expect(agent.history.messages.filter((message) => message.role === "user")).toHaveLength(1);
+      expect(agent.messages.filter((message) => message.role === "user")).toHaveLength(1);
     });
 
     test("stop() + clear() + send() interjects the new message ahead of queued work", async () => {
@@ -399,7 +373,7 @@ describe("Agent", () => {
       expect(staleError).toBeInstanceOf(AxleAgentAbortError);
       expect((staleError as AxleAgentAbortError).turn).toBeUndefined();
       expect(
-        agent.history.messages
+        agent.messages
           .filter((message) => message.role === "user")
           .map((message) => getTextContent(message.content)),
       ).toEqual(["run the tool", "urgent"]);
@@ -532,16 +506,20 @@ describe("Agent", () => {
   test("send metadata is stored on user messages and copied to user turns", async () => {
     const provider = createMockStreamProvider(["ok"]);
     const agent = new Agent({ provider, model: "mock" });
+    const tape = new TurnAccumulator();
     const events: { type: string; turn?: { metadata?: Record<string, unknown> } }[] = [];
-    agent.on((event) => events.push(event));
+    agent.on((event) => {
+      tape.apply(event as TurnEvent);
+      events.push(event);
+    });
 
     await agent.send("Render this specially", { metadata: { source: "system-editor" } }).final;
 
-    expect(agent.history.messages[0]).toMatchObject({
+    expect(agent.messages[0]).toMatchObject({
       role: "user",
       metadata: { source: "system-editor" },
     });
-    expect(agent.history.turns[0]).toMatchObject({
+    expect(tape.state.turns[0]).toMatchObject({
       owner: "user",
       metadata: { source: "system-editor" },
     });
@@ -552,14 +530,13 @@ describe("Agent", () => {
     expect(session.messages[0]).toMatchObject({
       metadata: { source: "system-editor" },
     });
-    expect(session.turns?.[0]).toMatchObject({
-      metadata: { source: "system-editor" },
-    });
   });
 
   test("instruct metadata is copied to user messages and turns", async () => {
     const provider = createMockStreamProvider(["ok"]);
     const agent = new Agent({ provider, model: "mock" });
+    const tape = new TurnAccumulator();
+    agent.on((event) => tape.apply(event));
     const instruct = new Instruct({
       prompt: "Review this prompt",
       metadata: { surface: "prompt-review" },
@@ -567,11 +544,11 @@ describe("Agent", () => {
 
     await agent.send(instruct).final;
 
-    expect(agent.history.messages[0]).toMatchObject({
+    expect(agent.messages[0]).toMatchObject({
       role: "user",
       metadata: { surface: "prompt-review" },
     });
-    expect(agent.history.turns[0]).toMatchObject({
+    expect(tape.state.turns[0]).toMatchObject({
       owner: "user",
       metadata: { surface: "prompt-review" },
     });
@@ -602,51 +579,54 @@ describe("Agent", () => {
     };
 
     const agent = new Agent({ provider, model: "mock" });
+    const tape = new TurnAccumulator();
+    agent.on((event) => tape.apply(event));
     await agent.send("one").final;
 
     const session = await agent.snapshot();
-    expect(session).toMatchObject({
-      version: 1,
+    expect(session).toEqual({
       sessionId: agent.sessionId,
-      messages: [{ role: "user" }, { role: "assistant" }],
-      turns: [{ owner: "user" }, { owner: "agent", status: "complete" }],
+      messages: [
+        expect.objectContaining({ role: "user" }),
+        expect.objectContaining({ role: "assistant" }),
+      ],
     });
 
-    const restored = new Agent(
-      { provider, model: "mock" },
-      {
-        ...session,
-        sessionAnnotations: [
-          { id: "session-note", kind: "note", label: "Restored session annotation" },
-        ],
-      },
-    );
+    const restored = new Agent({ provider, model: "mock" }, session);
+    const restoredTape = new TurnAccumulator(tape.state);
+    restored.on((event) => restoredTape.apply(event));
 
-    expect(restored.history.messages).toEqual(session.messages);
-    expect(restored.history.turns).toEqual(session.turns);
+    expect(restored.messages).toEqual(session.messages);
     expect(restored.sessionId).toBe(session.sessionId);
-    expect(restored.history.sessionAnnotations).toEqual([
-      { id: "session-note", kind: "note", label: "Restored session annotation" },
-    ]);
-    expect((await restored.snapshot()).sessionAnnotations).toEqual([
-      { id: "session-note", kind: "note", label: "Restored session annotation" },
+    expect(restoredTape.state.turns).toMatchObject([
+      { owner: "user" },
+      { owner: "agent", status: "complete" },
     ]);
 
     await restored.send("two").final;
 
     expect(requests[1]).toHaveLength(3);
     expect(requests[1]).toMatchObject([{ role: "user" }, { role: "assistant" }, { role: "user" }]);
+    expect(restoredTape.state.turns).toHaveLength(4);
   });
 
-  test("constructor rejects unsupported session versions", () => {
-    expect(
-      () =>
-        new Agent({ provider: createMockStreamProvider(["ok"]), model: "mock" }, {
-          version: 2,
-          sessionId: "session-1",
-          messages: [],
-        } as any),
-    ).toThrow("Unsupported agent session version: 2");
+  test("constructor ignores unknown keys in sessions stored by older versions", async () => {
+    const agent = new Agent({ provider: createMockStreamProvider(["ok"]), model: "mock" }, {
+      version: 1,
+      sessionId: "session-1",
+      messages: [{ role: "user", content: "hello" }],
+      archive: [{ role: "user", content: "hello" }],
+      compactions: [],
+      turns: [{ id: "t1", owner: "user", parts: [], status: "complete" }],
+      sessionAnnotations: [],
+    } as any);
+
+    expect(agent.sessionId).toBe("session-1");
+    expect(agent.messages).toEqual([{ role: "user", content: "hello" }]);
+    expect(await agent.snapshot()).toEqual({
+      sessionId: "session-1",
+      messages: [{ role: "user", content: "hello" }],
+    });
   });
 
   test("constructor restores continuation state from an agent session", async () => {
@@ -698,8 +678,7 @@ describe("Agent", () => {
     const restored = new Agent({ ...config, sessionId: "runtime-session", memory }, saved.session);
 
     expect(restored.sessionId).toBe(saved.session.sessionId);
-    expect(restored.history.messages).toEqual(saved.session.messages);
-    expect(restored.history.turns).toEqual(saved.session.turns);
+    expect(restored.messages).toEqual(saved.session.messages);
 
     await restored.send("two").final;
 
@@ -829,13 +808,15 @@ describe("Agent", () => {
     const provider = createMockStreamProvider(["Response 1", "Response 2"]);
     const instruct = new Instruct({ prompt: "Initial message" });
     const agent = new Agent({ provider, model: "mock" });
+    const tape = new TurnAccumulator();
+    agent.on((event) => tape.apply(event));
 
     await agent.send(instruct).final;
     await agent.send("Follow up").final;
 
     // 2 user + 2 agent = 4 turns
-    expect(agent.history.turns).toHaveLength(4);
-    expect(agent.history.turns.map((entry) => (entry as Turn).owner)).toEqual([
+    expect(tape.state.turns).toHaveLength(4);
+    expect(tape.state.turns.map((entry) => (entry as Turn).owner)).toEqual([
       "user",
       "agent",
       "user",
@@ -1082,6 +1063,8 @@ describe("Agent", () => {
       };
 
       const agent = new Agent({ provider, model: "mock" });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
 
       const first = agent.send("first");
       const second = agent.send("second");
@@ -1103,10 +1086,10 @@ describe("Agent", () => {
       expect((secondError as AxleAbortError).reason).toBe(reason);
       expect((secondError as AxleAgentAbortError).turn).toBeUndefined();
       expect(callCount).toBe(1);
-      expect(agent.history.turns).toHaveLength(2);
-      expect(agent.history.messages).toHaveLength(2);
-      expect(agent.history.messages[0]).toMatchObject({ role: "user" });
-      expect(agent.history.messages[1]).toMatchObject({ role: "assistant" });
+      expect(tape.state.turns).toHaveLength(2);
+      expect(agent.messages).toHaveLength(2);
+      expect(agent.messages[0]).toMatchObject({ role: "user" });
+      expect(agent.messages[1]).toMatchObject({ role: "assistant" });
     });
 
     test("cancel during tool execution preserves assistant history and cancelled turn state", async () => {
@@ -1160,6 +1143,8 @@ describe("Agent", () => {
       };
 
       const agent = new Agent({ provider, model: "mock", tools: [slowTool] });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
       const handle = agent.send("search for test");
 
       await toolStarted;
@@ -1185,10 +1170,10 @@ describe("Agent", () => {
         out: 1,
         breakdown: [{ provider: "mock-stream", model: "mock", in: 1, out: 1 }],
       });
-      expect(agent.history.messages).toHaveLength(2);
-      expect(agent.history.messages[0]).toMatchObject({ role: "user" });
-      expect(agent.history.messages[1]).toMatchObject({ role: "assistant" });
-      expect(agent.history.turns[1]?.status).toBe("cancelled");
+      expect(agent.messages).toHaveLength(2);
+      expect(agent.messages[0]).toMatchObject({ role: "user" });
+      expect(agent.messages[1]).toMatchObject({ role: "assistant" });
+      expect(tape.state.turns[1]?.status).toBe("cancelled");
     });
   });
 
@@ -1606,6 +1591,8 @@ describe("Agent", () => {
         name: "test-agent",
         memory,
       });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
 
       const result = await agent.send("Hi").final;
 
@@ -1613,7 +1600,7 @@ describe("Agent", () => {
       if (result.ok) return;
       expect(result.error.message).toBe("Something broke");
       expect(result.turn?.error).toEqual({ type: "model", message: "Something broke" });
-      expect(agent.history.turns.at(-1)?.error).toEqual({
+      expect(tape.state.turns.at(-1)?.error).toEqual({
         type: "model",
         message: "Something broke",
       });
@@ -1715,10 +1702,12 @@ describe("Agent", () => {
     test("user turn has UUID id in history", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
+      const tape = new TurnAccumulator();
+      agent.on((event) => tape.apply(event));
 
       await agent.send("Hi").final;
 
-      const userTurn = agent.history.turns[0] as Turn;
+      const userTurn = tape.state.turns[0] as Turn;
       expect(userTurn.owner).toBe("user");
       expect(userTurn.id).toBeDefined();
       expect(typeof userTurn.id).toBe("string");
@@ -1777,12 +1766,14 @@ describe("Agent", () => {
       };
 
       const agent = new Agent({ provider, model: "mock", tools: [noisyTool] });
+      const tape = new TurnAccumulator();
       const events: any[] = [];
       const inProgressSnapshots: any[] = [];
       agent.on((e) => {
+        tape.apply(e);
         events.push(e);
         if (e.type === "action:progress") {
-          const turn = agent.history.turns[1] as Turn | undefined;
+          const turn = tape.state.turns[1] as Turn | undefined;
           const part = turn?.parts.find(
             (p) => p.type === "action" && (p as any).kind === "tool",
           ) as any;
@@ -1803,7 +1794,7 @@ describe("Agent", () => {
       ]);
 
       // After completion, the final success result replaces the in-progress state.
-      const agentTurn = agent.history.turns[1] as Turn;
+      const agentTurn = tape.state.turns[1] as Turn;
       const toolPart = agentTurn.parts.find(
         (p) => p.type === "action" && (p as any).kind === "tool",
       ) as any;
@@ -1885,8 +1876,12 @@ describe("Agent", () => {
       });
 
       const agent = new Agent({ provider, model: "mock", tools: [tool] });
+      const tape = new TurnAccumulator();
       const events: any[] = [];
-      agent.on((event) => events.push(event));
+      agent.on((event) => {
+        tape.apply(event);
+        events.push(event);
+      });
 
       await agent.send("hi").final;
 
@@ -1898,7 +1893,7 @@ describe("Agent", () => {
       });
       expect(events.some((event) => event.type === "action:progress")).toBe(false);
 
-      const agentTurn = agent.history.turns[1] as Turn;
+      const agentTurn = tape.state.turns[1] as Turn;
       const agentPart = agentTurn.parts.find(
         (part) => part.type === "action" && part.kind === "agent",
       ) as any;
