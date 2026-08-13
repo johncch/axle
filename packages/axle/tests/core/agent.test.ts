@@ -143,7 +143,7 @@ describe("Agent", () => {
       const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
-        shouldCompact: ({ messages }, { usage, trigger }) => {
+        shouldCompactOnTrigger: ({ messages }, { usage, trigger }) => {
           order.push(trigger);
           if (trigger === "beforeTurn") {
             beforeMessageCounts.push(messages.length);
@@ -180,12 +180,12 @@ describe("Agent", () => {
       const compact = vi.fn(async () => ({ messages: [] }));
 
       agent.setCompaction({
-        shouldCompact: first,
+        shouldCompactOnTrigger: first,
         compact,
         triggers: { beforeTurn: true },
       });
       agent.setCompaction({
-        shouldCompact: second,
+        shouldCompactOnTrigger: second,
         compact,
         triggers: { beforeTurn: true },
       });

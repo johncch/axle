@@ -1,4 +1,4 @@
-import type { CompactionCallback, ShouldCompactCallback } from "../core/agent/types.js";
+import type { CompactionCallback, ShouldCompactOnTriggerCallback } from "../core/agent/types.js";
 import { AxleError } from "../errors/AxleError.js";
 import { getCompactionStamp } from "../messages/compaction.js";
 import type { AxleMessage } from "../messages/message.js";
@@ -34,9 +34,9 @@ export class PromptCompactor {
     this.recentUserMessages = options.recentUserMessages ?? 10;
   }
 
-  readonly shouldCompact: ShouldCompactCallback = (state, context) => {
+  readonly shouldCompactOnTrigger: ShouldCompactOnTriggerCallback = (state, context) => {
     if (state.messages.length === 0) return false;
-    return context.trigger === "manual" || context.usage.total >= this.thresholdTokens;
+    return context.usage.total >= this.thresholdTokens;
   };
 
   readonly compact: CompactionCallback = async (state, context) => {

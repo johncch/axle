@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { Agent } from "../../src/core/agent/index.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
@@ -237,16 +237,17 @@ describe("Agent.compact", () => {
     expect(part?.progress).toBe(1);
   });
 
-  test("a shouldCompact decline is the silent path: false, nothing emitted, nothing ran", async () => {
+  test("manual compaction bypasses the automatic-trigger policy", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const tape = attachTape(agent);
     let compactRan = false;
+    const shouldCompactOnTrigger = vi.fn(() => false);
     agent.setCompaction({
-      shouldCompact: () => false,
+      shouldCompactOnTrigger,
       compact: () => {
         compactRan = true;
-        return { messages: [user("never")] };
+        return { messages: [user("summary")] };
       },
     });
 
@@ -255,11 +256,12 @@ describe("Agent.compact", () => {
 
     const result = await agent.compact();
 
-    expect(result).toBe(false);
-    expect(compactRan).toBe(false);
-    expect(agent.messages).toEqual(FOUR_MESSAGES);
-    expect(events).toEqual([]);
-    expect(tape.state.turns).toEqual([]);
+    expect(result).toBe(true);
+    expect(shouldCompactOnTrigger).not.toHaveBeenCalled();
+    expect(compactRan).toBe(true);
+    expect(agent.messages).toEqual([user("summary")]);
+    expect(events.some((event) => event.type === "compaction:complete")).toBe(true);
+    expect(tape.state.turns).toHaveLength(1);
   });
 
   test("a throwing beforeTurn policy rejects the send and closes the agent turn", async () => {
@@ -267,7 +269,7 @@ describe("Agent.compact", () => {
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const tape = attachTape(agent);
     agent.setCompaction({
-      shouldCompact: () => {
+      shouldCompactOnTrigger: () => {
         throw new Error("broken policy");
       },
       compact: () => ({ messages: [] }),

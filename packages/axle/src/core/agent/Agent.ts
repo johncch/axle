@@ -422,11 +422,10 @@ export class Agent {
    *
    * Compaction is optional: with no config registered this resolves `false`.
    * Otherwise the call is enqueued behind in-flight sends so compaction never
-   * races a turn. `shouldCompact` is consulted first (`ctx.trigger` is
-   * `"manual"`); a decline resolves `false` with nothing emitted. Otherwise
-   * the engine opens a turn, streams the `CompactionPart` in it, and resolves
+   * races a turn. Explicit compaction bypasses `shouldCompactOnTrigger`: the
+   * engine opens a turn, streams the `CompactionPart` in it, and resolves
    * `true` once applied. Failures settle the part and turn as errored on the
-   * tape and reject — a manual compact was explicitly requested.
+   * tape and reject.
    * Cancellation rejects with `AxleAgentAbortError`, matching `send()`.
    *
    * Do not await this from inside a running send (a tool's `execute`,
@@ -489,10 +488,11 @@ export class Agent {
 
     try {
       const before = this.estimateContext(run.state);
-      const willing = config.shouldCompact
-        ? config.shouldCompact({ messages: [...run.state] }, { usage: before, trigger })
-        : true;
-      if (!willing) {
+      if (
+        trigger !== "manual" &&
+        config.shouldCompactOnTrigger &&
+        !config.shouldCompactOnTrigger({ messages: [...run.state] }, { usage: before, trigger })
+      ) {
         root?.setAttribute("outcome", "skipped");
         return "declined";
       }

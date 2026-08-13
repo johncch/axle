@@ -8,19 +8,19 @@ defined in [agent-state.md](./agent-state.md).
 
 ## Invariants
 
-1. **Three layers, one job each.** `triggers` say _when to ask_
-   (`beforeTurn`, `afterTurn`; omitted = manual-only). `shouldCompact(state,
-{usage, trigger})` synchronously says _whether_ — consulted at every boundary including
-   `manual`; "a manual request always compacts" is compactor policy via
-   `ctx.trigger`, never an engine carve-out; omitted = always willing.
+1. **Three layers, one job each.** `triggers` say _when to ask automatically_
+   (`beforeTurn`, `afterTurn`; omitted = manual-only).
+   `shouldCompactOnTrigger(state, {usage, trigger})` synchronously filters
+   those automatic requests; omitted = accept every configured trigger.
+   Explicit `agent.compact()` is a command and bypasses the policy.
    `compact(state, ctx)` does _the work_ — it returns `{ messages, summary? }`
    (the complete new conversation plus an optional reader-facing summary),
    never declines (`null` is not a return), and throws on failure.
-2. **A `shouldCompact` decline is the only silent path.** Nothing is
-   emitted, nothing ran, no id was allocated. Everything past a `true` is
-   visible turn work. A thrown policy error propagates as a client
-   implementation error. If the send's turn is already open, the engine
-   settles it before propagating the error.
+2. **An automatic-policy decline is the only silent path.** Nothing is
+   emitted, nothing ran, no id was allocated. Everything past a `true`—and
+   every explicit `agent.compact()`—is visible turn work. A thrown policy
+   error propagates as a client implementation error. If the send's turn is
+   already open, the engine settles it before propagating the error.
 3. **Compaction is ordinary, fallible, streamed turn work** — the lifecycle
    mirrors tool calls. `part:start` delivers `CompactionPart { id, type,
 status: "running" | "complete" | "error", summary?, progress?, error?, timing? }`
@@ -74,10 +74,11 @@ form; how the _transcript_ treats that moment is the consumer's business
 the pressure that shaped it was the skip: with `afterTurn`, the policy is
 consulted after every turn and almost always declines, so any design that
 announces before deciding either spams retractions into every fold or lies.
-Splitting the decision out (`shouldCompact`) makes the common case free and
-the announced case honest — once the policy commits, the compaction is real
-work and gets the same treatment as a tool call: visible, streamed,
-fallible, recorded.
+Splitting the automatic decision out (`shouldCompactOnTrigger`) makes the
+common case free and the announced case honest — once the policy commits,
+the compaction is real work and gets the same treatment as a tool call:
+visible, streamed, fallible, recorded. Manual `agent.compact()` is already an
+explicit commitment and therefore does not consult an automatic policy.
 
 Streaming (`ctx.emit` → `compaction:update`) is not cosmetic. A long
 summarization is otherwise a dead-silent window on the wire — bad for users
@@ -94,9 +95,9 @@ record and continue — `A⟨…, compaction(error)⟩` then next turn
 `A'⟨compaction(ok), …⟩`, or `A'⟨compaction(error)⟩` plus a context-overflow
 model error when continuing genuinely no longer fits.
 
-`PromptCompactor` implements the policy pair: `shouldCompact` is
-empty → false, manual → true, else `usage.total >= thresholdTokens`;
-`compact` streams via `stream()`, reports estimated progress, and returns two
+`PromptCompactor` implements the policy pair: `shouldCompactOnTrigger` is
+empty → false, otherwise `usage.total >= thresholdTokens`; `compact` streams
+via `stream()`, reports estimated progress, and returns two
 stamped messages (summary, recent-user-messages appendix) plus the summary
 text as the part's reader-facing final summary.
 
@@ -126,12 +127,12 @@ text as the part's reader-facing final summary.
 - **A `CompactionStrategy` interface instead of config fields** (2026-08-12):
   isomorphic capability with heavier contract — breaking evolution,
   `this`-binding hazards, harder wrapping — and it forbids deliberate
-  mix-and-match (e.g. reusing `PromptCompactor.shouldCompact` with a custom
-  `compact`). Flip conditions recorded: a third compactor concern, engine
-  need for compactor identity, or multi-compactor chains.
-- **`null` as a decline from `compact`** (2026-08-12): the decision belongs
-  to `shouldCompact`; a work function that can silently refuse blurs both
-  jobs. Malformed results are errored compactions, not skips.
+  mix-and-match (e.g. reusing `PromptCompactor.shouldCompactOnTrigger` with a
+  custom `compact`). Flip conditions recorded: a third compactor concern,
+  engine need for compactor identity, or multi-compactor chains.
+- **`null` as a decline from `compact`** (2026-08-12): automatic decisions
+  belong to `shouldCompactOnTrigger`; a work function that can silently refuse
+  blurs both jobs. Malformed results are errored compactions, not skips.
 - **Engine-extracted part summary (stamp-scan)** (2026-08-12): the engine
   copied the text of `role: "summary"` messages stamped with the current id
   onto the part, guaranteeing the reader saw exactly the model-facing

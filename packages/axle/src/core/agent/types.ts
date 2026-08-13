@@ -204,33 +204,35 @@ export type TurnEventCallback = (event: TurnEvent) => void;
 
 /**
  * Compaction is split into three layers, each with one job: `triggers` say
- * *when to ask*, `shouldCompact` says *whether*, and `compact` does the work.
+ * *when to ask automatically*, `shouldCompactOnTrigger` filters those
+ * automatic requests, and `compact` does the work.
  *
  * @experimental Compaction is under active design and may change in any release.
  */
-export type CompactionTrigger = "manual" | "beforeTurn" | "afterTurn";
+export type AutomaticCompactionTrigger = "beforeTurn" | "afterTurn";
+export type CompactionTrigger = "manual" | AutomaticCompactionTrigger;
 
 /**
- * The decision: should a compaction run now? Consulted at every trigger
- * boundary, including `manual` — "a manual request always compacts" is policy
- * (`ctx.trigger` is the input), not an engine carve-out. Omitted on the
- * config, the engine assumes always-yes. Keep it cheap; it runs on every
- * triggered boundary and must return its boolean synchronously.
+ * The decision: should an automatically triggered compaction run now?
+ * Omitted on the config, every configured automatic trigger runs. Explicit
+ * `agent.compact()` calls bypass this policy. Keep it cheap; it runs on every
+ * configured automatic boundary and must return its boolean synchronously.
  */
-export type ShouldCompactCallback = (
+export type ShouldCompactOnTriggerCallback = (
   state: { messages: AxleMessage[] },
   context: {
     usage: ContextUsage;
-    trigger: CompactionTrigger;
+    trigger: AutomaticCompactionTrigger;
   },
 ) => boolean;
 
 /**
  * The work: produce the complete new active conversation, and optionally a
  * reader-facing `summary` for the transcript part. There is no decline path —
- * declining is `shouldCompact`'s job — and failures throw. Publish transient
- * display state through `ctx.emit`; updates replace fields on the
- * running part and keep the event stream flowing during long summarizations.
+ * declining automatic work is `shouldCompactOnTrigger`'s job — and failures
+ * throw. Publish transient display state through `ctx.emit`; updates replace
+ * fields on the running part and keep the event stream flowing during long
+ * summarizations.
  *
  * `summary` is a presentation choice, independent of the model-facing
  * messages: it can be the summary text itself, or something else entirely
@@ -261,8 +263,8 @@ export type CompactionCallback = (
  */
 export interface CompactionConfig {
   compact: CompactionCallback;
-  /** Decision policy. Absent = always willing (`() => true`). */
-  shouldCompact?: ShouldCompactCallback;
+  /** Automatic-trigger policy. Absent = run at every configured trigger. */
+  shouldCompactOnTrigger?: ShouldCompactOnTriggerCallback;
   triggers?: {
     beforeTurn?: boolean;
     afterTurn?: boolean;

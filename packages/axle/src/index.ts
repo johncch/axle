@@ -135,8 +135,9 @@ export type {
 
 // Compaction (@experimental)
 export type {
+  AutomaticCompactionTrigger,
   CompactionCallback,
-  ShouldCompactCallback,
+  ShouldCompactOnTriggerCallback,
   CompactionConfig,
   CompactionTrigger,
 } from "./core/agent/index.js";
