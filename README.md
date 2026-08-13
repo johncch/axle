@@ -923,11 +923,11 @@ as every other operation: aborting rejects with an error whose `name` is
 `PromptCompactor` returns two user messages: a model-written summary, and an
 appendix of the latest 10 user messages in oldest-to-newest order. The target
 is an approximate budget for both together. While generating, it reports
-estimated progress without exposing the model's token stream; its returned
-summary becomes the reader-facing final summary. Set `recentUserMessages` to change
-the count. If the appendix must shrink, older recent messages are removed
-first. It returns the summary text as the part's reader-facing `summary`,
-and both messages are stamped via metadata
+estimated progress without exposing the model's token stream, emits 100%
+immediately before completion, and leaves the compaction part's optional
+reader-facing `summary` unset. Set `recentUserMessages` to change the count. If
+the appendix must shrink, older recent messages are removed first. Both
+messages are stamped via metadata
 (`axleCompaction: { id, role: "summary" | "appendix" }`, see
 `CompactionStamp`). The stamp is a compactor-side convention — it is how the
 compactor recognizes its own prior output, so carried-over messages are

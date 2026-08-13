@@ -59,7 +59,7 @@ describe("PromptCompactor", () => {
     expect(String(result.messages[0]?.content)).toContain("Durable summary.");
   });
 
-  test("reports estimated progress without exposing generated summary text", async () => {
+  test("reports estimated progress through 100% without exposing generated summary text", async () => {
     const { provider } = createProvider({ text: "Streamed summary text." });
     const compactor = createCompactor(provider);
     const updates: CompactionUpdate[] = [];
@@ -76,11 +76,15 @@ describe("PromptCompactor", () => {
 
     expect(updates.length).toBeGreaterThan(0);
     expect(updates.every((update) => update.summary === undefined)).toBe(true);
-    expect(updates.every((update) => update.progress! > 0 && update.progress! < 1)).toBe(true);
+    expect(updates.at(-1)).toEqual({ progress: 1 });
+    expect(
+      updates.slice(0, -1).every((update) => update.progress! > 0 && update.progress! < 1),
+    ).toBe(true);
     expect(updates.map((update) => update.progress)).toEqual(
       [...updates].map((update) => update.progress).sort((a, b) => a! - b!),
     );
     expect(String(result.messages[0]?.content)).toBe("Streamed summary text.");
+    expect(result.summary).toBeUndefined();
   });
 
   test("uses the configured provider, model, prompt, and remaining output budget", async () => {
@@ -142,7 +146,7 @@ describe("PromptCompactor", () => {
     const summary = String(result.messages[0]?.content);
     expect(summary).toContain("Earlier conversation summary.");
     expect(summary).not.toContain("Recent 3 user messages");
-    expect(result.summary).toBe(summary);
+    expect(result.summary).toBeUndefined();
 
     const appendix = String(result.messages[1]?.content);
     expect(appendix).not.toContain("- first");

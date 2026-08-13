@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.30.1] - Unreleased
+
+- `PromptCompactor` now emits 100% progress immediately before completion and leaves the compaction part's optional reader-facing summary unset instead of duplicating the generated continuation summary.
+
 ## [0.30.0] - 2026-08-13
 
 - **Breaking:** replaced agent-owned history with host-owned transcripts: use `agent.messages` for active conversation state and attach a `Transcript` to the event stream for persistence.

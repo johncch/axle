@@ -116,7 +116,8 @@ export class PromptCompactor {
         metadata: { axleCompaction: { id: context.id, role: "appendix" } },
       });
     }
-    return { messages: compacted, summary };
+    context.emit({ progress: 1 });
+    return { messages: compacted };
   };
 }
 

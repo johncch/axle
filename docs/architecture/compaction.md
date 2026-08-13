@@ -86,8 +86,9 @@ summarization is otherwise a dead-silent window on the wire — bad for users
 renders) and bad for infrastructure (idle-timeout-prone transports like
 ALBs drop quiet connections). Updates carry complete transient state rather
 than fragments. `PromptCompactor` emits estimated progress without mirroring
-its generated summary tokens; custom compactors may also publish an explicit
-reader-facing summary or status.
+its generated summary tokens, emits 100% immediately before completion, and
+does not publish a reader-facing summary; custom compactors may publish an
+explicit summary or status.
 
 The failure posture follows from "compaction is infrastructure": its
 failure must not destroy the user's completed work, so automatic failures
@@ -97,9 +98,9 @@ model error when continuing genuinely no longer fits.
 
 `PromptCompactor` implements the policy pair: `shouldCompactOnTrigger` is
 empty → false, otherwise `usage.total >= thresholdTokens`; `compact` streams
-via `stream()`, reports estimated progress, and returns two
-stamped messages (summary, recent-user-messages appendix) plus the summary
-text as the part's reader-facing final summary.
+via `stream()`, reports estimated progress through 100%, and returns two
+stamped messages (summary, recent-user-messages appendix) without duplicating
+the generated summary into the reader-facing compaction part.
 
 ## Rejected alternatives
 

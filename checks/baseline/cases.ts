@@ -337,8 +337,8 @@ export const baselineCases: BaselineCase[] = [
         ...(compactionTurn?.status !== "complete"
           ? [`Expected a complete compaction turn, got ${compactionTurn?.status ?? "none"}.`]
           : []),
-        ...(compactionPart?.type === "compaction" && !compactionPart.summary
-          ? ["Compaction part did not carry the returned summary."]
+        ...(compactionPart?.type === "compaction" && compactionPart.summary !== undefined
+          ? ["PromptCompactor exposed the generated summary on the compaction part."]
           : []),
         ...(compactionPart?.type === "compaction" && compactionPart.progress !== 1
           ? [`Expected completed compaction progress 1, got ${compactionPart.progress ?? "none"}.`]
@@ -350,8 +350,11 @@ export const baselineCases: BaselineCase[] = [
           ? ["PromptCompactor exposed generated summary text in a transient update."]
           : []),
         ...(progressUpdates.length !== compactionUpdates.length ||
-        progressUpdates.some((progress) => progress <= 0 || progress >= 1)
-          ? ["PromptCompactor emitted progress outside the open interval 0..1."]
+        progressUpdates.some((progress) => progress <= 0 || progress > 1)
+          ? ["PromptCompactor emitted progress outside the interval 0..1."]
+          : []),
+        ...(progressUpdates.at(-1) !== 1
+          ? ["PromptCompactor did not emit 100% progress before completion."]
           : []),
         ...(progressUpdates.some(
           (progress, index) => index > 0 && progress < progressUpdates[index - 1],
