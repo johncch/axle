@@ -145,12 +145,12 @@ export { getCompactionStamp, validateCompactedMessages } from "./messages/compac
 export type { CompactionStamp } from "./messages/compaction.js";
 
 // Turns (public format)
-export { TurnAccumulator } from "./turns/accumulator.js";
+export { Transcript } from "./turns/transcript.js";
 export type {
-  AccumulatableEvent,
-  TurnAccumulatorResult,
-  TurnAccumulatorState,
-} from "./turns/accumulator.js";
+  TranscriptApplyResult,
+  TranscriptInput,
+  TranscriptState,
+} from "./turns/transcript.js";
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export type {

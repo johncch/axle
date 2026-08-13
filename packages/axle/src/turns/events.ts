@@ -11,9 +11,7 @@ import type {
 } from "./types.js";
 
 export type AnnotationTarget =
-  | { type: "session" }
-  | { type: "turn"; turnId: string }
-  | { type: "part"; turnId: string; partId: string };
+  { type: "turn"; turnId: string } | { type: "part"; turnId: string; partId: string };
 
 export type AnnotationEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "annotation:start"; target: AnnotationTarget; annotation: TAnnotation }

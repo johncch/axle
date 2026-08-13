@@ -8,7 +8,7 @@ import { executeToolCalls, type ToolExecutionObserver } from "../../src/provider
 import { AxleStopReason, type AIProvider } from "../../src/providers/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
-import { TurnAccumulator } from "../../src/turns/accumulator.js";
+import { Transcript } from "../../src/turns/transcript.js";
 import type { Turn } from "../../src/turns/types.js";
 
 describe("createAgentTool", () => {
@@ -157,8 +157,8 @@ describe("createAgentTool", () => {
       model: "parent-configured-model",
       tools: [tool],
     });
-    const tape = new TurnAccumulator();
-    parent.on((event) => tape.apply(event));
+    const transcript = new Transcript();
+    parent.on((event) => transcript.apply(event));
 
     let thrown: unknown;
     try {
@@ -177,7 +177,7 @@ describe("createAgentTool", () => {
         { provider: "fatal-child-provider", model: "fatal-child-runtime-model", in: 3, out: 4 },
       ],
     });
-    expect((tape.state.turns[1] as Turn | undefined)?.usage).toEqual(fatal.usage);
+    expect((transcript.turns[1] as Turn | undefined)?.usage).toEqual(fatal.usage);
     // The child's conversation must not leak across the tool boundary.
     expect(fatal.toolName).toBe("delegate");
     expect(fatal.messages).toHaveLength(1);
@@ -220,8 +220,8 @@ describe("createAgentTool", () => {
       model: "parent-configured-model",
       tools: [tool],
     });
-    const tape = new TurnAccumulator();
-    parent.on((event) => tape.apply(event));
+    const transcript = new Transcript();
+    parent.on((event) => transcript.apply(event));
 
     const handle = parent.send("delegate this");
     await started;
@@ -250,7 +250,7 @@ describe("createAgentTool", () => {
         },
       ],
     });
-    expect((tape.state.turns[1] as Turn | undefined)?.usage).toEqual(abortError.usage);
+    expect((transcript.turns[1] as Turn | undefined)?.usage).toEqual(abortError.usage);
     expect(abortError.messages).toHaveLength(1);
     expect(abortError.messages?.[0]?.role).toBe("assistant");
   });

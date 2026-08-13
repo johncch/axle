@@ -1,4 +1,4 @@
-# Agent state: the continuation and the tape
+# Agent state: the continuation and the transcript
 
 **Status**: current · **Last design revision**: 2026-08-12 (0.30.0)
 
@@ -14,21 +14,21 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `new Agent(config, session)` restores it. Unknown keys in stored
    sessions are ignored.
 2. **The Agent holds no transcript.** It emits `TurnEvent`s; whoever wants
-   a transcript folds them (`TurnAccumulator` is the shipped in-memory
-   tape) and stores the result. Lose the tape, lose the transcript — the
-   Agent cannot recreate it. Internally the Agent keeps only a turn-scoped
-   fold to build `result.turn`, discarded when the operation settles.
-3. **The event stream is the only channel between engine and tape.** Hosts
+   a transcript folds them with the shipped in-memory `Transcript` and stores
+   its state. Lose that state, lose the transcript — the Agent cannot recreate
+   it. Internally the Agent keeps only a turn-scoped fold to build
+   `result.turn`, discarded when the operation settles.
+3. **The event stream is the only channel between engine and transcript.** Hosts
    attach with `agent.on(...)`; there is no injected store, no engine-side
    read-back, no `session:restore` event. Restore means the host re-seeds
-   its own tape (`new TurnAccumulator(savedState)`) from its own copy,
+   its own transcript (`new Transcript(savedState)`) from its own copy,
    persisted next to the `AgentSession` in one atomic write.
 4. **Historical messages are disposable.** Compaction replaces `messages`
-   and the old ones cease to exist. Lookback is served by the tape; hosts
+   and the old ones cease to exist. Lookback is served by the transcript; hosts
    wanting pre-compaction messages (undo/fork, exact-request audit) copy
    them themselves before returning from their compactor.
 5. **A user message commits together with its turn event.** Once `turn:user`
-   is on the wire, the message is in the conversation — tape and messages
+   is on the wire, the message is in the conversation — transcript and messages
    cannot diverge. Nothing is committed or emitted before genuine setup
    (such as MCP resolution) succeeds. `Agent.send()` clones and validates its
    `Instruct` synchronously before scheduling; execution materializes the
@@ -45,19 +45,21 @@ therefore different owners. **Messages** are folded working memory: compaction
 rewrites them, the past disappears from them by design, and the model needs
 them hot on every request — they belong to the Agent, and they are bounded by
 construction (compaction is the bound). **Turns** are an append-only fold of
-the event stream — a ticker tape of what happened. They are not a projection
-of messages: messages lack timing, thinking, errors, aborted turns,
+the event stream — the chronological record of what happened. They are not a
+projection of messages: messages lack timing, thinking, errors, aborted turns,
 annotations, and child-agent detail, and post-compaction they lack the past
-entirely. Turns are `fold(events)`, and the fold ships as `TurnAccumulator`.
+entirely. Turns are `fold(events)`, and the fold ships as `Transcript`.
 
 The pre-0.30 `History` glued the two together inside the Agent, which was
 neither-here-nor-there: the Agent didn't enforce coherence between them,
 carried turns only as a convenience, yet paid unbounded growth and
-serialization weight. The fix was a deletion: turns (and session
-annotations) left the Agent entirely. Consumers that already ran their own
-folds paid nothing; the engine stopped holding state it didn't own.
+serialization weight. The fix was a deletion: turns left the Agent entirely,
+and the unused session-annotation target was removed rather than moved into
+the transcript. Session-wide application state belongs to the host. Consumers
+that already ran their own folds paid nothing; the engine stopped holding
+state it didn't own.
 
-Consequences that fall out of the split: a DB-backed tape is just a
+Consequences that fall out of the split: a DB-backed transcript is just a
 subscriber with storage (no shared axle interface until a second
 storage-backed implementation wants one); compaction events are natural
 chapter boundaries for hosts that rotate storage; and there is deliberately
@@ -79,13 +81,13 @@ turn event stream instead of masquerading as semantic memory.
   (hosts already version their stored blobs); an incompatible shape change
   is an ordinary breaking release. Unknown-key tolerance replaces it.
 - **`archive` (append-only message log in the Agent)** (2026-08-12): no
-  readers existed; the tape is a strict superset for lookback; retention is
+  readers existed; the transcript is a strict superset for lookback; retention is
   a host choice at the compaction boundary.
-- **Injected tape (`new Agent(new TickerTape(), …)`)** (2026-08-12): the
-  engine only ever writes to it — that is a subscriber with extra ceremony,
-  and it falsely implies the Agent owns the tape's lifecycle. The event
-  stream is the channel designed for this. Revisit only if turn commit must
-  await durable writes (WAL semantics), which no consumer wants.
+- **Injected transcript (`new Agent(new Transcript(), …)`)** (2026-08-12):
+  the engine only ever writes to it — that is a subscriber with extra
+  ceremony, and it falsely implies the Agent owns the transcript's lifecycle.
+  The event stream is the channel designed for this. Revisit only if turn
+  commit must await durable writes (WAL semantics), which no consumer wants.
 - **`agent.sessionUsage` meter** (2026-08-12): usage fails the continuation
   test (instance-lifetime, resets on restore) and hosts already receive
   per-turn usage on `turn:end`.

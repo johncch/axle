@@ -13,7 +13,7 @@ import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
-import { TurnAccumulator } from "../../src/turns/accumulator.js";
+import { Transcript } from "../../src/turns/transcript.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import type { Turn } from "../../src/turns/types.js";
 
@@ -506,10 +506,10 @@ describe("Agent", () => {
   test("send metadata is stored on user messages and copied to user turns", async () => {
     const provider = createMockStreamProvider(["ok"]);
     const agent = new Agent({ provider, model: "mock" });
-    const tape = new TurnAccumulator();
+    const transcript = new Transcript();
     const events: { type: string; turn?: { metadata?: Record<string, unknown> } }[] = [];
     agent.on((event) => {
-      tape.apply(event as TurnEvent);
+      transcript.apply(event as TurnEvent);
       events.push(event);
     });
 
@@ -519,7 +519,7 @@ describe("Agent", () => {
       role: "user",
       metadata: { source: "system-editor" },
     });
-    expect(tape.state.turns[0]).toMatchObject({
+    expect(transcript.turns[0]).toMatchObject({
       owner: "user",
       metadata: { source: "system-editor" },
     });
@@ -535,8 +535,8 @@ describe("Agent", () => {
   test("instruct metadata is copied to user messages and turns", async () => {
     const provider = createMockStreamProvider(["ok"]);
     const agent = new Agent({ provider, model: "mock" });
-    const tape = new TurnAccumulator();
-    agent.on((event) => tape.apply(event));
+    const transcript = new Transcript();
+    agent.on((event) => transcript.apply(event));
     const instruct = new Instruct({
       prompt: "Review this prompt",
       metadata: { surface: "prompt-review" },
@@ -548,7 +548,7 @@ describe("Agent", () => {
       role: "user",
       metadata: { surface: "prompt-review" },
     });
-    expect(tape.state.turns[0]).toMatchObject({
+    expect(transcript.turns[0]).toMatchObject({
       owner: "user",
       metadata: { surface: "prompt-review" },
     });
@@ -579,8 +579,8 @@ describe("Agent", () => {
     };
 
     const agent = new Agent({ provider, model: "mock" });
-    const tape = new TurnAccumulator();
-    agent.on((event) => tape.apply(event));
+    const transcript = new Transcript();
+    agent.on((event) => transcript.apply(event));
     await agent.send("one").final;
 
     const session = await agent.snapshot();
@@ -593,12 +593,12 @@ describe("Agent", () => {
     });
 
     const restored = new Agent({ provider, model: "mock" }, session);
-    const restoredTape = new TurnAccumulator(tape.state);
-    restored.on((event) => restoredTape.apply(event));
+    const restoredTranscript = new Transcript(transcript.state);
+    restored.on((event) => restoredTranscript.apply(event));
 
     expect(restored.messages).toEqual(session.messages);
     expect(restored.sessionId).toBe(session.sessionId);
-    expect(restoredTape.state.turns).toMatchObject([
+    expect(restoredTranscript.turns).toMatchObject([
       { owner: "user" },
       { owner: "agent", status: "complete" },
     ]);
@@ -607,7 +607,7 @@ describe("Agent", () => {
 
     expect(requests[1]).toHaveLength(3);
     expect(requests[1]).toMatchObject([{ role: "user" }, { role: "assistant" }, { role: "user" }]);
-    expect(restoredTape.state.turns).toHaveLength(4);
+    expect(restoredTranscript.turns).toHaveLength(4);
   });
 
   test("constructor ignores unknown keys in sessions stored by older versions", async () => {
@@ -808,15 +808,15 @@ describe("Agent", () => {
     const provider = createMockStreamProvider(["Response 1", "Response 2"]);
     const instruct = new Instruct({ prompt: "Initial message" });
     const agent = new Agent({ provider, model: "mock" });
-    const tape = new TurnAccumulator();
-    agent.on((event) => tape.apply(event));
+    const transcript = new Transcript();
+    agent.on((event) => transcript.apply(event));
 
     await agent.send(instruct).final;
     await agent.send("Follow up").final;
 
     // 2 user + 2 agent = 4 turns
-    expect(tape.state.turns).toHaveLength(4);
-    expect(tape.state.turns.map((entry) => (entry as Turn).owner)).toEqual([
+    expect(transcript.turns).toHaveLength(4);
+    expect(transcript.turns.map((entry) => (entry as Turn).owner)).toEqual([
       "user",
       "agent",
       "user",
@@ -1063,8 +1063,8 @@ describe("Agent", () => {
       };
 
       const agent = new Agent({ provider, model: "mock" });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
 
       const first = agent.send("first");
       const second = agent.send("second");
@@ -1086,7 +1086,7 @@ describe("Agent", () => {
       expect((secondError as AxleAbortError).reason).toBe(reason);
       expect((secondError as AxleAgentAbortError).turn).toBeUndefined();
       expect(callCount).toBe(1);
-      expect(tape.state.turns).toHaveLength(2);
+      expect(transcript.turns).toHaveLength(2);
       expect(agent.messages).toHaveLength(2);
       expect(agent.messages[0]).toMatchObject({ role: "user" });
       expect(agent.messages[1]).toMatchObject({ role: "assistant" });
@@ -1143,8 +1143,8 @@ describe("Agent", () => {
       };
 
       const agent = new Agent({ provider, model: "mock", tools: [slowTool] });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       const handle = agent.send("search for test");
 
       await toolStarted;
@@ -1173,7 +1173,7 @@ describe("Agent", () => {
       expect(agent.messages).toHaveLength(2);
       expect(agent.messages[0]).toMatchObject({ role: "user" });
       expect(agent.messages[1]).toMatchObject({ role: "assistant" });
-      expect(tape.state.turns[1]?.status).toBe("cancelled");
+      expect(transcript.turns[1]?.status).toBe("cancelled");
     });
   });
 
@@ -1490,12 +1490,12 @@ describe("Agent", () => {
     test("user turn has UUID id in history", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
 
       await agent.send("Hi").final;
 
-      const userTurn = tape.state.turns[0] as Turn;
+      const userTurn = transcript.turns[0] as Turn;
       expect(userTurn.owner).toBe("user");
       expect(userTurn.id).toBeDefined();
       expect(typeof userTurn.id).toBe("string");
@@ -1554,14 +1554,14 @@ describe("Agent", () => {
       };
 
       const agent = new Agent({ provider, model: "mock", tools: [noisyTool] });
-      const tape = new TurnAccumulator();
+      const transcript = new Transcript();
       const events: any[] = [];
       const inProgressSnapshots: any[] = [];
       agent.on((e) => {
-        tape.apply(e);
+        transcript.apply(e);
         events.push(e);
         if (e.type === "action:progress") {
-          const turn = tape.state.turns[1] as Turn | undefined;
+          const turn = transcript.turns[1] as Turn | undefined;
           const part = turn?.parts.find(
             (p) => p.type === "action" && (p as any).kind === "tool",
           ) as any;
@@ -1582,7 +1582,7 @@ describe("Agent", () => {
       ]);
 
       // After completion, the final success result replaces the in-progress state.
-      const agentTurn = tape.state.turns[1] as Turn;
+      const agentTurn = transcript.turns[1] as Turn;
       const toolPart = agentTurn.parts.find(
         (p) => p.type === "action" && (p as any).kind === "tool",
       ) as any;
@@ -1664,10 +1664,10 @@ describe("Agent", () => {
       });
 
       const agent = new Agent({ provider, model: "mock", tools: [tool] });
-      const tape = new TurnAccumulator();
+      const transcript = new Transcript();
       const events: any[] = [];
       agent.on((event) => {
-        tape.apply(event);
+        transcript.apply(event);
         events.push(event);
       });
 
@@ -1681,7 +1681,7 @@ describe("Agent", () => {
       });
       expect(events.some((event) => event.type === "action:progress")).toBe(false);
 
-      const agentTurn = tape.state.turns[1] as Turn;
+      const agentTurn = transcript.turns[1] as Turn;
       const agentPart = agentTurn.parts.find(
         (part) => part.type === "action" && part.kind === "agent",
       ) as any;

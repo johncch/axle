@@ -14,7 +14,7 @@ import { stream } from "../../providers/stream.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
-import { TurnAccumulator } from "../../turns/accumulator.js";
+import { Transcript } from "../../turns/transcript.js";
 import { TurnEventBuilder } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import type { Stats } from "../../types.js";
@@ -71,7 +71,7 @@ export class Agent {
   private scheduler = new AgentScheduler();
   private turnActive = false;
   private stopRequested = false;
-  private accumulator = new TurnAccumulator();
+  private transcript = new Transcript();
   private messagesInternal: AxleMessage[];
 
   /**
@@ -310,7 +310,7 @@ export class Agent {
         return {
           ok: false,
           error: streamResult.error,
-          turn: this.accumulator.getTurn(startEvent.turnId),
+          turn: this.transcript.getTurn(startEvent.turnId),
           usage,
         };
       }
@@ -337,7 +337,7 @@ export class Agent {
       }
 
       finalize("complete");
-      const agentTurn = this.accumulator.getTurn(startEvent.turnId);
+      const agentTurn = this.transcript.getTurn(startEvent.turnId);
 
       if (parseFailure) {
         status = "error";
@@ -361,7 +361,7 @@ export class Agent {
       }
 
       finalize(status === "cancelled" ? "cancelled" : "error");
-      const turn = agentTurnId ? this.accumulator.getTurn(agentTurnId) : undefined;
+      const turn = agentTurnId ? this.transcript.getTurn(agentTurnId) : undefined;
       root?.error(error instanceof Error ? error.message : String(error));
 
       if (
@@ -394,7 +394,7 @@ export class Agent {
       streamSpan?.end(status);
       this.turnActive = false;
       this.stopRequested = false;
-      this.accumulator = new TurnAccumulator();
+      this.transcript = new Transcript();
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -425,7 +425,7 @@ export class Agent {
    * races a turn. Explicit compaction bypasses `shouldCompactOnTrigger`: the
    * engine opens a turn, streams the `CompactionPart` in it, and resolves
    * `true` once applied. Failures settle the part and turn as errored on the
-   * tape and reject.
+   * transcript and reject.
    * Cancellation rejects with `AxleAgentAbortError`, matching `send()`.
    *
    * Do not await this from inside a running send (a tool's `execute`,
@@ -445,7 +445,7 @@ export class Agent {
           });
           return outcome === "applied";
         } finally {
-          this.accumulator = new TurnAccumulator();
+          this.transcript = new Transcript();
         }
       },
       {
@@ -599,7 +599,7 @@ export class Agent {
    * always at rest — a snapshot never contains a streaming or running turn.
    * The returned object is the pure continuation: session id and the active
    * model-facing conversation. It contains no renderable turn state —
-   * transcripts are host-owned; persist your `TurnAccumulator` state
+   * transcripts are host-owned; persist your `TranscriptState`
    * alongside it.
    *
    * Do not await this from inside a running send (a tool's `execute`,
@@ -614,7 +614,7 @@ export class Agent {
   }
 
   private emitEvent(event: TurnEvent): void {
-    this.accumulator.apply(event);
+    this.transcript.apply(event);
     for (const cb of this.eventCallbacks) cb(event);
   }
 

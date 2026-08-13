@@ -1,52 +1,52 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { TurnAccumulator } from "../../src/turns/accumulator.js";
+import { Transcript } from "../../src/turns/transcript.js";
 import type { Annotation, SubagentAction, Turn } from "../../src/turns/types.js";
 
-describe("TurnAccumulator", () => {
+describe("Transcript", () => {
   test("gets the current turn by id", () => {
-    const accumulator = new TurnAccumulator();
+    const transcript = new Transcript();
 
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "text", text: "current" },
     });
 
-    expect(accumulator.getTurn("t1")).toEqual({
+    expect(transcript.getTurn("t1")).toEqual({
       id: "t1",
       owner: "agent",
       parts: [{ id: "p1", type: "text", text: "current" }],
       status: "streaming",
     });
-    expect(accumulator.getTurn("missing")).toBeUndefined();
+    expect(transcript.getTurn("missing")).toBeUndefined();
   });
 
   test("accumulates turn events into render state", () => {
-    const accumulator = new TurnAccumulator();
+    const transcript = new Transcript();
 
-    let result = accumulator.apply({ type: "turn:start", turnId: "t1" });
+    let result = transcript.apply({ type: "turn:start", turnId: "t1" });
     expect(result.handled).toBe(true);
     expect(result.state.turns).toEqual([
       { id: "t1", owner: "agent", parts: [], status: "streaming" },
     ]);
 
-    result = accumulator.apply({
+    result = transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "text", text: "" },
     });
     expect((result.state.turns[0] as Turn).parts).toEqual([{ id: "p1", type: "text", text: "" }]);
 
-    accumulator.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "Hello" });
-    result = accumulator.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: " world" });
+    transcript.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "Hello" });
+    result = transcript.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: " world" });
     expect((result.state.turns[0] as Turn).parts[0]).toEqual({
       id: "p1",
       type: "text",
       text: "Hello world",
     });
 
-    result = accumulator.apply({
+    result = transcript.apply({
       type: "turn:end",
       turnId: "t1",
       status: "complete",
@@ -61,10 +61,10 @@ describe("TurnAccumulator", () => {
   });
 
   test("retains model errors on their turn", () => {
-    const accumulator = new TurnAccumulator();
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
 
-    const result = accumulator.apply({
+    const result = transcript.apply({
       type: "error",
       turnId: "t1",
       error: { type: "model", message: "Rate limit exceeded" },
@@ -77,10 +77,10 @@ describe("TurnAccumulator", () => {
   });
 
   test("accumulates action events", () => {
-    const accumulator = new TurnAccumulator();
+    const transcript = new Transcript();
 
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: {
@@ -91,21 +91,21 @@ describe("TurnAccumulator", () => {
         detail: { name: "search", parameters: {} },
       },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "action:args-delta",
       turnId: "t1",
       partId: "p1",
       delta: '{"q":',
       accumulated: '{"q":',
     });
-    accumulator.apply({
+    transcript.apply({
       type: "action:running",
       turnId: "t1",
       partId: "p1",
       parameters: { q: "axle" },
     });
-    accumulator.apply({ type: "action:progress", turnId: "t1", partId: "p1", chunk: "partial" });
-    const result = accumulator.apply({
+    transcript.apply({ type: "action:progress", turnId: "t1", partId: "p1", chunk: "partial" });
+    const result = transcript.apply({
       type: "action:complete",
       turnId: "t1",
       partId: "p1",
@@ -126,33 +126,33 @@ describe("TurnAccumulator", () => {
   });
 
   test("accumulates citations and thinking summary metadata", () => {
-    const accumulator = new TurnAccumulator();
+    const transcript = new Transcript();
 
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "text", text: "" },
     });
-    accumulator.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "OpenAI" });
-    accumulator.apply({
+    transcript.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "OpenAI" });
+    transcript.apply({
       type: "text:citation",
       turnId: "t1",
       partId: "p1",
       citation: { source: { type: "web", title: "OpenAI", url: "https://openai.com" } },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p2", type: "thinking", summary: "", redacted: false },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "thinking:summary-delta",
       turnId: "t1",
       partId: "p2",
       delta: "Checked sources.",
     });
-    const result = accumulator.apply({
+    const result = transcript.apply({
       type: "thinking:update",
       turnId: "t1",
       partId: "p2",
@@ -173,13 +173,13 @@ describe("TurnAccumulator", () => {
   });
 
   test("accumulates citation parts", () => {
-    const accumulator = new TurnAccumulator();
+    const transcript = new Transcript();
     const citation = {
       source: { type: "web" as const, title: "Example", url: "https://example.com" },
     };
 
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    const result = accumulator.apply({
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    const result = transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "citation", citations: [citation] },
@@ -193,95 +193,82 @@ describe("TurnAccumulator", () => {
 
   test("returns unhandled for unknown host events", () => {
     type HostEvent = { type: "run:terminal"; status: "completed" };
-    const accumulator = new TurnAccumulator<Annotation, HostEvent>();
-    const state = accumulator.state;
-    const result = accumulator.apply({ type: "run:terminal", status: "completed" });
+    const transcript = new Transcript<Annotation, HostEvent>();
+    const state = transcript.state;
+    const result = transcript.apply({ type: "run:terminal", status: "completed" });
 
     expect(result.handled).toBe(false);
     expect(result.state).toBe(state);
-    if (!result.handled) {
-      expectTypeOf(result.event).toEqualTypeOf<HostEvent>();
+    if (result.handled === false) {
+      const hostEvent: HostEvent = result.event;
+      expect(hostEvent).toEqual({ type: "run:terminal", status: "completed" });
     }
   });
 
   test("returns a new state snapshot for handled mutations", () => {
-    const accumulator = new TurnAccumulator();
-    const first = accumulator.state;
-    const result = accumulator.apply({ type: "turn:start", turnId: "t1" });
+    const transcript = new Transcript();
+    const first = transcript.state;
+    const result = transcript.apply({ type: "turn:start", turnId: "t1" });
 
     expect(result.handled).toBe(true);
     expect(result.state).not.toBe(first);
-    expect(accumulator.state).toBe(result.state);
+    expect(transcript.state).toBe(result.state);
   });
 
-  test("accumulates session, turn, and part annotations", () => {
+  test("accumulates turn and part annotations", () => {
     type TestAnnotation = Annotation<{ value: number }, "metric">;
-    const accumulator = new TurnAccumulator<TestAnnotation>();
+    const transcript = new Transcript<TestAnnotation>();
 
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "text", text: "" },
     });
 
-    accumulator.apply({
-      type: "annotation:start",
-      target: { type: "session" },
-      annotation: { id: "a1", kind: "metric", label: "Session metric", data: { value: 1 } },
-    });
-    accumulator.apply({
+    transcript.apply({
       type: "annotation:start",
       target: { type: "turn", turnId: "t1" },
       annotation: {
-        id: "a2",
+        id: "a1",
         kind: "metric",
         label: "Turn metric",
         placement: "before",
-        data: { value: 2 },
+        data: { value: 1 },
       },
     });
-    const result = accumulator.apply({
+    const result = transcript.apply({
       type: "annotation:start",
       target: { type: "part", turnId: "t1", partId: "p1" },
-      annotation: { id: "a3", kind: "metric", label: "Part metric", data: { value: 3 } },
+      annotation: { id: "a2", kind: "metric", label: "Part metric", data: { value: 2 } },
     });
 
-    expect(result.state.sessionAnnotations).toEqual([
+    expect((result.state.turns[0] as Turn).annotations).toEqual([
       {
         id: "a1",
         kind: "metric",
-        label: "Session metric",
-        placement: "after",
-        data: { value: 1 },
-      },
-    ]);
-    expect((result.state.turns[0] as Turn).annotations).toEqual([
-      {
-        id: "a2",
-        kind: "metric",
         label: "Turn metric",
         placement: "before",
-        data: { value: 2 },
+        data: { value: 1 },
       },
     ]);
     expect((result.state.turns[0] as Turn).parts[0].annotations).toEqual([
       {
-        id: "a3",
+        id: "a2",
         kind: "metric",
         label: "Part metric",
         placement: "after",
-        data: { value: 3 },
+        data: { value: 2 },
       },
     ]);
   });
 
   test("annotation update and end replace the full annotation", () => {
     type TestAnnotation = Annotation<{ score: number }, "eval">;
-    const accumulator = new TurnAccumulator<TestAnnotation>();
+    const transcript = new Transcript<TestAnnotation>();
 
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "annotation:start",
       target: { type: "turn", turnId: "t1" },
       annotation: {
@@ -292,7 +279,7 @@ describe("TurnAccumulator", () => {
         data: { score: 0 },
       },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "annotation:update",
       target: { type: "turn", turnId: "t1" },
       annotation: {
@@ -303,7 +290,7 @@ describe("TurnAccumulator", () => {
         data: { score: 0.5 },
       },
     });
-    const result = accumulator.apply({
+    const result = transcript.apply({
       type: "annotation:end",
       target: { type: "turn", turnId: "t1" },
       annotation: {
@@ -327,9 +314,9 @@ describe("TurnAccumulator", () => {
   });
 
   test("missing annotation targets are ignored", () => {
-    const accumulator = new TurnAccumulator();
-    const state = accumulator.state;
-    const result = accumulator.apply({
+    const transcript = new Transcript();
+    const state = transcript.state;
+    const result = transcript.apply({
       type: "annotation:start",
       target: { type: "turn", turnId: "missing" },
       annotation: { id: "a1", kind: "note", label: "Note" },
@@ -340,20 +327,20 @@ describe("TurnAccumulator", () => {
   });
 
   test("compaction updates replace transient state and completion supplies final state", () => {
-    const accumulator = new TurnAccumulator();
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "c1", type: "compaction", status: "running" },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "compaction:update",
       turnId: "t1",
       partId: "c1",
       update: { summary: "draft summary…" },
     });
-    const streamed = accumulator.apply({
+    const streamed = transcript.apply({
       type: "compaction:update",
       turnId: "t1",
       partId: "c1",
@@ -366,7 +353,7 @@ describe("TurnAccumulator", () => {
       progress: 0.5,
     });
 
-    const settled = accumulator.apply({
+    const settled = transcript.apply({
       type: "compaction:complete",
       turnId: "t1",
       partId: "c1",
@@ -383,21 +370,21 @@ describe("TurnAccumulator", () => {
   });
 
   test("compaction parts settle error with the failure message, keeping transient state", () => {
-    const accumulator = new TurnAccumulator();
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "c1", type: "compaction", status: "running" },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "compaction:update",
       turnId: "t1",
       partId: "c1",
       update: { summary: "partial", progress: 0.4 },
     });
 
-    const settled = accumulator.apply({
+    const settled = transcript.apply({
       type: "compaction:error",
       turnId: "t1",
       partId: "c1",
@@ -414,21 +401,21 @@ describe("TurnAccumulator", () => {
   });
 
   test("compaction completion without a summary keeps the latest transient summary", () => {
-    const accumulator = new TurnAccumulator();
-    accumulator.apply({ type: "turn:start", turnId: "t1" });
-    accumulator.apply({
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "c1", type: "compaction", status: "running" },
     });
-    accumulator.apply({
+    transcript.apply({
       type: "compaction:update",
       turnId: "t1",
       partId: "c1",
       update: { summary: "Compacting history…", progress: 0.5 },
     });
 
-    const settled = accumulator.apply({
+    const settled = transcript.apply({
       type: "compaction:complete",
       turnId: "t1",
       partId: "c1",
@@ -443,24 +430,16 @@ describe("TurnAccumulator", () => {
   });
 
   test("constructor seeding restores persisted state and new events append to it", () => {
-    const saved = new TurnAccumulator();
+    const saved = new Transcript();
     saved.apply({
       type: "turn:user",
       turn: { id: "restored", owner: "user", parts: [], status: "complete" },
     });
-    saved.apply({
-      type: "annotation:start",
-      target: { type: "session" },
-      annotation: { id: "a1", kind: "note", label: "Restored" },
-    });
-
-    const restored = new TurnAccumulator(saved.state);
+    const restored = new Transcript(saved.state);
     restored.apply({ type: "turn:start", turnId: "next" });
 
-    expect(restored.state.turns.map((turn) => turn.id)).toEqual(["restored", "next"]);
-    expect(restored.state.sessionAnnotations).toEqual([
-      { id: "a1", kind: "note", label: "Restored", placement: "after" },
-    ]);
+    expect(restored.turns.map((turn) => turn.id)).toEqual(["restored", "next"]);
+    expect(restored.state).toEqual({ turns: restored.turns });
   });
 
   test("annotation generics preserve consumer data types", () => {
@@ -468,10 +447,11 @@ describe("TurnAccumulator", () => {
       | Annotation<{ image: string }, "sandbox">
       | Annotation<{ score: number; passed: boolean }, "eval">;
 
-    const accumulator = new TurnAccumulator<AppAnnotation>();
-    accumulator.apply({
+    const transcript = new Transcript<AppAnnotation>();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
       type: "annotation:start",
-      target: { type: "session" },
+      target: { type: "turn", turnId: "t1" },
       annotation: {
         id: "sandbox-1",
         kind: "sandbox",
@@ -480,7 +460,7 @@ describe("TurnAccumulator", () => {
       },
     });
 
-    expectTypeOf(accumulator.state.turns).toEqualTypeOf<Turn<AppAnnotation>[]>();
+    expectTypeOf(transcript.turns).toEqualTypeOf<Turn<AppAnnotation>[]>();
 
     const child: Turn<AppAnnotation> = {
       id: "child-turn",

@@ -1,30 +1,29 @@
 import type { AnnotationEvent, TurnEvent } from "./events.js";
 import type { Annotation, Turn, TurnPart } from "./types.js";
 
-export interface TurnAccumulatorState<TAnnotation extends Annotation = Annotation> {
+export interface TranscriptState<TAnnotation extends Annotation = Annotation> {
   turns: Turn<TAnnotation>[];
-  sessionAnnotations?: TAnnotation[];
 }
 
 export type UnknownEvent = { type: string };
 
-export type AccumulatableEvent<
+export type TranscriptInput<
   TAnnotation extends Annotation = Annotation,
   THostEvent extends UnknownEvent = UnknownEvent,
 > = TurnEvent<TAnnotation> | THostEvent;
 
-export type TurnAccumulatorResult<
+export type TranscriptApplyResult<
   TAnnotation extends Annotation = Annotation,
   THostEvent extends UnknownEvent = UnknownEvent,
 > =
   | {
       handled: true;
-      state: TurnAccumulatorState<TAnnotation>;
+      state: TranscriptState<TAnnotation>;
       event: TurnEvent<TAnnotation>;
     }
   | {
       handled: false;
-      state: TurnAccumulatorState<TAnnotation>;
+      state: TranscriptState<TAnnotation>;
       event: THostEvent;
     };
 
@@ -67,21 +66,24 @@ function isTurnEvent<TAnnotation extends Annotation>(
   return TURN_EVENT_TYPE_SET.has(event.type);
 }
 
-export class TurnAccumulator<
+export class Transcript<
   TAnnotation extends Annotation = Annotation,
   THostEvent extends UnknownEvent = UnknownEvent,
 > {
-  private _state: TurnAccumulatorState<TAnnotation>;
+  private _state: TranscriptState<TAnnotation>;
 
-  constructor(init?: TurnAccumulatorState<TAnnotation>) {
+  constructor(init?: TranscriptState<TAnnotation>) {
     this._state = {
       turns: init?.turns ?? [],
-      sessionAnnotations: init?.sessionAnnotations,
     };
   }
 
-  get state(): TurnAccumulatorState<TAnnotation> {
+  get state(): TranscriptState<TAnnotation> {
     return this._state;
+  }
+
+  get turns(): Turn<TAnnotation>[] {
+    return this._state.turns;
   }
 
   getTurn(turnId: string): Turn<TAnnotation> | undefined {
@@ -89,8 +91,8 @@ export class TurnAccumulator<
   }
 
   apply(
-    event: AccumulatableEvent<TAnnotation, THostEvent>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+    event: TranscriptInput<TAnnotation, THostEvent>,
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     if (!isTurnEvent<TAnnotation>(event)) {
       return { handled: false, state: this._state, event: event as THostEvent };
     }
@@ -99,7 +101,7 @@ export class TurnAccumulator<
 
   private applyTurnEvent(
     event: TurnEvent<TAnnotation>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     switch (event.type) {
       case "compaction:update":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
@@ -297,10 +299,10 @@ export class TurnAccumulator<
       case "action:child-event":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
           if (part.type !== "action" || part.kind !== "agent") return part;
-          const childAccumulator = new TurnAccumulator<TAnnotation>({
+          const childTranscript = new Transcript<TAnnotation>({
             turns: part.detail.children,
           });
-          const result = childAccumulator.apply(event.event);
+          const result = childTranscript.apply(event.event);
           return {
             ...part,
             detail: {
@@ -318,9 +320,9 @@ export class TurnAccumulator<
   }
 
   private replaceState(
-    state: TurnAccumulatorState<TAnnotation>,
+    state: TranscriptState<TAnnotation>,
     event: TurnEvent<TAnnotation>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     this._state = state;
     return this.handled(event);
   }
@@ -328,7 +330,7 @@ export class TurnAccumulator<
   private replaceTurns(
     turns: Turn<TAnnotation>[],
     event: TurnEvent<TAnnotation>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     return this.replaceState({ ...this._state, turns }, event);
   }
 
@@ -336,7 +338,7 @@ export class TurnAccumulator<
     turnId: string,
     event: TurnEvent<TAnnotation>,
     updater: (turn: Turn<TAnnotation>) => Turn<TAnnotation>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     let updated = false;
     const turns = this._state.turns.map((entry) => {
       if (entry.id !== turnId) return entry;
@@ -355,7 +357,7 @@ export class TurnAccumulator<
     partId: string,
     event: TurnEvent<TAnnotation>,
     updater: (part: TurnPart<TAnnotation>) => TurnPart<TAnnotation>,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     return this.updateTurn(turnId, event, (turn) => {
       let updated = false;
       const parts = turn.parts.map((part) => {
@@ -372,20 +374,10 @@ export class TurnAccumulator<
 
   private addAnnotation(
     event: AnnotationEvent<TAnnotation> & { type: "annotation:start" },
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     const target = event.target;
     const annotation = normalizeAnnotation(event.annotation);
     if (!annotation) return this.handled(event);
-
-    if (target.type === "session") {
-      return this.replaceState(
-        {
-          ...this._state,
-          sessionAnnotations: [...(this._state.sessionAnnotations ?? []), annotation],
-        },
-        event,
-      );
-    }
 
     if (target.type === "turn") {
       return this.updateTurn(target.turnId, event, (turn) => ({
@@ -403,16 +395,10 @@ export class TurnAccumulator<
   private replaceAnnotation(
     event: AnnotationEvent<TAnnotation> & { type: "annotation:update" | "annotation:end" },
     completeWhenMissing: boolean,
-  ): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, THostEvent> {
     const target = event.target;
     const annotation = normalizeAnnotation(event.annotation, completeWhenMissing);
     if (!annotation) return this.handled(event);
-
-    if (target.type === "session") {
-      const next = replaceAnnotationInList(this._state.sessionAnnotations, annotation);
-      if (!next) return this.handled(event);
-      return this.replaceState({ ...this._state, sessionAnnotations: next }, event);
-    }
 
     if (target.type === "turn") {
       return this.updateTurn(target.turnId, event, (turn) => {
@@ -427,7 +413,7 @@ export class TurnAccumulator<
     });
   }
 
-  private handled(event: TurnEvent<TAnnotation>): TurnAccumulatorResult<TAnnotation, THostEvent> {
+  private handled(event: TurnEvent<TAnnotation>): TranscriptApplyResult<TAnnotation, THostEvent> {
     return {
       handled: true,
       state: this._state,
