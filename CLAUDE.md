@@ -48,7 +48,7 @@
   - `src/mcp/`: Model Context Protocol adapter
   - `src/messages/`: Conversation history and message types
   - `src/tools/`: Tool interfaces and registry
-  - `src/turns/`: Turn presentation types, events, accumulator
+  - `src/turns/`: Turn presentation types, events, transcript
   - `src/tracer/`: Tracing/logging with pluggable writers
   - `src/errors/`: Custom error classes
   - `src/utils/`: Helper functions

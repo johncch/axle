@@ -14,7 +14,7 @@ import type { SpanData } from "../../src/observability/index.js";
 import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import { TurnAccumulator } from "../../src/turns/accumulator.js";
+import { Transcript } from "../../src/turns/transcript.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import type { CompactionPart, Turn } from "../../src/turns/types.js";
 
@@ -165,17 +165,17 @@ function seededAgent(provider: AIProvider, messages: AxleMessage[]): Agent {
   return new Agent({ provider, model: "mock" }, { sessionId: "seeded", messages });
 }
 
-function attachTape(agent: Agent): TurnAccumulator {
-  const tape = new TurnAccumulator();
-  agent.on((event) => tape.apply(event));
-  return tape;
+function attachTranscript(agent: Agent): Transcript {
+  const transcript = new Transcript();
+  agent.on((event) => transcript.apply(event));
+  return transcript;
 }
 
 describe("Agent.compact", () => {
   test("manual compaction runs the full part lifecycle in its own turn", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     const events: TurnEvent[] = [];
     agent.on((event) => events.push(event));
 
@@ -201,7 +201,7 @@ describe("Agent.compact", () => {
       "turn:end",
     ]);
 
-    const entries = tape.state.turns.filter(isCompactionTurn);
+    const entries = transcript.turns.filter(isCompactionTurn);
     expect(entries).toHaveLength(1);
     expect(entries[0].owner).toBe("agent");
     expect(entries[0].status).toBe("complete");
@@ -213,7 +213,7 @@ describe("Agent.compact", () => {
   test("ctx.emit replaces transient state; the returned summary settles it", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     const events: TurnEvent[] = [];
     agent.on((event) => events.push(event));
 
@@ -231,7 +231,7 @@ describe("Agent.compact", () => {
     await agent.compact();
 
     expect(events.filter((e) => e.type === "compaction:update")).toHaveLength(2);
-    const part = compactionPartOf(tape.state.turns.find(isCompactionTurn));
+    const part = compactionPartOf(transcript.turns.find(isCompactionTurn));
     expect(part?.status).toBe("complete");
     expect(part?.summary).toBe("Reduced the context by 50%");
     expect(part?.progress).toBe(1);
@@ -240,7 +240,7 @@ describe("Agent.compact", () => {
   test("manual compaction bypasses the automatic-trigger policy", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     let compactRan = false;
     const shouldCompactOnTrigger = vi.fn(() => false);
     agent.setCompaction({
@@ -261,13 +261,13 @@ describe("Agent.compact", () => {
     expect(compactRan).toBe(true);
     expect(agent.messages).toEqual([user("summary")]);
     expect(events.some((event) => event.type === "compaction:complete")).toBe(true);
-    expect(tape.state.turns).toHaveLength(1);
+    expect(transcript.turns).toHaveLength(1);
   });
 
   test("a throwing beforeTurn policy rejects the send and closes the agent turn", async () => {
     const { provider, requests } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     agent.setCompaction({
       shouldCompactOnTrigger: () => {
         throw new Error("broken policy");
@@ -278,8 +278,8 @@ describe("Agent.compact", () => {
 
     await expect(agent.send("next question").final).rejects.toThrow("broken policy");
     expect(requests).toEqual([]);
-    expect(tape.state.turns.map((turn) => turn.status)).toEqual(["complete", "error"]);
-    expect(tape.state.turns[1]?.parts).toEqual([]);
+    expect(transcript.turns.map((turn) => turn.status)).toEqual(["complete", "error"]);
+    expect(transcript.turns[1]?.parts).toEqual([]);
   });
 
   test("is a no-op without a registered config", async () => {
@@ -293,16 +293,16 @@ describe("Agent.compact", () => {
     expect(agent.messages).toEqual(FOUR_MESSAGES);
   });
 
-  test("an invalid result rejects the manual compact and settles an errored part on the tape", async () => {
+  test("an invalid result rejects the manual compact and settles an errored part on the transcript", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     agent.setCompaction({ compact: () => ({ messages: [assistantToolCall("a1", "tc1")] }) });
 
     await expect(agent.compact()).rejects.toThrowError(/unanswered tool calls/);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
 
-    const entry = tape.state.turns.find(isCompactionTurn);
+    const entry = transcript.turns.find(isCompactionTurn);
     expect(entry?.status).toBe("error");
     const part = compactionPartOf(entry);
     expect(part?.status).toBe("error");
@@ -312,12 +312,12 @@ describe("Agent.compact", () => {
   test("a callback returning no messages is an errored compaction, not a skip", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     agent.setCompaction({ compact: () => undefined as any });
 
     await expect(agent.compact()).rejects.toThrowError(/must return \{ messages \}/);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
-    expect(compactionPartOf(tape.state.turns.find(isCompactionTurn))?.status).toBe("error");
+    expect(compactionPartOf(transcript.turns.find(isCompactionTurn))?.status).toBe("error");
   });
 
   test("snapshot and restore round-trip the compacted conversation", async () => {
@@ -356,7 +356,7 @@ describe("Agent.compact", () => {
   test("beforeTurn embeds the compaction at the head of the send's turn", async () => {
     const { provider, requests } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     const summary = [user("summary before the next turn")];
     agent.setCompaction({
       compact: () => ({ messages: summary }),
@@ -369,8 +369,8 @@ describe("Agent.compact", () => {
     expect(requests[0]).toHaveLength(2);
     expect(requests[0][0]).toEqual(summary[0]);
     expect(requests[0][1]).toMatchObject({ role: "user" });
-    expect(tape.state.turns.map((turn) => turn.owner)).toEqual(["user", "agent"]);
-    const agentTurn = tape.state.turns[1];
+    expect(transcript.turns.map((turn) => turn.owner)).toEqual(["user", "agent"]);
+    const agentTurn = transcript.turns[1];
     expect(agentTurn.parts.map((part) => part.type)).toEqual(["compaction", "text"]);
     expect(agentTurn.status).toBe("complete");
     expect(compactionPartOf(agentTurn)?.status).toBe("complete");
@@ -379,7 +379,7 @@ describe("Agent.compact", () => {
   test("a beforeTurn compaction failure is non-fatal: the part records it, the send continues uncompacted", async () => {
     const { provider, requests } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     agent.setCompaction({
       compact: () => {
         throw new Error("summarizer down");
@@ -393,7 +393,7 @@ describe("Agent.compact", () => {
     expect(result.response).toBe("ok");
     // The request went out on the uncompacted conversation.
     expect(requests[0]).toHaveLength(5);
-    const agentTurn = tape.state.turns[1];
+    const agentTurn = transcript.turns[1];
     expect(agentTurn.status).toBe("complete");
     expect(agentTurn.parts.map((part) => part.type)).toEqual(["compaction", "text"]);
     const part = compactionPartOf(agentTurn);
@@ -406,7 +406,7 @@ describe("Agent.compact", () => {
   test("cancelling during beforeTurn compaction retains the committed user message", async () => {
     const { provider, requests } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     const controller = new AbortController();
     agent.setCompaction({
       compact: () => {
@@ -427,14 +427,14 @@ describe("Agent.compact", () => {
     expect(agent.messages).toHaveLength(5);
     expect(agent.messages.at(-1)).toMatchObject({ role: "user" });
     expect(JSON.stringify(agent.messages.at(-1)?.content)).toContain("keep this message");
-    expect(tape.state.turns.map((turn) => turn.status)).toEqual(["complete", "cancelled"]);
-    expect(compactionPartOf(tape.state.turns[1])?.status).toBe("error");
+    expect(transcript.turns.map((turn) => turn.status)).toEqual(["complete", "cancelled"]);
+    expect(compactionPartOf(transcript.turns[1])?.status).toBe("error");
   });
 
   test("afterTurn embeds the compaction at the tail of the send's turn", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     const summary = [user("summary after the turn")];
     agent.setCompaction({
       compact: () => ({ messages: summary }),
@@ -445,8 +445,8 @@ describe("Agent.compact", () => {
 
     expect(result.ok).toBe(true);
     expect(agent.messages).toEqual(summary);
-    expect(tape.state.turns.map((turn) => turn.owner)).toEqual(["user", "agent"]);
-    const agentTurn = tape.state.turns[1];
+    expect(transcript.turns.map((turn) => turn.owner)).toEqual(["user", "agent"]);
+    const agentTurn = transcript.turns[1];
     expect(agentTurn.parts.map((part) => part.type)).toEqual(["text", "compaction"]);
     expect(agentTurn.status).toBe("complete");
     expect(result.turn).toEqual(agentTurn);
@@ -455,7 +455,7 @@ describe("Agent.compact", () => {
   test("an afterTurn compaction failure is non-fatal: the send resolves and the part records it", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     agent.setCompaction({
       compact: () => {
         throw new Error("summarizer down");
@@ -467,29 +467,29 @@ describe("Agent.compact", () => {
 
     expect(result.ok).toBe(true);
     expect(result.response).toBe("ok");
-    const agentTurn = tape.state.turns[1];
+    const agentTurn = transcript.turns[1];
     expect(agentTurn.status).toBe("complete");
     expect(agentTurn.parts.map((part) => part.type)).toEqual(["text", "compaction"]);
     expect(compactionPartOf(agentTurn)?.status).toBe("error");
     expect(agent.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 
-  test("a consumer tape stays coherent across send, compact, send", async () => {
+  test("a consumer transcript stays coherent across send, compact, send", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
 
     await agent.send("first").final;
     await agent.compact();
     const result = await agent.send("second").final;
 
-    const kinds = tape.state.turns.map((entry) =>
+    const kinds = transcript.turns.map((entry) =>
       isCompactionTurn(entry) ? "compaction" : entry.owner,
     );
     expect(kinds).toEqual(["user", "agent", "compaction", "user", "agent"]);
-    expect(tape.state.turns.filter(isCompactionTurn)[0]?.status).toBe("complete");
-    expect(result.turn).toEqual(tape.state.turns.at(-1));
+    expect(transcript.turns.filter(isCompactionTurn)[0]?.status).toBe("complete");
+    expect(result.turn).toEqual(transcript.turns.at(-1));
   });
 
   test("compact called during an in-flight send runs after the send settles", async () => {
@@ -514,7 +514,7 @@ describe("Agent.compact", () => {
     };
 
     const agent = new Agent({ provider, model: "mock" });
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
     const seenByCallback: number[] = [];
     agent.setCompaction({
       compact: (state) => {
@@ -531,7 +531,7 @@ describe("Agent.compact", () => {
     // The callback ran after the send completed: it saw both the user
     // message and the assistant answer, not a mid-turn snapshot.
     expect(seenByCallback).toEqual([2]);
-    const kinds = tape.state.turns.map((entry) =>
+    const kinds = transcript.turns.map((entry) =>
       isCompactionTurn(entry) ? "compaction" : entry.owner,
     );
     expect(kinds).toEqual(["user", "agent", "compaction"]);
@@ -540,7 +540,7 @@ describe("Agent.compact", () => {
   test("each compaction receives a fresh engine-generated id", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
 
     const seen: string[] = [];
     agent.setCompaction({
@@ -555,7 +555,9 @@ describe("Agent.compact", () => {
 
     expect(seen).toHaveLength(2);
     expect(seen[0]).not.toBe(seen[1]);
-    const partIds = tape.state.turns.filter(isCompactionTurn).map((turn) => turn.parts[0]?.id);
+    const partIds = transcript.turns
+      .filter(isCompactionTurn)
+      .map((turn) => turn.parts[0]?.id);
     expect(partIds).toEqual(seen);
   });
 
@@ -586,7 +588,7 @@ describe("Agent.compact", () => {
   test("aborting during the callback discards its result, rejects, and cancels the turn", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
 
     const controller = new AbortController();
     agent.setCompaction({
@@ -601,7 +603,7 @@ describe("Agent.compact", () => {
       reason: "changed my mind",
     });
     expect(agent.messages).toEqual(FOUR_MESSAGES);
-    const entry = tape.state.turns.find(isCompactionTurn);
+    const entry = transcript.turns.find(isCompactionTurn);
     expect(entry?.status).toBe("cancelled");
     expect(compactionPartOf(entry)?.status).toBe("error");
   });
@@ -609,7 +611,7 @@ describe("Agent.compact", () => {
   test("a callback that throws on a forwarded abort rejects and cancels the turn", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const tape = attachTape(agent);
+    const transcript = attachTranscript(agent);
 
     const controller = new AbortController();
     agent.setCompaction({
@@ -624,7 +626,7 @@ describe("Agent.compact", () => {
       reason: "user cancelled",
     });
     expect(agent.messages).toEqual(FOUR_MESSAGES);
-    const entry = tape.state.turns.find(isCompactionTurn);
+    const entry = transcript.turns.find(isCompactionTurn);
     expect(entry?.status).toBe("cancelled");
     expect(compactionPartOf(entry)?.status).toBe("error");
   });
@@ -708,20 +710,20 @@ describe("Agent.compact", () => {
     expect(session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 
-  test("a restored agent keeps folding onto a host-restored tape", async () => {
+  test("a restored agent keeps folding onto a host-restored transcript", async () => {
     const { provider } = createCapturingProvider();
     const first = new Agent({ provider, model: "mock" });
-    const firstTape = attachTape(first);
+    const firstTranscript = attachTranscript(first);
     first.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
     await first.send("first").final;
     await first.compact();
 
     const restored = new Agent({ provider, model: "mock" }, await first.snapshot());
-    const restoredTape = new TurnAccumulator(firstTape.state);
-    restored.on((event) => restoredTape.apply(event));
+    const restoredTranscript = new Transcript(firstTranscript.state);
+    restored.on((event) => restoredTranscript.apply(event));
     await restored.send("second").final;
 
-    const kinds = restoredTape.state.turns.map((entry) =>
+    const kinds = restoredTranscript.turns.map((entry) =>
       isCompactionTurn(entry) ? "compaction" : entry.owner,
     );
     expect(kinds).toEqual(["user", "agent", "compaction", "user", "agent"]);

@@ -3,24 +3,27 @@ import type {
   Annotation,
   FileInfo,
   Stats,
+  TranscriptApplyResult,
+  TranscriptInput,
+  TranscriptState,
   Turn,
   TimingInfo,
-  TurnEvent,
   TurnMetadata,
 } from "../src/ui.js";
-import { TurnAccumulator } from "../src/ui.js";
+import { Transcript } from "../src/ui.js";
 
 describe("ui entrypoint", () => {
   test("exports browser-safe turn presentation primitives", () => {
     type AppAnnotation = Annotation<{ score: number }, "eval">;
-    const accumulator = new TurnAccumulator<AppAnnotation>();
-    const event: TurnEvent<AppAnnotation> = {
+    const transcript = new Transcript<AppAnnotation>();
+    const event: TranscriptInput<AppAnnotation> = {
       type: "turn:start",
       turnId: "t1",
     };
 
-    const result = accumulator.apply(event);
-    const turns: Turn<AppAnnotation>[] = result.state.turns;
+    const result: TranscriptApplyResult<AppAnnotation> = transcript.apply(event);
+    const state: TranscriptState<AppAnnotation> = result.state;
+    const turns: Turn<AppAnnotation>[] = transcript.turns;
     const metadata: TurnMetadata = { source: "example" };
     const usage: Stats = { in: 1, out: 1 };
     const timing: TimingInfo = { start: "2026-01-01T00:00:00.000Z" };
@@ -32,6 +35,7 @@ describe("ui entrypoint", () => {
     };
 
     expect(result.handled).toBe(true);
+    expect(state.turns).toBe(turns);
     expect(metadata.source).toBe("example");
     expect(turns).toEqual([{ id: "t1", owner: "agent", parts: [], status: "streaming" }]);
     expect(usage.in).toBe(1);

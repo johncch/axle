@@ -92,7 +92,7 @@ or a running handle during setup removes it without committing its user
 message. Once `turn:user` is emitted, the committed message remains and the
 agent turn is marked cancelled. This includes cancellation during
 `beforeTurn` compaction: compaction is ordinary work inside the already-open
-turn and cancellation does not unwind the tape or active conversation. Other
+turn and cancellation does not unwind the transcript or active conversation. Other
 queued handles continue. `stop()` never interrupts a running provider request
 or tool batch; use cancellation when a hard stop is required.
 
@@ -708,7 +708,7 @@ Callbacks are registered once and fire on every subsequent `send()`, and also
 receive the events of a manual `agent.compact()` (an engine-opened turn
 wrapping the compaction part).
 
-#### Turn accumulator
+#### Transcript
 
 `Turn` objects are accumulated render state. They are the snapshot counterpart
 to `TurnEvent` streams: text deltas are folded into text parts, tool call
@@ -719,47 +719,47 @@ Model and provider failures are retained on the agent turn as `turn.error`, so
 accumulated and restored render state includes the terminal error message.
 
 The Agent holds no turns: it emits events, and whoever wants a transcript
-folds and stores them. Attach a `TurnAccumulator`, persist its `state`
+folds and stores them. Attach a `Transcript`, persist its `state`
 alongside `agent.snapshot()`, and re-seed it on restore
-(`new TurnAccumulator(savedState)`). Compaction (see below) appears in the
+(`new Transcript(savedState)`). Compaction (see below) appears in the
 fold as an ordinary `compaction` part; renderers that don't handle that part
 type simply render nothing for it.
 
 Hosts that transport Axle events over SSE, WebSockets, or another mixed event
-stream can use `TurnAccumulator` instead of reimplementing this reducer:
+stream can use `Transcript` instead of reimplementing this reducer:
 
 ```typescript
-import { TurnAccumulator, type Annotation } from "@fifthrevision/axle/ui";
+import { Transcript, type Annotation } from "@fifthrevision/axle/ui";
 
 type AppAnnotation =
   Annotation<{ image: string }, "sandbox"> | Annotation<{ score: number; passed: boolean }, "eval">;
 
 type HostEvent = { type: "run:terminal"; status: string };
 
-const accumulator = new TurnAccumulator<AppAnnotation, HostEvent>();
+const transcript = new Transcript<AppAnnotation, HostEvent>();
 
 for await (const event of events) {
-  const { handled, state } = accumulator.apply(event);
+  const result = transcript.apply(event);
 
-  if (!handled) {
-    // event is typed as HostEvent here
-    applyHostEvent(event);
+  if (result.handled === false) {
+    // result.event is typed as HostEvent here
+    applyHostEvent(result.event);
   }
 
-  render(state.turns);
+  render(transcript.turns);
 }
 ```
 
 Use `@fifthrevision/axle/ui` for browser-safe presentation primitives. It
-exports turns, annotations, turn events, and `TurnAccumulator` without importing
+exports turns, annotations, turn events, and `Transcript` without importing
 providers, MCP, tools, or other server-side runtime code.
 
-The accumulator accepts open event objects. Unknown host events, such as
+Use `transcript.turns` for ordinary reads; `transcript.state` is the complete
+serializable value. The transcript accepts open event objects. Unknown host events, such as
 `run:terminal` or `session:expired`, return `handled: false` and leave the
-state unchanged. Session-level annotations are accumulated in
-`state.sessionAnnotations`; turn and part annotations are embedded on their
-targets. The accumulator is not idempotent; callers should deduplicate replayed
-transport events before applying them.
+state unchanged. Annotations are embedded on their turn or part targets. The
+transcript is not idempotent; callers should deduplicate replayed transport
+events before applying them.
 
 #### Turn metadata
 
@@ -963,15 +963,15 @@ turn events that Axle emits.
 
 To persist and resume an agent, snapshot it and construct a new agent with the
 session. The snapshot is the pure continuation (`{ sessionId, messages }`) —
-persist your tape's state next to it if you want the transcript back:
+persist your transcript's state next to it if you want the transcript back:
 
 ```typescript
 const session = await agent.snapshot(); // waits for in-flight work to settle
-const transcript = tape.state;
+const transcriptState = transcript.state;
 // ...store both, then later:
 const resumed = new Agent(config, session);
-const resumedTape = new TurnAccumulator(transcript);
-resumed.on((event) => resumedTape.apply(event));
+const resumedTranscript = new Transcript(transcriptState);
+resumed.on((event) => resumedTranscript.apply(event));
 ```
 
 ## Known Limitations

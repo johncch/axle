@@ -50,7 +50,7 @@ status: "running" | "complete" | "error", summary?, progress?, error?, timing? }
    outcome, and the send continues on the uncompacted conversation — a
    genuine context overflow then surfaces as the turn's model error.
    `manual` failures reject (explicitly requested) and still settle the
-   errored part and turn on the tape.
+   errored part and turn on the transcript.
 7. **The stamp is the compactor's recursion and correlation convention.**
    Compactors mark output messages with `metadata.axleCompaction = { id:
 ctx.id, role: "summary" | "appendix" }` so they recognize their own prior
@@ -59,7 +59,7 @@ ctx.id, role: "summary" | "appendix" }` so they recognize their own prior
    produced it. The engine does not read stamps; stamping is optional.
 8. **The reader's summary and the model's summary are separate channels on
    purpose.** `compact` returns `summary` for the part (for the reader;
-   frozen in the tape) independently of the messages it returns (for the
+   frozen in the transcript) independently of the messages it returns (for the
    model; replaced by the next compaction). Carrying the same text in both
    is the common case, but it is the compactor's presentation choice —
    "Reduced the context by 50%" is as valid a part summary as the summary

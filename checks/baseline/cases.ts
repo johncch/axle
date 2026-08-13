@@ -4,7 +4,7 @@ import {
   AxleToolFatalError,
   Instruct,
   PromptCompactor,
-  TurnAccumulator,
+  Transcript,
   createAgentTool,
   generate,
   loadFileContent,
@@ -188,16 +188,16 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent basic send() text response and history.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       const result = await agent.send("Reply with exactly: pong").final;
       const text = String(result.response ?? "");
 
       return {
-        ok: text.toLowerCase().includes("pong") && tape.state.turns.length === 2,
+        ok: text.toLowerCase().includes("pong") && transcript.turns.length === 2,
         details: {
           response: result.response,
-          turnCount: tape.state.turns.length,
+          turnCount: transcript.turns.length,
           usage: result.usage,
         },
       };
@@ -208,8 +208,8 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent send(Instruct) structured JSON response.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       const result = await agent.send(
         new Instruct({
           prompt: "Return answer='pong', count=3, ok=true.",
@@ -224,11 +224,11 @@ export const baselineCases: BaselineCase[] = [
           result.response?.answer.toLowerCase().includes("pong") &&
           result.response.count === 3 &&
           result.response.ok === true &&
-          tape.state.turns.length === 2,
+          transcript.turns.length === 2,
         ),
         details: {
           response: result.response,
-          turnCount: tape.state.turns.length,
+          turnCount: transcript.turns.length,
           usage: result.usage,
         },
       };
@@ -239,8 +239,8 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent preserves history across turns.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
         .final;
       const result = await agent.send(
@@ -257,8 +257,8 @@ export const baselineCases: BaselineCase[] = [
                 : "Second turn did not recall the lavender code word.",
             ]
           : []),
-        ...(tape.state.turns.length !== 4
-          ? [`Expected 4 history turns, received ${tape.state.turns.length}.`]
+        ...(transcript.turns.length !== 4
+          ? [`Expected 4 history turns, received ${transcript.turns.length}.`]
           : []),
       ];
 
@@ -268,7 +268,7 @@ export const baselineCases: BaselineCase[] = [
         details: {
           response: result.response,
           finishReason,
-          turnCount: tape.state.turns.length,
+          turnCount: transcript.turns.length,
           usage: result.usage,
         },
       };
@@ -280,10 +280,10 @@ export const baselineCases: BaselineCase[] = [
       "PromptCompactor replaces active history with a bounded summary and the conversation continues.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
-      const tape = new TurnAccumulator();
+      const transcript = new Transcript();
       const compactionUpdates: CompactionUpdate[] = [];
       agent.on((event) => {
-        tape.apply(event);
+        transcript.apply(event);
         if (event.type === "compaction:update") compactionUpdates.push(event.update);
       });
       await agent.send("For this conversation, the code word is lavender. Reply exactly: stored.")
@@ -311,7 +311,7 @@ export const baselineCases: BaselineCase[] = [
       const activeAfter = agent.messages.length;
       const summaryContent = String(agent.messages[0]?.content ?? "");
       const appendixContent = String(agent.messages[1]?.content ?? "");
-      const compactionTurn = tape.state.turns.find((turn) =>
+      const compactionTurn = transcript.turns.find((turn) =>
         turn.parts.some((part) => part.type === "compaction"),
       );
       const compactionPart = compactionTurn?.parts.find((part) => part.type === "compaction");
@@ -385,8 +385,8 @@ export const baselineCases: BaselineCase[] = [
       "Agent invokes one compaction callback at configured beforeTurn and afterTurn boundaries.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       const triggerOrder: string[] = [];
       const messageCounts: number[] = [];
 
@@ -407,7 +407,7 @@ export const baselineCases: BaselineCase[] = [
 
       const result = await agent.send("Reply with exactly: compaction-triggers-ok").final;
       const text = String(result.response ?? "");
-      const appliedCompactions = tape.state.turns.filter(
+      const appliedCompactions = transcript.turns.filter(
         (turn) =>
           turn.status === "complete" && turn.parts.some((part) => part.type === "compaction"),
       ).length;
@@ -677,8 +677,8 @@ export const baselineCases: BaselineCase[] = [
     description: "Agent executes a local tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, tools: [addNumbersTool] });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       const result = await agent.send(
         "Use the add_numbers tool to add 17 and 25. Then answer with the result.",
       ).final;
@@ -689,7 +689,7 @@ export const baselineCases: BaselineCase[] = [
         details: {
           response: result.response,
           toolResults: getToolResultDetails(agent.messages),
-          turnCount: tape.state.turns.length,
+          turnCount: transcript.turns.length,
           usage: result.usage,
         },
       };
@@ -850,8 +850,8 @@ export const baselineCases: BaselineCase[] = [
         prompt: () => "Reply with exactly: subagent-orchid",
       });
       const agent = new Agent({ provider, model, ...requestOptions, tools: [subagentTool] });
-      const tape = new TurnAccumulator();
-      agent.on((event) => tape.apply(event));
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
       const result = await agent.send(
         "Use delegate_code_word to get the code word. Then answer with only that code word.",
       ).final;
@@ -889,7 +889,7 @@ export const baselineCases: BaselineCase[] = [
         details: {
           response: result.response,
           toolResults,
-          turnCount: tape.state.turns.length,
+          turnCount: transcript.turns.length,
           childProvider: childProvider.name,
           usage: result.usage,
         },

@@ -6,13 +6,13 @@ export type {
   DocumentLocator,
   ThinkingContinuity,
 } from "./messages/message.js";
-export { TurnAccumulator } from "./turns/accumulator.js";
+export { Transcript } from "./turns/transcript.js";
 export type {
-  AccumulatableEvent,
-  TurnAccumulatorResult,
-  TurnAccumulatorState,
+  TranscriptApplyResult,
+  TranscriptInput,
+  TranscriptState,
   UnknownEvent,
-} from "./turns/accumulator.js";
+} from "./turns/transcript.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export type {
   ActionPart,
