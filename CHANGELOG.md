@@ -1,8 +1,8 @@
 # Changelog
 
-## [0.30.1] - Unreleased
+## [0.30.1] - 2026-08-13
 
-- `PromptCompactor` now emits 100% progress immediately before completion and leaves the compaction part's optional reader-facing summary unset instead of duplicating the generated continuation summary.
+- Fixed `PromptCompactor` progress reporting and summary handling so completed compactions are reported reliably without duplicating generated summaries.
 
 ## [0.30.0] - 2026-08-13
 
