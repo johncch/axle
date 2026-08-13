@@ -303,7 +303,7 @@ export const baselineCases: BaselineCase[] = [
       });
 
       agent.setCompaction({
-        shouldCompact: compactor.shouldCompact,
+        shouldCompactOnTrigger: compactor.shouldCompactOnTrigger,
         compact: compactor.compact,
       });
 
@@ -324,7 +324,7 @@ export const baselineCases: BaselineCase[] = [
       const text = String(result.response ?? "");
 
       const failureReasons = [
-        ...(!applied ? ["compact() resolved false; the policy declined."] : []),
+        ...(!applied ? ["compact() resolved false despite a registered compactor."] : []),
         ...(activeAfter >= messagesBefore
           ? [`Active history did not shrink: ${messagesBefore} -> ${activeAfter}.`]
           : []),
@@ -391,7 +391,7 @@ export const baselineCases: BaselineCase[] = [
       const messageCounts: number[] = [];
 
       agent.setCompaction({
-        shouldCompact: ({ messages }, { trigger }) => {
+        shouldCompactOnTrigger: ({ messages }, { trigger }) => {
           triggerOrder.push(trigger);
           messageCounts.push(messages.length);
           return messages.length > 0;

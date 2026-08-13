@@ -8,43 +8,34 @@ import { AxleStopReason } from "../../src/providers/types.js";
 import type { CompactionUpdate } from "../../src/turns/types.js";
 
 describe("PromptCompactor", () => {
-  describe("shouldCompact", () => {
+  describe("shouldCompactOnTrigger", () => {
     test("declines below the threshold and accepts at it for automatic triggers", () => {
       const { provider } = createProvider({ text: "unused" });
       const compactor = createCompactor(provider, { thresholdTokens: 100 });
 
       expect(
-        compactor.shouldCompact(
+        compactor.shouldCompactOnTrigger(
           { messages: [user("short conversation")] },
           { usage: usage(99), trigger: "beforeTurn" },
         ),
       ).toBe(false);
       expect(
-        compactor.shouldCompact(
+        compactor.shouldCompactOnTrigger(
           { messages: [user("short conversation")] },
           { usage: usage(100), trigger: "afterTurn" },
         ),
       ).toBe(true);
     });
 
-    test("manual requests bypass the threshold", () => {
-      const { provider } = createProvider({ text: "unused" });
-      const compactor = createCompactor(provider, { thresholdTokens: 100 });
-
-      expect(
-        compactor.shouldCompact(
-          { messages: [user("short conversation")] },
-          { usage: usage(1), trigger: "manual" },
-        ),
-      ).toBe(true);
-    });
-
-    test("declines when there is no conversation to compact, even manually", () => {
+    test("declines when there is no conversation to compact", () => {
       const { provider, requests } = createProvider({ text: "unused" });
       const compactor = createCompactor(provider);
 
       expect(
-        compactor.shouldCompact({ messages: [] }, { usage: usage(500), trigger: "manual" }),
+        compactor.shouldCompactOnTrigger(
+          { messages: [] },
+          { usage: usage(500), trigger: "beforeTurn" },
+        ),
       ).toBe(false);
       expect(requests).toEqual([]);
     });

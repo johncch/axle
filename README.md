@@ -876,37 +876,38 @@ const compactor = new PromptCompactor({
 });
 
 agent.setCompaction({
-  shouldCompact: compactor.shouldCompact,
+  shouldCompactOnTrigger: compactor.shouldCompactOnTrigger,
   compact: compactor.compact,
   triggers: {
     beforeTurn: true,
   },
 });
 
-const applied = await agent.compact(); // true when a compaction applied, false when declined
+const applied = await agent.compact(); // true when applied; false when no compactor is configured
 ```
 
 Compaction is split into three layers, each with one job. `triggers` say
 _when to ask_: omitting them makes compaction manual-only; `beforeTurn` asks
 at the start of the next `send()`'s turn, `afterTurn` after the model work of
-a successful turn, before it settles. `shouldCompact` says _whether_ — it is
-consulted at every boundary, including manual (`ctx.trigger` is the input;
-"a manual request always compacts" is `PromptCompactor` policy, not an engine
-rule), and a synchronous `false` is the only silent path: nothing emitted,
-nothing ran. A thrown policy error propagates as a client implementation
-error. Omitting `shouldCompact` means always-willing. `compact` does _the work_ and
-always returns `{ messages, summary? }` — the complete new conversation, plus
-an optional reader-facing summary for the transcript — there is no decline
-return; failures throw. The `summary` is a presentation choice, independent
-of the model-facing messages: it can be the summary text itself, or something
-else entirely ("Reduced the context by 50%"); omitted, the latest emitted
-summary remains, or the compaction part renders as a bare divider if none was
-emitted.
+a successful turn, before it settles. `shouldCompactOnTrigger` says whether
+to accept an automatic request; a synchronous `false` is the only silent
+automatic path: nothing is emitted and no id is allocated. A thrown policy
+error propagates as a client implementation error. Omitting the policy means
+every configured automatic trigger runs. Explicit `agent.compact()` bypasses
+the policy and always invokes the configured compactor. `compact` does _the
+work_ and always returns `{ messages, summary? }` — the complete new
+conversation, plus an optional reader-facing summary for the transcript —
+there is no decline return; failures throw. The `summary` is a presentation
+choice, independent of the model-facing messages: it can be the summary text
+itself, or something else entirely ("Reduced the context by 50%"); omitted,
+the latest emitted summary remains, or the compaction part renders as a bare
+divider if none was emitted.
 
-Once `shouldCompact` says yes, the compaction is ordinary fallible turn work,
-streamed like a tool call: a `running` compaction part lands in the natural
-turn — head of the send's turn for `beforeTurn`, tail for `afterTurn`, its
-own engine-opened turn for `manual` — `ctx.emit({ progress, summary? })`
+Once an automatic policy accepts—or `agent.compact()` is called—the
+compaction is ordinary fallible turn work, streamed like a tool call: a
+`running` compaction part lands in the natural turn — head of the send's turn
+for `beforeTurn`, tail for `afterTurn`, its own engine-opened turn for
+`manual` — `ctx.emit({ progress, summary? })`
 replaces transient reader-facing state on it (liveness for long
 summarizations, and real traffic for idle-timeout-prone transports), and it
 settles `complete` or `error`.

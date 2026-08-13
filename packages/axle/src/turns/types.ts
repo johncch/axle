@@ -193,7 +193,7 @@ export interface ThinkingPart<TAnnotation extends Annotation = Annotation> {
  * (`afterTurn`), or its own engine-opened turn (`manual`). `part:start`
  * delivers it `running`; `compaction:update` replaces transient display
  * fields; `compaction:complete` / `compaction:error` settle it. A compaction
- * declined by `shouldCompact` never appears at all.
+ * declined by `shouldCompactOnTrigger` never appears at all.
  *
  * A settled `complete` part means the message swap applied, atomically. An
  * `error` part records a failed attempt — non-fatal for automatic triggers;
