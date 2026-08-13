@@ -160,7 +160,7 @@ export type AgentDefinitionResolver = (
  * It intentionally does not include executable runtime objects (providers,
  * tools, MCP clients, file resolvers, tracers) or renderable turn
  * state — transcripts are folds of the event stream owned by the host; persist
- * your `TranscriptState` alongside this if you want one back. Recreate
+ * your `Transcript.turns` alongside this if you want one back. Recreate
  * runtime objects from host-owned configuration, then construct a new agent
  * with the session: `new Agent(config, session)`. Unknown keys in stored
  * sessions from older versions are ignored.

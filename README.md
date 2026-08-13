@@ -719,11 +719,10 @@ Model and provider failures are retained on the agent turn as `turn.error`, so
 accumulated and restored render state includes the terminal error message.
 
 The Agent holds no turns: it emits events, and whoever wants a transcript
-folds and stores them. Attach a `Transcript`, persist its `state`
-alongside `agent.snapshot()`, and re-seed it on restore
-(`new Transcript(savedState)`). Compaction (see below) appears in the
-fold as an ordinary `compaction` part; renderers that don't handle that part
-type simply render nothing for it.
+folds and stores them. Attach a `Transcript`, persist its `turns` alongside
+`agent.snapshot()`, and pass the saved turns to the constructor on restore.
+Compaction (see below) appears in the fold as an ordinary `compaction` part;
+renderers that don't handle that part type simply render nothing for it.
 
 Hosts that transport Axle events over SSE, WebSockets, or another mixed event
 stream can use `Transcript` instead of reimplementing this reducer:
@@ -754,8 +753,10 @@ Use `@fifthrevision/axle/ui` for browser-safe presentation primitives. It
 exports turns, annotations, turn events, and `Transcript` without importing
 providers, MCP, tools, or other server-side runtime code.
 
-Use `transcript.turns` for ordinary reads; `transcript.state` is the complete
-serializable value. The transcript accepts open event objects. Unknown host events, such as
+`transcript.turns` is a readonly array and serves as both the read and
+persistence surface. The constructor accepts a readonly array and makes a
+shallow copy, so later changes to the supplied array do not alter the
+transcript. The transcript accepts open event objects. Unknown host events, such as
 `run:terminal` or `session:expired`, return `handled: false` and leave the
 state unchanged. Annotations are embedded on their turn or part targets. The
 transcript is not idempotent; callers should deduplicate replayed transport
@@ -963,14 +964,14 @@ turn events that Axle emits.
 
 To persist and resume an agent, snapshot it and construct a new agent with the
 session. The snapshot is the pure continuation (`{ sessionId, messages }`) —
-persist your transcript's state next to it if you want the transcript back:
+persist your transcript's turns next to it if you want the transcript back:
 
 ```typescript
 const session = await agent.snapshot(); // waits for in-flight work to settle
-const transcriptState = transcript.state;
+const turns = transcript.turns;
 // ...store both, then later:
 const resumed = new Agent(config, session);
-const resumedTranscript = new Transcript(transcriptState);
+const resumedTranscript = new Transcript(turns);
 resumed.on((event) => resumedTranscript.apply(event));
 ```
 

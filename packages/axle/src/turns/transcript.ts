@@ -1,10 +1,6 @@
 import type { AnnotationEvent, TurnEvent } from "./events.js";
 import type { Annotation, Turn, TurnPart } from "./types.js";
 
-export interface TranscriptState<TAnnotation extends Annotation = Annotation> {
-  turns: Turn<TAnnotation>[];
-}
-
 export type UnknownEvent = { type: string };
 
 export type TranscriptInput<
@@ -18,12 +14,10 @@ export type TranscriptApplyResult<
 > =
   | {
       handled: true;
-      state: TranscriptState<TAnnotation>;
       event: TurnEvent<TAnnotation>;
     }
   | {
       handled: false;
-      state: TranscriptState<TAnnotation>;
       event: THostEvent;
     };
 
@@ -70,31 +64,25 @@ export class Transcript<
   TAnnotation extends Annotation = Annotation,
   THostEvent extends UnknownEvent = UnknownEvent,
 > {
-  private _state: TranscriptState<TAnnotation>;
+  private _turns: Turn<TAnnotation>[];
 
-  constructor(init?: TranscriptState<TAnnotation>) {
-    this._state = {
-      turns: init?.turns ?? [],
-    };
+  constructor(turns: readonly Turn<TAnnotation>[] = []) {
+    this._turns = [...turns];
   }
 
-  get state(): TranscriptState<TAnnotation> {
-    return this._state;
-  }
-
-  get turns(): Turn<TAnnotation>[] {
-    return this._state.turns;
+  get turns(): readonly Turn<TAnnotation>[] {
+    return this._turns;
   }
 
   getTurn(turnId: string): Turn<TAnnotation> | undefined {
-    return this._state.turns.find((turn) => turn.id === turnId);
+    return this._turns.find((turn) => turn.id === turnId);
   }
 
   apply(
     event: TranscriptInput<TAnnotation, THostEvent>,
   ): TranscriptApplyResult<TAnnotation, THostEvent> {
     if (!isTurnEvent<TAnnotation>(event)) {
-      return { handled: false, state: this._state, event: event as THostEvent };
+      return { handled: false, event: event as THostEvent };
     }
     return this.applyTurnEvent(event);
   }
@@ -137,7 +125,7 @@ export class Transcript<
         });
 
       case "turn:user":
-        return this.replaceTurns([...this._state.turns, event.turn], event);
+        return this.replaceTurns([...this._turns, event.turn], event);
 
       case "turn:start": {
         const turn: Turn<TAnnotation> = {
@@ -147,7 +135,7 @@ export class Transcript<
           status: "streaming",
           ...(event.timing ? { timing: event.timing } : {}),
         };
-        return this.replaceTurns([...this._state.turns, turn], event);
+        return this.replaceTurns([...this._turns, turn], event);
       }
 
       case "part:start":
@@ -299,15 +287,13 @@ export class Transcript<
       case "action:child-event":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
           if (part.type !== "action" || part.kind !== "agent") return part;
-          const childTranscript = new Transcript<TAnnotation>({
-            turns: part.detail.children,
-          });
-          const result = childTranscript.apply(event.event);
+          const childTranscript = new Transcript<TAnnotation>(part.detail.children);
+          childTranscript.apply(event.event);
           return {
             ...part,
             detail: {
               ...part.detail,
-              children: result.state.turns,
+              children: [...childTranscript.turns],
             },
           };
         });
@@ -319,19 +305,12 @@ export class Transcript<
     }
   }
 
-  private replaceState(
-    state: TranscriptState<TAnnotation>,
-    event: TurnEvent<TAnnotation>,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
-    this._state = state;
-    return this.handled(event);
-  }
-
   private replaceTurns(
     turns: Turn<TAnnotation>[],
     event: TurnEvent<TAnnotation>,
   ): TranscriptApplyResult<TAnnotation, THostEvent> {
-    return this.replaceState({ ...this._state, turns }, event);
+    this._turns = turns;
+    return this.handled(event);
   }
 
   private updateTurn(
@@ -340,7 +319,7 @@ export class Transcript<
     updater: (turn: Turn<TAnnotation>) => Turn<TAnnotation>,
   ): TranscriptApplyResult<TAnnotation, THostEvent> {
     let updated = false;
-    const turns = this._state.turns.map((entry) => {
+    const turns = this._turns.map((entry) => {
       if (entry.id !== turnId) return entry;
       const next = updater(entry);
       if (next === entry) return entry;
@@ -416,7 +395,6 @@ export class Transcript<
   private handled(event: TurnEvent<TAnnotation>): TranscriptApplyResult<TAnnotation, THostEvent> {
     return {
       handled: true,
-      state: this._state,
       event,
     };
   }

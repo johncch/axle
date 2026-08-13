@@ -599,7 +599,7 @@ export class Agent {
    * always at rest — a snapshot never contains a streaming or running turn.
    * The returned object is the pure continuation: session id and the active
    * model-facing conversation. It contains no renderable turn state —
-   * transcripts are host-owned; persist your `TranscriptState`
+   * transcripts are host-owned; persist your `Transcript.turns`
    * alongside it.
    *
    * Do not await this from inside a running send (a tool's `execute`,

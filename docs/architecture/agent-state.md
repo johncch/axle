@@ -15,13 +15,13 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    sessions are ignored.
 2. **The Agent holds no transcript.** It emits `TurnEvent`s; whoever wants
    a transcript folds them with the shipped in-memory `Transcript` and stores
-   its state. Lose that state, lose the transcript — the Agent cannot recreate
+   its turns. Lose those turns, lose the transcript — the Agent cannot recreate
    it. Internally the Agent keeps only a turn-scoped fold to build
    `result.turn`, discarded when the operation settles.
 3. **The event stream is the only channel between engine and transcript.** Hosts
    attach with `agent.on(...)`; there is no injected store, no engine-side
    read-back, no `session:restore` event. Restore means the host re-seeds
-   its own transcript (`new Transcript(savedState)`) from its own copy,
+   its own transcript (`new Transcript(savedTurns)`) from its own copy,
    persisted next to the `AgentSession` in one atomic write.
 4. **Historical messages are disposable.** Compaction replaces `messages`
    and the old ones cease to exist. Lookback is served by the transcript; hosts

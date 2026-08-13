@@ -5,7 +5,6 @@ import type {
   Stats,
   TranscriptApplyResult,
   TranscriptInput,
-  TranscriptState,
   Turn,
   TimingInfo,
   TurnMetadata,
@@ -22,8 +21,7 @@ describe("ui entrypoint", () => {
     };
 
     const result: TranscriptApplyResult<AppAnnotation> = transcript.apply(event);
-    const state: TranscriptState<AppAnnotation> = result.state;
-    const turns: Turn<AppAnnotation>[] = transcript.turns;
+    const turns: readonly Turn<AppAnnotation>[] = transcript.turns;
     const metadata: TurnMetadata = { source: "example" };
     const usage: Stats = { in: 1, out: 1 };
     const timing: TimingInfo = { start: "2026-01-01T00:00:00.000Z" };
@@ -35,7 +33,6 @@ describe("ui entrypoint", () => {
     };
 
     expect(result.handled).toBe(true);
-    expect(state.turns).toBe(turns);
     expect(metadata.source).toBe("example");
     expect(turns).toEqual([{ id: "t1", owner: "agent", parts: [], status: "streaming" }]);
     expect(usage.in).toBe(1);

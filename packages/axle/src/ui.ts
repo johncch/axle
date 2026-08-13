@@ -7,12 +7,7 @@ export type {
   ThinkingContinuity,
 } from "./messages/message.js";
 export { Transcript } from "./turns/transcript.js";
-export type {
-  TranscriptApplyResult,
-  TranscriptInput,
-  TranscriptState,
-  UnknownEvent,
-} from "./turns/transcript.js";
+export type { TranscriptApplyResult, TranscriptInput, UnknownEvent } from "./turns/transcript.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export type {
   ActionPart,

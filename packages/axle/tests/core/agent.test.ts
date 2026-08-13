@@ -593,7 +593,7 @@ describe("Agent", () => {
     });
 
     const restored = new Agent({ provider, model: "mock" }, session);
-    const restoredTranscript = new Transcript(transcript.state);
+    const restoredTranscript = new Transcript(transcript.turns);
     restored.on((event) => restoredTranscript.apply(event));
 
     expect(restored.messages).toEqual(session.messages);

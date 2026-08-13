@@ -25,35 +25,35 @@ describe("Transcript", () => {
   test("accumulates turn events into render state", () => {
     const transcript = new Transcript();
 
-    let result = transcript.apply({ type: "turn:start", turnId: "t1" });
+    const result = transcript.apply({ type: "turn:start", turnId: "t1" });
     expect(result.handled).toBe(true);
-    expect(result.state.turns).toEqual([
+    expect(transcript.turns).toEqual([
       { id: "t1", owner: "agent", parts: [], status: "streaming" },
     ]);
 
-    result = transcript.apply({
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "text", text: "" },
     });
-    expect((result.state.turns[0] as Turn).parts).toEqual([{ id: "p1", type: "text", text: "" }]);
+    expect((transcript.turns[0] as Turn).parts).toEqual([{ id: "p1", type: "text", text: "" }]);
 
     transcript.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: "Hello" });
-    result = transcript.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: " world" });
-    expect((result.state.turns[0] as Turn).parts[0]).toEqual({
+    transcript.apply({ type: "text:delta", turnId: "t1", partId: "p1", delta: " world" });
+    expect((transcript.turns[0] as Turn).parts[0]).toEqual({
       id: "p1",
       type: "text",
       text: "Hello world",
     });
 
-    result = transcript.apply({
+    transcript.apply({
       type: "turn:end",
       turnId: "t1",
       status: "complete",
       usage: { in: 1, out: 2 },
       timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:01.000Z" },
     });
-    expect(result.state.turns[0]).toMatchObject({
+    expect(transcript.turns[0]).toMatchObject({
       status: "complete",
       usage: { in: 1, out: 2 },
       timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:01.000Z" },
@@ -64,13 +64,13 @@ describe("Transcript", () => {
     const transcript = new Transcript();
     transcript.apply({ type: "turn:start", turnId: "t1" });
 
-    const result = transcript.apply({
+    transcript.apply({
       type: "error",
       turnId: "t1",
       error: { type: "model", message: "Rate limit exceeded" },
     });
 
-    expect(result.state.turns[0]).toMatchObject({
+    expect(transcript.turns[0]).toMatchObject({
       id: "t1",
       error: { type: "model", message: "Rate limit exceeded" },
     });
@@ -105,14 +105,14 @@ describe("Transcript", () => {
       parameters: { q: "axle" },
     });
     transcript.apply({ type: "action:progress", turnId: "t1", partId: "p1", chunk: "partial" });
-    const result = transcript.apply({
+    transcript.apply({
       type: "action:complete",
       turnId: "t1",
       partId: "p1",
       result: { type: "success", content: "done" },
     });
 
-    const part = (result.state.turns[0] as Turn).parts[0];
+    const part = (transcript.turns[0] as Turn).parts[0];
     expect(part).toMatchObject({
       type: "action",
       kind: "tool",
@@ -152,19 +152,19 @@ describe("Transcript", () => {
       partId: "p2",
       delta: "Checked sources.",
     });
-    const result = transcript.apply({
+    transcript.apply({
       type: "thinking:update",
       turnId: "t1",
       partId: "p2",
       continuity: { provider: "openai", encrypted: "encrypted" },
     });
 
-    expect((result.state.turns[0] as Turn).parts[0]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       type: "text",
       text: "OpenAI",
       citations: [{ source: { type: "web", title: "OpenAI", url: "https://openai.com" } }],
     });
-    expect((result.state.turns[0] as Turn).parts[1]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[1]).toMatchObject({
       type: "thinking",
       summary: "Checked sources.",
       redacted: false,
@@ -179,13 +179,13 @@ describe("Transcript", () => {
     };
 
     transcript.apply({ type: "turn:start", turnId: "t1" });
-    const result = transcript.apply({
+    transcript.apply({
       type: "part:start",
       turnId: "t1",
       part: { id: "p1", type: "citation", citations: [citation] },
     });
 
-    expect((result.state.turns[0] as Turn).parts[0]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       type: "citation",
       citations: [citation],
     });
@@ -194,25 +194,24 @@ describe("Transcript", () => {
   test("returns unhandled for unknown host events", () => {
     type HostEvent = { type: "run:terminal"; status: "completed" };
     const transcript = new Transcript<Annotation, HostEvent>();
-    const state = transcript.state;
+    const turns = transcript.turns;
     const result = transcript.apply({ type: "run:terminal", status: "completed" });
 
     expect(result.handled).toBe(false);
-    expect(result.state).toBe(state);
+    expect(transcript.turns).toBe(turns);
     if (result.handled === false) {
       const hostEvent: HostEvent = result.event;
       expect(hostEvent).toEqual({ type: "run:terminal", status: "completed" });
     }
   });
 
-  test("returns a new state snapshot for handled mutations", () => {
+  test("replaces the turn snapshot for handled mutations", () => {
     const transcript = new Transcript();
-    const first = transcript.state;
+    const first = transcript.turns;
     const result = transcript.apply({ type: "turn:start", turnId: "t1" });
 
     expect(result.handled).toBe(true);
-    expect(result.state).not.toBe(first);
-    expect(transcript.state).toBe(result.state);
+    expect(transcript.turns).not.toBe(first);
   });
 
   test("accumulates turn and part annotations", () => {
@@ -237,13 +236,13 @@ describe("Transcript", () => {
         data: { value: 1 },
       },
     });
-    const result = transcript.apply({
+    transcript.apply({
       type: "annotation:start",
       target: { type: "part", turnId: "t1", partId: "p1" },
       annotation: { id: "a2", kind: "metric", label: "Part metric", data: { value: 2 } },
     });
 
-    expect((result.state.turns[0] as Turn).annotations).toEqual([
+    expect((transcript.turns[0] as Turn).annotations).toEqual([
       {
         id: "a1",
         kind: "metric",
@@ -252,7 +251,7 @@ describe("Transcript", () => {
         data: { value: 1 },
       },
     ]);
-    expect((result.state.turns[0] as Turn).parts[0].annotations).toEqual([
+    expect((transcript.turns[0] as Turn).parts[0].annotations).toEqual([
       {
         id: "a2",
         kind: "metric",
@@ -290,7 +289,7 @@ describe("Transcript", () => {
         data: { score: 0.5 },
       },
     });
-    const result = transcript.apply({
+    transcript.apply({
       type: "annotation:end",
       target: { type: "turn", turnId: "t1" },
       annotation: {
@@ -301,7 +300,7 @@ describe("Transcript", () => {
       },
     });
 
-    expect((result.state.turns[0] as Turn).annotations).toEqual([
+    expect((transcript.turns[0] as Turn).annotations).toEqual([
       {
         id: "eval-1",
         kind: "eval",
@@ -315,7 +314,7 @@ describe("Transcript", () => {
 
   test("missing annotation targets are ignored", () => {
     const transcript = new Transcript();
-    const state = transcript.state;
+    const turns = transcript.turns;
     const result = transcript.apply({
       type: "annotation:start",
       target: { type: "turn", turnId: "missing" },
@@ -323,7 +322,7 @@ describe("Transcript", () => {
     });
 
     expect(result.handled).toBe(true);
-    expect(result.state).toBe(state);
+    expect(transcript.turns).toBe(turns);
   });
 
   test("compaction updates replace transient state and completion supplies final state", () => {
@@ -340,27 +339,27 @@ describe("Transcript", () => {
       partId: "c1",
       update: { summary: "draft summary…" },
     });
-    const streamed = transcript.apply({
+    transcript.apply({
       type: "compaction:update",
       turnId: "t1",
       partId: "c1",
       update: { summary: "current summary", progress: 0.5 },
     });
-    expect((streamed.state.turns[0] as Turn).parts[0]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       type: "compaction",
       status: "running",
       summary: "current summary",
       progress: 0.5,
     });
 
-    const settled = transcript.apply({
+    transcript.apply({
       type: "compaction:complete",
       turnId: "t1",
       partId: "c1",
       summary: "final stamped summary",
       timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:30.000Z" },
     });
-    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       type: "compaction",
       status: "complete",
       summary: "final stamped summary",
@@ -384,14 +383,14 @@ describe("Transcript", () => {
       update: { summary: "partial", progress: 0.4 },
     });
 
-    const settled = transcript.apply({
+    transcript.apply({
       type: "compaction:error",
       turnId: "t1",
       partId: "c1",
       error: "summarizer down",
     });
 
-    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       type: "compaction",
       status: "error",
       summary: "partial",
@@ -415,13 +414,13 @@ describe("Transcript", () => {
       update: { summary: "Compacting history…", progress: 0.5 },
     });
 
-    const settled = transcript.apply({
+    transcript.apply({
       type: "compaction:complete",
       turnId: "t1",
       partId: "c1",
     });
 
-    expect((settled.state.turns[0] as Turn).parts[0]).toMatchObject({
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       type: "compaction",
       status: "complete",
       summary: "Compacting history…",
@@ -435,11 +434,12 @@ describe("Transcript", () => {
       type: "turn:user",
       turn: { id: "restored", owner: "user", parts: [], status: "complete" },
     });
-    const restored = new Transcript(saved.state);
+    const savedTurns = [...saved.turns];
+    const restored = new Transcript(savedTurns);
+    savedTurns.length = 0;
     restored.apply({ type: "turn:start", turnId: "next" });
 
     expect(restored.turns.map((turn) => turn.id)).toEqual(["restored", "next"]);
-    expect(restored.state).toEqual({ turns: restored.turns });
   });
 
   test("annotation generics preserve consumer data types", () => {
@@ -460,7 +460,7 @@ describe("Transcript", () => {
       },
     });
 
-    expectTypeOf(transcript.turns).toEqualTypeOf<Turn<AppAnnotation>[]>();
+    expectTypeOf(transcript.turns).toEqualTypeOf<readonly Turn<AppAnnotation>[]>();
 
     const child: Turn<AppAnnotation> = {
       id: "child-turn",

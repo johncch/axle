@@ -6,7 +6,7 @@ export type {
   ThinkingContinuity,
 } from "../messages/message.js";
 export { Transcript } from "./transcript.js";
-export type { TranscriptApplyResult, TranscriptInput, TranscriptState } from "./transcript.js";
+export type { TranscriptApplyResult, TranscriptInput } from "./transcript.js";
 export { TurnEventBuilder } from "./eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./events.js";
 export type {

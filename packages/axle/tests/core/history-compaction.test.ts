@@ -555,9 +555,7 @@ describe("Agent.compact", () => {
 
     expect(seen).toHaveLength(2);
     expect(seen[0]).not.toBe(seen[1]);
-    const partIds = transcript.turns
-      .filter(isCompactionTurn)
-      .map((turn) => turn.parts[0]?.id);
+    const partIds = transcript.turns.filter(isCompactionTurn).map((turn) => turn.parts[0]?.id);
     expect(partIds).toEqual(seen);
   });
 
@@ -719,7 +717,7 @@ describe("Agent.compact", () => {
     await first.compact();
 
     const restored = new Agent({ provider, model: "mock" }, await first.snapshot());
-    const restoredTranscript = new Transcript(firstTranscript.state);
+    const restoredTranscript = new Transcript(firstTranscript.turns);
     restored.on((event) => restoredTranscript.apply(event));
     await restored.send("second").final;
 

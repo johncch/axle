@@ -56,10 +56,11 @@ to a single assistant message or to a provider request.
 
 **Transcript** — the host-owned, reader-facing fold of `TurnEvent`s into turns
 and annotations. The exported `Transcript` class is the shipped in-memory
-implementation; hosts persist its `state` and pass that `TranscriptState` to
-the constructor on restore. The Agent holds no transcript — it emits events
-and keeps only the active `messages` (folded working memory, bounded by
-compaction). Lose the transcript state, lose the transcript.
+implementation; hosts persist its `turns` and pass them to the constructor on
+restore. The constructor shallow-copies that array, and the public `turns`
+view is readonly; structural changes go through `apply`. The Agent holds no
+transcript — it emits events and keeps only the active `messages` (folded
+working memory, bounded by compaction). Lose the turns, lose the transcript.
 
 **Session** — the continuable identity of a conversation (`sessionId`).
 `AgentSession` is its serialized form — the pure continuation
