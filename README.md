@@ -210,14 +210,13 @@ Both handle the full tool-call loop automatically. Agent uses `stream()`
 internally and adds history management, system prompt, and callback wiring on
 top.
 
-Two options bound the tool loop. `maxIterations` caps the number of model
-turns; `maxContextTokens` caps the context budget, checked after each turn's
-tools are answered against that turn's reported usage (effective input +
-output). Crossing either limit is a stop, not an error: the loop returns
-`ok: true` with everything accumulated so far and `stopped` set to
-`"max-iterations"` or `"token-limit"`. The caller decides what happens next —
-e.g. compact the conversation and start a new call. Non-positive limits throw
-at call time.
+Two options bound the tool loop. `maxSteps` caps the number of model requests;
+`maxContextTokens` caps the context budget, checked after each step's tools are
+answered against that step's reported usage (effective input + output).
+Crossing either limit is a stop, not an error: the loop returns `ok: true` with
+everything accumulated so far and `stopped` set to `"max-steps"` or
+`"token-limit"`. The caller decides what happens next — e.g. compact the
+conversation and start a new call. Non-positive limits throw at call time.
 
 ### Results
 
@@ -232,7 +231,7 @@ if (!result.ok) {
 }
 
 result.response; // always present when ok is true
-result.stopped; // "max-iterations" | "token-limit" when a loop limit ended the run
+result.stopped; // "max-steps" | "token-limit" when a loop limit ended the run
 ```
 
 For `generate()` and `stream()`, plain calls return the final assistant message.
@@ -431,7 +430,7 @@ const researcher = createAgentTool({
   schema: z.object({ question: z.string() }),
   createAgent: () =>
     new Agent({
-      provider: anthropic({ apiKey }),
+      provider: anthropic(apiKey),
       model: "claude-haiku-4-5-20251001",
       system: "You are a focused researcher. Answer concisely.",
     }),
@@ -688,7 +687,8 @@ try {
 ```
 
 `TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
-`part:end`, `text:delta`, `thinking:delta`, `action:args-delta`,
+`part:end`, `text:delta`, `text:citation`, `thinking:delta`,
+`thinking:summary-delta`, `thinking:update`, `action:args-delta`,
 `action:running`, `action:progress`, `action:complete`, `action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:error`, `annotation:start`, `annotation:update`,
@@ -701,8 +701,8 @@ arrives `running` via `part:start`, `compaction:update` replaces transient
 returned summary replaces any transient summary.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
-`"thinking"`, `"file"`, `"action"`, `"compaction"`). Action parts further
-discriminate on `part.kind` (`"tool" | "agent" | "provider-tool"`).
+`"thinking"`, `"file"`, `"citation"`, `"action"`, `"compaction"`). Action parts
+further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool"`).
 
 Callbacks are registered once and fire on every subsequent `send()`, and also
 receive the events of a manual `agent.compact()` (an engine-opened turn
@@ -822,7 +822,7 @@ to the raw provider stream, with separate `start`/`end` events for each
 text and thinking block, and distinct events for tool request, execution,
 and completion.
 
-`StreamEvent` types: `turn:start`, `turn:complete`, `tool-results:start`,
+`StreamEvent` types: `step:start`, `step:complete`, `tool-results:start`,
 `tool-results:complete`, `text:start`, `text:delta`, `text:citation`,
 `text:end`, `citation`, `thinking:start`, `thinking:delta`,
 `thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
@@ -830,10 +830,10 @@ and completion.
 `tool:exec-error`, `provider-tool:start`, `provider-tool:complete`, `error`.
 
 Tool and provider-tool events correlate by `id`. Text and thinking parts
-stream sequentially within a turn, so their deltas belong to the most
+stream sequentially within a step, so their deltas belong to the most
 recently opened part.
 
-The `turn:complete` and `tool-results:complete` events carry complete
+The `step:complete` and `tool-results:complete` events carry complete
 `AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server
 architectures that need authoritative message boundaries.
 
@@ -961,6 +961,10 @@ Axle stops at the agent runtime boundary. If you need long-lived sessions,
 SSE transport, resumable cursors, or React client hooks, build those concerns
 in your host application on top of `Agent`, `agent.on(...)`, and the streamed
 turn events that Axle emits.
+
+`agent.messages` exposes the active, model-facing conversation as a copy —
+requests are built from it, and compaction replaces it. Read it for inspection
+or to drive your own persistence; mutating the returned array has no effect.
 
 To persist and resume an agent, snapshot it and construct a new agent with the
 session. The snapshot is the pure continuation (`{ sessionId, messages }`) —
