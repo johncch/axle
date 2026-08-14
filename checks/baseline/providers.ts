@@ -1,7 +1,8 @@
 import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
 import { Models } from "@fifthrevision/axle/models";
 
-export type BaselineProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together";
+export type BaselineProviderId =
+  "openai" | "anthropic" | "gemini" | "openrouter" | "together" | "ollama";
 
 export interface BaselineProviderTarget {
   id: BaselineProviderId;
@@ -40,12 +41,18 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
   },
   {
     id: "together",
-    model: process.env.TOGETHER_MODEL ?? "deepseek-ai/DeepSeek-V4-Pro",
+    model: process.env.TOGETHER_MODEL ?? "meta-models/Muse-Glimmer-30B",
     default: true,
     createProvider: () =>
       chatCompletions("https://api.together.ai/v1", {
         apiKey: getEnv("TOGETHER_API_KEY"),
       }),
+  },
+  {
+    id: "ollama",
+    model: process.env.OLLAMA_MODEL ?? "muse-glimmer:30b-mlx",
+    default: false,
+    createProvider: () => chatCompletions("http://localhost:11434/v1"),
   },
 ];
 

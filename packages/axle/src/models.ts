@@ -9,10 +9,6 @@ export const Models = {
     CLAUDE_FABLE_5: "anthropic/claude-fable-5",
     CLAUDE_HAIKU_4_5: "anthropic/claude-haiku-4-5",
     CLAUDE_HAIKU_4_5_20251001: "anthropic/claude-haiku-4-5-20251001",
-    /** @deprecated Deprecated by its publisher. */
-    CLAUDE_OPUS_4_1: "anthropic/claude-opus-4-1",
-    /** @deprecated Deprecated by its publisher. */
-    CLAUDE_OPUS_4_1_20250805: "anthropic/claude-opus-4-1-20250805",
     CLAUDE_OPUS_4_5: "anthropic/claude-opus-4-5",
     CLAUDE_OPUS_4_5_20251101: "anthropic/claude-opus-4-5-20251101",
     CLAUDE_OPUS_4_6: "anthropic/claude-opus-4-6",
@@ -29,16 +25,10 @@ export const Models = {
     DEEPSEEK_V4_PRO: "deepseek/deepseek-v4-pro",
   },
   Google: {
-    /** @deprecated Deprecated by its publisher. */
-    GEMINI_2_0_FLASH: "google/gemini-2.0-flash",
-    /** @deprecated Deprecated by its publisher. */
-    GEMINI_2_0_FLASH_LITE: "google/gemini-2.0-flash-lite",
     GEMINI_2_5_FLASH: "google/gemini-2.5-flash",
     GEMINI_2_5_FLASH_LITE: "google/gemini-2.5-flash-lite",
     GEMINI_2_5_PRO: "google/gemini-2.5-pro",
     GEMINI_3_FLASH_PREVIEW: "google/gemini-3-flash-preview",
-    /** @deprecated Deprecated by its publisher. */
-    GEMINI_3_PRO_PREVIEW: "google/gemini-3-pro-preview",
     GEMINI_3_1_FLASH_LITE: "google/gemini-3.1-flash-lite",
     /** @deprecated Deprecated by its publisher. */
     GEMINI_3_1_FLASH_LITE_PREVIEW: "google/gemini-3.1-flash-lite-preview",
@@ -47,6 +37,7 @@ export const Models = {
     GEMINI_3_5_FLASH: "google/gemini-3.5-flash",
     GEMINI_3_5_FLASH_LITE: "google/gemini-3.5-flash-lite",
     GEMINI_3_6_FLASH: "google/gemini-3.6-flash",
+    GEMINI_3_7_FLASH: "google/gemini-3.7-flash",
     GEMINI_FLASH_LATEST: "google/gemini-flash-latest",
     GEMINI_FLASH_LITE_LATEST: "google/gemini-flash-lite-latest",
     GEMMA_4_26B_A4B_IT: "google/gemma-4-26b-a4b-it",
@@ -129,6 +120,7 @@ export const Models = {
     QWEN3_7_FLASH: "qwen/qwen3.7-flash",
     QWEN3_7_MAX: "qwen/qwen3.7-max",
     QWEN3_7_PLUS: "qwen/qwen3.7-plus",
+    QWEN3_8_2_4T_A95B: "qwen/qwen3.8-2.4t-a95b",
     QWEN3_8_MAX: "qwen/qwen3.8-max",
   },
   ZAI: {
@@ -151,16 +143,6 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   [Models.Anthropic.CLAUDE_HAIKU_4_5_20251001]: {
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
-    multimodal: true,
-  },
-  [Models.Anthropic.CLAUDE_OPUS_4_1]: {
-    contextWindow: 200_000,
-    maxOutputTokens: 32_000,
-    multimodal: true,
-  },
-  [Models.Anthropic.CLAUDE_OPUS_4_1_20250805]: {
-    contextWindow: 200_000,
-    maxOutputTokens: 32_000,
     multimodal: true,
   },
   [Models.Anthropic.CLAUDE_OPUS_4_5]: {
@@ -223,16 +205,6 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 384_000,
     multimodal: false,
   },
-  [Models.Google.GEMINI_2_0_FLASH]: {
-    contextWindow: 1_048_576,
-    maxOutputTokens: 8_192,
-    multimodal: true,
-  },
-  [Models.Google.GEMINI_2_0_FLASH_LITE]: {
-    contextWindow: 1_048_576,
-    maxOutputTokens: 8_192,
-    multimodal: true,
-  },
   [Models.Google.GEMINI_2_5_FLASH]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
@@ -249,11 +221,6 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     multimodal: true,
   },
   [Models.Google.GEMINI_3_FLASH_PREVIEW]: {
-    contextWindow: 1_048_576,
-    maxOutputTokens: 65_536,
-    multimodal: true,
-  },
-  [Models.Google.GEMINI_3_PRO_PREVIEW]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
     multimodal: true,
@@ -289,6 +256,11 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     multimodal: true,
   },
   [Models.Google.GEMINI_3_6_FLASH]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    multimodal: true,
+  },
+  [Models.Google.GEMINI_3_7_FLASH]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
     multimodal: true,
@@ -550,7 +522,7 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_5_122B_A10B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 65_536,
+    maxOutputTokens: 81_920,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_27B]: {
@@ -560,12 +532,12 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_5_35B_A3B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 262_144,
+    maxOutputTokens: 65_536,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_397B_A17B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 65_536,
+    maxOutputTokens: 262_144,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_9B]: {
@@ -590,7 +562,7 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_6_27B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 131_072,
+    maxOutputTokens: 262_144,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_6_35B_A3B]: {
@@ -627,6 +599,11 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     contextWindow: 1_000_000,
     maxOutputTokens: 131_072,
     multimodal: true,
+  },
+  [Models.Qwen.QWEN3_8_2_4T_A95B]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 262_144,
+    multimodal: false,
   },
   [Models.Qwen.QWEN3_8_MAX]: {
     contextWindow: 1_000_000,
