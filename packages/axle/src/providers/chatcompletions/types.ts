@@ -70,6 +70,7 @@ export interface ChatCompletionChoice {
     content: string | null;
     reasoning_content?: string | null;
     reasoning?: string | null;
+    reasoning_details?: ChatCompletionReasoningDetail[];
     annotations?: ChatCompletionAnnotation[];
     tool_calls?: {
       id: string;
@@ -92,6 +93,18 @@ export interface ChatCompletionAnnotation {
     start_index?: number;
     end_index?: number;
   };
+  [key: string]: unknown;
+}
+
+export interface ChatCompletionReasoningDetail {
+  type: string;
+  id?: string | null;
+  format?: string;
+  index?: number;
+  text?: string;
+  summary?: string;
+  data?: string;
+  signature?: string | null;
   [key: string]: unknown;
 }
 
@@ -119,6 +132,7 @@ export interface ChatCompletionChunkChoice {
     content?: string;
     reasoning_content?: string;
     reasoning?: string;
+    reasoning_details?: ChatCompletionReasoningDetail[];
     annotations?: ChatCompletionAnnotation[];
     tool_calls?: {
       index: number;

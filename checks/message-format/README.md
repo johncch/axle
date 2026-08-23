@@ -20,7 +20,7 @@ Cases cover:
 - normalized citation source shape fixtures
 - redacted thinking
 - thinking summaries
-- streamed thinking text
+- streamed thinking text, including OpenRouter `thinking:delta` events
 - provider continuity payloads for OpenAI, Anthropic, and Gemini
 
 Provider coverage is intentionally uneven because the providers expose different

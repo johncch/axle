@@ -63,6 +63,42 @@ describe("createStreamingRequest", () => {
     });
   });
 
+  test("surfaces OpenRouter reasoning details as public thinking deltas", async () => {
+    const sseLines = [
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { role: "assistant", reasoning_details: [{ type: "reasoning.text", text: "First step", id: "reasoning-1", format: "anthropic-claude-v1", index: 0 }] }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { reasoning_details: [{ type: "reasoning.text", text: " then second", id: "reasoning-1", format: "anthropic-claude-v1", index: 0 }] }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Answer" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 8 } })}`,
+      "",
+      "data: [DONE]",
+      "",
+    ];
+
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    const handle = stream({
+      provider: makeProvider(),
+      model: MODEL,
+      messages: [{ role: "user", content: "Think first" }],
+    });
+    const thinkingDeltas: string[] = [];
+    handle.on((event) => {
+      if (event.type === "thinking:delta") thinkingDeltas.push(event.delta);
+    });
+
+    const result = await handle.final;
+
+    expect(result.ok).toBe(true);
+    expect(thinkingDeltas).toEqual(["First step", " then second"]);
+    if (!result.ok) throw new Error("Expected successful stream");
+    expect(result.final.content).toContainEqual(
+      expect.objectContaining({ type: "thinking", text: "First step then second" }),
+    );
+  });
+
   test("handles data: [DONE] gracefully", async () => {
     const sseLines = [
       `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,

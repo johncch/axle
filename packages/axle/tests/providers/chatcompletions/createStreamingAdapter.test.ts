@@ -213,6 +213,82 @@ describe("createStreamingAdapter", () => {
       expect((thinkingDeltas[0] as any).data.text).toBe("OpenRouter step");
     });
 
+    test("emits thinking-delta for OpenRouter reasoning.text details", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          reasoning_details: [
+            {
+              type: "reasoning.text",
+              text: "Structured OpenRouter step",
+              id: "reasoning-1",
+              format: "anthropic-claude-v1",
+              index: 0,
+            },
+          ],
+        }),
+      );
+
+      expect(chunks.find((chunk) => chunk.type === "thinking-start")).toMatchObject({
+        type: "thinking-start",
+        data: { index: 0, id: "reasoning-1" },
+      });
+      expect(chunks.find((chunk) => chunk.type === "thinking-delta")).toMatchObject({
+        type: "thinking-delta",
+        data: { index: 0, text: "Structured OpenRouter step" },
+      });
+    });
+
+    test("emits summary and redaction chunks for structured OpenRouter reasoning details", () => {
+      const adapter = createStreamingAdapter();
+      const summaryChunks = adapter.handleChunk(
+        makeChunk({
+          reasoning_details: [
+            { type: "reasoning.summary", summary: "Checked the constraints.", index: 0 },
+          ],
+        }),
+      );
+      const encryptedChunks = adapter.handleChunk(
+        makeChunk({
+          reasoning_details: [{ type: "reasoning.encrypted", data: "encrypted-state", index: 1 }],
+        }),
+      );
+
+      expect(summaryChunks.find((chunk) => chunk.type === "thinking-summary-delta")).toMatchObject({
+        type: "thinking-summary-delta",
+        data: { index: 0, text: "Checked the constraints." },
+      });
+      expect(encryptedChunks.find((chunk) => chunk.type === "thinking-metadata")).toMatchObject({
+        type: "thinking-metadata",
+        data: {
+          index: 0,
+          redacted: true,
+          providerMetadata: {
+            reasoningDetail: {
+              type: "reasoning.encrypted",
+              data: "encrypted-state",
+              index: 1,
+            },
+          },
+        },
+      });
+    });
+
+    test("does not duplicate reasoning when structured and legacy fields are both present", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          reasoning: "Legacy duplicate",
+          reasoning_details: [{ type: "reasoning.text", text: "Canonical detail", index: 0 }],
+        }),
+      );
+
+      const thinkingDeltas = chunks.filter((chunk) => chunk.type === "thinking-delta");
+      expect(thinkingDeltas).toEqual([
+        { type: "thinking-delta", data: { index: 0, text: "Canonical detail" } },
+      ]);
+    });
+
     test("does not emit thinking-start for subsequent reasoning chunks", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ reasoning_content: "Step 1" }));
@@ -488,6 +564,16 @@ function makeChunk(
     content?: string;
     reasoning?: string;
     reasoning_content?: string;
+    reasoning_details?: Array<{
+      type: string;
+      id?: string | null;
+      format?: string;
+      index?: number;
+      text?: string;
+      summary?: string;
+      data?: string;
+      signature?: string | null;
+    }>;
     annotations?: any[];
     tool_calls?: any[];
   },
