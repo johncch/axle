@@ -874,6 +874,9 @@ const compactor = new PromptCompactor({
     "Create a continuation summary. Preserve decisions, constraints, completed work, and open tasks.",
   thresholdTokens: 100_000,
   targetTokens: 20_000,
+  providerOptions: {
+    reasoning: { effort: "medium" },
+  },
 });
 
 agent.setCompaction({
@@ -934,6 +937,16 @@ compactor recognizes its own prior output, so carried-over messages are
 excluded from the appendix and repeated compactions never re-collect an
 earlier summary as a "recent" user message. The engine does not read stamps;
 custom `CompactionCallback`s that don't stamp are valid.
+
+The compactor accepts `reasoning` and `providerOptions` with the same semantics
+as `Agent`, `generate()`, and `stream()`. `reasoning` is the normalized boolean
+convenience and defaults to `false`; use `providerOptions` for exact native
+controls such as reasoning effort or a thinking-token budget. `targetTokens` is
+the compactor's only token budget: after reserving space for the recent-message
+appendix, the remainder becomes the provider's output limit and the maximum
+stored summary size. Provider thinking consumes that output budget, so enabling
+it may produce a shorter visible summary. The example above uses OpenAI's native
+reasoning shape; other providers receive their own native options unchanged.
 
 Like tool callbacks, the compaction callbacks run while the agent's scheduler
 is held: scheduling more work on the same agent from inside them queues behind

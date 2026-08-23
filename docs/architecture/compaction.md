@@ -100,7 +100,13 @@ model error when continuing genuinely no longer fits.
 empty → false, otherwise `usage.total >= thresholdTokens`; `compact` streams
 via `stream()`, reports estimated progress through 100%, and returns two
 stamped messages (summary, recent-user-messages appendix) without duplicating
-the generated summary into the reader-facing compaction part.
+the generated summary into the reader-facing compaction part. `reasoning` and
+`providerOptions` match their model-request semantics elsewhere in Axle;
+provider-native options override normalized mappings. Reasoning defaults to
+disabled. `targetTokens` is the sole compactor budget: the recent-message
+appendix is reserved first, and the remainder bounds both provider output and
+the stored summary. Thinking therefore consumes summary-generation capacity
+rather than introducing a second token-budget option.
 
 ## Rejected alternatives
 

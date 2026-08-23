@@ -116,6 +116,25 @@ describe("PromptCompactor", () => {
     expect(requests[0].signal).toBeInstanceOf(AbortSignal);
   });
 
+  test("forwards provider thinking options within the computed summary budget", async () => {
+    const { provider, requests } = createProvider({ text: "Reasoned summary." });
+    const compactor = createCompactor(provider, {
+      targetTokens: 300,
+      reasoning: true,
+      providerOptions: { reasoning: { effort: "medium" } },
+    });
+
+    await compactor.compact(
+      { messages: [user("remember blue"), assistant("acknowledged")] },
+      { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
+    );
+
+    expect(requests[0].reasoning).toBe(true);
+    expect(requests[0].maxOutputTokens).toBeGreaterThan(150);
+    expect(requests[0].maxOutputTokens).toBeLessThan(300);
+    expect(requests[0].providerOptions).toEqual({ reasoning: { effort: "medium" } });
+  });
+
   test("returns a stamped summary message and a stamped appendix of recent user messages", async () => {
     const { provider } = createProvider({ text: "Earlier conversation summary." });
     const compactor = createCompactor(provider, { recentUserMessages: 3 });
@@ -282,6 +301,7 @@ interface CapturedStreamRequest {
   messages: AxleMessage[];
   maxOutputTokens?: number;
   reasoning?: unknown;
+  providerOptions?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
@@ -307,6 +327,7 @@ function createProvider(result: { text: string } | { error: string }): {
           messages: params.messages,
           maxOutputTokens: params.maxOutputTokens,
           reasoning: params.reasoning,
+          providerOptions: params.providerOptions,
           signal: params.signal,
         });
         yield { type: "start", id: "summary-1", data: { model, timestamp: 0 } };

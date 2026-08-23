@@ -298,8 +298,10 @@ export const baselineCases: BaselineCase[] = [
           "Summarize this conversation for a fresh assistant taking over. " +
           "Preserve the code word and magic number exactly.",
         thresholdTokens: 100_000,
-        targetTokens: 800,
+        targetTokens: requestOptions.reasoning ? 12_000 : 800,
         recentUserMessages: 1,
+        reasoning: requestOptions.reasoning,
+        providerOptions: requestOptions.providerOptions,
       });
 
       agent.setCompaction({
