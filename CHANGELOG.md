@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.30.2] - 2026-08-23
+
+- Added support for OpenRouter streaming thinking deltas so reasoning output is handled correctly during chat completions.
+- Added reasoning option support for prompt compaction, enabling thinking-capable model configurations during compaction.
+- Updated available model definitions.
+
 ## [0.30.1] - 2026-08-13
 
 - Fixed `PromptCompactor` progress reporting and summary handling so completed compactions are reported reliably without duplicating generated summaries.
