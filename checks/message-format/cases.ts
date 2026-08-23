@@ -388,6 +388,40 @@ export const messageFormatCases: MessageFormatCase[] = [
     },
   },
   {
+    id: "chatcompletions-streaming-thinking-text",
+    description: "OpenRouter streams reasoning text through public thinking delta events.",
+    providers: ["openrouter"],
+    async run({ provider, model }) {
+      const handle = stream({
+        provider,
+        model,
+        messages: [{ role: "user", content: "Answer exactly: streaming reasoning ok" }],
+        maxOutputTokens: 512,
+        reasoning: true,
+      });
+      const events: string[] = [];
+      const thinkingDeltas: string[] = [];
+      handle.on((event) => {
+        events.push(event.type);
+        if (event.type === "thinking:delta") thinkingDeltas.push(event.delta);
+      });
+
+      const result = await handle.final;
+      if (!result.ok) return fail({ error: result.error, events });
+      const thinking = collectThinking(result.final);
+      return {
+        ok: thinkingDeltas.length > 0 && thinking.some((part) => Boolean(part.text)),
+        details: {
+          events,
+          thinkingDeltaCount: thinkingDeltas.length,
+          thinking,
+          text: collectText(result.final),
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
     id: "stream-turn-shape",
     description: "Streaming returns a final message with normalized renderable parts.",
     providers: ["openai", "anthropic", "gemini"],

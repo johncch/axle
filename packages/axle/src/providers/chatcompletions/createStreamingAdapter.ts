@@ -2,7 +2,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { truncateMiddle } from "../../utils/truncate.js";
 import { AxleStopReason } from "../types.js";
-import { ChatCompletionChunk } from "./types.js";
+import { ChatCompletionChunk, ChatCompletionReasoningDetail } from "./types.js";
 import { chatUsageToStats, convertFinishReason } from "./utils.js";
 import {
   isOpenRouterTextAnchoredCitation,
@@ -42,6 +42,26 @@ export function createStreamingAdapter() {
     currentPartIndex = -1;
   }
 
+  function ensureThinkingPart(
+    chunks: Array<AnyStreamChunk>,
+    detail?: ChatCompletionReasoningDetail,
+  ) {
+    if (activePart === "thinking") return;
+
+    closeActivePart(chunks);
+    currentPartIndex = partIndex++;
+    activePart = "thinking";
+    chunks.push({
+      type: "thinking-start",
+      data: {
+        index: currentPartIndex,
+        ...(detail?.id ? { id: detail.id } : {}),
+        ...(detail?.type === "reasoning.encrypted" ? { redacted: true } : {}),
+        ...(detail ? { providerMetadata: reasoningDetailMetadata(detail) } : {}),
+      },
+    });
+  }
+
   function handleChunk(chunk: ChatCompletionChunk): Array<AnyStreamChunk> {
     const chunks: Array<AnyStreamChunk> = [];
 
@@ -68,19 +88,39 @@ export function createStreamingAdapter() {
 
     const delta = choice.delta;
 
-    // Reasoning content (DeepSeek, vLLM, Kimi)
-    const reasoningDelta = delta.reasoning_content ?? delta.reasoning;
-    if (reasoningDelta) {
-      if (activePart !== "thinking") {
-        closeActivePart(chunks);
-        currentPartIndex = partIndex++;
-        activePart = "thinking";
+    let handledReasoningDetails = false;
+    for (const detail of delta.reasoning_details ?? []) {
+      if (detail.type === "reasoning.text" && detail.text) {
+        ensureThinkingPart(chunks, detail);
         chunks.push({
-          type: "thinking-start",
-          data: { index: currentPartIndex },
+          type: "thinking-delta",
+          data: { index: currentPartIndex, text: detail.text },
         });
+        handledReasoningDetails = true;
+      } else if (detail.type === "reasoning.summary" && detail.summary) {
+        ensureThinkingPart(chunks, detail);
+        chunks.push({
+          type: "thinking-summary-delta",
+          data: { index: currentPartIndex, text: detail.summary },
+        });
+        handledReasoningDetails = true;
+      } else if (detail.type === "reasoning.encrypted" && detail.data) {
+        ensureThinkingPart(chunks, detail);
+        chunks.push({
+          type: "thinking-metadata",
+          data: {
+            index: currentPartIndex,
+            redacted: true,
+            providerMetadata: reasoningDetailMetadata(detail),
+          },
+        });
+        handledReasoningDetails = true;
       }
+    }
 
+    const reasoningDelta = delta.reasoning_content ?? delta.reasoning;
+    if (!handledReasoningDetails && reasoningDelta) {
+      ensureThinkingPart(chunks);
       chunks.push({
         type: "thinking-delta",
         data: { index: currentPartIndex, text: reasoningDelta },
@@ -256,4 +296,8 @@ export function createStreamingAdapter() {
   }
 
   return { handleChunk, finalize };
+}
+
+function reasoningDetailMetadata(detail: ChatCompletionReasoningDetail): Record<string, unknown> {
+  return { reasoningDetail: detail };
 }
