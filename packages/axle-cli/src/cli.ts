@@ -5,7 +5,7 @@ import type { AgentConfig, MCP, Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import pkg from "../package.json";
 import { createCliAgentConfig } from "./cli/agent-config.js";
-import { getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
+import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { closeMcps } from "./cli/mcp.js";
 import { runBatch, runSingle } from "./cli/runners.js";
@@ -91,6 +91,7 @@ if (options.debug) {
 let serviceConfig: ServiceConfig;
 let jobConfig: JobConfig;
 try {
+  await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({
     span: rootSpan,
   });

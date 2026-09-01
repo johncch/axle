@@ -4,8 +4,14 @@ import { readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import YAML from "yaml";
 import * as z from "zod";
-import { CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
-import { JobConfig, JobConfigSchema, ServiceConfig } from "./schemas.js";
+import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
+import {
+  CliConfig,
+  CliConfigSchema,
+  JobConfig,
+  JobConfigSchema,
+  ServiceConfig,
+} from "./schemas.js";
 
 export async function getJobConfig(
   path: string,
@@ -68,13 +74,58 @@ export async function getServiceConfig(context: {
   return config;
 }
 
-async function readCredentialsFile(path: string): Promise<Record<string, string> | null> {
+export async function getCliConfig(context: {
+  span?: Span;
+  cwd?: string;
+  home?: string;
+}): Promise<CliConfig> {
+  const { span } = context;
+  const dirs = resolveConfigDirs(context);
+
+  let merged: CliConfig = {};
+  for (const dir of [dirs.user, dirs.project]) {
+    const path = join(dir, CONFIG_FILE);
+    const content = await readOptionalFile(path);
+    if (content === null) continue;
+
+    const parsed = CliConfigSchema.safeParse(YAML.parse(content));
+    if (!parsed.success) {
+      throw new Error(`Invalid config file at ${path}:\n${formatZodError(parsed.error)}`);
+    }
+    merged = mergeConfig(merged, parsed.data) as CliConfig;
+  }
+
+  span?.debug("CLI config: " + JSON.stringify(merged, null, 2));
+  return merged;
+}
+
+function mergeConfig(base: unknown, override: unknown): unknown {
+  if (isPlainObject(base) && isPlainObject(override)) {
+    const result: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(override)) {
+      result[key] = key in result ? mergeConfig(result[key], value) : value;
+    }
+    return result;
+  }
+  return override;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readOptionalFile(path: string): Promise<string | null> {
   try {
-    return parseDotenv(await readFile(path, { encoding: "utf-8" }));
+    return await readFile(path, { encoding: "utf-8" });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw e;
   }
+}
+
+async function readCredentialsFile(path: string): Promise<Record<string, string> | null> {
+  const content = await readOptionalFile(path);
+  return content === null ? null : parseDotenv(content);
 }
 
 function buildServiceConfig(lookup: (key: string) => string | undefined): ServiceConfig {

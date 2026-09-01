@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getJobConfig, getServiceConfig } from "../../src/cli/configs/loaders.js";
+import { getCliConfig, getJobConfig, getServiceConfig } from "../../src/cli/configs/loaders.js";
 
 const TEST_DIR = join(import.meta.dirname, "__config_loader_tmp__");
 const ORIGINAL_CWD = process.cwd();
@@ -147,6 +147,52 @@ describe("config loaders", () => {
     expect(config.anthropic).toEqual({ "api-key": "project-key", model: "user-model" });
     expect(config.openai).toEqual({ "api-key": "env-openai", model: undefined });
     expect(config.gemini).toEqual({ "api-key": "user-gemini", model: undefined });
+  });
+
+  it("merges config.yaml with project winning over user", async () => {
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "config.yaml"),
+      [
+        "defaults:",
+        "  model: anthropic/user-model",
+        "  providers:",
+        "    openai: openai/user-model",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(cwd, ".axle", "config.yaml"),
+      ["defaults:", "  providers:", "    openai: openai/project-model"].join("\n"),
+    );
+
+    const config = await getCliConfig({ cwd, home });
+
+    expect(config.defaults).toEqual({
+      model: "anthropic/user-model",
+      providers: { openai: "openai/project-model" },
+    });
+  });
+
+  it("returns an empty config when no config.yaml exists", async () => {
+    const config = await getCliConfig({
+      cwd: join(TEST_DIR, "nowhere"),
+      home: join(TEST_DIR, "nowhere-else"),
+    });
+
+    expect(config).toEqual({});
+  });
+
+  it("rejects an invalid config.yaml with its path", async () => {
+    const home = join(TEST_DIR, "home");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await writeFile(join(home, ".axle", "config.yaml"), "defaults:\n  model: [not, a, string]\n");
+
+    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(
+      /Invalid config file at .*config\.yaml/,
+    );
   });
 
   it("reports validation errors with paths", async () => {

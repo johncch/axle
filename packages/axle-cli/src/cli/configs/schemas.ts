@@ -95,6 +95,21 @@ export interface ServiceConfig {
 }
 
 /* ============================================================================
+ * CLI Config Schema (config.yaml)
+ * ========================================================================== */
+
+export const CliConfigSchema = z.object({
+  defaults: z
+    .object({
+      model: z.string().optional(),
+      providers: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
+});
+
+export type CliConfig = z.infer<typeof CliConfigSchema>;
+
+/* ============================================================================
  * MCP Config Schemas
  * ========================================================================== */
 
