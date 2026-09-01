@@ -103,6 +103,52 @@ describe("config loaders", () => {
     expect(config.openai).toEqual({ "api-key": "openai-key", model: "gpt-test" });
   });
 
+  it("reads credentials from the user home", async () => {
+    process.chdir(TEST_DIR);
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("ANTHROPIC_MODEL", "");
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await writeFile(
+      join(home, ".axle", "credentials"),
+      "ANTHROPIC_API_KEY=user-key\nANTHROPIC_MODEL=user-model\n",
+    );
+
+    const config = await getServiceConfig({ cwd, home });
+
+    expect(config.anthropic).toEqual({ "api-key": "user-key", model: "user-model" });
+  });
+
+  it("layers credentials per key: env over project over user", async () => {
+    process.chdir(TEST_DIR);
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("ANTHROPIC_MODEL", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("GEMINI_MODEL", "");
+    vi.stubEnv("OPENAI_API_KEY", "env-openai");
+    vi.stubEnv("OPENAI_MODEL", "");
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "credentials"),
+      "ANTHROPIC_API_KEY=user-key\nANTHROPIC_MODEL=user-model\nGEMINI_API_KEY=user-gemini\n",
+    );
+    await writeFile(
+      join(cwd, ".axle", "credentials"),
+      "ANTHROPIC_API_KEY=project-key\nOPENAI_API_KEY=project-openai\n",
+    );
+
+    const config = await getServiceConfig({ cwd, home });
+
+    expect(config.anthropic).toEqual({ "api-key": "project-key", model: "user-model" });
+    expect(config.openai).toEqual({ "api-key": "env-openai", model: undefined });
+    expect(config.gemini).toEqual({ "api-key": "user-gemini", model: undefined });
+  });
+
   it("reports validation errors with paths", async () => {
     const path = join(TEST_DIR, "bad.yml");
     await writeFile(path, "provider:\n  type: nope\ntask: test\n");

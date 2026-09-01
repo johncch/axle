@@ -1,9 +1,10 @@
 import type { Span } from "@fifthrevision/axle";
-import { config as loadDotenv } from "dotenv";
+import { config as loadDotenv, parse as parseDotenv } from "dotenv";
 import { readFile } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import YAML from "yaml";
 import * as z from "zod";
+import { CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
 import { JobConfig, JobConfigSchema, ServiceConfig } from "./schemas.js";
 
 export async function getJobConfig(
@@ -40,41 +41,68 @@ export async function getJobConfig(
   return parsed.data;
 }
 
-export async function getServiceConfig(context: { span?: Span }): Promise<ServiceConfig> {
+export async function getServiceConfig(context: {
+  span?: Span;
+  cwd?: string;
+  home?: string;
+}): Promise<ServiceConfig> {
   const { span } = context;
   loadDotenv({ quiet: true });
 
-  const envConfig = getEnvServiceConfig();
-  span?.debug("Service config: " + JSON.stringify(redactConfig(envConfig), null, 2));
-  return envConfig;
+  const dirs = resolveConfigDirs(context);
+  const layers: Record<string, string | undefined>[] = [process.env];
+  for (const dir of [dirs.project, dirs.user]) {
+    const parsed = await readCredentialsFile(join(dir, CREDENTIALS_FILE));
+    if (parsed) layers.push(parsed);
+  }
+
+  const lookup = (key: string): string | undefined => {
+    for (const layer of layers) {
+      if (layer[key]) return layer[key];
+    }
+    return undefined;
+  };
+
+  const config = buildServiceConfig(lookup);
+  span?.debug("Service config: " + JSON.stringify(redactConfig(config), null, 2));
+  return config;
 }
 
-function getEnvServiceConfig(): ServiceConfig {
+async function readCredentialsFile(path: string): Promise<Record<string, string> | null> {
+  try {
+    return parseDotenv(await readFile(path, { encoding: "utf-8" }));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+
+function buildServiceConfig(lookup: (key: string) => string | undefined): ServiceConfig {
   return compactServiceConfig({
-    openai: process.env.OPENAI_API_KEY
+    openai: lookup("OPENAI_API_KEY")
       ? {
-          "api-key": process.env.OPENAI_API_KEY,
-          model: process.env.OPENAI_MODEL,
+          "api-key": lookup("OPENAI_API_KEY"),
+          model: lookup("OPENAI_MODEL"),
         }
       : undefined,
-    anthropic: process.env.ANTHROPIC_API_KEY
+    anthropic: lookup("ANTHROPIC_API_KEY")
       ? {
-          "api-key": process.env.ANTHROPIC_API_KEY,
-          model: process.env.ANTHROPIC_MODEL,
+          "api-key": lookup("ANTHROPIC_API_KEY"),
+          model: lookup("ANTHROPIC_MODEL"),
         }
       : undefined,
-    gemini: process.env.GEMINI_API_KEY
+    gemini: lookup("GEMINI_API_KEY")
       ? {
-          "api-key": process.env.GEMINI_API_KEY,
-          model: process.env.GEMINI_MODEL,
+          "api-key": lookup("GEMINI_API_KEY"),
+          model: lookup("GEMINI_MODEL"),
         }
       : undefined,
     chatcompletions:
-      process.env.CHATCOMPLETIONS_BASE_URL && process.env.CHATCOMPLETIONS_MODEL
+      lookup("CHATCOMPLETIONS_BASE_URL") && lookup("CHATCOMPLETIONS_MODEL")
         ? {
-            "base-url": process.env.CHATCOMPLETIONS_BASE_URL,
-            model: process.env.CHATCOMPLETIONS_MODEL,
-            "api-key": process.env.CHATCOMPLETIONS_API_KEY,
+            "base-url": lookup("CHATCOMPLETIONS_BASE_URL"),
+            model: lookup("CHATCOMPLETIONS_MODEL"),
+            "api-key": lookup("CHATCOMPLETIONS_API_KEY"),
           }
         : undefined,
   });
