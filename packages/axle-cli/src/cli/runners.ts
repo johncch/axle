@@ -1,4 +1,4 @@
-import type { AgentConfig, Span, Stats } from "@fifthrevision/axle";
+import type { AgentConfig, AxleFailure, Span, Stats } from "@fifthrevision/axle";
 import { addStats, Agent, Instruct, loadFileContent } from "@fifthrevision/axle";
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
@@ -19,6 +19,17 @@ export interface ProgramOptions {
   args?: string[];
 }
 
+function describeFailure(failure: AxleFailure): string {
+  switch (failure.kind) {
+    case "model":
+      return `Model error: ${failure.message}`;
+    case "tool":
+      return `Tool error (${failure.error.name}): ${failure.message}`;
+    case "parse":
+      return `Parse error: ${failure.message}`;
+  }
+}
+
 export async function runSingle(
   input: CliJobInput,
   agentConfig: AgentConfig,
@@ -26,7 +37,7 @@ export async function runSingle(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: Span,
-) {
+): Promise<boolean> {
   const instruct = new Instruct({ prompt: input.task });
   if (input.files) {
     for (const filePath of input.files) {
@@ -45,16 +56,22 @@ export async function runSingle(
 
     addStats(stats, result.usage);
 
-    if (result.response) {
-      const text = result.response;
-      parentSpan.info(text, { markdown: true });
+    if (!result.ok) {
+      const msg = describeFailure(result.error);
+      parentSpan.error(msg);
+      jobSpan.error(msg);
+      jobSpan.end("error");
+      return false;
     }
+
+    parentSpan.info(result.response, { markdown: true });
 
     if (options.interactive) {
       await runInteractiveLoop(agent, stats, parentSpan);
     }
 
     jobSpan.end();
+    return true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     jobSpan.error(msg);
@@ -89,9 +106,10 @@ async function runInteractiveLoop(agent: Agent, stats: Stats, span: Span): Promi
 
         addStats(stats, result.usage);
 
-        if (result.response) {
-          const text = result.response;
-          span.info(text, { markdown: true });
+        if (result.ok) {
+          span.info(result.response, { markdown: true });
+        } else {
+          span.error(describeFailure(result.error));
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -111,12 +129,12 @@ export async function runBatch(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: Span,
-) {
+): Promise<boolean> {
   const filePaths = await glob(batchConfig.files);
 
   if (filePaths.length === 0) {
     parentSpan.warn(`No files matched pattern: ${batchConfig.files}`);
-    return;
+    return true;
   }
 
   parentSpan.info(`Batch: ${filePaths.length} file(s) matched "${batchConfig.files}"`);
@@ -166,6 +184,13 @@ export async function runBatch(
 
       addStats(stats, result.usage);
 
+      if (!result.ok) {
+        itemSpan.error(`Failed: ${describeFailure(result.error)}`);
+        itemSpan.end("error");
+        failed++;
+        return;
+      }
+
       await appendLedgerEntry({ file: batchFilePath, hash, timestamp: Date.now() });
       itemSpan.end();
       completed++;
@@ -178,6 +203,7 @@ export async function runBatch(
   });
 
   parentSpan.info(`Batch complete: ${completed} completed, ${skipped} skipped, ${failed} failed`);
+  return failed === 0;
 }
 
 async function runWithConcurrency<T>(
