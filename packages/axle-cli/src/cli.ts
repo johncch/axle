@@ -139,11 +139,20 @@ const input = {
   files: jobConfig.files,
 };
 
+let succeeded = false;
 try {
   if (jobConfig.batch) {
-    await runBatch(input, jobConfig.batch, agentConfig, variables, options, stats, rootSpan);
+    succeeded = await runBatch(
+      input,
+      jobConfig.batch,
+      agentConfig,
+      variables,
+      options,
+      stats,
+      rootSpan,
+    );
   } else {
-    await runSingle(input, agentConfig, variables, options, stats, rootSpan);
+    succeeded = await runSingle(input, agentConfig, variables, options, stats, rootSpan);
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
@@ -165,6 +174,12 @@ if (stats.cacheWriteIn !== undefined)
 if (stats.reasoningOut !== undefined)
   rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
 
-rootSpan.info("Complete. Goodbye");
-rootSpan.end();
+if (succeeded) {
+  rootSpan.info("Complete. Goodbye");
+  rootSpan.end();
+} else {
+  rootSpan.error("Job failed");
+  rootSpan.end("error");
+  process.exitCode = 1;
+}
 await tracer.flush();
