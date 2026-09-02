@@ -1,6 +1,6 @@
 import { ToolRegistry, type ToolProgressChunk } from "@fifthrevision/axle";
-import { beforeEach, describe, expect, it } from "vitest";
-import execTool from "../../../src/tools/exec/index.js";
+import { describe, expect, it } from "vitest";
+import execTool, { ExecTool } from "../../../src/tools/exec/index.js";
 
 const ctx = {
   signal: new AbortController().signal,
@@ -9,11 +9,6 @@ const ctx = {
 };
 
 describe("ExecTool", () => {
-  beforeEach(() => {
-    // Reset the tool state before each test
-    execTool.configure({});
-  });
-
   describe("command execution", () => {
     it("should return stdout from successful command", async () => {
       const result = await execTool.execute({ command: "echo hello" }, ctx);
@@ -41,29 +36,23 @@ describe("ExecTool", () => {
     });
   });
 
-  describe("configuration options", () => {
+  describe("constructor options", () => {
     it("should respect timeout configuration", async () => {
-      execTool.configure({
-        timeout: 100, // 100ms timeout
-      });
+      const tool = new ExecTool({ timeout: 100 });
 
-      const result = await execTool.execute({ command: "sleep 5" }, ctx);
+      const result = await tool.execute({ command: "sleep 5" }, ctx);
       expect(result).toContain("Error");
     });
 
     it("should respect cwd configuration", async () => {
-      execTool.configure({
-        cwd: "/tmp",
-      });
+      const tool = new ExecTool({ cwd: "/tmp" });
 
-      const result = await execTool.execute({ command: "pwd" }, ctx);
+      const result = await tool.execute({ command: "pwd" }, ctx);
       // On macOS, /tmp is a symlink to /private/tmp
       expect(result.trim()).toMatch(/^(\/tmp|\/private\/tmp)$/);
     });
 
     it("should use default timeout when not specified", async () => {
-      execTool.configure({});
-
       // Should complete quickly without hitting default 30s timeout
       const result = await execTool.execute({ command: "echo test" }, ctx);
       expect(result).toBe("test\n");

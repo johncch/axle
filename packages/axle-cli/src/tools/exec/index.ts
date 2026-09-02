@@ -1,30 +1,24 @@
 import * as z from "zod";
-import type { ExecProviderConfig, ExecutableTool, ToolContext } from "../types.js";
+import type { ExecutableTool, ToolContext } from "../types.js";
 import { formatExecError, formatOutput, runCommand } from "./helpers.js";
 
 const execSchema = z.object({
   command: z.string().describe("The shell command to execute"),
 });
 
-class ExecTool implements ExecutableTool<typeof execSchema> {
+export class ExecTool implements ExecutableTool<typeof execSchema> {
   name = "exec";
   description = "Execute a shell command and return the output.";
   schema = execSchema;
 
-  private timeout = 30000;
-  private maxBuffer = 1024 * 1024;
+  private timeout: number;
+  private maxBuffer: number;
   private cwd?: string;
 
-  constructor(config?: ExecProviderConfig) {
-    if (config) {
-      this.configure(config);
-    }
-  }
-
-  configure(config: ExecProviderConfig) {
-    this.timeout = config.timeout ?? 30000;
-    this.maxBuffer = config.maxBuffer ?? 1024 * 1024;
-    this.cwd = config.cwd;
+  constructor(options?: { timeout?: number; maxBuffer?: number; cwd?: string }) {
+    this.timeout = options?.timeout ?? 30000;
+    this.maxBuffer = options?.maxBuffer ?? 1024 * 1024;
+    this.cwd = options?.cwd;
   }
 
   summarize(params: z.infer<typeof execSchema>): string {

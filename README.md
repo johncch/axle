@@ -1021,9 +1021,8 @@ A job file specifies the provider, task prompt, and optional tools/files:
 
 ```yaml
 # job.yaml
-provider:
-  type: anthropic
-  model: claude-sonnet-4-5-20250929
+provider: anthropic
+model: anthropic/claude-sonnet-5
 
 task: |
   Summarize the attached document.
@@ -1031,11 +1030,37 @@ task: |
 tools:
   - calculator
 
-provider_tools:
+providerTools:
   - web_search
 
 files:
   - ./data/report.txt
+```
+
+`provider` says where requests go: a string (`anthropic`, `openai`, `gemini`,
+`chatcompletions`) or an object when the endpoint needs configuration.
+`model` says what to run there — a publisher-qualified registry id
+(e.g. `anthropic/claude-sonnet-5`, `openai/gpt-5.5`) or a bare provider-native
+id — and is optional where a default applies:
+
+```yaml
+# Ollama, or any OpenAI-compatible endpoint
+provider:
+  type: chatcompletions
+  baseUrl: http://localhost:11434/v1
+model: gemma3
+```
+
+Optional `system` sets the system prompt, and an optional `request` block
+sets provider-portable request options:
+
+```yaml
+system: You are a terse analyst.
+
+request:
+  reasoning: true
+  temperature: 0.2
+  maxOutputTokens: 4096
 ```
 
 CLI job files can use these local tool names:
@@ -1067,7 +1092,7 @@ batch:
 
 For first-party providers, the CLI supplies a model when one is omitted:
 `openai/gpt-5.4-mini`, `anthropic/claude-haiku-4-5`, or
-`google/gemini-3.5-flash`. Configure `provider.model` to override it.
+`google/gemini-3.5-flash`. Set the top-level `model` field to override it.
 
 - `files` — glob pattern for input files
 - `concurrency` — max parallel runs (default 3)
@@ -1104,7 +1129,11 @@ Each entry supports:
 
 ### Configuration
 
-For CLI use, put provider secrets in your environment or a local `.env` file:
+For CLI use, put provider secrets in your environment, a local `.env` file, or
+a credentials file. Credentials files use the same key names as the
+environment variables, one `KEY=value` per line, and are read in order —
+environment first, then the project's `.axle/credentials`, then the
+user-level `~/.axle/credentials`:
 
 ```bash
 OPENAI_API_KEY=...
@@ -1115,9 +1144,9 @@ GEMINI_API_KEY=...
 Optional model overrides use provider-specific variables:
 
 ```bash
-OPENAI_MODEL=gpt-4.1
-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
-GEMINI_MODEL=gemini-2.5-pro
+OPENAI_MODEL=openai/gpt-5.5
+ANTHROPIC_MODEL=anthropic/claude-sonnet-5
+GEMINI_MODEL=google/gemini-3.5-pro
 ```
 
 For OpenAI-compatible endpoints:

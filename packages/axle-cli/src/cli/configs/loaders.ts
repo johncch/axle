@@ -1,10 +1,17 @@
 import type { Span } from "@fifthrevision/axle";
-import { config as loadDotenv } from "dotenv";
+import { config as loadDotenv, parse as parseDotenv } from "dotenv";
 import { readFile } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import YAML from "yaml";
 import * as z from "zod";
-import { JobConfig, JobConfigSchema, ServiceConfig } from "./schemas.js";
+import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
+import {
+  CliConfig,
+  CliConfigSchema,
+  JobConfig,
+  JobConfigSchema,
+  ServiceConfig,
+} from "./schemas.js";
 
 export async function getJobConfig(
   path: string,
@@ -40,43 +47,124 @@ export async function getJobConfig(
   return parsed.data;
 }
 
-export async function getServiceConfig(context: { span?: Span }): Promise<ServiceConfig> {
+export async function getServiceConfig(context: {
+  span?: Span;
+  cwd?: string;
+  home?: string;
+}): Promise<ServiceConfig> {
   const { span } = context;
   loadDotenv({ quiet: true });
 
-  const envConfig = getEnvServiceConfig();
-  span?.debug("Service config: " + JSON.stringify(redactConfig(envConfig), null, 2));
-  return envConfig;
+  const dirs = resolveConfigDirs(context);
+  const layers: Record<string, string | undefined>[] = [process.env];
+  for (const dir of [dirs.project, dirs.user]) {
+    const parsed = await readCredentialsFile(join(dir, CREDENTIALS_FILE));
+    if (parsed) layers.push(parsed);
+  }
+
+  const lookup = (key: string): string | undefined => {
+    for (const layer of layers) {
+      if (layer[key]) return layer[key];
+    }
+    return undefined;
+  };
+
+  const config = buildServiceConfig(lookup);
+  span?.debug("Service config: " + JSON.stringify(redactConfig(config), null, 2));
+  return config;
 }
 
-function getEnvServiceConfig(): ServiceConfig {
+export async function getCliConfig(context: {
+  span?: Span;
+  cwd?: string;
+  home?: string;
+}): Promise<CliConfig> {
+  const { span } = context;
+  const dirs = resolveConfigDirs(context);
+
+  let merged: CliConfig = {};
+  for (const dir of [dirs.user, dirs.project]) {
+    const path = join(dir, CONFIG_FILE);
+    const content = await readOptionalFile(path);
+    if (content === null) continue;
+
+    let raw: unknown;
+    try {
+      raw = YAML.parse(content) ?? {};
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(`Invalid config file at ${path}:\n  ${message}`);
+    }
+
+    const parsed = CliConfigSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(`Invalid config file at ${path}:\n${formatZodError(parsed.error)}`);
+    }
+    merged = mergeCliConfig(merged, parsed.data);
+  }
+
+  span?.debug("CLI config: " + JSON.stringify(merged, null, 2));
+  return merged;
+}
+
+// Provider profiles replace wholesale across layers; field-merging two
+// profiles can produce a shape neither file's validation would accept.
+function mergeCliConfig(base: CliConfig, override: CliConfig): CliConfig {
+  const merged: CliConfig = {};
+
+  const providers = { ...base.providers, ...override.providers };
+  if (Object.keys(providers).length > 0) merged.providers = providers;
+
+  if (base.defaults || override.defaults) {
+    merged.defaults = { ...base.defaults, ...override.defaults };
+    const models = { ...base.defaults?.models, ...override.defaults?.models };
+    if (Object.keys(models).length > 0) merged.defaults.models = models;
+  }
+
+  return merged;
+}
+
+async function readOptionalFile(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, { encoding: "utf-8" });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+
+async function readCredentialsFile(path: string): Promise<Record<string, string> | null> {
+  const content = await readOptionalFile(path);
+  return content === null ? null : parseDotenv(content);
+}
+
+function buildServiceConfig(lookup: (key: string) => string | undefined): ServiceConfig {
   return compactServiceConfig({
-    openai: process.env.OPENAI_API_KEY
+    openai: lookup("OPENAI_API_KEY")
       ? {
-          "api-key": process.env.OPENAI_API_KEY,
-          model: process.env.OPENAI_MODEL,
+          apiKey: lookup("OPENAI_API_KEY"),
+          model: lookup("OPENAI_MODEL"),
         }
       : undefined,
-    anthropic: process.env.ANTHROPIC_API_KEY
+    anthropic: lookup("ANTHROPIC_API_KEY")
       ? {
-          "api-key": process.env.ANTHROPIC_API_KEY,
-          model: process.env.ANTHROPIC_MODEL,
+          apiKey: lookup("ANTHROPIC_API_KEY"),
+          model: lookup("ANTHROPIC_MODEL"),
         }
       : undefined,
-    gemini: process.env.GEMINI_API_KEY
+    gemini: lookup("GEMINI_API_KEY")
       ? {
-          "api-key": process.env.GEMINI_API_KEY,
-          model: process.env.GEMINI_MODEL,
+          apiKey: lookup("GEMINI_API_KEY"),
+          model: lookup("GEMINI_MODEL"),
         }
       : undefined,
-    chatcompletions:
-      process.env.CHATCOMPLETIONS_BASE_URL && process.env.CHATCOMPLETIONS_MODEL
-        ? {
-            "base-url": process.env.CHATCOMPLETIONS_BASE_URL,
-            model: process.env.CHATCOMPLETIONS_MODEL,
-            "api-key": process.env.CHATCOMPLETIONS_API_KEY,
-          }
-        : undefined,
+    chatcompletions: lookup("CHATCOMPLETIONS_BASE_URL")
+      ? {
+          baseUrl: lookup("CHATCOMPLETIONS_BASE_URL"),
+          model: lookup("CHATCOMPLETIONS_MODEL"),
+          apiKey: lookup("CHATCOMPLETIONS_API_KEY"),
+        }
+      : undefined,
   });
 }
 
@@ -104,7 +192,7 @@ function redactConfig(value: unknown): unknown {
 }
 
 function isSecretKey(key: string): boolean {
-  return key === "api-key" || key.toLowerCase().includes("secret");
+  return key === "apiKey" || key.toLowerCase().includes("secret");
 }
 
 /**
@@ -112,9 +200,22 @@ function isSecretKey(key: string): boolean {
  */
 function formatZodError(error: z.ZodError<any>): string {
   return error.issues
-    .map((issue) => {
-      const path = issue.path.join(".");
-      return `  - ${path || "root"}: ${issue.message}`;
-    })
+    .flatMap((issue) => flattenIssue(issue, issue.path))
+    .map(({ path, message }) => `  - ${path.join(".") || "root"}: ${message}`)
     .join("\n");
+}
+
+function flattenIssue(
+  issue: z.core.$ZodIssue,
+  path: PropertyKey[],
+): { path: PropertyKey[]; message: string }[] {
+  if (issue.code === "invalid_union") {
+    const branches = issue.errors.flatMap((branch) =>
+      branch.flatMap((sub) => flattenIssue(sub, [...path, ...sub.path])),
+    );
+    if (!branches.length) return [{ path, message: issue.message }];
+    const deeper = branches.filter((entry) => entry.path.length > path.length);
+    return deeper.length ? deeper : branches;
+  }
+  return [{ path, message: issue.message }];
 }

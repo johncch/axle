@@ -1,30 +1,12 @@
 import { z } from "zod";
 
 /* ============================================================================
- * Validation Error Type
- * ========================================================================== */
-
-export const ValidationErrorSchema = z.object({
-  value: z.string(),
-});
-
-export type ValidationError = z.infer<typeof ValidationErrorSchema>;
-
-/* ============================================================================
  * Provider Configuration Schemas
  * ========================================================================== */
 
-// Exec Provider
-export const ExecProviderConfigSchema = z.object({
-  timeout: z.number().optional(),
-  maxBuffer: z.number().optional(),
-  cwd: z.string().optional(),
-});
-
 const ApiKeyFieldsSchema = {
-  "api-key": z.string().optional(),
+  apiKey: z.string().optional(),
   apiKeyEnv: z.string().optional(),
-  "api-key-env": z.string().optional(),
 };
 
 const ProviderClientFieldsSchema = {
@@ -35,8 +17,7 @@ const ProviderClientFieldsSchema = {
 // AI Provider Use - Discriminated by 'type'
 const ChatCompletionsProviderUseSchema = z.strictObject({
   type: z.literal("chatcompletions"),
-  "base-url": z.string().optional(),
-  model: z.string().optional(),
+  baseUrl: z.string().optional(),
   vendor: z.enum(["openrouter", "together"]).optional(),
   ...ApiKeyFieldsSchema,
   ...ProviderClientFieldsSchema,
@@ -44,21 +25,18 @@ const ChatCompletionsProviderUseSchema = z.strictObject({
 
 const AnthropicProviderUseSchema = z.strictObject({
   type: z.literal("anthropic"),
-  model: z.string().optional(),
   ...ApiKeyFieldsSchema,
   ...ProviderClientFieldsSchema,
 });
 
 const OpenAIProviderUseSchema = z.strictObject({
   type: z.literal("openai"),
-  model: z.string().optional(),
   ...ApiKeyFieldsSchema,
   ...ProviderClientFieldsSchema,
 });
 
 const GeminiProviderUseSchema = z.strictObject({
   type: z.literal("gemini"),
-  model: z.string().optional(),
   ...ApiKeyFieldsSchema,
   ...ProviderClientFieldsSchema,
 });
@@ -72,18 +50,24 @@ export const AIProviderUseSchema = z.discriminatedUnion("type", [
 
 export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 
+const ProviderTypeSchema = z.enum(["anthropic", "openai", "gemini", "chatcompletions"]);
+
+export const ProviderUseSchema = z.union([
+  ProviderTypeSchema.transform((type) => ({ type })),
+  AIProviderUseSchema,
+]);
+
 // Service Config
 export interface ProviderServiceConfig {
-  "api-key"?: string;
+  apiKey?: string;
   apiKeyEnv?: string;
-  "api-key-env"?: string;
   model?: string;
   maxRetries?: number;
   timeoutMs?: number;
 }
 
 export interface ChatCompletionsServiceConfig extends ProviderServiceConfig {
-  "base-url"?: string;
+  baseUrl?: string;
   vendor?: "openrouter" | "together";
 }
 
@@ -93,6 +77,22 @@ export interface ServiceConfig {
   openai?: ProviderServiceConfig;
   gemini?: ProviderServiceConfig;
 }
+
+/* ============================================================================
+ * CLI Config Schema (cli.yaml)
+ * ========================================================================== */
+
+export const CliConfigSchema = z.object({
+  providers: z.record(z.string(), AIProviderUseSchema).optional(),
+  defaults: z
+    .object({
+      provider: z.string().optional(),
+      models: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
+});
+
+export type CliConfig = z.infer<typeof CliConfigSchema>;
 
 /* ============================================================================
  * MCP Config Schemas
@@ -136,12 +136,33 @@ export type BatchConfig = z.infer<typeof BatchConfigSchema>;
  * Job Config Schema
  * ========================================================================== */
 
-export const JobConfigSchema = z.object({
+export const RequestOptionsSchema = z.strictObject({
+  reasoning: z.boolean().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  stop: z.union([z.string(), z.array(z.string())]).optional(),
+  toolChoice: z
+    .union([
+      z.enum(["auto", "none", "required"]),
+      z.strictObject({ type: z.literal("tool"), name: z.string() }),
+    ])
+    .optional(),
+  parallelToolCalls: z.boolean().optional(),
+  providerOptions: z.record(z.string(), z.any()).optional(),
+});
+
+export type RequestOptions = z.infer<typeof RequestOptionsSchema>;
+
+export const JobConfigSchema = z.strictObject({
   name: z.string().optional(),
-  provider: AIProviderUseSchema,
+  provider: ProviderUseSchema.optional(),
+  model: z.string().optional(),
+  system: z.string().optional(),
+  request: RequestOptionsSchema.optional(),
   task: z.string(),
   tools: z.array(z.string()).optional(),
-  provider_tools: z.array(z.string()).optional(),
+  providerTools: z.array(z.string()).optional(),
   files: z.array(z.string()).optional(),
   mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),

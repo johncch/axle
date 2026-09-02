@@ -26,6 +26,7 @@ const defaultModels = {
 function resolveCliProvider(
   definition: ProviderDefinition,
   serviceConfig: ServiceConfig,
+  jobModel: string | undefined,
 ): { provider: AIProvider; model: string } {
   const providerConfig = (definition.config ?? {}) as Record<string, any>;
 
@@ -79,9 +80,9 @@ function resolveCliProvider(
 
     case "chatcompletions": {
       const config = { ...serviceConfig.chatcompletions, ...providerConfig };
-      const baseUrl = config["base-url"];
-      const providerModel = config.model;
-      if (!baseUrl || !providerModel) {
+      const baseUrl = config.baseUrl;
+      const model = jobModel ?? config.model;
+      if (!baseUrl || !model) {
         throw new Error(
           "The provider chatcompletions is not configured. Please check your configuration.",
         );
@@ -93,7 +94,7 @@ function resolveCliProvider(
           timeoutMs: config.timeoutMs,
           vendor: config.vendor,
         }),
-        model: providerModel,
+        model,
       };
     }
 
@@ -103,12 +104,12 @@ function resolveCliProvider(
 }
 
 function resolveApiKey(config: Record<string, any>): string | undefined {
-  const envName = config.apiKeyEnv ?? config["api-key-env"];
+  const envName = config.apiKeyEnv;
   if (typeof envName === "string" && envName.length > 0) {
     return process.env[envName];
   }
 
-  return config["api-key"];
+  return config.apiKey;
 }
 
 function resolveModel(config: Record<string, any>, defaultModel: string): string {
@@ -117,6 +118,11 @@ function resolveModel(config: Record<string, any>, defaultModel: string): string
 }
 
 function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {
+  if (!jobConfig.provider) {
+    throw new Error(
+      "The job file does not specify a provider and no default provider is configured.",
+    );
+  }
   const { type, ...providerConfig } = jobConfig.provider;
   const provider =
     Object.keys(providerConfig).length > 0
@@ -127,8 +133,11 @@ function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {
     version: 1,
     name: jobConfig.name,
     provider,
+    model: jobConfig.model,
+    system: jobConfig.system,
+    request: jobConfig.request,
     tools: jobConfig.tools?.map((name) => ({ name })),
-    providerTools: jobConfig.provider_tools?.map((name) => ({ name })),
+    providerTools: jobConfig.providerTools?.map((name) => ({ name })),
     mcps: jobConfig.mcps,
   };
 }
@@ -142,7 +151,11 @@ export async function createCliAgentConfig(
   const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
 
   const baseConfig = await createAgentConfig(definition, (definition) => {
-    const resolvedProvider = resolveCliProvider(definition.provider, serviceConfig);
+    const resolvedProvider = resolveCliProvider(
+      definition.provider,
+      serviceConfig,
+      definition.model,
+    );
 
     return {
       provider: resolvedProvider.provider,

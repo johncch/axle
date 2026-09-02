@@ -5,23 +5,18 @@ import {
   readFileTool,
   writeFileTool,
   type ExecutableTool,
-  type ToolProviderConfig,
 } from "../tools/index.js";
 
 /**
  * Factory for creating Tool instances by name.
  * Tools are LLM-callable and require explicit input schemas.
  */
-export function createTool(name: string, config?: ToolProviderConfig): ExecutableTool {
+export function createTool(name: string): ExecutableTool {
   switch (name) {
     case "calculator": {
       return calculatorTool;
     }
     case "exec": {
-      const toolConfig = config?.exec;
-      if (toolConfig) {
-        execTool.configure(toolConfig);
-      }
       return execTool;
     }
     case "patch-file": {
@@ -41,8 +36,8 @@ export function createTool(name: string, config?: ToolProviderConfig): Executabl
 /**
  * Create multiple tools by name.
  */
-export function createTools(names: string[], config?: ToolProviderConfig): ExecutableTool[] {
-  return names.map((name) => createTool(name, config));
+export function createTools(names: string[]): ExecutableTool[] {
+  return names.map((name) => createTool(name));
 }
 
 /**

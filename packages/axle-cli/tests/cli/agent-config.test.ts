@@ -23,7 +23,7 @@ describe("createCliAgentConfig", () => {
   test("creates an agent config from a CLI job config", async () => {
     const serviceConfig: ServiceConfig = {
       chatcompletions: {
-        "base-url": "https://example.test/v1",
+        baseUrl: "https://example.test/v1",
         model: "test-model",
       },
     };
@@ -53,8 +53,8 @@ describe("createCliAgentConfig", () => {
         provider: {
           type: "openai",
           apiKeyEnv: "AXLE_TEST_OPENAI_KEY",
-          model: "openai/gpt-test",
         },
+        model: "openai/gpt-test",
         task: "Run",
       },
       {},
@@ -65,11 +65,53 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.model).toBe("openai/gpt-test");
   });
 
+  test("rejects jobs with no provider", async () => {
+    await expect(
+      createCliAgentConfig({ model: "anthropic/claude-sonnet-5", task: "Run" }, {}, tracer),
+    ).rejects.toThrow(/does not specify a provider/);
+  });
+
+  test("top-level model wins over the service config model", async () => {
+    const { agentConfig } = await createCliAgentConfig(
+      {
+        provider: { type: "anthropic", apiKey: "anthropic-key" },
+        model: "anthropic/claude-sonnet-5",
+        task: "Run",
+      },
+      { anthropic: { apiKey: "ignored", model: "anthropic/claude-haiku-4-5" } },
+      tracer,
+    );
+
+    expect(agentConfig.model).toBe("anthropic/claude-sonnet-5");
+  });
+
+  test("passes system and request options through to the agent config", async () => {
+    const { agentConfig } = await createCliAgentConfig(
+      {
+        provider: { type: "anthropic", apiKey: "anthropic-key" },
+        system: "You are terse.",
+        request: {
+          reasoning: true,
+          temperature: 0.2,
+          maxOutputTokens: 2048,
+        },
+        task: "Run",
+      },
+      {},
+      tracer,
+    );
+
+    expect(agentConfig.system).toBe("You are terse.");
+    expect(agentConfig.reasoning).toBe(true);
+    expect(agentConfig.temperature).toBe(0.2);
+    expect(agentConfig.maxOutputTokens).toBe(2048);
+  });
+
   test("uses the CLI default model for first-party providers", async () => {
     const defaults = [
-      [{ type: "openai", "api-key": "openai-key" }, "openai/gpt-5.4-mini"],
-      [{ type: "anthropic", "api-key": "anthropic-key" }, "anthropic/claude-haiku-4-5"],
-      [{ type: "gemini", "api-key": "gemini-key" }, "google/gemini-3.5-flash"],
+      [{ type: "openai", apiKey: "openai-key" }, "openai/gpt-5.4-mini"],
+      [{ type: "anthropic", apiKey: "anthropic-key" }, "anthropic/claude-haiku-4-5"],
+      [{ type: "gemini", apiKey: "gemini-key" }, "google/gemini-3.5-flash"],
     ] as const;
 
     for (const [provider, model] of defaults) {

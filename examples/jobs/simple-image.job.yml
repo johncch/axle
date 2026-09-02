@@ -1,8 +1,9 @@
-# yaml-language-server: $schema=../../schemas/v2/job.yaml
+# yaml-language-server: $schema=../../schemas/v3/job.yaml
 provider:
   type: chatcompletions
-  base-url: http://localhost:11434/v1
-  model: gemma3
+  baseUrl: http://localhost:11434/v1
+
+model: gemma3
 
 task: |
   What are the data that is shown in the image.

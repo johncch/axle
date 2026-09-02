@@ -1,0 +1,229 @@
+# Generated from packages/axle-cli/src/cli/configs/schemas.ts — do not edit by hand.
+# Regenerate with: pnpm run generate:job-schema
+title: JobConfig
+$schema: http://json-schema.org/draft-07/schema#
+type: object
+properties:
+  name:
+    type: string
+  provider:
+    anyOf:
+      - type: string
+        enum:
+          - anthropic
+          - openai
+          - gemini
+          - chatcompletions
+      - oneOf:
+          - type: object
+            properties:
+              type:
+                type: string
+                const: chatcompletions
+              baseUrl:
+                type: string
+              vendor:
+                type: string
+                enum:
+                  - openrouter
+                  - together
+              apiKey:
+                type: string
+              apiKeyEnv:
+                type: string
+              maxRetries:
+                type: integer
+                minimum: 0
+                maximum: 9007199254740991
+              timeoutMs:
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
+            required:
+              - type
+            additionalProperties: false
+          - type: object
+            properties:
+              type:
+                type: string
+                const: anthropic
+              apiKey:
+                type: string
+              apiKeyEnv:
+                type: string
+              maxRetries:
+                type: integer
+                minimum: 0
+                maximum: 9007199254740991
+              timeoutMs:
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
+            required:
+              - type
+            additionalProperties: false
+          - type: object
+            properties:
+              type:
+                type: string
+                const: openai
+              apiKey:
+                type: string
+              apiKeyEnv:
+                type: string
+              maxRetries:
+                type: integer
+                minimum: 0
+                maximum: 9007199254740991
+              timeoutMs:
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
+            required:
+              - type
+            additionalProperties: false
+          - type: object
+            properties:
+              type:
+                type: string
+                const: gemini
+              apiKey:
+                type: string
+              apiKeyEnv:
+                type: string
+              maxRetries:
+                type: integer
+                minimum: 0
+                maximum: 9007199254740991
+              timeoutMs:
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
+            required:
+              - type
+            additionalProperties: false
+  model:
+    type: string
+  system:
+    type: string
+  request:
+    type: object
+    properties:
+      reasoning:
+        type: boolean
+      maxOutputTokens:
+        type: integer
+        exclusiveMinimum: 0
+        maximum: 9007199254740991
+      temperature:
+        type: number
+      topP:
+        type: number
+      stop:
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+      toolChoice:
+        anyOf:
+          - type: string
+            enum:
+              - auto
+              - none
+              - required
+          - type: object
+            properties:
+              type:
+                type: string
+                const: tool
+              name:
+                type: string
+            required:
+              - type
+              - name
+            additionalProperties: false
+      parallelToolCalls:
+        type: boolean
+      providerOptions:
+        type: object
+        propertyNames:
+          type: string
+        additionalProperties: {}
+    additionalProperties: false
+  task:
+    type: string
+  tools:
+    type: array
+    items:
+      type: string
+  providerTools:
+    type: array
+    items:
+      type: string
+  files:
+    type: array
+    items:
+      type: string
+  mcps:
+    type: array
+    items:
+      oneOf:
+        - type: object
+          properties:
+            transport:
+              type: string
+              const: stdio
+            name:
+              type: string
+            command:
+              type: string
+            args:
+              type: array
+              items:
+                type: string
+            env:
+              type: object
+              propertyNames:
+                type: string
+              additionalProperties:
+                type: string
+          required:
+            - transport
+            - command
+        - type: object
+          properties:
+            transport:
+              type: string
+              const: http
+            name:
+              type: string
+            url:
+              type: string
+            headers:
+              type: object
+              propertyNames:
+                type: string
+              additionalProperties:
+                type: string
+          required:
+            - transport
+            - url
+  batch:
+    type: object
+    properties:
+      files:
+        type: string
+      resume:
+        default: false
+        type: boolean
+      concurrency:
+        default: 3
+        type: integer
+        exclusiveMinimum: 0
+        maximum: 9007199254740991
+    required:
+      - files
+required:
+  - task
+additionalProperties: false

@@ -11,6 +11,8 @@
 - Build (dev): `pnpm run build-dev` (tsdown without minify)
 - Build (watch): `pnpm run build:watch` (for npm link development scenarios)
 - Test all: `pnpm test`
+- Typecheck: `pnpm run typecheck` (tsc --noEmit; CI runs this — vitest and tsdown don't typecheck tests)
+- Full CI mirror: `pnpm run check` (typecheck + test + build, same order as CI)
 - Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
@@ -57,7 +59,6 @@
   - `src/cli.ts`: CLI entrypoint
   - `src/cli/`: YAML loading, runners, tool factory, ledger
   - `src/tools/`: CLI local workflow tools (calculator, exec, read-file, write-file, patch-file)
-  - `src/store/`: CLI local file store
   - `tests/`: CLI package tests
 - `examples/`: Sample job definitions and scripts
 - `scripts/`: Utility scripts
