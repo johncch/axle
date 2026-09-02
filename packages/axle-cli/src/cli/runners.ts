@@ -1,10 +1,18 @@
 import type { AgentConfig, AxleFailure, Span, Stats } from "@fifthrevision/axle";
-import { addStats, Agent, Instruct, loadFileContent } from "@fifthrevision/axle";
+import {
+  addStats,
+  Agent,
+  AxleAgentAbortError,
+  Instruct,
+  loadFileContent,
+  Transcript,
+} from "@fifthrevision/axle";
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import type { BatchConfig } from "./configs/schemas.js";
 import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
+import type { SessionStore } from "./sessions.js";
 
 export interface CliJobInput {
   task: string;
@@ -37,6 +45,7 @@ export async function runSingle(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: Span,
+  sessionStore?: SessionStore,
 ): Promise<boolean> {
   const instruct = new Instruct({ prompt: input.task });
   if (input.files) {
@@ -51,8 +60,31 @@ export async function runSingle(
     observability: { trace: jobSpan },
   });
 
+  const transcript = new Transcript();
+  agent.on((event) => transcript.apply(event));
+
+  const controller = new AbortController();
+  const onSigint = () => controller.abort();
+  process.on("SIGINT", onSigint);
+
+  const saveSession = async () => {
+    if (!sessionStore) return;
+    try {
+      await sessionStore.save(await agent.snapshot(), transcript.turns);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      parentSpan.warn(`Failed to save session: ${msg}`);
+    }
+  };
+
+  if (sessionStore) {
+    parentSpan.info(`Session ${agent.sessionId} — resume with: axle --session ${agent.sessionId}`);
+  }
+
   try {
-    const result = await agent.send(instruct.withInputs(variables)).final;
+    const result = await agent.send(instruct.withInputs(variables), {
+      signal: controller.signal,
+    }).final;
 
     addStats(stats, result.usage);
 
@@ -64,29 +96,48 @@ export async function runSingle(
       return false;
     }
 
+    await saveSession();
     parentSpan.info(result.response, { markdown: true });
 
     if (options.interactive) {
-      await runInteractiveLoop(agent, stats, parentSpan);
+      await runInteractiveLoop(agent, stats, parentSpan, controller, saveSession);
     }
 
     jobSpan.end();
     return true;
   } catch (e) {
+    if (e instanceof AxleAgentAbortError) {
+      parentSpan.warn("Interrupted");
+      jobSpan.end("cancelled");
+      return false;
+    }
     const msg = e instanceof Error ? e.message : String(e);
     jobSpan.error(msg);
     jobSpan.end("error");
     throw e;
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+    await saveSession();
+    if (sessionStore) {
+      parentSpan.info(`Resume this session with: axle --session ${agent.sessionId}`);
+    }
   }
 }
 
-async function runInteractiveLoop(agent: Agent, stats: Stats, span: Span): Promise<void> {
+async function runInteractiveLoop(
+  agent: Agent,
+  stats: Stats,
+  span: Span,
+  controller: AbortController,
+  saveSession: () => Promise<void>,
+): Promise<void> {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
   rl.on("SIGINT", () => {
+    controller.abort();
     rl.close();
   });
 
@@ -102,7 +153,7 @@ async function runInteractiveLoop(agent: Agent, stats: Stats, span: Span): Promi
       if (input === null || input.trim() === "") break;
 
       try {
-        const result = await agent.send(input.trim()).final;
+        const result = await agent.send(input.trim(), { signal: controller.signal }).final;
 
         addStats(stats, result.usage);
 
@@ -112,9 +163,14 @@ async function runInteractiveLoop(agent: Agent, stats: Stats, span: Span): Promi
           span.error(describeFailure(result.error));
         }
       } catch (e) {
+        if (e instanceof AxleAgentAbortError) {
+          span.warn("Interrupted");
+          break;
+        }
         const msg = e instanceof Error ? e.message : String(e);
         span.error(msg);
       }
+      await saveSession();
     }
   } finally {
     rl.close();

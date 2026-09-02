@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "@commander-js/extra-typings";
-import type { AgentConfig, MCP, Stats } from "@fifthrevision/axle";
+import type { AgentConfig, AgentDefinition, MCP, Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
@@ -12,6 +12,7 @@ import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/load
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { closeMcps } from "./cli/mcp.js";
 import { runBatch, runSingle } from "./cli/runners.js";
+import { SessionStore } from "./cli/sessions.js";
 
 const program = new Command()
   .name("axle")
@@ -117,9 +118,11 @@ try {
  */
 let mcps: MCP[] = [];
 let agentConfig: AgentConfig | undefined;
+let agentDefinition: AgentDefinition | undefined;
 try {
   const cliConfig = await createCliAgentConfig(jobConfig, serviceConfig, rootSpan);
   agentConfig = cliConfig.agentConfig;
+  agentDefinition = cliConfig.definition;
   mcps = cliConfig.mcps;
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
@@ -131,7 +134,7 @@ try {
   process.exit(1);
 }
 
-if (!agentConfig) {
+if (!agentConfig || !agentDefinition) {
   throw new Error("Failed to create agent config.");
 }
 
@@ -157,7 +160,16 @@ try {
       rootSpan,
     );
   } else {
-    succeeded = await runSingle(input, agentConfig, variables, options, stats, rootSpan);
+    const sessionStore = new SessionStore(agentDefinition);
+    succeeded = await runSingle(
+      input,
+      agentConfig,
+      variables,
+      options,
+      stats,
+      rootSpan,
+      sessionStore,
+    );
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));

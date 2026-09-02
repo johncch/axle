@@ -14,6 +14,7 @@ import { createTools } from "./tools.js";
 
 export interface CliAgentConfig {
   agentConfig: AgentConfig;
+  definition: AgentDefinition;
   mcps: MCP[];
 }
 
@@ -166,5 +167,5 @@ export async function createCliAgentConfig(
       mcps: mcps.length > 0 ? mcps : undefined,
     };
   });
-  return { agentConfig: baseConfig, mcps };
+  return { agentConfig: baseConfig, definition, mcps };
 }
