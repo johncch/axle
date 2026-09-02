@@ -1,24 +1,27 @@
 #!/usr/bin/env node
 
 import { Command } from "@commander-js/extra-typings";
-import type { AgentConfig, AgentDefinition, MCP, Stats } from "@fifthrevision/axle";
+import type { AgentConfig, MCP, Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import pkg from "../package.json";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
-import { createCliAgentConfig } from "./cli/agent-config.js";
+import { createCliAgentConfig, resolveAgentDefinition } from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { closeMcps } from "./cli/mcp.js";
-import { runBatch, runSingle } from "./cli/runners.js";
-import { SessionStore } from "./cli/sessions.js";
+import { runBatch, runResume, runSingle } from "./cli/runners.js";
+import type { CliSessionFile } from "./cli/sessions.js";
+import { loadSession, SessionStore } from "./cli/sessions.js";
 
 const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
   .version(pkg.version)
-  .requiredOption("-j, --job <path>", "Path to the YAML job file")
+  .option("-j, --job <path>", "Path to the YAML job file")
+  .option("-s, --session <id>", "Resume a saved session")
+  .option("-m, --message <text>", "Send one message to the resumed session and exit")
   .option("--no-log", "Do not write the output to a log file")
   .option("-d, --debug", "Print additional debug information")
   .option("-i, --interactive", "Continue the conversation interactively after the initial task")
@@ -26,6 +29,16 @@ const program = new Command()
 
 program.parse(process.argv);
 const options = program.opts();
+
+if (!options.job && !options.session) {
+  program.error("error: provide --job <path> or --session <id>");
+}
+if (options.job && options.session) {
+  program.error("error: --job and --session are mutually exclusive");
+}
+if (options.message !== undefined && !options.session) {
+  program.error("error: --message requires --session");
+}
 
 const variables: Record<string, string> = {
   date: new Date().toISOString().split("T")[0],
@@ -94,15 +107,17 @@ if (options.debug) {
  * Read and load config, job
  */
 let serviceConfig: ServiceConfig;
-let jobConfig: JobConfig;
+let jobConfig: JobConfig | undefined;
 try {
   await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({
     span: rootSpan,
   });
-  jobConfig = await getJobConfig(options.job, {
-    span: rootSpan,
-  });
+  if (options.job) {
+    jobConfig = await getJobConfig(options.job, {
+      span: rootSpan,
+    });
+  }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
   rootSpan.error(error.message);
@@ -114,16 +129,38 @@ try {
 }
 
 /**
- * Execute the job
+ * Resolve what to run: a job from a file, or a resumed session
  */
+type RunPlan =
+  | { kind: "job"; jobConfig: JobConfig; agentConfig: AgentConfig; sessionStore: SessionStore }
+  | { kind: "resume"; saved: CliSessionFile; agentConfig: AgentConfig; sessionStore: SessionStore };
+
 let mcps: MCP[] = [];
-let agentConfig: AgentConfig | undefined;
-let agentDefinition: AgentDefinition | undefined;
+let plan: RunPlan | undefined;
 try {
-  const cliConfig = await createCliAgentConfig(jobConfig, serviceConfig, rootSpan);
-  agentConfig = cliConfig.agentConfig;
-  agentDefinition = cliConfig.definition;
-  mcps = cliConfig.mcps;
+  if (options.session) {
+    const saved = await loadSession(options.session);
+    const resolved = await resolveAgentDefinition(saved.definition, serviceConfig, rootSpan);
+    mcps = resolved.mcps;
+    plan = {
+      kind: "resume",
+      saved,
+      agentConfig: resolved.agentConfig,
+      sessionStore: new SessionStore(saved.definition, {
+        cwd: saved.cwd,
+        createdAt: saved.createdAt,
+      }),
+    };
+  } else if (jobConfig) {
+    const resolved = await createCliAgentConfig(jobConfig, serviceConfig, rootSpan);
+    mcps = resolved.mcps;
+    plan = {
+      kind: "job",
+      jobConfig,
+      agentConfig: resolved.agentConfig,
+      sessionStore: new SessionStore(resolved.definition),
+    };
+  }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
   rootSpan.error(error.message);
@@ -134,7 +171,7 @@ try {
   process.exit(1);
 }
 
-if (!agentConfig || !agentDefinition) {
+if (!plan) {
   throw new Error("Failed to create agent config.");
 }
 
@@ -142,34 +179,44 @@ rootSpan.info("All systems operational. Running job...");
 
 const stats: Stats = createStats();
 const startTime = performance.now();
-const input = {
-  task: jobConfig.task,
-  files: jobConfig.files,
-};
 
 let succeeded = false;
 try {
-  if (jobConfig.batch) {
-    succeeded = await runBatch(
-      input,
-      jobConfig.batch,
-      agentConfig,
-      variables,
+  if (plan.kind === "resume") {
+    succeeded = await runResume(
+      plan.saved,
+      plan.agentConfig,
       options,
       stats,
       rootSpan,
+      plan.sessionStore,
     );
   } else {
-    const sessionStore = new SessionStore(agentDefinition);
-    succeeded = await runSingle(
-      input,
-      agentConfig,
-      variables,
-      options,
-      stats,
-      rootSpan,
-      sessionStore,
-    );
+    const input = {
+      task: plan.jobConfig.task,
+      files: plan.jobConfig.files,
+    };
+    if (plan.jobConfig.batch) {
+      succeeded = await runBatch(
+        input,
+        plan.jobConfig.batch,
+        plan.agentConfig,
+        variables,
+        options,
+        stats,
+        rootSpan,
+      );
+    } else {
+      succeeded = await runSingle(
+        input,
+        plan.agentConfig,
+        variables,
+        options,
+        stats,
+        rootSpan,
+        plan.sessionStore,
+      );
+    }
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));

@@ -1,5 +1,5 @@
 import type { AgentDefinition, AgentSession, Turn } from "@fifthrevision/axle";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveConfigDirs } from "./configs/paths.js";
 
@@ -21,6 +21,32 @@ export function sessionFilePath(sessionId: string, home?: string): string {
   return join(sessionsDir(home), `${sessionId}.json`);
 }
 
+export async function loadSession(sessionId: string, home?: string): Promise<CliSessionFile> {
+  const path = sessionFilePath(sessionId, home);
+  let content: string;
+  try {
+    content = await readFile(path, "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`No session found with id ${sessionId}`);
+    }
+    throw e;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`Invalid session file at ${path}`);
+  }
+
+  const file = parsed as CliSessionFile;
+  if (file?.version !== 1 || !file.definition || !file.session) {
+    throw new Error(`Unsupported or corrupt session file at ${path}`);
+  }
+  return file;
+}
+
 /**
  * Persists resumable CLI sessions to `~/.axle/sessions/cli/<id>.json`.
  *
@@ -33,10 +59,14 @@ export class SessionStore {
   private readonly home?: string;
   private createdAt?: string;
 
-  constructor(definition: AgentDefinition, options?: { cwd?: string; home?: string }) {
+  constructor(
+    definition: AgentDefinition,
+    options?: { cwd?: string; home?: string; createdAt?: string },
+  ) {
     this.definition = definition;
     this.cwd = options?.cwd ?? process.cwd();
     this.home = options?.home;
+    this.createdAt = options?.createdAt;
   }
 
   async save(session: AgentSession, turns: readonly Turn[]): Promise<string> {

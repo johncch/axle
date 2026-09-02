@@ -1,4 +1,4 @@
-import type { AgentConfig, AxleFailure, Span, Stats } from "@fifthrevision/axle";
+import type { AgentConfig, AxleFailure, Span, Stats, Turn } from "@fifthrevision/axle";
 import {
   addStats,
   Agent,
@@ -12,7 +12,7 @@ import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import type { BatchConfig } from "./configs/schemas.js";
 import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
-import type { SessionStore } from "./sessions.js";
+import type { CliSessionFile, SessionStore } from "./sessions.js";
 
 export interface CliJobInput {
   task: string;
@@ -21,6 +21,8 @@ export interface CliJobInput {
 
 export interface ProgramOptions {
   job?: string;
+  session?: string;
+  message?: string;
   log?: boolean;
   debug?: boolean;
   interactive?: boolean;
@@ -120,6 +122,99 @@ export async function runSingle(
     await saveSession();
     if (sessionStore) {
       parentSpan.info(`Resume this session with: axle --session ${agent.sessionId}`);
+    }
+  }
+}
+
+export async function runResume(
+  saved: CliSessionFile,
+  agentConfig: AgentConfig,
+  options: ProgramOptions,
+  stats: Stats,
+  parentSpan: Span,
+  sessionStore: SessionStore,
+): Promise<boolean> {
+  const runSpan = parentSpan.startSpan("resume", { type: "workflow" });
+  const agent = new Agent(
+    {
+      ...agentConfig,
+      observability: { trace: runSpan },
+    },
+    saved.session,
+  );
+
+  const transcript = new Transcript(saved.turns);
+  agent.on((event) => transcript.apply(event));
+
+  const controller = new AbortController();
+  const onSigint = () => controller.abort();
+  process.on("SIGINT", onSigint);
+
+  const saveSession = async () => {
+    try {
+      await sessionStore.save(await agent.snapshot(), transcript.turns);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      parentSpan.warn(`Failed to save session: ${msg}`);
+    }
+  };
+
+  if (saved.cwd !== process.cwd()) {
+    parentSpan.warn(`Session was started in ${saved.cwd}; resuming from ${process.cwd()}`);
+  }
+  parentSpan.info(`Resuming session ${agent.sessionId}`);
+  renderPriorTurns(saved.turns, parentSpan);
+
+  try {
+    if (options.message !== undefined) {
+      const result = await agent.send(options.message, { signal: controller.signal }).final;
+
+      addStats(stats, result.usage);
+
+      if (!result.ok) {
+        const msg = describeFailure(result.error);
+        parentSpan.error(msg);
+        runSpan.error(msg);
+        runSpan.end("error");
+        return false;
+      }
+
+      parentSpan.info(result.response, { markdown: true });
+    } else {
+      await runInteractiveLoop(agent, stats, parentSpan, controller, saveSession);
+    }
+
+    runSpan.end();
+    return true;
+  } catch (e) {
+    if (e instanceof AxleAgentAbortError) {
+      parentSpan.warn("Interrupted");
+      runSpan.end("cancelled");
+      return false;
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    runSpan.error(msg);
+    runSpan.end("error");
+    throw e;
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+    await saveSession();
+    parentSpan.info(`Resume this session with: axle --session ${agent.sessionId}`);
+  }
+}
+
+function renderPriorTurns(turns: readonly Turn[], span: Span): void {
+  for (const turn of turns) {
+    for (const part of turn.parts) {
+      if (part.type === "text" && part.text.trim()) {
+        if (turn.owner === "user") {
+          span.info(`> ${part.text}`);
+        } else {
+          span.info(part.text, { markdown: true });
+        }
+      } else if (part.type === "action") {
+        span.info(`[${part.kind}] ${part.detail.name}`);
+      }
     }
   }
 }

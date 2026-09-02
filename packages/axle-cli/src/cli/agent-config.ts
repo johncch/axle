@@ -149,6 +149,14 @@ export async function createCliAgentConfig(
   span: Span,
 ): Promise<CliAgentConfig> {
   const definition = createAgentDefinition(jobConfig);
+  return resolveAgentDefinition(definition, serviceConfig, span);
+}
+
+export async function resolveAgentDefinition(
+  definition: AgentDefinition,
+  serviceConfig: ServiceConfig,
+  span: Span,
+): Promise<CliAgentConfig> {
   const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
 
   const baseConfig = await createAgentConfig(definition, (definition) => {
