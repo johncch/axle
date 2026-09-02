@@ -1,6 +1,5 @@
-# yaml-language-server: $schema=../../schemas/v2/job.yaml
-provider:
-  type: gemini
+# yaml-language-server: $schema=../../schemas/v3/job.yaml
+provider: gemini
 
 task: |
   Get me the first paragraph of the document.

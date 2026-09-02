@@ -10,7 +10,3 @@ export interface ExecProviderConfig {
   maxBuffer?: number;
   cwd?: string;
 }
-
-export interface ToolProviderConfig {
-  exec?: ExecProviderConfig;
-}

@@ -1,6 +1,5 @@
-# yaml-language-server: $schema=../../schemas/v2/job.yaml
-provider:
-  type: anthropic
+# yaml-language-server: $schema=../../schemas/v3/job.yaml
+provider: anthropic
 
 task: |
   Use the calculator tool to add 2 and 2 together.

@@ -46,7 +46,7 @@ describe("config loaders", () => {
         "provider:",
         "  type: openai",
         "  apiKeyEnv: CUSTOM_OPENAI_KEY",
-        "  model: gpt-test",
+        "model: openai/gpt-test",
         "task: Run",
       ].join("\n"),
     );
@@ -56,8 +56,8 @@ describe("config loaders", () => {
     expect(config.provider).toEqual({
       type: "openai",
       apiKeyEnv: "CUSTOM_OPENAI_KEY",
-      model: "gpt-test",
     });
+    expect(config.model).toBe("openai/gpt-test");
   });
 
   it("accepts a ChatCompletions vendor override", async () => {
@@ -67,9 +67,9 @@ describe("config loaders", () => {
       [
         "provider:",
         "  type: chatcompletions",
-        "  base-url: https://gateway.example.test/v1",
-        "  model: test-model",
+        "  baseUrl: https://gateway.example.test/v1",
         "  vendor: openrouter",
+        "model: test-model",
         "task: Run",
       ].join("\n"),
     );
@@ -78,10 +78,36 @@ describe("config loaders", () => {
 
     expect(config.provider).toMatchObject({
       type: "chatcompletions",
-      "base-url": "https://gateway.example.test/v1",
-      model: "test-model",
+      baseUrl: "https://gateway.example.test/v1",
       vendor: "openrouter",
     });
+    expect(config.model).toBe("test-model");
+  });
+
+  it("accepts a provider string shorthand", async () => {
+    const path = join(TEST_DIR, "shorthand.yml");
+    await writeFile(path, "provider: anthropic\ntask: Run\n");
+
+    const config = await getJobConfig(path, {});
+
+    expect(config.provider).toEqual({ type: "anthropic" });
+  });
+
+  it("accepts a job with no provider", async () => {
+    const path = join(TEST_DIR, "no-provider.yml");
+    await writeFile(path, "model: anthropic/claude-sonnet-5\ntask: Run\n");
+
+    const config = await getJobConfig(path, {});
+
+    expect(config.provider).toBeUndefined();
+    expect(config.model).toBe("anthropic/claude-sonnet-5");
+  });
+
+  it("rejects an unknown provider shorthand", async () => {
+    const path = join(TEST_DIR, "bad-shorthand.yml");
+    await writeFile(path, "provider: bedrock\ntask: Run\n");
+
+    await expect(getJobConfig(path, {})).rejects.toThrow(/provider/);
   });
 
   it("rejects non-YAML job files", async () => {
@@ -100,7 +126,7 @@ describe("config loaders", () => {
 
     const config = await getServiceConfig({});
 
-    expect(config.openai).toEqual({ "api-key": "openai-key", model: "gpt-test" });
+    expect(config.openai).toEqual({ apiKey: "openai-key", model: "gpt-test" });
   });
 
   it("reads credentials from the user home", async () => {
@@ -118,7 +144,7 @@ describe("config loaders", () => {
 
     const config = await getServiceConfig({ cwd, home });
 
-    expect(config.anthropic).toEqual({ "api-key": "user-key", model: "user-model" });
+    expect(config.anthropic).toEqual({ apiKey: "user-key", model: "user-model" });
   });
 
   it("layers credentials per key: env over project over user", async () => {
@@ -144,39 +170,68 @@ describe("config loaders", () => {
 
     const config = await getServiceConfig({ cwd, home });
 
-    expect(config.anthropic).toEqual({ "api-key": "project-key", model: "user-model" });
-    expect(config.openai).toEqual({ "api-key": "env-openai", model: undefined });
-    expect(config.gemini).toEqual({ "api-key": "user-gemini", model: undefined });
+    expect(config.anthropic).toEqual({ apiKey: "project-key", model: "user-model" });
+    expect(config.openai).toEqual({ apiKey: "env-openai", model: undefined });
+    expect(config.gemini).toEqual({ apiKey: "user-gemini", model: undefined });
   });
 
-  it("merges config.yaml with project winning over user", async () => {
+  it("merges cli.yaml with project winning over user", async () => {
     const home = join(TEST_DIR, "home");
     const cwd = join(TEST_DIR, "proj");
     await mkdir(join(home, ".axle"), { recursive: true });
     await mkdir(join(cwd, ".axle"), { recursive: true });
     await writeFile(
-      join(home, ".axle", "config.yaml"),
+      join(home, ".axle", "cli.yaml"),
       [
+        "providers:",
+        "  openrouter:",
+        "    type: chatcompletions",
+        "    baseUrl: https://openrouter.ai/api/v1",
+        "    apiKeyEnv: OPENROUTER_API_KEY",
         "defaults:",
-        "  model: anthropic/user-model",
-        "  providers:",
+        "  provider: anthropic",
+        "  models:",
         "    openai: openai/user-model",
       ].join("\n"),
     );
     await writeFile(
-      join(cwd, ".axle", "config.yaml"),
-      ["defaults:", "  providers:", "    openai: openai/project-model"].join("\n"),
+      join(cwd, ".axle", "cli.yaml"),
+      ["defaults:", "  provider: openrouter", "  models:", "    openai: openai/project-model"].join(
+        "\n",
+      ),
     );
 
     const config = await getCliConfig({ cwd, home });
 
+    expect(config.providers).toEqual({
+      openrouter: {
+        type: "chatcompletions",
+        baseUrl: "https://openrouter.ai/api/v1",
+        apiKeyEnv: "OPENROUTER_API_KEY",
+      },
+    });
     expect(config.defaults).toEqual({
-      model: "anthropic/user-model",
-      providers: { openai: "openai/project-model" },
+      provider: "openrouter",
+      models: { openai: "openai/project-model" },
     });
   });
 
-  it("returns an empty config when no config.yaml exists", async () => {
+  it("rejects a provider profile carrying a model", async () => {
+    const home = join(TEST_DIR, "home");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "cli.yaml"),
+      ["providers:", "  mine:", "    type: anthropic", "    model: anthropic/claude-sonnet-5"].join(
+        "\n",
+      ),
+    );
+
+    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(
+      /providers\.mine/,
+    );
+  });
+
+  it("returns an empty config when no cli.yaml exists", async () => {
     const config = await getCliConfig({
       cwd: join(TEST_DIR, "nowhere"),
       home: join(TEST_DIR, "nowhere-else"),
@@ -185,13 +240,13 @@ describe("config loaders", () => {
     expect(config).toEqual({});
   });
 
-  it("rejects an invalid config.yaml with its path", async () => {
+  it("rejects an invalid cli.yaml with its path", async () => {
     const home = join(TEST_DIR, "home");
     await mkdir(join(home, ".axle"), { recursive: true });
-    await writeFile(join(home, ".axle", "config.yaml"), "defaults:\n  model: [not, a, string]\n");
+    await writeFile(join(home, ".axle", "cli.yaml"), "defaults:\n  provider: [not, a, string]\n");
 
     await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(
-      /Invalid config file at .*config\.yaml/,
+      /Invalid config file at .*\/cli\.yaml/,
     );
   });
 

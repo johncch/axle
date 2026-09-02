@@ -132,28 +132,28 @@ function buildServiceConfig(lookup: (key: string) => string | undefined): Servic
   return compactServiceConfig({
     openai: lookup("OPENAI_API_KEY")
       ? {
-          "api-key": lookup("OPENAI_API_KEY"),
+          apiKey: lookup("OPENAI_API_KEY"),
           model: lookup("OPENAI_MODEL"),
         }
       : undefined,
     anthropic: lookup("ANTHROPIC_API_KEY")
       ? {
-          "api-key": lookup("ANTHROPIC_API_KEY"),
+          apiKey: lookup("ANTHROPIC_API_KEY"),
           model: lookup("ANTHROPIC_MODEL"),
         }
       : undefined,
     gemini: lookup("GEMINI_API_KEY")
       ? {
-          "api-key": lookup("GEMINI_API_KEY"),
+          apiKey: lookup("GEMINI_API_KEY"),
           model: lookup("GEMINI_MODEL"),
         }
       : undefined,
     chatcompletions:
       lookup("CHATCOMPLETIONS_BASE_URL") && lookup("CHATCOMPLETIONS_MODEL")
         ? {
-            "base-url": lookup("CHATCOMPLETIONS_BASE_URL"),
+            baseUrl: lookup("CHATCOMPLETIONS_BASE_URL"),
             model: lookup("CHATCOMPLETIONS_MODEL"),
-            "api-key": lookup("CHATCOMPLETIONS_API_KEY"),
+            apiKey: lookup("CHATCOMPLETIONS_API_KEY"),
           }
         : undefined,
   });
@@ -183,7 +183,7 @@ function redactConfig(value: unknown): unknown {
 }
 
 function isSecretKey(key: string): boolean {
-  return key === "api-key" || key.toLowerCase().includes("secret");
+  return key === "apiKey" || key.toLowerCase().includes("secret");
 }
 
 /**
@@ -191,9 +191,22 @@ function isSecretKey(key: string): boolean {
  */
 function formatZodError(error: z.ZodError<any>): string {
   return error.issues
-    .map((issue) => {
-      const path = issue.path.join(".");
-      return `  - ${path || "root"}: ${issue.message}`;
-    })
+    .flatMap((issue) => flattenIssue(issue, issue.path))
+    .map(({ path, message }) => `  - ${path.join(".") || "root"}: ${message}`)
     .join("\n");
+}
+
+function flattenIssue(
+  issue: z.core.$ZodIssue,
+  path: PropertyKey[],
+): { path: PropertyKey[]; message: string }[] {
+  if (issue.code === "invalid_union") {
+    const branches = issue.errors.flatMap((branch) =>
+      branch.flatMap((sub) => flattenIssue(sub, [...path, ...sub.path])),
+    );
+    if (!branches.length) return [{ path, message: issue.message }];
+    const deeper = branches.filter((entry) => entry.path.length > path.length);
+    return deeper.length ? deeper : branches;
+  }
+  return [{ path, message: issue.message }];
 }

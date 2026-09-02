@@ -1,5 +1,4 @@
-provider:
-  type: anthropic
+provider: anthropic
 
 mcps:
   - transport: stdio

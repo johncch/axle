@@ -1,7 +1,6 @@
-# yaml-language-server: $schema=../schemas/v2/job.yaml
-provider:
-  type: openai
-  model: gpt-5.5
+# yaml-language-server: $schema=../schemas/v3/job.yaml
+provider: openai
+model: openai/gpt-5.5
 
 task: |
   Generate a changelog entry for version {{version}}.

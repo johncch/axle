@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const CREDENTIALS_FILE = "credentials";
-export const CONFIG_FILE = "config.yaml";
+export const CONFIG_FILE = "cli.yaml";
 
 export interface ConfigDirs {
   project: string;

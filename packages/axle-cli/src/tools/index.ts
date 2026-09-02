@@ -8,6 +8,5 @@ export type {
   ProviderTool,
   ToolContext,
   ToolDefinition,
-  ToolProviderConfig,
 } from "./types.js";
 export { default as writeFileTool } from "./write-file.js";

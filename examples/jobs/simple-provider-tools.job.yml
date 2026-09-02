@@ -1,8 +1,7 @@
-# yaml-language-server: $schema=../../schemas/v2/job.yaml
-provider:
-  type: anthropic
+# yaml-language-server: $schema=../../schemas/v3/job.yaml
+provider: anthropic
 
-provider_tools:
+providerTools:
   - web_search
 
 task: |

@@ -1,6 +1,5 @@
 # Start server first: pnpm tsx examples/mcps/wordcount-server.ts --http --port 3100
-provider:
-  type: anthropic
+provider: anthropic
 
 mcps:
   - transport: http
