@@ -1009,12 +1009,23 @@ npm install -g @fifthrevision/axle-cli
 
 ### Usage
 
-The CLI requires an explicit YAML job file using the `-j` flag.
+The CLI runs a YAML job file with the `-j` flag, or resumes a saved session
+with `-s`.
 
 ```bash
 axle -j path/to/job.yaml
 axle -j path/to/job.yaml --args key=value other=thing
 axle -j path/to/job.yaml --debug
+axle -j path/to/job.yaml -i          # continue interactively after the task
+```
+
+Every run persists a resumable session to `~/.axle/sessions/cli/<id>.json`
+(the id is printed at run start and exit). Resuming restores the saved
+provider, model, tools, and conversation — no job file needed:
+
+```bash
+axle -s <session-id>                  # resume into interactive mode
+axle -s <session-id> -m "follow up"   # send one message and exit
 ```
 
 A job file specifies the provider, task prompt, and optional tools/files:

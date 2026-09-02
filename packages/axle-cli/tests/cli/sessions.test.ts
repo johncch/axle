@@ -1,11 +1,11 @@
 import type { AgentConfig, AgentDefinition, AIProvider } from "@fifthrevision/axle";
 import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runSingle } from "../../src/cli/runners.js";
+import { runResume, runSingle } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
-import { sessionFilePath, SessionStore } from "../../src/cli/sessions.js";
+import { loadSession, sessionFilePath, SessionStore } from "../../src/cli/sessions.js";
 
 const TEST_DIR = join(import.meta.dirname, "__sessions_tmp__");
 const HOME = join(TEST_DIR, "home");
@@ -17,14 +17,15 @@ const definition: AgentDefinition = {
   model: "anthropic/test-model",
 };
 
-function createMockProvider(text: string): AIProvider {
+function createMockProvider(text: string, requestMessages?: unknown[][]): AIProvider {
   let callIndex = 0;
   return {
     name: "mock",
     async createGenerationRequest() {
       throw new Error("not used");
     },
-    async *createStreamingRequest() {
+    async *createStreamingRequest(_model, params) {
+      requestMessages?.push([...(params as { messages: unknown[] }).messages]);
       callIndex += 1;
       yield {
         type: "start" as const,
@@ -97,6 +98,26 @@ describe("SessionStore", () => {
   });
 });
 
+describe("loadSession", () => {
+  it("rejects an unknown session id", async () => {
+    await expect(loadSession("missing", HOME)).rejects.toThrow("No session found with id missing");
+  });
+
+  it("rejects a corrupt session file", async () => {
+    await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
+    await writeFile(sessionFilePath("broken", HOME), "not json");
+
+    await expect(loadSession("broken", HOME)).rejects.toThrow(/Invalid session file at/);
+  });
+
+  it("rejects an unsupported session version", async () => {
+    await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
+    await writeFile(sessionFilePath("future", HOME), JSON.stringify({ version: 99 }));
+
+    await expect(loadSession("future", HOME)).rejects.toThrow(/Unsupported or corrupt/);
+  });
+});
+
 describe("runSingle session persistence", () => {
   it("persists definition, messages, and turns after a run", async () => {
     const agentConfig: AgentConfig = {
@@ -126,6 +147,58 @@ describe("runSingle session persistence", () => {
     expect(file.session.messages).toHaveLength(2);
     expect(file.session.messages[0].role).toBe("user");
     expect(file.turns.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("resumes a saved session: prior messages reach the model and the file grows", async () => {
+    const firstConfig: AgentConfig = {
+      provider: createMockProvider("first response"),
+      model: "test-model",
+      sessionId: "resume-1",
+    };
+    const store = new SessionStore(definition, { cwd: "/original/dir", home: HOME });
+    const tracer = new Tracer();
+
+    await runSingle(
+      { task: "Say hi" },
+      firstConfig,
+      {},
+      {},
+      createStats(),
+      tracer.startSpan("first"),
+      store,
+    );
+    const saved = await loadSession("resume-1", HOME);
+
+    const requestMessages: unknown[][] = [];
+    const resumeConfig: AgentConfig = {
+      provider: createMockProvider("second response", requestMessages),
+      model: "test-model",
+    };
+    const resumeStore = new SessionStore(saved.definition, {
+      cwd: saved.cwd,
+      createdAt: saved.createdAt,
+      home: HOME,
+    });
+
+    const succeeded = await runResume(
+      saved,
+      resumeConfig,
+      { message: "Say more" },
+      createStats(),
+      tracer.startSpan("resume"),
+      resumeStore,
+    );
+
+    expect(succeeded).toBe(true);
+    expect(requestMessages).toHaveLength(1);
+    expect(requestMessages[0]).toHaveLength(3);
+
+    const after = await readSessionFile("resume-1");
+    expect(after.session.sessionId).toBe("resume-1");
+    expect(after.session.messages).toHaveLength(4);
+    expect(after.turns.length).toBeGreaterThan(saved.turns.length);
+    expect(after.createdAt).toBe(saved.createdAt);
+    expect(after.cwd).toBe("/original/dir");
   });
 
   it("does not write anything without a session store", async () => {
