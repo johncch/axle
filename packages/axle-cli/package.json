@@ -34,11 +34,14 @@
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "glob": "^13.0.6",
+    "ink": "^7.1.1",
+    "react": "^19.2.8",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",
+    "@types/react": "^19.2.18",
     "publint": "^0.3.24",
     "tsdown": "^0.22.14",
     "tsx": "^4.23.12",

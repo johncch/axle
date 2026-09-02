@@ -1017,7 +1017,12 @@ axle -j path/to/job.yaml
 axle -j path/to/job.yaml --args key=value other=thing
 axle -j path/to/job.yaml --debug
 axle -j path/to/job.yaml -i          # continue interactively after the task
+axle -j path/to/job.yaml --renderer ink   # richer terminal UI (spinner, live streaming)
 ```
+
+`--renderer` picks the screen renderer for the run: `plain` (default,
+line-oriented, pipe-safe) or `ink` (terminal UI with a live streaming region;
+falls back to plain when stdout is not a TTY).
 
 Every run persists a resumable session to `~/.axle/sessions/cli/<id>.json`
 (the id is printed at run start and exit). Resuming restores the saved

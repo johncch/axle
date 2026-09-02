@@ -23,6 +23,7 @@ const program = new Command()
   .option("-j, --job <path>", "Path to the YAML job file")
   .option("-s, --session <id>", "Resume a saved session")
   .option("-m, --message <text>", "Send one message to the resumed session and exit")
+  .option("--renderer <mode>", "Screen renderer: plain or ink", "plain")
   .option("--no-log", "Do not write the output to a log file")
   .option("-d, --debug", "Print additional debug information")
   .option("-i, --interactive", "Continue the conversation interactively after the initial task")
@@ -72,7 +73,10 @@ if (options.debug) {
   tracer.addWriter(debugWriter);
 }
 
-const renderer = createRenderer("plain");
+if (options.renderer !== "plain" && options.renderer !== "ink") {
+  program.error(`error: unknown renderer "${options.renderer}" (expected plain or ink)`);
+}
+const renderer = await createRenderer(options.renderer as "plain" | "ink");
 
 if (options.log) {
   const logsDir = join(resolveConfigDirs().user, "logs", "cli");
