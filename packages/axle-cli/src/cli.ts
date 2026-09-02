@@ -14,6 +14,7 @@ import { closeMcps } from "./cli/mcp.js";
 import { runBatch, runResume, runSingle } from "./cli/runners.js";
 import type { CliSessionFile } from "./cli/sessions.js";
 import { loadSession, SessionStore } from "./cli/sessions.js";
+import { createRenderer } from "./ui/index.js";
 
 const program = new Command()
   .name("axle")
@@ -60,13 +61,18 @@ if (options.debug) {
   tracer.minLevel = "debug";
 }
 
-const logWriter = new SimpleWriter({
-  minLevel: options.debug ? "debug" : "info",
-  showInternal: options.debug,
-  showTimestamp: true,
-  markdown: true,
-});
-tracer.addWriter(logWriter);
+// The screen belongs to the renderer; the tracer writes to it only in debug.
+if (options.debug) {
+  const debugWriter = new SimpleWriter({
+    minLevel: "debug",
+    showInternal: true,
+    showTimestamp: true,
+    markdown: true,
+  });
+  tracer.addWriter(debugWriter);
+}
+
+const renderer = createRenderer("plain");
 
 if (options.log) {
   const logsDir = join(resolveConfigDirs().user, "logs", "cli");
@@ -120,6 +126,7 @@ try {
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
+  renderer.error(error.message);
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
   rootSpan.end("error");
@@ -163,6 +170,7 @@ try {
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
+  renderer.error(error.message);
   rootSpan.error(error.message);
   rootSpan.error(error.stack ?? "");
   rootSpan.end("error");
@@ -189,6 +197,7 @@ try {
       options,
       stats,
       rootSpan,
+      renderer,
       plan.sessionStore,
     );
   } else {
@@ -205,6 +214,7 @@ try {
         options,
         stats,
         rootSpan,
+        renderer,
       );
     } else {
       succeeded = await runSingle(
@@ -214,12 +224,14 @@ try {
         options,
         stats,
         rootSpan,
+        renderer,
         plan.sessionStore,
       );
     }
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
+  renderer.error(error.message);
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
 } finally {
@@ -238,12 +250,16 @@ if (stats.cacheWriteIn !== undefined)
 if (stats.reasoningOut !== undefined)
   rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
 
+renderer.info(`${(duration / 1000).toFixed(1)}s · ${stats.in} in / ${stats.out} out tokens`);
+
 if (succeeded) {
   rootSpan.info("Complete. Goodbye");
   rootSpan.end();
 } else {
+  renderer.error("Job failed");
   rootSpan.error("Job failed");
   rootSpan.end("error");
   process.exitCode = 1;
 }
+renderer.close();
 await tracer.flush();

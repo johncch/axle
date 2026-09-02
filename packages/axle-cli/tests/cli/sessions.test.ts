@@ -6,6 +6,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runResume, runSingle } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
 import { loadSession, sessionFilePath, SessionStore } from "../../src/cli/sessions.js";
+import type { Renderer } from "../../src/ui/index.js";
+
+const nullRenderer: Renderer = {
+  renderPriorTurns() {},
+  onEvent() {},
+  info() {},
+  warn() {},
+  error() {},
+  close() {},
+};
 
 const TEST_DIR = join(import.meta.dirname, "__sessions_tmp__");
 const HOME = join(TEST_DIR, "home");
@@ -136,6 +146,7 @@ describe("runSingle session persistence", () => {
       {},
       createStats(),
       span,
+      nullRenderer,
       store,
     );
 
@@ -165,6 +176,7 @@ describe("runSingle session persistence", () => {
       {},
       createStats(),
       tracer.startSpan("first"),
+      nullRenderer,
       store,
     );
     const saved = await loadSession("resume-1", HOME);
@@ -186,6 +198,7 @@ describe("runSingle session persistence", () => {
       { message: "Say more" },
       createStats(),
       tracer.startSpan("resume"),
+      nullRenderer,
       resumeStore,
     );
 
@@ -209,7 +222,15 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
     const span = tracer.startSpan("test");
 
-    const succeeded = await runSingle({ task: "Say hi" }, agentConfig, {}, {}, createStats(), span);
+    const succeeded = await runSingle(
+      { task: "Say hi" },
+      agentConfig,
+      {},
+      {},
+      createStats(),
+      span,
+      nullRenderer,
+    );
 
     expect(succeeded).toBe(true);
     await expect(readdir(join(HOME, ".axle"))).rejects.toThrow();

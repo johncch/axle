@@ -1,4 +1,4 @@
-import type { AgentConfig, AxleFailure, Span, Stats, Turn } from "@fifthrevision/axle";
+import type { AgentConfig, AxleFailure, Span, Stats } from "@fifthrevision/axle";
 import {
   addStats,
   Agent,
@@ -13,6 +13,7 @@ import { createInterface } from "node:readline";
 import type { BatchConfig } from "./configs/schemas.js";
 import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
 import type { CliSessionFile, SessionStore } from "./sessions.js";
+import type { Renderer } from "../ui/index.js";
 
 export interface CliJobInput {
   task: string;
@@ -47,6 +48,7 @@ export async function runSingle(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: Span,
+  renderer: Renderer,
   sessionStore?: SessionStore,
 ): Promise<boolean> {
   const instruct = new Instruct({ prompt: input.task });
@@ -63,7 +65,10 @@ export async function runSingle(
   });
 
   const transcript = new Transcript();
-  agent.on((event) => transcript.apply(event));
+  agent.on((event) => {
+    transcript.apply(event);
+    renderer.onEvent(event, transcript);
+  });
 
   const controller = new AbortController();
   const onSigint = () => controller.abort();
@@ -80,7 +85,9 @@ export async function runSingle(
   };
 
   if (sessionStore) {
-    parentSpan.info(`Session ${agent.sessionId} — resume with: axle --session ${agent.sessionId}`);
+    const line = `Session ${agent.sessionId} — resume with: axle --session ${agent.sessionId}`;
+    renderer.info(line);
+    parentSpan.info(line);
   }
 
   try {
@@ -92,6 +99,7 @@ export async function runSingle(
 
     if (!result.ok) {
       const msg = describeFailure(result.error);
+      renderer.error(msg);
       parentSpan.error(msg);
       jobSpan.error(msg);
       jobSpan.end("error");
@@ -102,13 +110,14 @@ export async function runSingle(
     parentSpan.info(result.response, { markdown: true });
 
     if (options.interactive) {
-      await runInteractiveLoop(agent, stats, parentSpan, controller, saveSession);
+      await runInteractiveLoop(agent, stats, parentSpan, renderer, controller, saveSession);
     }
 
     jobSpan.end();
     return true;
   } catch (e) {
     if (e instanceof AxleAgentAbortError) {
+      renderer.warn("Interrupted");
       parentSpan.warn("Interrupted");
       jobSpan.end("cancelled");
       return false;
@@ -121,7 +130,9 @@ export async function runSingle(
     process.removeListener("SIGINT", onSigint);
     await saveSession();
     if (sessionStore) {
-      parentSpan.info(`Resume this session with: axle --session ${agent.sessionId}`);
+      const line = `Resume this session with: axle --session ${agent.sessionId}`;
+      renderer.info(line);
+      parentSpan.info(line);
     }
   }
 }
@@ -132,6 +143,7 @@ export async function runResume(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: Span,
+  renderer: Renderer,
   sessionStore: SessionStore,
 ): Promise<boolean> {
   const runSpan = parentSpan.startSpan("resume", { type: "workflow" });
@@ -144,7 +156,10 @@ export async function runResume(
   );
 
   const transcript = new Transcript(saved.turns);
-  agent.on((event) => transcript.apply(event));
+  agent.on((event) => {
+    transcript.apply(event);
+    renderer.onEvent(event, transcript);
+  });
 
   const controller = new AbortController();
   const onSigint = () => controller.abort();
@@ -160,10 +175,13 @@ export async function runResume(
   };
 
   if (saved.cwd !== process.cwd()) {
-    parentSpan.warn(`Session was started in ${saved.cwd}; resuming from ${process.cwd()}`);
+    const warning = `Session was started in ${saved.cwd}; resuming from ${process.cwd()}`;
+    renderer.warn(warning);
+    parentSpan.warn(warning);
   }
+  renderer.info(`Resuming session ${agent.sessionId}`);
   parentSpan.info(`Resuming session ${agent.sessionId}`);
-  renderPriorTurns(saved.turns, parentSpan);
+  renderer.renderPriorTurns(saved.turns);
 
   try {
     if (options.message !== undefined) {
@@ -173,6 +191,7 @@ export async function runResume(
 
       if (!result.ok) {
         const msg = describeFailure(result.error);
+        renderer.error(msg);
         parentSpan.error(msg);
         runSpan.error(msg);
         runSpan.end("error");
@@ -181,13 +200,14 @@ export async function runResume(
 
       parentSpan.info(result.response, { markdown: true });
     } else {
-      await runInteractiveLoop(agent, stats, parentSpan, controller, saveSession);
+      await runInteractiveLoop(agent, stats, parentSpan, renderer, controller, saveSession);
     }
 
     runSpan.end();
     return true;
   } catch (e) {
     if (e instanceof AxleAgentAbortError) {
+      renderer.warn("Interrupted");
       parentSpan.warn("Interrupted");
       runSpan.end("cancelled");
       return false;
@@ -199,23 +219,9 @@ export async function runResume(
   } finally {
     process.removeListener("SIGINT", onSigint);
     await saveSession();
-    parentSpan.info(`Resume this session with: axle --session ${agent.sessionId}`);
-  }
-}
-
-function renderPriorTurns(turns: readonly Turn[], span: Span): void {
-  for (const turn of turns) {
-    for (const part of turn.parts) {
-      if (part.type === "text" && part.text.trim()) {
-        if (turn.owner === "user") {
-          span.info(`> ${part.text}`);
-        } else {
-          span.info(part.text, { markdown: true });
-        }
-      } else if (part.type === "action") {
-        span.info(`[${part.kind}] ${part.detail.name}`);
-      }
-    }
+    const line = `Resume this session with: axle --session ${agent.sessionId}`;
+    renderer.info(line);
+    parentSpan.info(line);
   }
 }
 
@@ -223,6 +229,7 @@ async function runInteractiveLoop(
   agent: Agent,
   stats: Stats,
   span: Span,
+  renderer: Renderer,
   controller: AbortController,
   saveSession: () => Promise<void>,
 ): Promise<void> {
@@ -255,14 +262,18 @@ async function runInteractiveLoop(
         if (result.ok) {
           span.info(result.response, { markdown: true });
         } else {
-          span.error(describeFailure(result.error));
+          const msg = describeFailure(result.error);
+          renderer.error(msg);
+          span.error(msg);
         }
       } catch (e) {
         if (e instanceof AxleAgentAbortError) {
+          renderer.warn("Interrupted");
           span.warn("Interrupted");
           break;
         }
         const msg = e instanceof Error ? e.message : String(e);
+        renderer.error(msg);
         span.error(msg);
       }
       await saveSession();
@@ -280,15 +291,20 @@ export async function runBatch(
   options: ProgramOptions,
   stats: Stats,
   parentSpan: Span,
+  renderer: Renderer,
 ): Promise<boolean> {
   const filePaths = await glob(batchConfig.files);
 
   if (filePaths.length === 0) {
-    parentSpan.warn(`No files matched pattern: ${batchConfig.files}`);
+    const warning = `No files matched pattern: ${batchConfig.files}`;
+    renderer.warn(warning);
+    parentSpan.warn(warning);
     return true;
   }
 
-  parentSpan.info(`Batch: ${filePaths.length} file(s) matched "${batchConfig.files}"`);
+  const header = `Batch: ${filePaths.length} file(s) matched "${batchConfig.files}"`;
+  renderer.info(header);
+  parentSpan.info(header);
 
   const ledger = batchConfig.resume ? await loadLedger() : new Map();
 
@@ -311,6 +327,7 @@ export async function runBatch(
 
       const existing = ledger.get(batchFilePath);
       if (batchConfig.resume && existing && existing.hash === hash) {
+        renderer.info(`- ${batchFilePath}: skipped (already completed)`);
         itemSpan.info(`Skipped (already completed)`);
         itemSpan.end();
         skipped++;
@@ -336,6 +353,7 @@ export async function runBatch(
       addStats(stats, result.usage);
 
       if (!result.ok) {
+        renderer.error(`- ${batchFilePath}: failed — ${describeFailure(result.error)}`);
         itemSpan.error(`Failed: ${describeFailure(result.error)}`);
         itemSpan.end("error");
         failed++;
@@ -343,17 +361,21 @@ export async function runBatch(
       }
 
       await appendLedgerEntry({ file: batchFilePath, hash, timestamp: Date.now() });
+      renderer.info(`- ${batchFilePath}: done`);
       itemSpan.end();
       completed++;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      renderer.error(`- ${batchFilePath}: failed — ${msg}`);
       itemSpan.error(`Failed: ${msg}`);
       itemSpan.end("error");
       failed++;
     }
   });
 
-  parentSpan.info(`Batch complete: ${completed} completed, ${skipped} skipped, ${failed} failed`);
+  const summary = `Batch complete: ${completed} completed, ${skipped} skipped, ${failed} failed`;
+  renderer.info(summary);
+  parentSpan.info(summary);
   return failed === 0;
 }
 
