@@ -3,7 +3,10 @@
 import { Command } from "@commander-js/extra-typings";
 import type { AgentConfig, MCP, Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import pkg from "../package.json";
+import { resolveConfigDirs } from "./cli/configs/paths.js";
 import { createCliAgentConfig } from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
@@ -52,14 +55,14 @@ const logWriter = new SimpleWriter({
 tracer.addWriter(logWriter);
 
 if (options.log) {
+  const logsDir = join(resolveConfigDirs().user, "logs", "cli");
+  mkdirSync(logsDir, { recursive: true });
+  const logFile = join(logsDir, `${new Date().toISOString()}.log`);
   const fileWriter = new SimpleWriter({
     minLevel: "debug",
     showInternal: true,
     showTimestamp: true,
-    output: (line) => {
-      // TODO: Write to file instead of console
-      // For now, SimpleWriter outputs to console by default
-    },
+    output: (line) => appendFileSync(logFile, line + "\n"),
   });
   tracer.addWriter(fileWriter);
 }

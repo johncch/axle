@@ -194,9 +194,6 @@ export type {
 } from "./observability/index.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
 
-// Store
-export type { FileStore } from "./store/index.js";
-
 // Utils
 export { loadFileContent } from "./utils/file.js";
 export type {
