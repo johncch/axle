@@ -88,30 +88,40 @@ export async function getCliConfig(context: {
     const content = await readOptionalFile(path);
     if (content === null) continue;
 
-    const parsed = CliConfigSchema.safeParse(YAML.parse(content));
+    let raw: unknown;
+    try {
+      raw = YAML.parse(content) ?? {};
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(`Invalid config file at ${path}:\n  ${message}`);
+    }
+
+    const parsed = CliConfigSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(`Invalid config file at ${path}:\n${formatZodError(parsed.error)}`);
     }
-    merged = mergeConfig(merged, parsed.data) as CliConfig;
+    merged = mergeCliConfig(merged, parsed.data);
   }
 
   span?.debug("CLI config: " + JSON.stringify(merged, null, 2));
   return merged;
 }
 
-function mergeConfig(base: unknown, override: unknown): unknown {
-  if (isPlainObject(base) && isPlainObject(override)) {
-    const result: Record<string, unknown> = { ...base };
-    for (const [key, value] of Object.entries(override)) {
-      result[key] = key in result ? mergeConfig(result[key], value) : value;
-    }
-    return result;
-  }
-  return override;
-}
+// Provider profiles replace wholesale across layers; field-merging two
+// profiles can produce a shape neither file's validation would accept.
+function mergeCliConfig(base: CliConfig, override: CliConfig): CliConfig {
+  const merged: CliConfig = {};
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  const providers = { ...base.providers, ...override.providers };
+  if (Object.keys(providers).length > 0) merged.providers = providers;
+
+  if (base.defaults || override.defaults) {
+    merged.defaults = { ...base.defaults, ...override.defaults };
+    const models = { ...base.defaults?.models, ...override.defaults?.models };
+    if (Object.keys(models).length > 0) merged.defaults.models = models;
+  }
+
+  return merged;
 }
 
 async function readOptionalFile(path: string): Promise<string | null> {
@@ -148,14 +158,13 @@ function buildServiceConfig(lookup: (key: string) => string | undefined): Servic
           model: lookup("GEMINI_MODEL"),
         }
       : undefined,
-    chatcompletions:
-      lookup("CHATCOMPLETIONS_BASE_URL") && lookup("CHATCOMPLETIONS_MODEL")
-        ? {
-            baseUrl: lookup("CHATCOMPLETIONS_BASE_URL"),
-            model: lookup("CHATCOMPLETIONS_MODEL"),
-            apiKey: lookup("CHATCOMPLETIONS_API_KEY"),
-          }
-        : undefined,
+    chatcompletions: lookup("CHATCOMPLETIONS_BASE_URL")
+      ? {
+          baseUrl: lookup("CHATCOMPLETIONS_BASE_URL"),
+          model: lookup("CHATCOMPLETIONS_MODEL"),
+          apiKey: lookup("CHATCOMPLETIONS_API_KEY"),
+        }
+      : undefined,
   });
 }
 

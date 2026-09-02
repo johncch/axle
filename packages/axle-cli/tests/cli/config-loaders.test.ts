@@ -216,6 +216,66 @@ describe("config loaders", () => {
     });
   });
 
+  it("tolerates an empty cli.yaml", async () => {
+    const home = join(TEST_DIR, "home");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await writeFile(join(home, ".axle", "cli.yaml"), "# just a comment\n");
+
+    const config = await getCliConfig({ cwd: join(TEST_DIR, "proj"), home });
+
+    expect(config).toEqual({});
+  });
+
+  it("replaces same-named provider profiles wholesale across layers", async () => {
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "cli.yaml"),
+      [
+        "providers:",
+        "  gw:",
+        "    type: chatcompletions",
+        "    baseUrl: https://gw.example.test/v1",
+        "    apiKeyEnv: GW_KEY",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(cwd, ".axle", "cli.yaml"),
+      ["providers:", "  gw:", "    type: anthropic"].join("\n"),
+    );
+
+    const config = await getCliConfig({ cwd, home });
+
+    expect(config.providers?.gw).toEqual({ type: "anthropic" });
+  });
+
+  it("provides a chatcompletions service config from baseUrl alone", async () => {
+    process.chdir(TEST_DIR);
+    vi.stubEnv("CHATCOMPLETIONS_BASE_URL", "http://localhost:11434/v1");
+    vi.stubEnv("CHATCOMPLETIONS_MODEL", "");
+    vi.stubEnv("CHATCOMPLETIONS_API_KEY", "");
+
+    const config = await getServiceConfig({
+      cwd: join(TEST_DIR, "proj"),
+      home: join(TEST_DIR, "home"),
+    });
+
+    expect(config.chatcompletions).toEqual({
+      baseUrl: "http://localhost:11434/v1",
+      model: undefined,
+      apiKey: undefined,
+    });
+  });
+
+  it("rejects unknown top-level job keys", async () => {
+    const path = join(TEST_DIR, "old-key.yml");
+    await writeFile(path, "provider: anthropic\nprovider_tools: [web_search]\ntask: Run\n");
+
+    await expect(getJobConfig(path, {})).rejects.toThrow(/provider_tools/);
+  });
+
   it("rejects a provider profile carrying a model", async () => {
     const home = join(TEST_DIR, "home");
     await mkdir(join(home, ".axle"), { recursive: true });

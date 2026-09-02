@@ -226,3 +226,4 @@ properties:
       - files
 required:
   - task
+additionalProperties: false

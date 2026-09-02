@@ -154,7 +154,7 @@ export const RequestOptionsSchema = z.strictObject({
 
 export type RequestOptions = z.infer<typeof RequestOptionsSchema>;
 
-export const JobConfigSchema = z.object({
+export const JobConfigSchema = z.strictObject({
   name: z.string().optional(),
   provider: ProviderUseSchema.optional(),
   model: z.string().optional(),
