@@ -34,7 +34,7 @@ describe("config loaders", () => {
     const config = await getJobConfig(path, {});
 
     expect(config.name).toBe("summarize");
-    expect(config.provider.type).toBe("openai");
+    expect(config.provider).toEqual({ type: "openai" });
     expect(config.mcps?.[0]).toMatchObject({ transport: "http" });
   });
 

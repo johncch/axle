@@ -11,6 +11,8 @@
     "build:watch": "pnpm --filter @fifthrevision/axle build:watch",
     "build-dev": "pnpm -r --filter @fifthrevision/axle --filter @fifthrevision/axle-cli build-dev",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm run typecheck && pnpm test && pnpm run build",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
     "generate:job-schema": "pnpm --filter @fifthrevision/axle-cli run generate:job-schema",
     "update-models": "pnpm exec tsx scripts/getModelsDev.ts",
