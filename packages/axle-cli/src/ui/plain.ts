@@ -1,11 +1,13 @@
 import type { Transcript, Turn, TurnEvent, TurnPart } from "@fifthrevision/axle/ui";
+import { capitalize, formatActionArgs, formatDuration } from "./format.js";
 import { ReadlinePrompt } from "./prompt.js";
 import type { Renderer, SessionUsage } from "./renderer.js";
 
 /**
- * Line-oriented streaming renderer: text deltas stream to the terminal as
- * they arrive, actions render as one-line markers. No cursor movement, no
- * ANSI state — safe for pipes and CI.
+ * Line-oriented renderer speaking the same consola/task-runner dialect as
+ * ink, minus color, animation, and the live region — a piped or CI log reads
+ * like a frozen ink transcript. Text deltas stream as they arrive; actions
+ * print once, settled, with duration. No cursor movement, no ANSI state.
  */
 export class PlainRenderer implements Renderer {
   private write: (text: string) => void;
@@ -35,21 +37,25 @@ export class PlainRenderer implements Renderer {
       case "text:delta":
         this.emit(event.delta);
         break;
-      case "part:end":
-        this.endLine();
-        break;
-      case "action:running": {
+      case "part:end": {
         const part = findPart(transcript, event.turnId, event.partId);
-        if (part?.type === "action") {
-          this.line(`[${part.kind}] ${part.detail.name}`);
+        if (part?.type === "thinking") {
+          this.renderStaticPart("agent", part);
+        } else {
+          this.endLine();
         }
         break;
       }
-      case "action:error":
-        this.line(`[error] ${event.error.message}`);
+      case "action:complete":
+      case "action:error": {
+        const part = findPart(transcript, event.turnId, event.partId);
+        if (part?.type === "action") {
+          this.renderStaticPart("agent", part);
+        }
         break;
+      }
       case "error":
-        this.line(`Error: ${event.error.message}`);
+        this.line(`✖ ${event.error.message}`);
         break;
       default:
         break;
@@ -57,19 +63,19 @@ export class PlainRenderer implements Renderer {
   }
 
   info(message: string): void {
-    this.line(message);
+    this.line(`ℹ ${indentContinuation(message)}`);
   }
 
   success(message: string): void {
-    this.line(message);
+    this.line(`✔ ${indentContinuation(message)}`);
   }
 
   warn(message: string): void {
-    this.line(message);
+    this.line(`⚠ ${indentContinuation(message)}`);
   }
 
   error(message: string): void {
-    this.line(message);
+    this.line(`✖ ${indentContinuation(message)}`);
   }
 
   updateUsage(_usage: SessionUsage): void {
@@ -88,10 +94,29 @@ export class PlainRenderer implements Renderer {
   }
 
   private renderStaticPart(owner: Turn["owner"], part: TurnPart): void {
-    if (part.type === "text" && part.text.trim()) {
-      this.line(owner === "user" ? `> ${part.text.trimEnd()}` : part.text.trimEnd());
-    } else if (part.type === "action") {
-      this.line(`[${part.kind}] ${part.detail.name}`);
+    switch (part.type) {
+      case "text": {
+        if (!part.text.trim()) return;
+        const text = part.text.trim();
+        this.line(owner === "user" ? `❯ ${indentContinuation(text)}` : text);
+        return;
+      }
+      case "thinking": {
+        const duration = formatDuration(part.timing);
+        this.line(`✔ Thinking${duration ? ` (${duration})` : ""}`);
+        return;
+      }
+      case "action": {
+        const glyph = part.status === "error" ? "✖" : part.status === "cancelled" ? "⚠" : "✔";
+        const args = formatActionArgs(part);
+        const duration = part.status === "complete" ? formatDuration(part.timing) : undefined;
+        this.line(
+          `${glyph} ${capitalize(part.detail.name)}${args ? ` ${args}` : ""}${duration ? ` (${duration})` : ""}${part.status === "cancelled" ? " (cancelled)" : ""}`,
+        );
+        return;
+      }
+      default:
+        return;
     }
   }
 
@@ -109,6 +134,10 @@ export class PlainRenderer implements Renderer {
     this.endLine();
     this.emit(text + "\n");
   }
+}
+
+function indentContinuation(text: string): string {
+  return text.split("\n").join("\n  ");
 }
 
 function findPart(transcript: Transcript, turnId: string, partId: string): TurnPart | undefined {

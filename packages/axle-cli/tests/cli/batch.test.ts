@@ -72,6 +72,7 @@ function batchSpec(provider: AIProvider, options?: { incremental?: boolean }) {
     concurrency: 1,
     jobName: "test-job",
     incremental: options?.incremental ?? false,
+    verbose: false,
     home: HOME,
   };
 }

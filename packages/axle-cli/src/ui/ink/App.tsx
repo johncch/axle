@@ -1,6 +1,7 @@
 import type { ActionPart, Turn, TurnPart } from "@fifthrevision/axle/ui";
 import { Box, Static, Text, useInput } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { capitalize, formatDuration, formatTokens, truncate } from "../format.js";
 import type { SessionUsage } from "../renderer.js";
 import type { StaticItem, UiStore } from "./store.js";
 
@@ -58,11 +59,6 @@ function contextBar(fraction: number): string {
   return "█".repeat(filled) + "░".repeat(CONTEXT_BAR_CELLS - filled);
 }
 
-function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
-  return String(count);
-}
 
 /**
  * Chat input, always mounted — it keeps the terminal in raw mode for the
@@ -141,21 +137,31 @@ function InputLine({
   );
 }
 
-const HOST_MARKS = {
+export const HOST_MARKS = {
   info: { glyph: "\u2139", color: "cyan" },
   success: { glyph: "\u2714", color: "green" },
   warn: { glyph: "\u26a0", color: "yellow" },
   error: { glyph: "\u2716", color: "red" },
 } as const;
 
+export function HostLine({
+  level,
+  text,
+}: {
+  level: keyof typeof HOST_MARKS;
+  text: string;
+}) {
+  const mark = HOST_MARKS[level];
+  return (
+    <Text>
+      <Text color={mark.color}>{mark.glyph}</Text> {indentContinuation(text)}
+    </Text>
+  );
+}
+
 function StaticItemView({ item }: { item: StaticItem }) {
   if (item.kind === "host") {
-    const mark = HOST_MARKS[item.level];
-    return (
-      <Text>
-        <Text color={mark.color}>{mark.glyph}</Text> {indentContinuation(item.text)}
-      </Text>
-    );
+    return <HostLine level={item.level} text={item.text} />;
   }
   return <TurnView turn={item.turn} />;
 }
@@ -168,7 +174,7 @@ function LiveRegion({ turn }: { turn: Turn }) {
   return <TurnView turn={turn} live spinnerFrame={frame} />;
 }
 
-function useSpinner(): string {
+export function useSpinner(): string {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick((t) => t + 1), 80);
@@ -346,16 +352,7 @@ function ActionResultView({
   return <Text dimColor> {truncate(firstLine(content), 200)}</Text>;
 }
 
-function capitalize(name: string): string {
-  return name.charAt(0).toUpperCase() + name.slice(1);
-}
 
-function formatDuration(timing?: { start: string; end?: string }): string | undefined {
-  if (!timing?.end) return undefined;
-  const ms = Date.parse(timing.end) - Date.parse(timing.start);
-  if (!Number.isFinite(ms) || ms < 0) return undefined;
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
-}
 
 function indentContinuation(text: string): string {
   return text.split("\n").join("\n  ");
@@ -370,6 +367,3 @@ function firstLine(text: string): string {
   return text.trim().split("\n", 1)[0];
 }
 
-function truncate(text: string, max: number): string {
-  return text.length > max ? text.slice(0, max - 1) + "…" : text;
-}

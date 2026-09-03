@@ -26,7 +26,7 @@ import {
   promptForMissingModel,
   runSetupWizard,
 } from "./cli/setup.js";
-import { createRenderer } from "./ui/index.js";
+import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
 interface CommonOpts {
   renderer: "plain" | "ink";
@@ -48,6 +48,7 @@ type Invocation =
       job: string;
       inputs: string[];
       incremental?: boolean;
+      verbose: boolean;
       args: string[];
       common: CommonOpts;
     }
@@ -62,11 +63,12 @@ const program = new Command()
   .enablePositionalOptions()
   .helpCommand(true);
 
-function commonOf(opts: { renderer: string; log: boolean; debug?: boolean }): CommonOpts {
-  if (opts.renderer !== "plain" && opts.renderer !== "ink") {
-    program.error(`error: unknown renderer "${opts.renderer}" (expected plain or ink)`);
+function commonOf(opts: { renderer?: string; log: boolean; debug?: boolean }): CommonOpts {
+  const renderer = opts.renderer ?? "ink";
+  if (renderer !== "plain" && renderer !== "ink") {
+    program.error(`error: unknown renderer "${renderer}" (expected plain or ink)`);
   }
-  return { renderer: opts.renderer as "plain" | "ink", log: opts.log, debug: Boolean(opts.debug) };
+  return { renderer: renderer as "plain" | "ink", log: opts.log, debug: Boolean(opts.debug) };
 }
 
 let invocation: Invocation | undefined;
@@ -108,6 +110,7 @@ program
   .requiredOption("-j, --job <path>", "Recipe to run")
   .option("--incremental", "Skip completed inputs whose content is unchanged")
   .option("--no-incremental", "Run every input even if the recipe sets incremental")
+  .option("--verbose", "Stream full item transcripts instead of progress rows (concurrency 1)")
   .option("--args <args...>", "Template variables in the form key=value")
   .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
   .option("--no-log", "Do not write the output to a log file")
@@ -118,6 +121,7 @@ program
       job: opts.job,
       inputs,
       incremental: opts.incremental,
+      verbose: Boolean(opts.verbose),
       args: opts.args ?? [],
       common: commonOf(opts),
     };
@@ -273,6 +277,7 @@ type PendingPlan =
       inputs: string[];
       concurrency: number;
       incremental: boolean;
+      verbose: boolean;
       definition: AgentDefinition;
     }
   | {
@@ -320,11 +325,14 @@ try {
           "batch needs inputs: pass globs/paths after the recipe, or add a batch: block to it.",
         );
       }
+      const verbose =
+        (inv.kind === "batch" && inv.verbose) || (jobConfig.batch?.concurrency ?? 3) === 1;
       pending = {
         kind: "batch",
         jobConfig,
         inputs,
-        concurrency: jobConfig.batch?.concurrency ?? 3,
+        verbose,
+        concurrency: verbose ? 1 : (jobConfig.batch?.concurrency ?? 3),
         incremental:
           (inv.kind === "batch" ? inv.incremental : undefined) ??
           jobConfig.batch?.incremental ??
@@ -375,7 +383,9 @@ if (!pending) {
  * Phase B — the renderer owns the terminal from here; resolve runtime
  * objects (connect MCPs) and execute.
  */
-const renderer = await createRenderer(common.renderer);
+const renderer = await createRenderer(common.renderer, {
+  batchProgress: pending.kind === "batch" && !pending.verbose,
+});
 
 type RunPlan =
   | { kind: "batch"; spec: BatchRunSpec }
@@ -402,6 +412,7 @@ try {
         concurrency: pending.concurrency,
         jobName: pending.jobConfig.name ?? "job",
         incremental: pending.incremental,
+        verbose: pending.verbose,
       },
     };
   } else {
@@ -442,7 +453,14 @@ const startTime = performance.now();
 let succeeded = false;
 try {
   if (plan.kind === "batch") {
-    succeeded = await runBatch(plan.spec, variables, stats, rootSpan, renderer);
+    succeeded = await runBatch(
+      plan.spec,
+      variables,
+      stats,
+      rootSpan,
+      renderer,
+      supportsBatchProgress(renderer) ? renderer : undefined,
+    );
   } else {
     succeeded = await runAgentSession(plan.spec, stats, rootSpan, renderer, plan.sessionStore);
   }

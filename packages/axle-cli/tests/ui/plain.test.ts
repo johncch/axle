@@ -35,36 +35,28 @@ describe("PlainRenderer", () => {
     expect(text()).toBe("Hello world\n");
   });
 
-  it("renders a running action as a one-line marker with its name", () => {
+  it("renders a settled action with args and duration", () => {
     const { feed, text } = createHarness();
 
     feed({ type: "turn:start", turnId: "t1" });
-    feed({ type: "part:start", turnId: "t1", part: toolPart });
-    feed({ type: "action:running", turnId: "t1", partId: "p2", parameters: { a: 2 } });
+    feed({
+      type: "part:start",
+      turnId: "t1",
+      part: { ...toolPart, detail: { name: "calculator", parameters: { a: 2, b: 2 } } },
+    });
+    feed({ type: "action:running", turnId: "t1", partId: "p2", parameters: { a: 2, b: 2 } });
+    feed({
+      type: "action:complete",
+      turnId: "t1",
+      partId: "p2",
+      result: { type: "success", content: "4" },
+      timing: { start: "2026-09-03T00:00:00.000Z", end: "2026-09-03T00:00:00.430Z" },
+    });
 
-    expect(text()).toBe("[tool] calculator\n");
+    expect(text()).toBe('✔ Calculator {"a":2,"b":2} (430ms)\n');
   });
 
-  it("breaks an in-progress delta line before a host line", () => {
-    const { renderer, feed, text } = createHarness();
-
-    feed({ type: "turn:start", turnId: "t1" });
-    feed({ type: "part:start", turnId: "t1", part: { id: "p1", type: "text", text: "" } });
-    feed({ type: "text:delta", turnId: "t1", partId: "p1", delta: "partial" });
-    renderer.info("host message");
-
-    expect(text()).toBe("partial\nhost message\n");
-  });
-
-  it("renders top-level error events", () => {
-    const { feed, text } = createHarness();
-
-    feed({ type: "error", error: { type: "model", message: "boom" } });
-
-    expect(text()).toBe("Error: boom\n");
-  });
-
-  it("renders action errors with the message", () => {
+  it("renders a failed action with the error glyph", () => {
     const { feed, text } = createHarness();
 
     feed({ type: "turn:start", turnId: "t1" });
@@ -76,10 +68,40 @@ describe("PlainRenderer", () => {
       error: { type: "tool", message: "division by zero" },
     });
 
-    expect(text()).toBe("[error] division by zero\n");
+    expect(text()).toBe("✖ Calculator\n");
   });
 
-  it("replays prior turns with owner prefixes and action markers", () => {
+  it("renders host lines with the consola gutter", () => {
+    const { renderer, text } = createHarness();
+
+    renderer.info("Session abc");
+    renderer.success("Done in 1.9s");
+    renderer.warn("careful");
+    renderer.error("boom");
+
+    expect(text()).toBe("ℹ Session abc\n✔ Done in 1.9s\n⚠ careful\n✖ boom\n");
+  });
+
+  it("breaks an in-progress delta line before a host line", () => {
+    const { renderer, feed, text } = createHarness();
+
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({ type: "part:start", turnId: "t1", part: { id: "p1", type: "text", text: "" } });
+    feed({ type: "text:delta", turnId: "t1", partId: "p1", delta: "partial" });
+    renderer.info("host message");
+
+    expect(text()).toBe("partial\nℹ host message\n");
+  });
+
+  it("renders top-level error events", () => {
+    const { feed, text } = createHarness();
+
+    feed({ type: "error", error: { type: "model", message: "boom" } });
+
+    expect(text()).toBe("✖ boom\n");
+  });
+
+  it("replays prior turns in the shared dialect", () => {
     const { renderer, text } = createHarness();
     const turns: Turn[] = [
       {
@@ -93,7 +115,11 @@ describe("PlainRenderer", () => {
         owner: "agent",
         status: "complete",
         parts: [
-          { ...toolPart, status: "complete" },
+          {
+            ...toolPart,
+            status: "complete",
+            timing: { start: "2026-09-03T00:00:00.000Z", end: "2026-09-03T00:00:01.200Z" },
+          },
           { id: "p3", type: "text", text: "The answer is 4." },
         ],
       },
@@ -101,7 +127,7 @@ describe("PlainRenderer", () => {
 
     renderer.renderPriorTurns(turns);
 
-    expect(text()).toBe("> Add 2 and 2\n[tool] calculator\nThe answer is 4.\n");
+    expect(text()).toBe("❯ Add 2 and 2\n✔ Calculator (1.2s)\nThe answer is 4.\n");
   });
 
   it("close terminates a dangling line exactly once", () => {

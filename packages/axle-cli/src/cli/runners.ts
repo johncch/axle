@@ -18,7 +18,8 @@ import {
 import { ModelInfo } from "@fifthrevision/axle/models";
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
-import type { Renderer } from "../ui/index.js";
+import { capitalize } from "../ui/format.js";
+import type { BatchProgress, BatchTotals, Renderer } from "../ui/index.js";
 import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "./ledger.js";
 import { SessionStore } from "./sessions.js";
 
@@ -240,6 +241,8 @@ export interface BatchRunSpec {
   jobName: string;
   /** Skip completed inputs whose content is unchanged. */
   incremental: boolean;
+  /** Stream full item transcripts through the renderer (concurrency 1). */
+  verbose: boolean;
   /** Session home override for tests. */
   home?: string;
 }
@@ -250,6 +253,7 @@ export async function runBatch(
   stats: Stats,
   parentSpan: Span,
   renderer: Renderer,
+  progress?: BatchProgress,
 ): Promise<boolean> {
   const matched = await Promise.all(spec.inputs.map((pattern) => glob(pattern)));
   const filePaths = [...new Set(matched.flat())].sort();
@@ -274,6 +278,17 @@ export async function runBatch(
   let completed = 0;
   let skipped = 0;
   let failed = 0;
+  let tokensIn = 0;
+  let tokensOut = 0;
+  const totals = (): BatchTotals => ({
+    total: filePaths.length,
+    completed,
+    skipped,
+    failed,
+    tokensIn,
+    tokensOut,
+  });
+  progress?.batchStarted(totals());
 
   const controller = new AbortController();
   const onInterrupt = () => {
@@ -302,6 +317,7 @@ export async function runBatch(
           itemSpan.info("Skipped (already completed)");
           itemSpan.end();
           skipped++;
+          progress?.itemFinished(batchFilePath, totals());
           return;
         }
 
@@ -311,8 +327,25 @@ export async function runBatch(
           ...spec.agentConfig,
           observability: { trace: itemSpan },
         });
+        progress?.itemStarted(batchFilePath);
         const transcript = new Transcript();
-        agent.on((event) => transcript.apply(event));
+        agent.on((event) => {
+          transcript.apply(event);
+          if (spec.verbose) {
+            renderer.onEvent(event, transcript);
+          } else if (progress && event.type === "part:start") {
+            const part = event.part;
+            const phase =
+              part.type === "action"
+                ? capitalize(part.detail.name)
+                : part.type === "thinking"
+                  ? "Thinking"
+                  : part.type === "text"
+                    ? "Writing"
+                    : undefined;
+            if (phase) progress.itemPhase(batchFilePath, phase);
+          }
+        });
 
         const saveItem = async () => {
           try {
@@ -338,6 +371,7 @@ export async function runBatch(
           itemSpan.error(`Failed: ${message}`);
           itemSpan.end("error");
           failed++;
+          progress?.itemFinished(batchFilePath, totals());
         };
 
         try {
@@ -355,6 +389,8 @@ export async function runBatch(
           ).final;
 
           addStats(stats, result.usage);
+          tokensIn += result.usage.in;
+          tokensOut += result.usage.out;
           await saveItem();
 
           if (!result.ok) {
@@ -373,11 +409,13 @@ export async function runBatch(
           renderer.success(`${batchFilePath}: done (axle resume ${agent.sessionId.slice(0, 8)})`);
           itemSpan.end();
           completed++;
+          progress?.itemFinished(batchFilePath, totals());
         } catch (e) {
           await saveItem();
           if (e instanceof AxleAgentAbortError) {
             itemSpan.end("cancelled");
             failed++;
+            progress?.itemFinished(batchFilePath, totals());
             return;
           }
           await recordFailure(hash, e instanceof Error ? e.message : String(e));

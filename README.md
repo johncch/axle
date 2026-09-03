@@ -1146,6 +1146,12 @@ the id). A project-local ledger (`.axle/batch.jsonl`) indexes input → session;
 re-running the job skips inputs whose content and task are unchanged, so a
 partially failed batch re-runs only what's left.
 
+On a terminal, batch shows test-runner-style progress: one spinner row per
+in-flight item (current phase, elapsed) and a running totals line, with
+settled items committed to scrollback. `--verbose` (or `concurrency: 1`)
+streams each item's full transcript instead. Piped output prints one line
+per settled item.
+
 Batch runs are non-interactive; a batch job cannot be combined with
 `--interactive`.
 
