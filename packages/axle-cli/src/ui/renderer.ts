@@ -1,5 +1,13 @@
 import type { Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
 
+/** Cumulative run usage plus a rough estimate of the current context size. */
+export interface SessionUsage {
+  in: number;
+  out: number;
+  contextTokens: number;
+  contextLimit?: number;
+}
+
 /**
  * Screen output boundary for the CLI.
  *
@@ -16,8 +24,25 @@ export interface Renderer {
   onEvent(event: TurnEvent, transcript: Transcript): void;
   /** Host-level line outside any turn (session id, batch progress, totals). */
   info(message: string): void;
+  /** Completion line (finished run, batch item done) — the ✔ gutter. */
+  success(message: string): void;
   warn(message: string): void;
   error(message: string): void;
+  /**
+   * Show the chat input line and resolve with the submitted text, or null
+   * when the user ends the chat (Ctrl-C or Ctrl-D at the prompt).
+   */
+  promptInput(): Promise<string | null>;
+  /** Refresh the persistent usage/context readout, where the renderer has one. */
+  updateUsage(usage: SessionUsage): void;
+  /**
+   * Register the handler for a user interrupt (Ctrl-C during a turn). A
+   * renderer that holds the terminal in raw mode receives Ctrl-C as a key
+   * event — a real SIGINT would also hit ancestor processes (pnpm, tsx) and
+   * kill the tree — so it must forward it here instead. Pass undefined to
+   * unregister.
+   */
+  setInterruptHandler(handler: (() => void) | undefined): void;
   /** Called once when the run ends; flush and restore the terminal. */
-  close(): void;
+  close(): void | Promise<void>;
 }

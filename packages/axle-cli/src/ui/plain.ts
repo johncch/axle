@@ -1,5 +1,6 @@
 import type { Transcript, Turn, TurnEvent, TurnPart } from "@fifthrevision/axle/ui";
-import type { Renderer } from "./renderer.js";
+import { ReadlinePrompt } from "./prompt.js";
+import type { Renderer, SessionUsage } from "./renderer.js";
 
 /**
  * Line-oriented streaming renderer: text deltas stream to the terminal as
@@ -9,9 +10,16 @@ import type { Renderer } from "./renderer.js";
 export class PlainRenderer implements Renderer {
   private write: (text: string) => void;
   private atLineStart = true;
+  private readline = new ReadlinePrompt();
 
   constructor(options?: { write?: (text: string) => void }) {
     this.write = options?.write ?? ((text) => process.stdout.write(text));
+  }
+
+  promptInput(): Promise<string | null> {
+    this.endLine();
+    this.atLineStart = true;
+    return this.readline.prompt();
   }
 
   renderPriorTurns(turns: readonly Turn[]): void {
@@ -52,6 +60,10 @@ export class PlainRenderer implements Renderer {
     this.line(message);
   }
 
+  success(message: string): void {
+    this.line(message);
+  }
+
   warn(message: string): void {
     this.line(message);
   }
@@ -60,7 +72,18 @@ export class PlainRenderer implements Renderer {
     this.line(message);
   }
 
+  updateUsage(_usage: SessionUsage): void {
+    // Line-oriented output has no persistent bar; the end-of-run summary
+    // covers totals.
+  }
+
+  setInterruptHandler(_handler: (() => void) | undefined): void {
+    // Cooked-mode terminal: Ctrl-C during a turn arrives as a real SIGINT,
+    // which the runner already listens for.
+  }
+
   close(): void {
+    this.readline.close();
     this.endLine();
   }
 

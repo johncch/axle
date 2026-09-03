@@ -2,17 +2,21 @@
 
 import { Command } from "@commander-js/extra-typings";
 import type { AgentConfig, MCP, Stats } from "@fifthrevision/axle";
-import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
+import { createStats, Instruct, loadFileContent, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import pkg from "../package.json";
-import { resolveConfigDirs } from "./cli/configs/paths.js";
-import { createCliAgentConfig, resolveAgentDefinition } from "./cli/agent-config.js";
+import {
+  createCliAgentConfig,
+  createDefaultAgentDefinition,
+  resolveAgentDefinition,
+} from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
-import type { JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
+import { resolveConfigDirs } from "./cli/configs/paths.js";
+import type { BatchConfig, CliConfig, JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { closeMcps } from "./cli/mcp.js";
-import { runBatch, runResume, runSingle } from "./cli/runners.js";
-import type { CliSessionFile } from "./cli/sessions.js";
+import type { AgentSessionSpec } from "./cli/runners.js";
+import { runAgentSession, runBatch } from "./cli/runners.js";
 import { loadSession, SessionStore } from "./cli/sessions.js";
 import { createRenderer } from "./ui/index.js";
 
@@ -20,26 +24,26 @@ const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
   .version(pkg.version)
-  .option("-j, --job <path>", "Path to the YAML job file")
+  .option("-j, --job <path>", "Run a YAML job file instead of starting a chat")
   .option("-s, --session <id>", "Resume a saved session")
-  .option("-m, --message <text>", "Send one message to the resumed session and exit")
-  .option("--renderer <mode>", "Screen renderer: plain or ink", "plain")
+  .option(
+    "-m, --message <text>",
+    "Send one message and exit (with --session: continue that session)",
+  )
+  .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
   .option("--no-log", "Do not write the output to a log file")
   .option("-d, --debug", "Print additional debug information")
-  .option("-i, --interactive", "Continue the conversation interactively after the initial task")
+  .option("-i, --interactive", "With --job: continue the conversation interactively after the task")
   .option("--args <args...>", "Additional arguments in the form key=value");
 
 program.parse(process.argv);
 const options = program.opts();
 
-if (!options.job && !options.session) {
-  program.error("error: provide --job <path> or --session <id>");
-}
 if (options.job && options.session) {
   program.error("error: --job and --session are mutually exclusive");
 }
-if (options.message !== undefined && !options.session) {
-  program.error("error: --message requires --session");
+if (options.job && options.message !== undefined) {
+  program.error("error: --message cannot be combined with --job");
 }
 
 const variables: Record<string, string> = {
@@ -116,10 +120,11 @@ if (options.debug) {
 /**
  * Read and load config, job
  */
+let cliConfig: CliConfig;
 let serviceConfig: ServiceConfig;
 let jobConfig: JobConfig | undefined;
 try {
-  await getCliConfig({ span: rootSpan });
+  cliConfig = await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({
     span: rootSpan,
   });
@@ -140,36 +145,81 @@ try {
 }
 
 /**
- * Resolve what to run: a job from a file, or a resumed session
+ * Resolve what to run: a batch job, or an agent session (job task, resumed
+ * session, or a chat from configured defaults)
  */
 type RunPlan =
-  | { kind: "job"; jobConfig: JobConfig; agentConfig: AgentConfig; sessionStore: SessionStore }
-  | { kind: "resume"; saved: CliSessionFile; agentConfig: AgentConfig; sessionStore: SessionStore };
+  | { kind: "batch"; jobConfig: JobConfig; batchConfig: BatchConfig; agentConfig: AgentConfig }
+  | { kind: "session"; spec: AgentSessionSpec; sessionStore: SessionStore };
 
 let mcps: MCP[] = [];
 let plan: RunPlan | undefined;
 try {
   if (options.session) {
     const saved = await loadSession(options.session);
+    if (saved.definition.mcps?.length) {
+      renderer.info("Connecting MCP servers…");
+    }
     const resolved = await resolveAgentDefinition(saved.definition, serviceConfig, rootSpan);
     mcps = resolved.mcps;
     plan = {
-      kind: "resume",
-      saved,
-      agentConfig: resolved.agentConfig,
+      kind: "session",
+      spec: {
+        agentConfig: resolved.agentConfig,
+        spanName: "resume",
+        session: saved.session,
+        priorTurns: saved.turns,
+        resumedFromCwd: saved.cwd,
+        initial: options.message,
+        interactive: options.message === undefined,
+      },
       sessionStore: new SessionStore(saved.definition, {
         cwd: saved.cwd,
         createdAt: saved.createdAt,
       }),
     };
   } else if (jobConfig) {
+    if (jobConfig.mcps?.length) {
+      renderer.info("Connecting MCP servers…");
+    }
     const resolved = await createCliAgentConfig(jobConfig, serviceConfig, rootSpan);
     mcps = resolved.mcps;
+    if (jobConfig.batch) {
+      plan = {
+        kind: "batch",
+        jobConfig,
+        batchConfig: jobConfig.batch,
+        agentConfig: resolved.agentConfig,
+      };
+    } else {
+      const instruct = new Instruct({ prompt: jobConfig.task });
+      for (const filePath of jobConfig.files ?? []) {
+        instruct.addFile(await loadFileContent(filePath));
+      }
+      plan = {
+        kind: "session",
+        spec: {
+          agentConfig: resolved.agentConfig,
+          spanName: "job",
+          initial: instruct.withInputs(variables),
+          interactive: Boolean(options.interactive),
+        },
+        sessionStore: new SessionStore(resolved.definition),
+      };
+    }
+  } else {
+    const definition = createDefaultAgentDefinition(cliConfig);
+    const resolved = await resolveAgentDefinition(definition, serviceConfig, rootSpan);
+    mcps = resolved.mcps;
     plan = {
-      kind: "job",
-      jobConfig,
-      agentConfig: resolved.agentConfig,
-      sessionStore: new SessionStore(resolved.definition),
+      kind: "session",
+      spec: {
+        agentConfig: resolved.agentConfig,
+        spanName: "chat",
+        initial: options.message,
+        interactive: options.message === undefined,
+      },
+      sessionStore: new SessionStore(definition),
     };
   }
 } catch (e) {
@@ -194,44 +244,18 @@ const startTime = performance.now();
 
 let succeeded = false;
 try {
-  if (plan.kind === "resume") {
-    succeeded = await runResume(
-      plan.saved,
+  if (plan.kind === "batch") {
+    succeeded = await runBatch(
+      { task: plan.jobConfig.task, files: plan.jobConfig.files },
+      plan.batchConfig,
       plan.agentConfig,
-      options,
+      variables,
       stats,
       rootSpan,
       renderer,
-      plan.sessionStore,
     );
   } else {
-    const input = {
-      task: plan.jobConfig.task,
-      files: plan.jobConfig.files,
-    };
-    if (plan.jobConfig.batch) {
-      succeeded = await runBatch(
-        input,
-        plan.jobConfig.batch,
-        plan.agentConfig,
-        variables,
-        options,
-        stats,
-        rootSpan,
-        renderer,
-      );
-    } else {
-      succeeded = await runSingle(
-        input,
-        plan.agentConfig,
-        variables,
-        options,
-        stats,
-        rootSpan,
-        renderer,
-        plan.sessionStore,
-      );
-    }
+    succeeded = await runAgentSession(plan.spec, stats, rootSpan, renderer, plan.sessionStore);
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));
@@ -254,7 +278,7 @@ if (stats.cacheWriteIn !== undefined)
 if (stats.reasoningOut !== undefined)
   rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
 
-renderer.info(`${(duration / 1000).toFixed(1)}s · ${stats.in} in / ${stats.out} out tokens`);
+renderer.success(`Done in ${(duration / 1000).toFixed(1)}s · ↑ ${stats.in} ↓ ${stats.out} tokens`);
 
 if (succeeded) {
   rootSpan.info("Complete. Goodbye");
@@ -265,5 +289,5 @@ if (succeeded) {
   rootSpan.end("error");
   process.exitCode = 1;
 }
-renderer.close();
+await renderer.close();
 await tracer.flush();

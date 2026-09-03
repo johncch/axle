@@ -1,29 +1,159 @@
-import type { ActionPart, Stats, Turn, TurnPart } from "@fifthrevision/axle/ui";
-import { Box, Static, Text } from "ink";
+import type { ActionPart, Turn, TurnPart } from "@fifthrevision/axle/ui";
+import { Box, Static, Text, useInput } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import type { SessionUsage } from "../renderer.js";
 import type { StaticItem, UiStore } from "./store.js";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const LIVE_TAIL_LINES = 6;
 
-export function App({ store }: { store: UiStore }) {
+export function App({
+  store,
+  onSubmit,
+}: {
+  store: UiStore;
+  onSubmit: (value: string | null) => void;
+}) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+
   return (
     <>
       <Static items={state.staticItems}>
         {(item, index) => <StaticItemView key={index} item={item} />}
       </Static>
       {state.liveTurn && <LiveRegion turn={state.liveTurn} />}
+      {state.queuedInputs.map((queued, index) => (
+        <Text key={index} dimColor>
+          {"\u276f "}
+          {queued} (queued)
+        </Text>
+      ))}
+      {!state.closed && (
+        <InputLine
+          onSubmit={onSubmit}
+          awaitingInput={state.awaitingInput}
+          onInterrupt={state.onInterrupt}
+        />
+      )}
+      {!state.closed && state.usage && <UsageBar usage={state.usage} />}
     </>
   );
 }
 
+function UsageBar({ usage }: { usage: SessionUsage }) {
+  const context = usage.contextLimit
+    ? `${contextBar(usage.contextTokens / usage.contextLimit)} ~${formatTokens(usage.contextTokens)}tok`
+    : `ctx ~${formatTokens(usage.contextTokens)}`;
+  return (
+    <Text dimColor>
+      {"  "}↑ {formatTokens(usage.in)} ↓ {formatTokens(usage.out)} · {context}
+    </Text>
+  );
+}
+
+const CONTEXT_BAR_CELLS = 8;
+
+function contextBar(fraction: number): string {
+  const filled = Math.min(CONTEXT_BAR_CELLS, Math.round(fraction * CONTEXT_BAR_CELLS));
+  return "█".repeat(filled) + "░".repeat(CONTEXT_BAR_CELLS - filled);
+}
+
+function formatTokens(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
+  return String(count);
+}
+
+/**
+ * Chat input, always mounted — it keeps the terminal in raw mode for the
+ * whole session, so Ctrl-C is always a key event here (a real SIGINT would
+ * also hit ancestor processes like pnpm/tsx and kill the tree). At rest,
+ * Ctrl-C ends the chat; during a turn it routes to the interrupt handler.
+ * Submitting during a turn queues the line for the next prompt.
+ */
+function InputLine({
+  onSubmit,
+  awaitingInput,
+  onInterrupt,
+}: {
+  onSubmit: (value: string | null) => void;
+  awaitingInput: boolean;
+  onInterrupt?: () => void;
+}) {
+  const [value, setValue] = useState("");
+
+  const submit = (text: string) => {
+    setValue("");
+    onSubmit(text);
+  };
+
+  useInput((input, key) => {
+    if (key.ctrl && input === "c") {
+      if (awaitingInput) {
+        onSubmit(null);
+      } else {
+        onInterrupt?.();
+      }
+      return;
+    }
+    if (key.ctrl && input === "d") {
+      if (awaitingInput && value === "") onSubmit(null);
+      return;
+    }
+    if (key.return) {
+      // Shift/Alt-Enter arrives as a modified return only in terminals that
+      // send one (VSCode, iTerm2 with a mapping, kitty); plain Enter submits.
+      if (key.shift || key.meta) {
+        setValue((v) => v + "\n");
+        return;
+      }
+      submit(value);
+      return;
+    }
+    if (key.backspace || key.delete) {
+      setValue((v) => v.slice(0, -1));
+      return;
+    }
+    if (key.ctrl && input === "u") {
+      setValue("");
+      return;
+    }
+    if (input && !key.ctrl && !key.meta) {
+      // A paste arrives as one chunk (key.return only fires for a lone Enter
+      // keypress); keep its newlines in the value instead of submitting.
+      setValue((v) => v + input.replace(/\r\n?/g, "\n"));
+    }
+  });
+
+  // Invisible until the prompt is live or the user starts typing ahead \u2014
+  // non-interactive runs keep the input mounted (raw mode, Ctrl-C handling)
+  // without showing a prompt they can't use.
+  if (!awaitingInput && value === "") return null;
+
+  return (
+    <Box marginTop={1}>
+      <Text>
+        <Text color="cyan">{"\u276f "}</Text>
+        {indentContinuation(value)}
+        <Text inverse> </Text>
+      </Text>
+    </Box>
+  );
+}
+
+const HOST_MARKS = {
+  info: { glyph: "\u2139", color: "cyan" },
+  success: { glyph: "\u2714", color: "green" },
+  warn: { glyph: "\u26a0", color: "yellow" },
+  error: { glyph: "\u2716", color: "red" },
+} as const;
+
 function StaticItemView({ item }: { item: StaticItem }) {
   if (item.kind === "host") {
-    const color = item.level === "error" ? "red" : item.level === "warn" ? "yellow" : undefined;
+    const mark = HOST_MARKS[item.level];
     return (
-      <Text color={color} dimColor={item.level === "info"}>
-        {item.text}
+      <Text>
+        <Text color={mark.color}>{mark.glyph}</Text> {indentContinuation(item.text)}
       </Text>
     );
   }
@@ -32,12 +162,10 @@ function StaticItemView({ item }: { item: StaticItem }) {
 
 function LiveRegion({ turn }: { turn: Turn }) {
   const frame = useSpinner();
-  return (
-    <Box flexDirection="column">
-      <TurnView turn={turn} live />
-      <Text color="cyan">{frame}</Text>
-    </Box>
-  );
+  if (turn.parts.length === 0) {
+    return <Text color="cyan">{frame}</Text>;
+  }
+  return <TurnView turn={turn} live spinnerFrame={frame} />;
 }
 
 function useSpinner(): string {
@@ -49,42 +177,79 @@ function useSpinner(): string {
   return SPINNER_FRAMES[tick % SPINNER_FRAMES.length];
 }
 
-function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
+function TurnView({
+  turn,
+  live,
+  spinnerFrame,
+}: {
+  turn: Turn;
+  live?: boolean;
+  spinnerFrame?: string;
+}) {
   return (
-    <Box flexDirection="column" marginBottom={live ? 0 : 1}>
-      {turn.parts.map((part) => (
-        <PartView key={part.id} part={part} owner={turn.owner} live={live} />
+    <Box flexDirection="column">
+      {turn.parts.map((part, index) => (
+        <PartView
+          key={part.id}
+          part={part}
+          owner={turn.owner}
+          live={live}
+          spinner={index === turn.parts.length - 1 ? spinnerFrame : undefined}
+        />
       ))}
-      {turn.error && <Text color="red">Error: {turn.error.message}</Text>}
-      {!live && turn.owner === "agent" && turn.usage && <UsageFooter usage={turn.usage} />}
+      {turn.error && <Text color="red">✖ {turn.error.message}</Text>}
     </Box>
   );
 }
 
-function PartView({ part, owner, live }: { part: TurnPart; owner: Turn["owner"]; live?: boolean }) {
+function PartView({
+  part,
+  owner,
+  live,
+  spinner,
+}: {
+  part: TurnPart;
+  owner: Turn["owner"];
+  live?: boolean;
+  spinner?: string;
+}) {
   switch (part.type) {
     case "text": {
-      if (!part.text) return null;
-      const text = live ? lastLines(part.text, LIVE_TAIL_LINES) : part.text.trimEnd();
+      if (!part.text) {
+        return spinner ? <Text color="cyan">{spinner}</Text> : null;
+      }
+      const text = live ? lastLines(part.text, LIVE_TAIL_LINES) : part.text.trim();
       if (owner === "user") {
-        return <Text dimColor>{"> " + text}</Text>;
+        return (
+          <Text>
+            {"\u276f "}
+            {indentContinuation(text)}
+          </Text>
+        );
       }
       return <Text>{text}</Text>;
     }
 
     case "thinking": {
-      const label = part.summary?.trim()
-        ? part.summary.trim()
-        : `thinking${part.text ? ` (${part.text.length} chars)` : "…"}`;
+      if (spinner) {
+        return (
+          <Text>
+            <Text color="cyan">{spinner}</Text> <Text dimColor>Thinking…</Text>
+          </Text>
+        );
+      }
+      const duration = formatDuration(part.timing);
+      const summary = part.summary?.trim();
       return (
-        <Text dimColor italic>
-          ✻ {label}
+        <Text dimColor>
+          ✔ Thinking{duration ? ` (${duration})` : ""}
+          {summary ? ` — ${summary}` : ""}
         </Text>
       );
     }
 
     case "action":
-      return <ActionView part={part} live={live} />;
+      return <ActionView part={part} live={live} spinner={spinner} />;
 
     case "citation":
       return (
@@ -103,7 +268,7 @@ function PartView({ part, owner, live }: { part: TurnPart; owner: Turn["owner"];
     case "file":
       return (
         <Text dimColor>
-          [file] {part.file.name} ({part.file.mimeType})
+          ▣ {part.file.name} ({part.file.mimeType})
         </Text>
       );
 
@@ -116,27 +281,44 @@ function PartView({ part, owner, live }: { part: TurnPart; owner: Turn["owner"];
   }
 }
 
-function ActionView({ part, live }: { part: ActionPart; live?: boolean }) {
-  const glyph =
-    part.status === "error"
-      ? "✖"
-      : part.status === "complete"
-        ? "✔"
-        : part.status === "cancelled"
-          ? "⊘"
-          : "⏺";
-  const color = part.status === "error" ? "red" : part.status === "complete" ? "green" : "yellow";
+function ActionView({
+  part,
+  live,
+  spinner,
+}: {
+  part: ActionPart;
+  live?: boolean;
+  spinner?: string;
+}) {
+  const running = part.status === "pending" || part.status === "running";
+  const glyph = running
+    ? (spinner ?? "\u280b")
+    : part.status === "complete"
+      ? "\u2714"
+      : part.status === "error"
+        ? "\u2716"
+        : "\u26a0";
+  const color = running
+    ? "cyan"
+    : part.status === "complete"
+      ? "green"
+      : part.status === "error"
+        ? "red"
+        : "yellow";
 
   const args =
     part.kind === "tool" && Object.keys(part.detail.parameters).length > 0
       ? truncate(JSON.stringify(part.detail.parameters), 80)
       : undefined;
+  const duration = running || part.status === "cancelled" ? undefined : formatDuration(part.timing);
 
   return (
     <Box flexDirection="column">
       <Text>
-        <Text color={color}>{glyph}</Text> {part.detail.name}
+        <Text color={color}>{glyph}</Text> {capitalize(part.detail.name)}
         {args && <Text dimColor> {args}</Text>}
+        {duration && <Text dimColor> ({duration})</Text>}
+        {part.status === "cancelled" && <Text dimColor> (cancelled)</Text>}
       </Text>
       <ActionResultView result={part.detail.result} />
       {part.kind === "agent" && part.detail.children.length > 0 && (
@@ -164,14 +346,19 @@ function ActionResultView({
   return <Text dimColor> {truncate(firstLine(content), 200)}</Text>;
 }
 
-function UsageFooter({ usage }: { usage: Stats }) {
-  const parts = [`${usage.in} in / ${usage.out} out`];
-  if (usage.breakdown && usage.breakdown.length > 1) {
-    for (const entry of usage.breakdown) {
-      parts.push(`${entry.provider}/${entry.model}: ${entry.in}/${entry.out}`);
-    }
-  }
-  return <Text dimColor>{parts.join(" · ")}</Text>;
+function capitalize(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function formatDuration(timing?: { start: string; end?: string }): string | undefined {
+  if (!timing?.end) return undefined;
+  const ms = Date.parse(timing.end) - Date.parse(timing.start);
+  if (!Number.isFinite(ms) || ms < 0) return undefined;
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+function indentContinuation(text: string): string {
+  return text.split("\n").join("\n  ");
 }
 
 function lastLines(text: string, count: number): string {

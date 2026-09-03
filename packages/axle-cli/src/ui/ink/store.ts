@@ -1,15 +1,27 @@
 import type { Turn } from "@fifthrevision/axle/ui";
+import type { SessionUsage } from "../renderer.js";
 
 export type StaticItem =
-  { kind: "turn"; turn: Turn } | { kind: "host"; level: "info" | "warn" | "error"; text: string };
+  | { kind: "turn"; turn: Turn }
+  | { kind: "host"; level: "info" | "success" | "warn" | "error"; text: string };
 
 export interface UiState {
   staticItems: StaticItem[];
   liveTurn?: Turn;
+  /** True while the runner is waiting at the prompt (submit sends directly). */
+  awaitingInput: boolean;
+  /** Lines submitted during a running turn, consumed by the next prompt. */
+  queuedInputs: string[];
+  /** Cumulative usage shown in the persistent bottom bar. */
+  usage?: SessionUsage;
+  /** Receives Ctrl-C pressed while a turn is running. */
+  onInterrupt?: () => void;
+  /** Set on close; hides the input line and usage bar in the final frame. */
+  closed?: boolean;
 }
 
 export class UiStore {
-  private state: UiState = { staticItems: [] };
+  private state: UiState = { staticItems: [], awaitingInput: false, queuedInputs: [] };
   private listeners = new Set<() => void>();
 
   getSnapshot = (): UiState => this.state;

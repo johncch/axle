@@ -3,7 +3,7 @@ import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runResume, runSingle } from "../../src/cli/runners.js";
+import { runAgentSession } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
 import { loadSession, sessionFilePath, SessionStore } from "../../src/cli/sessions.js";
 import type { Renderer } from "../../src/ui/index.js";
@@ -12,8 +12,12 @@ const nullRenderer: Renderer = {
   renderPriorTurns() {},
   onEvent() {},
   info() {},
+  success() {},
   warn() {},
   error() {},
+  promptInput: () => Promise.resolve(null),
+  updateUsage() {},
+  setInterruptHandler() {},
   close() {},
 };
 
@@ -139,11 +143,8 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
     const span = tracer.startSpan("test");
 
-    const succeeded = await runSingle(
-      { task: "Say hi" },
-      agentConfig,
-      {},
-      {},
+    const succeeded = await runAgentSession(
+      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
       createStats(),
       span,
       nullRenderer,
@@ -169,11 +170,8 @@ describe("runSingle session persistence", () => {
     const store = new SessionStore(definition, { cwd: "/original/dir", home: HOME });
     const tracer = new Tracer();
 
-    await runSingle(
-      { task: "Say hi" },
-      firstConfig,
-      {},
-      {},
+    await runAgentSession(
+      { agentConfig: firstConfig, spanName: "job", initial: "Say hi", interactive: false },
       createStats(),
       tracer.startSpan("first"),
       nullRenderer,
@@ -192,10 +190,16 @@ describe("runSingle session persistence", () => {
       home: HOME,
     });
 
-    const succeeded = await runResume(
-      saved,
-      resumeConfig,
-      { message: "Say more" },
+    const succeeded = await runAgentSession(
+      {
+        agentConfig: resumeConfig,
+        spanName: "resume",
+        session: saved.session,
+        priorTurns: saved.turns,
+        resumedFromCwd: saved.cwd,
+        initial: "Say more",
+        interactive: false,
+      },
       createStats(),
       tracer.startSpan("resume"),
       nullRenderer,
@@ -214,6 +218,37 @@ describe("runSingle session persistence", () => {
     expect(after.cwd).toBe("/original/dir");
   });
 
+  it("runs the chat loop: empty input re-prompts, /quit exits", async () => {
+    const inputs = ["", "  ", "hello", "/quit", "never sent"];
+    const scriptedRenderer: Renderer = {
+      ...nullRenderer,
+      promptInput: () => Promise.resolve(inputs.shift() ?? null),
+    };
+    const requestMessages: unknown[][] = [];
+    const agentConfig: AgentConfig = {
+      provider: createMockProvider("hi", requestMessages),
+      model: "test-model",
+      sessionId: "chat-1",
+    };
+    const store = new SessionStore(definition, { home: HOME });
+    const tracer = new Tracer();
+
+    const succeeded = await runAgentSession(
+      { agentConfig, spanName: "chat", interactive: true },
+      createStats(),
+      tracer.startSpan("chat"),
+      scriptedRenderer,
+      store,
+    );
+
+    expect(succeeded).toBe(true);
+    expect(requestMessages).toHaveLength(1);
+    expect(inputs).toEqual(["never sent"]);
+
+    const file = await readSessionFile("chat-1");
+    expect(file.session.messages).toHaveLength(2);
+  });
+
   it("does not write anything without a session store", async () => {
     const agentConfig: AgentConfig = {
       provider: createMockProvider("hello"),
@@ -222,11 +257,8 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
     const span = tracer.startSpan("test");
 
-    const succeeded = await runSingle(
-      { task: "Say hi" },
-      agentConfig,
-      {},
-      {},
+    const succeeded = await runAgentSession(
+      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
       createStats(),
       span,
       nullRenderer,

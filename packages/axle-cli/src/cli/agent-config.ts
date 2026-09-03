@@ -8,7 +8,7 @@ import type {
 } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
 import { Models } from "@fifthrevision/axle/models";
-import type { JobConfig, ServiceConfig } from "./configs/schemas.js";
+import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { createTools } from "./tools.js";
 
@@ -116,6 +116,41 @@ function resolveApiKey(config: Record<string, any>): string | undefined {
 function resolveModel(config: Record<string, any>, defaultModel: string): string {
   if (typeof config.model === "string" && config.model.length > 0) return config.model;
   return defaultModel;
+}
+
+const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"];
+
+/**
+ * Build a definition for runs without a job file (bare chat, one-shot
+ * message) from cli.yaml defaults. Job files still require an explicit
+ * provider until the full resolution chain lands (AXL-22).
+ */
+export function createDefaultAgentDefinition(cliConfig: CliConfig): AgentDefinition {
+  const providerName = cliConfig.defaults?.provider;
+  if (!providerName) {
+    throw new Error(
+      "No default provider configured. Set defaults.provider in ~/.axle/cli.yaml, or run a job file with --job.",
+    );
+  }
+
+  const profile = cliConfig.providers?.[providerName];
+  let provider: AgentDefinition["provider"];
+  if (profile) {
+    const { type, ...config } = profile;
+    provider = Object.keys(config).length > 0 ? { type, config } : { type };
+  } else if (BUILT_IN_PROVIDER_TYPES.includes(providerName)) {
+    provider = { type: providerName };
+  } else {
+    throw new Error(
+      `Default provider "${providerName}" is not a provider profile in cli.yaml or a built-in provider type.`,
+    );
+  }
+
+  return {
+    version: 1,
+    provider,
+    model: cliConfig.defaults?.models?.[providerName],
+  };
 }
 
 function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {

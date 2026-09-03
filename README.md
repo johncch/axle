@@ -1009,20 +1009,25 @@ npm install -g @fifthrevision/axle-cli
 
 ### Usage
 
-The CLI runs a YAML job file with the `-j` flag, or resumes a saved session
-with `-s`.
+Bare `axle` starts an interactive chat using the default provider and model
+from `~/.axle/cli.yaml` (`defaults.provider`, `defaults.models`). Running a
+YAML job file with `-j` is the non-interactive path.
 
 ```bash
-axle -j path/to/job.yaml
+axle                                 # interactive chat from configured defaults
+axle -m "one question"               # one-shot message, prints and exits
+axle -j path/to/job.yaml             # run a job file and exit
+axle -j path/to/job.yaml -i          # run the task, then continue interactively
 axle -j path/to/job.yaml --args key=value other=thing
-axle -j path/to/job.yaml --debug
-axle -j path/to/job.yaml -i          # continue interactively after the task
-axle -j path/to/job.yaml --renderer ink   # richer terminal UI (spinner, live streaming)
 ```
 
-`--renderer` picks the screen renderer for the run: `plain` (default,
-line-oriented, pipe-safe) or `ink` (terminal UI with a live streaming region;
-falls back to plain when stdout is not a TTY).
+In the chat, `/quit` (or Ctrl-C / Ctrl-D at the prompt) exits. Ctrl-C during
+a turn asks the agent to stop at the next tool boundary; a second Ctrl-C
+cancels immediately. The session is saved on every exit path.
+
+`--renderer` picks the screen renderer for the run: `ink` (default — terminal
+UI with a live streaming region and input line) or `plain` (line-oriented).
+Piped input or output always gets plain.
 
 Every run persists a resumable session to `~/.axle/sessions/cli/<id>.json`
 (the id is printed at run start and exit). Resuming restores the saved
