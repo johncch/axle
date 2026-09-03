@@ -156,6 +156,23 @@ describe("loadSession", () => {
     await expect(loadSession("missing", HOME)).rejects.toThrow("No session found with id missing");
   });
 
+  it("resolves a unique session id prefix", async () => {
+    const store = new SessionStore(definition, { home: HOME });
+    await store.save({ sessionId: "abcdef12-3456", messages: [] }, []);
+
+    const file = await loadSession("abcdef12", HOME);
+
+    expect(file.session.sessionId).toBe("abcdef12-3456");
+  });
+
+  it("rejects an ambiguous session id prefix", async () => {
+    const store = new SessionStore(definition, { home: HOME });
+    await store.save({ sessionId: "abc-one", messages: [] }, []);
+    await store.save({ sessionId: "abc-two", messages: [] }, []);
+
+    await expect(loadSession("abc", HOME)).rejects.toThrow(/ambiguous/);
+  });
+
   it("rejects a corrupt session file", async () => {
     await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
     await writeFile(sessionFilePath("broken", HOME), "not json");

@@ -4,7 +4,6 @@ model: anthropic/claude-sonnet-4-6
 
 batch:
   files: "input/*.txt"
-  # resume: true
   concurrency: 3
 
 task: |

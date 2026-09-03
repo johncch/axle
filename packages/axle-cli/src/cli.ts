@@ -13,62 +13,152 @@ import {
 } from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
-import type { BatchConfig, CliConfig, JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
+import type { CliConfig, JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import { closeMcps } from "./cli/mcp.js";
-import type { AgentSessionSpec } from "./cli/runners.js";
+import type { AgentSessionSpec, BatchRunSpec } from "./cli/runners.js";
 import { runAgentSession, runBatch } from "./cli/runners.js";
 import type { CliSessionFile } from "./cli/sessions.js";
 import { loadSession, SessionStore } from "./cli/sessions.js";
 import { runCleanup } from "./cli/cleanup.js";
-import { hasAnyCredentials, promptForMissingModel, runSetupWizard } from "./cli/setup.js";
+import {
+  hasAnyCredentials,
+  promptForInputs,
+  promptForMissingModel,
+  runSetupWizard,
+} from "./cli/setup.js";
 import { createRenderer } from "./ui/index.js";
+
+interface CommonOpts {
+  renderer: "plain" | "ink";
+  log: boolean;
+  debug: boolean;
+}
+
+type Invocation =
+  | {
+      kind: "kernel";
+      job?: string;
+      message?: string;
+      interactive: boolean;
+      args: string[];
+      common: CommonOpts;
+    }
+  | {
+      kind: "batch";
+      job: string;
+      inputs: string[];
+      incremental?: boolean;
+      args: string[];
+      common: CommonOpts;
+    }
+  | { kind: "resume"; id: string; message?: string; common: CommonOpts };
 
 const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
   .version(pkg.version)
-  .argument(
-    "[command]",
-    'Subcommand: "setup" configures providers/defaults, "cleanup" deletes sessions',
-  )
+  // Kernel and subcommands share flag names (-j, -m); positional parsing
+  // keeps each command's flags its own.
+  .enablePositionalOptions()
+  .helpCommand(true);
+
+function commonOf(opts: { renderer: string; log: boolean; debug?: boolean }): CommonOpts {
+  if (opts.renderer !== "plain" && opts.renderer !== "ink") {
+    program.error(`error: unknown renderer "${opts.renderer}" (expected plain or ink)`);
+  }
+  return { renderer: opts.renderer as "plain" | "ink", log: opts.log, debug: Boolean(opts.debug) };
+}
+
+let invocation: Invocation | undefined;
+
+program
   .option("-j, --job <path>", "Run a YAML job file instead of starting a chat")
-  .option("-s, --session <id>", "Resume a saved session")
-  .option(
-    "-m, --message <text>",
-    "Send one message and exit (with --session: continue that session)",
-  )
+  .option("-m, --message <text>", "Send one message and exit")
+  .option("-i, --interactive", "With --job: continue the conversation interactively after the task")
+  .option("--args <args...>", "Template variables in the form key=value")
   .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
   .option("--no-log", "Do not write the output to a log file")
   .option("-d, --debug", "Print additional debug information")
-  .option("-i, --interactive", "With --job: continue the conversation interactively after the task")
-  .option("--args <args...>", "Additional arguments in the form key=value");
+  .addHelpText(
+    "after",
+    `
+Run a session (default):
+  axle                    Interactive chat from configured defaults
+  axle -m "..."           One-shot message
+  axle -j <recipe>        Run a job file (batch if the recipe has a batch block)`,
+  )
+  .action((opts) => {
+    if (opts.job && opts.message !== undefined) {
+      program.error("error: --message cannot be combined with --job");
+    }
+    invocation = {
+      kind: "kernel",
+      job: opts.job,
+      message: opts.message,
+      interactive: Boolean(opts.interactive),
+      args: opts.args ?? [],
+      common: commonOf(opts),
+    };
+  });
 
-program.parse(process.argv);
-const options = program.opts();
-const [command] = program.args;
+program
+  .command("batch")
+  .description("Run a recipe once per input, one isolated session each")
+  .argument("[inputs...]", "Globs or paths; defaults to the recipe's batch block, else prompts")
+  .requiredOption("-j, --job <path>", "Recipe to run")
+  .option("--incremental", "Skip completed inputs whose content is unchanged")
+  .option("--no-incremental", "Run every input even if the recipe sets incremental")
+  .option("--args <args...>", "Template variables in the form key=value")
+  .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
+  .option("--no-log", "Do not write the output to a log file")
+  .option("-d, --debug", "Print additional debug information")
+  .action((inputs, opts) => {
+    invocation = {
+      kind: "batch",
+      job: opts.job,
+      inputs,
+      incremental: opts.incremental,
+      args: opts.args ?? [],
+      common: commonOf(opts),
+    };
+  });
 
-if (command !== undefined && command !== "setup" && command !== "cleanup") {
-  program.error(`error: unknown command "${command}"`);
-}
-if (options.job && options.session) {
-  program.error("error: --job and --session are mutually exclusive");
-}
-if (options.job && options.message !== undefined) {
-  program.error("error: --message cannot be combined with --job");
-}
-if (options.renderer !== "plain" && options.renderer !== "ink") {
-  program.error(`error: unknown renderer "${options.renderer}" (expected plain or ink)`);
-}
+program
+  .command("resume")
+  .description("Re-enter a saved session")
+  .argument("<id>", "Session id (unique prefixes accepted)")
+  .option("-m, --message <text>", "Send one message and exit")
+  .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
+  .option("--no-log", "Do not write the output to a log file")
+  .option("-d, --debug", "Print additional debug information")
+  .action((id, opts) => {
+    invocation = { kind: "resume", id, message: opts.message, common: commonOf(opts) };
+  });
 
-if (command === "setup") {
-  const serviceConfig = await getServiceConfig({});
-  await runSetupWizard(serviceConfig);
+program
+  .command("setup")
+  .description("Configure providers, credentials, and defaults")
+  .action(async () => {
+    const serviceConfig = await getServiceConfig({});
+    await runSetupWizard(serviceConfig);
+    process.exit(0);
+  });
+
+program
+  .command("cleanup")
+  .description("Delete saved sessions by age window")
+  .action(async () => {
+    await runCleanup();
+    process.exit(0);
+  });
+
+await program.parseAsync(process.argv);
+
+if (!invocation) {
   process.exit(0);
 }
-if (command === "cleanup") {
-  await runCleanup();
-  process.exit(0);
-}
+const inv = invocation;
+const common = inv.common;
 
 const variables: Record<string, string> = {
   date: new Date().toISOString().split("T")[0],
@@ -76,22 +166,22 @@ const variables: Record<string, string> = {
   cwd: process.cwd(),
 };
 
-if (options.args) {
-  options.args.forEach((arg: string) => {
+if ("args" in inv) {
+  for (const arg of inv.args) {
     const [key, value] = arg.split("=");
     if (key && value) {
       variables[key.trim()] = value.trim();
     }
-  });
+  }
 }
 
 const tracer = new Tracer();
-if (options.debug) {
+if (common.debug) {
   tracer.minLevel = "debug";
 }
 
 // The screen belongs to the renderer; the tracer writes to it only in debug.
-if (options.debug) {
+if (common.debug) {
   const debugWriter = new SimpleWriter({
     minLevel: "debug",
     showInternal: true,
@@ -101,7 +191,7 @@ if (options.debug) {
   tracer.addWriter(debugWriter);
 }
 
-if (options.log) {
+if (common.log) {
   const logsDir = join(resolveConfigDirs().user, "logs", "cli");
   mkdirSync(logsDir, { recursive: true });
   const logFile = join(logsDir, `${new Date().toISOString().replace(/:/g, "-")}.log`);
@@ -131,8 +221,8 @@ process.on("uncaughtException", async (err) => {
   process.exit(1);
 });
 
-if (options.debug) {
-  rootSpan.debug("Options: " + JSON.stringify(options, null, 2));
+if (common.debug) {
+  rootSpan.debug("Invocation: " + JSON.stringify(inv, null, 2));
   rootSpan.debug("Additional Arguments: " + JSON.stringify(variables, null, 2));
 }
 
@@ -155,8 +245,8 @@ let jobConfig: JobConfig | undefined;
 try {
   cliConfig = await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({ span: rootSpan });
-  if (options.job) {
-    jobConfig = await getJobConfig(options.job, { span: rootSpan });
+  if (inv.kind !== "resume" && inv.job) {
+    jobConfig = await getJobConfig(inv.job, { span: rootSpan });
   }
 } catch (e) {
   await failBeforeRender(e instanceof Error ? e : new Error(String(e)));
@@ -165,7 +255,7 @@ try {
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
 // First run with no credentials resolvable anywhere → onboarding wizard.
-if (!options.session && interactiveTerminal && !hasAnyCredentials(serviceConfig)) {
+if (inv.kind !== "resume" && interactiveTerminal && !hasAnyCredentials(serviceConfig)) {
   await runSetupWizard(serviceConfig);
   cliConfig = await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({ span: rootSpan });
@@ -177,7 +267,14 @@ if (!options.session && interactiveTerminal && !hasAnyCredentials(serviceConfig)
  * the terminal.
  */
 type PendingPlan =
-  | { kind: "batch"; jobConfig: JobConfig; batchConfig: BatchConfig; definition: AgentDefinition }
+  | {
+      kind: "batch";
+      jobConfig: JobConfig;
+      inputs: string[];
+      concurrency: number;
+      incremental: boolean;
+      definition: AgentDefinition;
+    }
   | {
       kind: "session";
       definition: AgentDefinition;
@@ -190,14 +287,14 @@ type PendingPlan =
 
 let pending: PendingPlan | undefined;
 try {
-  if (options.session) {
-    const saved = await loadSession(options.session);
+  if (inv.kind === "resume") {
+    const saved = await loadSession(inv.id);
     pending = {
       kind: "session",
       definition: saved.definition,
       saved,
-      initial: options.message,
-      interactive: options.message === undefined,
+      initial: inv.message,
+      interactive: inv.message === undefined,
       spanName: "resume",
       sessionStore: new SessionStore(saved.definition, {
         cwd: saved.cwd,
@@ -206,8 +303,34 @@ try {
     };
   } else if (jobConfig) {
     const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-    if (jobConfig.batch) {
-      pending = { kind: "batch", jobConfig, batchConfig: jobConfig.batch, definition };
+    if (inv.kind === "batch" || jobConfig.batch) {
+      if (inv.kind === "kernel" && inv.interactive) {
+        throw new Error("A batch run cannot be combined with --interactive.");
+      }
+      // Inputs: verb positionals → recipe batch block → prompt (verb only).
+      let inputs: string[];
+      if (inv.kind === "batch" && inv.inputs.length > 0) {
+        inputs = inv.inputs;
+      } else if (jobConfig.batch) {
+        inputs = [jobConfig.batch.files];
+      } else if (interactiveTerminal) {
+        inputs = [await promptForInputs()];
+      } else {
+        throw new Error(
+          "batch needs inputs: pass globs/paths after the recipe, or add a batch: block to it.",
+        );
+      }
+      pending = {
+        kind: "batch",
+        jobConfig,
+        inputs,
+        concurrency: jobConfig.batch?.concurrency ?? 3,
+        incremental:
+          (inv.kind === "batch" ? inv.incremental : undefined) ??
+          jobConfig.batch?.incremental ??
+          false,
+        definition,
+      };
     } else {
       const instruct = new Instruct({ prompt: jobConfig.task });
       for (const filePath of jobConfig.files ?? []) {
@@ -217,7 +340,7 @@ try {
         kind: "session",
         definition,
         initial: instruct.withInputs(variables),
-        interactive: Boolean(options.interactive),
+        interactive: inv.kind === "kernel" && inv.interactive,
         spanName: "job",
         sessionStore: new SessionStore(definition),
       };
@@ -227,8 +350,8 @@ try {
     pending = {
       kind: "session",
       definition,
-      initial: options.message,
-      interactive: options.message === undefined,
+      initial: inv.kind === "kernel" ? inv.message : undefined,
+      interactive: inv.kind !== "kernel" || inv.message === undefined,
       spanName: "chat",
       sessionStore: new SessionStore(definition),
     };
@@ -252,10 +375,10 @@ if (!pending) {
  * Phase B — the renderer owns the terminal from here; resolve runtime
  * objects (connect MCPs) and execute.
  */
-const renderer = await createRenderer(options.renderer as "plain" | "ink");
+const renderer = await createRenderer(common.renderer);
 
 type RunPlan =
-  | { kind: "batch"; jobConfig: JobConfig; batchConfig: BatchConfig; agentConfig: AgentConfig }
+  | { kind: "batch"; spec: BatchRunSpec }
   | { kind: "session"; spec: AgentSessionSpec; sessionStore: SessionStore };
 
 let mcps: MCP[] = [];
@@ -270,9 +393,16 @@ try {
   if (pending.kind === "batch") {
     plan = {
       kind: "batch",
-      jobConfig: pending.jobConfig,
-      batchConfig: pending.batchConfig,
-      agentConfig: resolved.agentConfig,
+      spec: {
+        task: pending.jobConfig.task,
+        files: pending.jobConfig.files,
+        definition: pending.definition,
+        agentConfig: resolved.agentConfig,
+        inputs: pending.inputs,
+        concurrency: pending.concurrency,
+        jobName: pending.jobConfig.name ?? "job",
+        incremental: pending.incremental,
+      },
     };
   } else {
     plan = {
@@ -312,15 +442,7 @@ const startTime = performance.now();
 let succeeded = false;
 try {
   if (plan.kind === "batch") {
-    succeeded = await runBatch(
-      { task: plan.jobConfig.task, files: plan.jobConfig.files },
-      plan.batchConfig,
-      plan.agentConfig,
-      variables,
-      stats,
-      rootSpan,
-      renderer,
-    );
+    succeeded = await runBatch(plan.spec, variables, stats, rootSpan, renderer);
   } else {
     succeeded = await runAgentSession(plan.spec, stats, rootSpan, renderer, plan.sessionStore);
   }

@@ -1027,7 +1027,15 @@ axle -m "one question"               # one-shot message, prints and exits
 axle -j path/to/job.yaml             # run a job file and exit
 axle -j path/to/job.yaml -i          # run the task, then continue interactively
 axle -j path/to/job.yaml --args key=value other=thing
+axle batch -j recipe.yaml 'data/*.md'   # fan a recipe out over inputs
+axle resume <id>                     # re-enter any saved session
+axle resume <id> -m "follow up"      # one-shot continuation
+axle setup                           # (re)configure providers and defaults
+axle cleanup                         # delete old sessions by age window
 ```
+
+Verbs select the machine; flags parameterize it. A session id prefix works
+anywhere a full id does (`axle resume 3a2f` finds the unique match).
 
 In the chat, `/quit` (or Ctrl-C / Ctrl-D at the prompt) exits. Ctrl-C during
 a turn asks the agent to stop at the next tool boundary; a second Ctrl-C
@@ -1039,12 +1047,7 @@ Piped input or output always gets plain.
 
 Every run persists a resumable session to `~/.axle/sessions/cli/<id>.json`
 (the id is printed at run start and exit). Resuming restores the saved
-provider, model, tools, and conversation — no job file needed:
-
-```bash
-axle -s <session-id>                  # resume into interactive mode
-axle -s <session-id> -m "follow up"   # send one message and exit
-```
+provider, model, tools, and conversation — no job file needed.
 
 A job file specifies the provider, task prompt, and optional tools/files:
 
@@ -1111,30 +1114,40 @@ CLI job files can use these local tool names:
 
 ### Batch
 
-Add a `batch` key to the job file to run the same task across multiple files.
-Each matched file is attached to the instruct automatically.
+Batch is map(recipe, inputs): one isolated session per input. Inputs resolve
+as positional arguments to the `batch` verb, then the recipe's `batch:`
+block, then an interactive prompt:
+
+```bash
+axle batch -j summarize.yml 'data/*.txt'   # inputs from the command line
+axle batch -j summarize.yml                # inputs from the recipe, or prompted
+axle -j summarize.yml                      # batch: block present → batch run
+```
+
+For a recurring job, put the inputs in the recipe — it stays
+self-documenting and runs with plain `-j`:
 
 ```yaml
 # job.yaml
-provider:
-  type: openai
+provider: anthropic
 
 task: |
-  Summarize this file.
+  Summarize this file ({{file}}).
 
 batch:
   files: "./data/*.txt"
   concurrency: 3
-  resume: true
 ```
 
-For first-party providers, the CLI supplies a model when one is omitted:
-`openai/gpt-5.4-mini`, `anthropic/claude-haiku-4-5`, or
-`google/gemini-3.5-flash`. Set the top-level `model` field to override it.
+Each matched file is attached to the instruct and available as `{{file}}`.
+Every input runs as its own session, so a failed item is inspected or
+continued like any other run: `axle --session <id>` (the failure line prints
+the id). A project-local ledger (`.axle/batch.jsonl`) indexes input → session;
+re-running the job skips inputs whose content and task are unchanged, so a
+partially failed batch re-runs only what's left.
 
-- `files` — glob pattern for input files
-- `concurrency` — max parallel runs (default 3)
-- `resume` — skip files already processed in a previous run
+Batch runs are non-interactive; a batch job cannot be combined with
+`--interactive`.
 
 ### MCP Servers
 

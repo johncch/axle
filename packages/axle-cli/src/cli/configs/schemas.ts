@@ -130,10 +130,10 @@ export type MCPConfigUse = z.infer<typeof MCPConfigSchema>;
  * Batch Config Schema
  * ========================================================================== */
 
-export const BatchConfigSchema = z.object({
+export const BatchConfigSchema = z.strictObject({
   files: z.string(),
-  resume: z.boolean().default(false),
   concurrency: z.number().int().positive().default(3),
+  incremental: z.boolean().default(false),
 });
 
 export type BatchConfig = z.infer<typeof BatchConfigSchema>;

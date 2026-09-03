@@ -21,6 +21,26 @@ export function sessionFilePath(sessionId: string, home?: string): string {
   return join(sessionsDir(home), `${sessionId}.json`);
 }
 
+async function resolveSessionId(sessionId: string, home?: string): Promise<string> {
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsDir(home));
+  } catch {
+    return sessionId;
+  }
+  const ids = entries.filter((e) => e.endsWith(".json")).map((e) => e.slice(0, -".json".length));
+  if (ids.includes(sessionId)) return sessionId;
+
+  const matches = ids.filter((id) => id.startsWith(sessionId));
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    throw new Error(
+      `Session id prefix "${sessionId}" is ambiguous (${matches.length} matches). Use more characters.`,
+    );
+  }
+  return sessionId;
+}
+
 export interface SessionSummary {
   sessionId: string;
   path: string;
@@ -72,7 +92,7 @@ export async function listSessionSummaries(home?: string): Promise<SessionSummar
 }
 
 export async function loadSession(sessionId: string, home?: string): Promise<CliSessionFile> {
-  const path = sessionFilePath(sessionId, home);
+  const path = sessionFilePath(await resolveSessionId(sessionId, home), home);
   let content: string;
   try {
     content = await readFile(path, "utf-8");

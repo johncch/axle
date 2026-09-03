@@ -1,5 +1,6 @@
 import type {
   AgentConfig,
+  AgentDefinition,
   AgentSession,
   AxleFailure,
   Span,
@@ -18,9 +19,8 @@ import { ModelInfo } from "@fifthrevision/axle/models";
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import type { Renderer } from "../ui/index.js";
-import type { BatchConfig } from "./configs/schemas.js";
-import { appendLedgerEntry, computeHash, loadLedger } from "./ledger.js";
-import type { SessionStore } from "./sessions.js";
+import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "./ledger.js";
+import { SessionStore } from "./sessions.js";
 
 export interface CliJobInput {
   task: string;
@@ -221,108 +221,180 @@ export async function runAgentSession(
     renderer.setInterruptHandler(undefined);
     await saveSession();
     if (sessionStore) {
-      const line = `Resume this session:\naxle --session ${agent.sessionId}`;
+      const line = `Resume this session:\naxle resume ${agent.sessionId}`;
       renderer.info(line);
       parentSpan.info(line);
     }
   }
 }
 
+export interface BatchRunSpec {
+  task: string;
+  files?: string[];
+  definition: AgentDefinition;
+  agentConfig: AgentConfig;
+  /** Globs or literal paths; unioned, deduped, sorted. */
+  inputs: string[];
+  concurrency: number;
+  /** Ledger scope; entries are keyed (job, input). */
+  jobName: string;
+  /** Skip completed inputs whose content is unchanged. */
+  incremental: boolean;
+  /** Session home override for tests. */
+  home?: string;
+}
+
 export async function runBatch(
-  input: CliJobInput,
-  batchConfig: BatchConfig,
-  agentConfig: AgentConfig,
+  spec: BatchRunSpec,
   variables: Record<string, any>,
   stats: Stats,
   parentSpan: Span,
   renderer: Renderer,
 ): Promise<boolean> {
-  const filePaths = await glob(batchConfig.files);
+  const matched = await Promise.all(spec.inputs.map((pattern) => glob(pattern)));
+  const filePaths = [...new Set(matched.flat())].sort();
 
   if (filePaths.length === 0) {
-    const warning = `No files matched pattern: ${batchConfig.files}`;
+    const warning = `No files matched: ${spec.inputs.join(" ")}`;
     renderer.warn(warning);
     parentSpan.warn(warning);
     return true;
   }
 
-  const header = `Batch: ${filePaths.length} file(s) matched "${batchConfig.files}"`;
+  const header = `Batch: ${filePaths.length} input(s) matched "${spec.inputs.join(" ")}"`;
   renderer.info(header);
   parentSpan.info(header);
 
-  const ledger = batchConfig.resume ? await loadLedger() : new Map();
+  const ledger = await loadLedger();
 
-  const sharedFiles = input.files
-    ? await Promise.all(input.files.map((fp) => loadFileContent(fp)))
+  const sharedFiles = spec.files
+    ? await Promise.all(spec.files.map((fp) => loadFileContent(fp)))
     : [];
 
   let completed = 0;
   let skipped = 0;
   let failed = 0;
 
-  const concurrency = batchConfig.concurrency ?? 3;
+  const controller = new AbortController();
+  const onInterrupt = () => {
+    renderer.warn("Cancelling batch…");
+    controller.abort();
+  };
+  process.on("SIGINT", onInterrupt);
+  renderer.setInterruptHandler(onInterrupt);
 
-  await runWithConcurrency(concurrency, filePaths, async (batchFilePath) => {
-    const itemSpan = parentSpan.startSpan(`batch:${batchFilePath}`, { type: "workflow" });
+  try {
+    await runWithConcurrency(
+      spec.concurrency,
+      filePaths,
+      async (batchFilePath) => {
+        if (controller.signal.aborted) return;
+        const itemSpan = parentSpan.startSpan(`batch:${batchFilePath}`, {
+          type: "workflow",
+        });
 
-    try {
-      const rawContent = await readFile(batchFilePath);
-      const hash = computeHash(input.task, rawContent);
+        const rawContent = await readFile(batchFilePath);
+        const hash = computeHash(rawContent);
 
-      const existing = ledger.get(batchFilePath);
-      if (batchConfig.resume && existing && existing.hash === hash) {
-        renderer.info(`- ${batchFilePath}: skipped (already completed)`);
-        itemSpan.info(`Skipped (already completed)`);
-        itemSpan.end();
-        skipped++;
-        return;
-      }
+        const existing = ledger.get(ledgerKey(spec.jobName, batchFilePath));
+        if (spec.incremental && existing?.status === "completed" && existing.hash === hash) {
+          renderer.info(`${batchFilePath}: unchanged — skipped`);
+          itemSpan.info("Skipped (already completed)");
+          itemSpan.end();
+          skipped++;
+          return;
+        }
 
-      const instruct = new Instruct({ prompt: input.task });
+        // One session per input: every batch item is an ordinary resumable run.
+        const sessionStore = new SessionStore(spec.definition, { home: spec.home });
+        const agent = new Agent({
+          ...spec.agentConfig,
+          observability: { trace: itemSpan },
+        });
+        const transcript = new Transcript();
+        agent.on((event) => transcript.apply(event));
 
-      for (const fi of sharedFiles) {
-        instruct.addFile(fi);
-      }
+        const saveItem = async () => {
+          try {
+            await sessionStore.save(await agent.snapshot(), transcript.turns);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            itemSpan.warn(`Failed to save session: ${msg}`);
+          }
+        };
 
-      instruct.addFile(await loadFileContent(batchFilePath));
+        const recordFailure = async (hashValue: string, message: string) => {
+          await appendLedgerEntry({
+            job: spec.jobName,
+            file: batchFilePath,
+            hash: hashValue,
+            sessionId: agent.sessionId,
+            status: "failed",
+            timestamp: Date.now(),
+          });
+          renderer.error(
+            `${batchFilePath}: failed — ${message} (axle resume ${agent.sessionId.slice(0, 8)})`,
+          );
+          itemSpan.error(`Failed: ${message}`);
+          itemSpan.end("error");
+          failed++;
+        };
 
-      const itemVars = { ...variables, file: batchFilePath };
+        try {
+          const instruct = new Instruct({ prompt: spec.task });
+          for (const fi of sharedFiles) {
+            instruct.addFile(fi);
+          }
+          instruct.addFile(await loadFileContent(batchFilePath));
 
-      const agent = new Agent({
-        ...agentConfig,
-        observability: { trace: itemSpan },
-      });
-      const result = await agent.send(instruct.withInputs(itemVars)).final;
+          const result = await agent.send(
+            instruct.withInputs({ ...variables, file: batchFilePath }),
+            {
+              signal: controller.signal,
+            },
+          ).final;
 
-      addStats(stats, result.usage);
+          addStats(stats, result.usage);
+          await saveItem();
 
-      if (!result.ok) {
-        renderer.error(`- ${batchFilePath}: failed — ${describeFailure(result.error)}`);
-        itemSpan.error(`Failed: ${describeFailure(result.error)}`);
-        itemSpan.end("error");
-        failed++;
-        return;
-      }
+          if (!result.ok) {
+            await recordFailure(hash, describeFailure(result.error));
+            return;
+          }
 
-      await appendLedgerEntry({ file: batchFilePath, hash, timestamp: Date.now() });
-      renderer.success(`${batchFilePath}: done`);
-      itemSpan.end();
-      completed++;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      renderer.error(`- ${batchFilePath}: failed — ${msg}`);
-      itemSpan.error(`Failed: ${msg}`);
-      itemSpan.end("error");
-      failed++;
-    }
-  });
+          await appendLedgerEntry({
+            job: spec.jobName,
+            file: batchFilePath,
+            hash,
+            sessionId: agent.sessionId,
+            status: "completed",
+            timestamp: Date.now(),
+          });
+          renderer.success(`${batchFilePath}: done (axle resume ${agent.sessionId.slice(0, 8)})`);
+          itemSpan.end();
+          completed++;
+        } catch (e) {
+          await saveItem();
+          if (e instanceof AxleAgentAbortError) {
+            itemSpan.end("cancelled");
+            failed++;
+            return;
+          }
+          await recordFailure(hash, e instanceof Error ? e.message : String(e));
+        }
+      },
+    );
+  } finally {
+    process.removeListener("SIGINT", onInterrupt);
+    renderer.setInterruptHandler(undefined);
+  }
 
-  const summary = `Batch complete: ${completed} completed, ${skipped} skipped, ${failed} failed`;
+  const aborted = controller.signal.aborted;
+  const summary = `Batch complete: ${completed} completed, ${skipped} skipped, ${failed} failed${aborted ? " (cancelled)" : ""}`;
   renderer.info(summary);
   parentSpan.info(summary);
-  return failed === 0;
+  return failed === 0 && !aborted;
 }
-
 async function runWithConcurrency<T>(
   limit: number,
   items: T[],

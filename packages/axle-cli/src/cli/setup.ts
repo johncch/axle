@@ -75,7 +75,19 @@ export async function promptForModel(providerType: string): Promise<string> {
     await clack.text({
       message: "Model id",
       placeholder: publisher ? `${publisher}model-name` : "e.g. qwen/qwen-3-coder",
-      validate: (value) => ((value ?? "").trim().length === 0 ? "A model id is required" : undefined),
+      validate: (value) =>
+        (value ?? "").trim().length === 0 ? "A model id is required" : undefined,
+    }),
+  ).trim();
+}
+
+/** `axle batch` with no inputs anywhere: ask for a glob. */
+export async function promptForInputs(): Promise<string> {
+  return ensureNotCancelled(
+    await clack.text({
+      message: "Input files (glob or path)",
+      placeholder: "data/*.md",
+      validate: (value) => ((value ?? "").trim().length === 0 ? "Inputs are required" : undefined),
     }),
   ).trim();
 }
@@ -129,7 +141,8 @@ export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void
         message: "Base URL of the endpoint",
         placeholder: "http://localhost:11434/v1",
         initialValue: serviceConfig.chatcompletions?.baseUrl ?? "",
-        validate: (value) => ((value ?? "").trim().length === 0 ? "A base URL is required" : undefined),
+        validate: (value) =>
+          (value ?? "").trim().length === 0 ? "A base URL is required" : undefined,
       }),
     ).trim();
     credentials.CHATCOMPLETIONS_BASE_URL = baseUrl;
