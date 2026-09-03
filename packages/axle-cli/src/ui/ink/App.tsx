@@ -59,7 +59,6 @@ function contextBar(fraction: number): string {
   return "█".repeat(filled) + "░".repeat(CONTEXT_BAR_CELLS - filled);
 }
 
-
 /**
  * Chat input, always mounted — it keeps the terminal in raw mode for the
  * whole session, so Ctrl-C is always a key event here (a real SIGINT would
@@ -144,13 +143,7 @@ export const HOST_MARKS = {
   error: { glyph: "\u2716", color: "red" },
 } as const;
 
-export function HostLine({
-  level,
-  text,
-}: {
-  level: keyof typeof HOST_MARKS;
-  text: string;
-}) {
+export function HostLine({ level, text }: { level: keyof typeof HOST_MARKS; text: string }) {
   const mark = HOST_MARKS[level];
   return (
     <Text>
@@ -280,9 +273,27 @@ function PartView({
 
     case "compaction": {
       if (part.status === "error") {
-        return <Text color="red">— compaction failed: {part.error}</Text>;
+        return <Text color="red">✖ Compaction failed: {part.error}</Text>;
       }
-      return <Text dimColor>— {part.summary ?? "context compacted"} —</Text>;
+      if (part.status === "running") {
+        const percent = part.progress !== undefined ? ` ${Math.round(part.progress * 100)}%` : "";
+        return (
+          <Text>
+            <Text color="cyan">{spinner ?? SPINNER_FRAMES[0]}</Text>{" "}
+            <Text dimColor>
+              Compacting…
+              {percent}
+            </Text>
+          </Text>
+        );
+      }
+      const duration = formatDuration(part.timing);
+      return (
+        <Text>
+          <Text color="green">✔</Text> Compacted context
+          {duration && <Text dimColor> ({duration})</Text>}
+        </Text>
+      );
     }
   }
 }
@@ -352,8 +363,6 @@ function ActionResultView({
   return <Text dimColor> {truncate(firstLine(content), 200)}</Text>;
 }
 
-
-
 function indentContinuation(text: string): string {
   return text.split("\n").join("\n  ");
 }
@@ -366,4 +375,3 @@ function lastLines(text: string, count: number): string {
 function firstLine(text: string): string {
   return text.trim().split("\n", 1)[0];
 }
-

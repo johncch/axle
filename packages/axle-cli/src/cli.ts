@@ -288,6 +288,7 @@ type PendingPlan =
       interactive: boolean;
       spanName: AgentSessionSpec["spanName"];
       sessionStore: SessionStore;
+      compaction?: boolean;
     };
 
 let pending: PendingPlan | undefined;
@@ -351,6 +352,7 @@ try {
         interactive: inv.kind === "kernel" && inv.interactive,
         spanName: "job",
         sessionStore: new SessionStore(definition),
+        compaction: jobConfig.compaction,
       };
     }
   } else {
@@ -426,6 +428,7 @@ try {
         resumedFromCwd: pending.saved?.cwd,
         initial: pending.initial,
         interactive: pending.interactive,
+        compaction: pending.compaction,
       },
       sessionStore: pending.sessionStore,
     };

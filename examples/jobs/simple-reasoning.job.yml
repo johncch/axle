@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../schemas/v3/job.yaml
+provider: anthropic
+
+request:
+  reasoning: true
+
+task: |
+  How many ways can you arrange the letters in "axle" so that no
+  arrangement starts with a vowel? Think it through step by step.

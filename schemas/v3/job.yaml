@@ -221,6 +221,8 @@ properties:
     required:
       - files
     additionalProperties: false
+  compaction:
+    type: boolean
 required:
   - task
 additionalProperties: false

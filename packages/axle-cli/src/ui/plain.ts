@@ -54,6 +54,14 @@ export class PlainRenderer implements Renderer {
         }
         break;
       }
+      case "compaction:complete":
+      case "compaction:error": {
+        const part = findPart(transcript, event.turnId, event.partId);
+        if (part?.type === "compaction") {
+          this.renderStaticPart("agent", part);
+        }
+        break;
+      }
       case "error":
         this.line(`✖ ${event.error.message}`);
         break;
@@ -113,6 +121,15 @@ export class PlainRenderer implements Renderer {
         this.line(
           `${glyph} ${capitalize(part.detail.name)}${args ? ` ${args}` : ""}${duration ? ` (${duration})` : ""}${part.status === "cancelled" ? " (cancelled)" : ""}`,
         );
+        return;
+      }
+      case "compaction": {
+        if (part.status === "error") {
+          this.line(`✖ Compaction failed: ${part.error}`);
+          return;
+        }
+        const duration = formatDuration(part.timing);
+        this.line(`✔ Compacted context${duration ? ` (${duration})` : ""}`);
         return;
       }
       default:

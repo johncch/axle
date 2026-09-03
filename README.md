@@ -1104,6 +1104,28 @@ request:
   maxOutputTokens: 4096
 ```
 
+`reasoning` is tri-state by omission: leave it unset and the model runs at
+its provider's own default (always safe, including for models that cannot
+disable thinking); `true` opts in, `false` opts out where the provider can
+express it.
+
+Long sessions compact automatically: when the conversation approaches the
+model's context window (~80%), the next send first summarizes the
+conversation down (~25% of the window) using the session's own provider,
+model, and `reasoning` setting, and the transcript records a
+`✔ Compacted context` line. Compacted sessions snapshot and resume like any
+other. Opt out per recipe with:
+
+```yaml
+compaction: false
+```
+
+`AXLE_CONTEXT_WINDOW=<tokens>` overrides the resolved window when the
+registry gets a model wrong — the usage bar, compaction threshold, and
+summary target all scale with it. A small value (e.g. `3000`) forces a
+compaction within a few exchanges, which is also the way to see one without
+filling a real context window.
+
 CLI job files can use these local tool names:
 
 - `calculator`

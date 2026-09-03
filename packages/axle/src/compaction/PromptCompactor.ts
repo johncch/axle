@@ -25,7 +25,7 @@ export class PromptCompactor {
   private readonly thresholdTokens: number;
   private readonly targetTokens: number;
   private readonly recentUserMessages: number;
-  private readonly reasoning: boolean;
+  private readonly reasoning: boolean | undefined;
   private readonly providerOptions: ProviderOptions | undefined;
 
   constructor(options: PromptCompactorOptions) {
@@ -36,7 +36,7 @@ export class PromptCompactor {
     this.thresholdTokens = options.thresholdTokens;
     this.targetTokens = options.targetTokens;
     this.recentUserMessages = options.recentUserMessages ?? 10;
-    this.reasoning = options.reasoning ?? false;
+    this.reasoning = options.reasoning;
     this.providerOptions = options.providerOptions;
   }
 

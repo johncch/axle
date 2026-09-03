@@ -93,6 +93,40 @@ describe("PlainRenderer", () => {
     expect(text()).toBe("partial\nℹ host message\n");
   });
 
+  it("renders a settled compaction as a work line", () => {
+    const { feed, text } = createHarness();
+
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    feed({ type: "compaction:update", turnId: "t1", partId: "c1", update: { progress: 0.5 } });
+    feed({
+      type: "compaction:complete",
+      turnId: "t1",
+      partId: "c1",
+      timing: { start: "2026-09-03T00:00:00.000Z", end: "2026-09-03T00:00:02.000Z" },
+    });
+
+    expect(text()).toBe("✔ Compacted context (2.0s)\n");
+  });
+
+  it("renders a failed compaction with the error glyph", () => {
+    const { feed, text } = createHarness();
+
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", status: "running" },
+    });
+    feed({ type: "compaction:error", turnId: "t1", partId: "c1", error: "summary was empty" });
+
+    expect(text()).toBe("✖ Compaction failed: summary was empty\n");
+  });
+
   it("renders top-level error events", () => {
     const { feed, text } = createHarness();
 

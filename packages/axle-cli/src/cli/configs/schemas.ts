@@ -172,6 +172,7 @@ export const JobConfigSchema = z.strictObject({
   files: z.array(z.string()).optional(),
   mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),
+  compaction: z.boolean().optional(),
 });
 
 export type JobConfig = z.infer<typeof JobConfigSchema>;
