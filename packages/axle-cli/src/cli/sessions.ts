@@ -1,5 +1,5 @@
 import type { AgentDefinition, AgentSession, Turn } from "@fifthrevision/axle";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveConfigDirs } from "./configs/paths.js";
 
@@ -19,6 +19,56 @@ export function sessionsDir(home?: string): string {
 
 export function sessionFilePath(sessionId: string, home?: string): string {
   return join(sessionsDir(home), `${sessionId}.json`);
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  path: string;
+  sizeBytes: number;
+  corrupt: boolean;
+  updatedAt?: string;
+  cwd?: string;
+  model?: string;
+  firstMessage?: string;
+}
+
+export async function listSessionSummaries(home?: string): Promise<SessionSummary[]> {
+  const dir = sessionsDir(home);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
+  }
+
+  const summaries: SessionSummary[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    const path = join(dir, entry);
+    const sessionId = entry.slice(0, -".json".length);
+    const sizeBytes = (await stat(path)).size;
+    try {
+      const file = JSON.parse(await readFile(path, "utf-8")) as CliSessionFile;
+      const firstUserTurn = file.turns?.find((turn) => turn.owner === "user");
+      const firstText = firstUserTurn?.parts.find((part) => part.type === "text");
+      summaries.push({
+        sessionId,
+        path,
+        sizeBytes,
+        corrupt: false,
+        updatedAt: file.updatedAt,
+        cwd: file.cwd,
+        model: file.definition?.model,
+        firstMessage: firstText?.text.trim().split("\n")[0],
+      });
+    } catch {
+      summaries.push({ sessionId, path, sizeBytes, corrupt: true });
+    }
+  }
+
+  summaries.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  return summaries;
 }
 
 export async function loadSession(sessionId: string, home?: string): Promise<CliSessionFile> {

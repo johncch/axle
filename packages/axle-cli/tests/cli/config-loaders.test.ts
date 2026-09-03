@@ -84,13 +84,13 @@ describe("config loaders", () => {
     expect(config.model).toBe("test-model");
   });
 
-  it("accepts a provider string shorthand", async () => {
+  it("accepts a provider string shorthand as a name reference", async () => {
     const path = join(TEST_DIR, "shorthand.yml");
     await writeFile(path, "provider: anthropic\ntask: Run\n");
 
     const config = await getJobConfig(path, {});
 
-    expect(config.provider).toEqual({ type: "anthropic" });
+    expect(config.provider).toEqual({ name: "anthropic" });
   });
 
   it("accepts a job with no provider", async () => {
@@ -103,11 +103,13 @@ describe("config loaders", () => {
     expect(config.model).toBe("anthropic/claude-sonnet-5");
   });
 
-  it("rejects an unknown provider shorthand", async () => {
-    const path = join(TEST_DIR, "bad-shorthand.yml");
-    await writeFile(path, "provider: bedrock\ntask: Run\n");
+  it("accepts any provider name at the schema level (validated at resolution)", async () => {
+    const path = join(TEST_DIR, "named-provider.yml");
+    await writeFile(path, "provider: openrouter\ntask: Run\n");
 
-    await expect(getJobConfig(path, {})).rejects.toThrow(/provider/);
+    const config = await getJobConfig(path, {});
+
+    expect(config.provider).toEqual({ name: "openrouter" });
   });
 
   it("rejects non-YAML job files", async () => {

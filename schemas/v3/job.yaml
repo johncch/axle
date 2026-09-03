@@ -9,11 +9,7 @@ properties:
   provider:
     anyOf:
       - type: string
-        enum:
-          - anthropic
-          - openai
-          - gemini
-          - chatcompletions
+        minLength: 1
       - oneOf:
           - type: object
             properties:

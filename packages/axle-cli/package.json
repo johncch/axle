@@ -29,6 +29,7 @@
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "@commander-js/extra-typings": "^15.0.0",
     "@fifthrevision/axle": "workspace:*",
     "commander": "^15.0.0",

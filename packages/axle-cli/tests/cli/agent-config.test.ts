@@ -1,6 +1,6 @@
 import type { Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createCliAgentConfig } from "../../src/cli/agent-config.js";
+import { createCliAgentConfig, createDefaultAgentDefinition } from "../../src/cli/agent-config.js";
 import type { ServiceConfig } from "../../src/cli/configs/schemas.js";
 
 const tracer = {
@@ -34,6 +34,7 @@ describe("createCliAgentConfig", () => {
         task: "Calculate something",
         tools: ["calculator"],
       },
+      {},
       serviceConfig,
       tracer,
     );
@@ -58,6 +59,7 @@ describe("createCliAgentConfig", () => {
         task: "Run",
       },
       {},
+      {},
       tracer,
     );
 
@@ -65,10 +67,93 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.model).toBe("openai/gpt-test");
   });
 
-  test("rejects jobs with no provider", async () => {
+  test("rejects jobs with no provider and no configured default", async () => {
     await expect(
-      createCliAgentConfig({ model: "anthropic/claude-sonnet-5", task: "Run" }, {}, tracer),
-    ).rejects.toThrow(/does not specify a provider/);
+      createCliAgentConfig({ model: "anthropic/claude-sonnet-5", task: "Run" }, {}, {}, tracer),
+    ).rejects.toThrow(/No provider specified and no default provider configured/);
+  });
+
+  test("a model-only job runs on the default provider", async () => {
+    const { agentConfig, definition } = await createCliAgentConfig(
+      { model: "anthropic/claude-sonnet-5", task: "Run" },
+      { defaults: { provider: "anthropic" } },
+      { anthropic: { apiKey: "key" } },
+      tracer,
+    );
+
+    expect(agentConfig.provider.name).toBe("anthropic");
+    expect(agentConfig.model).toBe("anthropic/claude-sonnet-5");
+    expect(definition.provider).toEqual({ type: "anthropic" });
+  });
+
+  test("a job can name a provider profile from cli.yaml", async () => {
+    vi.stubEnv("GW_KEY", "gateway-key");
+
+    const { agentConfig, definition } = await createCliAgentConfig(
+      { provider: { name: "gw" }, model: "some/model", task: "Run" },
+      {
+        providers: {
+          gw: {
+            type: "chatcompletions",
+            baseUrl: "https://gw.example.test/v1",
+            apiKeyEnv: "GW_KEY",
+          },
+        },
+      },
+      {},
+      tracer,
+    );
+
+    expect(agentConfig.provider.name).toBe("ChatCompletions");
+    expect(agentConfig.model).toBe("some/model");
+    expect(definition.provider).toEqual({
+      type: "chatcompletions",
+      config: { baseUrl: "https://gw.example.test/v1", apiKeyEnv: "GW_KEY" },
+    });
+  });
+
+  test("rejects a provider name that is neither profile nor built-in", async () => {
+    await expect(
+      createCliAgentConfig({ provider: { name: "bedrock" }, task: "Run" }, {}, {}, tracer),
+    ).rejects.toThrow(/"bedrock" is not a provider profile/);
+  });
+
+  test("defaults.models resolves by provider name, profiles included", async () => {
+    const { agentConfig } = await createCliAgentConfig(
+      { provider: { name: "gw" }, task: "Run" },
+      {
+        providers: {
+          gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" },
+        },
+        defaults: { models: { gw: "vendor/model-a" } },
+      },
+      {},
+      tracer,
+    );
+
+    expect(agentConfig.model).toBe("vendor/model-a");
+  });
+
+  test("model falls back to the service config (*_MODEL) after defaults.models", async () => {
+    const { agentConfig } = await createCliAgentConfig(
+      { provider: { name: "anthropic" }, task: "Run" },
+      { defaults: { models: { anthropic: "anthropic/from-defaults" } } },
+      { anthropic: { apiKey: "key", model: "anthropic/from-env" } },
+      tracer,
+    );
+
+    expect(agentConfig.model).toBe("anthropic/from-defaults");
+  });
+
+  test("no hardcoded model defaults: an unresolvable model is an error", async () => {
+    await expect(
+      createCliAgentConfig(
+        { provider: { type: "anthropic", apiKey: "key" }, task: "Run" },
+        {},
+        {},
+        tracer,
+      ),
+    ).rejects.toThrow(/No model resolved for provider anthropic/);
   });
 
   test("top-level model wins over the service config model", async () => {
@@ -78,6 +163,7 @@ describe("createCliAgentConfig", () => {
         model: "anthropic/claude-sonnet-5",
         task: "Run",
       },
+      {},
       { anthropic: { apiKey: "ignored", model: "anthropic/claude-haiku-4-5" } },
       tracer,
     );
@@ -95,8 +181,10 @@ describe("createCliAgentConfig", () => {
           temperature: 0.2,
           maxOutputTokens: 2048,
         },
+        model: "anthropic/claude-sonnet-5",
         task: "Run",
       },
+      {},
       {},
       tracer,
     );
@@ -106,18 +194,30 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.temperature).toBe(0.2);
     expect(agentConfig.maxOutputTokens).toBe(2048);
   });
+});
 
-  test("uses the CLI default model for first-party providers", async () => {
-    const defaults = [
-      [{ type: "openai", apiKey: "openai-key" }, "openai/gpt-5.4-mini"],
-      [{ type: "anthropic", apiKey: "anthropic-key" }, "anthropic/claude-haiku-4-5"],
-      [{ type: "gemini", apiKey: "gemini-key" }, "google/gemini-3.5-flash"],
-    ] as const;
+describe("createDefaultAgentDefinition", () => {
+  test("builds a definition from cli.yaml defaults", () => {
+    const definition = createDefaultAgentDefinition(
+      {
+        providers: {
+          gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" },
+        },
+        defaults: { provider: "gw", models: { gw: "vendor/model-a" } },
+      },
+      {},
+    );
 
-    for (const [provider, model] of defaults) {
-      const { agentConfig } = await createCliAgentConfig({ provider, task: "Run" }, {}, tracer);
+    expect(definition.provider).toEqual({
+      type: "chatcompletions",
+      config: { baseUrl: "https://gw.example.test/v1" },
+    });
+    expect(definition.model).toBe("vendor/model-a");
+  });
 
-      expect(agentConfig.model).toBe(model);
-    }
+  test("errors without a default provider", () => {
+    expect(() => createDefaultAgentDefinition({}, {})).toThrow(
+      /No provider specified and no default provider configured/,
+    );
   });
 });

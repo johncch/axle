@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAgentSession } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
-import { loadSession, sessionFilePath, SessionStore } from "../../src/cli/sessions.js";
+import {
+  listSessionSummaries,
+  loadSession,
+  sessionFilePath,
+  SessionStore,
+} from "../../src/cli/sessions.js";
 import type { Renderer } from "../../src/ui/index.js";
 
 const nullRenderer: Renderer = {
@@ -109,6 +114,40 @@ describe("SessionStore", () => {
 
     const entries = await readdir(join(HOME, ".axle", "sessions", "cli"));
     expect(entries).toEqual(["abc-123.json"]);
+  });
+});
+
+describe("listSessionSummaries", () => {
+  it("returns an empty list when the directory does not exist", async () => {
+    expect(await listSessionSummaries(HOME)).toEqual([]);
+  });
+
+  it("summarizes sessions newest-first and flags corrupt files", async () => {
+    const store = new SessionStore(definition, { cwd: "/proj", home: HOME });
+    await store.save({ sessionId: "older", messages: [] }, [
+      {
+        id: "u1",
+        owner: "user",
+        status: "complete",
+        parts: [{ id: "p1", type: "text", text: "first question here\nsecond line" }],
+      },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new SessionStore(definition, { home: HOME }).save(
+      { sessionId: "newer", messages: [] },
+      [],
+    );
+    await writeFile(sessionFilePath("broken", HOME), "not json");
+
+    const summaries = await listSessionSummaries(HOME);
+
+    expect(summaries.map((s) => s.sessionId)).toEqual(["newer", "older", "broken"]);
+    const older = summaries.find((s) => s.sessionId === "older")!;
+    expect(older.firstMessage).toBe("first question here");
+    expect(older.model).toBe("anthropic/test-model");
+    expect(older.cwd).toBe("/proj");
+    expect(older.corrupt).toBe(false);
+    expect(summaries.find((s) => s.sessionId === "broken")!.corrupt).toBe(true);
   });
 });
 

@@ -1013,6 +1013,14 @@ Bare `axle` starts an interactive chat using the default provider and model
 from `~/.axle/cli.yaml` (`defaults.provider`, `defaults.models`). Running a
 YAML job file with `-j` is the non-interactive path.
 
+On first run with no credentials anywhere, `axle` launches a setup wizard:
+pick a provider, paste a key (written to `~/.axle/credentials`, chmod 600),
+and pick a default model. Re-run it anytime with `axle setup`. A run that
+can't resolve a model drops into the same model picker.
+
+Sessions accumulate under `~/.axle/sessions/cli/` with no automatic
+retention; `axle cleanup` deletes them by age window (24h/7d/30d/all).
+
 ```bash
 axle                                 # interactive chat from configured defaults
 axle -m "one question"               # one-shot message, prints and exits
@@ -1058,11 +1066,20 @@ files:
   - ./data/report.txt
 ```
 
-`provider` says where requests go: a string (`anthropic`, `openai`, `gemini`,
-`chatcompletions`) or an object when the endpoint needs configuration.
-`model` says what to run there — a publisher-qualified registry id
-(e.g. `anthropic/claude-sonnet-5`, `openai/gpt-5.5`) or a bare provider-native
-id — and is optional where a default applies:
+`provider` says where requests go. A string names a provider — a built-in
+type (`anthropic`, `openai`, `gemini`, `chatcompletions`) or a provider
+profile from `cli.yaml` — and an object is inline endpoint configuration.
+Both `provider` and `model` are optional; anything the job leaves out
+resolves through the config chain:
+
+- provider: job → `defaults.provider` in `cli.yaml`
+- model: job → `defaults.models.<provider name>` → `<TYPE>_MODEL` env or
+  credentials → interactive model picker
+
+So a model-only job runs on the configured default provider, and a job with
+neither runs entirely on defaults. `model` is a publisher-qualified registry
+id (e.g. `anthropic/claude-sonnet-5`, `openai/gpt-5.5`) or a bare
+provider-native id:
 
 ```yaml
 # Ollama, or any OpenAI-compatible endpoint

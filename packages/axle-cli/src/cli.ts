@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 import { Command } from "@commander-js/extra-typings";
-import type { AgentConfig, MCP, Stats } from "@fifthrevision/axle";
+import type { AgentConfig, AgentDefinition, MCP, Stats } from "@fifthrevision/axle";
 import { createStats, Instruct, loadFileContent, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import pkg from "../package.json";
 import {
-  createCliAgentConfig,
+  createAgentDefinition,
   createDefaultAgentDefinition,
   resolveAgentDefinition,
 } from "./cli/agent-config.js";
@@ -17,13 +17,20 @@ import type { BatchConfig, CliConfig, JobConfig, ServiceConfig } from "./cli/con
 import { closeMcps } from "./cli/mcp.js";
 import type { AgentSessionSpec } from "./cli/runners.js";
 import { runAgentSession, runBatch } from "./cli/runners.js";
+import type { CliSessionFile } from "./cli/sessions.js";
 import { loadSession, SessionStore } from "./cli/sessions.js";
+import { runCleanup } from "./cli/cleanup.js";
+import { hasAnyCredentials, promptForMissingModel, runSetupWizard } from "./cli/setup.js";
 import { createRenderer } from "./ui/index.js";
 
 const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
   .version(pkg.version)
+  .argument(
+    "[command]",
+    'Subcommand: "setup" configures providers/defaults, "cleanup" deletes sessions',
+  )
   .option("-j, --job <path>", "Run a YAML job file instead of starting a chat")
   .option("-s, --session <id>", "Resume a saved session")
   .option(
@@ -38,12 +45,29 @@ const program = new Command()
 
 program.parse(process.argv);
 const options = program.opts();
+const [command] = program.args;
 
+if (command !== undefined && command !== "setup" && command !== "cleanup") {
+  program.error(`error: unknown command "${command}"`);
+}
 if (options.job && options.session) {
   program.error("error: --job and --session are mutually exclusive");
 }
 if (options.job && options.message !== undefined) {
   program.error("error: --message cannot be combined with --job");
+}
+if (options.renderer !== "plain" && options.renderer !== "ink") {
+  program.error(`error: unknown renderer "${options.renderer}" (expected plain or ink)`);
+}
+
+if (command === "setup") {
+  const serviceConfig = await getServiceConfig({});
+  await runSetupWizard(serviceConfig);
+  process.exit(0);
+}
+if (command === "cleanup") {
+  await runCleanup();
+  process.exit(0);
 }
 
 const variables: Record<string, string> = {
@@ -76,11 +100,6 @@ if (options.debug) {
   });
   tracer.addWriter(debugWriter);
 }
-
-if (options.renderer !== "plain" && options.renderer !== "ink") {
-  program.error(`error: unknown renderer "${options.renderer}" (expected plain or ink)`);
-}
-const renderer = await createRenderer(options.renderer as "plain" | "ink");
 
 if (options.log) {
   const logsDir = join(resolveConfigDirs().user, "logs", "cli");
@@ -117,25 +136,8 @@ if (options.debug) {
   rootSpan.debug("Additional Arguments: " + JSON.stringify(variables, null, 2));
 }
 
-/**
- * Read and load config, job
- */
-let cliConfig: CliConfig;
-let serviceConfig: ServiceConfig;
-let jobConfig: JobConfig | undefined;
-try {
-  cliConfig = await getCliConfig({ span: rootSpan });
-  serviceConfig = await getServiceConfig({
-    span: rootSpan,
-  });
-  if (options.job) {
-    jobConfig = await getJobConfig(options.job, {
-      span: rootSpan,
-    });
-  }
-} catch (e) {
-  const error = e instanceof Error ? e : new Error(String(e));
-  renderer.error(error.message);
+async function failBeforeRender(error: Error): Promise<never> {
+  console.error(error.message);
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
   rootSpan.end("error");
@@ -145,9 +147,113 @@ try {
 }
 
 /**
- * Resolve what to run: a batch job, or an agent session (job task, resumed
- * session, or a chat from configured defaults)
+ * Read and load config, job
  */
+let cliConfig!: CliConfig;
+let serviceConfig!: ServiceConfig;
+let jobConfig: JobConfig | undefined;
+try {
+  cliConfig = await getCliConfig({ span: rootSpan });
+  serviceConfig = await getServiceConfig({ span: rootSpan });
+  if (options.job) {
+    jobConfig = await getJobConfig(options.job, { span: rootSpan });
+  }
+} catch (e) {
+  await failBeforeRender(e instanceof Error ? e : new Error(String(e)));
+}
+
+const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+// First run with no credentials resolvable anywhere → onboarding wizard.
+if (!options.session && interactiveTerminal && !hasAnyCredentials(serviceConfig)) {
+  await runSetupWizard(serviceConfig);
+  cliConfig = await getCliConfig({ span: rootSpan });
+  serviceConfig = await getServiceConfig({ span: rootSpan });
+}
+
+/**
+ * Phase A — decide what to run and build the serializable definition.
+ * Interactive prompts (model picker) happen here, before the renderer owns
+ * the terminal.
+ */
+type PendingPlan =
+  | { kind: "batch"; jobConfig: JobConfig; batchConfig: BatchConfig; definition: AgentDefinition }
+  | {
+      kind: "session";
+      definition: AgentDefinition;
+      saved?: CliSessionFile;
+      initial?: Instruct | string;
+      interactive: boolean;
+      spanName: AgentSessionSpec["spanName"];
+      sessionStore: SessionStore;
+    };
+
+let pending: PendingPlan | undefined;
+try {
+  if (options.session) {
+    const saved = await loadSession(options.session);
+    pending = {
+      kind: "session",
+      definition: saved.definition,
+      saved,
+      initial: options.message,
+      interactive: options.message === undefined,
+      spanName: "resume",
+      sessionStore: new SessionStore(saved.definition, {
+        cwd: saved.cwd,
+        createdAt: saved.createdAt,
+      }),
+    };
+  } else if (jobConfig) {
+    const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
+    if (jobConfig.batch) {
+      pending = { kind: "batch", jobConfig, batchConfig: jobConfig.batch, definition };
+    } else {
+      const instruct = new Instruct({ prompt: jobConfig.task });
+      for (const filePath of jobConfig.files ?? []) {
+        instruct.addFile(await loadFileContent(filePath));
+      }
+      pending = {
+        kind: "session",
+        definition,
+        initial: instruct.withInputs(variables),
+        interactive: Boolean(options.interactive),
+        spanName: "job",
+        sessionStore: new SessionStore(definition),
+      };
+    }
+  } else {
+    const definition = createDefaultAgentDefinition(cliConfig, serviceConfig);
+    pending = {
+      kind: "session",
+      definition,
+      initial: options.message,
+      interactive: options.message === undefined,
+      spanName: "chat",
+      sessionStore: new SessionStore(definition),
+    };
+  }
+
+  // Any run that can't resolve a model falls into the picker.
+  if (!pending.definition.model && interactiveTerminal) {
+    pending.definition.model = await promptForMissingModel(pending.definition.provider.type, {
+      offerSave: pending.kind !== "session" || pending.spanName !== "resume",
+    });
+  }
+} catch (e) {
+  await failBeforeRender(e instanceof Error ? e : new Error(String(e)));
+}
+
+if (!pending) {
+  throw new Error("Failed to plan the run.");
+}
+
+/**
+ * Phase B — the renderer owns the terminal from here; resolve runtime
+ * objects (connect MCPs) and execute.
+ */
+const renderer = await createRenderer(options.renderer as "plain" | "ink");
+
 type RunPlan =
   | { kind: "batch"; jobConfig: JobConfig; batchConfig: BatchConfig; agentConfig: AgentConfig }
   | { kind: "session"; spec: AgentSessionSpec; sessionStore: SessionStore };
@@ -155,71 +261,32 @@ type RunPlan =
 let mcps: MCP[] = [];
 let plan: RunPlan | undefined;
 try {
-  if (options.session) {
-    const saved = await loadSession(options.session);
-    if (saved.definition.mcps?.length) {
-      renderer.info("Connecting MCP servers…");
-    }
-    const resolved = await resolveAgentDefinition(saved.definition, serviceConfig, rootSpan);
-    mcps = resolved.mcps;
+  if (pending.definition.mcps?.length) {
+    renderer.info("Connecting MCP servers…");
+  }
+  const resolved = await resolveAgentDefinition(pending.definition, serviceConfig, rootSpan);
+  mcps = resolved.mcps;
+
+  if (pending.kind === "batch") {
     plan = {
-      kind: "session",
-      spec: {
-        agentConfig: resolved.agentConfig,
-        spanName: "resume",
-        session: saved.session,
-        priorTurns: saved.turns,
-        resumedFromCwd: saved.cwd,
-        initial: options.message,
-        interactive: options.message === undefined,
-      },
-      sessionStore: new SessionStore(saved.definition, {
-        cwd: saved.cwd,
-        createdAt: saved.createdAt,
-      }),
+      kind: "batch",
+      jobConfig: pending.jobConfig,
+      batchConfig: pending.batchConfig,
+      agentConfig: resolved.agentConfig,
     };
-  } else if (jobConfig) {
-    if (jobConfig.mcps?.length) {
-      renderer.info("Connecting MCP servers…");
-    }
-    const resolved = await createCliAgentConfig(jobConfig, serviceConfig, rootSpan);
-    mcps = resolved.mcps;
-    if (jobConfig.batch) {
-      plan = {
-        kind: "batch",
-        jobConfig,
-        batchConfig: jobConfig.batch,
-        agentConfig: resolved.agentConfig,
-      };
-    } else {
-      const instruct = new Instruct({ prompt: jobConfig.task });
-      for (const filePath of jobConfig.files ?? []) {
-        instruct.addFile(await loadFileContent(filePath));
-      }
-      plan = {
-        kind: "session",
-        spec: {
-          agentConfig: resolved.agentConfig,
-          spanName: "job",
-          initial: instruct.withInputs(variables),
-          interactive: Boolean(options.interactive),
-        },
-        sessionStore: new SessionStore(resolved.definition),
-      };
-    }
   } else {
-    const definition = createDefaultAgentDefinition(cliConfig);
-    const resolved = await resolveAgentDefinition(definition, serviceConfig, rootSpan);
-    mcps = resolved.mcps;
     plan = {
       kind: "session",
       spec: {
         agentConfig: resolved.agentConfig,
-        spanName: "chat",
-        initial: options.message,
-        interactive: options.message === undefined,
+        spanName: pending.spanName,
+        session: pending.saved?.session,
+        priorTurns: pending.saved?.turns,
+        resumedFromCwd: pending.saved?.cwd,
+        initial: pending.initial,
+        interactive: pending.interactive,
       },
-      sessionStore: new SessionStore(definition),
+      sessionStore: pending.sessionStore,
     };
   }
 } catch (e) {
@@ -228,8 +295,8 @@ try {
   rootSpan.error(error.message);
   rootSpan.error(error.stack ?? "");
   rootSpan.end("error");
+  await renderer.close();
   await tracer.flush();
-  program.outputHelp();
   process.exit(1);
 }
 

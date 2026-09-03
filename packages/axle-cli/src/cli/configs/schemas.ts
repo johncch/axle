@@ -50,12 +50,18 @@ export const AIProviderUseSchema = z.discriminatedUnion("type", [
 
 export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 
-const ProviderTypeSchema = z.enum(["anthropic", "openai", "gemini", "chatcompletions"]);
-
+// A string names a provider: a cli.yaml profile or a built-in type (one
+// namespace; validated at resolution, not here). An object is inline
+// endpoint configuration.
 export const ProviderUseSchema = z.union([
-  ProviderTypeSchema.transform((type) => ({ type })),
+  z
+    .string()
+    .min(1)
+    .transform((name) => ({ name })),
   AIProviderUseSchema,
 ]);
+
+export type ProviderUse = z.infer<typeof ProviderUseSchema>;
 
 // Service Config
 export interface ProviderServiceConfig {
