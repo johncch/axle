@@ -13,7 +13,7 @@ export type RenderMode = "plain" | "ink";
 // throws on piped stdin.
 export async function createRenderer(
   mode: RenderMode,
-  options?: { batchProgress?: boolean },
+  options?: { batchProgress?: boolean; statusBar?: boolean },
 ): Promise<Renderer> {
   if (mode === "ink" && process.stdout.isTTY && process.stdin.isTTY) {
     if (options?.batchProgress) {
@@ -21,7 +21,7 @@ export async function createRenderer(
       return new InkBatchRenderer();
     }
     const { InkRenderer } = await import("./ink/InkRenderer.js");
-    return new InkRenderer();
+    return new InkRenderer({ statusBar: options?.statusBar });
   }
   return new PlainRenderer();
 }

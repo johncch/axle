@@ -257,6 +257,7 @@ const pending = await buildPendingPlan({
  */
 const renderer = await createRenderer(common.renderer, {
   batchProgress: pending.kind === "batch" && !pending.spec.verbose,
+  statusBar: pending.kind === "session" && pending.spec.interactive,
 });
 screen = renderer;
 // Under ink, raw mode swallows SIGINT and the runners only own the interrupt

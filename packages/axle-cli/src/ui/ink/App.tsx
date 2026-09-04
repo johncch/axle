@@ -18,9 +18,11 @@ const LIVE_TAIL_LINES = 6;
 export function App({
   store,
   onSubmit,
+  statusBar,
 }: {
   store: UiStore;
   onSubmit: (value: string | null) => void;
+  statusBar: boolean;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
 
@@ -43,7 +45,7 @@ export function App({
           onInterrupt={state.onInterrupt}
         />
       )}
-      {!state.closed && state.usage && <UsageBar usage={state.usage} />}
+      {statusBar && !state.closed && state.usage && <UsageBar usage={state.usage} />}
     </>
   );
 }

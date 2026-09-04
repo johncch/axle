@@ -1,6 +1,9 @@
 import type { Turn, TurnEvent } from "@fifthrevision/axle/ui";
 import { Transcript } from "@fifthrevision/axle/ui";
+import { renderToString } from "ink";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
+import { App } from "../../src/ui/ink/App.js";
 import type { UiState } from "../../src/ui/ink/store.js";
 import { partitionTurns, UiStore } from "../../src/ui/ink/store.js";
 
@@ -45,6 +48,22 @@ describe("UiStore", () => {
     unsubscribe();
     store.update((state) => state);
     expect(notified).toBe(1);
+  });
+});
+
+describe("App", () => {
+  it("omits the status bar when it is disabled for a non-interactive run", () => {
+    const store = new UiStore<UiState>({
+      staticItems: [],
+      awaitingInput: false,
+      queuedInputs: [],
+      usage: { in: 1_000, out: 200, contextTokens: 4_000, contextLimit: 10_000 },
+    });
+    const renderApp = (statusBar: boolean) =>
+      renderToString(createElement(App, { store, statusBar, onSubmit() {} }));
+
+    expect(renderApp(true)).toContain("↑ 1.0k ↓ 200");
+    expect(renderApp(false)).not.toContain("↑ 1.0k ↓ 200");
   });
 });
 

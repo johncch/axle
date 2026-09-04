@@ -17,11 +17,18 @@ export class InkRenderer implements Renderer {
   private instance: ReturnType<typeof render>;
   private waiter?: (value: string | null) => void;
 
-  constructor() {
-    this.instance = render(<App store={this.store} onSubmit={this.handleSubmit} />, {
-      exitOnCtrlC: false,
-      patchConsole: false,
-    });
+  constructor(options?: { statusBar?: boolean }) {
+    this.instance = render(
+      <App
+        store={this.store}
+        onSubmit={this.handleSubmit}
+        statusBar={options?.statusBar ?? true}
+      />,
+      {
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
   }
 
   private handleSubmit = (value: string | null): void => {
