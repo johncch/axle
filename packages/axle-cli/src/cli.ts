@@ -1,59 +1,23 @@
 #!/usr/bin/env node
 
 import { Command } from "@commander-js/extra-typings";
-import type { AgentConfig, AgentDefinition, MCP, Stats } from "@fifthrevision/axle";
-import { createStats, Instruct, loadFileContent, SimpleWriter, Tracer } from "@fifthrevision/axle";
+import type { Stats } from "@fifthrevision/axle";
+import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
-import {
-  createAgentDefinition,
-  createDefaultAgentDefinition,
-  resolveAgentDefinition,
-  resolveTarget,
-} from "./cli/agent-config.js";
+import { resolveAgentDefinition } from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
+import type { CommonOpts, Invocation } from "./cli/invocation.js";
+import { buildPendingPlan, parseTemplateArgs } from "./cli/invocation.js";
 import { closeMcps } from "./cli/mcp.js";
-import type { AgentSessionSpec, BatchRunSpec } from "./cli/runners.js";
 import { runAgentSession, runBatch } from "./cli/runners.js";
-import { loadSession, SessionStore } from "./cli/sessions.js";
 import { runCleanup } from "./cli/cleanup.js";
-import {
-  needsSetupWizard,
-  promptForInputs,
-  promptForMissingModel,
-  runSetupWizard,
-} from "./cli/setup.js";
+import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
-
-interface CommonOpts {
-  renderer: "plain" | "ink";
-  log: boolean;
-  debug: boolean;
-}
-
-type Invocation =
-  | {
-      kind: "kernel";
-      job?: string;
-      message?: string;
-      interactive: boolean;
-      args: string[];
-      common: CommonOpts;
-    }
-  | {
-      kind: "batch";
-      job: string;
-      inputs: string[];
-      incremental?: boolean;
-      verbose: boolean;
-      args: string[];
-      common: CommonOpts;
-    }
-  | { kind: "resume"; id: string; message?: string; common: CommonOpts };
 
 const program = new Command()
   .name("axle")
@@ -70,18 +34,6 @@ function commonOf(opts: { renderer?: string; log: boolean; debug?: boolean }): C
     program.error(`error: unknown renderer "${renderer}" (expected plain or ink)`);
   }
   return { renderer: renderer as "plain" | "ink", log: opts.log, debug: Boolean(opts.debug) };
-}
-
-function parseTemplateArgs(args: readonly string[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const arg of args) {
-    const separator = arg.indexOf("=");
-    if (separator < 1) continue;
-    const key = arg.slice(0, separator).trim();
-    const value = arg.slice(separator + 1).trim();
-    if (key && value) values[key] = value;
-  }
-  return values;
 }
 
 let invocation: Invocation | undefined;
@@ -288,123 +240,15 @@ if (
  * Interactive prompts (model picker) happen here, before the renderer owns
  * the terminal.
  */
-type PendingPlan =
-  | {
-      kind: "batch";
-      definition: AgentDefinition;
-      spec: Omit<BatchRunSpec, "agentConfig" | "definition">;
-    }
-  | {
-      kind: "session";
-      definition: AgentDefinition;
-      spec: Omit<AgentSessionSpec, "agentConfig">;
-      sessionStore: SessionStore;
-    };
-
-let pending!: PendingPlan;
-try {
-  if (inv.kind === "resume") {
-    const saved = await loadSession(inv.id);
-    pending = {
-      kind: "session",
-      definition: saved.definition,
-      spec: {
-        spanName: "resume",
-        session: saved.session,
-        priorTurns: saved.turns,
-        resumedFromCwd: saved.cwd,
-        initial: inv.message,
-        interactive: inv.message === undefined,
-        compaction: saved.compaction,
-      },
-      sessionStore: new SessionStore(saved.definition, {
-        cwd: saved.cwd,
-        createdAt: saved.createdAt,
-        compaction: saved.compaction,
-      }),
-    };
-  } else if (jobConfig) {
-    const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-    if (inv.kind === "batch" || jobConfig.batch) {
-      if (inv.kind === "kernel" && inv.interactive) {
-        throw new Error("A batch run cannot be combined with --interactive.");
-      }
-      // Inputs: verb positionals → recipe batch block → prompt (verb only).
-      let inputs: string[];
-      if (inv.kind === "batch" && inv.inputs.length > 0) {
-        inputs = inv.inputs;
-      } else if (jobConfig.batch) {
-        inputs = [jobConfig.batch.files];
-      } else if (interactiveTerminal) {
-        inputs = [await promptForInputs()];
-      } else {
-        throw new Error(
-          "batch needs inputs: pass globs/paths after the recipe, or add a batch: block to it.",
-        );
-      }
-      const verbose =
-        (inv.kind === "batch" && inv.verbose) || (jobConfig.batch?.concurrency ?? 3) === 1;
-      pending = {
-        kind: "batch",
-        definition,
-        spec: {
-          task: jobConfig.task,
-          files: jobConfig.files,
-          inputs,
-          concurrency: verbose ? 1 : (jobConfig.batch?.concurrency ?? 3),
-          jobName: jobScope,
-          incremental:
-            (inv.kind === "batch" ? inv.incremental : undefined) ??
-            jobConfig.batch?.incremental ??
-            false,
-          verbose,
-          compaction: jobConfig.compaction,
-        },
-      };
-    } else {
-      const instruct = new Instruct({ prompt: jobConfig.task });
-      for (const filePath of jobConfig.files ?? []) {
-        instruct.addFile(await loadFileContent(filePath));
-      }
-      pending = {
-        kind: "session",
-        definition,
-        spec: {
-          spanName: "job",
-          initial: instruct.withInputs(variables),
-          interactive: inv.kind === "kernel" && inv.interactive,
-          compaction: jobConfig.compaction,
-        },
-        sessionStore: new SessionStore(definition, { compaction: jobConfig.compaction }),
-      };
-    }
-  } else {
-    const definition = createDefaultAgentDefinition(cliConfig, serviceConfig);
-    pending = {
-      kind: "session",
-      definition,
-      spec: {
-        spanName: "chat",
-        initial: inv.kind === "kernel" ? inv.message : undefined,
-        interactive: inv.kind !== "kernel" || inv.message === undefined,
-      },
-      sessionStore: new SessionStore(definition),
-    };
-  }
-
-  // Any run that can't resolve a model falls into the picker.
-  if (!pending.definition.model && interactiveTerminal) {
-    const offerSave = pending.kind !== "session" || pending.spec.spanName !== "resume";
-    pending.definition.model = await promptForMissingModel(pending.definition.provider.type, {
-      offerSave,
-      saveAs: offerSave
-        ? resolveTarget(jobConfig, cliConfig, serviceConfig).providerName
-        : undefined,
-    });
-  }
-} catch (e) {
-  await fail(e);
-}
+const pending = await buildPendingPlan({
+  invocation: inv,
+  cliConfig,
+  serviceConfig,
+  jobConfig,
+  jobScope,
+  variables,
+  interactiveTerminal,
+}).catch(fail);
 
 /**
  * Phase B — the renderer owns the terminal from here; resolve runtime
@@ -420,18 +264,14 @@ screen = renderer;
 const exitOnInterrupt = () => process.exit(130);
 renderer.setInterruptHandler(exitOnInterrupt);
 
-let mcps: MCP[] = [];
-let agentConfig!: AgentConfig;
-try {
-  if (pending.definition.mcps?.length) {
-    renderer.info("Connecting MCP servers…");
-  }
-  const resolved = await resolveAgentDefinition(pending.definition, serviceConfig, rootSpan);
-  mcps = resolved.mcps;
-  agentConfig = resolved.agentConfig;
-} catch (e) {
-  await fail(e);
+if (pending.definition.mcps?.length) {
+  renderer.info("Connecting MCP servers…");
 }
+const { mcps, agentConfig } = await resolveAgentDefinition(
+  pending.definition,
+  serviceConfig,
+  rootSpan,
+).catch(fail);
 
 rootSpan.info("All systems operational. Running job...");
 
