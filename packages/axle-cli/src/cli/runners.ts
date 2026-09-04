@@ -7,6 +7,7 @@ import type {
   Span,
   Stats,
   Turn,
+  TurnEvent,
 } from "@fifthrevision/axle";
 import {
   addStats,
@@ -97,21 +98,58 @@ export function createSessionCompaction(agent: Agent): CompactionConfig {
   };
 }
 
-/**
- * The one construction path for a runnable session agent — every run gets
- * the same compaction policy, whichever verb built it.
- */
-function createSessionAgent(
-  agentConfig: AgentConfig,
-  span: Span,
-  compaction?: boolean,
-  session?: AgentSession,
-): Agent {
-  const agent = new Agent({ ...agentConfig, observability: { trace: span } }, session);
-  if (compaction !== false) {
-    agent.setCompaction(createSessionCompaction(agent));
+class SessionRuntime {
+  readonly agent: Agent;
+  readonly transcript: Transcript;
+
+  private readonly sessionStore?: SessionStore;
+  private readonly span: Span;
+  private persisted: boolean;
+
+  constructor(options: {
+    agentConfig: AgentConfig;
+    span: Span;
+    compaction?: boolean;
+    session?: AgentSession;
+    priorTurns?: readonly Turn[];
+    sessionStore?: SessionStore;
+    onEvent: (event: TurnEvent, transcript: Transcript) => void;
+  }) {
+    this.agent = new Agent(
+      { ...options.agentConfig, observability: { trace: options.span } },
+      options.session,
+    );
+    if (options.compaction !== false) {
+      this.agent.setCompaction(createSessionCompaction(this.agent));
+    }
+    this.transcript = new Transcript(options.priorTurns ?? []);
+    this.sessionStore = options.sessionStore;
+    this.span = options.span;
+    this.persisted = Boolean(options.session);
+    this.agent.on((event) => {
+      this.transcript.apply(event);
+      options.onEvent(event, this.transcript);
+    });
   }
-  return agent;
+
+  async save(): Promise<boolean> {
+    if (!this.sessionStore) return false;
+    try {
+      await this.sessionStore.save(await this.agent.snapshot(), this.transcript.turns);
+      this.persisted = true;
+      return true;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.span.warn(`Failed to save session: ${message}`);
+      return false;
+    }
+  }
+
+  resumeCommand(short = false): string | undefined {
+    if (!this.persisted) return undefined;
+    const id = short ? this.agent.sessionId.slice(0, 8) : this.agent.sessionId;
+    return `axle resume ${id}`;
+  }
 }
 
 export async function runAgentSession(
@@ -122,13 +160,16 @@ export async function runAgentSession(
   sessionStore?: SessionStore,
 ): Promise<boolean> {
   const runSpan = parentSpan.startSpan(spec.spanName, { type: "workflow" });
-  const agent = createSessionAgent(spec.agentConfig, runSpan, spec.compaction, spec.session);
-
-  const transcript = new Transcript(spec.priorTurns ?? []);
-  agent.on((event) => {
-    transcript.apply(event);
-    renderer.onEvent(event, transcript);
+  const runtime = new SessionRuntime({
+    agentConfig: spec.agentConfig,
+    span: runSpan,
+    compaction: spec.compaction,
+    session: spec.session,
+    priorTurns: spec.priorTurns,
+    sessionStore,
+    onEvent: (event, transcript) => renderer.onEvent(event, transcript),
   });
+  const { agent } = runtime;
 
   const controller = new AbortController();
   let sigintCount = 0;
@@ -146,16 +187,10 @@ export async function runAgentSession(
   // A resumed session starts clean; a new one is dirty so even a send-less
   // chat leaves a file behind (the resume hint printed on exit must be true).
   let dirty = !spec.session;
-  let persisted = Boolean(spec.session);
   const saveSession = async () => {
     if (!sessionStore || !dirty) return;
-    try {
-      await sessionStore.save(await agent.snapshot(), transcript.turns);
+    if (await runtime.save()) {
       dirty = false;
-      persisted = true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      parentSpan.warn(`Failed to save session: ${msg}`);
     }
   };
 
@@ -266,8 +301,9 @@ export async function runAgentSession(
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
     await saveSession();
-    if (sessionStore && persisted) {
-      const line = `Resume this session:\naxle resume ${agent.sessionId}`;
+    const resumeCommand = runtime.resumeCommand();
+    if (sessionStore && resumeCommand) {
+      const line = `Resume this session:\n${resumeCommand}`;
       renderer.info(line);
       parentSpan.info(line);
     }
@@ -380,35 +416,30 @@ export async function runBatch(
         home: spec.home,
         compaction: spec.compaction,
       });
-      const agent = createSessionAgent(spec.agentConfig, itemSpan, spec.compaction);
       progress?.itemStarted(batchFilePath);
-      const transcript = new Transcript();
-      agent.on((event) => {
-        transcript.apply(event);
-        if (spec.verbose) {
-          renderer.onEvent(event, transcript);
-        } else if (progress && event.type === "part:start") {
-          const part = event.part;
-          const phase =
-            part.type === "action"
-              ? capitalize(part.detail.name)
-              : part.type === "thinking"
-                ? "Thinking"
-                : part.type === "text"
-                  ? "Writing"
-                  : undefined;
-          if (phase) progress.itemPhase(batchFilePath, phase);
-        }
+      const runtime = new SessionRuntime({
+        agentConfig: spec.agentConfig,
+        span: itemSpan,
+        compaction: spec.compaction,
+        sessionStore,
+        onEvent: (event, transcript) => {
+          if (spec.verbose) {
+            renderer.onEvent(event, transcript);
+          } else if (progress && event.type === "part:start") {
+            const part = event.part;
+            const phase =
+              part.type === "action"
+                ? capitalize(part.detail.name)
+                : part.type === "thinking"
+                  ? "Thinking"
+                  : part.type === "text"
+                    ? "Writing"
+                    : undefined;
+            if (phase) progress.itemPhase(batchFilePath, phase);
+          }
+        },
       });
-
-      const saveItem = async () => {
-        try {
-          await sessionStore.save(await agent.snapshot(), transcript.turns);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          itemSpan.warn(`Failed to save session: ${msg}`);
-        }
-      };
+      const { agent } = runtime;
 
       const recordFailure = async (hashValue: string, message: string) => {
         await appendLedgerEntry({
@@ -419,8 +450,9 @@ export async function runBatch(
           status: "failed",
           timestamp: Date.now(),
         });
+        const resumeCommand = runtime.resumeCommand(true);
         renderer.error(
-          `${batchFilePath}: failed — ${message} (axle resume ${agent.sessionId.slice(0, 8)})`,
+          `${batchFilePath}: failed — ${message}${resumeCommand ? ` (${resumeCommand})` : ""}`,
         );
         itemSpan.error(`Failed: ${message}`);
         itemSpan.end("error");
@@ -445,7 +477,7 @@ export async function runBatch(
         addStats(stats, result.usage);
         tokensIn += result.usage.in;
         tokensOut += result.usage.out;
-        await saveItem();
+        await runtime.save();
 
         if (!result.ok) {
           await recordFailure(hash, describeFailure(result.error));
@@ -460,12 +492,13 @@ export async function runBatch(
           status: "completed",
           timestamp: Date.now(),
         });
-        renderer.success(`${batchFilePath}: done (axle resume ${agent.sessionId.slice(0, 8)})`);
+        const resumeCommand = runtime.resumeCommand(true);
+        renderer.success(`${batchFilePath}: done${resumeCommand ? ` (${resumeCommand})` : ""}`);
         itemSpan.end();
         completed++;
         progress?.itemFinished(batchFilePath, totals());
       } catch (e) {
-        await saveItem();
+        await runtime.save();
         if (e instanceof AxleAgentAbortError) {
           itemSpan.end("cancelled");
           failed++;

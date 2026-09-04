@@ -262,4 +262,22 @@ describe("runBatch (--each fan-out)", () => {
     const sessionFiles = await readdir(join(HOME, ".axle", "sessions", "cli"));
     expect(sessionFiles).toContain(`${failedEntry!.sessionId}.json`);
   });
+
+  it("does not advertise resume for batch sessions that could not be saved", async () => {
+    await writeFile(HOME, "not a directory");
+    const { renderer, lines } = createRecordingRenderer();
+
+    const succeeded = await runBatch(
+      batchSpec(createMockProvider({ failOnCall: 2 })),
+      {},
+      createStats(),
+      new Tracer().startSpan("batch"),
+      renderer,
+    );
+
+    expect(succeeded).toBe(false);
+    expect(lines.some((line) => line.includes(": done"))).toBe(true);
+    expect(lines.some((line) => line.includes(": failed"))).toBe(true);
+    expect(lines.every((line) => !line.includes("axle resume"))).toBe(true);
+  });
 });
