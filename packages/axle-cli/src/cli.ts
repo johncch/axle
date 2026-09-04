@@ -9,7 +9,6 @@ import pkg from "../package.json";
 import { resolveAgentDefinition } from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
-import type { CliConfig, JobConfig, ServiceConfig } from "./cli/configs/schemas.js";
 import type { CommonOpts, Invocation } from "./cli/invocation.js";
 import { buildPendingPlan, parseTemplateArgs } from "./cli/invocation.js";
 import { closeMcps } from "./cli/mcp.js";
@@ -207,20 +206,16 @@ async function fail(e: unknown): Promise<never> {
 /**
  * Read and load config, job
  */
-let cliConfig!: CliConfig;
-let serviceConfig!: ServiceConfig;
-let jobConfig: JobConfig | undefined;
-let jobScope = "job";
-try {
-  cliConfig = await getCliConfig({ span: rootSpan });
-  serviceConfig = await getServiceConfig({ span: rootSpan });
-  if (inv.kind !== "resume" && inv.job) {
-    jobConfig = await getJobConfig(inv.job, { span: rootSpan });
-    jobScope = jobConfig.name ?? relative(process.cwd(), resolve(inv.job));
-  }
-} catch (e) {
-  await fail(e);
-}
+let cliConfig = await getCliConfig({ span: rootSpan }).catch(fail);
+let serviceConfig = await getServiceConfig({ span: rootSpan }).catch(fail);
+const jobConfig =
+  inv.kind !== "resume" && inv.job
+    ? await getJobConfig(inv.job, { span: rootSpan }).catch(fail)
+    : undefined;
+const jobScope =
+  inv.kind !== "resume" && inv.job && jobConfig
+    ? (jobConfig.name ?? relative(process.cwd(), resolve(inv.job)))
+    : "job";
 
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
