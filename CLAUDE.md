@@ -98,13 +98,20 @@ Documentation is layered by authority; each genre has one job:
   behind it is ceremony.
 - **`docs/terminology.md` is normative for vocabulary.** Name new units of
   work or state there first.
-- **`README.md` is derived, never authoritative** — usage-level, and where
-  it describes a subsystem covered by an architecture doc, it must agree
-  with (and should be regenerable from) that doc. When changing public API
+- **READMEs are derived, never authoritative** — usage-level, and where
+  they describe a subsystem covered by an architecture doc, they must agree
+  with (and should be regenerable from) that doc. The root `README.md` is a
+  lean project front page; full usage docs live in each package's README
+  (`packages/axle/README.md` for the library, `packages/axle-cli/README.md`
+  for the CLI — these are the npm-facing pages). When changing public API
   signatures (Agent, Instruct, MCP, providers, tools, streaming events,
-  CLI/YAML schema), update `README.md` to match.
+  CLI/YAML schema), update the owning package README to match.
 - **`docs/<version>-migration.md`** (frozen): breaking-change deltas per
-  release. When building a new feature with breaking changes, write the
+  release **for the Axle library only** — API diffs for consumers with call
+  sites. When building a new feature with breaking changes, write the
   migration entry; ask the user which version to target.
+- **`packages/axle-cli/CHANGELOG.md`**: the CLI's release notes — it is a
+  separate product with recipe/flag-level changes, not API call sites.
+  Breaking changes lead each entry.
 - **`docs/development/*`** (frozen): dated working notes for a single
   change. Historical record — never updated after the fact.

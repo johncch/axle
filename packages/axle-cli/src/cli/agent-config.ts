@@ -7,47 +7,107 @@ import type {
   Span,
 } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
-import { Models } from "@fifthrevision/axle/models";
-import type { JobConfig, ServiceConfig } from "./configs/schemas.js";
+import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { createTools } from "./tools.js";
 
 export interface CliAgentConfig {
   agentConfig: AgentConfig;
+  definition: AgentDefinition;
   mcps: MCP[];
 }
 
-const defaultModels = {
-  anthropic: Models.Anthropic.CLAUDE_HAIKU_4_5,
-  gemini: Models.Google.GEMINI_3_5_FLASH,
-  openai: Models.OpenAI.GPT_5_4_MINI,
-};
+const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"];
+
+/**
+ * The uniform resolution chain (AXL-22):
+ *   provider name := job.provider → defaults.provider → error
+ *   endpoint      := cli.yaml providers[name] → built-in type → error
+ *   model         := job.model → defaults.models[name] → env/credentials
+ *                    `*_MODEL` → undefined (caller decides: picker or error)
+ *
+ * An inline provider object in the job is its own endpoint; its type doubles
+ * as the name for the defaults.models lookup.
+ */
+export function resolveTarget(
+  jobConfig: Pick<JobConfig, "provider" | "model"> | undefined,
+  cliConfig: CliConfig,
+  serviceConfig: ServiceConfig,
+): { provider: ProviderDefinition; model?: string; providerName: string } {
+  const jobProvider = jobConfig?.provider;
+
+  let endpoint: { type: string } & Record<string, unknown>;
+  let providerName: string;
+
+  if (jobProvider && !("name" in jobProvider)) {
+    endpoint = jobProvider;
+    providerName = jobProvider.type;
+  } else {
+    const name =
+      jobProvider && "name" in jobProvider ? jobProvider.name : cliConfig.defaults?.provider;
+    if (!name) {
+      throw new Error(
+        "No provider specified and no default provider configured. Add provider: to the job, or set defaults.provider in ~/.axle/cli.yaml.",
+      );
+    }
+    providerName = name;
+    const profile = cliConfig.providers?.[name];
+    if (profile) {
+      endpoint = profile;
+    } else if (BUILT_IN_PROVIDER_TYPES.includes(name)) {
+      endpoint = { type: name };
+    } else {
+      throw new Error(
+        `Provider "${name}" is not a provider profile in cli.yaml or a built-in provider type.`,
+      );
+    }
+  }
+
+  const model =
+    jobConfig?.model ??
+    cliConfig.defaults?.models?.[providerName] ??
+    serviceConfig[endpoint.type as keyof ServiceConfig]?.model;
+
+  const { type, ...config } = endpoint;
+  return {
+    provider: Object.keys(config).length > 0 ? { type, config } : { type },
+    model,
+    providerName,
+  };
+}
 
 function resolveCliProvider(
   definition: ProviderDefinition,
   serviceConfig: ServiceConfig,
-  jobModel: string | undefined,
+  definitionModel: string | undefined,
 ): { provider: AIProvider; model: string } {
   const providerConfig = (definition.config ?? {}) as Record<string, any>;
+  const type = definition.type;
+  const config = {
+    ...serviceConfig[type as keyof ServiceConfig],
+    ...providerConfig,
+  } as Record<string, any>;
 
-  switch (definition.type) {
+  const model = definitionModel ?? config.model;
+  if (!model) {
+    throw new Error(
+      `No model resolved for provider ${type}. Add model: to the job, set defaults.models in ~/.axle/cli.yaml, or set ${type.toUpperCase()}_MODEL.`,
+    );
+  }
+
+  switch (type) {
     case "openai": {
-      const config = { ...serviceConfig.openai, ...providerConfig };
       const apiKey = resolveApiKey(config);
       if (!apiKey) {
         throw new Error("The provider openai is not configured. Please check your configuration.");
       }
       return {
-        provider: openai(apiKey, {
-          maxRetries: config.maxRetries,
-          timeoutMs: config.timeoutMs,
-        }),
-        model: resolveModel(config, defaultModels.openai),
+        provider: openai(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
+        model,
       };
     }
 
     case "anthropic": {
-      const config = { ...serviceConfig.anthropic, ...providerConfig };
       const apiKey = resolveApiKey(config);
       if (!apiKey) {
         throw new Error(
@@ -55,34 +115,25 @@ function resolveCliProvider(
         );
       }
       return {
-        provider: anthropic(apiKey, {
-          maxRetries: config.maxRetries,
-          timeoutMs: config.timeoutMs,
-        }),
-        model: resolveModel(config, defaultModels.anthropic),
+        provider: anthropic(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
+        model,
       };
     }
 
     case "gemini": {
-      const config = { ...serviceConfig.gemini, ...providerConfig };
       const apiKey = resolveApiKey(config);
       if (!apiKey) {
         throw new Error("The provider gemini is not configured. Please check your configuration.");
       }
       return {
-        provider: gemini(apiKey, {
-          maxRetries: config.maxRetries,
-          timeoutMs: config.timeoutMs,
-        }),
-        model: resolveModel(config, defaultModels.gemini),
+        provider: gemini(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
+        model,
       };
     }
 
     case "chatcompletions": {
-      const config = { ...serviceConfig.chatcompletions, ...providerConfig };
       const baseUrl = config.baseUrl;
-      const model = jobModel ?? config.model;
-      if (!baseUrl || !model) {
+      if (!baseUrl) {
         throw new Error(
           "The provider chatcompletions is not configured. Please check your configuration.",
         );
@@ -99,7 +150,7 @@ function resolveCliProvider(
     }
 
     default:
-      throw new Error(`Unknown provider type: ${definition.type}`);
+      throw new Error(`Unknown provider type: ${type}`);
   }
 }
 
@@ -112,28 +163,34 @@ function resolveApiKey(config: Record<string, any>): string | undefined {
   return config.apiKey;
 }
 
-function resolveModel(config: Record<string, any>, defaultModel: string): string {
-  if (typeof config.model === "string" && config.model.length > 0) return config.model;
-  return defaultModel;
+/**
+ * Build a definition for runs without a job file (bare chat, one-shot
+ * message) from cli.yaml defaults.
+ */
+export function createDefaultAgentDefinition(
+  cliConfig: CliConfig,
+  serviceConfig: ServiceConfig,
+): AgentDefinition {
+  const target = resolveTarget(undefined, cliConfig, serviceConfig);
+  return {
+    version: 1,
+    provider: target.provider,
+    model: target.model,
+  };
 }
 
-function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {
-  if (!jobConfig.provider) {
-    throw new Error(
-      "The job file does not specify a provider and no default provider is configured.",
-    );
-  }
-  const { type, ...providerConfig } = jobConfig.provider;
-  const provider =
-    Object.keys(providerConfig).length > 0
-      ? { type, config: providerConfig as Record<string, unknown> }
-      : { type };
+export function createAgentDefinition(
+  jobConfig: JobConfig,
+  cliConfig: CliConfig,
+  serviceConfig: ServiceConfig,
+): AgentDefinition {
+  const target = resolveTarget(jobConfig, cliConfig, serviceConfig);
 
   return {
     version: 1,
     name: jobConfig.name,
-    provider,
-    model: jobConfig.model,
+    provider: target.provider,
+    model: target.model,
     system: jobConfig.system,
     request: jobConfig.request,
     tools: jobConfig.tools?.map((name) => ({ name })),
@@ -144,10 +201,19 @@ function createAgentDefinition(jobConfig: JobConfig): AgentDefinition {
 
 export async function createCliAgentConfig(
   jobConfig: JobConfig,
+  cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
   span: Span,
 ): Promise<CliAgentConfig> {
-  const definition = createAgentDefinition(jobConfig);
+  const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
+  return resolveAgentDefinition(definition, serviceConfig, span);
+}
+
+export async function resolveAgentDefinition(
+  definition: AgentDefinition,
+  serviceConfig: ServiceConfig,
+  span: Span,
+): Promise<CliAgentConfig> {
   const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
 
   const baseConfig = await createAgentConfig(definition, (definition) => {
@@ -166,5 +232,5 @@ export async function createCliAgentConfig(
       mcps: mcps.length > 0 ? mcps : undefined,
     };
   });
-  return { agentConfig: baseConfig, mcps };
+  return { agentConfig: baseConfig, definition, mcps };
 }

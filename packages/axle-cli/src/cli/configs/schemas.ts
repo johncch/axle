@@ -50,12 +50,18 @@ export const AIProviderUseSchema = z.discriminatedUnion("type", [
 
 export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 
-const ProviderTypeSchema = z.enum(["anthropic", "openai", "gemini", "chatcompletions"]);
-
+// A string names a provider: a cli.yaml profile or a built-in type (one
+// namespace; validated at resolution, not here). An object is inline
+// endpoint configuration.
 export const ProviderUseSchema = z.union([
-  ProviderTypeSchema.transform((type) => ({ type })),
+  z
+    .string()
+    .min(1)
+    .transform((name) => ({ name })),
   AIProviderUseSchema,
 ]);
+
+export type ProviderUse = z.infer<typeof ProviderUseSchema>;
 
 // Service Config
 export interface ProviderServiceConfig {
@@ -124,10 +130,10 @@ export type MCPConfigUse = z.infer<typeof MCPConfigSchema>;
  * Batch Config Schema
  * ========================================================================== */
 
-export const BatchConfigSchema = z.object({
+export const BatchConfigSchema = z.strictObject({
   files: z.string(),
-  resume: z.boolean().default(false),
   concurrency: z.number().int().positive().default(3),
+  incremental: z.boolean().default(false),
 });
 
 export type BatchConfig = z.infer<typeof BatchConfigSchema>;
@@ -166,6 +172,7 @@ export const JobConfigSchema = z.strictObject({
   files: z.array(z.string()).optional(),
   mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),
+  compaction: z.boolean().optional(),
 });
 
 export type JobConfig = z.infer<typeof JobConfigSchema>;

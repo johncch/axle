@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendLedgerEntry, computeHash, loadLedger } from "../../src/cli/ledger.js";
+import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "../../src/cli/ledger.js";
 
 const TEST_DIR = join(import.meta.dirname, "__ledger_test_tmp__");
 const TEST_LEDGER = join(TEST_DIR, "batch.jsonl");
@@ -16,28 +16,16 @@ describe("Ledger", () => {
   });
 
   describe("computeHash", () => {
-    it("should return a consistent hash for the same inputs", () => {
-      const a = computeHash("task", "content");
-      const b = computeHash("task", "content");
-      expect(a).toBe(b);
-    });
-
-    it("should change when the task changes", () => {
-      const a = computeHash("task-a", "content");
-      const b = computeHash("task-b", "content");
-      expect(a).not.toBe(b);
+    it("should return a consistent hash for the same content", () => {
+      expect(computeHash("content")).toBe(computeHash("content"));
     });
 
     it("should change when the file content changes", () => {
-      const a = computeHash("task", "content-a");
-      const b = computeHash("task", "content-b");
-      expect(a).not.toBe(b);
+      expect(computeHash("content-a")).not.toBe(computeHash("content-b"));
     });
 
     it("should work with Buffer content", () => {
-      const str = computeHash("task", "hello");
-      const buf = computeHash("task", Buffer.from("hello"));
-      expect(str).toBe(buf);
+      expect(computeHash("hello")).toBe(computeHash(Buffer.from("hello")));
     });
   });
 
@@ -49,22 +37,36 @@ describe("Ledger", () => {
 
     it("should parse valid entries", async () => {
       const entries = [
-        { file: "a.md", hash: "aaa", timestamp: 1 },
-        { file: "b.md", hash: "bbb", timestamp: 2 },
+        { job: "j", file: "a.md", hash: "aaa", sessionId: "s-a", status: "completed", timestamp: 1 },
+        { job: "j", file: "b.md", hash: "bbb", sessionId: "s-b", status: "completed", timestamp: 2 },
       ];
       await writeFile(TEST_LEDGER, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
 
       const ledger = await loadLedger(TEST_LEDGER);
       expect(ledger.size).toBe(2);
-      expect(ledger.get("a.md")?.hash).toBe("aaa");
-      expect(ledger.get("b.md")?.hash).toBe("bbb");
+      expect(ledger.get(ledgerKey("j", "a.md"))?.hash).toBe("aaa");
+      expect(ledger.get(ledgerKey("j", "b.md"))?.hash).toBe("bbb");
     });
 
     it("should skip malformed lines", async () => {
       const lines = [
-        JSON.stringify({ file: "a.md", hash: "aaa", timestamp: 1 }),
+        JSON.stringify({
+          job: "j",
+          file: "a.md",
+          hash: "aaa",
+          sessionId: "s-a",
+          status: "completed",
+          timestamp: 1,
+        }),
         "not json at all",
-        JSON.stringify({ file: "b.md", hash: "bbb", timestamp: 2 }),
+        JSON.stringify({
+          job: "j",
+          file: "b.md",
+          hash: "bbb",
+          sessionId: "s-b",
+          status: "completed",
+          timestamp: 2,
+        }),
       ];
       await writeFile(TEST_LEDGER, lines.join("\n") + "\n");
 
@@ -74,21 +76,28 @@ describe("Ledger", () => {
 
     it("should let later entries overwrite earlier ones", async () => {
       const entries = [
-        { file: "a.md", hash: "old", timestamp: 1 },
-        { file: "a.md", hash: "new", timestamp: 2 },
+        { job: "j", file: "a.md", hash: "old", sessionId: "s-1", status: "failed", timestamp: 1 },
+        { job: "j", file: "a.md", hash: "new", sessionId: "s-2", status: "completed", timestamp: 2 },
       ];
       await writeFile(TEST_LEDGER, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
 
       const ledger = await loadLedger(TEST_LEDGER);
       expect(ledger.size).toBe(1);
-      expect(ledger.get("a.md")?.hash).toBe("new");
+      expect(ledger.get(ledgerKey("j", "a.md"))?.hash).toBe("new");
     });
   });
 
   describe("appendLedgerEntry", () => {
     it("should create directory and append entry", async () => {
       const nested = join(TEST_DIR, "sub", "batch.jsonl");
-      const entry = { file: "a.md", hash: "aaa", timestamp: Date.now() };
+      const entry = {
+        job: "j",
+        file: "a.md",
+        hash: "aaa",
+        sessionId: "s-a",
+        status: "completed" as const,
+        timestamp: Date.now(),
+      };
 
       await appendLedgerEntry(entry, nested);
 
@@ -99,8 +108,22 @@ describe("Ledger", () => {
     });
 
     it("should append multiple entries", async () => {
-      const entry1 = { file: "a.md", hash: "aaa", timestamp: 1 };
-      const entry2 = { file: "b.md", hash: "bbb", timestamp: 2 };
+      const entry1 = {
+        job: "j",
+        file: "a.md",
+        hash: "aaa",
+        sessionId: "s-a",
+        status: "completed" as const,
+        timestamp: 1,
+      };
+      const entry2 = {
+        job: "j",
+        file: "b.md",
+        hash: "bbb",
+        sessionId: "s-b",
+        status: "failed" as const,
+        timestamp: 2,
+      };
 
       await appendLedgerEntry(entry1, TEST_LEDGER);
       await appendLedgerEntry(entry2, TEST_LEDGER);

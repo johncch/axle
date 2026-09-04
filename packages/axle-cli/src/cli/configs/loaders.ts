@@ -1,7 +1,7 @@
 import type { Span } from "@fifthrevision/axle";
 import { config as loadDotenv, parse as parseDotenv } from "dotenv";
 import { readFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { extname, join } from "node:path";
 import YAML from "yaml";
 import * as z from "zod";
 import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
@@ -38,10 +38,6 @@ export async function getJobConfig(
   const parsed = JobConfigSchema.safeParse(result);
   if (!parsed.success) {
     throw new Error(`The job file is not valid:\n${formatZodError(parsed.error)}`);
-  }
-
-  if (!parsed.data.name) {
-    parsed.data.name = basename(path, extname(path));
   }
 
   return parsed.data;

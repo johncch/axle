@@ -4,18 +4,25 @@ import { dirname } from "node:path";
 
 const LEDGER_PATH = ".axle/batch.jsonl";
 
+/**
+ * One appended line per batch item run; later lines for the same
+ * (job, input) win. Keying and hash policy: docs/architecture/cli.md.
+ */
 export interface LedgerEntry {
+  job: string;
   file: string;
   hash: string;
+  sessionId: string;
+  status: "completed" | "failed";
   timestamp: number;
 }
 
-export function computeHash(task: string, fileContent: string | Buffer): string {
-  const hash = createHash("sha256");
-  hash.update(task);
-  hash.update("\0");
-  hash.update(fileContent);
-  return hash.digest("hex");
+export function computeHash(fileContent: string | Buffer): string {
+  return createHash("sha256").update(fileContent).digest("hex");
+}
+
+export function ledgerKey(job: string, file: string): string {
+  return `${job}\u0000${file}`;
 }
 
 export async function loadLedger(path = LEDGER_PATH): Promise<Map<string, LedgerEntry>> {
@@ -33,8 +40,8 @@ export async function loadLedger(path = LEDGER_PATH): Promise<Map<string, Ledger
     if (!trimmed) continue;
     try {
       const entry: LedgerEntry = JSON.parse(trimmed);
-      if (entry.file && entry.hash) {
-        entries.set(entry.file, entry);
+      if (entry.job && entry.file && entry.hash && entry.sessionId && entry.status) {
+        entries.set(ledgerKey(entry.job, entry.file), entry);
       }
     } catch {
       // skip malformed lines

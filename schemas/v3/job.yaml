@@ -9,11 +9,7 @@ properties:
   provider:
     anyOf:
       - type: string
-        enum:
-          - anthropic
-          - openai
-          - gemini
-          - chatcompletions
+        minLength: 1
       - oneOf:
           - type: object
             properties:
@@ -214,16 +210,19 @@ properties:
     properties:
       files:
         type: string
-      resume:
-        default: false
-        type: boolean
       concurrency:
         default: 3
         type: integer
         exclusiveMinimum: 0
         maximum: 9007199254740991
+      incremental:
+        default: false
+        type: boolean
     required:
       - files
+    additionalProperties: false
+  compaction:
+    type: boolean
 required:
   - task
 additionalProperties: false

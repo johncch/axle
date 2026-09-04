@@ -76,6 +76,39 @@ summary. Old messages cease to exist; lookback is served by the transcript.
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means
 the conversation transcript.
 
+## CLI vocabulary
+
+The CLI layers its own units on top of the core terms; normative design in
+[architecture/cli.md](architecture/cli.md).
+
+**Recipe** — a job YAML file: a saved partial application of an invocation
+(`axle(...recipe, ...argv)`). Everything the command line could say has a
+home in the recipe; the command line overrides selectively. "Job" survives
+in flag names (`-j`) and ledger keys as the recipe's runtime instantiation.
+
+**Invocation** — one command-line call: a kernel invocation (bare `axle`,
+`-j`, `-m`) or a verb invocation (`batch`, `resume`, `setup`, `cleanup`).
+
+**Kernel** — the session runner every invocation composes on: resolve a
+definition, run an agent session, persist it.
+
+**Verb** — a distinct machine composed on the kernel, selected by a
+subcommand. Verbs select the machine; flags parameterize it — a mode is
+never a flag.
+
+**Session (CLI sense)** — the persisted continuation of one run:
+`AgentDefinition` + core `AgentSession` + `Transcript.turns` + cwd, at
+`~/.axle/sessions/cli/<id>.json`. Every run is a session, including each
+batch item; `axle resume <id>` re-enters any of them.
+
+**Ledger** — the project-local batch index (`.axle/batch.jsonl`): one
+append-only record per item run, keyed (job, input) with a content hash and
+session id. Read only under `--incremental`; always written.
+
+**Host line** — renderer output that is not transcript: `info` / `success`
+/ `warn` / `error` from the runner, drawn with the consola gutter. The
+transcript channel renders the model's conversation; host lines frame it.
+
 ## Reserved and avoided words
 
 - **iteration** — replaced by _step_. `maxIterations` is the pre-0.29 name
