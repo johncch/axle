@@ -231,6 +231,11 @@ describe("compacted session snapshot/resume", () => {
     const tracer = new Tracer();
     const calls: RunnerCall[] = [];
     const store = new SessionStore(definition, { home: HOME });
+    const usageReports: number[] = [];
+    const usageRenderer: Renderer = {
+      ...nullRenderer,
+      updateUsage: (usage) => usageReports.push(usage.contextTokens),
+    };
 
     const succeeded = await runAgentSession(
       {
@@ -246,14 +251,18 @@ describe("compacted session snapshot/resume", () => {
       },
       createStats(),
       tracer.startSpan("test"),
-      nullRenderer,
+      usageRenderer,
       store,
     );
 
     expect(succeeded).toBe(true);
-    // First provider call is the summarizer, second is the actual send.
     expect(calls).toHaveLength(2);
     expect(calls[0].system).toContain("You summarize an agent conversation");
+    // Usage reports: initial (over threshold), on compaction:complete
+    // (mid-turn drop), after the send settles.
+    expect(usageReports.length).toBeGreaterThanOrEqual(3);
+    expect(usageReports[0]).toBeGreaterThan(160_000);
+    expect(usageReports[1]).toBeLessThan(usageReports[0] / 2);
     expect(calls[1].messages.length).toBeLessThan(history.length);
     expect(String(calls[1].messages[0].content)).toBe("Continuation summary.");
     expect(JSON.stringify(calls[1].messages.at(-1)?.content)).toContain("please continue");

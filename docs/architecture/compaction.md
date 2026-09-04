@@ -98,18 +98,42 @@ model error when continuing genuinely no longer fits.
 
 `PromptCompactor` implements the policy pair: `shouldCompactOnTrigger` is
 empty → false, otherwise `usage.total >= thresholdTokens`; `compact` streams
-via `stream()`, reports estimated progress through 100%, and returns two
-stamped messages (summary, recent-user-messages appendix) without duplicating
-the generated summary into the reader-facing compaction part. `reasoning` and
-`providerOptions` match their model-request semantics elsewhere in Axle;
-provider-native options override normalized mappings. Reasoning defaults to
-disabled. `targetTokens` is the sole compactor budget: the recent-message
-appendix is reserved first, and the remainder bounds both provider output and
-the stored summary. Thinking therefore consumes summary-generation capacity
-rather than introducing a second token-budget option.
+via `stream()`, reports estimated progress through 100%, and returns stamped
+messages (summary, plus a recent-user-messages appendix unless
+`appendixTokens: 0`) without duplicating the generated summary into the
+reader-facing compaction part. `reasoning` and `providerOptions` match their
+model-request semantics elsewhere in Axle; provider-native options override
+normalized mappings, and unset `reasoning` stays unset (the model's own
+default). The two size controls are denominated in their honest units
+(2026-09-03): `summaryWords` because a word count is the only size a model
+can actually steer toward, and `appendixTokens` because the appendix
+protects a context-window invariant. `appendixTokens` stays absolute —
+budgets in comparable APIs are absolute, and only the absolute form can
+express a fixed cost ceiling independent of threshold — while the _default_
+is scale-aware: a tenth of `thresholdTokens`. The word bound is enforced by
+escalation, not by the request's output cap — steer by prompt, measure in
+words, one relative-shrink rewrite past ~1.3×, word-boundary truncation as
+last resort — while `maxOutputTokens` is a generous spend ceiling with
+thinking headroom, so reasoning never starves the summary text. The
+requested words are clamped to roughly an eighth of the threshold (a word
+measures ~2 estimated tokens, so a clamped summary lands near a quarter of
+the threshold), keeping artificially small windows coherent.
 
 ## Rejected alternatives
 
+- **`targetTokens` as a combined size budget doubling as the provider output
+  cap** (2026-09-03): conflated the size bound (a property of the result)
+  with the spend cap (a property of the request). Thinking tokens share
+  `maxOutputTokens` on every provider, so enforcing size through the cap
+  starved thinking models into empty summaries (`COMPACTION_EMPTY_SUMMARY`,
+  observed live with GLM); and window-proportional targets promised sizes
+  models never produce — summaries land at 500–2k words regardless of
+  allowance. Survey (Claude Code, Gemini CLI, Roo Code, Anthropic's
+  server-side compaction): no implementation caps output at the target; all
+  steer by prompt and verify by measurement. `recentUserMessages` went with
+  it — a message count is a size proxy that fails exactly when size matters
+  (one pasted log blows any count); the budget is the honest constraint,
+  with a fixed internal recency cap of 10 keeping "recent" recent.
 - **Turn policy in the compaction transform** — `{messages, turns}` return,
   suffix constraint, `retainedFrom` boundary event, `keepTurns` option
   (2026-08-11): dissolved entirely when turns left the Agent; transcript

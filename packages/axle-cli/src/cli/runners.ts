@@ -68,7 +68,6 @@ export interface AgentSessionSpec {
   compaction?: boolean;
 }
 
-// Assumption for models the registry doesn't know.
 const ASSUMED_CONTEXT_WINDOW = 200_000;
 
 /**
@@ -91,7 +90,7 @@ function contextWindowFor(agent: Agent, providerLimit?: number): number {
 }
 
 const COMPACTION_THRESHOLD_FRACTION = 0.8;
-const COMPACTION_TARGET_FRACTION = 0.25;
+const COMPACTION_SUMMARY_WORDS = 1_000;
 
 const COMPACTION_PROMPT = [
   "You summarize an agent conversation so it can continue in a smaller context.",
@@ -100,11 +99,13 @@ const COMPACTION_PROMPT = [
 ].join(" ");
 
 /**
- * Session compaction policy: thresholds derived from the model's context
- * window, summarized by the session's own provider and model, thinking
- * inherited from the recipe's `request.reasoning` (unset stays unset — the
- * model's own default). Triggers before the send that would overflow, never
- * speculatively after one.
+ * Session compaction policy: trigger at ~80% of the model's context window,
+ * compact to a ~1000-word summary plus recent user messages kept verbatim
+ * (the compactor's default: a tenth of the threshold), summarized by the
+ * session's own provider and model with thinking inherited from the recipe's
+ * `request.reasoning` (unset stays unset — the model's own default).
+ * Triggers before the send that would overflow, never speculatively after
+ * one.
  */
 export function createSessionCompaction(agent: Agent): CompactionConfig {
   const window = contextWindowFor(agent);
@@ -113,7 +114,7 @@ export function createSessionCompaction(agent: Agent): CompactionConfig {
     model: agent.model,
     prompt: COMPACTION_PROMPT,
     thresholdTokens: Math.floor(window * COMPACTION_THRESHOLD_FRACTION),
-    targetTokens: Math.floor(window * COMPACTION_TARGET_FRACTION),
+    summaryWords: COMPACTION_SUMMARY_WORDS,
     reasoning: agent.requestOptions.reasoning,
   });
   return {
@@ -201,6 +202,9 @@ export async function runAgentSession(
     });
   };
   reportUsage();
+  agent.on((event) => {
+    if (event.type === "compaction:complete") reportUsage();
+  });
 
   const sendMessage = async (message: Instruct<any> | string): Promise<boolean> => {
     try {

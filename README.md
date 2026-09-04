@@ -873,7 +873,8 @@ const compactor = new PromptCompactor({
   prompt:
     "Create a continuation summary. Preserve decisions, constraints, completed work, and open tasks.",
   thresholdTokens: 100_000,
-  targetTokens: 20_000,
+  summaryWords: 1_000,
+  appendixTokens: 10_000,
   providerOptions: {
     reasoning: { effort: "medium" },
   },
@@ -923,14 +924,20 @@ requested. `agent.compact({ signal })` follows the same cancellation contract
 as every other operation: aborting rejects with an error whose `name` is
 `"AbortError"`.
 
-`PromptCompactor` returns two user messages: a model-written summary, and an
-appendix of the latest 10 user messages in oldest-to-newest order. The target
-is an approximate budget for both together. While generating, it reports
-estimated progress without exposing the model's token stream, emits 100%
-immediately before completion, and leaves the compaction part's optional
-reader-facing `summary` unset. Set `recentUserMessages` to change the count. If
-the appendix must shrink, older recent messages are removed first. Both
-messages are stamped via metadata
+`PromptCompactor` returns a model-written summary and an appendix of up to
+the latest 10 user messages in oldest-to-newest order, evicted oldest-first
+to fit `appendixTokens` (default: a tenth of `thresholdTokens`; 0 keeps no
+appendix). `summaryWords`
+(default 1000) is a soft bound enforced by escalation, not by the request's
+output cap: the prompt steers the size in words, the result is measured in
+words, one relative-shrink rewrite runs if it lands over ~1.3× the request,
+and word-boundary truncation is the last resort. The request's
+`maxOutputTokens` is only a generous spend ceiling with thinking headroom,
+so reasoning models can think without starving the summary text. While
+generating, the compactor reports estimated progress without exposing the
+model's token stream, emits 100% immediately before completion, and leaves
+the compaction part's optional reader-facing `summary` unset. Both messages
+are stamped via metadata
 (`axleCompaction: { id, role: "summary" | "appendix" }`, see
 `CompactionStamp`). The stamp is a compactor-side convention — it is how the
 compactor recognizes its own prior output, so carried-over messages are
@@ -940,13 +947,11 @@ custom `CompactionCallback`s that don't stamp are valid.
 
 The compactor accepts `reasoning` and `providerOptions` with the same semantics
 as `Agent`, `generate()`, and `stream()`. `reasoning` is the normalized boolean
-convenience and defaults to `false`; use `providerOptions` for exact native
-controls such as reasoning effort or a thinking-token budget. `targetTokens` is
-the compactor's only token budget: after reserving space for the recent-message
-appendix, the remainder becomes the provider's output limit and the maximum
-stored summary size. Provider thinking consumes that output budget, so enabling
-it may produce a shorter visible summary. The example above uses OpenAI's native
-reasoning shape; other providers receive their own native options unchanged.
+convenience; leaving it unset sends no thinking parameters, so the model runs
+at its provider default. Use `providerOptions` for exact native controls such
+as reasoning effort or a thinking-token budget. The example above uses OpenAI's
+native reasoning shape; other providers receive their own native options
+unchanged.
 
 Like tool callbacks, the compaction callbacks run while the agent's scheduler
 is held: scheduling more work on the same agent from inside them queues behind
@@ -1110,11 +1115,12 @@ disable thinking); `true` opts in, `false` opts out where the provider can
 express it.
 
 Long sessions compact automatically: when the conversation approaches the
-model's context window (~80%), the next send first summarizes the
-conversation down (~25% of the window) using the session's own provider,
-model, and `reasoning` setting, and the transcript records a
-`✔ Compacted context` line. Compacted sessions snapshot and resume like any
-other. Opt out per recipe with:
+model's context window (~80%), the next send first replaces the history with
+a ~1000-word summary plus a slice of recent user messages kept verbatim (up
+to a tenth of the threshold), summarized by the session's own provider, model, and
+`reasoning` setting; the transcript records a `✔ Compacted context` line.
+Compacted sessions snapshot and resume like any other. Opt out per recipe
+with:
 
 ```yaml
 compaction: false

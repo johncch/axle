@@ -298,8 +298,9 @@ export const baselineCases: BaselineCase[] = [
           "Summarize this conversation for a fresh assistant taking over. " +
           "Preserve the code word and magic number exactly.",
         thresholdTokens: 100_000,
-        targetTokens: requestOptions.reasoning ? 12_000 : 800,
-        recentUserMessages: 1,
+        summaryWords: 200,
+        // Fits the latest user message's bullet (~35 tokens) but not two.
+        appendixTokens: 40,
         reasoning: requestOptions.reasoning,
         providerOptions: requestOptions.providerOptions,
       });
