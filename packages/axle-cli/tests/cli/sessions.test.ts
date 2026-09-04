@@ -36,6 +36,52 @@ const definition: AgentDefinition = {
   model: "anthropic/test-model",
 };
 
+function createRecordingRenderer(inputs: string[] = []) {
+  const errors: string[] = [];
+  const renderer: Renderer = {
+    ...nullRenderer,
+    error: (m) => void errors.push(m),
+    promptInput: () => Promise.resolve(inputs.shift() ?? null),
+  };
+  return { renderer, errors };
+}
+
+function createFailingProvider(options: {
+  failOnCall: number;
+  requestMessages?: unknown[][];
+}): AIProvider {
+  let callIndex = 0;
+  return {
+    name: "mock",
+    async createGenerationRequest() {
+      throw new Error("not used");
+    },
+    async *createStreamingRequest(_model, params) {
+      options.requestMessages?.push([...(params as { messages: unknown[] }).messages]);
+      callIndex += 1;
+      yield {
+        type: "start" as const,
+        id: `mock-${callIndex}`,
+        data: { model: "mock", timestamp: 0 },
+      };
+      if (callIndex === options.failOnCall) {
+        yield {
+          type: "error" as const,
+          data: { type: "server_error", message: "kaput" },
+        };
+        return;
+      }
+      yield { type: "text-start" as const, data: { index: 0 } };
+      yield { type: "text-delta" as const, data: { index: 0, text: "recovered" } };
+      yield { type: "text-complete" as const, data: { index: 0 } };
+      yield {
+        type: "complete" as const,
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+      };
+    },
+  };
+}
+
 function createMockProvider(text: string, requestMessages?: unknown[][]): AIProvider {
   let callIndex = 0;
   return {
@@ -303,6 +349,54 @@ describe("runSingle session persistence", () => {
 
     const file = await readSessionFile("chat-1");
     expect(file.session.messages).toHaveLength(2);
+  });
+
+  it("a failed initial send returns false, renders the failure, and still saves the session", async () => {
+    const { renderer, errors } = createRecordingRenderer();
+    const agentConfig: AgentConfig = {
+      provider: createFailingProvider({ failOnCall: 1 }),
+      model: "test-model",
+      sessionId: "fail-1",
+    };
+    const store = new SessionStore(definition, { home: HOME });
+    const tracer = new Tracer();
+
+    const succeeded = await runAgentSession(
+      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
+      createStats(),
+      tracer.startSpan("job"),
+      renderer,
+      store,
+    );
+
+    expect(succeeded).toBe(false);
+    expect(errors).toContainEqual(expect.stringContaining("Model error: kaput"));
+    const file = await readSessionFile("fail-1");
+    expect(file.session.sessionId).toBe("fail-1");
+  });
+
+  it("a failed send in the chat loop renders the error and keeps the loop alive", async () => {
+    const requestMessages: unknown[][] = [];
+    const { renderer, errors } = createRecordingRenderer(["first", "second", "/quit"]);
+    const agentConfig: AgentConfig = {
+      provider: createFailingProvider({ failOnCall: 1, requestMessages }),
+      model: "test-model",
+      sessionId: "chat-fail-1",
+    };
+    const store = new SessionStore(definition, { home: HOME });
+    const tracer = new Tracer();
+
+    const succeeded = await runAgentSession(
+      { agentConfig, spanName: "chat", interactive: true },
+      createStats(),
+      tracer.startSpan("chat"),
+      renderer,
+      store,
+    );
+
+    expect(succeeded).toBe(true);
+    expect(requestMessages).toHaveLength(2);
+    expect(errors).toContainEqual(expect.stringContaining("Model error: kaput"));
   });
 
   it("does not write anything without a session store", async () => {
