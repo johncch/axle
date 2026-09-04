@@ -170,6 +170,15 @@ if (common.log) {
 
 // Create root span for the entire CLI execution
 const rootSpan = tracer.startSpan("cli", { type: "root" });
+let screen: Renderer | undefined;
+
+async function shutdown(): Promise<void> {
+  try {
+    await screen?.close();
+  } finally {
+    await tracer.flush();
+  }
+}
 
 process.on("uncaughtException", async (err) => {
   console.error("Uncaught exception:");
@@ -179,7 +188,7 @@ process.on("uncaughtException", async (err) => {
   rootSpan.error(err.message);
   rootSpan.error(err.stack || "");
   rootSpan.end("error");
-  await tracer.flush();
+  await shutdown();
 
   process.exit(1);
 });
@@ -189,16 +198,13 @@ if (common.debug) {
   rootSpan.debug("Additional Arguments: " + JSON.stringify(variables, null, 2));
 }
 
-let screen: Renderer | undefined;
-
 async function fail(e: unknown): Promise<never> {
   const error = e instanceof Error ? e : new Error(String(e));
   (screen ?? console).error(error.message);
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
   rootSpan.end("error");
-  await screen?.close();
-  await tracer.flush();
+  await shutdown();
   if (!screen) program.outputHelp();
   process.exit(1);
 }
@@ -268,63 +274,65 @@ const { mcps, agentConfig } = await resolveAgentDefinition(
   rootSpan,
 ).catch(fail);
 
-rootSpan.info("All systems operational. Running job...");
-
-const stats: Stats = createStats();
-const startTime = performance.now();
-
-let succeeded = false;
 try {
-  if (pending.kind === "batch") {
-    succeeded = await runBatch(
-      { ...pending.spec, definition: pending.definition, agentConfig },
-      variables,
-      stats,
-      rootSpan,
-      renderer,
-      supportsBatchProgress(renderer) ? renderer : undefined,
-    );
+  rootSpan.info("All systems operational. Running job...");
+
+  const stats: Stats = createStats();
+  const startTime = performance.now();
+
+  let succeeded = false;
+  try {
+    if (pending.kind === "batch") {
+      succeeded = await runBatch(
+        { ...pending.spec, definition: pending.definition, agentConfig },
+        variables,
+        stats,
+        rootSpan,
+        renderer,
+        supportsBatchProgress(renderer) ? renderer : undefined,
+      );
+    } else {
+      succeeded = await runAgentSession(
+        { ...pending.spec, agentConfig },
+        stats,
+        rootSpan,
+        renderer,
+        pending.sessionStore,
+      );
+    }
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    renderer.error(error.message);
+    rootSpan.error(error.message);
+    rootSpan.debug(error.stack ?? "");
+  } finally {
+    renderer.setInterruptHandler(exitOnInterrupt);
+    if (mcps.length > 0) {
+      await closeMcps(mcps, rootSpan);
+    }
+  }
+
+  const duration = performance.now() - startTime;
+  rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
+  rootSpan.info(`Input tokens: ${stats.in}`);
+  rootSpan.info(`Output tokens: ${stats.out}`);
+  if (stats.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${stats.cachedIn}`);
+  if (stats.cacheWriteIn !== undefined)
+    rootSpan.info(`Cache write input tokens: ${stats.cacheWriteIn}`);
+  if (stats.reasoningOut !== undefined)
+    rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
+
+  const runSummary = `in ${(duration / 1000).toFixed(1)}s · ↑ ${stats.in} ↓ ${stats.out} tokens`;
+  if (succeeded) {
+    renderer.success(`Done ${runSummary}`);
+    rootSpan.info("Complete. Goodbye");
+    rootSpan.end();
   } else {
-    succeeded = await runAgentSession(
-      { ...pending.spec, agentConfig },
-      stats,
-      rootSpan,
-      renderer,
-      pending.sessionStore,
-    );
+    renderer.error(`Failed ${runSummary}`);
+    rootSpan.error("Job failed");
+    rootSpan.end("error");
+    process.exitCode = 1;
   }
-} catch (e) {
-  const error = e instanceof Error ? e : new Error(String(e));
-  renderer.error(error.message);
-  rootSpan.error(error.message);
-  rootSpan.debug(error.stack ?? "");
 } finally {
-  renderer.setInterruptHandler(exitOnInterrupt);
-  if (mcps.length > 0) {
-    await closeMcps(mcps, rootSpan);
-  }
+  await shutdown();
 }
-
-const duration = performance.now() - startTime;
-rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
-rootSpan.info(`Input tokens: ${stats.in}`);
-rootSpan.info(`Output tokens: ${stats.out}`);
-if (stats.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${stats.cachedIn}`);
-if (stats.cacheWriteIn !== undefined)
-  rootSpan.info(`Cache write input tokens: ${stats.cacheWriteIn}`);
-if (stats.reasoningOut !== undefined)
-  rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
-
-const runSummary = `in ${(duration / 1000).toFixed(1)}s · ↑ ${stats.in} ↓ ${stats.out} tokens`;
-if (succeeded) {
-  renderer.success(`Done ${runSummary}`);
-  rootSpan.info("Complete. Goodbye");
-  rootSpan.end();
-} else {
-  renderer.error(`Failed ${runSummary}`);
-  rootSpan.error("Job failed");
-  rootSpan.end("error");
-  process.exitCode = 1;
-}
-await renderer.close();
-await tracer.flush();
