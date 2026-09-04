@@ -22,7 +22,9 @@ Bare `axle` starts an interactive chat using the default provider and model
 from `~/.axle/cli.yaml` (`defaults.provider`, `defaults.models`). Running a
 YAML job file with `-j` is the non-interactive path.
 
-On first run with no credentials anywhere, `axle` launches a setup wizard:
+On first run with no configuration anywhere — no credentials, no `cli.yaml`
+providers or defaults, no inline provider in the recipe — `axle` launches a
+setup wizard:
 pick a provider, paste a key (written to `~/.axle/credentials`, chmod 600),
 and pick a default model. Re-run it anytime with `axle setup`. A run that
 can't resolve a model drops into the same model picker.

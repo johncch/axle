@@ -78,6 +78,7 @@ afterEach(async () => {
 function runCli(
   args: string[],
   env: Record<string, string> = {},
+  stdin = "",
 ): Promise<{ code: number | null; output: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(TSX_BIN, [CLI_PATH, ...args], {
@@ -89,7 +90,7 @@ function runCli(
     child.stderr.on("data", (chunk) => (output += chunk));
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, output }));
-    child.stdin.end();
+    child.stdin.end(stdin);
   });
 }
 
@@ -165,7 +166,8 @@ describe("cli.ts end-to-end", () => {
 
       expect(code).toBe(1);
       expect(output).toContain("Model error: stub exploded");
-      expect(output).toContain("Job failed");
+      expect(output).toContain("Failed in");
+      expect(output).not.toContain("Done in");
     },
     SPAWN_TIMEOUT,
   );
@@ -186,6 +188,28 @@ describe("cli.ts end-to-end", () => {
       expect(output).toContain("one-shot answer");
       expect(requests).toHaveLength(1);
       expect(requests[0].messages.at(-1)?.content).toContain("quick question");
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "piped chat reads a line at the prompt, answers, and exits cleanly at EOF",
+    async () => {
+      replies.push({ text: "chat answer" });
+      await mkdir(join(HOME, ".axle"), { recursive: true });
+      await writeFile(join(HOME, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
+
+      const { code, output } = await runCli(
+        ["--renderer", "plain", "--no-log"],
+        { CHATCOMPLETIONS_BASE_URL: baseUrl, CHATCOMPLETIONS_MODEL: "stub-model" },
+        "hello from the pipe\n",
+      );
+
+      expect(code).toBe(0);
+      expect(output).toContain("chat answer");
+      expect(output).toContain("Done in");
+      expect(requests).toHaveLength(1);
+      expect(requests[0].messages.at(-1)?.content).toContain("hello from the pipe");
     },
     SPAWN_TIMEOUT,
   );
@@ -243,7 +267,7 @@ describe("cli.ts end-to-end", () => {
 
       expect(code).toBe(1);
       expect(output).toContain("1 completed, 0 skipped, 1 failed");
-      expect(output).toContain("Job failed");
+      expect(output).toContain("Failed in");
 
       const ledgerLines = (await readFile(join(CWD, ".axle", "batch.jsonl"), "utf-8"))
         .trim()

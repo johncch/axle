@@ -301,6 +301,8 @@ export interface BatchRunSpec {
   incremental: boolean;
   /** Stream full item transcripts through the renderer (concurrency 1). */
   verbose: boolean;
+  /** Automatic context compaction; on unless the recipe says `compaction: false`. */
+  compaction?: boolean;
   /** Session home override for tests. */
   home?: string;
 }
@@ -387,11 +389,17 @@ export async function runBatch(
       }
 
       // One session per input: every batch item is an ordinary resumable run.
-      const sessionStore = new SessionStore(spec.definition, { home: spec.home });
+      const sessionStore = new SessionStore(spec.definition, {
+        home: spec.home,
+        compaction: spec.compaction,
+      });
       const agent = new Agent({
         ...spec.agentConfig,
         observability: { trace: itemSpan },
       });
+      if (spec.compaction !== false) {
+        agent.setCompaction(createSessionCompaction(agent));
+      }
       progress?.itemStarted(batchFilePath);
       const transcript = new Transcript();
       agent.on((event) => {

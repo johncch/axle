@@ -10,6 +10,7 @@ import {
   createAgentDefinition,
   createDefaultAgentDefinition,
   resolveAgentDefinition,
+  resolveTarget,
 } from "./cli/agent-config.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
@@ -21,7 +22,7 @@ import type { CliSessionFile } from "./cli/sessions.js";
 import { loadSession, SessionStore } from "./cli/sessions.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
-  hasAnyCredentials,
+  needsSetupWizard,
   promptForInputs,
   promptForMissingModel,
   runSetupWizard,
@@ -260,8 +261,12 @@ try {
 
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
-// First run with no credentials resolvable anywhere → onboarding wizard.
-if (inv.kind !== "resume" && interactiveTerminal && !hasAnyCredentials(serviceConfig)) {
+// First run with no configuration resolvable anywhere → onboarding wizard.
+if (
+  inv.kind !== "resume" &&
+  interactiveTerminal &&
+  needsSetupWizard(serviceConfig, cliConfig, jobConfig)
+) {
   await runSetupWizard(serviceConfig);
   cliConfig = await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({ span: rootSpan });
@@ -373,8 +378,12 @@ try {
 
   // Any run that can't resolve a model falls into the picker.
   if (!pending.definition.model && interactiveTerminal) {
+    const offerSave = pending.kind !== "session" || pending.spanName !== "resume";
     pending.definition.model = await promptForMissingModel(pending.definition.provider.type, {
-      offerSave: pending.kind !== "session" || pending.spanName !== "resume",
+      offerSave,
+      saveAs: offerSave
+        ? resolveTarget(jobConfig, cliConfig, serviceConfig).providerName
+        : undefined,
     });
   }
 } catch (e) {
@@ -392,6 +401,11 @@ if (!pending) {
 const renderer = await createRenderer(common.renderer, {
   batchProgress: pending.kind === "batch" && !pending.verbose,
 });
+// Under ink, raw mode swallows SIGINT and the runners only own the interrupt
+// while a run is live. Outside a run (MCP connect/close can hang), Ctrl-C
+// must still kill the process.
+const exitOnInterrupt = () => process.exit(130);
+renderer.setInterruptHandler(exitOnInterrupt);
 
 type RunPlan =
   | { kind: "batch"; spec: BatchRunSpec }
@@ -419,6 +433,7 @@ try {
         jobName: jobScope,
         incremental: pending.incremental,
         verbose: pending.verbose,
+        compaction: pending.jobConfig.compaction,
       },
     };
   } else {
@@ -477,6 +492,7 @@ try {
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
 } finally {
+  renderer.setInterruptHandler(exitOnInterrupt);
   if (mcps.length > 0) {
     await closeMcps(mcps, rootSpan);
   }
@@ -492,13 +508,13 @@ if (stats.cacheWriteIn !== undefined)
 if (stats.reasoningOut !== undefined)
   rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
 
-renderer.success(`Done in ${(duration / 1000).toFixed(1)}s · ↑ ${stats.in} ↓ ${stats.out} tokens`);
-
+const runSummary = `in ${(duration / 1000).toFixed(1)}s · ↑ ${stats.in} ↓ ${stats.out} tokens`;
 if (succeeded) {
+  renderer.success(`Done ${runSummary}`);
   rootSpan.info("Complete. Goodbye");
   rootSpan.end();
 } else {
-  renderer.error("Job failed");
+  renderer.error(`Failed ${runSummary}`);
   rootSpan.error("Job failed");
   rootSpan.end("error");
   process.exitCode = 1;

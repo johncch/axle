@@ -3,40 +3,43 @@ import { createInterface } from "node:readline";
 
 /**
  * Readline-backed input prompt. Resolves null when the user ends the chat
- * (Ctrl-C or Ctrl-D at the prompt). While readline is active the terminal is
- * in raw mode, so Ctrl-C arrives here as an interface event — the process
- * SIGINT handler only sees Ctrl-C pressed during a running turn.
+ * (Ctrl-C or Ctrl-D at the prompt).
+ *
+ * The interface lives only for the duration of one question: while it is
+ * open the terminal is in raw mode and Ctrl-C arrives as an interface event,
+ * so keeping it open across a running turn would swallow the SIGINT the
+ * runner's two-stage interrupt listens for. Between prompts the terminal is
+ * back in cooked mode and Ctrl-C is a real signal.
  */
 export class ReadlinePrompt {
-  private rl?: Interface;
+  private active?: Interface;
   private ended = false;
 
   prompt(): Promise<string | null> {
-    // stdin can hit EOF (pipe drained, Ctrl-D) while no question is pending;
-    // asking a closed interface throws, so a finished stream ends the chat.
-    if (this.ended) return Promise.resolve(null);
-    const rl = (this.rl ??= this.create());
+    // stdin can hit EOF (pipe drained, Ctrl-D mid-turn) while no interface
+    // is open; asking a finished stream would hang, so it ends the chat.
+    if (this.ended || process.stdin.readableEnded) return Promise.resolve(null);
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    this.active = rl;
+    rl.on("SIGINT", () => rl.close());
     return new Promise((resolve) => {
-      const onClose = () => resolve(null);
+      const onClose = () => {
+        this.ended = true;
+        this.active = undefined;
+        resolve(null);
+      };
       rl.once("close", onClose);
       rl.question("\n> ", (answer) => {
         rl.removeListener("close", onClose);
+        rl.close();
+        this.active = undefined;
         resolve(answer);
       });
     });
   }
 
   close(): void {
-    this.rl?.close();
-    this.rl = undefined;
-  }
-
-  private create(): Interface {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    rl.on("SIGINT", () => rl.close());
-    rl.on("close", () => {
-      this.ended = true;
-    });
-    return rl;
+    this.active?.close();
+    this.active = undefined;
   }
 }

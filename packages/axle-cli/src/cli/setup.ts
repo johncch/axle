@@ -1,6 +1,6 @@
 import * as clack from "@clack/prompts";
 import { ModelInfo } from "@fifthrevision/axle/models";
-import type { ServiceConfig } from "./configs/schemas.js";
+import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { updateCliDefaults, upsertCredentials } from "./configs/writers.js";
 
 interface ProviderChoice {
@@ -28,6 +28,24 @@ export function hasAnyCredentials(serviceConfig: ServiceConfig): boolean {
     serviceConfig.gemini?.apiKey ??
     serviceConfig.chatcompletions?.baseUrl,
   );
+}
+
+/**
+ * First-run onboarding gate. The wizard is for users with no configuration
+ * anywhere — a cli.yaml provider profile or default, or an inline provider
+ * block in the recipe, is configuration: let resolution run and report its
+ * own errors instead of demanding a built-in key first.
+ */
+export function needsSetupWizard(
+  serviceConfig: ServiceConfig,
+  cliConfig: CliConfig,
+  jobConfig?: JobConfig,
+): boolean {
+  if (hasAnyCredentials(serviceConfig)) return false;
+  if (Object.keys(cliConfig.providers ?? {}).length > 0) return false;
+  if (cliConfig.defaults?.provider) return false;
+  if (jobConfig?.provider && !("name" in jobConfig.provider)) return false;
+  return true;
 }
 
 function ensureNotCancelled<T>(value: T | symbol): T {
@@ -94,23 +112,27 @@ export async function promptForInputs(): Promise<string> {
 
 /**
  * Fallback for a run that resolved a provider but no model: pick one, and
- * optionally persist it as the provider's default.
+ * optionally persist it as the provider's default. `saveAs` is the provider
+ * *name* the `defaults.models` lookup uses — for a cli.yaml profile it
+ * differs from the endpoint type, and saving under the type would never be
+ * found again.
  */
 export async function promptForMissingModel(
   providerType: string,
-  options?: { offerSave?: boolean },
+  options?: { offerSave?: boolean; saveAs?: string },
 ): Promise<string> {
-  clack.log.warn(`No model configured for provider ${providerType}.`);
+  const saveAs = options?.saveAs ?? providerType;
+  clack.log.warn(`No model configured for provider ${saveAs}.`);
   const model = await promptForModel(providerType);
   if (options?.offerSave !== false) {
     const save = ensureNotCancelled(
       await clack.confirm({
-        message: `Save ${model} as the default model for ${providerType}?`,
+        message: `Save ${model} as the default model for ${saveAs}?`,
         initialValue: true,
       }),
     );
     if (save) {
-      const path = await updateCliDefaults({ models: { [providerType]: model } });
+      const path = await updateCliDefaults({ models: { [saveAs]: model } });
       clack.log.success(`Saved to ${path}`);
     }
   }

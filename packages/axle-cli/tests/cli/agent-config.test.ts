@@ -1,6 +1,6 @@
 import type { Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createCliAgentConfig, createDefaultAgentDefinition } from "../../src/cli/agent-config.js";
+import { createCliAgentConfig, createDefaultAgentDefinition, resolveTarget } from "../../src/cli/agent-config.js";
 import type { ServiceConfig } from "../../src/cli/configs/schemas.js";
 
 const tracer = {
@@ -219,5 +219,28 @@ describe("createDefaultAgentDefinition", () => {
     expect(() => createDefaultAgentDefinition({}, {})).toThrow(
       /No provider specified and no default provider configured/,
     );
+  });
+});
+
+describe("resolveTarget provider name", () => {
+  test("a named profile resolves its own name for the defaults.models lookup", () => {
+    const target = resolveTarget(
+      { provider: { name: "work" } },
+      { providers: { work: { type: "anthropic" } } },
+      {},
+    );
+
+    expect(target.providerName).toBe("work");
+    expect(target.provider.type).toBe("anthropic");
+  });
+
+  test("an inline endpoint's type doubles as its name", () => {
+    const target = resolveTarget(
+      { provider: { type: "chatcompletions", baseUrl: "http://localhost:1/v1" } },
+      {},
+      {},
+    );
+
+    expect(target.providerName).toBe("chatcompletions");
   });
 });

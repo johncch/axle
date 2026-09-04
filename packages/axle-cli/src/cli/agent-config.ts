@@ -33,7 +33,7 @@ export function resolveTarget(
   jobConfig: Pick<JobConfig, "provider" | "model"> | undefined,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
-): { provider: ProviderDefinition; model?: string } {
+): { provider: ProviderDefinition; model?: string; providerName: string } {
   const jobProvider = jobConfig?.provider;
 
   let endpoint: { type: string } & Record<string, unknown>;
@@ -72,6 +72,7 @@ export function resolveTarget(
   return {
     provider: Object.keys(config).length > 0 ? { type, config } : { type },
     model,
+    providerName,
   };
 }
 
