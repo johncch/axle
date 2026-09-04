@@ -215,6 +215,27 @@ describe("runBatch (--each fan-out)", () => {
     expect(lines.at(-1)).toContain("2 completed, 0 skipped, 0 failed");
   });
 
+  it("an unreadable input fails that item and the rest of the batch still runs", async () => {
+    await mkdir(join(INPUTS, "c.md"), { recursive: true });
+    const { renderer, lines } = createRecordingRenderer();
+    const tracer = new Tracer();
+
+    const succeeded = await runBatch(
+      batchSpec(createMockProvider()),
+      {},
+      createStats(),
+      tracer.startSpan("batch"),
+      renderer,
+    );
+
+    expect(succeeded).toBe(false);
+    expect(lines.some((l) => l.includes("c.md: failed"))).toBe(true);
+    expect(lines.at(-1)).toContain("2 completed, 0 skipped, 1 failed");
+
+    const ledger = await loadLedger();
+    expect([...ledger.values()].every((e) => e.status === "completed")).toBe(true);
+  });
+
   it("records a failed item with its session id for resumption", async () => {
     const { renderer, lines } = createRecordingRenderer();
     const tracer = new Tracer();

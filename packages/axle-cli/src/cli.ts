@@ -4,7 +4,7 @@ import { Command } from "@commander-js/extra-typings";
 import type { AgentConfig, AgentDefinition, MCP, Stats } from "@fifthrevision/axle";
 import { createStats, Instruct, loadFileContent, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
 import {
   createAgentDefinition,
@@ -246,11 +246,13 @@ async function failBeforeRender(error: Error): Promise<never> {
 let cliConfig!: CliConfig;
 let serviceConfig!: ServiceConfig;
 let jobConfig: JobConfig | undefined;
+let jobScope = "job";
 try {
   cliConfig = await getCliConfig({ span: rootSpan });
   serviceConfig = await getServiceConfig({ span: rootSpan });
   if (inv.kind !== "resume" && inv.job) {
     jobConfig = await getJobConfig(inv.job, { span: rootSpan });
+    jobScope = jobConfig.name ?? relative(process.cwd(), resolve(inv.job));
   }
 } catch (e) {
   await failBeforeRender(e instanceof Error ? e : new Error(String(e)));
@@ -305,7 +307,9 @@ try {
       sessionStore: new SessionStore(saved.definition, {
         cwd: saved.cwd,
         createdAt: saved.createdAt,
+        compaction: saved.compaction,
       }),
+      compaction: saved.compaction,
     };
   } else if (jobConfig) {
     const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
@@ -351,7 +355,7 @@ try {
         initial: instruct.withInputs(variables),
         interactive: inv.kind === "kernel" && inv.interactive,
         spanName: "job",
-        sessionStore: new SessionStore(definition),
+        sessionStore: new SessionStore(definition, { compaction: jobConfig.compaction }),
         compaction: jobConfig.compaction,
       };
     }
@@ -412,7 +416,7 @@ try {
         agentConfig: resolved.agentConfig,
         inputs: pending.inputs,
         concurrency: pending.concurrency,
-        jobName: pending.jobConfig.name ?? "job",
+        jobName: jobScope,
         incremental: pending.incremental,
         verbose: pending.verbose,
       },

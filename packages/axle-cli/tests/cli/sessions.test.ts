@@ -139,6 +139,20 @@ describe("SessionStore", () => {
     expect(file.updatedAt).toBeTruthy();
   });
 
+  it("persists the compaction opt-out and omits the field when unset", async () => {
+    await new SessionStore(definition, { home: HOME, compaction: false }).save(
+      { sessionId: "opted-out", messages: [] },
+      [],
+    );
+    await new SessionStore(definition, { home: HOME }).save(
+      { sessionId: "default", messages: [] },
+      [],
+    );
+
+    expect((await readSessionFile("opted-out")).compaction).toBe(false);
+    expect("compaction" in (await readSessionFile("default"))).toBe(false);
+  });
+
   it("keeps createdAt stable across saves", async () => {
     const store = new SessionStore(definition, { home: HOME });
     const session = { sessionId: "abc-123", messages: [] };

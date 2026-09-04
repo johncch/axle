@@ -27,16 +27,22 @@ export async function upsertCredentials(
   if (lines.at(-1) === "") lines.pop();
 
   const remaining = new Map(Object.entries(entries));
-  const updated = lines.map((line) => {
+  const replaced = new Set<string>();
+  const updated: string[] = [];
+  for (const line of lines) {
     const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/);
     const key = match?.[1];
     if (key && remaining.has(key)) {
-      const value = remaining.get(key)!;
+      updated.push(`${key}=${remaining.get(key)!}`);
       remaining.delete(key);
-      return `${key}=${value}`;
+      replaced.add(key);
+    } else if (key && replaced.has(key)) {
+      // dotenv is last-wins: a surviving later duplicate would shadow the
+      // value just written.
+    } else {
+      updated.push(line);
     }
-    return line;
-  });
+  }
   for (const [key, value] of remaining) {
     updated.push(`${key}=${value}`);
   }

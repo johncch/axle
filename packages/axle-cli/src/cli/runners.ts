@@ -363,8 +363,18 @@ export async function runBatch(
         type: "workflow",
       });
 
-      const rawContent = await readFile(batchFilePath);
-      const hash = computeHash(rawContent);
+      let hash: string;
+      try {
+        hash = computeHash(await readFile(batchFilePath));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        renderer.error(`${batchFilePath}: failed — ${msg}`);
+        itemSpan.error(`Failed: ${msg}`);
+        itemSpan.end("error");
+        failed++;
+        progress?.itemFinished(batchFilePath, totals());
+        return;
+      }
 
       const existing = ledger.get(ledgerKey(spec.jobName, batchFilePath));
       if (spec.incremental && existing?.status === "completed" && existing.hash === hash) {

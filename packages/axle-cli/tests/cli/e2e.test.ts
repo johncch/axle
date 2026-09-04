@@ -110,6 +110,26 @@ async function writeRecipe(name: string, extra = ""): Promise<string> {
   return path;
 }
 
+// With AXLE_CONTEXT_WINDOW=1000 the compaction threshold is 800 tokens
+// (~2400 chars); this task alone crosses it, so a resumed session is over
+// the threshold before its next send.
+async function writeOverThresholdRecipe(name: string, extra = ""): Promise<string> {
+  const path = join(CWD, name);
+  await writeFile(
+    path,
+    [
+      "provider:",
+      "  type: chatcompletions",
+      `  baseUrl: ${baseUrl}`,
+      "model: stub-model",
+      extra,
+      "task: |",
+      `  Analyze this. ${"filler words here ".repeat(200)}`,
+    ].join("\n"),
+  );
+  return path;
+}
+
 describe("cli.ts end-to-end", () => {
   it(
     "runs a recipe: exit 0, response on stdout, session file written",
@@ -230,6 +250,91 @@ describe("cli.ts end-to-end", () => {
         .split("\n")
         .map((line) => JSON.parse(line));
       expect(ledgerLines.map((e) => e.status).sort()).toEqual(["completed", "failed"]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "resume over the compaction threshold summarizes before sending",
+    async () => {
+      const recipe = await writeOverThresholdRecipe("compacting.yml");
+
+      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"], {
+        AXLE_CONTEXT_WINDOW: "1000",
+      });
+      const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
+
+      const { code } = await runCli(
+        ["resume", sessionId!, "-m", "follow up", "--renderer", "plain", "--no-log"],
+        { AXLE_CONTEXT_WINDOW: "1000" },
+      );
+
+      expect(code).toBe(0);
+      expect(requests).toHaveLength(3);
+      expect(JSON.stringify(requests[1].messages)).not.toContain("follow up");
+      expect(JSON.stringify(requests[2].messages.at(-1))).toContain("follow up");
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "compaction: false survives resume — no summarization request over the threshold",
+    async () => {
+      const recipe = await writeOverThresholdRecipe("optout.yml", "compaction: false");
+
+      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"], {
+        AXLE_CONTEXT_WINDOW: "1000",
+      });
+      const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
+      const saved = JSON.parse(
+        await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
+      );
+      expect(saved.compaction).toBe(false);
+
+      const { code } = await runCli(
+        ["resume", sessionId!, "-m", "follow up", "--renderer", "plain", "--no-log"],
+        { AXLE_CONTEXT_WINDOW: "1000" },
+      );
+
+      expect(code).toBe(0);
+      expect(requests).toHaveLength(2);
+      expect(JSON.stringify(requests[1].messages.at(-1))).toContain("follow up");
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "unnamed recipes get distinct ledger scopes: --incremental never cross-skips",
+    async () => {
+      await mkdir(join(CWD, "inputs"), { recursive: true });
+      await writeFile(join(CWD, "inputs", "a.md"), "alpha");
+      await writeFile(join(CWD, "inputs", "b.md"), "beta");
+      const batchBlock = ["batch:", '  files: "inputs/*.md"', "  concurrency: 1"].join("\n");
+      const recipeA = await writeRecipe("first.yml", batchBlock);
+      const recipeB = await writeRecipe("second.yml", batchBlock);
+
+      await runCli(["batch", "-j", recipeA, "--renderer", "plain", "--no-log"]);
+      const rerun = await runCli([
+        "batch",
+        "-j",
+        recipeA,
+        "--incremental",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
+      const other = await runCli([
+        "batch",
+        "-j",
+        recipeB,
+        "--incremental",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
+
+      expect(rerun.output).toContain("0 completed, 2 skipped, 0 failed");
+      expect(other.output).toContain("2 completed, 0 skipped, 0 failed");
     },
     SPAWN_TIMEOUT,
   );

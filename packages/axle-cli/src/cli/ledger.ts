@@ -6,7 +6,8 @@ const LEDGER_PATH = ".axle/batch.jsonl";
 
 /**
  * One line per batch item run: a thin input→session index, scoped by job
- * name. The session file holds the actual state; a failed item is inspected
+ * name or recipe path. The session file holds the actual state; a failed
+ * item is inspected
  * or continued with ordinary `axle resume <id>`. Later lines for the same
  * (job, input) win. The hash covers input content only — input changes are
  * the ledger's problem; recipe changes are the user's (see

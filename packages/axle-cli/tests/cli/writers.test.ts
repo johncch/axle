@@ -52,6 +52,31 @@ describe("upsertCredentials", () => {
       ].join("\n") + "\n",
     );
   });
+
+  it("drops later duplicates of an upserted key so the new value is not shadowed", async () => {
+    await mkdir(join(HOME, ".axle"), { recursive: true });
+    await writeFile(
+      CREDENTIALS,
+      [
+        "ANTHROPIC_API_KEY=old-key",
+        "AXLE_CODE_TOKEN=keep-me",
+        "ANTHROPIC_API_KEY=stale-duplicate",
+        "OPENROUTER_API_KEY=dup-not-managed",
+        "OPENROUTER_API_KEY=dup-not-managed-2",
+      ].join("\n") + "\n",
+    );
+
+    await upsertCredentials({ ANTHROPIC_API_KEY: "new-key" }, HOME);
+
+    expect(await readFile(CREDENTIALS, "utf-8")).toBe(
+      [
+        "ANTHROPIC_API_KEY=new-key",
+        "AXLE_CODE_TOKEN=keep-me",
+        "OPENROUTER_API_KEY=dup-not-managed",
+        "OPENROUTER_API_KEY=dup-not-managed-2",
+      ].join("\n") + "\n",
+    );
+  });
 });
 
 describe("updateCliDefaults", () => {

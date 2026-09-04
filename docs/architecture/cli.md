@@ -61,7 +61,10 @@ against it; divergence is a defect. State ownership is defined in
    arguments to the verb → the recipe's `batch:` block → an interactive
    prompt (verb only — bare `axle -j` honors the block and never prompts).
    A project-local ledger (`.axle/batch.jsonl`) records every item run,
-   keyed `(job name, input)` with a content-only hash. Skipping is opt-in:
+   keyed `(job scope, input)` with a content-only hash — the scope is the
+   recipe's `name`, else its path relative to the project root, never a
+   shared constant (unnamed recipes would cross-skip under
+   `--incremental`). Skipping is opt-in:
    `--incremental` (or `incremental: true` in the block; `--no-incremental`
    overrides) skips completed inputs whose content is unchanged. **Input
    changes are the ledger's problem; recipe changes are the user's** — a

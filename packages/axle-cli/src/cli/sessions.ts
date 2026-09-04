@@ -9,6 +9,8 @@ export interface CliSessionFile {
   updatedAt: string;
   cwd: string;
   definition: AgentDefinition;
+  /** Recipe-level compaction opt-out, carried so resume honors it. */
+  compaction?: boolean;
   session: AgentSession;
   turns: Turn[];
 }
@@ -127,15 +129,17 @@ export class SessionStore {
   private readonly definition: AgentDefinition;
   private readonly cwd: string;
   private readonly home?: string;
+  private readonly compaction?: boolean;
   private createdAt?: string;
 
   constructor(
     definition: AgentDefinition,
-    options?: { cwd?: string; home?: string; createdAt?: string },
+    options?: { cwd?: string; home?: string; createdAt?: string; compaction?: boolean },
   ) {
     this.definition = definition;
     this.cwd = options?.cwd ?? process.cwd();
     this.home = options?.home;
+    this.compaction = options?.compaction;
     this.createdAt = options?.createdAt;
   }
 
@@ -147,6 +151,7 @@ export class SessionStore {
       updatedAt: new Date().toISOString(),
       cwd: this.cwd,
       definition: this.definition,
+      compaction: this.compaction,
       session,
       turns: [...turns],
     };
