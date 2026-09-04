@@ -7,6 +7,7 @@ export interface ModelMetadata {
 export const Models = {
   Anthropic: {
     CLAUDE_FABLE_5: "anthropic/claude-fable-5",
+    CLAUDE_FABLE_5_1: "anthropic/claude-fable-5-1",
     CLAUDE_HAIKU_4_5: "anthropic/claude-haiku-4-5",
     CLAUDE_HAIKU_4_5_20251001: "anthropic/claude-haiku-4-5-20251001",
     CLAUDE_OPUS_4_5: "anthropic/claude-opus-4-5",
@@ -22,6 +23,7 @@ export const Models = {
   },
   DeepSeek: {
     DEEPSEEK_V4_FLASH: "deepseek/deepseek-v4-flash",
+    DEEPSEEK_V4_FLASH_VISION_EXP: "deepseek/deepseek-v4-flash-vision-exp",
     DEEPSEEK_V4_PRO: "deepseek/deepseek-v4-pro",
   },
   Google: {
@@ -38,6 +40,7 @@ export const Models = {
     GEMINI_3_5_FLASH_LITE: "google/gemini-3.5-flash-lite",
     GEMINI_3_6_FLASH: "google/gemini-3.6-flash",
     GEMINI_3_7_FLASH: "google/gemini-3.7-flash",
+    GEMINI_3_8_FLASH: "google/gemini-3.8-flash",
     GEMINI_FLASH_LATEST: "google/gemini-flash-latest",
     GEMINI_FLASH_LITE_LATEST: "google/gemini-flash-lite-latest",
     GEMMA_4_26B_A4B_IT: "google/gemma-4-26b-a4b-it",
@@ -77,8 +80,10 @@ export const Models = {
     GPT_5_PRO: "openai/gpt-5-pro",
     GPT_5_1: "openai/gpt-5.1",
     GPT_5_2: "openai/gpt-5.2",
+    /** @deprecated Deprecated by its publisher. */
     GPT_5_2_CHAT_LATEST: "openai/gpt-5.2-chat-latest",
     GPT_5_2_PRO: "openai/gpt-5.2-pro",
+    /** @deprecated Deprecated by its publisher. */
     GPT_5_3_CHAT_LATEST: "openai/gpt-5.3-chat-latest",
     GPT_5_3_CODEX: "openai/gpt-5.3-codex",
     GPT_5_3_CODEX_SPARK: "openai/gpt-5.3-codex-spark",
@@ -121,16 +126,25 @@ export const Models = {
     QWEN3_7_MAX: "qwen/qwen3.7-max",
     QWEN3_7_PLUS: "qwen/qwen3.7-plus",
     QWEN3_8_2_4T_A95B: "qwen/qwen3.8-2.4t-a95b",
+    QWEN3_8_27B: "qwen/qwen3.8-27b",
+    QWEN3_8_FLASH: "qwen/qwen3.8-flash",
     QWEN3_8_MAX: "qwen/qwen3.8-max",
   },
   ZAI: {
     GLM_5_1: "zai/glm-5.1",
     GLM_5_2: "zai/glm-5.2",
+    GLM_5_3: "zai/glm-5.3",
+    GLM_5_3_FLASH: "zai/glm-5.3-flash",
   },
 } as const;
 
 export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   [Models.Anthropic.CLAUDE_FABLE_5]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    multimodal: true,
+  },
+  [Models.Anthropic.CLAUDE_FABLE_5_1]: {
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
     multimodal: true,
@@ -200,6 +214,11 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 384_000,
     multimodal: false,
   },
+  [Models.DeepSeek.DEEPSEEK_V4_FLASH_VISION_EXP]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+    multimodal: true,
+  },
   [Models.DeepSeek.DEEPSEEK_V4_PRO]: {
     contextWindow: 1_000_000,
     maxOutputTokens: 384_000,
@@ -265,6 +284,11 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 65_536,
     multimodal: true,
   },
+  [Models.Google.GEMINI_3_8_FLASH]: {
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    multimodal: true,
+  },
   [Models.Google.GEMINI_FLASH_LATEST]: {
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
@@ -296,8 +320,8 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     multimodal: false,
   },
   [Models.MiniMax.MINIMAX_M3]: {
-    contextWindow: 1_000_000,
-    maxOutputTokens: 128_000,
+    contextWindow: 1_048_576,
+    maxOutputTokens: 512_000,
     multimodal: true,
   },
   [Models.Mistral.MAGISTRAL_MEDIUM_LATEST]: {
@@ -532,17 +556,17 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_5_35B_A3B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 65_536,
+    maxOutputTokens: 16_384,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_397B_A17B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 262_144,
+    maxOutputTokens: 235_929,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_9B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 262_144,
+    maxOutputTokens: 235_929,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_5_FLASH_02_23]: {
@@ -562,12 +586,12 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
   },
   [Models.Qwen.QWEN3_6_27B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 262_144,
+    maxOutputTokens: 65_536,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_6_35B_A3B]: {
     contextWindow: 262_144,
-    maxOutputTokens: 262_144,
+    maxOutputTokens: 235_929,
     multimodal: true,
   },
   [Models.Qwen.QWEN3_6_FLASH]: {
@@ -605,6 +629,16 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     maxOutputTokens: 262_144,
     multimodal: false,
   },
+  [Models.Qwen.QWEN3_8_27B]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    multimodal: true,
+  },
+  [Models.Qwen.QWEN3_8_FLASH]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    multimodal: true,
+  },
   [Models.Qwen.QWEN3_8_MAX]: {
     contextWindow: 1_000_000,
     maxOutputTokens: 131_072,
@@ -619,5 +653,15 @@ export const ModelInfo: Readonly<Record<string, ModelMetadata>> = {
     contextWindow: 1_000_000,
     maxOutputTokens: 131_072,
     multimodal: false,
+  },
+  [Models.ZAI.GLM_5_3]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    multimodal: false,
+  },
+  [Models.ZAI.GLM_5_3_FLASH]: {
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    multimodal: true,
   },
 };

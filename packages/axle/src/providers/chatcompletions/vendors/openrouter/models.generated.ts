@@ -8,4 +8,6 @@ export const OpenRouterModelAliases: Record<string, string> = {
   "minimax/MiniMax-M3": "minimax/minimax-m3",
   "zai/glm-5.1": "z-ai/glm-5.1",
   "zai/glm-5.2": "z-ai/glm-5.2",
+  "zai/glm-5.3": "z-ai/glm-5.3",
+  "zai/glm-5.3-flash": "z-ai/glm-5.3-flash",
 };
