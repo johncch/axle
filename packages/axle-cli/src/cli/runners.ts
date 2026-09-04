@@ -22,23 +22,9 @@ import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import { capitalize } from "../ui/format.js";
 import type { BatchProgress, BatchTotals, Renderer } from "../ui/index.js";
+import type { LedgerEntry } from "./ledger.js";
 import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "./ledger.js";
 import { SessionStore } from "./sessions.js";
-
-export interface CliJobInput {
-  task: string;
-  files?: string[];
-}
-
-export interface ProgramOptions {
-  job?: string;
-  session?: string;
-  message?: string;
-  log?: boolean;
-  debug?: boolean;
-  interactive?: boolean;
-  args?: string[];
-}
 
 function describeFailure(failure: AxleFailure): string {
   switch (failure.kind) {
@@ -61,7 +47,7 @@ export interface AgentSessionSpec {
   /** The cwd recorded when the session was created, for the mismatch warning. */
   resumedFromCwd?: string;
   /** First message to send; absent drops straight into the chat loop. */
-  initial?: Instruct<any> | string;
+  initial?: Instruct | string;
   /** Continue with the chat loop after the initial send. */
   interactive: boolean;
   /** Automatic context compaction; on unless the recipe says `compaction: false`. */
@@ -70,11 +56,6 @@ export interface AgentSessionSpec {
 
 const ASSUMED_CONTEXT_WINDOW = 200_000;
 
-/**
- * `AXLE_CONTEXT_WINDOW` overrides every other source — the escape hatch for
- * models the registry gets wrong, and the way to force compaction in manual
- * testing (the usage bar, threshold, and target all scale with it).
- */
 function contextWindowFor(agent: Agent, providerLimit?: number): number {
   const override = Number(process.env.AXLE_CONTEXT_WINDOW);
   if (Number.isInteger(override) && override > 0) return override;
@@ -98,15 +79,7 @@ const COMPACTION_PROMPT = [
   "completed work, and open tasks. Prefer concrete identifiers over prose.",
 ].join(" ");
 
-/**
- * Session compaction policy: trigger at ~80% of the model's context window,
- * compact to a ~1000-word summary plus recent user messages kept verbatim
- * (the compactor's default: a tenth of the threshold), summarized by the
- * session's own provider and model with thinking inherited from the recipe's
- * `request.reasoning` (unset stays unset — the model's own default).
- * Triggers before the send that would overflow, never speculatively after
- * one.
- */
+/** Session compaction policy; normative in docs/architecture/cli.md. */
 export function createSessionCompaction(agent: Agent): CompactionConfig {
   const window = contextWindowFor(agent);
   const compactor = new PromptCompactor({
@@ -124,6 +97,23 @@ export function createSessionCompaction(agent: Agent): CompactionConfig {
   };
 }
 
+/**
+ * The one construction path for a runnable session agent — every run gets
+ * the same compaction policy, whichever verb built it.
+ */
+function createSessionAgent(
+  agentConfig: AgentConfig,
+  span: Span,
+  compaction?: boolean,
+  session?: AgentSession,
+): Agent {
+  const agent = new Agent({ ...agentConfig, observability: { trace: span } }, session);
+  if (compaction !== false) {
+    agent.setCompaction(createSessionCompaction(agent));
+  }
+  return agent;
+}
+
 export async function runAgentSession(
   spec: AgentSessionSpec,
   stats: Stats,
@@ -132,17 +122,7 @@ export async function runAgentSession(
   sessionStore?: SessionStore,
 ): Promise<boolean> {
   const runSpan = parentSpan.startSpan(spec.spanName, { type: "workflow" });
-  const agent = new Agent(
-    {
-      ...spec.agentConfig,
-      observability: { trace: runSpan },
-    },
-    spec.session,
-  );
-
-  if (spec.compaction !== false) {
-    agent.setCompaction(createSessionCompaction(agent));
-  }
+  const agent = createSessionAgent(spec.agentConfig, runSpan, spec.compaction, spec.session);
 
   const transcript = new Transcript(spec.priorTurns ?? []);
   agent.on((event) => {
@@ -163,10 +143,14 @@ export async function runAgentSession(
   process.on("SIGINT", onInterrupt);
   renderer.setInterruptHandler(onInterrupt);
 
+  // A resumed session starts clean; a new one is dirty so even a send-less
+  // chat leaves a file behind (the resume hint printed on exit must be true).
+  let dirty = !spec.session;
   const saveSession = async () => {
-    if (!sessionStore) return;
+    if (!sessionStore || !dirty) return;
     try {
       await sessionStore.save(await agent.snapshot(), transcript.turns);
+      dirty = false;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       parentSpan.warn(`Failed to save session: ${msg}`);
@@ -206,9 +190,10 @@ export async function runAgentSession(
     if (event.type === "compaction:complete") reportUsage();
   });
 
-  const sendMessage = async (message: Instruct<any> | string): Promise<boolean> => {
+  const sendMessage = async (message: Instruct | string): Promise<boolean> => {
+    dirty = true;
     try {
-      const result = await agent.send(message as string, { signal: controller.signal }).final;
+      const result = await agent.send(message, { signal: controller.signal }).final;
 
       addStats(stats, result.usage);
       reportUsage();
@@ -329,7 +314,7 @@ export async function runBatch(
   renderer.info(header);
   parentSpan.info(header);
 
-  const ledger = await loadLedger();
+  const ledger: Map<string, LedgerEntry> = spec.incremental ? await loadLedger() : new Map();
 
   const sharedFiles = spec.files
     ? await Promise.all(spec.files.map((fp) => loadFileContent(fp)))
@@ -393,13 +378,7 @@ export async function runBatch(
         home: spec.home,
         compaction: spec.compaction,
       });
-      const agent = new Agent({
-        ...spec.agentConfig,
-        observability: { trace: itemSpan },
-      });
-      if (spec.compaction !== false) {
-        agent.setCompaction(createSessionCompaction(agent));
-      }
+      const agent = createSessionAgent(spec.agentConfig, itemSpan, spec.compaction);
       progress?.itemStarted(batchFilePath);
       const transcript = new Transcript();
       agent.on((event) => {

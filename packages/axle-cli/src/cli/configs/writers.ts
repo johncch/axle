@@ -1,6 +1,7 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import YAML from "yaml";
+import { writeFileAtomic } from "../atomic-write.js";
 import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
 
 /**
@@ -48,10 +49,7 @@ export async function upsertCredentials(
   }
 
   await mkdir(dir, { recursive: true });
-  const tmpPath = `${path}.tmp`;
-  await writeFile(tmpPath, updated.join("\n") + "\n", { mode: 0o600 });
-  await rename(tmpPath, path);
-  await chmod(path, 0o600);
+  await writeFileAtomic(path, updated.join("\n") + "\n", { mode: 0o600 });
   return path;
 }
 
@@ -83,8 +81,6 @@ export async function updateCliDefaults(
   }
 
   await mkdir(dir, { recursive: true });
-  const tmpPath = `${path}.tmp`;
-  await writeFile(tmpPath, doc.toString());
-  await rename(tmpPath, path);
+  await writeFileAtomic(path, doc.toString());
   return path;
 }

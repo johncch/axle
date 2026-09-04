@@ -182,32 +182,26 @@ describe("listSessionSummaries", () => {
     expect(await listSessionSummaries(HOME)).toEqual([]);
   });
 
-  it("summarizes sessions newest-first and flags corrupt files", async () => {
+  it("summarizes sessions newest-first, corrupt files aged by mtime", async () => {
     const store = new SessionStore(definition, { cwd: "/proj", home: HOME });
-    await store.save({ sessionId: "older", messages: [] }, [
-      {
-        id: "u1",
-        owner: "user",
-        status: "complete",
-        parts: [{ id: "p1", type: "text", text: "first question here\nsecond line" }],
-      },
-    ]);
+    await store.save({ sessionId: "older", messages: [] }, []);
     await new Promise((resolve) => setTimeout(resolve, 5));
     await new SessionStore(definition, { home: HOME }).save(
       { sessionId: "newer", messages: [] },
       [],
     );
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await writeFile(sessionFilePath("broken", HOME), "not json");
 
     const summaries = await listSessionSummaries(HOME);
 
-    expect(summaries.map((s) => s.sessionId)).toEqual(["newer", "older", "broken"]);
+    expect(summaries.map((s) => s.sessionId)).toEqual(["broken", "newer", "older"]);
     const older = summaries.find((s) => s.sessionId === "older")!;
-    expect(older.firstMessage).toBe("first question here");
-    expect(older.model).toBe("anthropic/test-model");
-    expect(older.cwd).toBe("/proj");
     expect(older.corrupt).toBe(false);
-    expect(summaries.find((s) => s.sessionId === "broken")!.corrupt).toBe(true);
+    expect(Date.parse(older.updatedAt)).toBeTruthy();
+    const broken = summaries.find((s) => s.sessionId === "broken")!;
+    expect(broken.corrupt).toBe(true);
+    expect(Date.parse(broken.updatedAt)).toBeTruthy();
   });
 });
 
@@ -363,6 +357,46 @@ describe("runSingle session persistence", () => {
 
     const file = await readSessionFile("chat-1");
     expect(file.session.messages).toHaveLength(2);
+  });
+
+  it("resuming and quitting without a send does not rewrite the session file", async () => {
+    const store = new SessionStore(definition, { home: HOME });
+    await runAgentSession(
+      {
+        agentConfig: {
+          provider: createMockProvider("hello"),
+          model: "test-model",
+          sessionId: "idle-resume",
+        },
+        spanName: "job",
+        initial: "Say hi",
+        interactive: false,
+      },
+      createStats(),
+      new Tracer().startSpan("first"),
+      nullRenderer,
+      store,
+    );
+    const before = await readSessionFile("idle-resume");
+
+    const saved = await loadSession("idle-resume", HOME);
+    const quitRenderer: Renderer = { ...nullRenderer, promptInput: () => Promise.resolve("/quit") };
+    await runAgentSession(
+      {
+        agentConfig: { provider: createMockProvider("unused"), model: "test-model" },
+        spanName: "resume",
+        session: saved.session,
+        priorTurns: saved.turns,
+        interactive: true,
+      },
+      createStats(),
+      new Tracer().startSpan("resume"),
+      quitRenderer,
+      new SessionStore(saved.definition, { createdAt: saved.createdAt, home: HOME }),
+    );
+
+    const after = await readSessionFile("idle-resume");
+    expect(after.updatedAt).toBe(before.updatedAt);
   });
 
   it("a failed initial send returns false, renders the failure, and still saves the session", async () => {

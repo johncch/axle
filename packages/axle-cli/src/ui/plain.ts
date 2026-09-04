@@ -1,5 +1,5 @@
 import type { Transcript, Turn, TurnEvent, TurnPart } from "@fifthrevision/axle/ui";
-import { capitalize, formatActionArgs, formatDuration } from "./format.js";
+import { capitalize, formatActionArgs, formatDuration, indentContinuation } from "./format.js";
 import { ReadlinePrompt } from "./prompt.js";
 import type { Renderer, SessionUsage } from "./renderer.js";
 
@@ -151,10 +151,6 @@ export class PlainRenderer implements Renderer {
     this.endLine();
     this.emit(text + "\n");
   }
-}
-
-function indentContinuation(text: string): string {
-  return text.split("\n").join("\n  ");
 }
 
 function findPart(transcript: Transcript, turnId: string, partId: string): TurnPart | undefined {

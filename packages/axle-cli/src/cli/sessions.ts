@@ -1,6 +1,7 @@
 import type { AgentDefinition, AgentSession, Turn } from "@fifthrevision/axle";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { writeFileAtomic } from "./atomic-write.js";
 import { resolveConfigDirs } from "./configs/paths.js";
 
 export interface CliSessionFile {
@@ -43,15 +44,13 @@ async function resolveSessionId(sessionId: string, home?: string): Promise<strin
   return sessionId;
 }
 
+/** What `axle cleanup` needs: identity, size, age, and deletability-now. */
 export interface SessionSummary {
   sessionId: string;
   path: string;
   sizeBytes: number;
+  updatedAt: string;
   corrupt: boolean;
-  updatedAt?: string;
-  cwd?: string;
-  model?: string;
-  firstMessage?: string;
 }
 
 export async function listSessionSummaries(home?: string): Promise<SessionSummary[]> {
@@ -64,32 +63,29 @@ export async function listSessionSummaries(home?: string): Promise<SessionSummar
     throw e;
   }
 
-  const summaries: SessionSummary[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".json")) continue;
-    const path = join(dir, entry);
-    const sessionId = entry.slice(0, -".json".length);
-    const sizeBytes = (await stat(path)).size;
-    try {
-      const file = JSON.parse(await readFile(path, "utf-8")) as CliSessionFile;
-      const firstUserTurn = file.turns?.find((turn) => turn.owner === "user");
-      const firstText = firstUserTurn?.parts.find((part) => part.type === "text");
-      summaries.push({
-        sessionId,
-        path,
-        sizeBytes,
-        corrupt: false,
-        updatedAt: file.updatedAt,
-        cwd: file.cwd,
-        model: file.definition?.model,
-        firstMessage: firstText?.text.trim().split("\n")[0],
-      });
-    } catch {
-      summaries.push({ sessionId, path, sizeBytes, corrupt: true });
-    }
-  }
+  const summaries = await Promise.all(
+    entries
+      .filter((entry) => entry.endsWith(".json"))
+      .map(async (entry): Promise<SessionSummary> => {
+        const path = join(dir, entry);
+        const sessionId = entry.slice(0, -".json".length);
+        const stats = await stat(path);
+        const base = {
+          sessionId,
+          path,
+          sizeBytes: stats.size,
+          updatedAt: stats.mtime.toISOString(),
+        };
+        try {
+          const file = JSON.parse(await readFile(path, "utf-8")) as CliSessionFile;
+          return { ...base, updatedAt: file.updatedAt ?? base.updatedAt, corrupt: false };
+        } catch {
+          return { ...base, corrupt: true };
+        }
+      }),
+  );
 
-  summaries.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  summaries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return summaries;
 }
 
@@ -158,10 +154,7 @@ export class SessionStore {
 
     await mkdir(sessionsDir(this.home), { recursive: true });
     const path = sessionFilePath(session.sessionId, this.home);
-    // Write-then-rename so a Ctrl-C mid-save never truncates the session file.
-    const tmpPath = `${path}.tmp`;
-    await writeFile(tmpPath, JSON.stringify(file, null, 2));
-    await rename(tmpPath, path);
+    await writeFileAtomic(path, JSON.stringify(file, null, 2));
     return path;
   }
 }

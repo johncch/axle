@@ -28,7 +28,7 @@ export async function runCleanup(home?: string): Promise<void> {
   const now = Date.now();
   const inWindow = (session: SessionSummary, windowMs: number): boolean => {
     if (windowMs === 0 || session.corrupt) return true;
-    const updated = Date.parse(session.updatedAt ?? "");
+    const updated = Date.parse(session.updatedAt);
     return !Number.isFinite(updated) || now - updated > windowMs;
   };
 

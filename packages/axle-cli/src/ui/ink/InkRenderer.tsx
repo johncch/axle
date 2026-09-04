@@ -2,7 +2,7 @@ import type { Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
 import { render } from "ink";
 import type { Renderer, SessionUsage } from "../renderer.js";
 import { App } from "./App.js";
-import type { StaticItem } from "./store.js";
+import type { StaticItem, UiState } from "./store.js";
 import { partitionTurns, UiStore } from "./store.js";
 
 /**
@@ -12,7 +12,7 @@ import { partitionTurns, UiStore } from "./store.js";
  * renders inside the app while a prompt is pending.
  */
 export class InkRenderer implements Renderer {
-  private store = new UiStore();
+  private store = new UiStore<UiState>({ staticItems: [], awaitingInput: false, queuedInputs: [] });
   private committed = new Set<string>();
   private instance: ReturnType<typeof render>;
   private waiter?: (value: string | null) => void;

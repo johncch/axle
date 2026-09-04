@@ -5,6 +5,7 @@ import type { BatchProgress, BatchTotals } from "../batch.js";
 import { formatMs, formatTokens } from "../format.js";
 import type { Renderer, SessionUsage } from "../renderer.js";
 import { HostLine, useSpinner } from "./App.js";
+import { UiStore } from "./store.js";
 
 interface HostItem {
   level: "info" | "success" | "warn" | "error";
@@ -25,26 +26,7 @@ interface BatchUiState {
   closed?: boolean;
 }
 
-class BatchStore {
-  private state: BatchUiState = { staticItems: [], rows: [] };
-  private listeners = new Set<() => void>();
-
-  getSnapshot = (): BatchUiState => this.state;
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  };
-
-  update(mutate: (state: BatchUiState) => BatchUiState): void {
-    this.state = mutate(this.state);
-    for (const listener of this.listeners) listener();
-  }
-}
-
-function BatchApp({ store }: { store: BatchStore }) {
+function BatchApp({ store }: { store: UiStore<BatchUiState> }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const frame = useSpinner();
 
@@ -97,7 +79,7 @@ function shortName(input: string): string {
  * committed to scrollback via the shared host-line dialect.
  */
 export class InkBatchRenderer implements Renderer, BatchProgress {
-  private store = new BatchStore();
+  private store = new UiStore<BatchUiState>({ staticItems: [], rows: [] });
   private instance: ReturnType<typeof render>;
 
   constructor() {

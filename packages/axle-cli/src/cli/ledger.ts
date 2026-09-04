@@ -5,13 +5,8 @@ import { dirname } from "node:path";
 const LEDGER_PATH = ".axle/batch.jsonl";
 
 /**
- * One line per batch item run: a thin input→session index, scoped by job
- * name or recipe path. The session file holds the actual state; a failed
- * item is inspected
- * or continued with ordinary `axle resume <id>`. Later lines for the same
- * (job, input) win. The hash covers input content only — input changes are
- * the ledger's problem; recipe changes are the user's (see
- * docs/architecture/cli.md).
+ * One appended line per batch item run; later lines for the same
+ * (job, input) win. Keying and hash policy: docs/architecture/cli.md.
  */
 export interface LedgerEntry {
   job: string;

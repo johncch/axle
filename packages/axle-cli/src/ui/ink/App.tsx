@@ -1,7 +1,14 @@
 import type { ActionPart, Turn, TurnPart } from "@fifthrevision/axle/ui";
 import { Box, Static, Text, useInput } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { capitalize, formatDuration, formatTokens, truncate } from "../format.js";
+import {
+  capitalize,
+  formatActionArgs,
+  formatDuration,
+  formatTokens,
+  indentContinuation,
+  truncate,
+} from "../format.js";
 import type { SessionUsage } from "../renderer.js";
 import type { StaticItem, UiStore } from "./store.js";
 
@@ -59,13 +66,6 @@ function contextBar(fraction: number): string {
   return "█".repeat(filled) + "░".repeat(CONTEXT_BAR_CELLS - filled);
 }
 
-/**
- * Chat input, always mounted — it keeps the terminal in raw mode for the
- * whole session, so Ctrl-C is always a key event here (a real SIGINT would
- * also hit ancestor processes like pnpm/tsx and kill the tree). At rest,
- * Ctrl-C ends the chat; during a turn it routes to the interrupt handler.
- * Submitting during a turn queues the line for the next prompt.
- */
 function InputLine({
   onSubmit,
   awaitingInput,
@@ -323,10 +323,7 @@ function ActionView({
         ? "red"
         : "yellow";
 
-  const args =
-    part.kind === "tool" && Object.keys(part.detail.parameters).length > 0
-      ? truncate(JSON.stringify(part.detail.parameters), 80)
-      : undefined;
+  const args = formatActionArgs(part);
   const duration = running || part.status === "cancelled" ? undefined : formatDuration(part.timing);
 
   return (
@@ -363,13 +360,17 @@ function ActionResultView({
   return <Text dimColor> {truncate(firstLine(content), 200)}</Text>;
 }
 
-function indentContinuation(text: string): string {
-  return text.split("\n").join("\n  ");
-}
-
+// Called on every streaming re-render, so it scans backward for the last N
+// newlines instead of splitting the whole accumulated text each frame.
 function lastLines(text: string, count: number): string {
-  const lines = text.trimEnd().split("\n");
-  return lines.slice(-count).join("\n");
+  const trimmed = text.trimEnd();
+  let index = trimmed.length;
+  for (let i = 0; i < count; i++) {
+    const next = trimmed.lastIndexOf("\n", index - 1);
+    if (next === -1) return trimmed;
+    index = next;
+  }
+  return trimmed.slice(index + 1);
 }
 
 function firstLine(text: string): string {

@@ -18,7 +18,6 @@ import type { CliConfig, JobConfig, ServiceConfig } from "./cli/configs/schemas.
 import { closeMcps } from "./cli/mcp.js";
 import type { AgentSessionSpec, BatchRunSpec } from "./cli/runners.js";
 import { runAgentSession, runBatch } from "./cli/runners.js";
-import type { CliSessionFile } from "./cli/sessions.js";
 import { loadSession, SessionStore } from "./cli/sessions.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
@@ -27,6 +26,7 @@ import {
   promptForMissingModel,
   runSetupWizard,
 } from "./cli/setup.js";
+import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
 interface CommonOpts {
@@ -231,13 +231,17 @@ if (common.debug) {
   rootSpan.debug("Additional Arguments: " + JSON.stringify(variables, null, 2));
 }
 
-async function failBeforeRender(error: Error): Promise<never> {
-  console.error(error.message);
+let screen: Renderer | undefined;
+
+async function fail(e: unknown): Promise<never> {
+  const error = e instanceof Error ? e : new Error(String(e));
+  (screen ?? console).error(error.message);
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
   rootSpan.end("error");
+  await screen?.close();
   await tracer.flush();
-  program.outputHelp();
+  if (!screen) program.outputHelp();
   process.exit(1);
 }
 
@@ -256,7 +260,7 @@ try {
     jobScope = jobConfig.name ?? relative(process.cwd(), resolve(inv.job));
   }
 } catch (e) {
-  await failBeforeRender(e instanceof Error ? e : new Error(String(e)));
+  await fail(e);
 }
 
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
@@ -278,43 +282,35 @@ if (
  * the terminal.
  */
 type PendingPlan =
-  | {
-      kind: "batch";
-      jobConfig: JobConfig;
-      inputs: string[];
-      concurrency: number;
-      incremental: boolean;
-      verbose: boolean;
-      definition: AgentDefinition;
-    }
+  | { kind: "batch"; definition: AgentDefinition; spec: Omit<BatchRunSpec, "agentConfig"> }
   | {
       kind: "session";
       definition: AgentDefinition;
-      saved?: CliSessionFile;
-      initial?: Instruct | string;
-      interactive: boolean;
-      spanName: AgentSessionSpec["spanName"];
+      spec: Omit<AgentSessionSpec, "agentConfig">;
       sessionStore: SessionStore;
-      compaction?: boolean;
     };
 
-let pending: PendingPlan | undefined;
+let pending!: PendingPlan;
 try {
   if (inv.kind === "resume") {
     const saved = await loadSession(inv.id);
     pending = {
       kind: "session",
       definition: saved.definition,
-      saved,
-      initial: inv.message,
-      interactive: inv.message === undefined,
-      spanName: "resume",
+      spec: {
+        spanName: "resume",
+        session: saved.session,
+        priorTurns: saved.turns,
+        resumedFromCwd: saved.cwd,
+        initial: inv.message,
+        interactive: inv.message === undefined,
+        compaction: saved.compaction,
+      },
       sessionStore: new SessionStore(saved.definition, {
         cwd: saved.cwd,
         createdAt: saved.createdAt,
         compaction: saved.compaction,
       }),
-      compaction: saved.compaction,
     };
   } else if (jobConfig) {
     const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
@@ -339,15 +335,21 @@ try {
         (inv.kind === "batch" && inv.verbose) || (jobConfig.batch?.concurrency ?? 3) === 1;
       pending = {
         kind: "batch",
-        jobConfig,
-        inputs,
-        verbose,
-        concurrency: verbose ? 1 : (jobConfig.batch?.concurrency ?? 3),
-        incremental:
-          (inv.kind === "batch" ? inv.incremental : undefined) ??
-          jobConfig.batch?.incremental ??
-          false,
         definition,
+        spec: {
+          task: jobConfig.task,
+          files: jobConfig.files,
+          definition,
+          inputs,
+          concurrency: verbose ? 1 : (jobConfig.batch?.concurrency ?? 3),
+          jobName: jobScope,
+          incremental:
+            (inv.kind === "batch" ? inv.incremental : undefined) ??
+            jobConfig.batch?.incremental ??
+            false,
+          verbose,
+          compaction: jobConfig.compaction,
+        },
       };
     } else {
       const instruct = new Instruct({ prompt: jobConfig.task });
@@ -357,11 +359,13 @@ try {
       pending = {
         kind: "session",
         definition,
-        initial: instruct.withInputs(variables),
-        interactive: inv.kind === "kernel" && inv.interactive,
-        spanName: "job",
+        spec: {
+          spanName: "job",
+          initial: instruct.withInputs(variables),
+          interactive: inv.kind === "kernel" && inv.interactive,
+          compaction: jobConfig.compaction,
+        },
         sessionStore: new SessionStore(definition, { compaction: jobConfig.compaction }),
-        compaction: jobConfig.compaction,
       };
     }
   } else {
@@ -369,16 +373,18 @@ try {
     pending = {
       kind: "session",
       definition,
-      initial: inv.kind === "kernel" ? inv.message : undefined,
-      interactive: inv.kind !== "kernel" || inv.message === undefined,
-      spanName: "chat",
+      spec: {
+        spanName: "chat",
+        initial: inv.kind === "kernel" ? inv.message : undefined,
+        interactive: inv.kind !== "kernel" || inv.message === undefined,
+      },
       sessionStore: new SessionStore(definition),
     };
   }
 
   // Any run that can't resolve a model falls into the picker.
   if (!pending.definition.model && interactiveTerminal) {
-    const offerSave = pending.kind !== "session" || pending.spanName !== "resume";
+    const offerSave = pending.kind !== "session" || pending.spec.spanName !== "resume";
     pending.definition.model = await promptForMissingModel(pending.definition.provider.type, {
       offerSave,
       saveAs: offerSave
@@ -387,11 +393,7 @@ try {
     });
   }
 } catch (e) {
-  await failBeforeRender(e instanceof Error ? e : new Error(String(e)));
-}
-
-if (!pending) {
-  throw new Error("Failed to plan the run.");
+  await fail(e);
 }
 
 /**
@@ -399,72 +401,26 @@ if (!pending) {
  * objects (connect MCPs) and execute.
  */
 const renderer = await createRenderer(common.renderer, {
-  batchProgress: pending.kind === "batch" && !pending.verbose,
+  batchProgress: pending.kind === "batch" && !pending.spec.verbose,
 });
+screen = renderer;
 // Under ink, raw mode swallows SIGINT and the runners only own the interrupt
 // while a run is live. Outside a run (MCP connect/close can hang), Ctrl-C
 // must still kill the process.
 const exitOnInterrupt = () => process.exit(130);
 renderer.setInterruptHandler(exitOnInterrupt);
 
-type RunPlan =
-  | { kind: "batch"; spec: BatchRunSpec }
-  | { kind: "session"; spec: AgentSessionSpec; sessionStore: SessionStore };
-
 let mcps: MCP[] = [];
-let plan: RunPlan | undefined;
+let agentConfig!: AgentConfig;
 try {
   if (pending.definition.mcps?.length) {
     renderer.info("Connecting MCP servers…");
   }
   const resolved = await resolveAgentDefinition(pending.definition, serviceConfig, rootSpan);
   mcps = resolved.mcps;
-
-  if (pending.kind === "batch") {
-    plan = {
-      kind: "batch",
-      spec: {
-        task: pending.jobConfig.task,
-        files: pending.jobConfig.files,
-        definition: pending.definition,
-        agentConfig: resolved.agentConfig,
-        inputs: pending.inputs,
-        concurrency: pending.concurrency,
-        jobName: jobScope,
-        incremental: pending.incremental,
-        verbose: pending.verbose,
-        compaction: pending.jobConfig.compaction,
-      },
-    };
-  } else {
-    plan = {
-      kind: "session",
-      spec: {
-        agentConfig: resolved.agentConfig,
-        spanName: pending.spanName,
-        session: pending.saved?.session,
-        priorTurns: pending.saved?.turns,
-        resumedFromCwd: pending.saved?.cwd,
-        initial: pending.initial,
-        interactive: pending.interactive,
-        compaction: pending.compaction,
-      },
-      sessionStore: pending.sessionStore,
-    };
-  }
+  agentConfig = resolved.agentConfig;
 } catch (e) {
-  const error = e instanceof Error ? e : new Error(String(e));
-  renderer.error(error.message);
-  rootSpan.error(error.message);
-  rootSpan.error(error.stack ?? "");
-  rootSpan.end("error");
-  await renderer.close();
-  await tracer.flush();
-  process.exit(1);
-}
-
-if (!plan) {
-  throw new Error("Failed to create agent config.");
+  await fail(e);
 }
 
 rootSpan.info("All systems operational. Running job...");
@@ -474,9 +430,9 @@ const startTime = performance.now();
 
 let succeeded = false;
 try {
-  if (plan.kind === "batch") {
+  if (pending.kind === "batch") {
     succeeded = await runBatch(
-      plan.spec,
+      { ...pending.spec, agentConfig },
       variables,
       stats,
       rootSpan,
@@ -484,7 +440,13 @@ try {
       supportsBatchProgress(renderer) ? renderer : undefined,
     );
   } else {
-    succeeded = await runAgentSession(plan.spec, stats, rootSpan, renderer, plan.sessionStore);
+    succeeded = await runAgentSession(
+      { ...pending.spec, agentConfig },
+      stats,
+      rootSpan,
+      renderer,
+      pending.sessionStore,
+    );
   }
 } catch (e) {
   const error = e instanceof Error ? e : new Error(String(e));

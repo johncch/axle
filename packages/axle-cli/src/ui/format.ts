@@ -23,6 +23,10 @@ export function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+export function indentContinuation(text: string): string {
+  return text.split("\n").join("\n  ");
+}
+
 export function formatActionArgs(part: { kind: string; detail: object }): string | undefined {
   if (part.kind !== "tool") return undefined;
   const parameters = (part.detail as { parameters?: Record<string, unknown> }).parameters ?? {};

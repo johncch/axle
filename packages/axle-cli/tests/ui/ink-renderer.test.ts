@@ -1,6 +1,7 @@
 import type { Turn, TurnEvent } from "@fifthrevision/axle/ui";
 import { Transcript } from "@fifthrevision/axle/ui";
 import { describe, expect, it } from "vitest";
+import type { UiState } from "../../src/ui/ink/store.js";
 import { partitionTurns, UiStore } from "../../src/ui/ink/store.js";
 
 function textPart(id: string, text: string) {
@@ -23,7 +24,11 @@ function createHarness() {
 
 describe("UiStore", () => {
   it("notifies subscribers and swaps state immutably", () => {
-    const store = new UiStore();
+    const store = new UiStore<UiState>({
+      staticItems: [],
+      awaitingInput: false,
+      queuedInputs: [],
+    });
     const before = store.getSnapshot();
     let notified = 0;
     const unsubscribe = store.subscribe(() => notified++);

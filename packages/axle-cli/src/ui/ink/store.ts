@@ -20,11 +20,15 @@ export interface UiState {
   closed?: boolean;
 }
 
-export class UiStore {
-  private state: UiState = { staticItems: [], awaitingInput: false, queuedInputs: [] };
+export class UiStore<T = UiState> {
+  private state: T;
   private listeners = new Set<() => void>();
 
-  getSnapshot = (): UiState => this.state;
+  constructor(initial: T) {
+    this.state = initial;
+  }
+
+  getSnapshot = (): T => this.state;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -33,7 +37,7 @@ export class UiStore {
     };
   };
 
-  update(mutate: (state: UiState) => UiState): void {
+  update(mutate: (state: T) => T): void {
     this.state = mutate(this.state);
     for (const listener of this.listeners) listener();
   }
