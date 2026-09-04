@@ -423,6 +423,32 @@ describe("runSingle session persistence", () => {
     expect(file.session.sessionId).toBe("fail-1");
   });
 
+  it("does not advertise resume when a new session cannot be saved", async () => {
+    const blockedHome = join(TEST_DIR, "blocked-home");
+    await writeFile(blockedHome, "not a directory");
+    const info: string[] = [];
+    const renderer: Renderer = {
+      ...nullRenderer,
+      info: (message) => void info.push(message),
+    };
+    const agentConfig: AgentConfig = {
+      provider: createMockProvider("hello"),
+      model: "test-model",
+      sessionId: "unsaved-1",
+    };
+
+    const succeeded = await runAgentSession(
+      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
+      createStats(),
+      new Tracer().startSpan("job"),
+      renderer,
+      new SessionStore(definition, { home: blockedHome }),
+    );
+
+    expect(succeeded).toBe(true);
+    expect(info).not.toContainEqual(expect.stringContaining("Resume this session"));
+  });
+
   it("a failed send in the chat loop renders the error and keeps the loop alive", async () => {
     const requestMessages: unknown[][] = [];
     const { renderer, errors } = createRecordingRenderer(["first", "second", "/quit"]);

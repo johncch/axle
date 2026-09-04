@@ -72,6 +72,18 @@ function commonOf(opts: { renderer?: string; log: boolean; debug?: boolean }): C
   return { renderer: renderer as "plain" | "ink", log: opts.log, debug: Boolean(opts.debug) };
 }
 
+function parseTemplateArgs(args: readonly string[]): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const arg of args) {
+    const separator = arg.indexOf("=");
+    if (separator < 1) continue;
+    const key = arg.slice(0, separator).trim();
+    const value = arg.slice(separator + 1).trim();
+    if (key && value) values[key] = value;
+  }
+  return values;
+}
+
 let invocation: Invocation | undefined;
 
 program
@@ -172,12 +184,7 @@ const variables: Record<string, string> = {
 };
 
 if ("args" in inv) {
-  for (const arg of inv.args) {
-    const [key, value] = arg.split("=");
-    if (key && value) {
-      variables[key.trim()] = value.trim();
-    }
-  }
+  Object.assign(variables, parseTemplateArgs(inv.args));
 }
 
 const tracer = new Tracer();
@@ -282,7 +289,11 @@ if (
  * the terminal.
  */
 type PendingPlan =
-  | { kind: "batch"; definition: AgentDefinition; spec: Omit<BatchRunSpec, "agentConfig"> }
+  | {
+      kind: "batch";
+      definition: AgentDefinition;
+      spec: Omit<BatchRunSpec, "agentConfig" | "definition">;
+    }
   | {
       kind: "session";
       definition: AgentDefinition;
@@ -339,7 +350,6 @@ try {
         spec: {
           task: jobConfig.task,
           files: jobConfig.files,
-          definition,
           inputs,
           concurrency: verbose ? 1 : (jobConfig.batch?.concurrency ?? 3),
           jobName: jobScope,
@@ -432,7 +442,7 @@ let succeeded = false;
 try {
   if (pending.kind === "batch") {
     succeeded = await runBatch(
-      { ...pending.spec, agentConfig },
+      { ...pending.spec, definition: pending.definition, agentConfig },
       variables,
       stats,
       rootSpan,

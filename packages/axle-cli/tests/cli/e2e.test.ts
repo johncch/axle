@@ -193,6 +193,38 @@ describe("cli.ts end-to-end", () => {
   );
 
   it(
+    "preserves equals signs in recipe arguments",
+    async () => {
+      replies.push({ text: "argument received" });
+      const recipe = join(CWD, "args.yml");
+      await writeFile(
+        recipe,
+        [
+          "provider:",
+          "  type: chatcompletions",
+          `  baseUrl: ${baseUrl}`,
+          "model: stub-model",
+          "task: Use {{token}}",
+        ].join("\n"),
+      );
+
+      const { code } = await runCli([
+        "-j",
+        recipe,
+        "--args",
+        "token=a=b=c",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
+
+      expect(code).toBe(0);
+      expect(JSON.stringify(requests[0].messages.at(-1)?.content)).toContain("a=b=c");
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
     "piped chat reads a line at the prompt, answers, and exits cleanly at EOF",
     async () => {
       replies.push({ text: "chat answer" });
@@ -328,14 +360,16 @@ describe("cli.ts end-to-end", () => {
   );
 
   it(
-    "unnamed recipes get distinct ledger scopes: --incremental never cross-skips",
+    "same-named recipe files in different directories get distinct ledger scopes",
     async () => {
       await mkdir(join(CWD, "inputs"), { recursive: true });
+      await mkdir(join(CWD, "jobs", "first"), { recursive: true });
+      await mkdir(join(CWD, "jobs", "second"), { recursive: true });
       await writeFile(join(CWD, "inputs", "a.md"), "alpha");
       await writeFile(join(CWD, "inputs", "b.md"), "beta");
       const batchBlock = ["batch:", '  files: "inputs/*.md"', "  concurrency: 1"].join("\n");
-      const recipeA = await writeRecipe("first.yml", batchBlock);
-      const recipeB = await writeRecipe("second.yml", batchBlock);
+      const recipeA = await writeRecipe("jobs/first/process.yml", batchBlock);
+      const recipeB = await writeRecipe("jobs/second/process.yml", batchBlock);
 
       await runCli(["batch", "-j", recipeA, "--renderer", "plain", "--no-log"]);
       const rerun = await runCli([

@@ -146,11 +146,13 @@ export async function runAgentSession(
   // A resumed session starts clean; a new one is dirty so even a send-less
   // chat leaves a file behind (the resume hint printed on exit must be true).
   let dirty = !spec.session;
+  let persisted = Boolean(spec.session);
   const saveSession = async () => {
     if (!sessionStore || !dirty) return;
     try {
       await sessionStore.save(await agent.snapshot(), transcript.turns);
       dirty = false;
+      persisted = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       parentSpan.warn(`Failed to save session: ${msg}`);
@@ -264,7 +266,7 @@ export async function runAgentSession(
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
     await saveSession();
-    if (sessionStore) {
+    if (sessionStore && persisted) {
       const line = `Resume this session:\naxle resume ${agent.sessionId}`;
       renderer.info(line);
       parentSpan.info(line);

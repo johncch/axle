@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 describe("config loaders", () => {
-  it("loads YAML job config and defaults name from filename", async () => {
+  it("loads YAML job config without inventing a name", async () => {
     const path = join(TEST_DIR, "summarize.yml");
     await writeFile(
       path,
@@ -33,7 +33,7 @@ describe("config loaders", () => {
 
     const config = await getJobConfig(path, {});
 
-    expect(config.name).toBe("summarize");
+    expect(config.name).toBeUndefined();
     expect(config.provider).toEqual({ type: "openai" });
     expect(config.mcps?.[0]).toMatchObject({ transport: "http" });
   });
