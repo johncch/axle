@@ -4,12 +4,30 @@ These checks run real provider calls against Axle's core public workflows. They
 are intended as a publish smoke test, not as unit tests or performance
 benchmarks.
 
+Cases belong to one of two groups:
+
+- `default`: the publish smoke set. Run before every release.
+- `extended`: edge-case coverage (schema shapes, message formats, cache
+  telemetry, compaction sizing). Slower and costlier; run on each minor release
+  or when touching the subsystem a case covers.
+
 ## Usage
 
-Run the default provider set at their default smoke models:
+Run the default case group against the default provider set at their default
+smoke models:
 
 ```bash
 pnpm exec tsx checks/baseline/run.ts
+# or
+pnpm run checks
+```
+
+Run the default and extended groups together:
+
+```bash
+pnpm exec tsx checks/baseline/run.ts --extended
+# or
+pnpm run checks:extended
 ```
 
 The default set is OpenAI, Anthropic, Gemini, and Together. OpenRouter is
@@ -56,10 +74,12 @@ Enable provider reasoning/thinking controls where supported:
 pnpm exec tsx checks/baseline/run.ts --provider anthropic --model claude-opus-4-8 --thinking
 ```
 
-Run selected cases:
+Run selected cases. A selection runs regardless of group, and a trailing `*`
+matches an id prefix:
 
 ```bash
 pnpm exec tsx checks/baseline/run.ts --case generate-basic,agent-basic
+pnpm exec tsx checks/baseline/run.ts --case "agent-*"
 ```
 
 Provider API keys are loaded from your shell environment or repo-local `.env`:
@@ -112,6 +132,8 @@ done
 
 ## Cases
 
+### Default
+
 - `generate-basic`
 - `stream-basic`
 - `generate-instruct-json`
@@ -137,6 +159,13 @@ done
 - `stream-web-search`
 - `instruct-text-reference`
 - `instruct-context`
+- `generate-image-file`
+- `generate-pdf-file` (providers whose API accepts PDF parts)
+
+### Extended
+
+None yet. The one-off checks that lived beside this suite are being folded in
+here as extended cases.
 
 The runner writes JSONL records to `output/checks/` and exits non-zero if any
 case fails or errors. For every case that reports `usage` in its details, the

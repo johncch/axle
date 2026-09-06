@@ -16,6 +16,7 @@ interface RunOptions {
   model?: string;
   all: boolean;
   thinking: boolean;
+  extended: boolean;
   cases: string[];
   out: string;
 }
@@ -41,10 +42,7 @@ const targets = resolveProviderTargets({
   model: options.model,
   all: options.all,
 });
-const cases =
-  options.cases.length === 0
-    ? baselineCases
-    : baselineCases.filter((testCase) => options.cases.includes(testCase.id));
+const cases = selectCases(baselineCases, options);
 
 if (cases.length === 0) {
   throw new Error(`No cases matched: ${options.cases.join(", ")}`);
@@ -133,7 +131,9 @@ const reporter = new DotReporter(targets.length, cases.length);
 const runStartedAt = Date.now();
 
 console.log(bar("baseline session starts"));
-console.log(`collected ${cases.length} cases, ${targets.length} providers\n`);
+const groupLabel =
+  options.cases.length > 0 ? "selected" : options.extended ? "default + extended" : "default";
+console.log(`collected ${cases.length} cases (${groupLabel}), ${targets.length} providers\n`);
 
 await Promise.all(targets.map((target, index) => runTarget(target, index)));
 
@@ -292,6 +292,22 @@ function color(colorName: "green" | "red" | "yellow" | "gray", value: string): s
   return `\x1b[${code}m${value}\x1b[0m`;
 }
 
+// An explicit --case selection wins over the group filter so an extended
+// case can be run alone without also enabling the whole extended set.
+function selectCases(all: BaselineCase[], selection: RunOptions): BaselineCase[] {
+  if (selection.cases.length > 0) {
+    return all.filter((testCase) =>
+      selection.cases.some((pattern) => matchesCasePattern(testCase.id, pattern)),
+    );
+  }
+  return selection.extended ? all : all.filter((testCase) => testCase.group === "default");
+}
+
+function matchesCasePattern(id: string, pattern: string): boolean {
+  if (pattern.endsWith("*")) return id.startsWith(pattern.slice(0, -1));
+  return id === pattern;
+}
+
 function getSkipReason(
   testCase: BaselineCase,
   providerId: BaselineProviderId,
@@ -324,6 +340,7 @@ function parseArgs(args: string[]): RunOptions {
     providers: [],
     all: false,
     thinking: false,
+    extended: false,
     cases: [],
     out: join("output", "checks", `baseline-${Date.now()}.jsonl`),
   };
@@ -355,6 +372,9 @@ function parseArgs(args: string[]): RunOptions {
         break;
       case "--thinking":
         parsed.thinking = true;
+        break;
+      case "--extended":
+        parsed.extended = true;
         break;
       case "--help":
       case "-h":
@@ -413,7 +433,9 @@ Options:
   --all              Include non-default providers such as OpenRouter.
   --model <model>    Override model for one selected provider.
   --thinking         Enable provider reasoning/thinking controls where supported.
-  --case <id>        Case id. Repeat or comma-separate. Defaults to all cases.
+  --extended         Run the extended case group as well as the default group.
+  --case <id>        Case id or prefix ending in "*". Repeat or comma-separate.
+                     Selected cases run regardless of group.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.
 `);
 }
