@@ -19,34 +19,8 @@ import {
   type ProviderTool,
 } from "@fifthrevision/axle";
 import * as z from "zod";
-import type { BaselineProviderId } from "./providers.js";
-
-export interface BaselineCaseContext {
-  provider: AIProvider;
-  model: string;
-  providerId: BaselineProviderId;
-  requestOptions: AxleModelRequestOptions;
-}
-
-export interface BaselineCaseResult {
-  ok: boolean;
-  failureReasons?: string[];
-  details?: Record<string, unknown>;
-}
-
-export interface BaselineCaseExclusion {
-  provider: BaselineProviderId;
-  model?: RegExp;
-  reason: string;
-}
-
-export interface BaselineCase {
-  id: string;
-  description: string;
-  providers?: BaselineProviderId[];
-  exclusions?: BaselineCaseExclusion[];
-  run(context: BaselineCaseContext): Promise<BaselineCaseResult>;
-}
+import { fail, getAssistantText } from "./helpers.js";
+import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const answerSchema = z.object({
   answer: z.string(),
@@ -56,8 +30,9 @@ const answerSchema = z.object({
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
-export const baselineCases: BaselineCase[] = [
+export const coreCases: CheckCase[] = [
   {
+    group: "default",
     id: "generate-basic",
     description: "Basic generate() text response.",
     async run({ provider, model, requestOptions }) {
@@ -77,6 +52,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "stream-basic",
     description: "Basic stream() text response.",
     async run({ provider, model, requestOptions }) {
@@ -101,6 +77,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-instruct-json",
     description: "generate() with Instruct structured JSON response.",
     async run({ provider, model, requestOptions }) {
@@ -126,6 +103,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "stream-instruct-json",
     description: "stream() with Instruct structured JSON response.",
     async run({ provider, model, requestOptions }) {
@@ -152,6 +130,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-instruct-history",
     description: "generate() uses historical messages plus latest Instruct turn.",
     async run({ provider, model, requestOptions }) {
@@ -184,6 +163,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-basic",
     description: "Agent basic send() text response and history.",
     async run({ provider, model, requestOptions }) {
@@ -204,6 +184,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-instruct-json",
     description: "Agent send(Instruct) structured JSON response.",
     async run({ provider, model, requestOptions }) {
@@ -235,6 +216,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-multiturn-history",
     description: "Agent preserves history across turns.",
     async run({ provider, model, requestOptions }) {
@@ -275,6 +257,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-compaction",
     description:
       "PromptCompactor replaces active history with a bounded summary and the conversation continues.",
@@ -386,6 +369,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-compaction-triggers",
     description:
       "Agent invokes one compaction callback at configured beforeTurn and afterTurn boundaries.",
@@ -454,6 +438,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-tool",
     description: "generate() executes a local tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
@@ -484,6 +469,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-deferred-tool-file",
     description: "generate() resolves a deferred text file returned by a local tool.",
     async run({ provider, model, requestOptions }) {
@@ -573,9 +559,10 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-unsupported-tool-file",
     description: "Chat Completions continues when a local tool returns an unsupported binary file.",
-    providers: ["openrouter"],
+    providers: ["openrouter", "together"],
     async run({ provider, model, requestOptions }) {
       const schema = z.object({});
       const captureImage: ExecutableTool<typeof schema> = {
@@ -643,6 +630,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "stream-tool",
     description: "stream() executes a local tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
@@ -679,6 +667,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-tool",
     description: "Agent executes a local tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
@@ -702,6 +691,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-stop",
     description: "Agent finishes the active tool batch after stop() and the queued send continues.",
     async run({ provider, model, requestOptions }) {
@@ -772,6 +762,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-parallelized-tool",
     description: "generate() executes a generated batch tool and reaches a final answer.",
     async run({ provider, model, requestOptions }) {
@@ -833,6 +824,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-subagent-tool",
     description: "Agent delegates to a child agent exposed as a tool.",
     async run({ provider, model, requestOptions }) {
@@ -903,6 +895,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-tool-fatal",
     description: "Fatal tool error terminates the send with usage and intact history.",
     async run({ provider, model, requestOptions }) {
@@ -946,6 +939,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-subagent-abort",
     description: "Cancelling mid-delegation aborts cleanly without leaking the child conversation.",
     async run({ provider, model, requestOptions }) {
@@ -969,7 +963,7 @@ export const baselineCases: BaselineCase[] = [
       agent.on((event) => {
         if (event.type === "action:child-event" && !sawChildEvent) {
           sawChildEvent = true;
-          handleRef?.cancel("baseline-abort");
+          handleRef?.cancel("checks-abort");
         }
       });
 
@@ -1003,6 +997,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "agent-parallel-subagents",
     description:
       "parallelize(createAgentTool) fans out subagents with per-item results and merged usage.",
@@ -1067,6 +1062,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "reasoning-false",
     description: "generate() succeeds with reasoning disabled.",
     async run({ provider, model }) {
@@ -1086,6 +1082,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "stream-web-search",
     description: "stream() uses native or fallback web search and surfaces execution evidence.",
     async run({ provider, model, requestOptions }) {
@@ -1099,6 +1096,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "instruct-text-reference",
     description: "Instruct text references are included in the user turn.",
     async run({ provider, model, requestOptions }) {
@@ -1119,6 +1117,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "instruct-context",
     description: "Instruct supporting context is included separately from the authored prompt.",
     async run({ provider, model, requestOptions }) {
@@ -1141,6 +1140,7 @@ export const baselineCases: BaselineCase[] = [
     },
   },
   {
+    group: "default",
     id: "generate-image-file",
     description: "generate() with an Instruct image file attachment.",
     exclusions: [
@@ -1164,17 +1164,21 @@ export const baselineCases: BaselineCase[] = [
       const result = await generate({ provider, model, ...requestOptions, instruct });
       if (!result.ok) return fail({ error: result.error });
 
-      const title = result.response.title.toLowerCase();
-      const topUniversity = result.response.topUniversity.toLowerCase();
+      const failureReasons = [
+        ...(result.response.title.trim().length > 0 ? [] : ["Chart title is empty."]),
+        ...(result.response.topUniversity.toLowerCase().includes("carnegie")
+          ? []
+          : ["Top university is not Carnegie Mellon."]),
+      ];
       return {
-        ok:
-          (title.includes("brainy") || title.includes("import")) &&
-          topUniversity.includes("carnegie"),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: { response: result.response },
       };
     },
   },
   {
+    group: "default",
     id: "generate-pdf-file",
     description: "generate() with an Instruct PDF file attachment.",
     providers: ["openai", "anthropic", "gemini", "openrouter"],
@@ -1211,7 +1215,7 @@ async function runStreamingWebSearchCitationCase({
   model: string;
   requestOptions: AxleModelRequestOptions;
   prompt: string;
-}): Promise<BaselineCaseResult> {
+}): Promise<CheckCaseResult> {
   const eventTypes: string[] = [];
   const handle = stream({
     provider,
@@ -1302,18 +1306,6 @@ const addNumbersTool: ExecutableTool<
     return String(input.a + input.b);
   },
 };
-
-function fail(details: Record<string, unknown>): BaselineCaseResult {
-  return { ok: false, details };
-}
-
-function getAssistantText(message: AxleAssistantMessage | undefined): string {
-  if (!message) return "";
-  return message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("");
-}
 
 function countCitationParts(message: AxleAssistantMessage | undefined): number {
   if (!message) return 0;

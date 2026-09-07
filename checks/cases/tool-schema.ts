@@ -1,48 +1,22 @@
-import {
-  generate,
-  stream,
-  type AIProvider,
-  type AxleAssistantMessage,
-  type AxleMessage,
-  type AxleModelRequestOptions,
-  type ExecutableTool,
-} from "@fifthrevision/axle";
+import { generate, type ExecutableTool } from "@fifthrevision/axle";
 import * as z from "zod";
-import type { ToolCallProviderId } from "./providers.js";
+import { fail, getAssistantText } from "./helpers.js";
+import type { CheckCase, CheckCaseContext, CheckCaseResult } from "./types.js";
 
-export interface ToolCallCaseContext {
-  provider: AIProvider;
-  model: string;
-  providerId: ToolCallProviderId;
-  requestOptions: AxleModelRequestOptions;
-  surface: ToolCallSurface;
-}
+// Providers reject or silently mangle function-tool definitions whose JSON
+// Schema shape they dislike (optional booleans, nullables, defaults, loose
+// objects). Each case sends one probe tool with a different shape and checks
+// that the model both calls it and passes input that satisfies the Zod schema.
+// generate() and stream() share tool conversion, so generate() alone covers it.
 
-export interface ToolCallCaseResult {
-  ok: boolean;
-  failureReasons?: string[];
-  details?: Record<string, unknown>;
-}
-
-export interface ToolCallCase {
-  id: string;
-  description: string;
-  providers?: ToolCallProviderId[];
-  run(context: ToolCallCaseContext): Promise<ToolCallCaseResult>;
-}
-
-export type ToolCallSurface = "generate" | "stream";
-
-type AnyTool = ExecutableTool<z.ZodObject<any>>;
-
-interface SchemaCase {
+interface SchemaProbe {
   id: string;
   description: string;
   schema: z.ZodObject<any>;
   prompt: string;
 }
 
-const schemaCases: SchemaCase[] = [
+const schemaProbes: SchemaProbe[] = [
   {
     id: "required-only",
     description: "Tool schema with only required scalar parameters.",
@@ -119,8 +93,7 @@ const schemaCases: SchemaCase[] = [
       id: z.string(),
       note: z.string().nullable(),
     }),
-    prompt:
-      "Call the nullable_required_probe tool exactly once with id='alpha' and note=null.",
+    prompt: "Call the nullable_required_probe tool exactly once with id='alpha' and note=null.",
   },
   {
     id: "nullish-optional",
@@ -153,65 +126,68 @@ const schemaCases: SchemaCase[] = [
   },
 ];
 
-export const toolCallCases: ToolCallCase[] = schemaCases.map((schemaCase) => ({
-  id: schemaCase.id,
-  description: schemaCase.description,
-  run: (context) => runSchemaCase(schemaCase, context),
+export const toolSchemaCases: CheckCase[] = schemaProbes.map((probe) => ({
+  id: `tool-schema-${probe.id}`,
+  description: probe.description,
+  group: "extended",
+  run: (context) => runSchemaProbe(probe, context),
 }));
 
-async function runSchemaCase(
-  schemaCase: SchemaCase,
-  { provider, model, requestOptions, surface }: ToolCallCaseContext,
-): Promise<ToolCallCaseResult> {
-  const toolName = `${schemaCase.id.replaceAll("-", "_")}_probe`;
-  const calls: Array<{ input: Record<string, unknown>; parse: ReturnType<typeof schemaCase.schema.safeParse> }> = [];
-  const tool: AnyTool = {
+interface ProbeCall {
+  input: Record<string, unknown>;
+  parseSuccess: boolean;
+  parseError?: string;
+}
+
+async function runSchemaProbe(
+  probe: SchemaProbe,
+  { provider, model, requestOptions }: CheckCaseContext,
+): Promise<CheckCaseResult> {
+  const toolName = `${probe.id.replaceAll("-", "_")}_probe`;
+  const calls: ProbeCall[] = [];
+  const tool: ExecutableTool<z.ZodObject<any>> = {
     name: toolName,
-    description: `Record one invocation for the ${schemaCase.id} tool-call schema check.`,
-    schema: schemaCase.schema,
+    description: `Record one invocation for the ${probe.id} tool-call schema check.`,
+    schema: probe.schema,
     async execute(input) {
-      const parsed = schemaCase.schema.safeParse(input);
-      calls.push({ input, parse: parsed });
+      const parsed = probe.schema.safeParse(input);
+      calls.push({
+        input,
+        parseSuccess: parsed.success,
+        ...(parsed.success ? {} : { parseError: parsed.error.message }),
+      });
       return parsed.success
-        ? `TOOL_CALL_SCHEMA_OK ${schemaCase.id} ${JSON.stringify(parsed.data)}`
-        : `TOOL_CALL_SCHEMA_INVALID ${schemaCase.id} ${parsed.error.message}`;
+        ? `TOOL_CALL_SCHEMA_OK ${probe.id} ${JSON.stringify(parsed.data)}`
+        : `TOOL_CALL_SCHEMA_INVALID ${probe.id} ${parsed.error.message}`;
     },
   };
 
-  const messages: AxleMessage[] = [
-    {
-      role: "user",
-      content: `${schemaCase.prompt} After the tool returns, reply with exactly: done.`,
-    },
-  ];
+  const result = await generate({
+    provider,
+    model,
+    ...requestOptions,
+    messages: [
+      {
+        role: "user",
+        content: `${probe.prompt} After the tool returns, reply with exactly: done.`,
+      },
+    ],
+    tools: [tool],
+    maxSteps: 2,
+    maxOutputTokens: 4096,
+  });
 
-  const result =
-    surface === "stream"
-      ? await stream({
-          provider,
-          model,
-          ...requestOptions,
-          messages,
-          tools: [tool],
-          maxSteps: 2,
-          maxOutputTokens: 512,
-        }).final
-      : await generate({
-          provider,
-          model,
-          ...requestOptions,
-          messages,
-          tools: [tool],
-          maxSteps: 2,
-          maxOutputTokens: 512,
-        });
+  if (!result.ok) return fail({ error: result.error, calls });
 
-  if (!result.ok) return fail({ error: result.error, calls: calls.map(toCallDetail) });
-
+  const finishReason = result.final?.finishReason;
   const failureReasons = [
-    ...(calls.length === 0 ? [`Tool ${toolName} was not called.`] : []),
+    ...(calls.length > 0
+      ? []
+      : finishReason === "length"
+        ? [`Tool ${toolName} was not called: the model hit the output limit first.`]
+        : [`Tool ${toolName} was not called.`]),
     ...calls.flatMap((call, index) =>
-      call.parse.success ? [] : [`Tool call ${index + 1} did not satisfy the Zod schema.`],
+      call.parseSuccess ? [] : [`Tool call ${index + 1} did not satisfy the Zod schema.`],
     ),
   ];
 
@@ -219,34 +195,11 @@ async function runSchemaCase(
     ok: failureReasons.length === 0,
     ...(failureReasons.length > 0 ? { failureReasons } : {}),
     details: {
-      surface,
       text: getAssistantText(result.final),
+      finishReason,
       callCount: calls.length,
-      calls: calls.map(toCallDetail),
+      calls,
       usage: result.usage,
     },
   };
-}
-
-function toCallDetail(call: {
-  input: Record<string, unknown>;
-  parse: ReturnType<z.ZodObject<any>["safeParse"]>;
-}) {
-  return {
-    input: call.input,
-    parseSuccess: call.parse.success,
-    ...(!call.parse.success ? { parseError: call.parse.error.message } : {}),
-  };
-}
-
-function fail(details: Record<string, unknown>): ToolCallCaseResult {
-  return { ok: false, details };
-}
-
-function getAssistantText(message: AxleAssistantMessage | undefined): string {
-  if (!message) return "";
-  return message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("");
 }

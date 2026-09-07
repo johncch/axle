@@ -1,33 +1,38 @@
 import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
 import { Models } from "@fifthrevision/axle/models";
 
-export type ToolCallProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together";
+export type ProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together" | "ollama";
 
-export interface ToolCallProviderTarget {
-  id: ToolCallProviderId;
+export interface ProviderTarget {
+  id: ProviderId;
   model: string;
+  default: boolean;
   createProvider(): AIProvider;
 }
 
-export const toolCallProviderTargets: ToolCallProviderTarget[] = [
+export const providerTargets: ProviderTarget[] = [
   {
     id: "openai",
-    model: Models.OpenAI.GPT_5_4_MINI,
+    model: Models.OpenAI.GPT_5_6_LUNA,
+    default: true,
     createProvider: () => openai(getEnv("OPENAI_API_KEY")),
   },
   {
     id: "anthropic",
     model: Models.Anthropic.CLAUDE_HAIKU_4_5,
+    default: true,
     createProvider: () => anthropic(getEnv("ANTHROPIC_API_KEY")),
   },
   {
     id: "gemini",
-    model: Models.Google.GEMINI_3_FLASH_PREVIEW,
+    model: Models.Google.GEMINI_FLASH_LITE_LATEST,
+    default: true,
     createProvider: () => gemini(getEnv("GEMINI_API_KEY")),
   },
   {
     id: "openrouter",
     model: Models.Qwen.QWEN3_6_PLUS,
+    default: false,
     createProvider: () =>
       chatCompletions("https://openrouter.ai/api/v1", {
         apiKey: getEnv("OPENROUTER_API_KEY"),
@@ -35,11 +40,18 @@ export const toolCallProviderTargets: ToolCallProviderTarget[] = [
   },
   {
     id: "together",
-    model: process.env.TOGETHER_MODEL ?? "Qwen/Qwen3.5-9B",
+    model: process.env.TOGETHER_MODEL ?? "zai-org/GLM-5.3-Flash",
+    default: true,
     createProvider: () =>
       chatCompletions("https://api.together.ai/v1", {
         apiKey: getEnv("TOGETHER_API_KEY"),
       }),
+  },
+  {
+    id: "ollama",
+    model: process.env.OLLAMA_MODEL ?? "muse-glimmer:30b-mlx",
+    default: false,
+    createProvider: () => chatCompletions("http://localhost:11434/v1"),
   },
 ];
 
@@ -47,16 +59,18 @@ export function resolveProviderTargets(options: {
   providers?: string[];
   model?: string;
   all?: boolean;
-}): ToolCallProviderTarget[] {
+}): ProviderTarget[] {
   const providerIds = [...new Set(options.providers ?? [])];
   const targets =
     providerIds.length > 0
       ? providerIds.map((providerId) => {
-          const target = toolCallProviderTargets.find((candidate) => candidate.id === providerId);
+          const target = providerTargets.find((candidate) => candidate.id === providerId);
           if (!target) throw new Error(`Unknown provider: ${providerId}`);
           return target;
         })
-      : toolCallProviderTargets;
+      : options.all
+        ? providerTargets
+        : providerTargets.filter((target) => target.default);
 
   if (!options.model) return targets;
   if (targets.length !== 1) {
