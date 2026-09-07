@@ -1,7 +1,7 @@
 import { generate, type ExecutableTool } from "@fifthrevision/axle";
 import * as z from "zod";
 import { fail, getAssistantText } from "./helpers.js";
-import type { BaselineCase, BaselineCaseContext, BaselineCaseResult } from "./types.js";
+import type { CheckCase, CheckCaseContext, CheckCaseResult } from "./types.js";
 
 // Providers reject or silently mangle function-tool definitions whose JSON
 // Schema shape they dislike (optional booleans, nullables, defaults, loose
@@ -126,7 +126,7 @@ const schemaProbes: SchemaProbe[] = [
   },
 ];
 
-export const toolSchemaCases: BaselineCase[] = schemaProbes.map((probe) => ({
+export const toolSchemaCases: CheckCase[] = schemaProbes.map((probe) => ({
   id: `tool-schema-${probe.id}`,
   description: probe.description,
   group: "extended",
@@ -141,8 +141,8 @@ interface ProbeCall {
 
 async function runSchemaProbe(
   probe: SchemaProbe,
-  { provider, model, requestOptions }: BaselineCaseContext,
-): Promise<BaselineCaseResult> {
+  { provider, model, requestOptions }: CheckCaseContext,
+): Promise<CheckCaseResult> {
   const toolName = `${probe.id.replaceAll("-", "_")}_probe`;
   const calls: ProbeCall[] = [];
   const tool: ExecutableTool<z.ZodObject<any>> = {

@@ -1,20 +1,19 @@
 import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
 import { Models } from "@fifthrevision/axle/models";
 
-export type BaselineProviderId =
-  "openai" | "anthropic" | "gemini" | "openrouter" | "together" | "ollama";
+export type ProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together" | "ollama";
 
-export interface BaselineProviderTarget {
-  id: BaselineProviderId;
+export interface ProviderTarget {
+  id: ProviderId;
   model: string;
   default: boolean;
   createProvider(): AIProvider;
 }
 
-export const baselineProviderTargets: BaselineProviderTarget[] = [
+export const providerTargets: ProviderTarget[] = [
   {
     id: "openai",
-    model: Models.OpenAI.GPT_5_4_MINI,
+    model: Models.OpenAI.GPT_5_6_LUNA,
     default: true,
     createProvider: () => openai(getEnv("OPENAI_API_KEY")),
   },
@@ -26,7 +25,7 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
   },
   {
     id: "gemini",
-    model: Models.Google.GEMINI_3_5_FLASH_LITE,
+    model: Models.Google.GEMINI_FLASH_LITE_LATEST,
     default: true,
     createProvider: () => gemini(getEnv("GEMINI_API_KEY")),
   },
@@ -41,7 +40,7 @@ export const baselineProviderTargets: BaselineProviderTarget[] = [
   },
   {
     id: "together",
-    model: process.env.TOGETHER_MODEL ?? "meta-models/Muse-Glimmer-30B",
+    model: process.env.TOGETHER_MODEL ?? "zai-org/GLM-5.3-Flash",
     default: true,
     createProvider: () =>
       chatCompletions("https://api.together.ai/v1", {
@@ -60,18 +59,18 @@ export function resolveProviderTargets(options: {
   providers?: string[];
   model?: string;
   all?: boolean;
-}): BaselineProviderTarget[] {
+}): ProviderTarget[] {
   const providerIds = [...new Set(options.providers ?? [])];
   const targets =
     providerIds.length > 0
       ? providerIds.map((providerId) => {
-          const target = baselineProviderTargets.find((candidate) => candidate.id === providerId);
+          const target = providerTargets.find((candidate) => candidate.id === providerId);
           if (!target) throw new Error(`Unknown provider: ${providerId}`);
           return target;
         })
       : options.all
-        ? baselineProviderTargets
-        : baselineProviderTargets.filter((target) => target.default);
+        ? providerTargets
+        : providerTargets.filter((target) => target.default);
 
   if (!options.model) return targets;
   if (targets.length !== 1) {

@@ -1,7 +1,7 @@
 import { generate, Instruct, type OutputSchema } from "@fifthrevision/axle";
 import * as z from "zod";
 import { fail } from "./helpers.js";
-import type { BaselineCase, BaselineCaseContext, BaselineCaseResult } from "./types.js";
+import type { CheckCase, CheckCaseContext, CheckCaseResult } from "./types.js";
 
 interface SchemaProbe<TSchema extends OutputSchema = OutputSchema> {
   id: string;
@@ -106,7 +106,7 @@ function defineProbe<TSchema extends OutputSchema>(probe: SchemaProbe<TSchema>):
   return probe as unknown as SchemaProbe;
 }
 
-export const instructJsonCases: BaselineCase[] = schemaProbes.map((probe) => ({
+export const instructJsonCases: CheckCase[] = schemaProbes.map((probe) => ({
   id: `instruct-json-${probe.id}`,
   description: probe.description,
   group: "extended",
@@ -115,8 +115,8 @@ export const instructJsonCases: BaselineCase[] = schemaProbes.map((probe) => ({
 
 async function runSchemaProbe(
   probe: SchemaProbe,
-  { provider, model, requestOptions }: BaselineCaseContext,
-): Promise<BaselineCaseResult> {
+  { provider, model, requestOptions }: CheckCaseContext,
+): Promise<CheckCaseResult> {
   const result = await generate({
     provider,
     model,

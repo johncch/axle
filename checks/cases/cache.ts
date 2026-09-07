@@ -1,19 +1,25 @@
 import { generate, type Stats } from "@fifthrevision/axle";
 import { GoogleGenAI } from "@google/genai";
 import { fail } from "./helpers.js";
-import type { BaselineCase } from "./types.js";
+import type { CheckCase } from "./types.js";
 
 // Cache counters that silently read as zero are indistinguishable from a
 // provider that never cached, so this is the only place the mapping from
 // provider usage fields to `cachedIn` / `cacheWriteIn` is exercised for real.
-// Every provider here needs a prefix above its minimum cacheable size.
-const stableContext = Array.from(
-  { length: 400 },
-  (_, index) =>
-    `Stable cache line ${index}: Axle should preserve provider cache telemetry for repeated identical prompt prefixes.`,
-).join("\n");
+// Every provider here needs a prefix above its minimum cacheable size. The
+// nonce keeps a rerun inside the provider's cache TTL from finding the
+// previous run's entry, which would turn the first call into a read.
+const runNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const stableContext = [
+  `Cache check run ${runNonce}.`,
+  ...Array.from(
+    { length: 400 },
+    (_, index) =>
+      `Stable cache line ${index}: Axle should preserve provider cache telemetry for repeated identical prompt prefixes.`,
+  ),
+].join("\n");
 
-export const cacheCases: BaselineCase[] = [
+export const cacheCases: CheckCase[] = [
   {
     group: "extended",
     id: "cache-prompt-reuse",
@@ -23,7 +29,7 @@ export const cacheCases: BaselineCase[] = [
       const providerOptions =
         providerId === "openai"
           ? {
-              prompt_cache_key: `axle-baseline-cache-${Date.now()}`,
+              prompt_cache_key: `axle-checks-cache-${runNonce}`,
               prompt_cache_retention: "in_memory",
             }
           : { cache_control: { type: "ephemeral" } };
@@ -59,7 +65,7 @@ export const cacheCases: BaselineCase[] = [
       return {
         ok: failureReasons.length === 0,
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
-        details: { first, second, usage: second },
+        details: { first, second, usage: sumUsage(first, second) },
       };
     },
   },
@@ -76,7 +82,7 @@ export const cacheCases: BaselineCase[] = [
       const cache = await client.caches.create({
         model: model.replace(/^google\//, ""),
         config: {
-          displayName: `axle-baseline-cache-${Date.now()}`,
+          displayName: `axle-checks-cache-${runNonce}`,
           ttl: "300s",
           contents: [{ role: "user", parts: [{ text: stableContext }] }],
         },
@@ -111,6 +117,15 @@ export const cacheCases: BaselineCase[] = [
     },
   },
 ];
+
+function sumUsage(first: Stats, second: Stats): Stats {
+  return {
+    in: first.in + second.in,
+    out: first.out + second.out,
+    cachedIn: (first.cachedIn ?? 0) + (second.cachedIn ?? 0),
+    cacheWriteIn: (first.cacheWriteIn ?? 0) + (second.cacheWriteIn ?? 0),
+  };
+}
 
 function getEnv(name: string): string {
   const value = process.env[name];

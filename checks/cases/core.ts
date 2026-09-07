@@ -20,7 +20,7 @@ import {
 } from "@fifthrevision/axle";
 import * as z from "zod";
 import { fail, getAssistantText } from "./helpers.js";
-import type { BaselineCase, BaselineCaseResult } from "./types.js";
+import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const answerSchema = z.object({
   answer: z.string(),
@@ -30,7 +30,7 @@ const answerSchema = z.object({
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
-export const coreCases: BaselineCase[] = [
+export const coreCases: CheckCase[] = [
   {
     group: "default",
     id: "generate-basic",
@@ -963,7 +963,7 @@ export const coreCases: BaselineCase[] = [
       agent.on((event) => {
         if (event.type === "action:child-event" && !sawChildEvent) {
           sawChildEvent = true;
-          handleRef?.cancel("baseline-abort");
+          handleRef?.cancel("checks-abort");
         }
       });
 
@@ -1212,7 +1212,7 @@ async function runStreamingWebSearchCitationCase({
   model: string;
   requestOptions: AxleModelRequestOptions;
   prompt: string;
-}): Promise<BaselineCaseResult> {
+}): Promise<CheckCaseResult> {
   const eventTypes: string[] = [];
   const handle = stream({
     provider,

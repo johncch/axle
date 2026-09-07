@@ -7,7 +7,7 @@ import { toolSchemaCases } from "./tool-schema.js";
 
 export type * from "./types.js";
 
-export const baselineCases = [
+export const checkCases = [
   ...coreCases,
   ...toolSchemaCases,
   ...instructJsonCases,

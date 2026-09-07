@@ -1,4 +1,4 @@
-# Baseline Provider Checks
+# Provider Checks
 
 These checks run real provider calls against Axle's core public workflows. They
 are intended as a publish smoke test, not as unit tests or performance
@@ -17,7 +17,7 @@ Run the default case group against the default provider set at their default
 smoke models:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts
+pnpm exec tsx checks/run.ts
 # or
 pnpm run checks
 ```
@@ -25,7 +25,7 @@ pnpm run checks
 Run the default and extended groups together:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts --extended
+pnpm exec tsx checks/run.ts --extended
 # or
 pnpm run checks:extended
 ```
@@ -36,20 +36,22 @@ available as an explicit alternative Chat Completions provider.
 Providers run concurrently; cases within a provider run sequentially. Output
 is pytest-style: one dot row per provider (`.` pass, `F` fail, `E` error,
 `s` skip) with right-aligned progress, updated live on a TTY (each completed
-row prints once when piped), followed by a `FAILURES` section with reasons
-and details and a colored summary bar. JSONL records are appended in
+row prints once when piped), followed by a `TOKENS` section with one line
+per provider (input and output token totals, with cache and reasoning
+breakdowns when non-zero, and how many of the run cases reported usage), a
+`FAILURES` section with reasons and details, and a colored summary bar. JSONL records are appended in
 completion order and carry `providerId` for grouping.
 
 Run one provider:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts --provider openai
+pnpm exec tsx checks/run.ts --provider openai
 ```
 
 Run a selected provider set:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts \
+pnpm exec tsx checks/run.ts \
   --provider openrouter \
   --provider together
 ```
@@ -59,27 +61,27 @@ Provider flags may also be comma-separated.
 Run every provider, including OpenRouter:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts --all
+pnpm exec tsx checks/run.ts --all
 ```
 
 Override the model for one provider:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts --provider openai --model gpt-5.4
+pnpm exec tsx checks/run.ts --provider openai --model gpt-5.4
 ```
 
 Enable provider reasoning/thinking controls where supported:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts --provider anthropic --model claude-opus-4-8 --thinking
+pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-4-8 --thinking
 ```
 
 Run selected cases. A selection runs regardless of group, and a trailing `*`
 matches an id prefix:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts --case generate-basic,agent-basic
-pnpm exec tsx checks/baseline/run.ts --case "agent-*"
+pnpm exec tsx checks/run.ts --case generate-basic,agent-basic
+pnpm exec tsx checks/run.ts --case "agent-*"
 ```
 
 Provider API keys are loaded from your shell environment or repo-local `.env`:
@@ -93,7 +95,7 @@ TOGETHER_API_KEY=...
 BRAVE_API_KEY=...
 ```
 
-`BRAVE_API_KEY` is required for baseline runs. The fallback is configured once
+`BRAVE_API_KEY` is required for every run. The fallback is configured once
 at runner startup so native web-search providers are exercised while a fallback
 is present, and fallback providers such as Together use Brave automatically.
 The PDF attachment case is excluded because Together's Chat Completions API
@@ -103,7 +105,7 @@ does not accept PDF file parts. Override Together's default smoke model with
 Run the native OpenRouter search path:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts \
+pnpm exec tsx checks/run.ts \
   --provider openrouter \
   --case stream-web-search
 ```
@@ -111,7 +113,7 @@ pnpm exec tsx checks/baseline/run.ts \
 Run the Together + Brave fallback path:
 
 ```bash
-pnpm exec tsx checks/baseline/run.ts \
+pnpm exec tsx checks/run.ts \
   --provider together \
   --case stream-web-search
 ```
@@ -121,12 +123,12 @@ Run specific configuration against a set of models
 ```
 for model in claude-opus-4-8 claude-opus-4-7 claude-sonnet-4-6 claude-opus-4-6
 do
-  pnpm exec tsx checks/baseline/run.ts \
+  pnpm exec tsx checks/run.ts \
     --provider anthropic \
     --model "$model" \
     --case generate-basic \
     --thinking \
-    --out "output/checks/baseline-anthropic-${model}-thinking.jsonl"
+    --out "output/checks/anthropic-${model}-thinking.jsonl"
 done
 ```
 

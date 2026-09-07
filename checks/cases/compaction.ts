@@ -6,7 +6,7 @@ import {
   type AxleMessage,
 } from "@fifthrevision/axle";
 import { fail } from "./helpers.js";
-import type { BaselineCase } from "./types.js";
+import type { CheckCase } from "./types.js";
 
 const THRESHOLD_TOKENS = 12_000;
 const SUMMARY_WORDS = 1_000;
@@ -45,7 +45,7 @@ function estimate(messages: AxleMessage[]): number {
   return estimateContextUsage({ messages }).messages;
 }
 
-export const compactionCases: BaselineCase[] = [
+export const compactionCases: CheckCase[] = [
   {
     group: "extended",
     id: "compaction-size-ladder",

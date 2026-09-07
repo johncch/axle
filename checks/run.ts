@@ -4,12 +4,8 @@ import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
-import { baselineCases, type BaselineCase, type BaselineCaseResult } from "./cases/index.js";
-import {
-  resolveProviderTargets,
-  type BaselineProviderId,
-  type BaselineProviderTarget,
-} from "./providers.js";
+import { checkCases, type CheckCase, type CheckCaseResult } from "./cases/index.js";
+import { resolveProviderTargets, type ProviderId, type ProviderTarget } from "./providers.js";
 
 interface RunOptions {
   providers: string[];
@@ -42,7 +38,7 @@ const targets = resolveProviderTargets({
   model: options.model,
   all: options.all,
 });
-const cases = selectCases(baselineCases, options);
+const cases = selectCases(checkCases, options);
 
 if (cases.length === 0) {
   throw new Error(`No cases matched: ${options.cases.join(", ")}`);
@@ -124,20 +120,39 @@ function bar(text: string): string {
   return `${"=".repeat(left)}${inner}${"=".repeat(fill - left)}`;
 }
 
+interface UsageTotals {
+  in: number;
+  out: number;
+  cachedIn: number;
+  cacheWriteIn: number;
+  reasoningOut: number;
+  reportingCases: number;
+  runCases: number;
+}
+
 let passed = 0;
 let skipped = 0;
 const failedRecords: CheckRecord[] = [];
+const usageTotals: UsageTotals[] = targets.map(() => ({
+  in: 0,
+  out: 0,
+  cachedIn: 0,
+  cacheWriteIn: 0,
+  reasoningOut: 0,
+  reportingCases: 0,
+  runCases: 0,
+}));
 const reporter = new DotReporter(targets.length, cases.length);
 const runStartedAt = Date.now();
 
-console.log(bar("baseline session starts"));
+console.log(bar("checks session starts"));
 const groupLabel =
   options.cases.length > 0 ? "selected" : options.extended ? "default + extended" : "default";
 console.log(`collected ${cases.length} cases (${groupLabel}), ${targets.length} providers\n`);
 
 await Promise.all(targets.map((target, index) => runTarget(target, index)));
 
-async function runTarget(target: BaselineProviderTarget, index: number): Promise<void> {
+async function runTarget(target: ProviderTarget, index: number): Promise<void> {
   reporter.start(index, `${target.id}:${target.model}`);
   const provider = target.createProvider();
 
@@ -169,6 +184,7 @@ async function runTarget(target: BaselineProviderTarget, index: number): Promise
         providerId: target.id,
         requestOptions: options.thinking ? { reasoning: true } : {},
       });
+      accumulateUsage(usageTotals[index], result.details?.usage);
       const usageViolation = findUsageInvariantViolation(result.details?.usage);
       const failureReasons = deriveFailureReasons(result, usageViolation);
       const status = result.ok && failureReasons.length === 0 ? "pass" : "fail";
@@ -190,6 +206,7 @@ async function runTarget(target: BaselineProviderTarget, index: number): Promise
       if (status !== "pass") failedRecords.push(record);
       reporter.caseDone(index, status);
     } catch (error) {
+      usageTotals[index].runCases += 1;
       const serializedError = serializeError(error);
       const failureReasons = [`Case threw: ${getErrorMessage(error) ?? "unknown error"}`];
       const record: CheckRecord = {
@@ -211,6 +228,23 @@ async function runTarget(target: BaselineProviderTarget, index: number): Promise
   }
 
   reporter.finish(index);
+}
+
+console.log(`\n${bar("TOKENS")}`);
+const tokenLabelWidth = Math.max(...targets.map((target) => `${target.id}:${target.model}`.length));
+for (const [index, target] of targets.entries()) {
+  const totals = usageTotals[index];
+  const label = `${target.id}:${target.model}`.padEnd(tokenLabelWidth);
+  const cacheNote =
+    totals.cachedIn > 0 || totals.cacheWriteIn > 0
+      ? ` (cached ${formatTokens(totals.cachedIn)}, cache write ${formatTokens(totals.cacheWriteIn)})`
+      : "";
+  const reasoningNote =
+    totals.reasoningOut > 0 ? ` (reasoning ${formatTokens(totals.reasoningOut)})` : "";
+  console.log(
+    `${label}  in ${formatTokens(totals.in)}${cacheNote}  out ${formatTokens(totals.out)}${reasoningNote}` +
+      color("gray", `  ${totals.reportingCases}/${totals.runCases} cases reported usage`),
+  );
 }
 
 if (failedRecords.length > 0) {
@@ -245,6 +279,25 @@ async function writeRecord(record: CheckRecord): Promise<void> {
   await writeFile(options.out, `${JSON.stringify(record)}\n`, { flag: "a" });
 }
 
+// Only cases that put `usage` in their details contribute, so the totals are
+// a floor on spend; the reporting-case count says how complete they are.
+function accumulateUsage(totals: UsageTotals, usage: unknown): void {
+  totals.runCases += 1;
+  if (!usage || typeof usage !== "object") return;
+  const stats = usage as Record<string, unknown>;
+  if (typeof stats.in !== "number" || typeof stats.out !== "number") return;
+  totals.reportingCases += 1;
+  totals.in += stats.in;
+  totals.out += stats.out;
+  totals.cachedIn += typeof stats.cachedIn === "number" ? stats.cachedIn : 0;
+  totals.cacheWriteIn += typeof stats.cacheWriteIn === "number" ? stats.cacheWriteIn : 0;
+  totals.reasoningOut += typeof stats.reasoningOut === "number" ? stats.reasoningOut : 0;
+}
+
+function formatTokens(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
 // Every accumulation path attributes usage to a provider+model entry, so
 // breakdown entries must sum exactly to the aggregate fields; drift means
 // tokens were dropped or double-counted somewhere in the pipeline.
@@ -268,7 +321,7 @@ function findUsageInvariantViolation(usage: unknown): string | undefined {
 }
 
 function deriveFailureReasons(
-  result: BaselineCaseResult,
+  result: CheckCaseResult,
   usageViolation: string | undefined,
 ): string[] {
   const reasons = [...(result.failureReasons ?? []), ...(usageViolation ? [usageViolation] : [])];
@@ -294,7 +347,7 @@ function color(colorName: "green" | "red" | "yellow" | "gray", value: string): s
 
 // An explicit --case selection wins over the group filter so an extended
 // case can be run alone without also enabling the whole extended set.
-function selectCases(all: BaselineCase[], selection: RunOptions): BaselineCase[] {
+function selectCases(all: CheckCase[], selection: RunOptions): CheckCase[] {
   if (selection.cases.length > 0) {
     return all.filter((testCase) =>
       selection.cases.some((pattern) => matchesCasePattern(testCase.id, pattern)),
@@ -309,8 +362,8 @@ function matchesCasePattern(id: string, pattern: string): boolean {
 }
 
 function getSkipReason(
-  testCase: BaselineCase,
-  providerId: BaselineProviderId,
+  testCase: CheckCase,
+  providerId: ProviderId,
   model: string,
 ): string | undefined {
   if (testCase.providers && !testCase.providers.includes(providerId)) {
@@ -342,7 +395,7 @@ function parseArgs(args: string[]): RunOptions {
     thinking: false,
     extended: false,
     cases: [],
-    out: join("output", "checks", `baseline-${Date.now()}.jsonl`),
+    out: join("output", "checks", `run-${Date.now()}.jsonl`),
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -423,10 +476,10 @@ function getErrorMessage(error: unknown): string | undefined {
 }
 
 function printHelp(): void {
-  console.log(`Baseline provider checks
+  console.log(`Provider checks
 
 Usage:
-  pnpm exec tsx checks/baseline/run.ts [provider] [options]
+  pnpm exec tsx checks/run.ts [provider] [options]
 
 Options:
   --provider <id>    Provider id. Repeat or comma-separate to run multiple providers.

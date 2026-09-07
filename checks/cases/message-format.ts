@@ -8,7 +8,7 @@ import {
   type ProviderTool,
 } from "@fifthrevision/axle";
 import { fail, getAssistantText } from "./helpers.js";
-import type { BaselineCase } from "./types.js";
+import type { CheckCase } from "./types.js";
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
@@ -17,7 +17,7 @@ const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 const reasoningPrompt =
   "How many times does the letter r appear in the phrase 'strawberry raspberry'? Work it out, then answer with only the number.";
 
-export const messageFormatCases: BaselineCase[] = [
+export const messageFormatCases: CheckCase[] = [
   {
     group: "extended",
     id: "format-web-citations",

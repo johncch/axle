@@ -1,7 +1,7 @@
 import type { AxleAssistantMessage } from "@fifthrevision/axle";
-import type { BaselineCaseResult } from "./types.js";
+import type { CheckCaseResult } from "./types.js";
 
-export function fail(details: Record<string, unknown>): BaselineCaseResult {
+export function fail(details: Record<string, unknown>): CheckCaseResult {
   return { ok: false, details };
 }
 
