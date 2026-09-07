@@ -179,6 +179,17 @@ checks the model calls it with input that satisfies the Zod schema.
 - `tool-schema-defaulted-optional`
 - `tool-schema-loose-object`
 
+Instruct JSON shapes (`instruct-json-*`): structured-output schemas beyond
+the flat object the default group uses. Each must parse, and some assert a
+count or literal the prompt demanded.
+
+- `instruct-json-primitive-arrays`
+- `instruct-json-nested-object`
+- `instruct-json-array-of-objects`
+- `instruct-json-optional-field`
+- `instruct-json-hostile-string` (quotes, braces, code fence, XML-like text)
+- `instruct-json-prose-prone`
+
 The runner writes JSONL records to `output/checks/` and exits non-zero if any
 case fails or errors. For every case that reports `usage` in its details, the
 runner additionally verifies usage conservation: the per-provider/model
