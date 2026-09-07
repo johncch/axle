@@ -190,6 +190,33 @@ count or literal the prompt demanded.
 - `instruct-json-hostile-string` (quotes, braces, code fence, XML-like text)
 - `instruct-json-prose-prone`
 
+Message formats (`format-*`): normalized citation and thinking shapes on the
+assistant message. Provider coverage is uneven because providers expose
+different surfaces; each case lists the providers it runs on and skips the
+rest.
+
+- `format-web-citations` (OpenAI, Gemini hosted search)
+- `format-document-citations` (Anthropic PDF input)
+- `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
+  signature, Gemini summary)
+- `format-thinking-redacted` (Anthropic omitted thinking)
+- `format-thinking-stream` (`thinking:delta` required for Anthropic and
+  OpenRouter, which stream thinking text)
+
+Cache telemetry (`cache-*`): provider cache counters surface on `usage`.
+
+- `cache-prompt-reuse` (OpenAI `prompt_cache_key`, Anthropic `cache_control`
+  with `cacheWriteIn` on the first call)
+- `cache-gemini-cached-content` (explicit cached-content resource passed via
+  `providerOptions.cachedContent`; created and deleted by the case)
+
+Compaction sizing (`compaction-*`): the `agent-compaction` default case
+proves the loop works; this one observes the size ladder itself.
+
+- `compaction-size-ladder` (result under threshold, stamped messages; summary
+  word count, overshoot, and summarizer call count in details, where 1 call
+  means no rewrite pass fired)
+
 The runner writes JSONL records to `output/checks/` and exits non-zero if any
 case fails or errors. For every case that reports `usage` in its details, the
 runner additionally verifies usage conservation: the per-provider/model
