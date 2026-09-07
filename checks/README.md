@@ -202,8 +202,8 @@ rest.
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
   signature, Gemini summary)
 - `format-thinking-redacted` (Anthropic omitted thinking)
-- `format-thinking-stream` (`thinking:delta` required for Anthropic and
-  OpenRouter, which stream thinking text)
+- `format-thinking-stream` (`thinking:delta` required for Anthropic,
+  OpenRouter, and Together, which stream thinking text)
 
 Cache telemetry (`cache-*`): provider cache counters surface on `usage`.
 

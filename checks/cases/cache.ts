@@ -28,10 +28,7 @@ export const cacheCases: CheckCase[] = [
     async run({ provider, model, providerId, requestOptions }) {
       const providerOptions =
         providerId === "openai"
-          ? {
-              prompt_cache_key: `axle-checks-cache-${runNonce}`,
-              prompt_cache_retention: "in_memory",
-            }
+          ? { prompt_cache_key: `axle-checks-cache-${runNonce}` }
           : { cache_control: { type: "ephemeral" } };
 
       const call = async (): Promise<Stats | { error: unknown }> => {

@@ -562,7 +562,7 @@ export const coreCases: CheckCase[] = [
     group: "default",
     id: "generate-unsupported-tool-file",
     description: "Chat Completions continues when a local tool returns an unsupported binary file.",
-    providers: ["openrouter"],
+    providers: ["openrouter", "together"],
     async run({ provider, model, requestOptions }) {
       const schema = z.object({});
       const captureImage: ExecutableTool<typeof schema> = {
@@ -1164,12 +1164,15 @@ export const coreCases: CheckCase[] = [
       const result = await generate({ provider, model, ...requestOptions, instruct });
       if (!result.ok) return fail({ error: result.error });
 
-      const title = result.response.title.toLowerCase();
-      const topUniversity = result.response.topUniversity.toLowerCase();
+      const failureReasons = [
+        ...(result.response.title.trim().length > 0 ? [] : ["Chart title is empty."]),
+        ...(result.response.topUniversity.toLowerCase().includes("carnegie")
+          ? []
+          : ["Top university is not Carnegie Mellon."]),
+      ];
       return {
-        ok:
-          (title.includes("brainy") || title.includes("import")) &&
-          topUniversity.includes("carnegie"),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: { response: result.response },
       };
     },

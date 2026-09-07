@@ -174,13 +174,18 @@ async function runSchemaProbe(
     ],
     tools: [tool],
     maxSteps: 2,
-    maxOutputTokens: 512,
+    maxOutputTokens: 4096,
   });
 
   if (!result.ok) return fail({ error: result.error, calls });
 
+  const finishReason = result.final?.finishReason;
   const failureReasons = [
-    ...(calls.length === 0 ? [`Tool ${toolName} was not called.`] : []),
+    ...(calls.length > 0
+      ? []
+      : finishReason === "length"
+        ? [`Tool ${toolName} was not called: the model hit the output limit first.`]
+        : [`Tool ${toolName} was not called.`]),
     ...calls.flatMap((call, index) =>
       call.parseSuccess ? [] : [`Tool call ${index + 1} did not satisfy the Zod schema.`],
     ),
@@ -191,6 +196,7 @@ async function runSchemaProbe(
     ...(failureReasons.length > 0 ? { failureReasons } : {}),
     details: {
       text: getAssistantText(result.final),
+      finishReason,
       callCount: calls.length,
       calls,
       usage: result.usage,
