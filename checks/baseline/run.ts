@@ -4,7 +4,7 @@ import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
-import { baselineCases, type BaselineCase, type BaselineCaseResult } from "./cases.js";
+import { baselineCases, type BaselineCase, type BaselineCaseResult } from "./cases/index.js";
 import {
   resolveProviderTargets,
   type BaselineProviderId,

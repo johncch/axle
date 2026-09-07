@@ -164,8 +164,20 @@ done
 
 ### Extended
 
-None yet. The one-off checks that lived beside this suite are being folded in
-here as extended cases.
+Tool schema shapes (`tool-schema-*`): each sends one probe tool whose
+parameter schema exercises a shape providers have rejected or mangled, and
+checks the model calls it with input that satisfies the Zod schema.
+
+- `tool-schema-required-only`
+- `tool-schema-optional-string`
+- `tool-schema-optional-boolean` (matches `edit_file.replace_all?`)
+- `tool-schema-optional-number` (matches `bash.timeout_ms?`)
+- `tool-schema-nested-optional`
+- `tool-schema-array-object-optional`
+- `tool-schema-nullable-required`
+- `tool-schema-nullish-optional`
+- `tool-schema-defaulted-optional`
+- `tool-schema-loose-object`
 
 The runner writes JSONL records to `output/checks/` and exits non-zero if any
 case fails or errors. For every case that reports `usage` in its details, the

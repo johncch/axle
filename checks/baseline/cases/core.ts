@@ -19,37 +19,8 @@ import {
   type ProviderTool,
 } from "@fifthrevision/axle";
 import * as z from "zod";
-import type { BaselineProviderId } from "./providers.js";
-
-export interface BaselineCaseContext {
-  provider: AIProvider;
-  model: string;
-  providerId: BaselineProviderId;
-  requestOptions: AxleModelRequestOptions;
-}
-
-export interface BaselineCaseResult {
-  ok: boolean;
-  failureReasons?: string[];
-  details?: Record<string, unknown>;
-}
-
-export interface BaselineCaseExclusion {
-  provider: BaselineProviderId;
-  model?: RegExp;
-  reason: string;
-}
-
-export type BaselineCaseGroup = "default" | "extended";
-
-export interface BaselineCase {
-  id: string;
-  description: string;
-  group: BaselineCaseGroup;
-  providers?: BaselineProviderId[];
-  exclusions?: BaselineCaseExclusion[];
-  run(context: BaselineCaseContext): Promise<BaselineCaseResult>;
-}
+import { fail, getAssistantText } from "./helpers.js";
+import type { BaselineCase, BaselineCaseResult } from "./types.js";
 
 const answerSchema = z.object({
   answer: z.string(),
@@ -59,7 +30,7 @@ const answerSchema = z.object({
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
-export const baselineCases: BaselineCase[] = [
+export const coreCases: BaselineCase[] = [
   {
     group: "default",
     id: "generate-basic",
@@ -1332,18 +1303,6 @@ const addNumbersTool: ExecutableTool<
     return String(input.a + input.b);
   },
 };
-
-function fail(details: Record<string, unknown>): BaselineCaseResult {
-  return { ok: false, details };
-}
-
-function getAssistantText(message: AxleAssistantMessage | undefined): string {
-  if (!message) return "";
-  return message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("");
-}
 
 function countCitationParts(message: AxleAssistantMessage | undefined): number {
   if (!message) return 0;
