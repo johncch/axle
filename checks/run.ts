@@ -1,4 +1,4 @@
-import { braveWebSearch, configureAxle } from "@fifthrevision/axle";
+import { braveWebSearch, configureAxle, type ReasoningSetting } from "@fifthrevision/axle";
 import "dotenv/config";
 import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -7,11 +7,13 @@ import { inspect } from "node:util";
 import { checkCases, type CheckCase, type CheckCaseResult } from "./cases/index.js";
 import { resolveProviderTargets, type ProviderId, type ProviderTarget } from "./providers.js";
 
+const REASONING_FLAGS = ["default", "off", "on", "low", "medium", "high"] as const;
+
 interface RunOptions {
   providers: string[];
   model?: string;
   all: boolean;
-  thinking: boolean;
+  reasoning?: ReasoningSetting;
   extended: boolean;
   cases: string[];
   out: string;
@@ -21,7 +23,7 @@ interface CheckRecord {
   timestamp: string;
   providerId: string;
   model: string;
-  thinking: boolean;
+  reasoning?: ReasoningSetting;
   caseId: string;
   caseDescription: string;
   status: "pass" | "fail" | "error" | "skip";
@@ -164,7 +166,7 @@ async function runTarget(target: ProviderTarget, index: number): Promise<void> {
         timestamp: new Date().toISOString(),
         providerId: target.id,
         model: target.model,
-        thinking: options.thinking,
+        reasoning: options.reasoning,
         caseId: testCase.id,
         caseDescription: testCase.description,
         status: "skip",
@@ -182,7 +184,7 @@ async function runTarget(target: ProviderTarget, index: number): Promise<void> {
         provider,
         model: target.model,
         providerId: target.id,
-        requestOptions: options.thinking ? { reasoning: true } : {},
+        requestOptions: options.reasoning ? { reasoning: options.reasoning } : {},
       });
       accumulateUsage(usageTotals[index], result.details?.usage);
       const usageViolation = findUsageInvariantViolation(result.details?.usage);
@@ -194,7 +196,7 @@ async function runTarget(target: ProviderTarget, index: number): Promise<void> {
         timestamp: new Date().toISOString(),
         providerId: target.id,
         model: target.model,
-        thinking: options.thinking,
+        reasoning: options.reasoning,
         caseId: testCase.id,
         caseDescription: testCase.description,
         status,
@@ -213,7 +215,7 @@ async function runTarget(target: ProviderTarget, index: number): Promise<void> {
         timestamp: new Date().toISOString(),
         providerId: target.id,
         model: target.model,
-        thinking: options.thinking,
+        reasoning: options.reasoning,
         caseId: testCase.id,
         caseDescription: testCase.description,
         status: "error",
@@ -388,11 +390,18 @@ function formatFailureReasons(reasons: string[]): string {
   return reasons.map((reason) => `    Reason: ${reason}`).join("\n");
 }
 
+function parseReasoningFlag(value: string): ReasoningSetting {
+  if (!(REASONING_FLAGS as readonly string[]).includes(value)) {
+    throw new Error(`--reasoning expects one of ${REASONING_FLAGS.join(", ")}`);
+  }
+  if (value === "low" || value === "medium" || value === "high") return { effort: value };
+  return value as "default" | "off" | "on";
+}
+
 function parseArgs(args: string[]): RunOptions {
   const parsed: RunOptions = {
     providers: [],
     all: false,
-    thinking: false,
     extended: false,
     cases: [],
     out: join("output", "checks", `run-${Date.now()}.jsonl`),
@@ -423,8 +432,8 @@ function parseArgs(args: string[]): RunOptions {
       case "--out":
         parsed.out = next();
         break;
-      case "--thinking":
-        parsed.thinking = true;
+      case "--reasoning":
+        parsed.reasoning = parseReasoningFlag(next());
         break;
       case "--extended":
         parsed.extended = true;
@@ -485,7 +494,7 @@ Options:
   --provider <id>    Provider id. Repeat or comma-separate to run multiple providers.
   --all              Include non-default providers such as OpenRouter.
   --model <model>    Override model for one selected provider.
-  --thinking         Enable provider reasoning/thinking controls where supported.
+  --reasoning <s>    Portable reasoning setting: default, off, on, low, medium, or high.
   --extended         Run the extended case group as well as the default group.
   --case <id>        Case id or prefix ending in "*". Repeat or comma-separate.
                      Selected cases run regardless of group.

@@ -162,7 +162,7 @@ describe("createGenerationRequest", () => {
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
         vendor: "together",
-        reasoning: false,
+        reasoning: "off",
       });
 
       const body = JSON.parse((fetch as any).mock.calls[0][1].body);

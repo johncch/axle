@@ -9,6 +9,7 @@ import {
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
+import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import type { ResolvedProviderTool, ToolChoice } from "../types.js";
 
 /* To Request */
@@ -98,16 +99,11 @@ export function toOpenAIToolChoice(
   throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
 }
 
-/**
- * Translate Axle's normalized `reasoning` boolean into OpenAI's reasoning
- * field. `true` → effort: "high"; `false` → effort: "none"; `undefined` → omit.
- * Users wanting `xhigh` or other specific effort levels set `providerOptions.reasoning`
- * directly, which spreads after this and overrides.
- */
-export function toOpenAIReasoning(reasoning: boolean | undefined) {
-  if (reasoning === true) return { reasoning: { effort: "high" as const } };
-  if (reasoning === false) return { reasoning: { effort: "none" as const } };
-  return {};
+export function toOpenAIReasoning(reasoning: ReasoningSetting | undefined) {
+  const request = resolveReasoning(reasoning);
+  if (request === "default") return {};
+  if (request === "off") return { reasoning: { effort: "none" as const } };
+  return { reasoning: { effort: request } };
 }
 
 interface OpenAIConversionContext {

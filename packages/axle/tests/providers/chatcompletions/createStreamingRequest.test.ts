@@ -135,13 +135,13 @@ describe("createStreamingRequest", () => {
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
         vendor: "together",
-        reasoning: true,
+        reasoning: { effort: "high" },
       }),
     );
 
     const body = JSON.parse((fetch as any).mock.calls[0][1].body);
     expect(body.reasoning).toEqual({ enabled: true });
-    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.reasoning_effort).toBe("high");
   });
 
   test("skips a single malformed SSE data line and completes valid chunks", async () => {

@@ -4,7 +4,7 @@ import { useCLIHelper } from "./helpers/cli.js";
 const [provider, model] = useCLIHelper();
 
 async function reasonIt() {
-  const agent = new Agent({ provider, model, reasoning: true });
+  const agent = new Agent({ provider, model, reasoning: "on" });
 
   agent.on((event) => {
     if (event.type === "part:start" && event.part.type === "thinking") {

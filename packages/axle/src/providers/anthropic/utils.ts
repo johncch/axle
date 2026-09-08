@@ -8,7 +8,14 @@ import {
   ContentPartToolCall,
   type ToolResultPart,
 } from "../../messages/message.js";
+import { ModelInfo, Models } from "../../models.js";
 import type { ToolDefinition } from "../../tools/types.js";
+import {
+  LEGACY_REASONING_BUDGETS,
+  resolveReasoning,
+  type ReasoningEffort,
+  type ReasoningSetting,
+} from "../reasoning.js";
 import {
   type FileInfo,
   type FileResolver,
@@ -247,39 +254,58 @@ function toAnthropicPdfSource(
   throw new Error(`Unsupported Anthropic PDF source: ${resolved.type}`);
 }
 
-/**
- * Translate Axle's normalized `reasoning` boolean into Anthropic's thinking
- * field. Newer Claude 4.6+ adaptive-thinking models use effort instead of a
- * manual thinking token budget; older models keep the legacy budget form.
- * `false` and `undefined` produce no field (Anthropic defaults to off).
- * Users wanting precise control set `providerOptions.thinking` or
- * `providerOptions.output_config` directly, which spreads after this and
- * overrides.
- */
-export function toAnthropicThinking(reasoning: boolean | undefined, model = "") {
-  if (reasoning !== true) return {};
-  if (supportsAdaptiveThinking(model)) {
-    return {
-      thinking: { type: "adaptive" as const },
-      output_config: { effort: "high" as const },
-    };
+export type AnthropicThinkingFields =
+  | Record<string, never>
+  | { thinking: { type: "disabled" } }
+  | { thinking: { type: "enabled"; budget_tokens: number } }
+  | { thinking: { type: "adaptive" }; output_config: { effort: ReasoningEffort } };
+
+export function toAnthropicThinking(
+  reasoning: ReasoningSetting | undefined,
+  model = "",
+): AnthropicThinkingFields {
+  const request = resolveReasoning(reasoning);
+  if (request === "default") return {};
+  if (request === "off") return { thinking: { type: "disabled" } };
+  if (usesAnthropicThinkingBudget(model)) {
+    return { thinking: { type: "enabled", budget_tokens: LEGACY_REASONING_BUDGETS[request] } };
   }
-  return { thinking: { type: "enabled" as const, budget_tokens: 8192 } };
+  return { thinking: { type: "adaptive" }, output_config: { effort: request } };
 }
 
-function supportsAdaptiveThinking(model: string): boolean {
-  const match = model.toLowerCase().match(/claude-(opus|sonnet)-(\d+)-(\d+)/);
-  if (!match) return false;
+/**
+ * Every Claude ID that only accepts `thinking.type: enabled` with a token
+ * budget. Anything else, including unknown IDs, takes the adaptive route.
+ */
+export const ANTHROPIC_THINKING_BUDGET_MODELS: ReadonlySet<string> = new Set([
+  Models.Anthropic.CLAUDE_HAIKU_4_5,
+  Models.Anthropic.CLAUDE_HAIKU_4_5_20251001,
+  Models.Anthropic.CLAUDE_OPUS_4_5,
+  Models.Anthropic.CLAUDE_OPUS_4_5_20251101,
+  Models.Anthropic.CLAUDE_SONNET_4_5,
+  Models.Anthropic.CLAUDE_SONNET_4_5_20250929,
+]);
 
-  const [, family, majorText, minorText] = match;
-  const major = Number(majorText);
-  const minor = Number(minorText);
-  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
-
-  if (family === "opus") return major > 4 || (major === 4 && minor >= 6);
-  if (family === "sonnet") return major > 4 || (major === 4 && minor >= 6);
-  return false;
+function toAnthropicRegistryId(model: string): string {
+  return `anthropic/${model.toLowerCase()}`;
 }
+
+function usesAnthropicThinkingBudget(model: string): boolean {
+  return ANTHROPIC_THINKING_BUDGET_MODELS.has(toAnthropicRegistryId(model));
+}
+
+const ANTHROPIC_STREAM_FALLBACK_MAX_TOKENS = 64_000;
+
+export function getAnthropicStreamMaxTokens(model: string): number {
+  return (
+    ModelInfo[toAnthropicRegistryId(model)]?.maxOutputTokens ?? ANTHROPIC_STREAM_FALLBACK_MAX_TOKENS
+  );
+}
+
+// The Anthropic SDK throws before sending a non-streaming request whose
+// max_tokens implies more than ten minutes at its assumed 128k tokens/hour,
+// so generate() can never default above 21,333.
+export const ANTHROPIC_GENERATE_MAX_TOKENS = 21_000;
 
 export function convertToAnthropicTools(
   tools: Array<ToolDefinition>,

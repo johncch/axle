@@ -117,7 +117,7 @@ export const messageFormatCases: CheckCase[] = [
                 reasoning: { effort: "medium", summary: "auto" },
               },
             }
-          : { reasoning: true }),
+          : { reasoning: "on" }),
       });
 
       if (!result.ok) return fail({ error: result.error });
@@ -185,7 +185,7 @@ export const messageFormatCases: CheckCase[] = [
         provider,
         model,
         messages: [{ role: "user", content: reasoningPrompt }],
-        reasoning: true,
+        reasoning: "on",
         ...(providerId === "openai"
           ? { providerOptions: { reasoning: { effort: "medium", summary: "auto" } } }
           : {}),

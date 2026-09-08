@@ -189,7 +189,7 @@ describe("createGenerationRequest (Anthropic)", () => {
         model: "claude-opus-4-8",
         messages: [{ role: "user" as const, content: "Hello" }],
         runtime: {},
-        reasoning: true,
+        reasoning: { effort: "high" },
       });
 
       expect(mockCreate).toHaveBeenCalledWith(
@@ -199,6 +199,61 @@ describe("createGenerationRequest (Anthropic)", () => {
         }),
       );
       expect(mockCreate.mock.calls[0][0].thinking).not.toHaveProperty("budget_tokens");
+    });
+
+    test("raises the implicit max_tokens above a legacy thinking budget within the SDK cap", async () => {
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_123",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        model: "claude-haiku-4-5",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 20 },
+      });
+
+      await createGenerationRequest({
+        client: mockClient,
+        model: "claude-haiku-4-5",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        runtime: {},
+        reasoning: { effort: "high" },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thinking: { type: "enabled", budget_tokens: 16384 },
+          max_tokens: 21000,
+        }),
+      );
+    });
+
+    test("providerOptions override the portable reasoning mapping", async () => {
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_123",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        model: "claude-opus-4-8",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 20 },
+      });
+
+      await createGenerationRequest({
+        client: mockClient,
+        model: "claude-opus-4-8",
+        messages: [{ role: "user" as const, content: "Hello" }],
+        runtime: {},
+        reasoning: "off",
+        providerOptions: { thinking: { type: "adaptive" }, output_config: { effort: "max" } },
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thinking: { type: "adaptive" },
+          output_config: { effort: "max" },
+        }),
+      );
     });
 
     test("should include system message when provided", async () => {

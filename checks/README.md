@@ -70,10 +70,11 @@ Override the model for one provider:
 pnpm exec tsx checks/run.ts --provider openai --model gpt-5.4
 ```
 
-Enable provider reasoning/thinking controls where supported:
+Apply a portable reasoning setting (`default`, `off`, `on`, `low`, `medium`,
+`high`) to every case that forwards `requestOptions`:
 
 ```bash
-pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-4-8 --thinking
+pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-4-8 --reasoning high
 ```
 
 Run selected cases. A selection runs regardless of group, and a trailing `*`
@@ -127,8 +128,8 @@ do
     --provider anthropic \
     --model "$model" \
     --case generate-basic \
-    --thinking \
-    --out "output/checks/anthropic-${model}-thinking.jsonl"
+    --reasoning on \
+    --out "output/checks/anthropic-${model}-reasoning.jsonl"
 done
 ```
 
@@ -157,7 +158,10 @@ done
 - `agent-tool-fatal` (fatal tool error terminates the send with usage intact)
 - `agent-subagent-abort` (cancel mid-delegation; no child conversation leak)
 - `agent-parallel-subagents` (parallelize + createAgentTool fan-out)
-- `reasoning-false`
+- `reasoning-off` (explicit disable; skipped on Fable, which cannot turn thinking off)
+- `reasoning-efforts` (low, medium, and high each accepted on the target model)
+- `reasoning-stream-effort`
+- `reasoning-tool-continuity` (thinking carried back through a tool turn)
 - `stream-web-search`
 - `instruct-text-reference`
 - `instruct-context`
@@ -204,6 +208,17 @@ rest.
 - `format-thinking-redacted` (Anthropic omitted thinking)
 - `format-thinking-stream` (`thinking:delta` required for Anthropic,
   OpenRouter, and Together, which stream thinking text)
+
+Reasoning routes (`reasoning-route-*`, `reasoning-unsupported-error`): the
+request syntax Axle picks per model generation, pinned to models the default
+targets don't cover. Normative in `docs/architecture/reasoning.md`.
+
+- `reasoning-route-legacy` (Anthropic Haiku 4.5 budget, Gemini 2.5 budget;
+  reasoning tokens must be reported)
+- `reasoning-route-modern` (Anthropic Sonnet 4.6 adaptive, Gemini
+  `flash-lite-latest` named level)
+- `reasoning-unsupported-error` (`off` on Fable and Gemini 3 Pro must surface
+  the provider's rejection)
 
 Cache telemetry (`cache-*`): provider cache counters surface on `usage`.
 

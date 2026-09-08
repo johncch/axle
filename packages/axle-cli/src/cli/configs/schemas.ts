@@ -143,7 +143,12 @@ export type BatchConfig = z.infer<typeof BatchConfigSchema>;
  * ========================================================================== */
 
 export const RequestOptionsSchema = z.strictObject({
-  reasoning: z.boolean().optional(),
+  reasoning: z
+    .union([
+      z.enum(["default", "off", "on"]),
+      z.strictObject({ effort: z.enum(["low", "medium", "high"]) }),
+    ])
+    .optional(),
   maxOutputTokens: z.number().int().positive().optional(),
   temperature: z.number().optional(),
   topP: z.number().optional(),

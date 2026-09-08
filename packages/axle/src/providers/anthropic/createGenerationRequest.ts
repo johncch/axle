@@ -12,6 +12,7 @@ import {
   convertToAnthropicTools,
   convertToAxleContentParts,
   convertToProviderMessages,
+  ANTHROPIC_GENERATE_MAX_TOKENS,
   toAnthropicThinking,
   toAnthropicToolChoice,
 } from "./utils.js";
@@ -51,7 +52,7 @@ export async function createGenerationRequest(
 
     const request = {
       model: model,
-      max_tokens: maxOutputTokens ?? 16000,
+      max_tokens: maxOutputTokens ?? ANTHROPIC_GENERATE_MAX_TOKENS,
       messages: providerMessages,
       ...(system && { system }),
 

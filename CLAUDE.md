@@ -18,6 +18,12 @@
 - Start: `pnpm start` (runs with tsx)
 - Release: `pnpm run release -- <version>` (runs tests, builds, versions packages, commits, and tags)
 
+# Working with Humans
+
+- Let's document major design decisions in the docs/ folder so we can have something to refer to and track how the ideas in the codebase have evolved.
+- If a feature work touches a core concept, ask the human if it needs to be a core architecture doc or update an existing one
+- If a feature work is a new feature or a revamp, ask the human if it wants a new entry under docs/development (most likely yes).
+
 # Code Style Guidelines
 
 - **Imports**: ES modules, use `node:` prefix for Node.js modules

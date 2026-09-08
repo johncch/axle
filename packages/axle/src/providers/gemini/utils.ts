@@ -6,7 +6,9 @@ import {
 } from "@google/genai";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
+import { Models } from "../../models.js";
 import type { ToolDefinition } from "../../tools/index.js";
+import { LEGACY_REASONING_BUDGETS, resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import {
   type FileInfo,
   type FileResolver,
@@ -112,42 +114,30 @@ export function toGeminiToolConfig(
   throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
 }
 
+export function toGeminiThinkingConfig(reasoning: ReasoningSetting | undefined, model = "") {
+  const request = resolveReasoning(reasoning);
+  if (request === "default") return {};
+  if (request === "off") return { thinkingConfig: { thinkingBudget: 0 } };
+  if (usesGeminiThinkingBudget(model)) {
+    return {
+      thinkingConfig: { thinkingBudget: LEGACY_REASONING_BUDGETS[request], includeThoughts: true },
+    };
+  }
+  return { thinkingConfig: { thinkingLevel: request, includeThoughts: true } };
+}
+
 /**
- * Translate Axle's normalized `reasoning` boolean into Gemini's model-specific
- * thinkingConfig. Raw provider options can override this mapping.
+ * Every Gemini ID that only accepts `thinkingBudget`. Anything else,
+ * including aliases and unknown IDs, takes the `thinkingLevel` route.
  */
-export function toGeminiThinkingConfig(reasoning: boolean | undefined, model = "") {
-  if (reasoning === undefined) return {};
+export const GEMINI_THINKING_BUDGET_MODELS: ReadonlySet<string> = new Set([
+  Models.Google.GEMINI_2_5_FLASH,
+  Models.Google.GEMINI_2_5_FLASH_LITE,
+  Models.Google.GEMINI_2_5_PRO,
+]);
 
-  if (isGemini3Model(model)) {
-    const thinkingLevel = reasoning ? "high" : model.includes("pro") ? "low" : "minimal";
-    return {
-      thinkingConfig: {
-        thinkingLevel,
-        ...(reasoning ? { includeThoughts: true } : {}),
-      },
-    };
-  }
-
-  if (isGemini25Model(model)) {
-    const thinkingBudget = reasoning ? 8192 : model.includes("pro") ? 128 : 0;
-    return {
-      thinkingConfig: {
-        thinkingBudget,
-        ...(reasoning ? { includeThoughts: true } : {}),
-      },
-    };
-  }
-
-  return {};
-}
-
-function isGemini3Model(model: string): boolean {
-  return /(?:^|\/)gemini-3(?:[.-]|$)/i.test(model);
-}
-
-function isGemini25Model(model: string): boolean {
-  return /(?:^|\/)gemini-2\.5(?:[.-]|$)/i.test(model);
+function usesGeminiThinkingBudget(model: string): boolean {
+  return GEMINI_THINKING_BUDGET_MODELS.has(`google/${model.toLowerCase()}`);
 }
 
 interface GeminiConversionContext {

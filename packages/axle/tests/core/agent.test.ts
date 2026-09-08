@@ -866,21 +866,21 @@ describe("Agent", () => {
     const agent = new Agent({
       provider,
       model: "mock",
-      reasoning: true,
+      reasoning: "on",
       temperature: 0.7,
       maxOutputTokens: 100,
       providerOptions: { seed: 1, metadata: { source: "agent" } },
     });
 
     await agent.send("Hi", {
-      reasoning: false,
+      reasoning: "off",
       maxOutputTokens: 20,
       topP: 0.5,
       providerOptions: { metadata: { source: "send" } },
     }).final;
 
     expect(observedRequest).toEqual({
-      reasoning: false,
+      reasoning: "off",
       maxOutputTokens: 20,
       temperature: 0.7,
       topP: 0.5,

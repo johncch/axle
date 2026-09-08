@@ -85,6 +85,7 @@ export type {
   ProviderOptions,
   ToolChoice,
 } from "./providers/types.js";
+export type { ReasoningEffort, ReasoningSetting } from "./providers/reasoning.js";
 
 // Tools
 export { braveWebSearch, createAgentTool, parallelize } from "./tools/index.js";

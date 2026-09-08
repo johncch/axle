@@ -218,6 +218,36 @@ everything accumulated so far and `stopped` set to `"max-steps"` or
 `"token-limit"`. The caller decides what happens next — e.g. compact the
 conversation and start a new call. Non-positive limits throw at call time.
 
+### Reasoning
+
+`reasoning` is the one portable control over provider thinking. It is
+accepted by `Agent`, `generate()`, `stream()`, and `PromptCompactor`:
+
+```typescript
+type ReasoningSetting = "default" | "off" | "on" | { effort: "low" | "medium" | "high" };
+
+await generate({ provider, model, messages, reasoning: { effort: "high" } });
+```
+
+| Setting               | Meaning                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                |
+| `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3) reject the request          |
+| `"on"`                | Same as `{ effort: "medium" }`                                                                                      |
+| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets |
+
+Effort is relative within a model, not comparable across models. `"on"`
+enables reasoning but does not guarantee a visible thinking block on every
+response. Axle does not validate support: an unsupported combination comes
+back as a provider error. Anything beyond these levels, such as `xhigh`, an
+exact budget, or thinking display, goes through `providerOptions`, which is
+applied after the portable mapping and overrides it.
+
+Anthropic needs an output cap on every request. When you don't pass
+`maxOutputTokens`, `stream()` uses the model's ceiling and `generate()` uses
+21,000, the largest cap the Anthropic SDK sends without streaming. The
+per-provider translation is documented in `docs/architecture/reasoning.md`.
+
 ### Results
 
 `generate(...)`, `stream(...).final`, and `agent.send(...).final` all resolve
@@ -931,9 +961,9 @@ appendix). `summaryWords`
 (default 1000) is a soft bound enforced by escalation, not by the request's
 output cap: the prompt steers the size in words, the result is measured in
 words, one relative-shrink rewrite runs if it lands over ~1.3× the request,
-and word-boundary truncation is the last resort. The request's
-`maxOutputTokens` is only a generous spend ceiling with thinking headroom,
-so reasoning models can think without starving the summary text. While
+and word-boundary truncation is the last resort. The request sends no
+output cap, so reasoning models think within the provider's own ceiling.
+While
 generating, the compactor reports estimated progress without exposing the
 model's token stream, emits 100% immediately before completion, and leaves
 the compaction part's optional reader-facing `summary` unset. Both messages
@@ -946,12 +976,11 @@ earlier summary as a "recent" user message. The engine does not read stamps;
 custom `CompactionCallback`s that don't stamp are valid.
 
 The compactor accepts `reasoning` and `providerOptions` with the same semantics
-as `Agent`, `generate()`, and `stream()`. `reasoning` is the normalized boolean
-convenience; leaving it unset sends no thinking parameters, so the model runs
-at its provider default. Use `providerOptions` for exact native controls such
-as reasoning effort or a thinking-token budget. The example above uses OpenAI's
-native reasoning shape; other providers receive their own native options
-unchanged.
+as `Agent`, `generate()`, and `stream()` (see [Reasoning](#reasoning)); leaving
+`reasoning` unset sends no thinking parameters, so the model runs at its
+provider default. Use `providerOptions` for exact native controls such as a
+thinking-token budget. The example above uses OpenAI's native reasoning shape;
+other providers receive their own native options unchanged.
 
 Like tool callbacks, the compaction callbacks run while the agent's scheduler
 is held: scheduling more work on the same agent from inside them queues behind

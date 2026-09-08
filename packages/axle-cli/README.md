@@ -113,15 +113,22 @@ sets provider-portable request options:
 system: You are a terse analyst.
 
 request:
-  reasoning: true
+  reasoning: on
   temperature: 0.2
   maxOutputTokens: 4096
 ```
 
-`reasoning` is tri-state by omission: leave it unset and the model runs at
-its provider's own default (always safe, including for models that cannot
-disable thinking); `true` opts in, `false` opts out where the provider can
-express it.
+`reasoning` takes `default`, `off`, `on`, or `{ effort: low | medium | high }`.
+Leave it unset (or `default`) and the model runs at its provider's own
+default, which is always safe, including for models that cannot disable
+thinking. `on` is medium effort; `off` sends the provider's explicit disable
+and is rejected by models that cannot turn thinking off.
+
+```yaml
+request:
+  reasoning:
+    effort: high
+```
 
 Long sessions compact automatically: when the conversation approaches the
 model's context window (~80%), the next send first replaces the history with

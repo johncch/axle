@@ -1,6 +1,6 @@
 # Compaction
 
-**Status**: current (@experimental API) · **Last design revision**: 2026-08-12 (0.30.0)
+**Status**: current (@experimental API) · **Last design revision**: 2026-09-07 (0.31.0)
 
 This document is normative for compaction's contract and lifecycle. Code and
 tests are built against it; divergence is a defect. State ownership is
@@ -113,14 +113,25 @@ express a fixed cost ceiling independent of threshold — while the _default_
 is scale-aware: a tenth of `thresholdTokens`. The word bound is enforced by
 escalation, not by the request's output cap — steer by prompt, measure in
 words, one relative-shrink rewrite past ~1.3×, word-boundary truncation as
-last resort — while `maxOutputTokens` is a generous spend ceiling with
-thinking headroom, so reasoning never starves the summary text. The
+last resort — and the request carries no `maxOutputTokens` at all
+(2026-09-07): the provider's own ceiling bounds thinking plus summary, so
+any reasoning setting the session uses fits, and the measure-and-cut ladder
+is the only size control. The
 requested words are clamped to roughly an eighth of the threshold (a word
 measures ~2 estimated tokens, so a clamped summary lands near a quarter of
 the threshold), keeping artificially small windows coherent.
 
 ## Rejected alternatives
 
+- **A library-computed spend ceiling (`summaryWords × 2` plus thinking
+  headroom)** (2026-09-07): the headroom was sized for the one thinking
+  budget that existed when it was written. Once `reasoning` could select a
+  budget up to 16,384 on legacy models, the cap either had to track the
+  largest preset or reject the request, and on adaptive models it only
+  bounded a runaway summary the word ladder already corrects. Every current
+  model's ceiling is 64,000 or more; omitting the cap and letting the
+  adapter default apply removes the arithmetic without changing what a
+  well-behaved summary costs.
 - **`targetTokens` as a combined size budget doubling as the provider output
   cap** (2026-09-03): conflated the size bound (a property of the result)
   with the spend cap (a property of the request). Thinking tokens share
