@@ -7,6 +7,9 @@
   },
   "description": "Axle core runtime for building agentic LLM applications.",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -32,20 +35,20 @@
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.98.0",
-    "@google/genai": "^2.6.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "chalk": "^5.6.2",
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@google/genai": "^2.21.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "chalk": "^6.0.0",
     "glob": "^13.0.6",
-    "marked": "^18.0.4",
+    "marked": "^18.0.11",
     "mime": "^4.1.0",
-    "openai": "^6.39.0",
-    "zod": "^4.4.3"
+    "openai": "^7.10.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@arethetypeswrong/core": "^0.18.2",
-    "publint": "^0.3.21",
-    "tsdown": "^0.22.0",
+    "@arethetypeswrong/core": "^0.18.5",
+    "publint": "^0.3.24",
+    "tsdown": "^0.23.0",
     "typescript": "^6.0.3"
   }
 }

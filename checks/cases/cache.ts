@@ -55,9 +55,7 @@ export const cacheCases: CheckCase[] = [
 
       const failureReasons = [
         ...((second.cachedIn ?? 0) > 0 ? [] : ["Second call did not report cachedIn > 0."]),
-        ...(providerId === "anthropic" && (first.cacheWriteIn ?? 0) <= 0
-          ? ["First Anthropic call did not report cacheWriteIn > 0."]
-          : []),
+        ...((first.cacheWriteIn ?? 0) > 0 ? [] : ["First call did not report cacheWriteIn > 0."]),
       ];
       return {
         ok: failureReasons.length === 0,

@@ -339,6 +339,7 @@ describe("responsesAPI", () => {
           input_tokens: 5,
           input_tokens_details: {
             cached_tokens: 0,
+            cache_write_tokens: 0,
           },
           output_tokens: 0,
           output_tokens_details: {

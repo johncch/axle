@@ -182,6 +182,7 @@ export function createStreamingAdapter() {
               },
               {
                 cachedIn: usage?.input_tokens_details?.cached_tokens,
+                cacheWriteIn: usage?.input_tokens_details?.cache_write_tokens,
                 reasoningOut: usage?.output_tokens_details?.reasoning_tokens,
               },
             ),

@@ -199,7 +199,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
             input_tokens: 100,
             output_tokens: 50,
             total_tokens: 150,
-            input_tokens_details: { cached_tokens: 80 },
+            input_tokens_details: { cached_tokens: 80, cache_write_tokens: 25 },
             output_tokens_details: { reasoning_tokens: 12 },
           },
         },
@@ -213,6 +213,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
           in: 100,
           out: 50,
           cachedIn: 80,
+          cacheWriteIn: 25,
           reasoningOut: 12,
         });
       }

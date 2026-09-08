@@ -54,7 +54,7 @@ describe("createGenerationRequest (OpenAI)", () => {
 
   test("maps cache and reasoning usage details", async () => {
     const response = makeTextResponse("Hello") as any;
-    response.usage.input_tokens_details = { cached_tokens: 7 };
+    response.usage.input_tokens_details = { cached_tokens: 7, cache_write_tokens: 4 };
     response.usage.output_tokens_details = { reasoning_tokens: 3 };
     mockCreate.mockResolvedValue(response);
 
@@ -66,7 +66,7 @@ describe("createGenerationRequest (OpenAI)", () => {
     });
 
     expect(result.type).toBe("success");
-    expect(result.usage).toEqual({ in: 10, out: 20, cachedIn: 7, reasoningOut: 3 });
+    expect(result.usage).toEqual({ in: 10, out: 20, cachedIn: 7, cacheWriteIn: 4, reasoningOut: 3 });
   });
 
   test("maps normalized options and lets providerOptions override", async () => {

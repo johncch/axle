@@ -7,6 +7,9 @@
   },
   "description": "Axle command line workflow runner.",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "axle": "dist/cli.js"
   },
@@ -38,14 +41,14 @@
     "ink": "^7.1.1",
     "react": "^19.2.8",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",
     "@types/react": "^19.2.18",
     "publint": "^0.3.24",
-    "tsdown": "^0.22.14",
-    "tsx": "^4.23.12",
+    "tsdown": "^0.23.0",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3"
   }
 }
