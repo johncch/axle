@@ -4,11 +4,11 @@ import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
 import { ProviderStreamParams } from "../types.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
-import { ModelInfo } from "../../models.js";
 import {
   convertToAnthropicProviderTools,
   convertToAnthropicTools,
   convertToProviderMessages,
+  getAnthropicStreamMaxTokens,
   toAnthropicThinking,
   toAnthropicToolChoice,
 } from "./utils.js";
@@ -52,7 +52,7 @@ export async function* createStreamingRequest(
 
     const request = {
       model: model,
-      max_tokens: maxOutputTokens ?? getMaxTokens(model),
+      max_tokens: maxOutputTokens ?? getAnthropicStreamMaxTokens(model),
       messages: providerMessages,
       ...(system && { system }),
 
@@ -94,22 +94,4 @@ export async function* createStreamingRequest(
       },
     };
   }
-}
-
-export function getMaxTokens(model: string): number {
-  const maxOutputTokens = ModelInfo[model]?.maxOutputTokens;
-  if (maxOutputTokens !== undefined) return maxOutputTokens;
-
-  if (model.includes("opus")) {
-    // Opus 4.6+ trend: 128K
-    if (model.match(/opus-4-[6-9]|opus-[5-9]/)) return 128000;
-    return 64000;
-  }
-
-  if (model.includes("sonnet") || model.includes("haiku")) {
-    if (model.match(/claude-3-[0-5]-/)) return 8192;
-    return 64000;
-  }
-
-  return 16384;
 }

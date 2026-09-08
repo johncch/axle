@@ -10,6 +10,7 @@ import type { Span } from "../observability/types.js";
 import type { ProviderTool, ToolDefinition } from "../tools/types.js";
 import { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
+import type { ReasoningSetting } from "./reasoning.js";
 
 /*
  General AI Interfaces
@@ -48,8 +49,12 @@ export type ToolChoice = "auto" | "none" | "required" | { type: "tool"; name: st
  * represented here.
  */
 export interface AxleModelRequestOptions {
-  /** Enables or disables provider reasoning/thinking controls where supported. */
-  reasoning?: boolean;
+  /**
+   * Portable reasoning control: `"default"` inherits the model's behavior,
+   * `"off"` sends the provider's explicit disable, `"on"` is medium effort,
+   * `{ effort }` picks a named level or legacy budget preset.
+   */
+  reasoning?: ReasoningSetting;
   /** Maximum output tokens to request from the model. */
   maxOutputTokens?: number;
   /** Sampling temperature, when supported by the provider/model. */

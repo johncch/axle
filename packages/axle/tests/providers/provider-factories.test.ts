@@ -174,7 +174,7 @@ describe("provider client factory options", () => {
     await together.createGenerationRequest("test-model", {
       messages: [{ role: "user", content: "Hi" }],
       runtime: {},
-      reasoning: false,
+      reasoning: "off",
     });
 
     const body = JSON.parse((fetch as any).mock.calls[0][1].body);

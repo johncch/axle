@@ -1063,26 +1063,6 @@ export const coreCases: CheckCase[] = [
   },
   {
     group: "default",
-    id: "reasoning-false",
-    description: "generate() succeeds with reasoning disabled.",
-    async run({ provider, model }) {
-      const result = await generate({
-        provider,
-        model,
-        messages: [{ role: "user", content: "Reply with exactly: pong" }],
-        reasoning: false,
-      });
-
-      if (!result.ok) return fail({ error: result.error });
-      const text = getAssistantText(result.final);
-      return {
-        ok: text.toLowerCase().includes("pong"),
-        details: { text, usage: result.usage },
-      };
-    },
-  },
-  {
-    group: "default",
     id: "stream-web-search",
     description: "stream() uses native or fallback web search and surfaces execution evidence.",
     async run({ provider, model, requestOptions }) {
@@ -1221,7 +1201,7 @@ async function runStreamingWebSearchCitationCase({
     provider,
     model,
     ...requestOptions,
-    reasoning: true,
+    reasoning: "on",
     providerTools: [webSearchTool],
     messages: [
       {

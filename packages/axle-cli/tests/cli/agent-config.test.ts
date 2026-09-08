@@ -177,7 +177,7 @@ describe("createCliAgentConfig", () => {
         provider: { type: "anthropic", apiKey: "anthropic-key" },
         system: "You are terse.",
         request: {
-          reasoning: true,
+          reasoning: { effort: "low" },
           temperature: 0.2,
           maxOutputTokens: 2048,
         },
@@ -190,7 +190,7 @@ describe("createCliAgentConfig", () => {
     );
 
     expect(agentConfig.system).toBe("You are terse.");
-    expect(agentConfig.reasoning).toBe(true);
+    expect(agentConfig.reasoning).toEqual({ effort: "low" });
     expect(agentConfig.temperature).toBe(0.2);
     expect(agentConfig.maxOutputTokens).toBe(2048);
   });

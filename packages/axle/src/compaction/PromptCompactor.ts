@@ -5,6 +5,7 @@ import type { AxleMessage } from "../messages/message.js";
 import { getTextContent } from "../messages/utils.js";
 import { estimateContextUsage } from "../providers/context.js";
 import { stream } from "../providers/stream.js";
+import type { ReasoningSetting } from "../providers/reasoning.js";
 import type { AIProvider, ProviderOptions } from "../providers/types.js";
 
 export interface PromptCompactorOptions {
@@ -20,7 +21,7 @@ export interface PromptCompactorOptions {
    * `thresholdTokens`; 0 keeps none.
    */
   appendixTokens?: number;
-  reasoning?: boolean;
+  reasoning?: ReasoningSetting;
   providerOptions?: ProviderOptions;
 }
 
@@ -29,7 +30,6 @@ const DEFAULT_APPENDIX_FRACTION = 0.1;
 const RECENT_USER_MESSAGES = 10;
 const ACCEPTANCE_FACTOR = 1.3;
 const MINIMUM_SUMMARY_WORDS = 50;
-const SPEND_HEADROOM_TOKENS = 8_192;
 
 /**
  * Prompt-based compactor: summarizes the conversation with the configured
@@ -38,10 +38,9 @@ const SPEND_HEADROOM_TOKENS = 8_192;
  * The summary side is words-native: `summaryWords` steers the prompt, the
  * result is measured in words, one relative-shrink rewrite runs if it lands
  * over ~1.3× the request, and word-boundary truncation is the last resort.
- * The request's `maxOutputTokens` is only a generous spend ceiling, so
- * thinking models can reason without starving the summary text. The appendix
- * side stays token-denominated: up to the last ten user messages, evicted
- * oldest-first to fit `appendixTokens`.
+ * The request sends no output cap, so thinking models reason within the
+ * provider's own ceiling. The appendix side stays token-denominated: up to
+ * the last ten user messages, evicted oldest-first to fit `appendixTokens`.
  *
  * @experimental Compaction is under active design and may change in any release.
  */
@@ -52,7 +51,7 @@ export class PromptCompactor {
   private readonly thresholdTokens: number;
   private readonly summaryWords: number;
   private readonly appendixTokens: number;
-  private readonly reasoning: boolean | undefined;
+  private readonly reasoning: ReasoningSetting | undefined;
   private readonly providerOptions: ProviderOptions | undefined;
 
   constructor(options: PromptCompactorOptions) {
@@ -94,13 +93,11 @@ export class PromptCompactor {
       MINIMUM_SUMMARY_WORDS,
       Math.min(this.summaryWords, Math.floor(this.thresholdTokens / 8)),
     );
-    const spendCap = summaryWords * 2 + SPEND_HEADROOM_TOKENS;
     const acceptableWords = Math.ceil(summaryWords * ACCEPTANCE_FACTOR);
     const progress = { emitted: 0 };
 
     let summary = await this.generateSummary(
       renderSummaryRequest(state.messages, summaryWords, recent.length),
-      spendCap,
       summaryWords,
       context,
       progress,
@@ -110,7 +107,6 @@ export class PromptCompactor {
       try {
         const rewritten = await this.generateSummary(
           renderShrinkRequest(summary, summaryWords),
-          spendCap,
           summaryWords,
           context,
           progress,
@@ -150,7 +146,6 @@ export class PromptCompactor {
 
   private async generateSummary(
     request: string,
-    spendCap: number,
     summaryWords: number,
     context: { signal?: AbortSignal; emit: (update: { progress?: number }) => void },
     progress: { emitted: number },
@@ -164,7 +159,6 @@ export class PromptCompactor {
       ].join("\n\n"),
       reasoning: this.reasoning,
       providerOptions: this.providerOptions,
-      maxOutputTokens: spendCap,
       signal: context.signal,
       messages: [{ role: "user", content: request }],
     });

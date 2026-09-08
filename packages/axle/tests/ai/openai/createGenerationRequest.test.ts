@@ -77,7 +77,7 @@ describe("createGenerationRequest (OpenAI)", () => {
       model: MODEL,
       messages: [{ role: "user", content: "Hello" }],
       runtime: {},
-      reasoning: true,
+      reasoning: "on",
       temperature: 0.5,
       topP: 0.9,
       maxOutputTokens: 100,

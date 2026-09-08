@@ -34,7 +34,11 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
       model: string,
       params: ProviderGenerationParams,
     ): Promise<ModelResult> {
-      return await createGenerationRequest({ client, model: resolveFirstPartyModel(model, ["anthropic"]), ...params });
+      return await createGenerationRequest({
+        client,
+        model: resolveFirstPartyModel(model, ["anthropic"]),
+        ...params,
+      });
     },
 
     /** @internal */
@@ -42,7 +46,11 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
       model: string,
       params: ProviderStreamParams,
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
-      return createStreamingRequest({ client, model: resolveFirstPartyModel(model, ["anthropic"]), ...params });
+      return createStreamingRequest({
+        client,
+        model: resolveFirstPartyModel(model, ["anthropic"]),
+        ...params,
+      });
     },
   };
 }

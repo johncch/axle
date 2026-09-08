@@ -9,6 +9,7 @@ import {
   type ResolvedFileSource,
 } from "../../utils/file.js";
 import { withUsageDetails } from "../../utils/stats.js";
+import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import { AxleStopReason, ToolChoice, type ResolvedProviderTool } from "../types.js";
 import {
   ChatCompletionContentPart,
@@ -37,10 +38,7 @@ export function resolveChatCompletionsProviderToolName(
   }
 }
 
-export function resolveChatCompletionsModel(
-  model: string,
-  vendor?: ChatCompletionsVendor,
-): string {
+export function resolveChatCompletionsModel(model: string, vendor?: ChatCompletionsVendor): string {
   switch (vendor) {
     case "openrouter":
       return resolveOpenRouterModel(model);
@@ -73,22 +71,19 @@ export async function convertAxleMessages(
   return converted;
 }
 
-/**
- * Translate Axle's normalized `reasoning` boolean into provider controls.
- * Raw provider options are applied later and may override this mapping.
- */
 export function toChatCompletionsReasoning(
-  reasoning: boolean | undefined,
+  reasoning: ReasoningSetting | undefined,
   vendor?: ChatCompletionsVendor,
 ) {
   if (vendor === "together") return toTogetherReasoning(reasoning);
   return toReasoningEffort(reasoning);
 }
 
-export function toReasoningEffort(reasoning: boolean | undefined) {
-  if (reasoning === true) return { reasoning_effort: "high" as const };
-  if (reasoning === false) return { reasoning_effort: "none" as const };
-  return {};
+export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
+  const request = resolveReasoning(reasoning);
+  if (request === "default") return {};
+  if (request === "off") return { reasoning_effort: "none" as const };
+  return { reasoning_effort: request };
 }
 
 export function chatUsageToStats(usage: ChatCompletionUsage | undefined): Stats {

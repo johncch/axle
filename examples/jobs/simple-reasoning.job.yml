@@ -2,7 +2,7 @@
 provider: anthropic
 
 request:
-  reasoning: true
+  reasoning: on
 
 task: |
   How many ways can you arrange the letters in "axle" so that no

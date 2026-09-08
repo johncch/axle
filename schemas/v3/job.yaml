@@ -106,7 +106,23 @@ properties:
     type: object
     properties:
       reasoning:
-        type: boolean
+        anyOf:
+          - type: string
+            enum:
+              - default
+              - off
+              - on
+          - type: object
+            properties:
+              effort:
+                type: string
+                enum:
+                  - low
+                  - medium
+                  - high
+            required:
+              - effort
+            additionalProperties: false
       maxOutputTokens:
         type: integer
         exclusiveMinimum: 0

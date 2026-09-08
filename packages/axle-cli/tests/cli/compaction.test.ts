@@ -136,7 +136,7 @@ describe("createSessionCompaction", () => {
     const requests: CapturedRequest[] = [];
     const agent = createAgent({
       provider: createCapturingProvider("mock", requests),
-      reasoning: true,
+      reasoning: "on",
     });
     const config = createSessionCompaction(agent);
 
@@ -145,7 +145,7 @@ describe("createSessionCompaction", () => {
       { usage: usage(1000), trigger: "beforeTurn", id: "comp-1", emit: () => {} },
     );
 
-    expect(requests[0].reasoning).toBe(true);
+    expect(requests[0].reasoning).toBe("on");
   });
 
   it("leaves reasoning unset when the recipe doesn't set it", async () => {
