@@ -229,12 +229,12 @@ type ReasoningSetting = "default" | "off" | "on" | { effort: "low" | "medium" | 
 await generate({ provider, model, messages, reasoning: { effort: "high" } });
 ```
 
-| Setting               | Meaning                                                                                                             |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                |
-| `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3) reject the request          |
-| `"on"`                | Same as `{ effort: "medium" }`                                                                                      |
-| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets |
+| Setting               | Meaning                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                       |
+| `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3, Gemini 2.5 Pro) reject the request |
+| `"on"`                | Same as `{ effort: "medium" }`                                                                                             |
+| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets        |
 
 Effort is relative within a model, not comparable across models. `"on"`
 enables reasoning but does not guarantee a visible thinking block on every

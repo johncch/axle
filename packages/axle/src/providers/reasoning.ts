@@ -17,7 +17,12 @@ export function resolveReasoning(setting: ReasoningSetting | undefined): Reasoni
   if (setting === undefined || setting === "default") return "default";
   if (setting === "off") return "off";
   if (setting === "on") return "medium";
-  return setting.effort;
+  if (typeof setting === "object" && setting.effort in LEGACY_REASONING_BUDGETS) {
+    return setting.effort;
+  }
+  throw new TypeError(
+    `Unsupported reasoning setting ${JSON.stringify(setting)}; expected "default", "off", "on", or { effort: "low" | "medium" | "high" }`,
+  );
 }
 
 /**

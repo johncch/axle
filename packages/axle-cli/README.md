@@ -115,14 +115,17 @@ system: You are a terse analyst.
 request:
   reasoning: on
   temperature: 0.2
-  maxOutputTokens: 4096
+  maxOutputTokens: 16000
 ```
 
 `reasoning` takes `default`, `off`, `on`, or `{ effort: low | medium | high }`.
 Leave it unset (or `default`) and the model runs at its provider's own
 default, which is always safe, including for models that cannot disable
 thinking. `on` is medium effort; `off` sends the provider's explicit disable
-and is rejected by models that cannot turn thinking off.
+and is rejected by models that cannot turn thinking off. On models that only
+take a thinking budget (Claude Haiku, Opus, and Sonnet 4.5; Gemini 2.5), a
+`maxOutputTokens` you set must exceed the budget: 8,192 for `on`, 16,384 for
+`high`. Leave it unset and Axle's default already does.
 
 ```yaml
 request:

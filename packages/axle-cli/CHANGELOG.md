@@ -64,7 +64,8 @@
   piped output falls back to a line-oriented renderer.
 - Recipes gain top-level `system` and a `request:` block (`reasoning`,
   `maxOutputTokens`, `temperature`, `topP`, `stop`, `toolChoice`,
-  `parallelToolCalls`, `providerOptions`).
+  `parallelToolCalls`, `providerOptions`). `reasoning` takes `default`,
+  `off`, `on`, or `{ effort: low | medium | high }`.
 
 Built on Axle 0.31.0 — see
 [docs/0.31.0-migration.md](../../docs/0.31.0-migration.md) for the library's

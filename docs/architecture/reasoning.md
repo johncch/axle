@@ -168,8 +168,8 @@ leaves 4,616 tokens above the high legacy preset. Caller-supplied
 `maxOutputTokens` is sent untouched on both paths, and the provider rejects a
 budget that does not fit under it.
 
-`PromptCompactor` sends no output cap, so its summarizer request takes these
-same defaults and any preset fits.
+`PromptCompactor` sends no output cap and streams, so its summarizer request
+takes the `stream()` default and any preset fits.
 
 ## Harness coverage
 

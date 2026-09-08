@@ -27,6 +27,11 @@ describe("reasoning translation", () => {
       expect(resolveReasoning({ effort: "low" })).toBe("low");
       expect(resolveReasoning({ effort: "high" })).toBe("high");
     });
+    test("the 0.30 boolean and unknown efforts throw instead of enabling thinking", () => {
+      expect(() => resolveReasoning(true as never)).toThrow(TypeError);
+      expect(() => resolveReasoning(false as never)).toThrow(TypeError);
+      expect(() => resolveReasoning({ effort: "xhigh" } as never)).toThrow(TypeError);
+    });
   });
 
   describe("Anthropic", () => {

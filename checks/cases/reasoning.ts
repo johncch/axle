@@ -48,8 +48,9 @@ export const reasoningCases: CheckCase[] = [
       { provider: "anthropic", model: /fable/, reason: "Fable rejects thinking.type: disabled." },
       {
         provider: "gemini",
-        model: /gemini-3|-latest$/,
-        reason: "Gemini 3 cannot disable thinking; the -latest aliases resolve to Gemini 3.",
+        model: /gemini-3|gemini-2\.5-pro|-latest$/,
+        reason:
+          "Gemini 3 and 2.5 Pro cannot disable thinking; the -latest aliases resolve to Gemini 3.",
       },
     ],
     async run({ provider, model, requestOptions }) {
