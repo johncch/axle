@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.0] - 2026-09-08
+
+- Added portable reasoning controls with named modes and effort levels, including validation and updated reasoning documentation.
+- Redesigned `axle-cli` around interactive chat by default, with batch and resume commands, persistent sessions, and improved terminal rendering.
+- Added CLI session resumption, automatic context compaction, and configurable compaction size controls for longer-running conversations.
+- Added layered CLI configuration loading and validation, support for the v3 job configuration schema, and timestamped CLI log files.
+- Improved CLI reliability for piped input, non-interactive runs, interrupted runs, failed batches, session cleanup, and credential handling.
+- Updated available model definitions.
+
 ## [0.30.2] - 2026-08-23
 
 - Added support for OpenRouter streaming thinking deltas so reasoning output is handled correctly during chat completions.
