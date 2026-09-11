@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Thinking text now streams from Claude and OpenAI models.** `request.reasoning`
+  with `on` or `{ effort }` asks every provider that has a disclosure field
+  for its thinking; previously Anthropic and OpenAI requests inherited a
+  hidden default and rendered no thinking at all. Add `display: hidden`
+  under `{ effort }` to keep thinking off the wire.
+
 ## 0.31.0
 
 ### Breaking changes

@@ -1,6 +1,6 @@
 # Reasoning controls
 
-**Status**: current · **Last design revision**: 2026-09-07 (0.31.0)
+**Status**: current · **Last design revision**: 2026-09-10 (0.32.0)
 
 This document is normative for Axle's portable reasoning control: what the
 `reasoning` request option means, how each provider adapter translates it,
@@ -12,7 +12,7 @@ can be re-checked when they change.
 ## Invariants
 
 1. **One portable setting.** `reasoning?: ReasoningSetting` where
-   `ReasoningSetting = "default" | "off" | "on" | { effort: "low" | "medium" | "high" }`.
+   `ReasoningSetting = "default" | "off" | "on" | { effort: "low" | "medium" | "high"; display?: "visible" | "hidden" }`.
    It is the same option on `Agent`, `generate()`, `stream()`,
    `PromptCompactor`, and the CLI's `request` block. Booleans are not
    accepted.
@@ -45,10 +45,24 @@ can be re-checked when they change.
    error path. There is no retry at a lower effort and no substitution.
 9. **`providerOptions` wins.** Raw provider fields are spread after the
    portable mapping and override it field by field. Exact budgets,
-   `xhigh`/`max`, and thinking-display controls stay there.
-10. **Enabling reasoning on Gemini requests thought summaries.**
-    `includeThoughts: true` rides along with every enable so Axle's thinking
-    parts are populated; `off` and `default` do not set it.
+   `xhigh`/`max`, OpenAI summary lengths, and Anthropic's `updates` display
+   stay there. A nested object is one field: overriding `thinking` on
+   Anthropic replaces the whole object, `type` included.
+10. **Enabling reasoning requests disclosure wherever a field exists.**
+    `display` defaults to `"visible"` and rides along with every enable:
+    Anthropic `thinking.display: summarized`, Gemini `includeThoughts: true`,
+    OpenAI `reasoning.summary: auto`. `"hidden"` sends the explicit hide
+    value on the same routes (`omitted`, `false`, no summary field) and
+    `reasoning: { exclude: true }` on OpenRouter. Generic Chat Completions
+    endpoints and Together have no field and send nothing either way. `off`
+    and `default` never carry a display field; on Anthropic it can only
+    travel inside a typed `thinking` object, so a display without an enable
+    is unrepresentable by construction.
+11. **Display controls disclosure, not form.** The request says whether the
+    provider should show its thinking. Whether a summary or raw text comes
+    back is the model's property, recorded on the thinking part, and no
+    provider lets the caller choose it. The request values are therefore
+    named for visibility, not for the part field they populate.
 
 ## Provider and model requirements
 
@@ -81,9 +95,13 @@ Constraints that shape the translation:
   assumed 128k tokens/hour (about 21,333 tokens). The check is skipped when
   the client was constructed with an explicit timeout. Streaming requests are
   exempt.
-- Thinking display defaults to `omitted` on many models: thinking blocks
-  arrive with an empty text and a signature. Axle preserves the signature for
-  continuity and leaves display selection to `providerOptions`.
+- `thinking.display` defaults to `omitted` on Opus 4.7, 4.8, and every 5.x
+  model, and to `summarized` on 4.6 and the budget models. Under `omitted`
+  the server emits no `thinking_delta` events: blocks arrive with empty text
+  and a signature. Axle sends `display` explicitly on every enable so the
+  per-model default never decides what streams, and preserves the signature
+  for continuity either way. `updates` (progress notes only) is a beta value
+  the installed SDK does not type; it stays in `providerOptions`.
 
 ### Google Gemini GenerateContent
 
@@ -104,15 +122,19 @@ all three.
 ### OpenAI Responses API
 
 `reasoning.effort` with `none | minimal | low | medium | high | xhigh`
-depending on model. `none` is rejected by models that always think. Encrypted
-reasoning continuity requires `store: false` and
-`include: ["reasoning.encrypted_content"]` via `providerOptions`.
+depending on model. `none` is rejected by models that always think.
+`reasoning.summary` with `auto | concise | detailed` requests a summary;
+without it no summary parts are returned. Encrypted reasoning continuity
+requires `store: false` and `include: ["reasoning.encrypted_content"]` via
+`providerOptions`.
 
 ### OpenAI-compatible Chat Completions
 
 - **Generic endpoints and OpenRouter**: `reasoning_effort` with
   `none | low | medium | high`. OpenRouter's own translation to the upstream
-  provider is upstream behavior.
+  provider is upstream behavior; it picks `summarized` for Claude. Its only
+  disclosure control is `reasoning.exclude: boolean`, which strips reasoning
+  from the response and never selects a form.
 - **Together**: hybrid models (GLM, Qwen, Kimi, MiniMax, DeepSeek V3.1) toggle
   with `reasoning: { enabled }`; GPT-OSS and DeepSeek V4 accept
   `reasoning_effort` with `low | medium | high`. Neither family documents
@@ -120,8 +142,9 @@ reasoning continuity requires `store: false` and
 
 ## Axle translation
 
-`resolveReasoning` collapses the setting to `"default" | "off" | ReasoningEffort`
-(with `"on"` → `"medium"`); each adapter maps that request:
+`resolveReasoning` collapses the setting to
+`"default" | "off" | { effort, display }` (with `"on"` →
+`{ effort: "medium", display: "visible" }`); each adapter maps that request:
 
 | Route                                                | Off                                   | Low                                                           | On / Medium       | High            |
 | ---------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------- | ----------------- | --------------- |
@@ -133,7 +156,16 @@ reasoning continuity requires `store: false` and
 | Chat Completions, OpenRouter                         | `reasoning_effort: none`              | low                                                           | medium            | high            |
 | Together                                             | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: low`           | medium            | high            |
 
-Default sends no fields on every route.
+Default sends no fields on every route. Every enabled cell above also
+carries the route's display field:
+
+| Route                       | `display: "visible"` (default) | `display: "hidden"`            |
+| --------------------------- | ------------------------------ | ------------------------------ |
+| Anthropic, both routes      | `thinking.display: summarized` | `thinking.display: omitted`    |
+| Gemini, both routes         | `includeThoughts: true`        | `includeThoughts: false`       |
+| OpenAI Responses            | `reasoning.summary: auto`      | no summary field               |
+| OpenRouter                  | nothing                        | `reasoning: { exclude: true }` |
+| Generic endpoints, Together | nothing                        | nothing                        |
 
 ### Legacy budget sets
 
@@ -175,11 +207,34 @@ takes the `stream()` default and any preset fits.
 
 `checks/cases/reasoning.ts` runs `reasoning-off`, `reasoning-efforts`,
 `reasoning-stream-effort`, and `reasoning-tool-continuity` on every default
-target, and pins models for `reasoning-route-legacy` (Haiku 4.5, Gemini 2.5
+target (`reasoning-efforts` also requires disclosed thinking text from at
+least one effort on Anthropic, OpenAI, and Gemini), and pins models for `reasoning-route-legacy` (Haiku 4.5, Gemini 2.5
 Flash Lite), `reasoning-route-modern` (Sonnet 4.6, `gemini-flash-lite-latest`),
 and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
 
 ## Rejected alternatives
+
+- **A fixed `summarized` with no portable knob** (2026-09-10): the only
+  opt-out would be `providerOptions`, which replaces the whole `thinking`
+  object, so skipping thinking tokens for time-to-first-token would mean
+  restating `type` and, on budget models, `budget_tokens`. Disclosure is a
+  separate request field on every native provider; it earns the same
+  portable treatment as on/off and effort.
+- **`summary: boolean`** (2026-09-10): the 0.30 boolean on `reasoning`
+  itself was already replaced by named values once; and Anthropic's
+  `updates` mode is a third disclosure state a boolean cannot hold.
+- **Summary levels (`"concise" | "detailed"`)** (2026-09-10): only OpenAI
+  has levels. Anthropic and Gemini would silently collapse them, the same
+  silent drop that rejected Together `enabled`-only. The intersection every
+  provider shares is binary.
+- **Values named for the part field (`"summary" | "none"`)** (2026-09-10):
+  no provider lets the caller choose the form. An open-weight model answers
+  a `"summary"` request with raw text, so the value would promise what the
+  request cannot deliver. Visibility is what the request controls.
+- **Display as a sibling option outside the effort object** (2026-09-10):
+  Gemini and OpenAI could send the flag alone, Anthropic cannot. Nesting it
+  under `{ effort }` makes the rule structural on every route instead of
+  documented for one.
 
 - **`on` = high effort** (2026-09-07): the previous boolean mapped `true` to
   the highest named level. No portable-API precedent supports it; OpenRouter

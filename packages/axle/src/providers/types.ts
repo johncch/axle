@@ -52,7 +52,8 @@ export interface AxleModelRequestOptions {
   /**
    * Portable reasoning control: `"default"` inherits the model's behavior,
    * `"off"` sends the provider's explicit disable, `"on"` is medium effort,
-   * `{ effort }` picks a named level or legacy budget preset.
+   * `{ effort, display? }` picks a named level or legacy budget preset and
+   * whether the provider should disclose its thinking (default `"visible"`).
    */
   reasoning?: ReasoningSetting;
   /** Maximum output tokens to request from the model. */

@@ -103,7 +103,8 @@ export function toOpenAIReasoning(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning: { effort: "none" as const } };
-  return { reasoning: { effort: request } };
+  if (request.display === "hidden") return { reasoning: { effort: request.effort } };
+  return { reasoning: { effort: request.effort, summary: "auto" as const } };
 }
 
 interface OpenAIConversionContext {

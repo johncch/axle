@@ -76,14 +76,25 @@ export function toChatCompletionsReasoning(
   vendor?: ChatCompletionsVendor,
 ) {
   if (vendor === "together") return toTogetherReasoning(reasoning);
+  if (vendor === "openrouter") return toOpenRouterReasoning(reasoning);
   return toReasoningEffort(reasoning);
+}
+
+export function toOpenRouterReasoning(reasoning: ReasoningSetting | undefined) {
+  const request = resolveReasoning(reasoning);
+  if (request === "default") return {};
+  if (request === "off") return { reasoning_effort: "none" as const };
+  if (request.display === "hidden") {
+    return { reasoning_effort: request.effort, reasoning: { exclude: true } };
+  }
+  return { reasoning_effort: request.effort };
 }
 
 export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning_effort: "none" as const };
-  return { reasoning_effort: request };
+  return { reasoning_effort: request.effort };
 }
 
 export function chatUsageToStats(usage: ChatCompletionUsage | undefined): Stats {

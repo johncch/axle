@@ -254,11 +254,16 @@ function toAnthropicPdfSource(
   throw new Error(`Unsupported Anthropic PDF source: ${resolved.type}`);
 }
 
+type AnthropicThinkingDisplay = "summarized" | "omitted";
+
 export type AnthropicThinkingFields =
   | Record<string, never>
   | { thinking: { type: "disabled" } }
-  | { thinking: { type: "enabled"; budget_tokens: number } }
-  | { thinking: { type: "adaptive" }; output_config: { effort: ReasoningEffort } };
+  | { thinking: { type: "enabled"; budget_tokens: number; display: AnthropicThinkingDisplay } }
+  | {
+      thinking: { type: "adaptive"; display: AnthropicThinkingDisplay };
+      output_config: { effort: ReasoningEffort };
+    };
 
 export function toAnthropicThinking(
   reasoning: ReasoningSetting | undefined,
@@ -267,10 +272,21 @@ export function toAnthropicThinking(
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { thinking: { type: "disabled" } };
+  const display: AnthropicThinkingDisplay =
+    request.display === "visible" ? "summarized" : "omitted";
   if (usesAnthropicThinkingBudget(model)) {
-    return { thinking: { type: "enabled", budget_tokens: LEGACY_REASONING_BUDGETS[request] } };
+    return {
+      thinking: {
+        type: "enabled",
+        budget_tokens: LEGACY_REASONING_BUDGETS[request.effort],
+        display,
+      },
+    };
   }
-  return { thinking: { type: "adaptive" }, output_config: { effort: request } };
+  return {
+    thinking: { type: "adaptive", display },
+    output_config: { effort: request.effort },
+  };
 }
 
 /**

@@ -118,7 +118,10 @@ request:
   maxOutputTokens: 16000
 ```
 
-`reasoning` takes `default`, `off`, `on`, or `{ effort: low | medium | high }`.
+`reasoning` takes `default`, `off`, `on`, or
+`{ effort: low | medium | high, display?: visible | hidden }`. `display`
+defaults to `visible`; `hidden` asks the provider to keep its thinking off
+the wire.
 Leave it unset (or `default`) and the model runs at its provider's own
 default, which is always safe, including for models that cannot disable
 thinking. `on` is medium effort; `off` sends the provider's explicit disable

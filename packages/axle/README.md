@@ -224,24 +224,30 @@ conversation and start a new call. Non-positive limits throw at call time.
 accepted by `Agent`, `generate()`, `stream()`, and `PromptCompactor`:
 
 ```typescript
-type ReasoningSetting = "default" | "off" | "on" | { effort: "low" | "medium" | "high" };
+type ReasoningSetting =
+  "default" | "off" | "on" | { effort: "low" | "medium" | "high"; display?: "visible" | "hidden" };
 
 await generate({ provider, model, messages, reasoning: { effort: "high" } });
 ```
 
-| Setting               | Meaning                                                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                       |
-| `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3, Gemini 2.5 Pro) reject the request |
-| `"on"`                | Same as `{ effort: "medium" }`                                                                                             |
-| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets        |
+| Setting               | Meaning                                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                                                                       |
+| `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3, Gemini 2.5 Pro) reject the request                                                 |
+| `"on"`                | Same as `{ effort: "medium" }`                                                                                                                                             |
+| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets                                                        |
+| `{ effort, display }` | `"visible"` (default) asks the provider to disclose its thinking; `"hidden"` asks it not to, which skips thinking tokens on the wire and improves time to first text token |
 
 Effort is relative within a model, not comparable across models. `"on"`
 enables reasoning but does not guarantee a visible thinking block on every
-response. Axle does not validate support: an unsupported combination comes
-back as a provider error. Anything beyond these levels, such as `xhigh`, an
-exact budget, or thinking display, goes through `providerOptions`, which is
-applied after the portable mapping and overrides it.
+response. `display` controls whether thinking is disclosed, not its form:
+Anthropic, OpenAI, and Gemini return a summary, open-weight models return
+raw text, and chat-completions endpoints other than OpenRouter have no
+field and ignore it. Axle does not validate support: an unsupported
+combination comes back as a provider error. Anything beyond these levels,
+such as `xhigh`, an exact budget, or an OpenAI summary length, goes through
+`providerOptions`, which is applied after the portable mapping and overrides
+it.
 
 Anthropic needs an output cap on every request. When you don't pass
 `maxOutputTokens`, `stream()` uses the model's ceiling and `generate()` uses

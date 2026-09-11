@@ -194,7 +194,7 @@ describe("createGenerationRequest (Anthropic)", () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          thinking: { type: "adaptive" },
+          thinking: { type: "adaptive", display: "summarized" },
           output_config: { effort: "high" },
         }),
       );
@@ -222,7 +222,7 @@ describe("createGenerationRequest (Anthropic)", () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          thinking: { type: "enabled", budget_tokens: 16384 },
+          thinking: { type: "enabled", budget_tokens: 16384, display: "summarized" },
           max_tokens: 21000,
         }),
       );
