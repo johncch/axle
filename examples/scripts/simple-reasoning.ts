@@ -10,7 +10,7 @@ async function reasonIt() {
     if (event.type === "part:start" && event.part.type === "thinking") {
       process.stdout.write("--- thinking ---\n");
     }
-    if (event.type === "thinking:delta") {
+    if (event.type === "thinking:raw-delta") {
       process.stdout.write(event.delta);
     }
     if (event.type === "part:start" && event.part.type === "text") {

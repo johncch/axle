@@ -93,7 +93,7 @@ export function createStreamingAdapter() {
       if (detail.type === "reasoning.text" && detail.text) {
         ensureThinkingPart(chunks, detail);
         chunks.push({
-          type: "thinking-delta",
+          type: "thinking-raw-delta",
           data: { index: currentPartIndex, text: detail.text },
         });
         handledReasoningDetails = true;
@@ -122,7 +122,7 @@ export function createStreamingAdapter() {
     if (!handledReasoningDetails && reasoningDelta) {
       ensureThinkingPart(chunks);
       chunks.push({
-        type: "thinking-delta",
+        type: "thinking-raw-delta",
         data: { index: currentPartIndex, text: reasoningDelta },
       });
     }

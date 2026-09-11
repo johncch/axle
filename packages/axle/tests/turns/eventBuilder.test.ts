@@ -71,6 +71,54 @@ describe("TurnEventBuilder", () => {
     });
   });
 
+  test("thinking streaming opens a part with no content fields and names the field each delta grows", () => {
+    const builder = new TurnEventBuilder();
+    const start = builder.startAgentTurn();
+
+    const events: TurnEvent[] = [];
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "thinking:start",
+        continuity: { provider: "anthropic", signature: "sig" },
+      }),
+    );
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "thinking:summary-delta",
+        delta: "gist",
+        accumulated: "gist",
+      }),
+    );
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "thinking:raw-delta",
+        delta: "chain",
+        accumulated: "chain",
+      }),
+    );
+    events.push(
+      ...builder.handleStreamEvent({ type: "thinking:end", summary: "gist", raw: "chain" }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "part:start",
+      "thinking:summary-delta",
+      "thinking:raw-delta",
+      "part:end",
+    ]);
+    const opened = events[0];
+    if (opened.type !== "part:start") throw new Error("expected part:start");
+    expect(opened.turnId).toBe(start.turnId);
+    expect(opened.part).toMatchObject({
+      type: "thinking",
+      continuity: { provider: "anthropic", signature: "sig" },
+    });
+    expect(opened.part).not.toHaveProperty("summary");
+    expect(opened.part).not.toHaveProperty("raw");
+    expect(opened.part).not.toHaveProperty("text");
+    expect(opened.part).not.toHaveProperty("redacted");
+  });
+
   test("tool lifecycle emits action events with completion timing", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-23T12:00:00.000Z"));

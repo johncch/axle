@@ -170,12 +170,10 @@ export interface ThinkingPart<TAnnotation extends Annotation = Annotation> {
   id: string;
   /** Part discriminator. */
   type: "thinking";
-  /** Accumulated renderable thinking text, when the provider exposes it. */
-  text?: string;
-  /** Optional provider-supplied summary. */
+  /** The provider's condensed account of its reasoning, when it disclosed one. */
   summary?: string;
-  /** Whether the provider marked the thinking content as redacted. */
-  redacted?: boolean;
+  /** The chain of thought itself; effectively open-weight models only. */
+  raw?: string;
   /** Provider continuity payload that should be preserved for future requests. */
   continuity?: ThinkingContinuity;
   /** Provider-specific metadata that is not part of Axle's normalized contract. */

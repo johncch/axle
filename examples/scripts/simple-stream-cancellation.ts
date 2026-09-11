@@ -26,7 +26,7 @@ handle.on((event) => {
       console.log(`[Start] thinking`);
       break;
     case "text:delta":
-    case "thinking:delta":
+    case "thinking:raw-delta":
       process.stdout.write(event.delta);
       break;
     case "text:end":

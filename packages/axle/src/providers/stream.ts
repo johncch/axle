@@ -59,19 +59,17 @@ export type StreamEvent =
   // Thinking streaming
   | {
       type: "thinking:start";
-      redacted?: boolean;
       continuity?: ThinkingContinuity;
       providerMetadata?: Record<string, unknown>;
     }
-  | { type: "thinking:delta"; delta: string; accumulated: string }
+  | { type: "thinking:raw-delta"; delta: string; accumulated: string }
   | { type: "thinking:summary-delta"; delta: string; accumulated: string }
   | {
       type: "thinking:update";
-      redacted?: boolean;
       continuity?: ThinkingContinuity;
       providerMetadata?: Record<string, unknown>;
     }
-  | { type: "thinking:end"; final: string }
+  | { type: "thinking:end"; summary?: string; raw?: string }
   // Tool calls (correlated by `id`)
   | { type: "tool:request"; id: string; name: string; kind?: "tool" | "agent" }
   | {
@@ -497,12 +495,7 @@ async function run(
       });
     }
 
-    const toolResultsMessage = await executeStepTools(
-      toolCalls,
-      outcome,
-      assistantMessage,
-      loop,
-    );
+    const toolResultsMessage = await executeStepTools(toolCalls, outcome, assistantMessage, loop);
 
     if (signal.aborted) {
       span?.end("ok");

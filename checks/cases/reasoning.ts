@@ -131,7 +131,7 @@ export const reasoningCases: CheckCase[] = [
       });
       let thinkingDeltaCount = 0;
       handle.on((event) => {
-        if (event.type === "thinking:delta") thinkingDeltaCount += 1;
+        if (event.type === "thinking:raw-delta") thinkingDeltaCount += 1;
       });
 
       const result = await handle.final;

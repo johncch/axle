@@ -181,7 +181,7 @@ export function createAnthropicStreamingAdapter() {
           }
         } else if (event.delta.type === "thinking_delta") {
           chunks.push({
-            type: "thinking-delta",
+            type: "thinking-raw-delta",
             data: {
               text: event.delta.thinking,
               index: event.index,

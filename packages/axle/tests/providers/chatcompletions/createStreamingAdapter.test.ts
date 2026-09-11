@@ -146,7 +146,7 @@ describe("createStreamingAdapter", () => {
       expect(types).toEqual([
         "start",
         "thinking-start",
-        "thinking-delta",
+        "thinking-raw-delta",
         "thinking-complete",
         "citation",
         "text-start",
@@ -195,25 +195,25 @@ describe("createStreamingAdapter", () => {
       expect(thinkingStart).toHaveLength(1);
     });
 
-    test("emits thinking-delta for reasoning_content", () => {
+    test("emits thinking-raw-delta for reasoning_content", () => {
       const adapter = createStreamingAdapter();
       const chunks = adapter.handleChunk(makeChunk({ reasoning_content: "Step 1" }));
 
-      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-delta");
+      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-raw-delta");
       expect(thinkingDeltas).toHaveLength(1);
       expect((thinkingDeltas[0] as any).data.text).toBe("Step 1");
     });
 
-    test("emits thinking-delta for reasoning", () => {
+    test("emits thinking-raw-delta for reasoning", () => {
       const adapter = createStreamingAdapter();
       const chunks = adapter.handleChunk(makeChunk({ reasoning: "OpenRouter step" }));
 
-      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-delta");
+      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-raw-delta");
       expect(thinkingDeltas).toHaveLength(1);
       expect((thinkingDeltas[0] as any).data.text).toBe("OpenRouter step");
     });
 
-    test("emits thinking-delta for OpenRouter reasoning.text details", () => {
+    test("emits thinking-raw-delta for OpenRouter reasoning.text details", () => {
       const adapter = createStreamingAdapter();
       const chunks = adapter.handleChunk(
         makeChunk({
@@ -233,8 +233,8 @@ describe("createStreamingAdapter", () => {
         type: "thinking-start",
         data: { index: 0, id: "reasoning-1" },
       });
-      expect(chunks.find((chunk) => chunk.type === "thinking-delta")).toMatchObject({
-        type: "thinking-delta",
+      expect(chunks.find((chunk) => chunk.type === "thinking-raw-delta")).toMatchObject({
+        type: "thinking-raw-delta",
         data: { index: 0, text: "Structured OpenRouter step" },
       });
     });
@@ -283,9 +283,9 @@ describe("createStreamingAdapter", () => {
         }),
       );
 
-      const thinkingDeltas = chunks.filter((chunk) => chunk.type === "thinking-delta");
+      const thinkingDeltas = chunks.filter((chunk) => chunk.type === "thinking-raw-delta");
       expect(thinkingDeltas).toEqual([
-        { type: "thinking-delta", data: { index: 0, text: "Canonical detail" } },
+        { type: "thinking-raw-delta", data: { index: 0, text: "Canonical detail" } },
       ]);
     });
 
@@ -297,7 +297,7 @@ describe("createStreamingAdapter", () => {
       const thinkingStarts = chunks.filter((c) => c.type === "thinking-start");
       expect(thinkingStarts).toHaveLength(0);
 
-      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-delta");
+      const thinkingDeltas = chunks.filter((c) => c.type === "thinking-raw-delta");
       expect(thinkingDeltas).toHaveLength(1);
       expect((thinkingDeltas[0] as any).data.text).toBe(" Step 2");
     });
@@ -311,9 +311,9 @@ describe("createStreamingAdapter", () => {
       const allChunks = [...chunk1, ...chunk2];
       const types = allChunks.map((c) => c.type);
 
-      // Should have: start, thinking-start, thinking-delta, thinking-complete, text-start, text-delta
+      // Should have: start, thinking-start, thinking-raw-delta, thinking-complete, text-start, text-delta
       expect(types).toContain("thinking-start");
-      expect(types).toContain("thinking-delta");
+      expect(types).toContain("thinking-raw-delta");
       expect(types).toContain("thinking-complete");
       expect(types).toContain("text-start");
       expect(types).toContain("text-delta");

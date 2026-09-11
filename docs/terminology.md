@@ -82,6 +82,19 @@ should show its thinking, never in what form. The form that arrives, a
 summary or raw text, is recorded on the thinking part and is the model's
 property; "display" never names a summary length or a rendering choice.
 
+**Summary / raw (thinking)** — the two content fields of a turn's thinking
+part, each named for what the provider handed back: `summary` is the
+provider's condensed account of its reasoning, `raw` is the chain of
+thought itself (open-weight models only). Neither present is the withheld
+state. The message-layer thinking part keeps the wire vocabulary (`text`,
+`summary`, `redacted`) because it exists to be echoed, not read. Normative
+in `docs/architecture/thinking.md`.
+
+**Redacted (thinking)** — a wire-layer flag only: the provider substituted
+an opaque payload for the content and wants it echoed on the next turn.
+Never a turn-part or event field, and never set because thinking was
+merely hidden.
+
 ## CLI vocabulary
 
 The CLI layers its own units on top of the core terms; normative design in

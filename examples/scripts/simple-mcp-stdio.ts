@@ -28,7 +28,7 @@ agent.on((event) => {
         console.log(`[Tool] Starting ${event.part.detail.name} tool`);
       }
       break;
-    case "thinking:delta":
+    case "thinking:raw-delta":
     case "text:delta":
       process.stdout.write(`${event.delta}`);
       break;

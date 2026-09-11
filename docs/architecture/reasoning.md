@@ -60,9 +60,10 @@ can be re-checked when they change.
     is unrepresentable by construction.
 11. **Display controls disclosure, not form.** The request says whether the
     provider should show its thinking. Whether a summary or raw text comes
-    back is the model's property, recorded on the thinking part, and no
-    provider lets the caller choose it. The request values are therefore
-    named for visibility, not for the part field they populate.
+    back is the model's property, recorded on the thinking part (see
+    [thinking.md](thinking.md)), and no provider lets the caller choose it.
+    The request values are therefore named for visibility, not for the part
+    field they populate.
 
 ## Provider and model requirements
 

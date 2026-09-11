@@ -264,8 +264,8 @@ describe("createAnthropicStreamingAdapter", () => {
       const chunks = adapter.handleEvent(event as any);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("thinking-delta");
-      if (chunks[0].type === "thinking-delta") {
+      expect(chunks[0].type).toBe("thinking-raw-delta");
+      if (chunks[0].type === "thinking-raw-delta") {
         expect(chunks[0].data.text).toBe("Let me think about this...");
         expect(chunks[0].data.index).toBe(0);
       }
@@ -292,9 +292,9 @@ describe("createAnthropicStreamingAdapter", () => {
         delta: { type: "thinking_delta", thinking: "I need to consider..." },
       });
 
-      expect(delta1[0].type).toBe("thinking-delta");
-      expect(delta2[0].type).toBe("thinking-delta");
-      if (delta1[0].type === "thinking-delta" && delta2[0].type === "thinking-delta") {
+      expect(delta1[0].type).toBe("thinking-raw-delta");
+      expect(delta2[0].type).toBe("thinking-raw-delta");
+      if (delta1[0].type === "thinking-raw-delta" && delta2[0].type === "thinking-raw-delta") {
         expect(delta1[0].data.text).toBe("First, ");
         expect(delta2[0].data.text).toBe("I need to consider...");
       }
@@ -649,7 +649,7 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(thinkStart[0].type).toBe("thinking-start");
-      expect(thinkDelta[0].type).toBe("thinking-delta");
+      expect(thinkDelta[0].type).toBe("thinking-raw-delta");
       expect(thinkStop).toHaveLength(1);
       expect(thinkStop[0].type).toBe("thinking-complete");
       expect(textStart).toHaveLength(1);

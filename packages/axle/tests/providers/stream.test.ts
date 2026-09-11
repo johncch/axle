@@ -12,7 +12,7 @@ import type {
   StreamTextDeltaChunk,
   StreamTextStartChunk,
   StreamThinkingCompleteChunk,
-  StreamThinkingDeltaChunk,
+  StreamThinkingRawDeltaChunk,
   StreamThinkingStartChunk,
   StreamToolCallCompleteChunk,
   StreamToolCallStartChunk,
@@ -89,8 +89,8 @@ function thinkingStartChunk(index: number): StreamThinkingStartChunk {
   return { type: "thinking-start", data: { index } };
 }
 
-function thinkingDeltaChunk(index: number, text: string): StreamThinkingDeltaChunk {
-  return { type: "thinking-delta", data: { index, text } };
+function thinkingDeltaChunk(index: number, text: string): StreamThinkingRawDeltaChunk {
+  return { type: "thinking-raw-delta", data: { index, text } };
 }
 
 function thinkingCompleteChunk(index: number): StreamThinkingCompleteChunk {
@@ -258,6 +258,71 @@ describe("stream()", () => {
       expect(events.some((event) => event.type === "thinking:update")).toBe(true);
     });
 
+    test.each([
+      ["raw then summary", ["thinking-raw-delta", "thinking-summary-delta"]],
+      ["summary then raw", ["thinking-summary-delta", "thinking-raw-delta"]],
+    ] as const)("thinking:end carries both buffers, %s", async (_label, order) => {
+      const text = { "thinking-raw-delta": "chain", "thinking-summary-delta": "gist" } as const;
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        ...order.map((type) => ({ type, data: { index: 0, text: text[type] } })),
+        thinkingCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([{ type: "thinking", text: "chain", summary: "gist" }]);
+      expect(events.find((event) => event.type === "thinking:end")).toEqual({
+        type: "thinking:end",
+        raw: "chain",
+        summary: "gist",
+      });
+    });
+
+    test("redacted stays on the message part and off the stream events", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        {
+          type: "thinking-start",
+          data: {
+            index: 0,
+            redacted: true,
+            continuity: { provider: "anthropic", redactedData: "opaque" },
+          },
+        },
+        thinkingCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([
+        {
+          type: "thinking",
+          redacted: true,
+          continuity: { provider: "anthropic", redactedData: "opaque" },
+        },
+      ]);
+      const thinkingEvents = events.filter((event) => event.type.startsWith("thinking:"));
+      expect(thinkingEvents.map((event) => event.type)).toEqual(["thinking:start", "thinking:end"]);
+      for (const event of thinkingEvents) expect(event).not.toHaveProperty("redacted");
+      expect(thinkingEvents[1]).toEqual({ type: "thinking:end" });
+    });
+
     test("accumulates unanchored citations as ordered citation parts", async () => {
       const citation = {
         source: { type: "web" as const, title: "Example", url: "https://example.com" },
@@ -395,10 +460,7 @@ describe("stream()", () => {
       const final = await handle.final;
 
       expect(final.ok).toBe(true);
-      expect(final.messages.map((message) => message.role)).toEqual([
-        "assistant",
-        "tool",
-      ]);
+      expect(final.messages.map((message) => message.role)).toEqual(["assistant", "tool"]);
       expect(providerCalls).toBe(1);
     });
 
@@ -883,9 +945,9 @@ describe("stream()", () => {
     test("throws on a non-positive maxSteps", () => {
       const provider = makeProvider({ streamChunks: [] });
 
-      expect(() =>
-        stream({ provider, model: "test-model", messages: [], maxSteps: 0 }),
-      ).toThrow("maxSteps must be at least 1");
+      expect(() => stream({ provider, model: "test-model", messages: [], maxSteps: 0 })).toThrow(
+        "maxSteps must be at least 1",
+      );
     });
 
     test("throws on a non-positive maxContextTokens", () => {

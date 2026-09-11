@@ -276,7 +276,7 @@ export function createStreamingAdapter() {
       case "response.reasoning_text.delta": {
         if (event.delta) {
           chunks.push({
-            type: "thinking-delta",
+            type: "thinking-raw-delta",
             data: {
               index: currentPartIndex,
               text: event.delta,
