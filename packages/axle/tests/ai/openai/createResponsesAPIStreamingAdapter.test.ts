@@ -296,8 +296,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
       const chunks = adapter.handleEvent(event);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("thinking-delta");
-      if (chunks[0].type === "thinking-delta") {
+      expect(chunks[0].type).toBe("thinking-raw-delta");
+      if (chunks[0].type === "thinking-raw-delta") {
         expect(chunks[0].data.text).toBe("Let me think about this...");
         expect(chunks[0].data.index).toBe(0);
       }
@@ -378,15 +378,15 @@ describe("createResponsesAPIStreamingAdapter", () => {
         sequence_number: 5,
       } as ResponseStreamEvent);
 
-      if (chunks1[0].type === "thinking-delta") {
+      if (chunks1[0].type === "thinking-raw-delta") {
         expect(chunks1[0].data.text).toBe("First, ");
         expect(chunks1[0].data.index).toBe(0);
       }
-      if (chunks2[0].type === "thinking-delta") {
+      if (chunks2[0].type === "thinking-raw-delta") {
         expect(chunks2[0].data.text).toBe("I need to analyze ");
         expect(chunks2[0].data.index).toBe(0);
       }
-      if (chunks3[0].type === "thinking-delta") {
+      if (chunks3[0].type === "thinking-raw-delta") {
         expect(chunks3[0].data.text).toBe("the problem.");
         expect(chunks3[0].data.index).toBe(0);
       }
@@ -643,8 +643,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
       expect(chunks1[0].type).toBe("start");
       expect(chunks2[0].type).toBe("thinking-start");
-      expect(chunks3[0].type).toBe("thinking-delta");
-      if (chunks3[0].type === "thinking-delta") {
+      expect(chunks3[0].type).toBe("thinking-raw-delta");
+      if (chunks3[0].type === "thinking-raw-delta") {
         expect(chunks3[0].data.text).toBe("Thinking...");
       }
       expect(chunks4).toHaveLength(1);

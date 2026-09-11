@@ -66,7 +66,8 @@ export async function readStep(
   let usage: Stats = createStats();
 
   let openPartType: "text" | "thinking" | null = null;
-  let openAccumulated: string = "";
+  let openText = "";
+  let openThinking: { summary?: string; raw?: string } = {};
 
   const toolCallArgumentErrors = new Map<string, ToolCallArgumentError>();
   const chunkIndexToPartIndex = new Map<number, number>();
@@ -90,12 +91,14 @@ export async function readStep(
   let currentPartIndex = -1;
 
   const closePart = () => {
-    if (openPartType !== null) {
-      const endType = openPartType === "text" ? ("text:end" as const) : ("thinking:end" as const);
-      ctx.emit({ type: endType, final: openAccumulated });
-      openPartType = null;
-      openAccumulated = "";
+    if (openPartType === "text") {
+      ctx.emit({ type: "text:end", final: openText });
+    } else if (openPartType === "thinking") {
+      ctx.emit({ type: "thinking:end", ...openThinking });
     }
+    openPartType = null;
+    openText = "";
+    openThinking = {};
   };
 
   for await (const chunk of source) {
@@ -112,7 +115,7 @@ export async function readStep(
         currentPartIndex = parts.length - 1;
         chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
         openPartType = "text";
-        openAccumulated = "";
+        openText = "";
         ctx.emit({ type: "text:start" });
         break;
       }
@@ -120,11 +123,11 @@ export async function readStep(
       case "text-delta": {
         const part = parts[currentPartIndex] as ContentPartText;
         part.text += chunk.data.text;
-        openAccumulated = part.text;
+        openText = part.text;
         ctx.emit({
           type: "text:delta",
           delta: chunk.data.text,
-          accumulated: openAccumulated,
+          accumulated: openText,
         });
         break;
       }
@@ -168,7 +171,6 @@ export async function readStep(
         closePart();
         parts.push({
           type: "thinking",
-          text: "",
           ...(chunk.data.id ? { id: chunk.data.id } : {}),
           ...(chunk.data.redacted !== undefined ? { redacted: chunk.data.redacted } : {}),
           ...(chunk.data.continuity ? { continuity: chunk.data.continuity } : {}),
@@ -177,24 +179,23 @@ export async function readStep(
         currentPartIndex = parts.length - 1;
         chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
         openPartType = "thinking";
-        openAccumulated = "";
+        openThinking = {};
         ctx.emit({
           type: "thinking:start",
-          redacted: chunk.data.redacted,
           continuity: chunk.data.continuity,
           providerMetadata: chunk.data.providerMetadata,
         });
         break;
       }
 
-      case "thinking-delta": {
+      case "thinking-raw-delta": {
         const part = parts[currentPartIndex] as ContentPartThinking;
         part.text = (part.text ?? "") + chunk.data.text;
-        openAccumulated = part.text;
+        openThinking.raw = part.text;
         ctx.emit({
-          type: "thinking:delta",
+          type: "thinking:raw-delta",
           delta: chunk.data.text,
-          accumulated: openAccumulated,
+          accumulated: part.text,
         });
         break;
       }
@@ -202,11 +203,11 @@ export async function readStep(
       case "thinking-summary-delta": {
         const part = parts[currentPartIndex] as ContentPartThinking;
         part.summary = (part.summary ?? "") + chunk.data.text;
-        openAccumulated = part.summary;
+        openThinking.summary = part.summary;
         ctx.emit({
           type: "thinking:summary-delta",
           delta: chunk.data.text,
-          accumulated: openAccumulated,
+          accumulated: part.summary,
         });
         break;
       }
@@ -220,7 +221,6 @@ export async function readStep(
         if (chunk.data.providerMetadata) part.providerMetadata = chunk.data.providerMetadata;
         ctx.emit({
           type: "thinking:update",
-          redacted: chunk.data.redacted,
           continuity: chunk.data.continuity,
           providerMetadata: chunk.data.providerMetadata,
         });

@@ -14,7 +14,7 @@ export interface StreamChunk {
     | "tool-call-args-delta"
     | "tool-call-complete"
     | "thinking-start"
-    | "thinking-delta"
+    | "thinking-raw-delta"
     | "thinking-summary-delta"
     | "thinking-metadata"
     | "thinking-complete"
@@ -115,8 +115,8 @@ export interface StreamThinkingStartChunk extends StreamChunk {
   };
 }
 
-export interface StreamThinkingDeltaChunk extends StreamChunk {
-  type: "thinking-delta";
+export interface StreamThinkingRawDeltaChunk extends StreamChunk {
+  type: "thinking-raw-delta";
   data: {
     index: number;
     text: string;
@@ -225,7 +225,7 @@ export type AnyStreamChunk =
   | StreamCitationChunk
   | StreamTextCompleteChunk
   | StreamThinkingStartChunk
-  | StreamThinkingDeltaChunk
+  | StreamThinkingRawDeltaChunk
   | StreamThinkingSummaryDeltaChunk
   | StreamThinkingMetadataChunk
   | StreamThinkingCompleteChunk

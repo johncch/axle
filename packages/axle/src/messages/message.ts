@@ -134,11 +134,11 @@ export interface ContentPartThinking {
   type: "thinking";
   /** Provider thinking block id, when supplied. */
   id?: string;
-  /** Renderable reasoning text content, when the provider exposes it. */
+  /** The provider's block content as sent, echoed back verbatim under its signature. */
   text?: string;
-  /** Optional provider-supplied reasoning summary. */
+  /** The provider's reasoning summary, echoed back where the provider accepts it. */
   summary?: string;
-  /** Whether the provider redacted the reasoning content. */
+  /** The provider substituted an opaque payload for the content and wants it echoed. */
   redacted?: boolean;
   /** Provider continuity payload that should be preserved for future requests. */
   continuity?: ThinkingContinuity;

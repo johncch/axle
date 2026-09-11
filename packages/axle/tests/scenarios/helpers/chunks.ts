@@ -6,7 +6,7 @@ import type {
   StreamTextDeltaChunk,
   StreamTextStartChunk,
   StreamThinkingCompleteChunk,
-  StreamThinkingDeltaChunk,
+  StreamThinkingRawDeltaChunk,
   StreamThinkingStartChunk,
   StreamToolCallCompleteChunk,
   StreamToolCallStartChunk,
@@ -33,8 +33,8 @@ export function thinkingStartChunk(index: number): StreamThinkingStartChunk {
   return { type: "thinking-start", data: { index } };
 }
 
-export function thinkingDeltaChunk(index: number, text: string): StreamThinkingDeltaChunk {
-  return { type: "thinking-delta", data: { index, text } };
+export function thinkingDeltaChunk(index: number, text: string): StreamThinkingRawDeltaChunk {
+  return { type: "thinking-raw-delta", data: { index, text } };
 }
 
 export function thinkingCompleteChunk(index: number): StreamThinkingCompleteChunk {

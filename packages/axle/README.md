@@ -723,7 +723,7 @@ try {
 ```
 
 `TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
-`part:end`, `text:delta`, `text:citation`, `thinking:delta`,
+`part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
 `action:running`, `action:progress`, `action:complete`, `action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
@@ -860,7 +860,7 @@ and completion.
 
 `StreamEvent` types: `step:start`, `step:complete`, `tool-results:start`,
 `tool-results:complete`, `text:start`, `text:delta`, `text:citation`,
-`text:end`, `citation`, `thinking:start`, `thinking:delta`,
+`text:end`, `citation`, `thinking:start`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
 `tool:args-delta`, `tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
 `tool:exec-error`, `provider-tool:start`, `provider-tool:complete`, `error`.

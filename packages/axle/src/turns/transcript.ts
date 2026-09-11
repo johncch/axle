@@ -36,7 +36,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "part:start": true,
   "text:delta": true,
   "text:citation": true,
-  "thinking:delta": true,
+  "thinking:raw-delta": true,
   "thinking:summary-delta": true,
   "thinking:update": true,
   "part:end": true,
@@ -159,10 +159,10 @@ export class Transcript<
           };
         });
 
-      case "thinking:delta":
+      case "thinking:raw-delta":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
           if (part.type !== "thinking") return part;
-          return { ...part, text: (part.text ?? "") + event.delta };
+          return { ...part, raw: (part.raw ?? "") + event.delta };
         });
 
       case "thinking:summary-delta":
@@ -176,7 +176,6 @@ export class Transcript<
           if (part.type !== "thinking") return part;
           return {
             ...part,
-            ...(event.redacted !== undefined ? { redacted: event.redacted } : {}),
             ...(event.continuity ? { continuity: event.continuity } : {}),
             ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
           };

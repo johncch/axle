@@ -86,7 +86,7 @@ describe("createStreamingRequest", () => {
     });
     const thinkingDeltas: string[] = [];
     handle.on((event) => {
-      if (event.type === "thinking:delta") thinkingDeltas.push(event.delta);
+      if (event.type === "thinking:raw-delta") thinkingDeltas.push(event.delta);
     });
 
     const result = await handle.final;

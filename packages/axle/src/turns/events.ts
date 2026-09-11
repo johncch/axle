@@ -37,13 +37,12 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "part:start"; turnId: string; part: TurnPart<TAnnotation> }
   | { type: "text:delta"; turnId: string; partId: string; delta: string }
   | { type: "text:citation"; turnId: string; partId: string; citation: Citation }
-  | { type: "thinking:delta"; turnId: string; partId: string; delta: string }
+  | { type: "thinking:raw-delta"; turnId: string; partId: string; delta: string }
   | { type: "thinking:summary-delta"; turnId: string; partId: string; delta: string }
   | {
       type: "thinking:update";
       turnId: string;
       partId: string;
-      redacted?: boolean;
       continuity?: ThinkingContinuity;
       providerMetadata?: Record<string, unknown>;
     }

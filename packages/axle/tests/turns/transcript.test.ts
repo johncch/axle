@@ -144,7 +144,7 @@ describe("Transcript", () => {
     transcript.apply({
       type: "part:start",
       turnId: "t1",
-      part: { id: "p2", type: "thinking", summary: "", redacted: false },
+      part: { id: "p2", type: "thinking" },
     });
     transcript.apply({
       type: "thinking:summary-delta",
@@ -167,8 +167,34 @@ describe("Transcript", () => {
     expect((transcript.turns[0] as Turn).parts[1]).toMatchObject({
       type: "thinking",
       summary: "Checked sources.",
-      redacted: false,
       continuity: { provider: "openai", encrypted: "encrypted" },
+    });
+    expect((transcript.turns[0] as Turn).parts[1]).not.toHaveProperty("raw");
+    expect((transcript.turns[0] as Turn).parts[1]).not.toHaveProperty("redacted");
+  });
+
+  test("raw and summary deltas accumulate into separate thinking fields", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1", timing: { start: "2026-01-01" } });
+    transcript.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "p1", type: "thinking" },
+    });
+    transcript.apply({ type: "thinking:raw-delta", turnId: "t1", partId: "p1", delta: "Let me " });
+    transcript.apply({
+      type: "thinking:summary-delta",
+      turnId: "t1",
+      partId: "p1",
+      delta: "Short.",
+    });
+    transcript.apply({ type: "thinking:raw-delta", turnId: "t1", partId: "p1", delta: "think." });
+
+    expect((transcript.turns[0] as Turn).parts[0]).toEqual({
+      id: "p1",
+      type: "thinking",
+      raw: "Let me think.",
+      summary: "Short.",
     });
   });
 

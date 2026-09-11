@@ -172,9 +172,7 @@ export class TurnEventBuilder {
         const part: ThinkingPart = {
           id: partId,
           type: "thinking",
-          text: "",
           timing: startTiming(),
-          ...(event.redacted !== undefined ? { redacted: event.redacted } : {}),
           ...(event.continuity ? { continuity: event.continuity } : {}),
           ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
         };
@@ -183,10 +181,10 @@ export class TurnEventBuilder {
         break;
       }
 
-      case "thinking:delta": {
+      case "thinking:raw-delta": {
         if (this.currentThinkingPart) {
           events.push({
-            type: "thinking:delta",
+            type: "thinking:raw-delta",
             turnId,
             partId: this.currentThinkingPart.id,
             delta: event.delta,
@@ -225,7 +223,6 @@ export class TurnEventBuilder {
             type: "thinking:update",
             turnId,
             partId: this.currentThinkingPart.id,
-            redacted: event.redacted,
             continuity: event.continuity,
             providerMetadata: event.providerMetadata,
           });
