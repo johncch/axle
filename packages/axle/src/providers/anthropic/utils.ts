@@ -59,7 +59,7 @@ async function convertMessage(
         } else if (continuity?.signature) {
           content.push({
             type: "thinking",
-            thinking: part.text ?? "",
+            thinking: part.summary ?? part.text ?? "",
             signature: continuity.signature,
           });
         }
@@ -393,11 +393,9 @@ export function convertToAxleContentParts(
         ...(citations && citations.length > 0 ? { citations } : {}),
       });
     } else if (block.type === "thinking") {
-      const isRedacted = block.thinking.length === 0 && Boolean(block.signature);
       result.push({
         type: "thinking",
-        ...(block.thinking ? { text: block.thinking } : {}),
-        redacted: isRedacted,
+        ...(block.thinking ? { summary: block.thinking } : {}),
         continuity: { provider: "anthropic", signature: block.signature },
       });
     } else if (block.type === "redacted_thinking") {

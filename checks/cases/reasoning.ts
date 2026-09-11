@@ -97,17 +97,17 @@ export const reasoningCases: CheckCase[] = [
           continue;
         }
         usage = result.usage;
-        const thinkingText = getThinkingText(result.final);
-        disclosed ||= thinkingText.length > 0;
+        const summary = getThinkingSummary(result.final);
+        disclosed ||= summary.length > 0;
         perEffort[effort] = {
           text: getAssistantText(result.final),
           reasoningOut: result.usage?.reasoningOut,
           thinkingParts: countThinking(result.final),
-          thinkingText: thinkingText.slice(0, 200),
+          thinkingSummary: summary.slice(0, 200),
         };
       }
       if (DISCLOSING_PROVIDERS.has(providerId) && !disclosed) {
-        failureReasons.push("No effort returned disclosed thinking text.");
+        failureReasons.push("No effort returned a thinking summary.");
       }
 
       return {
@@ -153,41 +153,14 @@ export const reasoningCases: CheckCase[] = [
     id: "reasoning-tool-continuity",
     description:
       "A reasoning-enabled tool loop passes thinking continuity back through the tool turn and finishes.",
-    async run({ provider, model, providerId, requestOptions }) {
-      const result = await generate({
-        provider,
-        model,
-        ...requestOptions,
-        reasoning: "on",
-        ...(providerId === "openai"
-          ? { providerOptions: { store: false, include: ["reasoning.encrypted_content"] } }
-          : {}),
-        messages: [
-          {
-            role: "user",
-            content: "Use the add_numbers tool to add 17 and 25. Then answer with the result.",
-          },
-        ],
-        tools: [addNumbersTool],
-      });
-
-      if (!result.ok) return fail({ error: result.error });
-      const text = getAssistantText(result.final);
-      const toolTurns = result.messages.filter(
-        (message): message is AxleAssistantMessage =>
-          message.role === "assistant" && message.content.some((part) => part.type === "tool-call"),
-      );
-      return {
-        ok: text.includes("42") && toolTurns.length > 0,
-        details: {
-          text,
-          toolTurns: toolTurns.length,
-          thinkingBeforeToolCall: toolTurns.map(countThinking),
-          messageCount: result.messages.length,
-          usage: result.usage,
-        },
-      };
-    },
+    run: (context) => runToolContinuity(context, "on"),
+  },
+  {
+    group: "extended",
+    id: "reasoning-tool-continuity-hidden",
+    description:
+      "A hidden-display tool loop echoes empty thinking blocks with their signatures and finishes.",
+    run: (context) => runToolContinuity(context, { effort: "medium", display: "hidden" }),
   },
   {
     group: "extended",
@@ -285,15 +258,67 @@ const addNumbersTool: ExecutableTool<z.ZodObject<{ a: z.ZodNumber; b: z.ZodNumbe
   },
 };
 
+async function runToolContinuity(
+  { provider, model, providerId, requestOptions }: Parameters<CheckCase["run"]>[0],
+  reasoning: ReasoningSetting,
+): Promise<CheckCaseResult> {
+  const result = await generate({
+    provider,
+    model,
+    ...requestOptions,
+    reasoning,
+    ...(providerId === "openai"
+      ? { providerOptions: { store: false, include: ["reasoning.encrypted_content"] } }
+      : {}),
+    messages: [
+      {
+        role: "user",
+        content: "Use the add_numbers tool to add 17 and 25. Then answer with the result.",
+      },
+    ],
+    tools: [addNumbersTool],
+  });
+
+  if (!result.ok) return fail({ error: result.error });
+  const text = getAssistantText(result.final);
+  const toolTurns = result.messages.filter(
+    (message): message is AxleAssistantMessage =>
+      message.role === "assistant" && message.content.some((part) => part.type === "tool-call"),
+  );
+  return {
+    ok: text.includes("42") && toolTurns.length > 0,
+    details: {
+      text,
+      toolTurns: toolTurns.length,
+      thinkingBeforeToolCall: toolTurns.map(describeThinking),
+      messageCount: result.messages.length,
+      usage: result.usage,
+    },
+  };
+}
+
+function describeThinking(message: AxleAssistantMessage) {
+  return message.content
+    .filter((part) => part.type === "thinking")
+    .map((part) => ({
+      id: part.id,
+      summary: part.summary?.slice(0, 120),
+      text: part.text?.slice(0, 120),
+      redacted: part.redacted,
+      continuity: part.continuity?.provider,
+      providerMetadata: part.providerMetadata,
+    }));
+}
+
 function countThinking(message: AxleMessage | undefined): number {
   if (!message || message.role !== "assistant") return 0;
   return message.content.filter((part) => part.type === "thinking").length;
 }
 
-function getThinkingText(message: AxleMessage | undefined): string {
+function getThinkingSummary(message: AxleMessage | undefined): string {
   if (!message || message.role !== "assistant") return "";
   return message.content
     .filter((part) => part.type === "thinking")
-    .map((part) => part.summary ?? part.text ?? "")
+    .map((part) => part.summary ?? "")
     .join("");
 }

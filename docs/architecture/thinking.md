@@ -76,11 +76,14 @@ reader may see.
 | Chat Completions bare `reasoning` / `reasoning_content` | ✓              |                   |                    |                | ✓          |
 | Chat Completions `reasoning.encrypted` alone            |                |                   | ✓                  |                |            |
 
-The `reasoning.text` rows are inferred from the field's name; OpenRouter
-documents no mapping from upstream model to detail type, and it defaults
-Claude to `summarized`, so a Claude summary could plausibly arrive under
-that type. This is the one place the table records a guess rather than a
-verified mapping.
+The Chat Completions rows map wire shape, not disclosure. OpenRouter
+documents no mapping from upstream model to detail type, and a harness run
+on 2026-09-11 (Claude Haiku 4.5 through OpenRouter, `reasoning_effort`
+sent) delivered Claude's summary as the bare `reasoning` string with no
+`reasoning_details` and no signature. That summary lands in `raw`, the
+audit's benign case. Whether OpenRouter emits `reasoning_details` under its
+unified `reasoning` request object is untested; that question belongs to
+the chat-completions boundary work (AXL-59).
 
 ## What each provider echoes back
 

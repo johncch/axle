@@ -207,11 +207,28 @@ describe("createAnthropicStreamingAdapter", () => {
       expect(chunks[0].type).toBe("thinking-start");
       if (chunks[0].type === "thinking-start") {
         expect(chunks[0].data.index).toBe(0);
-        expect(chunks[0].data.redacted).toBe(false);
+        expect(chunks[0].data).not.toHaveProperty("redacted");
         expect(chunks[0].data.continuity).toEqual({
           provider: "anthropic",
           signature: undefined,
         });
+      }
+    });
+
+    test("a hidden thinking block (empty text with a signature) is not redacted", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "", signature: "sig" } as any,
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-start");
+      if (chunks[0].type === "thinking-start") {
+        expect(chunks[0].data).not.toHaveProperty("redacted");
+        expect(chunks[0].data.continuity).toEqual({ provider: "anthropic", signature: "sig" });
       }
     });
 
@@ -264,8 +281,8 @@ describe("createAnthropicStreamingAdapter", () => {
       const chunks = adapter.handleEvent(event as any);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("thinking-raw-delta");
-      if (chunks[0].type === "thinking-raw-delta") {
+      expect(chunks[0].type).toBe("thinking-summary-delta");
+      if (chunks[0].type === "thinking-summary-delta") {
         expect(chunks[0].data.text).toBe("Let me think about this...");
         expect(chunks[0].data.index).toBe(0);
       }
@@ -292,9 +309,12 @@ describe("createAnthropicStreamingAdapter", () => {
         delta: { type: "thinking_delta", thinking: "I need to consider..." },
       });
 
-      expect(delta1[0].type).toBe("thinking-raw-delta");
-      expect(delta2[0].type).toBe("thinking-raw-delta");
-      if (delta1[0].type === "thinking-raw-delta" && delta2[0].type === "thinking-raw-delta") {
+      expect(delta1[0].type).toBe("thinking-summary-delta");
+      expect(delta2[0].type).toBe("thinking-summary-delta");
+      if (
+        delta1[0].type === "thinking-summary-delta" &&
+        delta2[0].type === "thinking-summary-delta"
+      ) {
         expect(delta1[0].data.text).toBe("First, ");
         expect(delta2[0].data.text).toBe("I need to consider...");
       }
@@ -649,7 +669,7 @@ describe("createAnthropicStreamingAdapter", () => {
       });
 
       expect(thinkStart[0].type).toBe("thinking-start");
-      expect(thinkDelta[0].type).toBe("thinking-raw-delta");
+      expect(thinkDelta[0].type).toBe("thinking-summary-delta");
       expect(thinkStop).toHaveLength(1);
       expect(thinkStop[0].type).toBe("thinking-complete");
       expect(textStart).toHaveLength(1);
@@ -765,6 +785,5 @@ describe("createAnthropicStreamingAdapter", () => {
         expect(chunks[0].data.output).toBeDefined();
       }
     });
-
   });
 });

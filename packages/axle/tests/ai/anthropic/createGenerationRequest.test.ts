@@ -421,9 +421,102 @@ describe("createGenerationRequest (Anthropic)", () => {
       expect(result.type).toBe("success");
       if (result.type === "success") {
         expect(result.content).toHaveLength(2);
-        expect(result.content[0].type).toBe("thinking");
+        expect(result.content[0]).toEqual({
+          type: "thinking",
+          summary: "Let me think...",
+          continuity: { provider: "anthropic", signature: undefined },
+        });
         expect(result.content[1].type).toBe("text");
       }
+    });
+
+    test("non-streaming thinking blocks: summarized, hidden, and redacted", async () => {
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_123",
+        type: "message",
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Gist.", signature: "sig-1" },
+          { type: "thinking", thinking: "", signature: "sig-2" },
+          { type: "redacted_thinking", data: "opaque" },
+          { type: "text", text: "Answer" },
+        ],
+        model: "claude-opus-5",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 30 },
+      });
+
+      const result = await createGenerationRequest({
+        client: mockClient,
+        model: "claude-opus-5",
+        messages: [{ role: "user" as const, content: "Question" }],
+        runtime: {},
+      });
+
+      expect(result.type).toBe("success");
+      if (result.type !== "success") return;
+      expect(result.content.slice(0, 3)).toEqual([
+        {
+          type: "thinking",
+          summary: "Gist.",
+          continuity: { provider: "anthropic", signature: "sig-1" },
+        },
+        { type: "thinking", continuity: { provider: "anthropic", signature: "sig-2" } },
+        {
+          type: "thinking",
+          redacted: true,
+          continuity: { provider: "anthropic", redactedData: "opaque" },
+        },
+      ]);
+    });
+
+    test("echoes summarized, hidden, and redacted thinking parts as the blocks Anthropic sent", async () => {
+      (mockCreate.mockResolvedValue as any)({
+        id: "msg_124",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-5",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 1 },
+      });
+
+      const messages: AxleMessage[] = [
+        { role: "user" as const, content: "Question" },
+        {
+          role: "assistant" as const,
+          id: "msg_prev",
+          content: [
+            {
+              type: "thinking",
+              summary: "Gist.",
+              continuity: { provider: "anthropic", signature: "sig-1" },
+            },
+            { type: "thinking", continuity: { provider: "anthropic", signature: "sig-2" } },
+            {
+              type: "thinking",
+              redacted: true,
+              continuity: { provider: "anthropic", redactedData: "opaque" },
+            },
+            { type: "text", text: "Answer" },
+          ],
+        },
+        { role: "user" as const, content: "Follow-up" },
+      ];
+
+      await createGenerationRequest({
+        client: mockClient,
+        model: "claude-opus-5",
+        messages,
+        runtime: {},
+      });
+
+      const sent = mockCreate.mock.calls[0][0].messages[1].content;
+      expect(sent.slice(0, 3)).toEqual([
+        { type: "thinking", thinking: "Gist.", signature: "sig-1" },
+        { type: "thinking", thinking: "", signature: "sig-2" },
+        { type: "redacted_thinking", data: "opaque" },
+      ]);
     });
 
     test("should handle max_tokens stop reason", async () => {

@@ -99,13 +99,10 @@ export function createAnthropicStreamingAdapter() {
           });
         } else if (event.content_block.type === "thinking") {
           blockTypes.set(event.index, "thinking");
-          const isRedacted =
-            event.content_block.thinking.length === 0 && Boolean(event.content_block.signature);
           chunks.push({
             type: "thinking-start",
             data: {
               index: event.index,
-              redacted: isRedacted,
               continuity: {
                 provider: "anthropic",
                 signature: event.content_block.signature,
@@ -181,7 +178,7 @@ export function createAnthropicStreamingAdapter() {
           }
         } else if (event.delta.type === "thinking_delta") {
           chunks.push({
-            type: "thinking-raw-delta",
+            type: "thinking-summary-delta",
             data: {
               text: event.delta.thinking,
               index: event.index,
