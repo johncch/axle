@@ -146,7 +146,10 @@ export const RequestOptionsSchema = z.strictObject({
   reasoning: z
     .union([
       z.enum(["default", "off", "on"]),
-      z.strictObject({ effort: z.enum(["low", "medium", "high"]) }),
+      z.strictObject({
+        effort: z.enum(["low", "medium", "high"]),
+        display: z.enum(["visible", "hidden"]).optional(),
+      }),
     ])
     .optional(),
   maxOutputTokens: z.number().int().positive().optional(),

@@ -76,6 +76,12 @@ summary. Old messages cease to exist; lookback is served by the transcript.
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means
 the conversation transcript.
 
+**Display (reasoning)** — the request-side disclosure control on
+`reasoning`: `display: "visible" | "hidden"`. It says whether the provider
+should show its thinking, never in what form. The form that arrives, a
+summary or raw text, is recorded on the thinking part and is the model's
+property; "display" never names a summary length or a rendering choice.
+
 ## CLI vocabulary
 
 The CLI layers its own units on top of the core terms; normative design in

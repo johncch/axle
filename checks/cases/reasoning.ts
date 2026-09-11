@@ -19,6 +19,8 @@ const reasoningPrompt =
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
 
+const DISCLOSING_PROVIDERS: ReadonlySet<ProviderId> = new Set(["anthropic", "openai", "gemini"]);
+
 // Models whose request syntax differs from the provider's default check
 // target, so both routes run in a single default pass.
 const LEGACY_BUDGET_MODELS: Partial<Record<ProviderId, string>> = {
@@ -73,11 +75,13 @@ export const reasoningCases: CheckCase[] = [
   {
     group: "default",
     id: "reasoning-efforts",
-    description: "generate() accepts each named effort on the target model.",
-    async run({ provider, model, requestOptions }) {
+    description:
+      "generate() accepts each named effort on the target model and discloses thinking where the provider has a field.",
+    async run({ provider, providerId, model, requestOptions }) {
       const perEffort: Record<string, unknown> = {};
       const failureReasons: string[] = [];
       let usage: unknown;
+      let disclosed = false;
 
       for (const effort of EFFORTS) {
         const result = await generate({
@@ -93,11 +97,17 @@ export const reasoningCases: CheckCase[] = [
           continue;
         }
         usage = result.usage;
+        const thinkingText = getThinkingText(result.final);
+        disclosed ||= thinkingText.length > 0;
         perEffort[effort] = {
           text: getAssistantText(result.final),
           reasoningOut: result.usage?.reasoningOut,
           thinkingParts: countThinking(result.final),
+          thinkingText: thinkingText.slice(0, 200),
         };
+      }
+      if (DISCLOSING_PROVIDERS.has(providerId) && !disclosed) {
+        failureReasons.push("No effort returned disclosed thinking text.");
       }
 
       return {
@@ -278,4 +288,12 @@ const addNumbersTool: ExecutableTool<z.ZodObject<{ a: z.ZodNumber; b: z.ZodNumbe
 function countThinking(message: AxleMessage | undefined): number {
   if (!message || message.role !== "assistant") return 0;
   return message.content.filter((part) => part.type === "thinking").length;
+}
+
+function getThinkingText(message: AxleMessage | undefined): string {
+  if (!message || message.role !== "assistant") return "";
+  return message.content
+    .filter((part) => part.type === "thinking")
+    .map((part) => part.summary ?? part.text ?? "")
+    .join("");
 }

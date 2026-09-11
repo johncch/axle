@@ -10,7 +10,7 @@ export function toTogetherReasoning(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning: { enabled: false } };
-  return { reasoning: { enabled: true }, reasoning_effort: request };
+  return { reasoning: { enabled: true }, reasoning_effort: request.effort };
 }
 
 export function assertTogetherFilePartSupported(file: FileInfo): void {

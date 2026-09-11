@@ -120,10 +120,18 @@ export function toGeminiThinkingConfig(reasoning: ReasoningSetting | undefined, 
   if (request === "off") return { thinkingConfig: { thinkingBudget: 0 } };
   if (usesGeminiThinkingBudget(model)) {
     return {
-      thinkingConfig: { thinkingBudget: LEGACY_REASONING_BUDGETS[request], includeThoughts: true },
+      thinkingConfig: {
+        thinkingBudget: LEGACY_REASONING_BUDGETS[request.effort],
+        includeThoughts: request.display === "visible",
+      },
     };
   }
-  return { thinkingConfig: { thinkingLevel: request, includeThoughts: true } };
+  return {
+    thinkingConfig: {
+      thinkingLevel: request.effort,
+      includeThoughts: request.display === "visible",
+    },
+  };
 }
 
 /**

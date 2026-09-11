@@ -120,6 +120,11 @@ properties:
                   - low
                   - medium
                   - high
+              display:
+                type: string
+                enum:
+                  - visible
+                  - hidden
             required:
               - effort
             additionalProperties: false
