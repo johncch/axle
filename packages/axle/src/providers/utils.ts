@@ -13,3 +13,43 @@ export function requireInteger(
 
   return value;
 }
+
+export function normalizeProviderError(error: unknown): {
+  type: string;
+  message: string;
+  raw: unknown;
+} {
+  if (error instanceof Error) {
+    return {
+      type: error.name || "Error",
+      message: error.message || "Unexpected error",
+      raw: error,
+    };
+  }
+  if (error && typeof error === "object") {
+    const value = error as Record<string, any>;
+    return {
+      type: String(
+        value.error?.error?.type ||
+          value.error?.type ||
+          value.type ||
+          value.code ||
+          value.status ||
+          "Undetermined",
+      ),
+      message: String(
+        value.error?.error?.message ||
+          value.error?.message ||
+          value.message ||
+          value.error ||
+          "Unexpected error",
+      ),
+      raw: error,
+    };
+  }
+  return {
+    type: "Undetermined",
+    message: error == null ? "Unknown error occurred" : String(error),
+    raw: error,
+  };
+}

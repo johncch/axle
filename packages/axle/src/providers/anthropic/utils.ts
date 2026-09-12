@@ -1,13 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import z from "zod";
-import {
-  AxleMessage,
-  Citation,
-  ContentPartText,
-  ContentPartThinking,
-  ContentPartToolCall,
-  type ToolResultPart,
-} from "../../messages/message.js";
+import { AxleMessage, Citation, type ToolResultPart } from "../../messages/message.js";
 import { ModelInfo, Models } from "../../models.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import {

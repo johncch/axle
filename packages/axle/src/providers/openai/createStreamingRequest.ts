@@ -1,3 +1,4 @@
+import { normalizeProviderError } from "../utils.js";
 import OpenAI from "openai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
@@ -34,18 +35,18 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
-  if (stop !== undefined) {
-    throw new Error("OpenAI Responses does not support normalized stop sequences");
-  }
-
-  const modelTools: any[] = [
-    ...(prepareTools(tools) ?? []),
-    ...(prepareProviderTools(providerTools) ?? []),
-  ];
-
-  const streamingAdapter = createStreamingAdapter();
-
   try {
+    if (stop !== undefined) {
+      throw new Error("OpenAI Responses does not support normalized stop sequences");
+    }
+
+    const modelTools: any[] = [
+      ...(prepareTools(tools) ?? []),
+      ...(prepareProviderTools(providerTools) ?? []),
+    ];
+
+    const streamingAdapter = createStreamingAdapter();
+
     const input = await convertAxleMessageToResponseInput(messages, {
       model,
       fileResolver: runtime?.fileResolver,
@@ -88,11 +89,7 @@ export async function* createStreamingRequest(
     span?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
-      data: {
-        type: "STREAMING_ERROR",
-        message: error instanceof Error ? error.message : String(error),
-        raw: error,
-      },
+      data: normalizeProviderError(error),
     };
   }
 }

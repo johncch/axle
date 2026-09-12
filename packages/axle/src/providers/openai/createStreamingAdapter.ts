@@ -195,8 +195,19 @@ export function createStreamingAdapter() {
         chunks.push({
           type: "error",
           data: {
-            type: "RESPONSES_API_ERROR",
-            message: `Response failed: ${event.response.status}`,
+            type: event.response.error?.code || "RESPONSES_API_ERROR",
+            message: event.response.error?.message || `Response failed: ${event.response.status}`,
+            usage: withUsageDetails(
+              {
+                in: event.response.usage?.input_tokens || 0,
+                out: event.response.usage?.output_tokens || 0,
+              },
+              {
+                cachedIn: event.response.usage?.input_tokens_details?.cached_tokens,
+                cacheWriteIn: event.response.usage?.input_tokens_details?.cache_write_tokens,
+                reasoningOut: event.response.usage?.output_tokens_details?.reasoning_tokens,
+              },
+            ),
             raw: event,
           },
         });

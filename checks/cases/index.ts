@@ -1,3 +1,4 @@
+import { streamErrorCases } from "./stream-errors.js";
 import { cacheCases } from "./cache.js";
 import { compactionCases } from "./compaction.js";
 import { coreCases } from "./core.js";
@@ -10,6 +11,7 @@ export type * from "./types.js";
 
 export const checkCases = [
   ...coreCases,
+  ...streamErrorCases,
   ...toolSchemaCases,
   ...instructJsonCases,
   ...messageFormatCases,

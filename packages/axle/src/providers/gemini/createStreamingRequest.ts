@@ -1,3 +1,4 @@
+import { normalizeProviderError } from "../utils.js";
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
@@ -34,27 +35,27 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
-  const googleOptions: Record<string, any> = {
-    // Axle-normalized options.
-    ...toGeminiThinkingConfig(reasoning, model),
-    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-    ...(temperature !== undefined ? { temperature } : {}),
-    ...(topP !== undefined ? { topP } : {}),
-    ...(stop !== undefined ? { stopSequences: Array.isArray(stop) ? stop : [stop] } : {}),
-    ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
-
-    // Raw provider options are applied last so they can override Axle mappings.
-    ...providerOptions,
-  };
-
-  const config = prepareConfig(tools, system, googleOptions);
-  if (toolChoice !== "none") {
-    addGeminiProviderTools(config, providerTools);
-  }
-
-  const streamingAdapter = createGeminiStreamingAdapter();
-
   try {
+    const googleOptions: Record<string, any> = {
+      // Axle-normalized options.
+      ...toGeminiThinkingConfig(reasoning, model),
+      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { topP } : {}),
+      ...(stop !== undefined ? { stopSequences: Array.isArray(stop) ? stop : [stop] } : {}),
+      ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
+
+      // Raw provider options are applied last so they can override Axle mappings.
+      ...providerOptions,
+    };
+
+    const config = prepareConfig(tools, system, googleOptions);
+    if (toolChoice !== "none") {
+      addGeminiProviderTools(config, providerTools);
+    }
+
+    const streamingAdapter = createGeminiStreamingAdapter();
+
     const contents = await convertAxleMessagesToGemini(messages, {
       model,
       fileResolver: runtime?.fileResolver,
@@ -63,7 +64,7 @@ export async function* createStreamingRequest(
 
     const request = {
       contents,
-      config,
+      config: { ...config, abortSignal: signal },
     };
     span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
 
@@ -83,11 +84,7 @@ export async function* createStreamingRequest(
     span?.error(error instanceof Error ? error.message : String(error));
     yield {
       type: "error",
-      data: {
-        type: "STREAMING_ERROR",
-        message: error instanceof Error ? error.message : String(error),
-        raw: error,
-      },
+      data: normalizeProviderError(error),
     };
   }
 }

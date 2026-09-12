@@ -29,7 +29,7 @@ import type {
 } from "../tools/types.js";
 import { createWebSearchFallbackTool } from "../tools/webSearch.js";
 import type { Stats } from "../types.js";
-import { addStats, attributeStats, createStats, mergeStats } from "../utils/stats.js";
+import { addStats, createStats, mergeStats } from "../utils/stats.js";
 import type { AIProvider, ModelError, ResolvedProviderTool } from "./types.js";
 
 export type ToolCallResult =
@@ -65,7 +65,7 @@ export type AxleFailure =
 /** @deprecated Use AxleFailure. */
 export type GenerateError = AxleFailure;
 
-export type GenerateResult<TResponse = AxleAssistantMessage> =
+export type StreamResult<TResponse = AxleAssistantMessage> =
   | {
       ok: true;
       response: TResponse;
@@ -96,7 +96,7 @@ export type GenerateResult<TResponse = AxleAssistantMessage> =
       stopped?: "max-steps" | "token-limit";
     };
 
-export type StreamResult<TResponse = AxleAssistantMessage> = GenerateResult<TResponse>;
+export type GenerateResult<TResponse = AxleAssistantMessage> = StreamResult<TResponse>;
 
 /**
  * Validate tool-loop limit options at the call boundary. Non-positive limits
@@ -121,7 +121,7 @@ export function validateLoopLimits(options: {
 
 /**
  * Decide whether a configured limit ends the tool loop after a settled step.
- * Shared by stream() and generate() so the two loops cannot drift.
+ * Used by the shared stream() and generate() loop.
  */
 export function checkLoopStop(
   steps: number,

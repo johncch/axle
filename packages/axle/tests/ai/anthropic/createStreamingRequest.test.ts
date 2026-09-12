@@ -134,7 +134,7 @@ describe("createStreamingRequest (Anthropic)", () => {
     expect(request().thinking).not.toHaveProperty("budget_tokens");
   });
 
-  test("legacy budget route defaults max_tokens to the model's registry ceiling", async () => {
+  test("legacy budget route includes its thinking budget and output cap", async () => {
     await drain(
       createStreamingRequest({
         client: mockClient,
@@ -148,6 +148,22 @@ describe("createStreamingRequest (Anthropic)", () => {
       thinking: { type: "enabled", budget_tokens: 16384, display: "summarized" },
       max_tokens: 64000,
     });
+  });
+
+  test("registry ceiling differs from the unknown-model fallback", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: "claude-opus-4-6",
+        messages,
+        runtime: {},
+      }),
+    );
+    expect(request().max_tokens).toBe(128000);
+    await drain(
+      createStreamingRequest({ client: mockClient, model: "unknown-model", messages, runtime: {} }),
+    );
+    expect(mockCreate.mock.calls[1][0].max_tokens).toBe(64000);
   });
 
   test("providerOptions override the portable reasoning mapping", async () => {

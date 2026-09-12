@@ -244,3 +244,17 @@ double-counted somewhere in the pipeline. Failed cases can also return
 failure summary, and writes them to the JSONL record. Cases may declare
 provider/model exclusions for known capability gaps; these are recorded as
 skips with the exclusion reason.
+
+### Deterministic error contracts
+
+`stream-error-contract` and `stream-escaped-abort` use injected providers and
+exercise both `generate()` and `stream().final` without network requests. They
+verify error diagnostics, raw payload identity, usage, and completed conversation
+state after an escaped provider abort.
+
+Vendor safety blocks, failed response events, SDK exceptions, preparation errors,
+and cancellation before the first chunk are injected in
+`packages/axle/tests/providers/streaming-errors.test.ts`. Live providers cannot
+reliably produce these exact failure conditions; these fixtures cover the vendor
+adapters and public API together. The live harness does not validate actual
+socket cancellation or provoke provider safety blocks.

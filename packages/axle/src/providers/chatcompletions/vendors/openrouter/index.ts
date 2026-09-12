@@ -1,7 +1,6 @@
 import type {
   AxleAssistantMessage,
   Citation,
-  ContentPartThinking,
   ThinkingContinuity,
 } from "../../../../messages/message.js";
 import { resolveReasoning, type ReasoningSetting } from "../../../reasoning.js";

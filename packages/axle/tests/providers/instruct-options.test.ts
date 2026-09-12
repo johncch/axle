@@ -1,4 +1,10 @@
-import { modelResultToChunks, type ModelResult } from "../scenarios/helpers/providers.js";
+import {
+  startChunk,
+  textStartChunk,
+  textChunk,
+  textCompleteChunk,
+  completeChunk,
+} from "../scenarios/helpers/chunks.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
@@ -12,17 +18,13 @@ import { AxleStopReason } from "../../src/providers/types.js";
 describe("Instruct options", () => {
   test("generate() appends instruct as latest user turn and returns parsed response", async () => {
     const requests: AxleMessage[][] = [];
-    const provider = makeGenerateProvider(requests, {
-      type: "success",
-      role: "assistant",
-      id: "msg_1",
-      model: "test-model",
-      text: '{"answer":"yes"}',
-      content: [{ type: "text", text: '{"answer":"yes"}' }],
-      finishReason: AxleStopReason.Stop,
-      usage: { in: 4, out: 5 },
-      raw: {},
-    });
+    const provider = makeStreamProvider(requests, [
+      startChunk(),
+      textStartChunk(0),
+      textChunk(0, '{"answer":"yes"}'),
+      textCompleteChunk(0),
+      completeChunk(AxleStopReason.Stop, { in: 4, out: 5 }),
+    ]);
 
     const instruct = new Instruct({
       prompt: "Answer {{question}}",
@@ -51,17 +53,13 @@ describe("Instruct options", () => {
 
   test("generate() returns raw final content when instruct parsing fails", async () => {
     const requests: AxleMessage[][] = [];
-    const provider = makeGenerateProvider(requests, {
-      type: "success",
-      role: "assistant",
-      id: "msg_1",
-      model: "test-model",
-      text: '{"answer":"unterminated}',
-      content: [{ type: "text", text: '{"answer":"unterminated}' }],
-      finishReason: AxleStopReason.Stop,
-      usage: { in: 4, out: 5 },
-      raw: {},
-    });
+    const provider = makeStreamProvider(requests, [
+      startChunk(),
+      textStartChunk(0),
+      textChunk(0, '{"answer":"unterminated}'),
+      textCompleteChunk(0),
+      completeChunk(AxleStopReason.Stop, { in: 4, out: 5 }),
+    ]);
 
     const result = await generate({
       provider,
@@ -143,10 +141,6 @@ describe("Instruct options", () => {
     expect(result.final?.content).toEqual([{ type: "text", text: '{"count":' }]);
   });
 });
-
-function makeGenerateProvider(requests: AxleMessage[][], response: ModelResult): AIProvider {
-  return makeStreamProvider(requests, modelResultToChunks(response));
-}
 
 function makeStreamProvider(requests: AxleMessage[][], chunks: AnyStreamChunk[]): AIProvider {
   return {

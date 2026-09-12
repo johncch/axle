@@ -1,22 +1,18 @@
-import { Instruct, type InstructResponse } from "../core/Instruct.js";
 import type { OutputSchema } from "../core/parse.js";
-import type { AxleMessage } from "../messages/message.js";
 import type { GenerateResult } from "./helpers.js";
-import { stream, type StreamParams } from "./stream.js";
+import {
+  stream,
+  type StreamInstructParams,
+  type StreamInstructResult,
+  type StreamParams,
+} from "./stream.js";
 
 export type GenerateParams = StreamParams;
 
-export interface GenerateInstructParams<TSchema extends OutputSchema | undefined> extends Omit<
-  GenerateParams,
-  "messages"
-> {
-  messages?: Array<AxleMessage>;
-  instruct: Instruct<TSchema>;
-}
-
-export type GenerateInstructResult<TSchema extends OutputSchema | undefined> = GenerateResult<
-  InstructResponse<TSchema>
->;
+export type GenerateInstructParams<TSchema extends OutputSchema | undefined> =
+  StreamInstructParams<TSchema>;
+export type GenerateInstructResult<TSchema extends OutputSchema | undefined> =
+  StreamInstructResult<TSchema>;
 
 /**
  * The non-streaming return shape of `stream()`: the same request, the same
@@ -29,6 +25,5 @@ export async function generate(options: GenerateParams): Promise<GenerateResult>
 export async function generate(
   options: GenerateParams | GenerateInstructParams<any>,
 ): Promise<GenerateResult | GenerateInstructResult<any>> {
-  if ("instruct" in options) return stream(options).final;
   return stream(options).final;
 }

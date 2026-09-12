@@ -3,6 +3,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { arrayify } from "../../utils/utils.js";
 import { ProviderStreamParams } from "../types.js";
+import { normalizeProviderError } from "../utils.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   convertToAnthropicProviderTools,
@@ -36,14 +37,14 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
-  const apiTools: any[] = [
-    ...(tools ? convertToAnthropicTools(tools) : []),
-    ...convertToAnthropicProviderTools(providerTools),
-  ];
-
-  const streamingAdapter = createAnthropicStreamingAdapter();
-
   try {
+    const apiTools: any[] = [
+      ...(tools ? convertToAnthropicTools(tools) : []),
+      ...convertToAnthropicProviderTools(providerTools),
+    ];
+
+    const streamingAdapter = createAnthropicStreamingAdapter();
+
     const providerMessages = await convertToProviderMessages(messages, {
       model,
       fileResolver: runtime?.fileResolver,
@@ -87,11 +88,7 @@ export async function* createStreamingRequest(
     if (signal?.aborted) return;
     yield {
       type: "error",
-      data: {
-        type: "STREAMING_ERROR",
-        message: error instanceof Error ? error.message : String(error),
-        raw: error,
-      },
+      data: normalizeProviderError(error),
     };
   }
 }

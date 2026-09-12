@@ -137,7 +137,7 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
     });
   });
 
-  test("rejects normalized stop sequences", async () => {
+  test("yields an error for normalized stop sequences", async () => {
     await expect(
       drain(
         createStreamingRequest({
@@ -148,7 +148,15 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
           stop: "STOP",
         }),
       ),
-    ).rejects.toThrow("does not support normalized stop sequences");
+    ).resolves.toMatchObject([
+      {
+        type: "error",
+        data: {
+          type: "Error",
+          message: "OpenAI Responses does not support normalized stop sequences",
+        },
+      },
+    ]);
     expect(mockStream).not.toHaveBeenCalled();
   });
 });

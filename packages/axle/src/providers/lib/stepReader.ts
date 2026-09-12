@@ -49,7 +49,14 @@ export type StepReadOutcome =
   | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
   | { kind: "incomplete" }
-  | { kind: "provider-error"; errorType: string; message: string; usage?: Stats; model: string };
+  | {
+      kind: "provider-error";
+      errorType: string;
+      message: string;
+      raw?: unknown;
+      usage?: Stats;
+      model: string;
+    };
 
 /**
  * Consume one model step from a provider chunk stream, translating chunks
@@ -333,6 +340,7 @@ export async function readStep(
         return {
           kind: "provider-error",
           errorType: chunk.data.type,
+          raw: chunk.data.raw,
           message: chunk.data.message,
           usage: chunk.data.usage,
           model: stepModel,
