@@ -26,6 +26,11 @@ export interface StepReaderContext {
   /** Registry-resolved tools, for the kind on `tool:request` events. */
   tools: ResolvedTools;
   signal: AbortSignal;
+  /**
+   * Whether thinking content reaches the event stream. The message always
+   * receives what the wire carried; `false` withholds it from the turn.
+   */
+  discloseThinking?: boolean;
 }
 
 /** A settled model step: every content part closed, finish reason known. */
@@ -68,6 +73,7 @@ export async function readStep(
   let openPartType: "text" | "thinking" | null = null;
   let openText = "";
   let openThinking: { summary?: string; raw?: string } = {};
+  const discloseThinking = ctx.discloseThinking ?? true;
 
   const toolCallArgumentErrors = new Map<string, ToolCallArgumentError>();
   const chunkIndexToPartIndex = new Map<number, number>();
@@ -191,6 +197,7 @@ export async function readStep(
       case "thinking-raw-delta": {
         const part = parts[currentPartIndex] as ContentPartThinking;
         part.text = (part.text ?? "") + chunk.data.text;
+        if (!discloseThinking) break;
         openThinking.raw = part.text;
         ctx.emit({
           type: "thinking:raw-delta",
@@ -203,6 +210,7 @@ export async function readStep(
       case "thinking-summary-delta": {
         const part = parts[currentPartIndex] as ContentPartThinking;
         part.summary = (part.summary ?? "") + chunk.data.text;
+        if (!discloseThinking) break;
         openThinking.summary = part.summary;
         ctx.emit({
           type: "thinking:summary-delta",

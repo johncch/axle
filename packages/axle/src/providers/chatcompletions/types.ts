@@ -5,6 +5,7 @@ export interface ChatCompletionMessage {
   content: string | ChatCompletionContentPart[] | null;
   tool_calls?: ChatCompletionMessageToolCall[];
   tool_call_id?: string;
+  reasoning_details?: ChatCompletionReasoningDetail[];
 }
 
 export interface ChatCompletionContentPart {

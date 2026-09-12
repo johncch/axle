@@ -219,36 +219,33 @@ async function convertToolMessage(
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Content {
   const parts: any[] = [];
 
-  const textParts = msg.content.filter((c) => c.type === "text");
-  if (textParts.length > 0) {
-    for (const item of textParts) {
-      const text = item.text;
-      if (!text) continue;
-      const part: Record<string, unknown> = { text };
+  for (const item of msg.content) {
+    if (item.type === "thinking") {
+      if (item.continuity?.provider !== "gemini") continue;
+      parts.push({
+        ...(item.summary ? { thought: true, text: item.summary } : { text: "" }),
+        thoughtSignature: item.continuity.thoughtSignature,
+      });
+    } else if (item.type === "text") {
+      if (!item.text) continue;
+      const part: Record<string, unknown> = { text: item.text };
+      if (item.providerMetadata?.thoughtSignature) {
+        part.thoughtSignature = item.providerMetadata.thoughtSignature;
+      }
+      parts.push(part);
+    } else if (item.type === "tool-call") {
+      const part: Record<string, unknown> = {
+        functionCall: {
+          id: item.id ?? undefined,
+          name: item.name,
+          args: item.parameters,
+        },
+      };
       if (item.providerMetadata?.thoughtSignature) {
         part.thoughtSignature = item.providerMetadata.thoughtSignature;
       }
       parts.push(part);
     }
-  }
-
-  const toolCallParts = msg.content.filter((c) => c.type === "tool-call");
-  if (toolCallParts.length > 0) {
-    parts.push(
-      ...toolCallParts.map((item: any) => {
-        const part: Record<string, unknown> = {
-          functionCall: {
-            id: item.id ?? undefined,
-            name: item.name,
-            args: item.parameters,
-          },
-        };
-        if (item.providerMetadata?.thoughtSignature) {
-          part.thoughtSignature = item.providerMetadata.thoughtSignature;
-        }
-        return part;
-      }),
-    );
   }
 
   return {

@@ -84,18 +84,29 @@ describe("createStreamingRequest", () => {
       model: MODEL,
       messages: [{ role: "user", content: "Think first" }],
     });
-    const thinkingDeltas: string[] = [];
+    const summaryDeltas: string[] = [];
     handle.on((event) => {
-      if (event.type === "thinking:raw-delta") thinkingDeltas.push(event.delta);
+      if (event.type === "thinking:summary-delta") summaryDeltas.push(event.delta);
     });
 
     const result = await handle.final;
 
     expect(result.ok).toBe(true);
-    expect(thinkingDeltas).toEqual(["First step", " then second"]);
+    expect(summaryDeltas).toEqual(["First step", " then second"]);
     if (!result.ok) throw new Error("Expected successful stream");
     expect(result.final.content).toContainEqual(
-      expect.objectContaining({ type: "thinking", text: "First step then second" }),
+      expect.objectContaining({
+        type: "thinking",
+        id: "reasoning-1",
+        summary: "First step then second",
+        continuity: {
+          provider: "openrouter",
+          type: "reasoning.text",
+          id: "reasoning-1",
+          format: "anthropic-claude-v1",
+          index: 0,
+        },
+      }),
     );
   });
 
@@ -322,9 +333,7 @@ describe("createStreamingRequest", () => {
       },
     });
     const toolCall = chunks.find((chunk) => chunk.type === "tool-call-complete") as any;
-    expect(toolCall.data.error.message).toContain(
-      "Failed to parse tool call arguments for search",
-    );
+    expect(toolCall.data.error.message).toContain("Failed to parse tool call arguments for search");
     expect(chunks.at(-1)).toMatchObject({
       type: "complete",
       data: { finishReason: AxleStopReason.FunctionCall },

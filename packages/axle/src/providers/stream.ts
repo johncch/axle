@@ -33,6 +33,7 @@ import {
   type ToolCallResult,
 } from "./helpers.js";
 import { readStep } from "./lib/stepReader.js";
+import { resolveReasoningDisplay } from "./reasoning.js";
 import { executeStepTools, type LoopContext } from "./lib/stepTools.js";
 import type { AIProvider, AxleModelRequestOptions } from "./types.js";
 import { AxleStopReason } from "./types.js";
@@ -197,6 +198,7 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   }
 
   validateLoopLimits(streamOptions);
+  resolveReasoningDisplay(streamOptions.reasoning);
 
   const controller = new AbortController();
   const effectiveSignal = streamOptions.signal
@@ -280,6 +282,7 @@ async function run(
     parallelToolCalls,
     providerOptions,
   } = options;
+  const discloseThinking = resolveReasoningDisplay(reasoning) === "visible";
   const registry = resolveToolRegistry(options);
   const resolvedTools = resolveTools(registry, {
     provider,
@@ -364,6 +367,7 @@ async function run(
       emit: (event) => emit(cbs, event),
       tools: resolvedTools,
       signal,
+      discloseThinking,
     });
 
     if (outcome.kind === "aborted") {

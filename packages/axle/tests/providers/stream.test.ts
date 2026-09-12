@@ -287,6 +287,49 @@ describe("stream()", () => {
       });
     });
 
+    test("an invalid reasoning setting throws at call time, before any request", () => {
+      const provider = makeProvider({ streamChunks: [[startChunk(), completeChunk()]] });
+      expect(() =>
+        stream({
+          provider,
+          model: "test-model",
+          messages: [],
+          reasoning: { effort: "extreme" } as never,
+        }),
+      ).toThrow(TypeError);
+    });
+
+    test("hidden display keeps thinking on the message and off the stream events", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        { type: "thinking-summary-delta", data: { index: 0, text: "gist" } },
+        thinkingDeltaChunk(0, "chain"),
+        thinkingCompleteChunk(0),
+        textStartChunk(1),
+        textChunk(1, "Answer"),
+        textCompleteChunk(1),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        reasoning: { effort: "low", display: "hidden" },
+      });
+      result.on(callback);
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content[0]).toEqual({ type: "thinking", summary: "gist", text: "chain" });
+      const thinkingEvents = events.filter((event) => event.type.startsWith("thinking:"));
+      expect(thinkingEvents).toEqual([{ type: "thinking:start" }, { type: "thinking:end" }]);
+    });
+
     test("redacted stays on the message part and off the stream events", async () => {
       const chunks: AnyStreamChunk[] = [
         startChunk(),

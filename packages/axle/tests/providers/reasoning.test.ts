@@ -6,15 +6,13 @@ import {
   toAnthropicThinking,
 } from "../../src/providers/anthropic/utils.js";
 import { LEGACY_REASONING_BUDGETS } from "../../src/providers/reasoning.js";
-import {
-  toOpenRouterReasoning,
-  toReasoningEffort,
-} from "../../src/providers/chatcompletions/utils.js";
+import { toReasoningEffort } from "../../src/providers/chatcompletions/utils.js";
+import { toOpenRouterReasoning } from "../../src/providers/chatcompletions/vendors/openrouter/index.js";
 import { toTogetherReasoning } from "../../src/providers/chatcompletions/vendors/together.js";
 import { toGeminiThinkingConfig } from "../../src/providers/gemini/utils.js";
 import { resolveFirstPartyModel } from "../../src/providers/model.js";
 import { toOpenAIReasoning } from "../../src/providers/openai/utils.js";
-import { resolveReasoning } from "../../src/providers/reasoning.js";
+import { resolveReasoning, resolveReasoningDisplay } from "../../src/providers/reasoning.js";
 
 describe("reasoning translation", () => {
   describe("resolveReasoning", () => {
@@ -32,6 +30,12 @@ describe("reasoning translation", () => {
         effort: "high",
         display: "hidden",
       });
+    });
+    test("resolveReasoningDisplay is visible unless an enable says hidden", () => {
+      expect(resolveReasoningDisplay(undefined)).toBe("visible");
+      expect(resolveReasoningDisplay("off")).toBe("visible");
+      expect(resolveReasoningDisplay("on")).toBe("visible");
+      expect(resolveReasoningDisplay({ effort: "low", display: "hidden" })).toBe("hidden");
     });
     test("the 0.30 boolean, unknown efforts, and unknown displays throw", () => {
       expect(() => resolveReasoning(true as never)).toThrow(TypeError);

@@ -21,6 +21,8 @@ import {
   prepareOpenRouterProviderTools,
   resolveOpenRouterModel,
   resolveOpenRouterProviderToolName,
+  toOpenRouterReasoning,
+  toOpenRouterReasoningDetails,
 } from "./vendors/openrouter/index.js";
 import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
@@ -78,16 +80,6 @@ export function toChatCompletionsReasoning(
   if (vendor === "together") return toTogetherReasoning(reasoning);
   if (vendor === "openrouter") return toOpenRouterReasoning(reasoning);
   return toReasoningEffort(reasoning);
-}
-
-export function toOpenRouterReasoning(reasoning: ReasoningSetting | undefined) {
-  const request = resolveReasoning(reasoning);
-  if (request === "default") return {};
-  if (request === "off") return { reasoning_effort: "none" as const };
-  if (request.display === "hidden") {
-    return { reasoning_effort: request.effort, reasoning: { exclude: true } };
-  }
-  return { reasoning_effort: request.effort };
 }
 
 export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
@@ -195,7 +187,7 @@ async function convertMessage(
     case "tool":
       return convertToolMessage(msg, context);
     case "assistant":
-      return convertAssistantMessage(msg);
+      return convertAssistantMessage(msg, context);
     default:
       return convertUserMessage(msg, context);
   }
@@ -217,9 +209,14 @@ async function convertToolMessage(
   );
 }
 
-function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): ChatCompletionMessage {
+function convertAssistantMessage(
+  msg: AxleMessage & { role: "assistant" },
+  context: ChatCompletionsConversionContext,
+): ChatCompletionMessage {
   const toolCallParts = msg.content.filter((c) => c.type === "tool-call");
   const textParts = msg.content.filter((c) => c.type === "text");
+  const reasoningDetails =
+    context.vendor === "openrouter" ? toOpenRouterReasoningDetails(msg.content) : [];
 
   const toolCalls =
     toolCallParts.length > 0
@@ -237,6 +234,7 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Chat
     role: "assistant",
     content: textParts.map((c: any) => c.text).join(""),
     ...(toolCalls && { tool_calls: toolCalls }),
+    ...(reasoningDetails.length > 0 ? { reasoning_details: reasoningDetails } : {}),
   };
 }
 

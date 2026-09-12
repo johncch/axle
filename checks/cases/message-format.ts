@@ -130,8 +130,8 @@ export const messageFormatCases: CheckCase[] = [
         !thinking.some((part) => part.continuity?.provider === providerId)
           ? [`No thinking part carries ${providerId} continuity.`]
           : []),
-        ...(providerId === "anthropic" && !thinking.some((part) => Boolean(part.text))
-          ? ["Anthropic thinking part has no renderable text."]
+        ...(providerId === "anthropic" && !thinking.some((part) => Boolean(part.summary))
+          ? ["Anthropic thinking part has no summary."]
           : []),
         ...(providerId === "gemini" &&
         !thinking.some((part) => Boolean(part.summary) || Boolean(part.text))
@@ -147,29 +147,36 @@ export const messageFormatCases: CheckCase[] = [
   },
   {
     group: "extended",
-    id: "format-thinking-redacted",
-    description: "Omitted Anthropic thinking surfaces as a redacted part with continuity.",
+    id: "format-thinking-hidden",
+    description:
+      "Hidden Anthropic thinking surfaces as a part with continuity only: no content, and not marked redacted.",
     providers: ["anthropic"],
     async run({ provider, model }) {
       const result = await generate({
         provider,
         model,
-        messages: [{ role: "user", content: "Answer exactly: redacted ok" }],
-        maxOutputTokens: 2048,
-        providerOptions: {
-          thinking: { type: "enabled", budget_tokens: 1024, display: "omitted" },
-        },
+        messages: [{ role: "user", content: "Answer exactly: hidden ok" }],
+        reasoning: { effort: "low", display: "hidden" },
       });
 
       if (!result.ok) return fail({ error: result.error });
       const thinking = collectThinking(result.final);
+      const failureReasons = [
+        ...(thinking.some(
+          (part) => part.continuity?.provider === "anthropic" && part.continuity.signature,
+        )
+          ? []
+          : ["No thinking part carries an Anthropic signature."]),
+        ...(thinking.some((part) => part.summary || part.text)
+          ? ["A hidden thinking part carried content."]
+          : []),
+        ...(thinking.some((part) => part.redacted)
+          ? ["A hidden thinking part was marked redacted."]
+          : []),
+      ];
       return {
-        ok: thinking.some(
-          (part) =>
-            part.redacted === true &&
-            part.continuity?.provider === "anthropic" &&
-            Boolean(part.continuity.signature || part.continuity.redactedData),
-        ),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: { thinking, text: getAssistantText(result.final), usage: result.usage },
       };
     },
@@ -178,7 +185,7 @@ export const messageFormatCases: CheckCase[] = [
     group: "extended",
     id: "format-thinking-stream",
     description:
-      "Streamed reasoning ends in a normalized thinking part; providers that stream thinking text emit thinking:raw-delta events.",
+      "Streamed reasoning ends in a normalized thinking part; providers that stream thinking text emit raw or summary delta events.",
     providers: ["openai", "anthropic", "gemini", "openrouter", "together"],
     async run({ provider, model, providerId }) {
       const handle = stream({
@@ -194,7 +201,9 @@ export const messageFormatCases: CheckCase[] = [
       let thinkingDeltaCount = 0;
       handle.on((event) => {
         events.push(event.type);
-        if (event.type === "thinking:raw-delta") thinkingDeltaCount += 1;
+        if (event.type === "thinking:raw-delta" || event.type === "thinking:summary-delta") {
+          thinkingDeltaCount += 1;
+        }
       });
 
       const result = await handle.final;
@@ -209,7 +218,7 @@ export const messageFormatCases: CheckCase[] = [
           ? []
           : ["Final message has no thinking part with content or continuity."]),
         ...(streamsThinkingText && thinkingDeltaCount === 0
-          ? ["No thinking:raw-delta events were emitted."]
+          ? ["No thinking delta events were emitted."]
           : []),
       ];
       return {

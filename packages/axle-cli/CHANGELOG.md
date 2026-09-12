@@ -7,6 +7,11 @@
   for its thinking; previously Anthropic and OpenAI requests inherited a
   hidden default and rendered no thinking at all. Add `display: hidden`
   under `{ effort }` to keep thinking off the wire.
+- **Claude through OpenRouter shows its thinking summary and keeps its
+  reasoning across tool calls.** OpenRouter's `reasoning_details` are now
+  read and echoed back, so summaries render as summaries and multi-turn tool
+  loops on a Claude model keep their signatures. `display: hidden` keeps
+  thinking out of the transcript on every provider, OpenRouter included.
 
 ## 0.31.0
 

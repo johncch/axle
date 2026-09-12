@@ -10,7 +10,9 @@ describe("OpenRouter model resolution", () => {
   });
 
   test("passes through identities that already match OpenRouter's slug", () => {
-    expect(resolveOpenRouterModel(Models.DeepSeek.DEEPSEEK_V4_PRO)).toBe("deepseek/deepseek-v4-pro");
+    expect(resolveOpenRouterModel(Models.DeepSeek.DEEPSEEK_V4_PRO)).toBe(
+      "deepseek/deepseek-v4-pro",
+    );
     expect(resolveOpenRouterModel(Models.Qwen.QWEN3_7_MAX)).toBe("qwen/qwen3.7-max");
   });
 

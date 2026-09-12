@@ -205,8 +205,8 @@ rest.
 - `format-document-citations` (Anthropic PDF input)
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
   signature, Gemini summary)
-- `format-thinking-redacted` (Anthropic omitted thinking)
-- `format-thinking-stream` (`thinking:delta` required for Anthropic,
+- `format-thinking-hidden` (Anthropic hidden thinking: continuity only, not redacted)
+- `format-thinking-stream` (a raw or summary delta required for Anthropic,
   OpenRouter, and Together, which stream thinking text)
 
 Reasoning routes (`reasoning-route-*`, `reasoning-unsupported-error`): the

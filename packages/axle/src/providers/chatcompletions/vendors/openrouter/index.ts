@@ -1,7 +1,143 @@
-import type { Citation } from "../../../../messages/message.js";
+import type {
+  AxleAssistantMessage,
+  Citation,
+  ContentPartThinking,
+  ThinkingContinuity,
+} from "../../../../messages/message.js";
+import { resolveReasoning, type ReasoningSetting } from "../../../reasoning.js";
 import type { ResolvedProviderTool } from "../../../types.js";
-import type { ChatCompletionAnnotation } from "../../types.js";
+import type { ChatCompletionAnnotation, ChatCompletionReasoningDetail } from "../../types.js";
 import { OpenRouterModelAliases } from "./models.generated.js";
+
+export type OpenRouterThinkingContinuity = Extract<ThinkingContinuity, { provider: "openrouter" }>;
+
+/**
+ * `reasoning.text` formats whose upstream never discloses raw reasoning, so
+ * the text is a summary. Bounded set, extended as formats are observed.
+ */
+export const OPENROUTER_SUMMARY_REASONING_FORMATS: ReadonlySet<string> = new Set([
+  "anthropic-claude-v1",
+  "google-gemini-v1",
+]);
+
+export function toOpenRouterReasoning(reasoning: ReasoningSetting | undefined) {
+  const request = resolveReasoning(reasoning);
+  if (request === "default") return {};
+  if (request === "off") return { reasoning_effort: "none" as const };
+  if (request.display === "hidden") {
+    return { reasoning_effort: request.effort, reasoning: { exclude: true } };
+  }
+  return { reasoning_effort: request.effort };
+}
+
+export function reasoningDetailContentField(
+  detail: ChatCompletionReasoningDetail,
+): "summary" | "raw" | null {
+  if (detail.type === "reasoning.summary") return "summary";
+  if (detail.type === "reasoning.text") {
+    return detail.format && OPENROUTER_SUMMARY_REASONING_FORMATS.has(detail.format)
+      ? "summary"
+      : "raw";
+  }
+  return null;
+}
+
+export function reasoningDetailContentText(detail: ChatCompletionReasoningDetail): string {
+  return (detail.type === "reasoning.summary" ? detail.summary : detail.text) ?? "";
+}
+
+export function reasoningDetailContinuity(
+  detail: ChatCompletionReasoningDetail,
+  previous?: OpenRouterThinkingContinuity,
+): OpenRouterThinkingContinuity {
+  return {
+    ...previous,
+    provider: "openrouter",
+    type: previous?.type ?? detail.type,
+    ...(detail.id ? { id: detail.id } : {}),
+    ...(detail.format ? { format: detail.format } : {}),
+    ...(detail.index !== undefined ? { index: detail.index } : {}),
+    ...(detail.signature ? { signature: detail.signature } : {}),
+    ...(detail.data ? { data: detail.data } : {}),
+  };
+}
+
+export function reasoningDetailCarriesContinuity(detail: ChatCompletionReasoningDetail): boolean {
+  return Boolean(detail.signature || detail.id || detail.data);
+}
+
+export function reasoningDetailIdentity(
+  detail: ChatCompletionReasoningDetail,
+): ChatCompletionReasoningDetail {
+  return {
+    type: detail.type,
+    ...(detail.id ? { id: detail.id } : {}),
+    ...(detail.format ? { format: detail.format } : {}),
+    ...(detail.index !== undefined ? { index: detail.index } : {}),
+    ...(detail.signature ? { signature: detail.signature } : {}),
+  };
+}
+
+export function reasoningDetailsToThinkingParts(
+  details: ChatCompletionReasoningDetail[],
+): ContentPartThinking[] {
+  const parts: ContentPartThinking[] = [];
+  const byIndex = new Map<number, ContentPartThinking>();
+  for (const detail of details) {
+    let part = detail.index !== undefined ? byIndex.get(detail.index) : undefined;
+    if (!part) {
+      part = {
+        type: "thinking",
+        ...(detail.id ? { id: detail.id } : {}),
+        continuity: reasoningDetailContinuity(detail),
+        providerMetadata: { reasoningDetail: reasoningDetailIdentity(detail) },
+      };
+      parts.push(part);
+      if (detail.index !== undefined) byIndex.set(detail.index, part);
+    } else if (part.continuity?.provider === "openrouter") {
+      part.continuity = reasoningDetailContinuity(detail, part.continuity);
+    }
+    if (detail.type === "reasoning.encrypted") part.redacted = true;
+    const text = reasoningDetailContentText(detail);
+    if (!text) continue;
+    const field = reasoningDetailContentField(detail);
+    if (field === "summary") part.summary = (part.summary ?? "") + text;
+    if (field === "raw") part.text = (part.text ?? "") + text;
+  }
+  return parts;
+}
+
+export function toOpenRouterReasoningDetails(
+  content: AxleAssistantMessage["content"],
+): ChatCompletionReasoningDetail[] {
+  const details: ChatCompletionReasoningDetail[] = [];
+  for (const part of content) {
+    if (part.type !== "thinking" || part.continuity?.provider !== "openrouter") continue;
+    const continuity = part.continuity;
+    if (!continuity.signature && !continuity.data) continue;
+    const detail: ChatCompletionReasoningDetail = {
+      type: continuity.type,
+      ...(continuity.id ? { id: continuity.id } : {}),
+      ...(continuity.format ? { format: continuity.format } : {}),
+      ...(continuity.index !== undefined ? { index: continuity.index } : {}),
+      ...(continuity.signature ? { signature: continuity.signature } : {}),
+    };
+    if (continuity.type === "reasoning.summary") detail.summary = part.summary ?? "";
+    else if (continuity.type === "reasoning.encrypted") detail.data = continuity.data ?? "";
+    else detail.text = part.summary ?? part.text ?? "";
+    details.push(detail);
+    if (continuity.type !== "reasoning.encrypted" && continuity.data) {
+      details.push({
+        type: "reasoning.encrypted",
+        ...(continuity.id ? { id: continuity.id } : {}),
+        ...(continuity.format ? { format: continuity.format } : {}),
+        ...(continuity.index !== undefined ? { index: continuity.index } : {}),
+        data: continuity.data,
+      });
+    }
+  }
+  return details;
+}
 
 const OPENROUTER_SERVER_TOOL_MAP: Record<string, string> = {
   web_search: "openrouter:web_search",

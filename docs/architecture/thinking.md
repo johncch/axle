@@ -1,6 +1,6 @@
 # Thinking parts
 
-**Status**: current · **Last design revision**: 2026-09-11 (0.32.0)
+**Status**: current · **Last design revision**: 2026-09-11 (0.32.0, chat-completions and Gemini continuity)
 
 This document is normative for how model reasoning moves from a provider's
 wire format to a transcript turn: which layer records what, which provider
@@ -53,8 +53,22 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `thinking:end` on the stream and `part:start` / `part:end` on the turn.
 8. **Continuity is round-tripped by the message, never by the turn.**
    `continuity` holds the provider's resume token (Anthropic `signature` or
-   `redactedData`, OpenAI `encrypted`, Gemini `thoughtSignature`). The turn
-   part carries a copy for inspection; requests are built from the message.
+   `redactedData`, OpenAI `encrypted`, Gemini `thoughtSignature`, OpenRouter
+   the `reasoning_details` entry's identity: `type`, `id`, `format`, `index`,
+   `signature`, `data`). The turn part carries a copy for inspection;
+   requests are built from the message.
+9. **The step reader honors `display`; adapters do not know the request.**
+   Under `display: "hidden"` the step reader still writes every thinking
+   delta to the message part and emits no thinking content events, so the
+   turn never shows content the caller asked to hide while the message keeps
+   whatever the wire carried. Adapters and parsers translate the wire only.
+   This is a no-op where the provider already withheld the text and the
+   whole mechanism where it did not (OpenRouter, generic endpoints).
+10. **Adapters read block identity where the wire carries it.** Anthropic
+    keys parts on the block index, OpenAI on the reasoning item, OpenRouter
+    on the detail `index` (a bare `reasoning` string continues the open part
+    by adjacency and the first indexed detail joins it). Gemini has no block
+    identity and uses adjacency.
 
 ## Where fields get written
 
@@ -71,29 +85,44 @@ reader may see.
 | OpenAI reasoning item, no summary requested             |                |                   |                    |                |            |
 | OpenAI `gpt-oss`, `reasoning_text.delta`                | ✓              |                   |                    |                | ✓          |
 | Gemini `thought: true` parts                            |                | ✓                 |                    | ✓              |            |
+| Gemini signature-only part (empty text)                 |                |                   |                    |                |            |
 | Chat Completions `reasoning.summary` detail             |                | ✓                 |                    | ✓              |            |
-| Chat Completions `reasoning.text` detail                | ✓              |                   |                    |                | ✓          |
+| Chat Completions `reasoning.text`, summarizing format   |                | ✓                 |                    | ✓              |            |
+| Chat Completions `reasoning.text`, other format         | ✓              |                   |                    |                | ✓          |
 | Chat Completions bare `reasoning` / `reasoning_content` | ✓              |                   |                    |                | ✓          |
 | Chat Completions `reasoning.encrypted` alone            |                |                   | ✓                  |                |            |
 
-The Chat Completions rows map wire shape, not disclosure. OpenRouter
-documents no mapping from upstream model to detail type, and a harness run
-on 2026-09-11 (Claude Haiku 4.5 through OpenRouter, `reasoning_effort`
-sent) delivered Claude's summary as the bare `reasoning` string with no
-`reasoning_details` and no signature. That summary lands in `raw`, the
-audit's benign case. Whether OpenRouter emits `reasoning_details` under its
-unified `reasoning` request object is untested; that question belongs to
-the chat-completions boundary work (AXL-59).
+The Chat Completions rows are OpenRouter's `reasoning_details` contract,
+verified on the wire on 2026-09-11 (Claude Haiku 4.5, tool call): each entry
+carries `type`, `text`, `format`, `index`, and `signature`, under both the
+`reasoning_effort` and unified `reasoning` request shapes. `format` names the
+upstream, and an upstream that never discloses raw thinking makes a
+`reasoning.text` entry a summary. `OPENROUTER_SUMMARY_REASONING_FORMATS`
+(`anthropic-claude-v1`, `google-gemini-v1`; both observed 2026-09-11) is
+that bounded set, extended as formats are observed; an unrecognized format
+stays raw. Gemini and OpenAI through OpenRouter (formats `google-gemini-v1`
+and `openai-responses-v1`, captured 2026-09-11 with a prompt that forces
+reasoning before a tool call) send the disclosed entry, `reasoning.text` or
+`reasoning.summary`, at one index and the `reasoning.encrypted` entry with
+the resume token and id at the next. No upstream has been seen sharing an
+index between a disclosed entry and an encrypted one, so the two always
+become two parts, and only the encrypted one is echoed since the disclosed
+entry carries no token. Under `exclude`, both upstreams drop the disclosed
+entry and keep the encrypted one. The Gemini signature-only row is
+the part Google warns about, "a part with empty text content": it lands as a
+continuity-only part, on the open thinking part if one is open.
 
 ## What each provider echoes back
 
-| Provider         | Block sent on the next turn                                   | Built from                                         |
-| ---------------- | ------------------------------------------------------------- | -------------------------------------------------- |
-| Anthropic        | `thinking: { thinking, signature }`                           | message `summary ?? text` + `continuity.signature` |
-| Anthropic        | `redacted_thinking: { data }`                                 | `redacted` + `continuity.redactedData`             |
-| OpenAI           | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`  |
-| Gemini           | `thoughtSignature` on the following part                      | `providerMetadata.thoughtSignature`                |
-| Chat Completions | nothing today                                                 | —                                                  |
+| Provider          | Block sent on the next turn                                   | Built from                                               |
+| ----------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
+| Anthropic         | `thinking: { thinking, signature }`                           | message `summary ?? text` + `continuity.signature`       |
+| Anthropic         | `redacted_thinking: { data }`                                 | `redacted` + `continuity.redactedData`                   |
+| OpenAI            | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`        |
+| Gemini            | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`  |
+| Gemini            | `thoughtSignature` on a text or function-call part            | `providerMetadata.thoughtSignature`                      |
+| OpenRouter        | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data` |
+| Generic, Together | nothing                                                       | —                                                        |
 
 Anthropic signs whatever it put in the block's `thinking` field. Under
 `summarized` that is the summary, so the echo sends the summary; under
@@ -135,6 +164,17 @@ one place a provider hands back a real headline; it arrives as a sibling
 block describing the next action, not as a field on the reasoning block.
 Not planned work; recorded so the option is on file.
 
+OpenRouter forwards the echoed entries to the upstream as signed blocks, and
+Anthropic rejects a signature whose text was altered, so the echo sends the
+message's content field verbatim. The echo is gated on the `openrouter`
+vendor, as Together's request shape is; a strict generic endpoint may reject
+an unknown field. Under `display: "hidden"` OpenRouter still returns
+`reasoning_details` with text for Claude (`exclude` strips only the
+convenience `reasoning` string there), while for Gemini it also drops the
+`reasoning.text` entry and keeps the encrypted one (both verified
+2026-09-11). Either way the message carries what arrived, the echo stays
+valid, and the turn shows nothing.
+
 ## Rejected alternatives
 
 - **A `disclosure` enum on the turn part** (2026-09-10): computable from
@@ -162,3 +202,18 @@ Not planned work; recorded so the option is on file.
   that grows a field called `raw` under an unqualified name is the same
   told-not-shown rule the part rename removes. 0.32.0 already breaks this
   surface.
+- **Enforcing `display: "hidden"` inside the chat-completions adapter**
+  (2026-09-11): built and reverted the same day. It needed the request
+  setting threaded into the adapter and the non-streaming parser, the
+  undisclosed text relocated onto continuity so the signed echo still
+  matched, and metadata deferred to part close. All of it existed because
+  the adapter was deciding a display question. The step reader already
+  writes the message and emits the turn from one chunk, so one boolean
+  there does the whole job for every provider.
+- **Sending nothing for `hidden` on OpenRouter** (2026-09-11): `exclude` is
+  the provider's own knob and still trims the duplicate string; dropping it
+  would make the wire less faithful to the request for no gain.
+- **Deciding summary versus raw on OpenRouter by model id** (2026-09-11):
+  the detail's `format` label is a wire fact from the provider, so a bounded
+  format set is the same shape as the legacy model sets in reasoning.md,
+  not the family regex that doc rejects.
