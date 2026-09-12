@@ -7,6 +7,11 @@ import { chatUsageToStats, convertFinishReason } from "./utils.js";
 import {
   isOpenRouterTextAnchoredCitation,
   normalizeOpenRouterCitation,
+  reasoningDetailCarriesContinuity,
+  reasoningDetailContentField,
+  reasoningDetailContentText,
+  reasoningDetailContinuity,
+  type OpenRouterThinkingContinuity,
 } from "./vendors/openrouter/index.js";
 
 export function createStreamingAdapter() {
@@ -25,6 +30,8 @@ export function createStreamingAdapter() {
   let model = "";
 
   let activePart: "text" | "thinking" | null = null;
+  let activeDetailIndex: number | undefined;
+  let activeContinuity: OpenRouterThinkingContinuity | undefined;
 
   // Deferred completion: finish_reason arrives before the usage-only chunk,
   // so we hold the complete event until finalize() is called.
@@ -40,23 +47,45 @@ export function createStreamingAdapter() {
     }
     activePart = null;
     currentPartIndex = -1;
+    activeDetailIndex = undefined;
+    activeContinuity = undefined;
   }
 
   function ensureThinkingPart(
     chunks: Array<AnyStreamChunk>,
     detail?: ChatCompletionReasoningDetail,
   ) {
-    if (activePart === "thinking") return;
+    const continuesOpenBlock =
+      activePart === "thinking" &&
+      (detail?.index === undefined ||
+        activeDetailIndex === undefined ||
+        detail.index === activeDetailIndex);
+    if (continuesOpenBlock) {
+      if (detail) {
+        activeDetailIndex ??= detail.index;
+        activeContinuity = reasoningDetailContinuity(detail, activeContinuity);
+        if (reasoningDetailCarriesContinuity(detail)) {
+          chunks.push({
+            type: "thinking-metadata",
+            data: { index: currentPartIndex, continuity: activeContinuity },
+          });
+        }
+      }
+      return;
+    }
 
     closeActivePart(chunks);
     currentPartIndex = partIndex++;
     activePart = "thinking";
+    activeDetailIndex = detail?.index;
+    activeContinuity = detail ? reasoningDetailContinuity(detail) : undefined;
     chunks.push({
       type: "thinking-start",
       data: {
         index: currentPartIndex,
         ...(detail?.id ? { id: detail.id } : {}),
         ...(detail?.type === "reasoning.encrypted" ? { redacted: true } : {}),
+        ...(activeContinuity ? { continuity: activeContinuity } : {}),
         ...(detail ? { providerMetadata: reasoningDetailMetadata(detail) } : {}),
       },
     });
@@ -90,18 +119,13 @@ export function createStreamingAdapter() {
 
     let handledReasoningDetails = false;
     for (const detail of delta.reasoning_details ?? []) {
-      if (detail.type === "reasoning.text" && detail.text) {
+      const field = reasoningDetailContentField(detail);
+      const text = reasoningDetailContentText(detail);
+      if (field && text) {
         ensureThinkingPart(chunks, detail);
         chunks.push({
-          type: "thinking-raw-delta",
-          data: { index: currentPartIndex, text: detail.text },
-        });
-        handledReasoningDetails = true;
-      } else if (detail.type === "reasoning.summary" && detail.summary) {
-        ensureThinkingPart(chunks, detail);
-        chunks.push({
-          type: "thinking-summary-delta",
-          data: { index: currentPartIndex, text: detail.summary },
+          type: field === "summary" ? "thinking-summary-delta" : "thinking-raw-delta",
+          data: { index: currentPartIndex, text },
         });
         handledReasoningDetails = true;
       } else if (detail.type === "reasoning.encrypted" && detail.data) {
@@ -111,9 +135,13 @@ export function createStreamingAdapter() {
           data: {
             index: currentPartIndex,
             redacted: true,
+            continuity: activeContinuity,
             providerMetadata: reasoningDetailMetadata(detail),
           },
         });
+        handledReasoningDetails = true;
+      } else if (reasoningDetailCarriesContinuity(detail)) {
+        ensureThinkingPart(chunks, detail);
         handledReasoningDetails = true;
       }
     }

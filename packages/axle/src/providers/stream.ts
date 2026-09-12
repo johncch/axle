@@ -33,6 +33,7 @@ import {
   type ToolCallResult,
 } from "./helpers.js";
 import { readStep } from "./lib/stepReader.js";
+import { resolveReasoningDisplay } from "./reasoning.js";
 import { executeStepTools, type LoopContext } from "./lib/stepTools.js";
 import type { AIProvider, AxleModelRequestOptions } from "./types.js";
 import { AxleStopReason } from "./types.js";
@@ -364,6 +365,7 @@ async function run(
       emit: (event) => emit(cbs, event),
       tools: resolvedTools,
       signal,
+      discloseThinking: resolveReasoningDisplay(reasoning) === "visible",
     });
 
     if (outcome.kind === "aborted") {

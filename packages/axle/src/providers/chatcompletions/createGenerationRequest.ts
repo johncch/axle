@@ -24,6 +24,7 @@ import {
 import {
   isOpenRouterTextAnchoredCitation,
   normalizeOpenRouterCitation,
+  reasoningDetailsToThinkingParts,
 } from "./vendors/openrouter/index.js";
 
 export async function createGenerationRequest(
@@ -176,8 +177,11 @@ function fromModelResponse(data: ChatCompletionResponse): ModelResult {
     ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartCitation
   > = [];
 
+  const reasoningDetails = choice.message.reasoning_details ?? [];
   const reasoningText = choice.message.reasoning_content ?? choice.message.reasoning;
-  if (reasoningText) {
+  if (reasoningDetails.length > 0) {
+    content.push(...reasoningDetailsToThinkingParts(reasoningDetails));
+  } else if (reasoningText) {
     content.push({
       type: "thinking",
       text: reasoningText,

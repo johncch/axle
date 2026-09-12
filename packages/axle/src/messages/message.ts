@@ -223,7 +223,16 @@ export interface CitationOutputSpan {
 export type ThinkingContinuity =
   | { provider: "openai"; encrypted: string }
   | { provider: "anthropic"; signature?: string; redactedData?: string }
-  | { provider: "gemini"; thoughtSignature: string };
+  | { provider: "gemini"; thoughtSignature: string }
+  | {
+      provider: "openrouter";
+      type: string;
+      id?: string;
+      format?: string;
+      index?: number;
+      signature?: string;
+      data?: string;
+    };
 
 /**
  * Axle-managed tool call request emitted by the assistant.

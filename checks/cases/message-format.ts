@@ -178,7 +178,7 @@ export const messageFormatCases: CheckCase[] = [
     group: "extended",
     id: "format-thinking-stream",
     description:
-      "Streamed reasoning ends in a normalized thinking part; providers that stream thinking text emit thinking:raw-delta events.",
+      "Streamed reasoning ends in a normalized thinking part; providers that stream thinking text emit raw or summary delta events.",
     providers: ["openai", "anthropic", "gemini", "openrouter", "together"],
     async run({ provider, model, providerId }) {
       const handle = stream({
@@ -194,7 +194,9 @@ export const messageFormatCases: CheckCase[] = [
       let thinkingDeltaCount = 0;
       handle.on((event) => {
         events.push(event.type);
-        if (event.type === "thinking:raw-delta") thinkingDeltaCount += 1;
+        if (event.type === "thinking:raw-delta" || event.type === "thinking:summary-delta") {
+          thinkingDeltaCount += 1;
+        }
       });
 
       const result = await handle.final;
@@ -209,7 +211,7 @@ export const messageFormatCases: CheckCase[] = [
           ? []
           : ["Final message has no thinking part with content or continuity."]),
         ...(streamsThinkingText && thinkingDeltaCount === 0
-          ? ["No thinking:raw-delta events were emitted."]
+          ? ["No thinking delta events were emitted."]
           : []),
       ];
       return {

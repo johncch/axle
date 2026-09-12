@@ -25,6 +25,11 @@ export type ReasoningRequest =
 
 const REASONING_DISPLAYS: ReadonlySet<string> = new Set(["visible", "hidden"]);
 
+export function resolveReasoningDisplay(setting: ReasoningSetting | undefined): ReasoningDisplay {
+  const request = resolveReasoning(setting);
+  return typeof request === "object" ? request.display : "visible";
+}
+
 export function resolveReasoning(setting: ReasoningSetting | undefined): ReasoningRequest {
   if (setting === undefined || setting === "default") return "default";
   if (setting === "off") return "off";

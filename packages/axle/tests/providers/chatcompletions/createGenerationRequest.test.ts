@@ -364,6 +364,152 @@ describe("createGenerationRequest", () => {
       expect(result.content[1]).toEqual({ type: "text", text: "The answer is 42." });
     });
 
+    test("parses reasoning_details into thinking parts, by form and with continuity", async () => {
+      const response = {
+        id: "chatcmpl-123",
+        model: MODEL,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "42",
+              reasoning: "Claude's summary",
+              reasoning_details: [
+                {
+                  type: "reasoning.text",
+                  text: "Claude's summary",
+                  format: "anthropic-claude-v1",
+                  index: 0,
+                  signature: "sig-1",
+                },
+                { type: "reasoning.text", text: "open-weight chain", index: 1 },
+                { type: "reasoning.encrypted", data: "opaque", index: 2 },
+              ],
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 20 },
+      };
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+
+      const result = await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        vendor: "openrouter",
+        messages: [{ role: "user", content: "Question" }],
+        runtime: {},
+      });
+
+      expect(result.type).toBe("success");
+      if (result.type !== "success") return;
+      expect(result.content.slice(0, 3)).toEqual([
+        {
+          type: "thinking",
+          summary: "Claude's summary",
+          continuity: {
+            provider: "openrouter",
+            type: "reasoning.text",
+            format: "anthropic-claude-v1",
+            index: 0,
+            signature: "sig-1",
+          },
+          providerMetadata: { reasoningDetail: response.choices[0].message.reasoning_details[0] },
+        },
+        {
+          type: "thinking",
+          text: "open-weight chain",
+          continuity: { provider: "openrouter", type: "reasoning.text", index: 1 },
+          providerMetadata: { reasoningDetail: response.choices[0].message.reasoning_details[1] },
+        },
+        {
+          type: "thinking",
+          redacted: true,
+          continuity: {
+            provider: "openrouter",
+            type: "reasoning.encrypted",
+            index: 2,
+            data: "opaque",
+          },
+          providerMetadata: { reasoningDetail: response.choices[0].message.reasoning_details[2] },
+        },
+      ]);
+      expect(result.content[3]).toEqual({ type: "text", text: "42" });
+    });
+
+    test("echoes reasoning_details on assistant messages for the OpenRouter vendor only", async () => {
+      const response = {
+        id: "chatcmpl-123",
+        model: MODEL,
+        choices: [
+          { index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      };
+      const messages = [
+        { role: "user" as const, content: "Question" },
+        {
+          role: "assistant" as const,
+          id: "prev",
+          content: [
+            {
+              type: "thinking" as const,
+              summary: "Claude's summary",
+              continuity: {
+                provider: "openrouter" as const,
+                type: "reasoning.text",
+                format: "anthropic-claude-v1",
+                index: 0,
+                signature: "sig-1",
+              },
+            },
+            {
+              type: "thinking" as const,
+              redacted: true,
+              continuity: {
+                provider: "openrouter" as const,
+                type: "reasoning.encrypted",
+                index: 1,
+                data: "opaque",
+              },
+            },
+            { type: "text" as const, text: "42" },
+          ],
+        },
+        { role: "user" as const, content: "Follow-up" },
+      ];
+
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        vendor: "openrouter",
+        messages,
+        runtime: {},
+      });
+      const openrouterBody = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(openrouterBody.messages[1]).toEqual({
+        role: "assistant",
+        content: "42",
+        reasoning_details: [
+          {
+            type: "reasoning.text",
+            format: "anthropic-claude-v1",
+            index: 0,
+            signature: "sig-1",
+            text: "Claude's summary",
+          },
+          { type: "reasoning.encrypted", index: 1, data: "opaque" },
+        ],
+      });
+
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+      await createGenerationRequest({ baseUrl: BASE_URL, model: MODEL, messages, runtime: {} });
+      const genericBody = JSON.parse((fetch as any).mock.calls[1][1].body);
+      expect(genericBody.messages[1]).toEqual({ role: "assistant", content: "42" });
+    });
+
     test("parses reasoning into thinking part", async () => {
       const response = {
         id: "chatcmpl-123",
