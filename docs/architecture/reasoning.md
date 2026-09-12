@@ -54,10 +54,14 @@ can be re-checked when they change.
     OpenAI `reasoning.summary: auto`. `"hidden"` sends the explicit hide
     value on the same routes (`omitted`, `false`, no summary field) and
     `reasoning: { exclude: true }` on OpenRouter. Generic Chat Completions
-    endpoints and Together have no field and send nothing either way. `off`
-    and `default` never carry a display field; on Anthropic it can only
-    travel inside a typed `thinking` object, so a display without an enable
-    is unrepresentable by construction.
+    endpoints and Together have no field and send nothing either way. On
+    every route the step reader also withholds thinking content from the
+    turn under `"hidden"` while the message keeps what the wire carried
+    (thinking.md invariant 9); this is how `"hidden"` holds on OpenRouter,
+    whose `exclude` leaves `reasoning_details` text in place. `off` and
+    `default` never carry a display field; on Anthropic it can only travel
+    inside a typed `thinking` object, so a display without an enable is
+    unrepresentable by construction.
 11. **Display controls disclosure, not form.** The request says whether the
     provider should show its thinking. Whether a summary or raw text comes
     back is the model's property, recorded on the thinking part (see
@@ -134,8 +138,10 @@ requires `store: false` and `include: ["reasoning.encrypted_content"]` via
 - **Generic endpoints and OpenRouter**: `reasoning_effort` with
   `none | low | medium | high`. OpenRouter's own translation to the upstream
   provider is upstream behavior; it picks `summarized` for Claude. Its only
-  disclosure control is `reasoning.exclude: boolean`, which strips reasoning
-  from the response and never selects a form.
+  disclosure control is `reasoning.exclude: boolean`, which removes the
+  convenience `reasoning` string from the response and nothing else:
+  `reasoning_details` still arrive with text and signature (verified
+  2026-09-11), since they exist for the round trip.
 - **Together**: hybrid models (GLM, Qwen, Kimi, MiniMax, DeepSeek V3.1) toggle
   with `reasoning: { enabled }`; GPT-OSS and DeepSeek V4 accept
   `reasoning_effort` with `low | medium | high`. Neither family documents
@@ -167,6 +173,9 @@ carries the route's display field:
 | OpenAI Responses            | `reasoning.summary: auto`      | no summary field               |
 | OpenRouter                  | nothing                        | `reasoning: { exclude: true }` |
 | Generic endpoints, Together | nothing                        | nothing                        |
+
+Under `"hidden"` the turn receives no thinking content on any route; the
+step reader withholds it (thinking.md invariant 9).
 
 ### Legacy budget sets
 
