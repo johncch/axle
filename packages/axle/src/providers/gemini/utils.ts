@@ -223,8 +223,7 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
     if (item.type === "thinking") {
       if (item.continuity?.provider !== "gemini") continue;
       parts.push({
-        thought: true,
-        text: item.summary ?? "",
+        ...(item.summary ? { thought: true, text: item.summary } : { text: "" }),
         thoughtSignature: item.continuity.thoughtSignature,
       });
     } else if (item.type === "text") {

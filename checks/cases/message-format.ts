@@ -156,7 +156,6 @@ export const messageFormatCases: CheckCase[] = [
         provider,
         model,
         messages: [{ role: "user", content: "Answer exactly: hidden ok" }],
-        maxOutputTokens: 2048,
         reasoning: { effort: "low", display: "hidden" },
       });
 

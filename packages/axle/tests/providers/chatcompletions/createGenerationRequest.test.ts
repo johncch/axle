@@ -415,13 +415,20 @@ describe("createGenerationRequest", () => {
             index: 0,
             signature: "sig-1",
           },
-          providerMetadata: { reasoningDetail: response.choices[0].message.reasoning_details[0] },
+          providerMetadata: {
+            reasoningDetail: {
+              type: "reasoning.text",
+              format: "anthropic-claude-v1",
+              index: 0,
+              signature: "sig-1",
+            },
+          },
         },
         {
           type: "thinking",
           text: "open-weight chain",
           continuity: { provider: "openrouter", type: "reasoning.text", index: 1 },
-          providerMetadata: { reasoningDetail: response.choices[0].message.reasoning_details[1] },
+          providerMetadata: { reasoningDetail: { type: "reasoning.text", index: 1 } },
         },
         {
           type: "thinking",
@@ -432,10 +439,55 @@ describe("createGenerationRequest", () => {
             index: 2,
             data: "opaque",
           },
-          providerMetadata: { reasoningDetail: response.choices[0].message.reasoning_details[2] },
+          providerMetadata: { reasoningDetail: { type: "reasoning.encrypted", index: 2 } },
         },
       ]);
       expect(result.content[3]).toEqual({ type: "text", text: "42" });
+    });
+
+    test("a summary part that absorbed an encrypted entry echoes both entries", async () => {
+      const response = {
+        id: "chatcmpl-123",
+        model: MODEL,
+        choices: [
+          { index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      };
+      (fetch as any).mockResolvedValue(makeOkResponse(response));
+      await createGenerationRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        vendor: "openrouter",
+        messages: [
+          { role: "user", content: "Question" },
+          {
+            role: "assistant",
+            id: "prev",
+            content: [
+              {
+                type: "thinking",
+                summary: "gist",
+                redacted: true,
+                continuity: {
+                  provider: "openrouter",
+                  type: "reasoning.summary",
+                  id: "rs_1",
+                  index: 0,
+                  data: "gAAA",
+                },
+              },
+            ],
+          },
+          { role: "user", content: "Follow-up" },
+        ],
+        runtime: {},
+      });
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.messages[1].reasoning_details).toEqual([
+        { type: "reasoning.summary", id: "rs_1", index: 0, summary: "gist" },
+        { type: "reasoning.encrypted", id: "rs_1", index: 0, data: "gAAA" },
+      ]);
     });
 
     test("echoes reasoning_details on assistant messages for the OpenRouter vendor only", async () => {
@@ -472,6 +524,16 @@ describe("createGenerationRequest", () => {
                 type: "reasoning.encrypted",
                 index: 1,
                 data: "opaque",
+              },
+            },
+            {
+              type: "thinking" as const,
+              summary: "aborted before its signature arrived",
+              continuity: {
+                provider: "openrouter" as const,
+                type: "reasoning.text",
+                format: "anthropic-claude-v1",
+                index: 2,
               },
             },
             { type: "text" as const, text: "42" },

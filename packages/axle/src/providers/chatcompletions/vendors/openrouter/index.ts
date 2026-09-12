@@ -17,6 +17,7 @@ export type OpenRouterThinkingContinuity = Extract<ThinkingContinuity, { provide
  */
 export const OPENROUTER_SUMMARY_REASONING_FORMATS: ReadonlySet<string> = new Set([
   "anthropic-claude-v1",
+  "google-gemini-v1",
 ]);
 
 export function toOpenRouterReasoning(reasoning: ReasoningSetting | undefined) {
@@ -65,6 +66,18 @@ export function reasoningDetailCarriesContinuity(detail: ChatCompletionReasoning
   return Boolean(detail.signature || detail.id || detail.data);
 }
 
+export function reasoningDetailIdentity(
+  detail: ChatCompletionReasoningDetail,
+): ChatCompletionReasoningDetail {
+  return {
+    type: detail.type,
+    ...(detail.id ? { id: detail.id } : {}),
+    ...(detail.format ? { format: detail.format } : {}),
+    ...(detail.index !== undefined ? { index: detail.index } : {}),
+    ...(detail.signature ? { signature: detail.signature } : {}),
+  };
+}
+
 export function reasoningDetailsToThinkingParts(
   details: ChatCompletionReasoningDetail[],
 ): ContentPartThinking[] {
@@ -77,7 +90,7 @@ export function reasoningDetailsToThinkingParts(
         type: "thinking",
         ...(detail.id ? { id: detail.id } : {}),
         continuity: reasoningDetailContinuity(detail),
-        providerMetadata: { reasoningDetail: detail },
+        providerMetadata: { reasoningDetail: reasoningDetailIdentity(detail) },
       };
       parts.push(part);
       if (detail.index !== undefined) byIndex.set(detail.index, part);
@@ -101,6 +114,7 @@ export function toOpenRouterReasoningDetails(
   for (const part of content) {
     if (part.type !== "thinking" || part.continuity?.provider !== "openrouter") continue;
     const continuity = part.continuity;
+    if (!continuity.signature && !continuity.data) continue;
     const detail: ChatCompletionReasoningDetail = {
       type: continuity.type,
       ...(continuity.id ? { id: continuity.id } : {}),
@@ -112,6 +126,15 @@ export function toOpenRouterReasoningDetails(
     else if (continuity.type === "reasoning.encrypted") detail.data = continuity.data ?? "";
     else detail.text = part.summary ?? part.text ?? "";
     details.push(detail);
+    if (continuity.type !== "reasoning.encrypted" && continuity.data) {
+      details.push({
+        type: "reasoning.encrypted",
+        ...(continuity.id ? { id: continuity.id } : {}),
+        ...(continuity.format ? { format: continuity.format } : {}),
+        ...(continuity.index !== undefined ? { index: continuity.index } : {}),
+        data: continuity.data,
+      });
+    }
   }
   return details;
 }

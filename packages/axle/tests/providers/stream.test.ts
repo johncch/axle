@@ -287,6 +287,18 @@ describe("stream()", () => {
       });
     });
 
+    test("an invalid reasoning setting throws at call time, before any request", () => {
+      const provider = makeProvider({ streamChunks: [[startChunk(), completeChunk()]] });
+      expect(() =>
+        stream({
+          provider,
+          model: "test-model",
+          messages: [],
+          reasoning: { effort: "extreme" } as never,
+        }),
+      ).toThrow(TypeError);
+    });
+
     test("hidden display keeps thinking on the message and off the stream events", async () => {
       const chunks: AnyStreamChunk[] = [
         startChunk(),

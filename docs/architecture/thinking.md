@@ -98,8 +98,17 @@ carries `type`, `text`, `format`, `index`, and `signature`, under both the
 `reasoning_effort` and unified `reasoning` request shapes. `format` names the
 upstream, and an upstream that never discloses raw thinking makes a
 `reasoning.text` entry a summary. `OPENROUTER_SUMMARY_REASONING_FORMATS`
-(`anthropic-claude-v1` today) is that bounded set, extended as formats are
-observed; an unrecognized format stays raw. The Gemini signature-only row is
+(`anthropic-claude-v1`, `google-gemini-v1`; both observed 2026-09-11) is
+that bounded set, extended as formats are observed; an unrecognized format
+stays raw. Gemini and OpenAI through OpenRouter (formats `google-gemini-v1`
+and `openai-responses-v1`, captured 2026-09-11 with a prompt that forces
+reasoning before a tool call) send the disclosed entry, `reasoning.text` or
+`reasoning.summary`, at one index and the `reasoning.encrypted` entry with
+the resume token and id at the next. No upstream has been seen sharing an
+index between a disclosed entry and an encrypted one, so the two always
+become two parts, and only the encrypted one is echoed since the disclosed
+entry carries no token. Under `exclude`, both upstreams drop the disclosed
+entry and keep the encrypted one. The Gemini signature-only row is
 the part Google warns about, "a part with empty text content": it lands as a
 continuity-only part, on the open thinking part if one is open.
 
@@ -160,9 +169,11 @@ Anthropic rejects a signature whose text was altered, so the echo sends the
 message's content field verbatim. The echo is gated on the `openrouter`
 vendor, as Together's request shape is; a strict generic endpoint may reject
 an unknown field. Under `display: "hidden"` OpenRouter still returns
-`reasoning_details` with text (`exclude` strips only the convenience
-`reasoning` string, verified 2026-09-11), so the message carries the text and
-the echo stays valid while the turn shows nothing.
+`reasoning_details` with text for Claude (`exclude` strips only the
+convenience `reasoning` string there), while for Gemini it also drops the
+`reasoning.text` entry and keeps the encrypted one (both verified
+2026-09-11). Either way the message carries what arrived, the echo stays
+valid, and the turn shows nothing.
 
 ## Rejected alternatives
 

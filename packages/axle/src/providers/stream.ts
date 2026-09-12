@@ -198,6 +198,7 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   }
 
   validateLoopLimits(streamOptions);
+  resolveReasoningDisplay(streamOptions.reasoning);
 
   const controller = new AbortController();
   const effectiveSignal = streamOptions.signal
@@ -281,6 +282,7 @@ async function run(
     parallelToolCalls,
     providerOptions,
   } = options;
+  const discloseThinking = resolveReasoningDisplay(reasoning) === "visible";
   const registry = resolveToolRegistry(options);
   const resolvedTools = resolveTools(registry, {
     provider,
@@ -365,7 +367,7 @@ async function run(
       emit: (event) => emit(cbs, event),
       tools: resolvedTools,
       signal,
-      discloseThinking: resolveReasoningDisplay(reasoning) === "visible",
+      discloseThinking,
     });
 
     if (outcome.kind === "aborted") {

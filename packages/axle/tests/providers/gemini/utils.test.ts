@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { convertAxleMessagesToGemini } from "../../../src/providers/gemini/utils.js";
 
 describe("convertAxleMessagesToGemini", () => {
-  test("echoes thinking parts that carry a Gemini signature, in source order", async () => {
+  test("echoes signed thinking parts as they arrived, in source order", async () => {
     const contents = await convertAxleMessagesToGemini([
       { role: "user", content: "Add 17 and 25." },
       {
@@ -37,7 +37,7 @@ describe("convertAxleMessagesToGemini", () => {
       role: "model",
       parts: [
         { thought: true, text: "Simple addition.", thoughtSignature: "sig-thought" },
-        { thought: true, text: "", thoughtSignature: "sig-only" },
+        { text: "", thoughtSignature: "sig-only" },
         {
           functionCall: { id: "call_1", name: "add_numbers", args: { a: 17, b: 25 } },
           thoughtSignature: "sig-call",
