@@ -35,15 +35,15 @@
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
-    "@google/genai": "^2.21.0",
+    "@anthropic-ai/sdk": "^0.125.0",
+    "@google/genai": "^2.22.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "chalk": "^6.0.0",
     "glob": "^13.0.6",
-    "marked": "^18.0.11",
+    "marked": "^18.0.12",
     "mime": "^4.1.0",
-    "openai": "^7.10.0",
-    "zod": "^4.5.4"
+    "openai": "^7.15.0",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",

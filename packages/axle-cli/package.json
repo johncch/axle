@@ -32,20 +32,20 @@
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
-    "@clack/prompts": "^1.7.0",
+    "@clack/prompts": "^1.8.0",
     "@commander-js/extra-typings": "^15.0.0",
     "@fifthrevision/axle": "workspace:*",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "glob": "^13.0.6",
     "ink": "^7.1.1",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "yaml": "^2.9.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",
-    "@types/react": "^19.2.18",
+    "@types/react": "^19.3.0",
     "publint": "^0.3.24",
     "tsdown": "^0.23.0",
     "tsx": "^4.23.13",
