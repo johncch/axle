@@ -151,19 +151,20 @@ describe("provider client factory options", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({
-            id: "chatcmpl-1",
-            model: "test-model",
-            choices: [
-              {
-                index: 0,
-                message: { role: "assistant", content: "Hi" },
-                finish_reason: "stop",
-              },
-            ],
-            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
+          [
+            `data: ${JSON.stringify({
+              id: "chatcmpl-1",
+              model: "test-model",
+              choices: [
+                { index: 0, delta: { role: "assistant", content: "Hi" }, finish_reason: "stop" },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
         ),
       ),
     );
@@ -171,11 +172,13 @@ describe("provider client factory options", () => {
     const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
     const together = chatCompletions("https://api.together.ai/v1");
 
-    await together.createGenerationRequest("test-model", {
+    for await (const _chunk of together.createStreamingRequest("test-model", {
       messages: [{ role: "user", content: "Hi" }],
       runtime: {},
       reasoning: "off",
-    });
+    })) {
+      // drain
+    }
 
     const body = JSON.parse((fetch as any).mock.calls[0][1].body);
     expect(body.reasoning).toEqual({ enabled: false });

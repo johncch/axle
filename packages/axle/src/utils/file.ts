@@ -84,14 +84,10 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 export type FileKind = "image" | "document" | "text";
 
 type TextSource =
-  | { type: "text"; content: string }
-  | { type: "url"; url: string }
-  | { type: "ref"; ref: unknown };
+  { type: "text"; content: string } | { type: "url"; url: string } | { type: "ref"; ref: unknown };
 
 type BinarySource =
-  | { type: "base64"; data: string }
-  | { type: "url"; url: string }
-  | { type: "ref"; ref: unknown };
+  { type: "base64"; data: string } | { type: "url"; url: string } | { type: "ref"; ref: unknown };
 
 interface BaseFile {
   mimeType: string;

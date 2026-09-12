@@ -2,9 +2,14 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { generate } from "../../src/providers/generate.js";
-import type { AIProvider, ModelError, ModelResponse } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import { makeGenerateProvider } from "./helpers/providers.js";
+import {
+  makeGenerateProvider,
+  modelResultToChunks,
+  type ModelError,
+  type ModelResponse,
+} from "./helpers/providers.js";
 import { createTracerAndWriter, eventIndex } from "./helpers/recording-writer.js";
 
 async function expectAbortError(promise: Promise<unknown>): Promise<AxleAbortError> {
@@ -316,11 +321,8 @@ describe("generate() error paths", () => {
       get name() {
         return "test";
       },
-      async createGenerationRequest() {
-        throw new Error("Network failure");
-      },
       async *createStreamingRequest() {
-        throw new Error("Not implemented");
+        throw new Error("Network failure");
       },
     };
 
@@ -355,20 +357,22 @@ describe("generate() error paths", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let requestStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      requestStarted = resolve;
+    });
 
     const provider: AIProvider = {
       get name() {
         return "test";
       },
-      async createGenerationRequest(_model, { signal }) {
+      // Mirrors the real adapters: an aborted request ends the stream without
+      // yielding, and the reader reports the abort.
+      async *createStreamingRequest(_model, { signal }) {
+        requestStarted();
         await gate;
-        if (signal?.aborted) {
-          const error = new Error("Aborted");
-          error.name = "AbortError";
-          throw error;
-        }
-
-        return {
+        if (signal?.aborted) return;
+        yield* modelResultToChunks({
           type: "success",
           role: "assistant",
           id: "msg_abort",
@@ -378,10 +382,7 @@ describe("generate() error paths", () => {
           finishReason: AxleStopReason.Stop,
           usage: { in: 1, out: 1 },
           raw: {},
-        };
-      },
-      async *createStreamingRequest() {
-        throw new Error("Not implemented");
+        });
       },
     };
 
@@ -394,6 +395,7 @@ describe("generate() error paths", () => {
     });
 
     const reason = "timeout";
+    await started;
     controller.abort(reason);
     release();
 
@@ -478,15 +480,12 @@ describe("generate() error paths", () => {
     const controller = new AbortController();
     controller.abort("pre-aborted");
 
-    const createGenerationRequest = vi.fn();
+    const createStreamingRequest = vi.fn();
     const provider: AIProvider = {
       get name() {
         return "test";
       },
-      createGenerationRequest,
-      async *createStreamingRequest() {
-        throw new Error("Not implemented");
-      },
+      createStreamingRequest,
     };
 
     const error = await expectAbortError(
@@ -502,7 +501,7 @@ describe("generate() error paths", () => {
     expect(error.reason).toBe("pre-aborted");
     expect(error.messages).toHaveLength(0);
     expect(error.usage).toEqual({ in: 0, out: 0 });
-    expect(createGenerationRequest).not.toHaveBeenCalled();
+    expect(createStreamingRequest).not.toHaveBeenCalled();
 
     const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
     expect(rootSpanData.status).toBe("ok");

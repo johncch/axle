@@ -1,6 +1,10 @@
 import type { Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createCliAgentConfig, createDefaultAgentDefinition, resolveTarget } from "../../src/cli/agent-config.js";
+import {
+  createCliAgentConfig,
+  createDefaultAgentDefinition,
+  resolveTarget,
+} from "../../src/cli/agent-config.js";
 import type { ServiceConfig } from "../../src/cli/configs/schemas.js";
 
 const tracer = {

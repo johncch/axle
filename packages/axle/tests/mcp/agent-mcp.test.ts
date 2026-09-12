@@ -10,9 +10,6 @@ function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
   return {
     name: "mock-stream",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const text = responses[callIndex++] ?? "default";
       yield {

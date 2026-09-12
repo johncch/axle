@@ -28,7 +28,7 @@ span:start → span:update (setResult) → span:end
 
 **Root span** gets `setResult` with the final LLM result, then `end()`. On error, both the turn span and root span end with `"error"` status.
 
-**Known gap:** If the provider itself throws (generator throws for stream, `createGenerationRequest` rejects for generate), the turn and root spans are never ended (leaked). Tests 2.5 and 6.3 document this.
+**Known gap:** If the provider itself throws (the provider's generator throws), the turn and root spans are never ended (leaked). Tests 2.5 and 6.3 document this.
 
 ## What Each Test Verifies
 
@@ -43,14 +43,14 @@ span:start → span:update (setResult) → span:end
 
 ### stream() — Error Paths
 
-| Test | Scenario                           | Key assertions                                                                           |
-| ---- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| 2.1  | Error chunk (no prior text)        | Turn and root spans both end with `"error"`, root result has no finishReason             |
-| 2.2  | Error after partial text           | Both turn and root spans marked error                                                    |
-| 2.3  | Stream ends without complete chunk | Produces `IncompleteStream` error, both spans error                                      |
-| 2.4  | maxIterations reached              | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-iterations"` |
+| Test | Scenario                           | Key assertions                                                                                                                |
+| ---- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 2.1  | Error chunk (no prior text)        | Turn and root spans both end with `"error"`, root result has no finishReason                                                  |
+| 2.2  | Error after partial text           | Both turn and root spans marked error                                                                                         |
+| 2.3  | Stream ends without complete chunk | Produces `IncompleteStream` error, both spans error                                                                           |
+| 2.4  | maxIterations reached              | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-iterations"`                         |
 | 2.6  | token limit reached                | Turn 1 usage crosses `maxContextTokens`, loop stops at boundary, returns ok with `stopped: "token-limit"`, messages preserved |
-| 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**             |
+| 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**                                                  |
 
 ### stream() — Cancellation
 

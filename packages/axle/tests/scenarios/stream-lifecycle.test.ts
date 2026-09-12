@@ -488,9 +488,6 @@ describe("stream() error paths", () => {
       get name() {
         return "test";
       },
-      async createGenerationRequest() {
-        throw new Error("Not implemented");
-      },
       async *createStreamingRequest() {
         yield startChunk();
         throw new Error("Connection refused");

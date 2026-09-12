@@ -1,3 +1,4 @@
+import { modelResultToChunks, type ModelResult } from "../scenarios/helpers/providers.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
@@ -5,7 +6,7 @@ import type { AxleMessage } from "../../src/messages/message.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { generate } from "../../src/providers/generate.js";
 import { stream } from "../../src/providers/stream.js";
-import type { AIProvider, ModelResult } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 
 describe("Instruct options", () => {
@@ -144,27 +145,13 @@ describe("Instruct options", () => {
 });
 
 function makeGenerateProvider(requests: AxleMessage[][], response: ModelResult): AIProvider {
-  return {
-    get name() {
-      return "test";
-    },
-    async createGenerationRequest(_model, params) {
-      requests.push([...params.messages]);
-      return response;
-    },
-    async *createStreamingRequest() {
-      throw new Error("Not implemented");
-    },
-  };
+  return makeStreamProvider(requests, modelResultToChunks(response));
 }
 
 function makeStreamProvider(requests: AxleMessage[][], chunks: AnyStreamChunk[]): AIProvider {
   return {
     get name() {
       return "test";
-    },
-    async createGenerationRequest() {
-      throw new Error("Not implemented");
     },
     async *createStreamingRequest(_model, params) {
       requests.push([...params.messages]);

@@ -39,9 +39,6 @@ function createMockProvider(options?: { failOnCall?: number }): AIProvider {
   let callIndex = 0;
   return {
     name: "mock",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest() {
       callIndex += 1;
       if (callIndex === options?.failOnCall) {

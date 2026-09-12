@@ -45,9 +45,6 @@ function makeProvider(opts: {
     get name() {
       return "test";
     },
-    async createGenerationRequest(_model: string) {
-      throw new Error("Not implemented");
-    },
     createStreamingRequest: streamFactory
       ? ((() => streamFactory()) as any)
       : (function* (_model: string) {

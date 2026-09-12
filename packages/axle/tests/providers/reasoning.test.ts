@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   ANTHROPIC_THINKING_BUDGET_MODELS,
-  ANTHROPIC_GENERATE_MAX_TOKENS,
   getAnthropicStreamMaxTokens,
   toAnthropicThinking,
 } from "../../src/providers/anthropic/utils.js";
@@ -131,10 +130,7 @@ describe("reasoning translation", () => {
         expect(getAnthropicStreamMaxTokens("claude-fable-5-1")).toBe(128000);
         expect(getAnthropicStreamMaxTokens("claude-nova-7")).toBe(64000);
       });
-      test("generate() defaults to the largest cap the SDK sends without streaming", () => {
-        expect(ANTHROPIC_GENERATE_MAX_TOKENS).toBe(21000);
-      });
-      test("every legacy budget model's defaults exceed the high preset on both paths", () => {
+      test("every legacy budget model's default ceiling exceeds the high preset", () => {
         for (const registryId of ANTHROPIC_THINKING_BUDGET_MODELS) {
           const model = resolveFirstPartyModel(registryId, ["anthropic"]);
           expect(toAnthropicThinking({ effort: "high" }, model)).toEqual({
@@ -142,7 +138,6 @@ describe("reasoning translation", () => {
           });
           expect(getAnthropicStreamMaxTokens(model)).toBeGreaterThan(LEGACY_REASONING_BUDGETS.high);
         }
-        expect(ANTHROPIC_GENERATE_MAX_TOKENS).toBeGreaterThan(LEGACY_REASONING_BUDGETS.high);
       });
     });
   });

@@ -17,9 +17,6 @@ interface CapturedRequest {
 function createCapturingProvider(name: string, requests: CapturedRequest[]): AIProvider {
   return {
     name,
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(model, params) {
       requests.push({
         reasoning: (params as { reasoning?: unknown }).reasoning,
@@ -194,9 +191,6 @@ interface RunnerCall {
 function createRunnerProvider(calls: RunnerCall[]): AIProvider {
   return {
     name: "mock",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(model, params) {
       const { system, messages } = params as unknown as RunnerCall & { system?: string };
       calls.push({ system, messages: [...messages] });
