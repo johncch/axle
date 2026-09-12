@@ -245,6 +245,11 @@ failure summary, and writes them to the JSONL record. Cases may declare
 provider/model exclusions for known capability gaps; these are recorded as
 skips with the exclusion reason.
 
+`format-gemini-delayed-citations` injects Gemini response chunks with text, a
+trailing thought signature, and delayed grounding metadata. It verifies citation
+attachment and omitted zero offsets through both `generate()` and `stream().final`
+without network requests.
+
 ### Deterministic error contracts
 
 `stream-error-contract` and `stream-escaped-abort` use injected providers and

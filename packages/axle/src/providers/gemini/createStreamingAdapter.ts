@@ -8,6 +8,7 @@ import { convertStopReason } from "./utils.js";
 export function createGeminiStreamingAdapter() {
   let partIndex = 0;
   let currentPartIndex = -1;
+  let lastTextPartIndex = -1;
   let hasFunctionCalls = false;
   let messageId = "";
   let model = "";
@@ -151,6 +152,7 @@ export function createGeminiStreamingAdapter() {
             data: { index: currentPartIndex },
           });
         }
+        lastTextPartIndex = currentPartIndex;
         modelPartToStreamPart.set(modelPartIndex, currentPartIndex);
         chunks.push({
           type: "text-delta",
@@ -216,7 +218,7 @@ export function createGeminiStreamingAdapter() {
 
     for (const { partIndex, citation } of normalizeGeminiCitations(candidate)) {
       const streamPartIndex =
-        partIndex !== undefined ? modelPartToStreamPart.get(partIndex) : currentPartIndex;
+        partIndex !== undefined ? modelPartToStreamPart.get(partIndex) : lastTextPartIndex;
       if (streamPartIndex === undefined || streamPartIndex < 0) {
         console.warn("[Gemini] received citation without a resolvable text part", { citation });
         continue;
@@ -314,7 +316,10 @@ function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
         title: chunk.web.title,
         url: chunk.web.uri,
       },
-      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      outputSpan: {
+        start: segment ? (segment.startIndex ?? 0) : undefined,
+        end: segment?.endIndex,
+      },
       providerMetadata: {
         outputText: segment?.text,
         confidenceScores: support.confidenceScores,
@@ -334,7 +339,10 @@ function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
           end: chunk.retrievedContext.pageNumber,
         },
       },
-      outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+      outputSpan: {
+        start: segment ? (segment.startIndex ?? 0) : undefined,
+        end: segment?.endIndex,
+      },
       providerMetadata: {
         documentName: chunk.retrievedContext.documentName,
         outputText: segment?.text,
@@ -344,7 +352,7 @@ function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
   }
   return {
     source: { type: "unknown" },
-    outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
+    outputSpan: { start: segment ? (segment.startIndex ?? 0) : undefined, end: segment?.endIndex },
     providerMetadata: {
       chunk,
       outputText: segment?.text,

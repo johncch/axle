@@ -438,6 +438,35 @@ describe("createGeminiStreamingAdapter", () => {
       warn.mockRestore();
     });
 
+    test.each([
+      [{ thoughtSignature: "signature" }],
+      [{ thought: true, text: "Reasoning" }],
+      [{ functionCall: { name: "search", args: {} } }],
+    ])("attaches delayed grounding to text after %j", (part) => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "The answer" }] }));
+      adapter.handleChunk(makeChunk({ parts: [part] }));
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [],
+          finishReason: FinishReason.STOP,
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: "Source", uri: "https://example.com" } }],
+            groundingSupports: [
+              {
+                groundingChunkIndices: [0],
+                segment: { endIndex: 10, text: "The answer" },
+              },
+            ],
+          },
+        }),
+      );
+      expect(chunks.find((chunk) => chunk.type === "text-citation")).toMatchObject({
+        type: "text-citation",
+        data: { index: 0, citation: { outputSpan: { start: 0, end: 10 } } },
+      });
+    });
+
     test("warns when grounding metadata cannot be attached to a text part", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const adapter = createGeminiStreamingAdapter();
