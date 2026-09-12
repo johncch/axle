@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.32.0] - 2026-09-12
+
+- **Breaking:** renamed thinking stream events and separated displayable thinking summaries from raw reasoning content for clearer reasoning handling.
+- Unified generation request handling for streaming transports, improving consistency between standard and streaming responses.
+- Preserved OpenRouter and Gemini reasoning continuity metadata across generation, streaming, and assistant message conversion.
+- Added portable controls for displaying, hiding, or retaining reasoning only for provider continuity.
+- Improved usage reporting for OpenAI cached responses by tracking cache write tokens in standard and streaming flows.
+- Fixed Gemini thinking/signature handling and related provider issues.
+- Updated runtime support to require Node.js 22.
+
+
 ## [0.31.0] - 2026-09-08
 
 - Added portable reasoning controls with named modes and effort levels, including validation and updated reasoning documentation.
