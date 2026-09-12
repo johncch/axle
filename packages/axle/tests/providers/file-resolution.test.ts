@@ -25,9 +25,6 @@ describe("deferred file resolution", () => {
 
     const provider: AIProvider = {
       name: "test-openai-converter",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(model, params) {
         providerInput = await convertAxleMessageToResponseInput(params.messages, {
           model,
@@ -98,9 +95,6 @@ describe("deferred file resolution", () => {
     const providerInputs: unknown[] = [];
     const provider: AIProvider = {
       name: "test-tool-result-replay",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
         requestCount += 1;
         providerInputs.push(
@@ -177,9 +171,6 @@ describe("deferred file resolution", () => {
 
     const provider: AIProvider = {
       name: "test-signal",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(model, params) {
         await convertAxleMessageToResponseInput(params.messages, {
           model,

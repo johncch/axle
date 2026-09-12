@@ -47,9 +47,26 @@ export function createGeminiStreamingAdapter() {
     // Update usage metadata if available
     if (chunk.usageMetadata) {
       inputTokens = chunk.usageMetadata.promptTokenCount || 0;
-      outputTokens = (chunk.usageMetadata.totalTokenCount || 0) - inputTokens;
+      outputTokens = (chunk.usageMetadata.totalTokenCount ?? inputTokens) - inputTokens;
       cachedInputTokens = (chunk.usageMetadata as any).cachedContentTokenCount || 0;
       reasoningOutputTokens = (chunk.usageMetadata as any).thoughtsTokenCount || 0;
+    }
+
+    if (chunk.promptFeedback?.blockReason) {
+      closeActivePart(chunks);
+      chunks.push({
+        type: "error",
+        data: {
+          type: "Blocked",
+          message: `Response blocked by Google AI: ${chunk.promptFeedback.blockReason}${chunk.promptFeedback.blockReasonMessage ? `, ${chunk.promptFeedback.blockReasonMessage}` : ""}`,
+          usage: withUsageDetails(
+            { in: inputTokens, out: outputTokens },
+            { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
+          ),
+          raw: chunk,
+        },
+      });
+      return chunks;
     }
 
     // Process candidates

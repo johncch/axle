@@ -1,13 +1,6 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
-import {
-  AIProvider,
-  ModelResult,
-  ProviderClientOptions,
-  ProviderGenerationParams,
-  ProviderStreamParams,
-} from "../types.js";
+import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
-import { createGenerationRequest } from "./createGenerationRequest.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import {
   resolveChatCompletionsModel,
@@ -54,22 +47,6 @@ export function chatCompletions(
     name: "ChatCompletions",
     resolveProviderToolName(name) {
       return resolveChatCompletionsProviderToolName(name, vendor);
-    },
-
-    /** @internal */
-    async createGenerationRequest(
-      model: string,
-      params: ProviderGenerationParams,
-    ): Promise<ModelResult> {
-      return await createGenerationRequest({
-        baseUrl,
-        model: resolveChatCompletionsModel(model, vendor),
-        apiKey,
-        maxRetries,
-        timeoutMs,
-        vendor,
-        ...params,
-      });
     },
 
     /** @internal */

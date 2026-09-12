@@ -595,6 +595,255 @@ describe("createStreamingRequest", () => {
     vi.useRealTimers();
   });
 
+  describe("request construction", () => {
+    const okStream = () =>
+      makeSSEResponse(
+        [
+          `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: "stop" }] })}`,
+          "",
+        ].join("\n"),
+      );
+
+    test("sends POST to {baseUrl}/chat/completions with model and messages", async () => {
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hello world" }],
+          runtime: {},
+        }),
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        `${BASE_URL}/chat/completions`,
+        expect.objectContaining({ method: "POST" }),
+      );
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.model).toBe(MODEL);
+      expect(body.messages).toEqual([{ role: "user", content: "Hello world" }]);
+    });
+
+    test("sends the Authorization header only when an apiKey is provided", async () => {
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          apiKey: "sk-test",
+        }),
+      );
+      expect((fetch as any).mock.calls[0][1].headers["Authorization"]).toBe("Bearer sk-test");
+
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+        }),
+      );
+      expect((fetch as any).mock.calls[1][1].headers["Authorization"]).toBeUndefined();
+    });
+
+    test("maps named tool choice and parallel tool calls", async () => {
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
+          toolChoice: { type: "tool", name: "lookup" },
+          parallelToolCalls: true,
+        }),
+      );
+      const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+      expect(body.tool_choice).toEqual({ type: "function", function: { name: "lookup" } });
+      expect(body.parallel_tool_calls).toBe(true);
+    });
+
+    test("echoes reasoning_details on assistant messages for the OpenRouter vendor only", async () => {
+      const messages = [
+        { role: "user" as const, content: "Question" },
+        {
+          role: "assistant" as const,
+          id: "prev",
+          content: [
+            {
+              type: "thinking" as const,
+              summary: "Claude's summary",
+              continuity: {
+                provider: "openrouter" as const,
+                type: "reasoning.text",
+                format: "anthropic-claude-v1",
+                index: 0,
+                signature: "sig-1",
+              },
+            },
+            {
+              type: "thinking" as const,
+              redacted: true,
+              continuity: {
+                provider: "openrouter" as const,
+                type: "reasoning.encrypted",
+                index: 1,
+                data: "opaque",
+              },
+            },
+            {
+              type: "thinking" as const,
+              summary: "aborted before its signature arrived",
+              continuity: {
+                provider: "openrouter" as const,
+                type: "reasoning.text",
+                format: "anthropic-claude-v1",
+                index: 2,
+              },
+            },
+            { type: "text" as const, text: "42" },
+          ],
+        },
+        { role: "user" as const, content: "Follow-up" },
+      ];
+
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          vendor: "openrouter",
+          messages,
+          runtime: {},
+        }),
+      );
+      expect(JSON.parse((fetch as any).mock.calls[0][1].body).messages[1]).toEqual({
+        role: "assistant",
+        content: "42",
+        reasoning_details: [
+          {
+            type: "reasoning.text",
+            format: "anthropic-claude-v1",
+            index: 0,
+            signature: "sig-1",
+            text: "Claude's summary",
+          },
+          { type: "reasoning.encrypted", index: 1, data: "opaque" },
+        ],
+      });
+
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({ baseUrl: BASE_URL, model: MODEL, messages, runtime: {} }),
+      );
+      expect(JSON.parse((fetch as any).mock.calls[1][1].body).messages[1]).toEqual({
+        role: "assistant",
+        content: "42",
+      });
+    });
+  });
+
+  describe("retries before the first byte", () => {
+    const recovered = () =>
+      makeSSEResponse(
+        [
+          `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Recovered" }, finish_reason: "stop" }] })}`,
+          "",
+        ].join("\n"),
+      );
+
+    test("retries retryable HTTP statuses then succeeds", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockResolvedValueOnce(makeErrorResponse(429, "Rate limited"))
+        .mockResolvedValueOnce(recovered());
+      const pending = collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          maxRetries: 1,
+        }),
+      );
+      await vi.runAllTimersAsync();
+      const chunks = await pending;
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+      vi.useRealTimers();
+    });
+
+    test("does not retry non-retryable HTTP statuses", async () => {
+      (fetch as any).mockResolvedValue(makeErrorResponse(400, "Bad request"));
+      const chunks = await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          maxRetries: 1,
+        }),
+      );
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(chunks.some((chunk) => chunk.type === "error")).toBe(true);
+    });
+
+    test("honors retry-after-ms", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockResolvedValueOnce(makeErrorResponse(503, "Unavailable", { "retry-after-ms": "25" }))
+        .mockResolvedValueOnce(recovered());
+      const pending = collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          maxRetries: 1,
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(24);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(fetch).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    test("retries request timeouts then succeeds", async () => {
+      vi.useFakeTimers();
+      (fetch as any)
+        .mockImplementationOnce(
+          (_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+                once: true,
+              });
+            }),
+        )
+        .mockResolvedValueOnce(recovered());
+      const pending = collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          maxRetries: 1,
+          timeoutMs: 25,
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await vi.runAllTimersAsync();
+      const chunks = await pending;
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+      vi.useRealTimers();
+    });
+  });
+
   test("includes stream: true and stream_options in request body", async () => {
     const sseLines = [
       `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
@@ -717,6 +966,10 @@ function makeSSEResponse(sseText: string) {
   };
 }
 
+function makeErrorResponse(status: number, text: string, headers: Record<string, string> = {}) {
+  return { ok: false, status, headers: new Headers(headers), text: () => Promise.resolve(text) };
+}
+
 function makeSpan() {
   return {
     trace: vi.fn(),
@@ -729,9 +982,6 @@ function makeSpan() {
 function makeProvider(): AIProvider {
   return {
     name: "chatcompletions-test",
-    async createGenerationRequest() {
-      throw new Error("Not implemented");
-    },
     createStreamingRequest(_model, params) {
       return createStreamingRequest({
         ...params,

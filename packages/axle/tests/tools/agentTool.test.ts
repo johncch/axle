@@ -282,9 +282,6 @@ function runAgentTool(
 function createProvider(response: string, prompts: string[] = []): AIProvider {
   return {
     name: "child-provider",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const user = params.messages.findLast((message) => message.role === "user");
       const prompt = getMessageText(user?.content);
@@ -310,9 +307,6 @@ function createParentProvider(): AIProvider {
   let call = 0;
   return {
     name: "parent-provider",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       call += 1;
       yield {
@@ -355,9 +349,6 @@ function createParentProvider(): AIProvider {
 function createErrorChildProvider(): AIProvider {
   return {
     name: "error-child-provider",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",
@@ -375,9 +366,6 @@ function createErrorChildProvider(): AIProvider {
 function createFatalChildProvider(): AIProvider {
   return {
     name: "fatal-child-provider",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",
@@ -403,9 +391,6 @@ function createFatalChildProvider(): AIProvider {
 function createBlockingChildProvider(): AIProvider {
   return {
     name: "blocking-child-provider",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",

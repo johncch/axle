@@ -64,7 +64,7 @@ export type {
   GenerateResult,
   StreamResult,
 } from "./providers/helpers.js";
-export { generate, generateStep, stream } from "./providers/index.js";
+export { generate, stream } from "./providers/index.js";
 export { openai } from "./providers/openai/index.js";
 export type {
   StreamEvent,

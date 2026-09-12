@@ -87,9 +87,6 @@ export interface AIProvider {
   resolveProviderToolName?(name: string, model: string): string | undefined;
 
   /** @internal */
-  createGenerationRequest(model: string, params: ProviderGenerationParams): Promise<ModelResult>;
-
-  /** @internal */
   createStreamingRequest(
     model: string,
     params: ProviderStreamParams,
@@ -101,9 +98,9 @@ export interface ResolvedProviderTool extends ProviderTool {
 }
 
 /**
- * Parameters passed to provider adapters for one non-streaming generation call.
+ * Parameters passed to provider adapters for one streaming generation call.
  */
-export interface ProviderGenerationParams extends AxleModelRequestOptions {
+export interface ProviderStreamParams extends AxleModelRequestOptions {
   /** Conversation messages to send to the provider. */
   messages: Array<AxleMessage>;
   /** Optional system/developer instruction for the request. */
@@ -116,23 +113,6 @@ export interface ProviderGenerationParams extends AxleModelRequestOptions {
   runtime: ProviderRuntime;
 }
 
-/**
- * Parameters passed to provider adapters for one streaming generation call.
- */
-export interface ProviderStreamParams extends ProviderGenerationParams {}
-
-export interface ModelResponse {
-  type: "success";
-  role: "assistant";
-  id: string;
-  model: string;
-  text: string;
-  content: Array<ContentPartText | ContentPartThinking | ContentPartToolCall | ContentPartCitation>;
-  finishReason: AxleStopReason;
-  usage: Stats;
-  raw: any;
-}
-
 export interface ModelError {
   type: "error";
   error: {
@@ -142,8 +122,6 @@ export interface ModelError {
   usage?: Stats;
   raw?: any;
 }
-
-export type ModelResult = ModelResponse | ModelError;
 
 export interface ContextUsage {
   total: number;

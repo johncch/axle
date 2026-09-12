@@ -11,9 +11,6 @@ import {
 function createProvider(): AIProvider {
   return {
     name: "definition-provider",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest() {
       throw new Error("not used");
     },

@@ -1,7 +1,6 @@
 import type {
   AxleAssistantMessage,
   Citation,
-  ContentPartThinking,
   ThinkingContinuity,
 } from "../../../../messages/message.js";
 import { resolveReasoning, type ReasoningSetting } from "../../../reasoning.js";
@@ -76,35 +75,6 @@ export function reasoningDetailIdentity(
     ...(detail.index !== undefined ? { index: detail.index } : {}),
     ...(detail.signature ? { signature: detail.signature } : {}),
   };
-}
-
-export function reasoningDetailsToThinkingParts(
-  details: ChatCompletionReasoningDetail[],
-): ContentPartThinking[] {
-  const parts: ContentPartThinking[] = [];
-  const byIndex = new Map<number, ContentPartThinking>();
-  for (const detail of details) {
-    let part = detail.index !== undefined ? byIndex.get(detail.index) : undefined;
-    if (!part) {
-      part = {
-        type: "thinking",
-        ...(detail.id ? { id: detail.id } : {}),
-        continuity: reasoningDetailContinuity(detail),
-        providerMetadata: { reasoningDetail: reasoningDetailIdentity(detail) },
-      };
-      parts.push(part);
-      if (detail.index !== undefined) byIndex.set(detail.index, part);
-    } else if (part.continuity?.provider === "openrouter") {
-      part.continuity = reasoningDetailContinuity(detail, part.continuity);
-    }
-    if (detail.type === "reasoning.encrypted") part.redacted = true;
-    const text = reasoningDetailContentText(detail);
-    if (!text) continue;
-    const field = reasoningDetailContentField(detail);
-    if (field === "summary") part.summary = (part.summary ?? "") + text;
-    if (field === "raw") part.text = (part.text ?? "") + text;
-  }
-  return parts;
 }
 
 export function toOpenRouterReasoningDetails(

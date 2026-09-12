@@ -1,5 +1,3 @@
-import { ModelError } from "./types.js";
-
 export function requireInteger(
   value: number,
   name: string,
@@ -16,71 +14,42 @@ export function requireInteger(
   return value;
 }
 
-export function getUndefinedError(e: unknown): ModelError {
-  if (e == null) {
+export function normalizeProviderError(error: unknown): {
+  type: string;
+  message: string;
+  raw: unknown;
+} {
+  if (error instanceof Error) {
     return {
-      type: "error",
-      error: {
-        type: "Undetermined",
-        message: "Unknown error occurred",
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
+      type: error.name || "Error",
+      message: error.message || "Unexpected error",
+      raw: error,
     };
   }
-
-  // Handle standard Error objects
-  if (e instanceof Error) {
+  if (error && typeof error === "object") {
+    const value = error as Record<string, any>;
     return {
-      type: "error",
-      error: {
-        type: e.name || "Error",
-        message: e.message || "Unexpected error",
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
+      type: String(
+        value.error?.error?.type ||
+          value.error?.type ||
+          value.type ||
+          value.code ||
+          value.status ||
+          "Undetermined",
+      ),
+      message: String(
+        value.error?.error?.message ||
+          value.error?.message ||
+          value.message ||
+          value.error ||
+          "Unexpected error",
+      ),
+      raw: error,
     };
   }
-
-  // Handle object-based errors (common in AI SDKs)
-  if (typeof e === "object") {
-    const errorObj = e as any;
-
-    // Try various common error structures
-    const errorType =
-      errorObj?.error?.error?.type || // Anthropic nested
-      errorObj?.error?.type || // Common pattern
-      errorObj?.type || // Direct property
-      errorObj?.code || // OpenAI uses 'code'
-      errorObj?.status || // HTTP status
-      "Undetermined";
-
-    const errorMessage =
-      errorObj?.error?.error?.message || // Anthropic nested
-      errorObj?.error?.message || // Common pattern
-      errorObj?.message || // Direct property
-      errorObj?.error || // Error as string
-      "Unexpected error";
-
-    return {
-      type: "error",
-      error: {
-        type: String(errorType),
-        message: String(errorMessage),
-      },
-      usage: { in: 0, out: 0 },
-      raw: e,
-    };
-  }
-
-  // Handle primitive values (string, number, etc.)
   return {
-    type: "error",
-    error: {
-      type: "Undetermined",
-      message: String(e),
-    },
-    usage: { in: 0, out: 0 },
-    raw: e,
+    type: "Undetermined",
+    message: error == null ? "Unknown error occurred" : String(error),
+    raw: error,
   };
 }

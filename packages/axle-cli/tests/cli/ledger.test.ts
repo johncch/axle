@@ -37,8 +37,22 @@ describe("Ledger", () => {
 
     it("should parse valid entries", async () => {
       const entries = [
-        { job: "j", file: "a.md", hash: "aaa", sessionId: "s-a", status: "completed", timestamp: 1 },
-        { job: "j", file: "b.md", hash: "bbb", sessionId: "s-b", status: "completed", timestamp: 2 },
+        {
+          job: "j",
+          file: "a.md",
+          hash: "aaa",
+          sessionId: "s-a",
+          status: "completed",
+          timestamp: 1,
+        },
+        {
+          job: "j",
+          file: "b.md",
+          hash: "bbb",
+          sessionId: "s-b",
+          status: "completed",
+          timestamp: 2,
+        },
       ];
       await writeFile(TEST_LEDGER, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
 
@@ -77,7 +91,14 @@ describe("Ledger", () => {
     it("should let later entries overwrite earlier ones", async () => {
       const entries = [
         { job: "j", file: "a.md", hash: "old", sessionId: "s-1", status: "failed", timestamp: 1 },
-        { job: "j", file: "a.md", hash: "new", sessionId: "s-2", status: "completed", timestamp: 2 },
+        {
+          job: "j",
+          file: "a.md",
+          hash: "new",
+          sessionId: "s-2",
+          status: "completed",
+          timestamp: 2,
+        },
       ];
       await writeFile(TEST_LEDGER, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
 

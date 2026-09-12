@@ -287,9 +287,6 @@ function makeProvider(options: {
               : undefined;
           },
         }),
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
       callCount += 1;
       requests.push({

@@ -164,8 +164,10 @@ const result = await handle.final;
 if (!result.ok) throw new Error(result.error.kind);
 ```
 
-`generate()` does the same but without streaming — it returns the final result
-directly as a promise:
+`generate()` is the same request and the same tool loop with the non-streaming
+return shape: it resolves the handle's `final` directly as a promise. The
+transport underneath is always streaming, so the two never differ in what
+they send or what they return:
 
 ```typescript
 import { generate } from "@fifthrevision/axle";
@@ -251,9 +253,9 @@ such as `xhigh`, an exact budget, or an OpenAI summary length, goes through
 it.
 
 Anthropic needs an output cap on every request. When you don't pass
-`maxOutputTokens`, `stream()` uses the model's ceiling and `generate()` uses
-21,000, the largest cap the Anthropic SDK sends without streaming. The
-per-provider translation is documented in `docs/architecture/reasoning.md`.
+`maxOutputTokens`, Axle uses the model's registry ceiling, else 64,000, on
+`stream()`, `generate()`, and `Agent` alike. The per-provider translation is
+documented in `docs/architecture/reasoning.md`.
 
 ### Results
 

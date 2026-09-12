@@ -414,9 +414,6 @@ function createProvider(...results: ({ text: string } | { error: string })[]): {
     models,
     provider: {
       name: "test",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void> {
         const result = results[Math.min(models.length, results.length - 1)];
         models.push(model);

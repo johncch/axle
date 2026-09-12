@@ -21,9 +21,6 @@ function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
   return {
     name: "mock-stream",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const text = responses[callIndex++] ?? "default";
       yield {
@@ -47,9 +44,6 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
   const requests: unknown[][] = [];
   const provider: AIProvider = {
     name: "mock-tool-stream",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
       callCount += 1;
       requests.push([...messages]);
@@ -105,9 +99,6 @@ function createEchoStreamProvider(requests: string[]): AIProvider {
   let callCount = 0;
   return {
     name: "mock-echo-stream",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
       callCount += 1;
       const userMessage = messages.findLast((message) => message.role === "user");
@@ -558,9 +549,6 @@ describe("Agent", () => {
     const requests: unknown[][] = [];
     const provider: AIProvider = {
       name: "snapshot-provider",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
         requests.push([...messages]);
         yield {
@@ -633,9 +621,6 @@ describe("Agent", () => {
     const requests: unknown[][] = [];
     const provider: AIProvider = {
       name: "restore-provider",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
         requests.push([...messages]);
         yield {
@@ -838,9 +823,6 @@ describe("Agent", () => {
     let observedRequest: unknown;
     const provider: AIProvider = {
       name: "mock-stream",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void> {
         observedRequest = {
           reasoning: params.reasoning,
@@ -893,9 +875,6 @@ describe("Agent", () => {
       let providerSignal: AbortSignal | undefined;
       const provider: AIProvider = {
         name: "mock-stream",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
           providerSignal = signal;
           yield {
@@ -927,9 +906,6 @@ describe("Agent", () => {
       let requestMessages: Array<{ role: string }> = [];
       const provider: AIProvider = {
         name: "mock-stream",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(
           _model,
           { messages, signal },
@@ -970,9 +946,6 @@ describe("Agent", () => {
 
       const provider: AIProvider = {
         name: "mock-stream",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(
           _model,
           { signal },
@@ -1032,9 +1005,6 @@ describe("Agent", () => {
 
       const provider: AIProvider = {
         name: "mock-stream",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callCount += 1;
           const isFirstCall = callCount === 1;
@@ -1106,9 +1076,6 @@ describe("Agent", () => {
 
       const provider: AIProvider = {
         name: "mock-stream",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callCount += 1;
           yield {
@@ -1351,9 +1318,6 @@ describe("Agent", () => {
     let callIndex = 0;
     const provider: AIProvider = {
       name: "mock",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
         callIndex++;
         yield {
@@ -1507,9 +1471,6 @@ describe("Agent", () => {
       let callIndex = 0;
       const provider: AIProvider = {
         name: "mock",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callIndex++;
           yield {
@@ -1596,9 +1557,6 @@ describe("Agent", () => {
       let callIndex = 0;
       const provider: AIProvider = {
         name: "mock",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callIndex++;
           yield {
@@ -1633,9 +1591,6 @@ describe("Agent", () => {
 
       const childProvider: AIProvider = {
         name: "child-provider",
-        async createGenerationRequest() {
-          throw new Error("not used");
-        },
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           yield {
             type: "start",

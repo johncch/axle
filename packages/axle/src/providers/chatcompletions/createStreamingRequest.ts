@@ -1,3 +1,4 @@
+import { normalizeProviderError } from "../utils.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
@@ -123,9 +124,11 @@ export async function* createStreamingRequest(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      throw new Error(
-        `HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`,
-      );
+      throw {
+        status: response.status,
+        message: `HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`,
+        body: errorText,
+      };
     }
 
     if (!response.body) {
@@ -195,11 +198,7 @@ export async function* createStreamingRequest(
     });
     yield {
       type: "error",
-      data: {
-        type: "STREAMING_ERROR",
-        message: error instanceof Error ? error.message : String(error),
-        raw: error,
-      },
+      data: normalizeProviderError(error),
     };
   }
 }

@@ -143,9 +143,6 @@ function createCapturingProvider(): { provider: AIProvider; requests: AxleMessag
   const requests: AxleMessage[][] = [];
   const provider: AIProvider = {
     name: "mock-capture",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
       requests.push([...messages]);
       yield { type: "start", id: "mock-1", data: { model: "mock", timestamp: 0 } };
@@ -497,9 +494,6 @@ describe("Agent.compact", () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
       name: "gated",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;
@@ -634,9 +628,6 @@ describe("Agent.compact", () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
       name: "gated",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;
@@ -683,9 +674,6 @@ describe("Agent.compact", () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
       name: "gated",
-      async createGenerationRequest() {
-        throw new Error("not used");
-      },
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;

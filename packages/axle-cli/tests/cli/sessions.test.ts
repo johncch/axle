@@ -53,9 +53,6 @@ function createFailingProvider(options: {
   let callIndex = 0;
   return {
     name: "mock",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(_model, params) {
       options.requestMessages?.push([...(params as { messages: unknown[] }).messages]);
       callIndex += 1;
@@ -86,9 +83,6 @@ function createMockProvider(text: string, requestMessages?: unknown[][]): AIProv
   let callIndex = 0;
   return {
     name: "mock",
-    async createGenerationRequest() {
-      throw new Error("not used");
-    },
     async *createStreamingRequest(_model, params) {
       requestMessages?.push([...(params as { messages: unknown[] }).messages]);
       callIndex += 1;

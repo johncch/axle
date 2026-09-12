@@ -1,13 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import z from "zod";
-import {
-  AxleMessage,
-  Citation,
-  ContentPartText,
-  ContentPartThinking,
-  ContentPartToolCall,
-  type ToolResultPart,
-} from "../../messages/message.js";
+import { AxleMessage, Citation, type ToolResultPart } from "../../messages/message.js";
 import { ModelInfo, Models } from "../../models.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import {
@@ -318,11 +311,6 @@ export function getAnthropicStreamMaxTokens(model: string): number {
   );
 }
 
-// The Anthropic SDK throws before sending a non-streaming request whose
-// max_tokens implies more than ten minutes at its assumed 128k tokens/hour,
-// so generate() can never default above 21,333.
-export const ANTHROPIC_GENERATE_MAX_TOKENS = 21_000;
-
 export function convertToAnthropicTools(
   tools: Array<ToolDefinition>,
 ): Array<Anthropic.Messages.Tool> {
@@ -377,49 +365,6 @@ export function toAnthropicToolChoice(
     providerTools?.some((tool) => tool.name === choice.name);
   if (!exists) throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
   return { tool_choice: { type: "tool" as const, name: choice.name, ...disable } };
-}
-
-export function convertToAxleContentParts(
-  contentBlocks: Anthropic.Messages.ContentBlock[],
-): Array<ContentPartText | ContentPartThinking | ContentPartToolCall> {
-  const result: Array<ContentPartText | ContentPartThinking | ContentPartToolCall> = [];
-
-  for (const block of contentBlocks) {
-    if (block.type === "text") {
-      const citations = block.citations?.map(normalizeAnthropicCitation);
-      result.push({
-        type: "text",
-        text: block.text,
-        ...(citations && citations.length > 0 ? { citations } : {}),
-      });
-    } else if (block.type === "thinking") {
-      result.push({
-        type: "thinking",
-        ...(block.thinking ? { summary: block.thinking } : {}),
-        continuity: { provider: "anthropic", signature: block.signature },
-      });
-    } else if (block.type === "redacted_thinking") {
-      result.push({
-        type: "thinking",
-        redacted: true,
-        continuity: { provider: "anthropic", redactedData: block.data },
-      });
-    } else if (block.type === "tool_use") {
-      if (typeof block.input !== "object" || block.input === null || Array.isArray(block.input)) {
-        throw new Error(
-          `Invalid tool call input for ${block.name}: expected object, got ${typeof block.input}`,
-        );
-      }
-      result.push({
-        type: "tool-call",
-        id: block.id,
-        name: block.name,
-        parameters: block.input as Record<string, unknown>,
-      });
-    }
-  }
-
-  return result;
 }
 
 export function normalizeAnthropicCitation(citation: Anthropic.Messages.TextCitation): Citation {

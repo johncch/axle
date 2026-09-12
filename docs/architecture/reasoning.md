@@ -1,6 +1,6 @@
 # Reasoning controls
 
-**Status**: current · **Last design revision**: 2026-09-10 (0.32.0)
+**Status**: current · **Last design revision**: 2026-09-12 (0.32.0, single transport)
 
 This document is normative for Axle's portable reasoning control: what the
 `reasoning` request option means, how each provider adapter translates it,
@@ -95,11 +95,11 @@ Constraints that shape the translation:
 - `output_config.effort: high` is identical to omitting effort. Effort is a
   behavioral signal, not a budget; at low effort adaptive models may skip
   thinking on easy prompts.
-- The `@anthropic-ai/sdk` client throws before sending a non-streaming
-  request whose `max_tokens` implies more than ten minutes of output at its
-  assumed 128k tokens/hour (about 21,333 tokens). The check is skipped when
-  the client was constructed with an explicit timeout. Streaming requests are
-  exempt.
+- The `@anthropic-ai/sdk` client refuses a non-streaming request whose
+  `max_tokens` implies more than ten minutes of output at its assumed 128k
+  tokens/hour (about 21,333 tokens) unless the client has an explicit
+  timeout. Axle sends only streaming requests since 0.32.0, so the guard
+  constrains nothing Axle does.
 - `thinking.display` defaults to `omitted` on Opus 4.7, 4.8, and every 5.x
   model, and to `summarized` on 4.6 and the budget models. Under `omitted`
   the server emits no `thinking_delta` events: blocks arrive with empty text
@@ -194,24 +194,22 @@ support horizon, and a retired ID falls to the modern route where the
 provider rejects it as unknown. Adding a model to a set is a same-diff
 change to this document.
 
-## Anthropic output ceilings
+## Anthropic output ceiling
 
 Anthropic is the only adapter that must send an output cap, so it is the only
-one with a library-owned default. The two request paths differ because of the
-SDK's non-streaming guard above, and the difference is deliberate:
+one with a library-owned default. There is one request path and one implicit
+ceiling:
 
-| Path                               | Implicit `max_tokens` when the caller sets none                    |
-| ---------------------------------- | ------------------------------------------------------------------ |
-| `stream()` (and therefore `Agent`) | the model's `maxOutputTokens` from the model registry, else 64,000 |
-| `generate()`                       | 21,000, the largest value under the SDK's non-streaming guard      |
+| Path                                               | Implicit `max_tokens` when the caller sets none                    |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| `stream()`, and therefore `generate()` and `Agent` | the model's `maxOutputTokens` from the model registry, else 64,000 |
 
-A ceiling is not spend, so the flat 21,000 costs nothing on short answers and
-leaves 4,616 tokens above the high legacy preset. Caller-supplied
-`maxOutputTokens` is sent untouched on both paths, and the provider rejects a
-budget that does not fit under it.
+A ceiling is not spend, so a high default costs nothing on short answers and
+leaves every legacy preset room to fit. Caller-supplied `maxOutputTokens` is
+sent untouched, and the provider rejects a budget that does not fit under it.
 
-`PromptCompactor` sends no output cap and streams, so its summarizer request
-takes the `stream()` default and any preset fits.
+`PromptCompactor` sends no output cap, so its summarizer request takes the
+same default and any preset fits.
 
 ## Harness coverage
 
@@ -276,3 +274,10 @@ and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
   model actually runs that long.
 - **Together `enabled` only** (2026-09-07): drops an explicit effort
   silently, which invariant 8 forbids.
+- **Two transports behind two public functions** (2026-09-12, AXL-55): the
+  buffered `generate()` loop and the four `createGenerationRequest` builders
+  were deleted; `generate(o)` is `stream(o).final`. The two Anthropic
+  ceilings above were the visible symptom of the drift that two transports
+  invite, and the SDK's non-streaming guard only ever mattered because the
+  buffered path existed. The two entries above about a `generate()` ceiling
+  are kept as history; there is no longer a second ceiling to choose.

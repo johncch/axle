@@ -20,7 +20,7 @@ import type {
 } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
-import { addStats, attributeStats, createStats, toTokenUsage } from "../utils/stats.js";
+import { addStats, attributeStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.js";
 import {
   checkLoopStop,
   logStepContent,
@@ -32,7 +32,7 @@ import {
   type ToolCallCallback,
   type ToolCallResult,
 } from "./helpers.js";
-import { readStep } from "./lib/stepReader.js";
+import { readStep, type StepReadOutcome } from "./lib/stepReader.js";
 import { resolveReasoningDisplay } from "./reasoning.js";
 import { executeStepTools, type LoopContext } from "./lib/stepTools.js";
 import type { AIProvider, AxleModelRequestOptions } from "./types.js";
@@ -180,6 +180,7 @@ export function stream<TSchema extends OutputSchema | undefined>(
   options: StreamInstructParams<TSchema>,
 ): StreamInstructHandle<TSchema>;
 export function stream(options: StreamParams): StreamHandle;
+export function stream(options: StreamParams | StreamInstructParams<any>): StreamHandle;
 export function stream(options: StreamParams | StreamInstructParams<any>): StreamHandle {
   const callbacks: StreamEventCallback[] = [];
   let streamOptions: StreamParams;
@@ -346,29 +347,44 @@ async function run(
     const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
     const providerTools = resolvedTools.provider();
 
-    const streamSource = provider.createStreamingRequest(model, {
-      messages: workingMessages,
-      system,
-      tools,
-      providerTools: providerTools.length > 0 ? providerTools : undefined,
-      runtime: { span: stepSpan, fileResolver },
-      signal,
-      reasoning,
-      maxOutputTokens,
-      temperature,
-      topP,
-      stop,
-      toolChoice,
-      parallelToolCalls,
-      providerOptions,
-    });
+    let outcome: StepReadOutcome;
+    try {
+      const streamSource = provider.createStreamingRequest(model, {
+        messages: workingMessages,
+        system,
+        tools,
+        providerTools: providerTools.length > 0 ? providerTools : undefined,
+        runtime: { span: stepSpan, fileResolver },
+        signal,
+        reasoning,
+        maxOutputTokens,
+        temperature,
+        topP,
+        stop,
+        toolChoice,
+        parallelToolCalls,
+        providerOptions,
+      });
 
-    const outcome = await readStep(streamSource, {
-      emit: (event) => emit(cbs, event),
-      tools: resolvedTools,
-      signal,
-      discloseThinking,
-    });
+      outcome = await readStep(streamSource, {
+        emit: (event) => emit(cbs, event),
+        tools: resolvedTools,
+        signal,
+        discloseThinking,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        stepSpan?.end("ok");
+        span?.end("ok");
+        throw new AxleAbortError("Stream aborted", {
+          reason: error instanceof AxleAbortError ? error.reason : signal.reason,
+          messages: error instanceof AxleAbortError ? (error.messages ?? newMessages) : newMessages,
+          partial: error instanceof AxleAbortError ? error.partial : undefined,
+          usage: error instanceof AxleAbortError ? mergeStats(usage, error.usage) : usage,
+        });
+      }
+      throw error;
+    }
 
     if (outcome.kind === "aborted") {
       stepSpan?.end("ok");
@@ -402,6 +418,8 @@ async function run(
           error: {
             type: "error",
             error: { type: outcome.errorType, message: outcome.message },
+            raw: outcome.raw,
+            usage: outcome.usage,
           },
         },
         usage,

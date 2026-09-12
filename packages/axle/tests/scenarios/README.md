@@ -4,7 +4,7 @@ Tests verifying the tracer span lifecycle for `stream()` and `generate()`.
 
 ## Span Lifecycle Model
 
-Both `stream()` and `generate()` create a tree of spans when given a `tracer` (Span):
+Both `stream()` and `generate()` create a tree of spans when given a `span` (Span):
 
 ```
 root span (passed in by caller)
@@ -28,7 +28,7 @@ span:start → span:update (setResult) → span:end
 
 **Root span** gets `setResult` with the final LLM result, then `end()`. On error, both the turn span and root span end with `"error"` status.
 
-**Known gap:** If the provider itself throws (generator throws for stream, `createGenerationRequest` rejects for generate), the turn and root spans are never ended (leaked). Tests 2.5 and 6.3 document this.
+**Known gap:** If the provider itself throws (the provider's generator throws), the turn and root spans are never ended (leaked). Tests 2.5 and 6.3 document this.
 
 ## What Each Test Verifies
 
@@ -43,14 +43,14 @@ span:start → span:update (setResult) → span:end
 
 ### stream() — Error Paths
 
-| Test | Scenario                           | Key assertions                                                                           |
-| ---- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| 2.1  | Error chunk (no prior text)        | Turn and root spans both end with `"error"`, root result has no finishReason             |
-| 2.2  | Error after partial text           | Both turn and root spans marked error                                                    |
-| 2.3  | Stream ends without complete chunk | Produces `IncompleteStream` error, both spans error                                      |
-| 2.4  | maxIterations reached              | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-iterations"` |
+| Test | Scenario                           | Key assertions                                                                                                                |
+| ---- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 2.1  | Error chunk (no prior text)        | Turn and root spans both end with `"error"`, root result has no finishReason                                                  |
+| 2.2  | Error after partial text           | Both turn and root spans marked error                                                                                         |
+| 2.3  | Stream ends without complete chunk | Produces `IncompleteStream` error, both spans error                                                                           |
+| 2.4  | maxSteps reached                   | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-steps"`                              |
 | 2.6  | token limit reached                | Turn 1 usage crosses `maxContextTokens`, loop stops at boundary, returns ok with `stopped: "token-limit"`, messages preserved |
-| 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**             |
+| 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**                                                  |
 
 ### stream() — Cancellation
 
@@ -67,20 +67,17 @@ span:start → span:update (setResult) → span:end
 | 7.3  | `onToolCall` returns error | Tool span status `"error"`, result kind is `"tool"`         |
 | 7.4  | `onToolCall` throws        | Exception caught by `executeToolCalls`, same outcome as 7.3 |
 
-### generate() — Happy Paths
+### generate() — Wrapper Coverage
 
-| Test | Scenario             | Key assertions                                         |
-| ---- | -------------------- | ------------------------------------------------------ |
-| 5.1  | Single text response | span:update for setResult, usage/finishReason on spans |
-| 5.2  | Tool call → text     | 4 spans with correct ordering, messages accumulate     |
+| ID  | Scenario                                                            |
+| --- | ------------------------------------------------------------------- |
+| 5.3 | Executes a local tool without onToolCall                            |
+| 6.4 | Escaped provider AbortError becomes AxleAbortError and closes spans |
+| 6.5 | Abort during tool execution preserves prior state                   |
+| 6.6 | Pre-aborted signal prevents provider work                           |
 
-### generate() — Error Paths
-
-| Test | Scenario                    | Key assertions                                                                     |
-| ---- | --------------------------- | ---------------------------------------------------------------------------------- |
-| 6.1  | Provider returns ModelError | Turn span ends with `"error"` (via `setTurnResult`), root span ends with `"error"` |
-| 6.2  | maxIterations reached       | Same as stream 2.4 but via generate path                                           |
-| 6.3  | Provider throws             | Promise rejects, **turn and root spans are leaked** (same gap as 2.5)              |
+Shared lifecycle behavior is covered by `stream-lifecycle.test.ts`. Instruct
+history and parsing contracts are covered by `providers/instruct-options.test.ts`.
 
 ## Adding a New Test
 
@@ -95,14 +92,11 @@ span:start → span:update (setResult) → span:end
 const { writer, tracer } = createTracerAndWriter();
 const rootSpan = tracer.startSpan("stream", { type: "workflow" });
 
-// For stream tests: build chunk sequences per turn
+// Build chunk sequences per step for either API
 const provider = makeStreamingProvider([turn1Chunks, turn2Chunks]);
-
-// For generate tests: build response objects per turn
-const provider = makeGenerateProvider([response1, response2]);
 ```
 
-### 3. Build chunk sequences (stream tests)
+### 3. Build chunk sequences
 
 Each turn is an array of chunks. A minimal text turn:
 
