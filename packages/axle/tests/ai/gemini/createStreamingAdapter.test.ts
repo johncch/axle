@@ -163,6 +163,52 @@ describe("createGeminiStreamingAdapter", () => {
       }
     });
 
+    test("a signature-only part after thinking updates the open part's continuity", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Thinking...", thought: true }] }));
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "", thoughtSignature: "sig_late" }] }),
+      );
+
+      expect(chunks).toEqual([
+        {
+          type: "thinking-metadata",
+          data: { index: 0, continuity: { provider: "gemini", thoughtSignature: "sig_late" } },
+        },
+      ]);
+    });
+
+    test("a later thought part carrying a signature updates the open part's continuity", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "First, ", thought: true }] }));
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "then.", thought: true, thoughtSignature: "sig_2" }] }),
+      );
+
+      expect(chunks.map((chunk) => chunk.type)).toEqual([
+        "thinking-metadata",
+        "thinking-summary-delta",
+      ]);
+      expect(chunks[0]).toMatchObject({
+        data: { index: 0, continuity: { provider: "gemini", thoughtSignature: "sig_2" } },
+      });
+    });
+
+    test("a signature-only part after text becomes a continuity-only thinking part", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Answer" }] }));
+      const chunks = adapter.handleChunk(makeChunk({ parts: [{ thoughtSignature: "sig_tail" }] }));
+
+      expect(chunks).toEqual([
+        { type: "text-complete", data: { index: 0 } },
+        {
+          type: "thinking-start",
+          data: { index: 1, continuity: { provider: "gemini", thoughtSignature: "sig_tail" } },
+        },
+        { type: "thinking-complete", data: { index: 1 } },
+      ]);
+    });
+
     test("should not emit thinking-start on subsequent thinking chunks", () => {
       const adapter = createGeminiStreamingAdapter();
       adapter.handleChunk(makeChunk({ parts: [{ text: "First, ", thought: true }] }));

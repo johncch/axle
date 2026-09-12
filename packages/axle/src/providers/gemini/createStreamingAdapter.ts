@@ -67,9 +67,26 @@ export function createGeminiStreamingAdapter() {
         ("thoughtSignature" in part && !part.text && !part.functionCall) ||
         (partKeys.length === 2 && "text" in part && "thoughtSignature" in part && !part.text);
 
-      // Signatures are caching/verification metadata; we don't carry them
-      // forward today, so skip silently rather than tripping the unhandled log.
-      if (isSignatureOnly || isEmptyText) continue;
+      if (isEmptyText) continue;
+
+      if (isSignatureOnly) {
+        const continuity = {
+          provider: "gemini" as const,
+          thoughtSignature: part.thoughtSignature as string,
+        };
+        if (activePart === "thinking") {
+          chunks.push({
+            type: "thinking-metadata",
+            data: { index: currentPartIndex, continuity },
+          });
+        } else {
+          closeActivePart(chunks);
+          const signatureIdx = partIndex++;
+          chunks.push({ type: "thinking-start", data: { index: signatureIdx, continuity } });
+          chunks.push({ type: "thinking-complete", data: { index: signatureIdx } });
+        }
+        continue;
+      }
 
       // Handle thinking content
       if (isThought && part.text) {
@@ -89,6 +106,14 @@ export function createGeminiStreamingAdapter() {
                     },
                   }
                 : {}),
+            },
+          });
+        } else if (part.thoughtSignature) {
+          chunks.push({
+            type: "thinking-metadata",
+            data: {
+              index: currentPartIndex,
+              continuity: { provider: "gemini" as const, thoughtSignature: part.thoughtSignature },
             },
           });
         }
@@ -176,10 +201,7 @@ export function createGeminiStreamingAdapter() {
       const streamPartIndex =
         partIndex !== undefined ? modelPartToStreamPart.get(partIndex) : currentPartIndex;
       if (streamPartIndex === undefined || streamPartIndex < 0) {
-        console.warn(
-          "[Gemini] received citation without a resolvable text part",
-          { citation },
-        );
+        console.warn("[Gemini] received citation without a resolvable text part", { citation });
         continue;
       }
       chunks.push({
@@ -306,6 +328,10 @@ function normalizeGeminiGroundingChunk(chunk: any, support: any): Citation {
   return {
     source: { type: "unknown" },
     outputSpan: { start: segment?.startIndex, end: segment?.endIndex },
-    providerMetadata: { chunk, outputText: segment?.text, confidenceScores: support.confidenceScores },
+    providerMetadata: {
+      chunk,
+      outputText: segment?.text,
+      confidenceScores: support.confidenceScores,
+    },
   };
 }

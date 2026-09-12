@@ -164,7 +164,15 @@ export function fromModelResponse(
 
     for (let index = 0; index < parts.length; index++) {
       const part = parts[index];
-      if (!part.text) continue;
+      if (!part.text) {
+        if (part.thoughtSignature && !part.functionCall) {
+          content.push({
+            type: "thinking" as const,
+            continuity: { provider: "gemini" as const, thoughtSignature: part.thoughtSignature },
+          });
+        }
+        continue;
+      }
       if (part.thought) {
         content.push({
           type: "thinking" as const,

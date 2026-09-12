@@ -130,8 +130,8 @@ export const messageFormatCases: CheckCase[] = [
         !thinking.some((part) => part.continuity?.provider === providerId)
           ? [`No thinking part carries ${providerId} continuity.`]
           : []),
-        ...(providerId === "anthropic" && !thinking.some((part) => Boolean(part.text))
-          ? ["Anthropic thinking part has no renderable text."]
+        ...(providerId === "anthropic" && !thinking.some((part) => Boolean(part.summary))
+          ? ["Anthropic thinking part has no summary."]
           : []),
         ...(providerId === "gemini" &&
         !thinking.some((part) => Boolean(part.summary) || Boolean(part.text))
@@ -147,29 +147,37 @@ export const messageFormatCases: CheckCase[] = [
   },
   {
     group: "extended",
-    id: "format-thinking-redacted",
-    description: "Omitted Anthropic thinking surfaces as a redacted part with continuity.",
+    id: "format-thinking-hidden",
+    description:
+      "Hidden Anthropic thinking surfaces as a part with continuity only: no content, and not marked redacted.",
     providers: ["anthropic"],
     async run({ provider, model }) {
       const result = await generate({
         provider,
         model,
-        messages: [{ role: "user", content: "Answer exactly: redacted ok" }],
+        messages: [{ role: "user", content: "Answer exactly: hidden ok" }],
         maxOutputTokens: 2048,
-        providerOptions: {
-          thinking: { type: "enabled", budget_tokens: 1024, display: "omitted" },
-        },
+        reasoning: { effort: "low", display: "hidden" },
       });
 
       if (!result.ok) return fail({ error: result.error });
       const thinking = collectThinking(result.final);
+      const failureReasons = [
+        ...(thinking.some(
+          (part) => part.continuity?.provider === "anthropic" && part.continuity.signature,
+        )
+          ? []
+          : ["No thinking part carries an Anthropic signature."]),
+        ...(thinking.some((part) => part.summary || part.text)
+          ? ["A hidden thinking part carried content."]
+          : []),
+        ...(thinking.some((part) => part.redacted)
+          ? ["A hidden thinking part was marked redacted."]
+          : []),
+      ];
       return {
-        ok: thinking.some(
-          (part) =>
-            part.redacted === true &&
-            part.continuity?.provider === "anthropic" &&
-            Boolean(part.continuity.signature || part.continuity.redactedData),
-        ),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: { thinking, text: getAssistantText(result.final), usage: result.usage },
       };
     },
