@@ -326,3 +326,30 @@ describe("config loaders", () => {
     await expect(getJobConfig(path, {})).rejects.toThrow(/provider/);
   });
 });
+
+describe("schedule block", () => {
+  async function loadWith(block: string[]): Promise<Awaited<ReturnType<typeof getJobConfig>>> {
+    const path = join(TEST_DIR, "scheduled.yml");
+    await writeFile(path, ["provider:", "  type: openai", "task: Check", ...block].join("\n"));
+    return getJobConfig(path, {});
+  }
+
+  it("accepts a fixed interval", async () => {
+    const config = await loadWith(["schedule:", "  every: 1h"]);
+    expect(config.schedule).toEqual({ every: "1h" });
+  });
+
+  it("leaves schedule undefined when absent", async () => {
+    expect((await loadWith([])).schedule).toBeUndefined();
+  });
+
+  it.each([
+    ["schedule:", "  every: 90 minutes"],
+    ["schedule:", "  every: 30s"],
+    ["schedule:", "  every: 1h", "  overlap: skip"],
+    ["schedule:", "  at: 09:00"],
+    ["schedule: hourly"],
+  ])("rejects malformed block %j", async (...block) => {
+    await expect(loadWith(block)).rejects.toThrow(/The job file is not valid/);
+  });
+});

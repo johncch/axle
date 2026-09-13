@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INTERVAL_PATTERN, parseInterval } from "../schedule/duration.js";
 
 /* ============================================================================
  * Provider Configuration Schemas
@@ -139,6 +140,32 @@ export const BatchConfigSchema = z.strictObject({
 export type BatchConfig = z.infer<typeof BatchConfigSchema>;
 
 /* ============================================================================
+ * Schedule Config Schema
+ * ========================================================================== */
+
+export const ScheduleConfigSchema = z.strictObject({
+  every: z
+    .string()
+    .regex(
+      new RegExp(INTERVAL_PATTERN),
+      "expected <positive integer><unit> with unit s, m, h, or d",
+    )
+    .refine(
+      (every) => {
+        try {
+          parseInterval(every);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "interval is below 60s or too large for a backend" },
+    ),
+});
+
+export type ScheduleConfig = z.infer<typeof ScheduleConfigSchema>;
+
+/* ============================================================================
  * Job Config Schema
  * ========================================================================== */
 
@@ -180,6 +207,7 @@ export const JobConfigSchema = z.strictObject({
   files: z.array(z.string()).optional(),
   mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),
+  schedule: ScheduleConfigSchema.optional(),
   compaction: z.boolean().optional(),
 });
 
