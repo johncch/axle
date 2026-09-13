@@ -1,14 +1,15 @@
 # yaml-language-server: $schema=../schemas/v3/job.yaml
-provider: openai
-model: openai/gpt-5.5
+provider: openrouter
+model: z-ai/glm-5.3-flash
 
 task: |
   Generate a changelog entry for version {{version}}.
 
   1. Run `git describe --tags --abbrev=0` to find the last release tag.
   2. Run `git log <tag>..HEAD --format="%s%n%n%b"` to get commit messages since that tag.
-  3. Read the current CHANGELOG.md file (if it exists).
-  4. Write a new changelog entry and prepend it to CHANGELOG.md.
+  3. Read any files if you need more details
+  4. Read the current CHANGELOG.md file (if it exists).
+  5. Update the existing entry or write a new changelog entry and prepend it to CHANGELOG.md.
 
   Rules for the changelog entry:
   - Use {{version}} as the version number
