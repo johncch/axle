@@ -55,7 +55,7 @@ function desired(overrides: Partial<DesiredSchedule> = {}): DesiredSchedule {
     name: "monitor",
     recipePath: "/recipes/monitor.yml",
     cwd: "/recipes",
-    intervalSeconds: 3600,
+    trigger: { kind: "interval", seconds: 3600 },
     programArguments: ["/bin/node", "/axle/cli.js", "-j", "/recipes/monitor.yml"],
     path: "/usr/bin:/bin",
     stdoutPath: `${HOME}/.axle/logs/schedules/abc123.out.log`,
@@ -116,24 +116,24 @@ describe("reconcileSchedule", () => {
     const later = { now: () => new Date("2026-09-12T11:00:00.000Z") };
 
     const outcome = await reconcileSchedule(
-      desired({ intervalSeconds: 900, cwd: "/elsewhere" }),
+      desired({ trigger: { kind: "interval", seconds: 900 }, cwd: "/elsewhere" }),
       backend,
       { home: HOME, ...later },
     );
 
     expect(outcome).toMatchObject({
       kind: "updated",
-      previous: { desired: { intervalSeconds: 3600, cwd: "/recipes" } },
+      previous: { desired: { trigger: { kind: "interval", seconds: 3600 }, cwd: "/recipes" } },
     });
     expect(backend.calls).toEqual([
       {
         op: "apply",
-        desired: desired({ intervalSeconds: 900, cwd: "/elsewhere" }),
+        desired: desired({ trigger: { kind: "interval", seconds: 900 }, cwd: "/elsewhere" }),
         previous: { kind: "launchd", label: "test.abc123", plistPath: "/la/abc123.plist" },
       },
     ]);
     expect(await readScheduleRecord("abc123", HOME)).toMatchObject({
-      desired: { intervalSeconds: 900, cwd: "/elsewhere" },
+      desired: { trigger: { kind: "interval", seconds: 900 }, cwd: "/elsewhere" },
       createdAt: "2026-09-12T10:00:00.000Z",
       updatedAt: "2026-09-12T11:00:00.000Z",
     });
@@ -170,7 +170,9 @@ describe("reconcileSchedule", () => {
     backend.failNextApply = new Error("launchctl bootstrap failed");
 
     await expect(
-      reconcileSchedule(desired({ intervalSeconds: 900 }), backend, { home: HOME }),
+      reconcileSchedule(desired({ trigger: { kind: "interval", seconds: 900 } }), backend, {
+        home: HOME,
+      }),
     ).rejects.toThrow(/bootstrap failed/);
 
     expect(await readScheduleRecord("abc123", HOME)).toEqual(before);

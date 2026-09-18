@@ -232,8 +232,21 @@ task: |
 ```
 
 `every` is a fixed elapsed interval: `<integer><unit>` with unit `s`, `m`,
-`h`, or `d` (a day is 24 hours); `60s` is the minimum. Calendar times,
-weekdays, and cron expressions are not supported yet.
+`h`, or `d` (a day is 24 hours); `60s` is the minimum. For a fixed time of
+day use `at` instead, optionally limited to weekdays with `on`:
+
+```yaml
+schedule:
+  at: "09:00" # every day at 09:00, machine-local time
+
+schedule:
+  at: ["09:00", "17:30"] # more than one time a day
+  on: [mon, tue, wed, thu, fri]
+```
+
+Times are `HH:MM` in 24-hour form, in the machine's local time; there is no
+timezone setting. A recipe declares either `every` or `at`, not both. Cron
+expressions and day-of-month schedules are not supported yet.
 
 ```bash
 axle schedule -j monitor.yaml            # register or update, then run once now
@@ -244,9 +257,10 @@ axle schedule remove -j monitor.yaml
 axle -j monitor.yaml                     # just run it; the schedule is never touched
 ```
 
-The first scheduled firing comes one full interval after registering, which
-is why `schedule -j` runs once immediately: a daily job is proven now, not
-tomorrow. Use `register` when the run itself has side effects you do not
+The first scheduled firing comes one full interval after registering, or
+at the next matching clock time, which is why `schedule -j` runs once
+immediately: a daily job is proven now, not tomorrow. Every apply prints
+when the next firing is due. Use `register` when the run itself has side effects you do not
 want repeated, such as re-applying after an interval edit.
 
 A schedule is addressed by its recipe everywhere; there is no separate
@@ -255,9 +269,7 @@ schedule, so repeating it prints "is current" and changes nothing. An update say
 changed (`every 1h → 15m`, `cwd … → …`). Editing the task, model, tools, or
 `batch:` block takes effect on the next firing with no re-registration;
 changing `every`, or applying from a different directory, updates the
-registration. On a recipe without a block, both forms ask for the interval
-in a terminal and write the block into the recipe (comments and other keys
-preserved); outside a terminal they fail instead.
+registration. Both forms refuse a recipe without a `schedule` block.
 
 A plain `axle -j` on the recipe only runs it, and prints one line about its
 schedule: not registered, scheduled with its last run, or a warning when
@@ -271,8 +283,9 @@ user `.axle/`, the directory's `.env`), and saves a fresh resumable session
 those runs newest first with their `axle resume` command; stdout and
 stderr also land in `~/.axle/logs/schedules/<id>.out.log` and `.err.log`.
 A schedule never overlaps itself: if a firing is still running when the
-next interval arrives, that interval is skipped rather than queued, and
-intervals missed while the machine sleeps are not replayed. A failed
+next one is due, that firing is skipped rather than queued. Intervals
+missed while the machine sleeps are not replayed; a clock time missed
+while asleep runs once on wake. A failed
 firing exits non-zero into the log and leaves later firings registered.
 
 `remove` unloads the LaunchAgent and deletes only its plist and the

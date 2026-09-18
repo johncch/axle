@@ -40,7 +40,7 @@ describe("buildDesiredSchedule", () => {
       name: "hourly-monitor",
       recipePath: "/Users/me/My Recipes/monitor.yml",
       cwd: "/Users/me/My Recipes",
-      intervalSeconds: 3600,
+      trigger: { kind: "interval", seconds: 3600 },
       relaunch: ["/usr/local/bin/node", "/usr/local/lib/axle/dist/cli.js"],
       path: "/usr/local/bin:/usr/bin:/bin",
       home: "/Users/me",
@@ -51,7 +51,7 @@ describe("buildDesiredSchedule", () => {
       name: "hourly-monitor",
       recipePath: "/Users/me/My Recipes/monitor.yml",
       cwd: "/Users/me/My Recipes",
-      intervalSeconds: 3600,
+      trigger: { kind: "interval", seconds: 3600 },
       programArguments: [
         "/usr/local/bin/node",
         "/usr/local/lib/axle/dist/cli.js",

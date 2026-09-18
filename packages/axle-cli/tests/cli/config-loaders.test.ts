@@ -339,6 +339,13 @@ describe("schedule block", () => {
     expect(config.schedule).toEqual({ every: "1h" });
   });
 
+  it("accepts clock times with optional weekdays", async () => {
+    expect((await loadWith(["schedule:", "  at: '09:00'"])).schedule).toEqual({ at: "09:00" });
+    expect(
+      (await loadWith(["schedule:", "  at: ['09:00', '17:30']", "  on: [mon, fri]"])).schedule,
+    ).toEqual({ at: ["09:00", "17:30"], on: ["mon", "fri"] });
+  });
+
   it("leaves schedule undefined when absent", async () => {
     expect((await loadWith([])).schedule).toBeUndefined();
   });
@@ -347,7 +354,11 @@ describe("schedule block", () => {
     ["schedule:", "  every: 90 minutes"],
     ["schedule:", "  every: 30s"],
     ["schedule:", "  every: 1h", "  overlap: skip"],
-    ["schedule:", "  at: 09:00"],
+    ["schedule:", "  at: '9:00'"],
+    ["schedule:", "  at: '09:00'", "  every: 1h"],
+    ["schedule:", "  on: [mon]"],
+    ["schedule:", "  at: '09:00'", "  on: [monday]"],
+    ["schedule:", "  at: []"],
     ["schedule: hourly"],
   ])("rejects malformed block %j", async (...block) => {
     await expect(loadWith(block)).rejects.toThrow(/The job file is not valid/);

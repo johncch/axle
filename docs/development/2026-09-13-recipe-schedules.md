@@ -127,9 +127,36 @@ Positional recipes (`axle <recipe>`, `axle schedule <recipe>`) came up and
 were split out: the current rule is that recipes are always `-j` and ids
 and inputs are positional, and changing that is a CLI-wide grammar change.
 
+## Clock-time schedules (2026-09-18)
+
+The first question after the interval form worked was "does it do fixed
+hours?", so `at` followed in the same change rather than a new ticket. The
+grammar is structured, not a string: `at: "09:00"` or a list, plus an
+optional `on` weekday list, mutually exclusive with `every` in the strict
+schema. The record now stores a parsed `trigger` union (interval seconds
+or calendar times and weekdays) in place of `intervalSeconds`; the record
+version stays at 1 because no version had shipped. The launchd backend
+renders one `StartCalendarInterval` dictionary per time and weekday, and
+every apply now names the next firing, computed locally for calendar
+triggers. Two semantics stated in the docs rather than invented: launchd
+evaluates local time, so there is no timezone field; and a clock time
+missed during sleep runs on wake, where an interval is skipped. The
+wizard still asks only for an interval; a clock-time prompt is a small
+follow-up.
+
+## Wizard removed (2026-09-18)
+
+The TTY wizard that prompted for `every` and wrote the block into a recipe
+missing one was removed the day after clock times landed. It only knew
+intervals, it was the only prompt on the whole schedule surface, and the
+alternative — add the block by hand — is what every other recipe field
+already asks. The comment-preserving YAML write-back went with it; both
+are in history if a need returns.
+
 ## Left for later
 
-Linux/systemd and Windows backends; calendar, cron, and one-shot schedules
-(a distinct schema shape, not `every`); catch-up and retry; queue or
+Linux/systemd and Windows backends; cron, day-of-month, and one-shot
+schedules (further fields beside `at`, not an overloaded `every`); a
+wizard prompt for clock times; catch-up and retry; queue or
 parallel overlap policies; log rotation; continuing one session across
 occurrences; model-created schedules.

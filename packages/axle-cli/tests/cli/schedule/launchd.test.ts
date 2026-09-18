@@ -37,7 +37,7 @@ function desired(overrides: Partial<DesiredSchedule> = {}): DesiredSchedule {
     name: "monitor",
     recipePath: join(HOME, "My Recipes", "monitor.yml"),
     cwd: join(HOME, "My Recipes"),
-    intervalSeconds: 3600,
+    trigger: { kind: "interval", seconds: 3600 },
     programArguments: [
       "/usr/local/bin/node",
       "/usr/local/lib/axle/dist/cli.js",
@@ -107,6 +107,39 @@ function parsePlist(xml: string): PlistValue {
 }
 
 describe("renderPlist", () => {
+  it("renders a calendar trigger as one StartCalendarInterval entry per time and weekday", () => {
+    const parsed = parsePlist(
+      renderPlist(
+        "label",
+        desired({
+          trigger: {
+            kind: "calendar",
+            times: [
+              { hour: 9, minute: 0 },
+              { hour: 17, minute: 30 },
+            ],
+            weekdays: [1, 5],
+          },
+        }),
+      ),
+    ) as { [key: string]: PlistValue };
+
+    expect(parsed).not.toHaveProperty("StartInterval");
+    expect(parsed.StartCalendarInterval).toEqual([
+      { Hour: 9, Minute: 0, Weekday: 1 },
+      { Hour: 9, Minute: 0, Weekday: 5 },
+      { Hour: 17, Minute: 30, Weekday: 1 },
+      { Hour: 17, Minute: 30, Weekday: 5 },
+    ]);
+    const daily = parsePlist(
+      renderPlist(
+        "label",
+        desired({ trigger: { kind: "calendar", times: [{ hour: 9, minute: 0 }] } }),
+      ),
+    ) as { [key: string]: PlistValue };
+    expect(daily.StartCalendarInterval).toEqual([{ Hour: 9, Minute: 0 }]);
+  });
+
   it("carries exactly the desired registration, with every string escaped", () => {
     const hostile = desired({
       cwd: "/a&b/<c>/'d' \"e\"",
@@ -164,7 +197,10 @@ describe("launchd backend apply", () => {
     const first = await backend.apply(desired());
     launchctl.calls = [];
 
-    const updated = await backend.apply(desired({ intervalSeconds: 900 }), first);
+    const updated = await backend.apply(
+      desired({ trigger: { kind: "interval", seconds: 900 } }),
+      first,
+    );
 
     expect(updated).toEqual(first);
     expect(launchctl.calls).toEqual([
@@ -188,9 +224,9 @@ describe("launchd backend apply", () => {
       () => ({ code: 5, stdout: "", stderr: "Bootstrap failed: 5: Input/output error" }),
     ];
 
-    await expect(backend.apply(desired({ intervalSeconds: 900 }), first)).rejects.toThrow(
-      /bootstrap .* failed/,
-    );
+    await expect(
+      backend.apply(desired({ trigger: { kind: "interval", seconds: 900 } }), first),
+    ).rejects.toThrow(/bootstrap .* failed/);
 
     expect(await readFile(first.plistPath, "utf-8")).toBe(originalPlist);
     expect(launchctl.calls.at(-1)).toEqual(["bootstrap", "gui/501", first.plistPath]);

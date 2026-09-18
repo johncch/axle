@@ -4,7 +4,6 @@ import type { JobConfig } from "../configs/schemas.js";
 import type { ScheduleBackends } from "./backend.js";
 import { unknownBackendError, unsupportedPlatformError } from "./backend.js";
 import { buildDesiredSchedule, resolveRelaunchArgv } from "./desired.js";
-import { formatInterval, parseInterval } from "./duration.js";
 import { displayNameFor, resolveScheduleIdentity, scheduleIdFor } from "./identity.js";
 import type { ReconcileOutcome } from "./reconcile.js";
 import { reconcileSchedule, removeSchedule } from "./reconcile.js";
@@ -12,6 +11,7 @@ import type { DesiredSchedule, ScheduleRecord } from "./records.js";
 import { listScheduleRecords, readScheduleRecord } from "./records.js";
 import type { ScheduleRun } from "./runs.js";
 import { readScheduleRuns } from "./runs.js";
+import { describeNextFiring, formatTrigger, parseScheduleTrigger } from "./trigger.js";
 
 export interface ScheduleContext {
   backends: ScheduleBackends;
@@ -35,7 +35,7 @@ export async function applyRecipeSchedule(
     name: displayNameFor(jobConfig.name, identity.recipePath),
     recipePath: identity.recipePath,
     cwd: process.cwd(),
-    intervalSeconds: parseInterval(jobConfig.schedule.every),
+    trigger: parseScheduleTrigger(jobConfig.schedule),
     relaunch: resolveRelaunchArgv(),
     path: process.env.PATH ?? "",
     home: context.home,
@@ -45,26 +45,24 @@ export async function applyRecipeSchedule(
 
 export function describeOutcome(outcome: ReconcileOutcome): string {
   const { desired } = outcome.record;
-  const every = formatInterval(desired.intervalSeconds);
-  const next = `Next firing in ${every}.`;
+  const when = formatTrigger(desired.trigger);
+  const next = `Next firing ${describeNextFiring(desired.trigger, new Date())}.`;
   switch (outcome.kind) {
     case "created":
-      return `Scheduled ${desired.name} every ${every}. ${next}`;
+      return `Scheduled ${desired.name} ${when}. ${next}`;
     case "updated":
       return `Updated schedule ${desired.name}: ${describeChanges(outcome.previous.desired, desired).join(", ")}. ${next}`;
     case "restored":
-      return `Restored schedule ${desired.name} every ${every}: its registration was missing. ${next}`;
+      return `Restored schedule ${desired.name} ${when}: its registration was missing. ${next}`;
     case "unchanged":
-      return `Schedule ${desired.name} is current: every ${every}`;
+      return `Schedule ${desired.name} is current: ${when}`;
   }
 }
 
 function describeChanges(before: DesiredSchedule, after: DesiredSchedule): string[] {
   const changes: string[] = [];
-  if (before.intervalSeconds !== after.intervalSeconds) {
-    changes.push(
-      `every ${formatInterval(before.intervalSeconds)} → ${formatInterval(after.intervalSeconds)}`,
-    );
+  if (!isDeepStrictEqual(before.trigger, after.trigger)) {
+    changes.push(`${formatTrigger(before.trigger)} → ${formatTrigger(after.trigger)}`);
   }
   if (before.name !== after.name) changes.push(`name ${before.name} → ${after.name}`);
   if (before.cwd !== after.cwd) changes.push(`cwd ${before.cwd} → ${after.cwd}`);
@@ -96,39 +94,39 @@ export async function describeScheduleState(
     return { level: "warn", message: `The schedule record for ${recipe} is unreadable: ${reason}` };
   }
 
-  const declared = jobConfig.schedule ? parseInterval(jobConfig.schedule.every) : undefined;
+  const declared = jobConfig.schedule ? parseScheduleTrigger(jobConfig.schedule) : undefined;
   if (declared === undefined && !record) return undefined;
 
   if (declared !== undefined && !record) {
-    const every = formatInterval(declared);
+    const when = formatTrigger(declared);
     return context.backends.forPlatform(context.platform)
       ? {
           level: "info",
-          message: `Declares a schedule (every ${every}), not registered. Register and run with: axle schedule -j ${recipe}`,
+          message: `Declares a schedule (${when}), not registered. Register and run with: axle schedule -j ${recipe}`,
         }
       : {
           level: "info",
-          message: `Declares a schedule (every ${every}); schedules are not supported on ${context.platform} yet.`,
+          message: `Declares a schedule (${when}); schedules are not supported on ${context.platform} yet.`,
         };
   }
 
-  const registered = formatInterval(record!.desired.intervalSeconds);
+  const registered = formatTrigger(record!.desired.trigger);
   if (declared === undefined) {
     return {
       level: "warn",
-      message: `Registered every ${registered}, but the recipe no longer declares a schedule. Remove with: axle schedule remove -j ${recipe}`,
+      message: `Registered ${registered}, but the recipe no longer declares a schedule. Remove with: axle schedule remove -j ${recipe}`,
     };
   }
-  if (declared !== record!.desired.intervalSeconds) {
+  if (!isDeepStrictEqual(declared, record!.desired.trigger)) {
     return {
       level: "warn",
-      message: `Registered every ${registered}, but the recipe now says ${formatInterval(declared)}. Re-apply with: axle schedule register -j ${recipe}`,
+      message: `Registered ${registered}, but the recipe now says ${formatTrigger(declared)}. Re-apply with: axle schedule register -j ${recipe}`,
     };
   }
   const last = (await readScheduleRuns(id, context.home))[0];
   return {
     level: "info",
-    message: `Scheduled every ${registered}, ${describeLastRun(last)}`,
+    message: `Scheduled ${registered}, ${describeLastRun(last)}`,
   };
 }
 
@@ -145,7 +143,7 @@ export async function formatScheduleList(context: ScheduleContext): Promise<stri
     const { desired, binding } = entry.record;
     const last = (await readScheduleRuns(desired.id, context.home))[0];
     lines.push(
-      `${desired.name}  every ${formatInterval(desired.intervalSeconds)}  ${binding.kind}  ${describeLastRun(last)}`,
+      `${desired.name}  ${formatTrigger(desired.trigger)}  ${binding.kind}  ${describeLastRun(last)}`,
     );
     lines.push(`  ${desired.recipePath}`);
     if (desired.cwd !== process.cwd()) lines.push(`  cwd ${desired.cwd}`);

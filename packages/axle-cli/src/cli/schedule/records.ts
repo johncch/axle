@@ -6,12 +6,28 @@ import { resolveConfigDirs } from "../configs/paths.js";
 
 export const SCHEDULE_RECORD_VERSION = 1;
 
+export const ScheduleTriggerSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("interval"), seconds: z.number().int().positive() }),
+  z.strictObject({
+    kind: z.literal("calendar"),
+    times: z
+      .array(
+        z.strictObject({
+          hour: z.number().int().min(0).max(23),
+          minute: z.number().int().min(0).max(59),
+        }),
+      )
+      .min(1),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1).optional(),
+  }),
+]);
+
 export const DesiredScheduleSchema = z.strictObject({
   id: z.string(),
   name: z.string(),
   recipePath: z.string(),
   cwd: z.string(),
-  intervalSeconds: z.number().int().positive(),
+  trigger: ScheduleTriggerSchema,
   programArguments: z.array(z.string()).min(1),
   path: z.string(),
   stdoutPath: z.string(),

@@ -26,7 +26,6 @@ import {
 } from "./cli/schedule/commands.js";
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/runs.js";
-import { promptForInterval, writeScheduleBlock } from "./cli/schedule/wizard.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
@@ -58,18 +57,14 @@ function scheduleContext(): ScheduleContext {
   };
 }
 
-async function ensureScheduleBlock(recipe: string): Promise<ScheduledJobConfig | undefined> {
+async function requireScheduleBlock(recipe: string): Promise<ScheduledJobConfig> {
   const jobConfig = await getJobConfig(recipe, {});
-  if (jobConfig.schedule) return { ...jobConfig, schedule: jobConfig.schedule };
-  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+  if (!jobConfig.schedule) {
     throw new Error(
-      `${recipe} has no schedule block. Add one (schedule: { every: 1h }) or run this in a terminal to be prompted.`,
+      `${recipe} has no schedule block. Add one, for example: schedule: { every: 1h }`,
     );
   }
-  const every = await promptForInterval(recipe);
-  if (!every) return undefined;
-  await writeScheduleBlock(recipe, every);
-  return { ...jobConfig, schedule: { every } };
+  return { ...jobConfig, schedule: jobConfig.schedule };
 }
 
 async function manage(command: () => Promise<void>): Promise<never> {
@@ -157,10 +152,7 @@ const schedule = program
   .command("schedule")
   .description("Register a recipe's recurring schedule (macOS launchd) and run it once now")
   .enablePositionalOptions()
-  .option(
-    "-j, --job <path>",
-    "Recipe to register and run; a terminal wizard adds a missing schedule block",
-  )
+  .option("-j, --job <path>", "Recipe with a schedule block to register and run")
   .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
   .option("--no-log", "Do not write the output to a log file")
   .option("-d, --debug", "Print additional debug information")
@@ -168,7 +160,7 @@ const schedule = program
     const recipe = opts.job;
     if (!recipe) return schedule.help();
     try {
-      if (!(await ensureScheduleBlock(recipe))) process.exit(0);
+      await requireScheduleBlock(recipe);
     } catch (e) {
       console.error(`✖ ${e instanceof Error ? e.message : String(e)}`);
       process.exit(1);
@@ -186,14 +178,10 @@ const schedule = program
 schedule
   .command("register")
   .description("Register or update a recipe's schedule without running it")
-  .requiredOption(
-    "-j, --job <path>",
-    "Recipe to register; a terminal wizard adds a missing schedule block",
-  )
+  .requiredOption("-j, --job <path>", "Recipe with a schedule block to register")
   .action(async (opts) => {
     await manage(async () => {
-      const jobConfig = await ensureScheduleBlock(opts.job);
-      if (!jobConfig) return;
+      const jobConfig = await requireScheduleBlock(opts.job);
       const outcome = await applyRecipeSchedule(opts.job, jobConfig, scheduleContext());
       console.log(`✔ ${describeOutcome(outcome)}`);
     });

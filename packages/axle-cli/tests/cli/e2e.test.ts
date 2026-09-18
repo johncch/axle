@@ -511,7 +511,7 @@ describe("schedules end-to-end", () => {
         name: "hourly-monitor",
         recipePath: recipe,
         cwd: CWD,
-        intervalSeconds: 3600,
+        trigger: { kind: "interval", seconds: 3600 },
       });
       expect(record.desired.programArguments.slice(-7)).toEqual([
         "-j",
@@ -551,9 +551,12 @@ describe("schedules end-to-end", () => {
       await writeRecipe("monitor.yml", "name: hourly-monitor\nschedule:\n  every: 15m");
       const changed = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
       expect(changed.code).toBe(0);
-      expect(changed.output).toContain("Updated schedule hourly-monitor: every 1h → 15m.");
+      expect(changed.output).toContain("Updated schedule hourly-monitor: every 1h → every 15m.");
       expect(await launchctlCalls()).toHaveLength(5);
-      expect((await records())[0].record.desired.intervalSeconds).toBe(900);
+      expect((await records())[0].record.desired.trigger).toEqual({
+        kind: "interval",
+        seconds: 900,
+      });
       expect(await readdir(LAUNCH_AGENTS)).toHaveLength(1);
       expect(await runsOf(id)).toHaveLength(3);
     },
@@ -588,7 +591,7 @@ describe("schedules end-to-end", () => {
       await writeRecipe("monitor.yml", "schedule:\n  every: 15m");
       const drifted = await runCli(["-j", recipe, ...plain], scheduleEnv());
       expect(drifted.output).toContain(
-        `⚠ Registered every 1h, but the recipe now says 15m. Re-apply with: axle schedule register -j ${recipe}`,
+        `⚠ Registered every 1h, but the recipe now says every 15m. Re-apply with: axle schedule register -j ${recipe}`,
       );
 
       await writeRecipe("monitor.yml");
@@ -599,7 +602,10 @@ describe("schedules end-to-end", () => {
       );
 
       expect(await launchctlCalls()).toHaveLength(mutations);
-      expect((await records())[0].record.desired.intervalSeconds).toBe(3600);
+      expect((await records())[0].record.desired.trigger).toEqual({
+        kind: "interval",
+        seconds: 3600,
+      });
       expect(requests).toHaveLength(5);
     },
     SPAWN_TIMEOUT,
@@ -625,7 +631,7 @@ describe("schedules end-to-end", () => {
   );
 
   it(
-    "schedule register registers without running; without a block both forms refuse outside a terminal",
+    "schedule register registers without running; without a block both forms refuse",
     async () => {
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 2d");
 
@@ -664,6 +670,51 @@ describe("schedules end-to-end", () => {
       expect(code).toBe(1);
       expect(output).toContain("The job file is not valid");
       expect(await launchctlCalls()).toEqual([]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "a calendar recipe registers StartCalendarInterval entries and diffs against an interval",
+    async () => {
+      const recipe = await writeRecipe(
+        "digest.yml",
+        "name: digest\nschedule:\n  at: ['09:00', '17:30']\n  on: [mon, fri]",
+      );
+
+      const applied = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+
+      expect(applied.code).toBe(0);
+      expect(applied.output).toMatch(
+        /Scheduled digest at 09:00, 17:30 on mon,fri\. Next firing (Mon|Fri) (09:00|17:30)\./,
+      );
+      const [{ record }] = await records();
+      expect(record.desired.trigger).toEqual({
+        kind: "calendar",
+        times: [
+          { hour: 9, minute: 0 },
+          { hour: 17, minute: 30 },
+        ],
+        weekdays: [1, 5],
+      });
+      const plist = await readFile(record.binding.plistPath, "utf-8");
+      expect(plist).toContain("<key>StartCalendarInterval</key>");
+      expect(plist).not.toContain("StartInterval</key>");
+      expect(plist.match(/<key>Weekday<\/key>/g)).toHaveLength(4);
+
+      const listed = await runCli(["schedule", "list"], scheduleEnv());
+      expect(listed.output).toMatch(/digest {2}at 09:00, 17:30 on mon,fri {2}launchd/);
+
+      await writeRecipe("digest.yml", "name: digest\nschedule:\n  every: 1d");
+      const state = await runCli(["-j", recipe, ...plain], scheduleEnv());
+      expect(state.output).toContain(
+        "⚠ Registered at 09:00, 17:30 on mon,fri, but the recipe now says every 1d.",
+      );
+      const changed = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      expect(changed.output).toContain(
+        "Updated schedule digest: at 09:00, 17:30 on mon,fri → every 1d. Next firing in 1d.",
+      );
+      expect(requests).toHaveLength(1);
     },
     SPAWN_TIMEOUT,
   );
@@ -709,7 +760,10 @@ describe("schedules end-to-end", () => {
       expect(fired.output).toContain("fired");
       expect(fired.output).not.toMatch(/Scheduled|Updated schedule|is current/);
       expect(await launchctlCalls()).toHaveLength(callsBefore);
-      expect((await records())[0].record.desired.intervalSeconds).toBe(3600);
+      expect((await records())[0].record.desired.trigger).toEqual({
+        kind: "interval",
+        seconds: 3600,
+      });
       const sessionId = fired.output.match(/axle resume (\S+)/)?.[1];
       expect(sessionId).toBeTruthy();
       await stat(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`));

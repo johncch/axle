@@ -134,12 +134,18 @@ against it; divergence is a defect. State ownership is defined in
    more.
 
 10. **A schedule is a recipe property; the OS is its registrar, never its
-    memory.** `schedule: { every }` declares recurrence next to the task it
-    recurs. `every` is a fixed elapsed interval, `<positive integer><s|m|h|d>`,
-    a day being 24 hours; the floor is 60 seconds and the ceiling is what a
-    signed 32-bit backend interval holds. Calendar, cron, and one-shot
-    schedules are deferred and will take a distinct shape rather than
-    overloading `every`. Plain `-j` is a pure run and never touches the
+    memory.** A `schedule:` block declares recurrence next to the task it recurs, in
+    one of two shapes that are never merged. `every` is a fixed elapsed
+    interval, `<positive integer><s|m|h|d>`, a day being 24 hours; the
+    floor is 60 seconds and the ceiling is what a signed 32-bit backend
+    interval holds. `at` is one `HH:MM` or a list of them in the machine's
+    local time, optionally restricted by `on` to a list of weekdays
+    (`mon`…`sun`); there is no timezone field because the registrar
+    evaluates local time and a field it cannot honor would lie. The two
+    differ in what a missed firing means: an interval missed during sleep
+    is skipped, a clock time missed during sleep runs once on wake. Cron
+    expressions, day-of-month, and one-shot schedules are deferred and
+    take further distinct fields, not an overloaded `every`. Plain `-j` is a pure run and never touches the
     registrar: it prints one read-only state line (declared but not
     registered, scheduled with its last run, or drifted — the recipe's
     interval changed or its block was removed while a registration
@@ -150,9 +156,10 @@ against it; divergence is a defect. State ownership is defined in
     and, like every management subcommand, exits before provider
     resolution or any agent machinery. `-j` means "run this recipe"
     everywhere it appears bare; the verb wraps that run with registration.
-    An update states what changed (`every 1h → 15m`, `cwd a → b`), and a
-    record that matches but whose OS registration is gone is re-applied
-    rather than trusted.
+    An update states what changed (`every 1h → at 09:00 on mon,fri`,
+    `cwd a → b`) and every apply names the next firing (`in 1h`,
+    `Mon 09:00`), and a record that matches but whose OS registration is
+    gone is re-applied rather than trusted.
     The registrar is an injected `ScheduleBackend` (`apply`, `remove`,
     `isLoaded`) behind
     a platform lookup; only macOS `launchd` ships. Everything above the
@@ -177,15 +184,17 @@ against it; divergence is a defect. State ownership is defined in
 
     An _occurrence_ is the scheduler re-entering this same CLI build:
     `[execPath, ...execArgv, entry] -j <abs recipe> --renderer plain --no-log
---scheduled <id>`. The marker bypasses reconciliation, prompts, and the
-    wizard and otherwise takes the ordinary `-j` path — one fresh session, or
+--scheduled <id>`. The marker bypasses reconciliation and prompts and otherwise takes the
+    ordinary `-j` path — one fresh session, or
     one per input for a `batch:` recipe — re-reading the recipe every time,
     so task/model/tool edits need no re-registration while interval, cwd,
     relaunch command, or `PATH` changes reconcile on the next apply.
-    `StartInterval` fixes overlap: a schedule never runs concurrently with
-    itself, a firing during a still-running occurrence is missed not queued,
-    sleep-missed firings are not replayed, and a hung occurrence suppresses
-    later ones until it exits. Each occurrence — and the foreground run of
+    The record stores the parsed _trigger_, a discriminated union of
+    interval seconds or calendar times and weekdays, which the backend maps
+    to `StartInterval` or one `StartCalendarInterval` entry per time and
+    weekday. Either way a schedule never runs concurrently with itself, a
+    firing during a still-running occurrence is missed not queued, and a
+    hung occurrence suppresses later ones until it exits. Each occurrence — and the foreground run of
     `axle schedule -j`, the schedule's first — appends one line to
     `~/.axle/schedules/<id>.runs.jsonl` (start, end, status, session ids),
     which `schedule sessions` reads and `schedule list` summarizes; it is the
@@ -197,6 +206,14 @@ against it; divergence is a defect. State ownership is defined in
 
 ## Decisions
 
+- **2026-09-18 — clock-time schedules are a second field, not a richer
+  `every`.** `at: HH:MM | [HH:MM]` with optional `on: [weekday]`. Rejected:
+  a string grammar (`"mon-fri 09:00"`) — a second parser for what YAML
+  already structures. Rejected: cron syntax — expressive but opaque to the
+  people who write recipes, and launchd cannot represent all of it.
+  Rejected: a `timezone` field — launchd runs in local time; recording a
+  zone the registrar ignores would misstate when the job runs. Deferred:
+  day-of-month and month, as further fields in the same shape.
 - **2026-09-17 — registration moves off the kernel onto the verb (AXL-28,
   reverses 2026-09-13 below before it shipped).** Rejected: plain `-j`
   reconciling as a side effect — running a recipe silently mutated the OS
@@ -222,9 +239,11 @@ against it; divergence is a defect. State ownership is defined in
   recurring job's memory is its checked-in YAML). Rejected: reconciling
   only when the record is absent — the behavior would depend on history the
   user cannot see; reconciliation is idempotent instead. Settled: the
-  block is the declaration and the TTY wizard writes the block into the
-  recipe rather than remembering an answer. (The apply-and-run gesture
-  moved from `-j` to `axle schedule -j` on 2026-09-17, above.)
+  block is the declaration; a recipe without one is refused, not prompted
+  for (a TTY wizard that wrote the block into the recipe shipped briefly
+  and was removed 2026-09-18 as unearned surface — recoverable from
+  history if a need appears). (The apply-and-run gesture moved from `-j`
+  to `axle schedule -j` on 2026-09-17, above.)
 - **2026-09-13 — sessions are captured without changing the runners.** The
   occurrence learns its session ids from the `SessionStore` it owns (single
   run) or from the batch ledger entries written during the run (batch);

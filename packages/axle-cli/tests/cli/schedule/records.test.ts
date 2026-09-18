@@ -22,7 +22,7 @@ function record(id: string, overrides: Partial<ScheduleRecord["desired"]> = {}):
       name: "monitor",
       recipePath: `/recipes/${id}.yml`,
       cwd: "/recipes",
-      intervalSeconds: 3600,
+      trigger: { kind: "interval", seconds: 3600 },
       programArguments: ["/usr/local/bin/node", "/opt/axle/cli.js", "-j", `/recipes/${id}.yml`],
       path: "/usr/bin:/bin",
       stdoutPath: `/home/.axle/logs/schedules/${id}.out.log`,

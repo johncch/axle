@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { INTERVAL_PATTERN, parseInterval } from "../schedule/duration.js";
+import { CLOCK_TIME_PATTERN, WEEKDAY_NAMES } from "../schedule/trigger.js";
 
 /* ============================================================================
  * Provider Configuration Schemas
@@ -143,25 +144,37 @@ export type BatchConfig = z.infer<typeof BatchConfigSchema>;
  * Schedule Config Schema
  * ========================================================================== */
 
-export const ScheduleConfigSchema = z.strictObject({
-  every: z
-    .string()
-    .regex(
-      new RegExp(INTERVAL_PATTERN),
-      "expected <positive integer><unit> with unit s, m, h, or d",
-    )
-    .refine(
-      (every) => {
-        try {
-          parseInterval(every);
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: "interval is below 60s or too large for a backend" },
-    ),
-});
+const ClockTimeSchema = z
+  .string()
+  .regex(new RegExp(CLOCK_TIME_PATTERN), "expected HH:MM in 24-hour form");
+
+// `every` (elapsed interval) and `at` (machine-local clock time, optionally
+// restricted to weekdays with `on`) are distinct shapes, never merged.
+export const ScheduleConfigSchema = z.union([
+  z.strictObject({
+    every: z
+      .string()
+      .regex(
+        new RegExp(INTERVAL_PATTERN),
+        "expected <positive integer><unit> with unit s, m, h, or d",
+      )
+      .refine(
+        (every) => {
+          try {
+            parseInterval(every);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: "interval is below 60s or too large for a backend" },
+      ),
+  }),
+  z.strictObject({
+    at: z.union([ClockTimeSchema, z.array(ClockTimeSchema).min(1)]),
+    on: z.array(z.enum(WEEKDAY_NAMES)).min(1).optional(),
+  }),
+]);
 
 export type ScheduleConfig = z.infer<typeof ScheduleConfigSchema>;
 

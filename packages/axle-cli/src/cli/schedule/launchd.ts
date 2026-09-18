@@ -43,6 +43,14 @@ export function renderPlist(label: string, desired: DesiredSchedule): string {
   const programArguments = desired.programArguments
     .map((argument) => `    <string>${escapeXml(argument)}</string>`)
     .join("\n");
+  const trigger =
+    desired.trigger.kind === "interval"
+      ? `  <key>StartInterval</key>
+  <integer>${desired.trigger.seconds}</integer>`
+      : `  <key>StartCalendarInterval</key>
+  <array>
+${renderCalendarEntries(desired.trigger.times, desired.trigger.weekdays)}
+  </array>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -55,8 +63,7 @@ ${programArguments}
   </array>
   <key>WorkingDirectory</key>
   <string>${escapeXml(desired.cwd)}</string>
-  <key>StartInterval</key>
-  <integer>${desired.intervalSeconds}</integer>
+${trigger}
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -69,6 +76,31 @@ ${programArguments}
 </dict>
 </plist>
 `;
+}
+
+function renderCalendarEntries(
+  times: readonly { hour: number; minute: number }[],
+  weekdays: readonly number[] | undefined,
+): string {
+  const entries: string[] = [];
+  for (const time of times) {
+    for (const weekday of weekdays ?? [undefined]) {
+      entries.push(
+        [
+          "    <dict>",
+          "      <key>Hour</key>",
+          `      <integer>${time.hour}</integer>`,
+          "      <key>Minute</key>",
+          `      <integer>${time.minute}</integer>`,
+          ...(weekday === undefined
+            ? []
+            : ["      <key>Weekday</key>", `      <integer>${weekday}</integer>`]),
+          "    </dict>",
+        ].join("\n"),
+      );
+    }
+  }
+  return entries.join("\n");
 }
 
 function escapeXml(value: string): string {

@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import type { DesiredSchedule } from "./records.js";
 import { scheduleLogsDir } from "./records.js";
+import type { ScheduleTrigger } from "./trigger.js";
 
 export const SCHEDULED_OCCURRENCE_FLAG = "--scheduled";
 
@@ -37,7 +38,7 @@ export function buildDesiredSchedule(input: {
   name: string;
   recipePath: string;
   cwd: string;
-  intervalSeconds: number;
+  trigger: ScheduleTrigger;
   relaunch: readonly string[];
   path: string;
   home?: string;
@@ -48,7 +49,7 @@ export function buildDesiredSchedule(input: {
     name: input.name,
     recipePath: input.recipePath,
     cwd: input.cwd,
-    intervalSeconds: input.intervalSeconds,
+    trigger: input.trigger,
     programArguments: occurrenceArguments(input.relaunch, input.id, input.recipePath),
     path: input.path,
     stdoutPath: join(logs, `${input.id}.out.log`),

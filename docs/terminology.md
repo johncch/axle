@@ -136,6 +136,11 @@ re-entered with the `--scheduled <id>` marker, taking the ordinary `-j`
 path without reconciliation or prompts. Deliberately not "run" (Sunnyday's
 term) or "firing" (the launchd event, before the CLI is involved).
 
+**Trigger** — the parsed recurrence stored in a schedule record: an
+interval (`every`, elapsed seconds) or a calendar (`at` times in local
+time, optional `on` weekdays). The backend-neutral name for what a backend
+maps to `StartInterval` or `StartCalendarInterval`.
+
 **Binding** — the backend-specific half of a schedule record
 (`{ kind: "launchd", label, plistPath }`), a versioned discriminated union
 with one member per backend. Common fields never depend on it.
