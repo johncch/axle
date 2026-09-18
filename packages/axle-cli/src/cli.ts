@@ -49,11 +49,30 @@ function commonOf(opts: { renderer?: string; log: boolean; debug?: boolean }): C
 
 let invocation: Invocation | undefined;
 
+const PLATFORMS: readonly NodeJS.Platform[] = [
+  "aix",
+  "android",
+  "cygwin",
+  "darwin",
+  "freebsd",
+  "haiku",
+  "linux",
+  "netbsd",
+  "openbsd",
+  "sunos",
+  "win32",
+];
+
 function scheduleContext(): ScheduleContext {
+  const override = process.env.AXLE_SCHEDULE_PLATFORM;
+  if (override !== undefined && !PLATFORMS.includes(override as NodeJS.Platform)) {
+    throw new Error(
+      `AXLE_SCHEDULE_PLATFORM must be one of ${PLATFORMS.join(", ")}; got "${override}".`,
+    );
+  }
   return {
     backends: createScheduleBackends({ launchctl: process.env.AXLE_LAUNCHCTL }),
-    platform:
-      (process.env.AXLE_SCHEDULE_PLATFORM as NodeJS.Platform | undefined) ?? process.platform,
+    platform: (override as NodeJS.Platform | undefined) ?? process.platform,
   };
 }
 
@@ -97,6 +116,9 @@ Run a session (default):
   .action((opts) => {
     if (opts.job && opts.message !== undefined) {
       program.error("error: --message cannot be combined with --job");
+    }
+    if (opts.scheduled !== undefined && !/^[0-9a-f]{16}$/.test(opts.scheduled)) {
+      program.error("error: --scheduled expects a schedule id");
     }
     invocation = {
       kind: "kernel",
@@ -283,7 +305,26 @@ if (common.log) {
 
 // Create root span for the entire CLI execution
 const rootSpan = tracer.startSpan("cli", { type: "root" });
+const startedAt = new Date();
 let screen: Renderer | undefined;
+let scheduleRunId: string | undefined;
+
+async function recordScheduleRun(
+  status: "succeeded" | "failed",
+  sessionIds: string[],
+): Promise<void> {
+  const runId =
+    inv.kind === "kernel" && inv.scheduling.kind === "occurrence"
+      ? inv.scheduling.id
+      : scheduleRunId;
+  if (runId === undefined) return;
+  await appendScheduleRun(runId, {
+    startedAt: startedAt.toISOString(),
+    finishedAt: new Date().toISOString(),
+    status,
+    sessionIds,
+  }).catch((e) => rootSpan.warn(`Failed to record scheduled run: ${e}`));
+}
 
 async function shutdown(): Promise<void> {
   try {
@@ -317,6 +358,7 @@ async function fail(e: unknown): Promise<never> {
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
   rootSpan.end("error");
+  await recordScheduleRun("failed", []);
   await shutdown();
   if (!screen) program.outputHelp();
   process.exit(1);
@@ -363,7 +405,7 @@ async function prepareSchedule(): Promise<string | undefined> {
   return undefined;
 }
 
-const scheduleRunId = await prepareSchedule().catch(fail);
+scheduleRunId = await prepareSchedule().catch(fail);
 
 // First run with no configuration resolvable anywhere → onboarding wizard.
 if (
@@ -420,7 +462,6 @@ try {
 
   const stats: Stats = createStats();
   const startTime = performance.now();
-  const startedAt = new Date();
 
   let succeeded = false;
   try {
@@ -455,25 +496,17 @@ try {
   }
 
   const duration = performance.now() - startTime;
-  if (scheduleRunId !== undefined) {
-    const sessionIds =
-      pending.kind === "session"
-        ? pending.sessionStore.savedSessionId
-          ? [pending.sessionStore.savedSessionId]
-          : []
-        : [...(await loadLedger()).values()]
-            .filter(
-              (entry) =>
-                entry.job === pending.spec.jobName && entry.timestamp >= startedAt.getTime(),
-            )
-            .map((entry) => entry.sessionId);
-    await appendScheduleRun(scheduleRunId, {
-      startedAt: startedAt.toISOString(),
-      finishedAt: new Date().toISOString(),
-      status: succeeded ? "succeeded" : "failed",
-      sessionIds,
-    }).catch((e) => rootSpan.warn(`Failed to record scheduled run: ${e}`));
-  }
+  const sessionIds =
+    pending.kind === "session"
+      ? pending.sessionStore.savedSessionId
+        ? [pending.sessionStore.savedSessionId]
+        : []
+      : [...(await loadLedger()).values()]
+          .filter(
+            (entry) => entry.job === pending.spec.jobName && entry.timestamp >= startedAt.getTime(),
+          )
+          .map((entry) => entry.sessionId);
+  await recordScheduleRun(succeeded ? "succeeded" : "failed", sessionIds);
   rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
   rootSpan.info(`Input tokens: ${stats.in}`);
   rootSpan.info(`Output tokens: ${stats.out}`);

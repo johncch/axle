@@ -720,6 +720,113 @@ describe("schedules end-to-end", () => {
   );
 
   it(
+    "remove still unloads a schedule whose record is corrupt",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id, record }] = await records();
+      await writeFile(join(SCHEDULES, `${id}.json`), "{corrupt");
+      const callsBefore = (await launchctlCalls()).length;
+
+      const removed = await runCli(["schedule", "remove", "-j", recipe], scheduleEnv());
+
+      expect(removed.code).toBe(0);
+      expect(removed.output).toContain("Removed schedule");
+      expect((await launchctlCalls()).slice(callsBefore)).toEqual([
+        `bootout gui/${process.getuid!()}/com.fifthrevision.axle.${id}`,
+      ]);
+      await expect(stat(record.binding.plistPath)).rejects.toThrow(/ENOENT/);
+      await expect(stat(join(SCHEDULES, `${id}.json`))).rejects.toThrow(/ENOENT/);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "an occurrence that fails before running still records a failed run",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id, record }] = await records();
+      await writeFile(recipe, "task: [unclosed\n");
+
+      const fired = await runOccurrence(record.desired.programArguments);
+
+      expect(fired.code).toBe(1);
+      expect(await runsOf(id)).toMatchObject([{ status: "failed", sessionIds: [] }]);
+      const listed = await runCli(["schedule", "list"], scheduleEnv());
+      expect(listed.output).toContain("last run ✖");
+      expect(requests).toHaveLength(0);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "a plain run still runs when the schedule's history file is unreadable",
+    async () => {
+      replies.push({ text: "ran anyway" });
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id }] = await records();
+      await mkdir(join(SCHEDULES, `${id}.runs.jsonl`));
+
+      const { code, output } = await runCli(["-j", recipe, ...plain], scheduleEnv());
+
+      expect(code).toBe(0);
+      expect(output).toContain("ran anyway");
+      expect(output).toMatch(/^⚠ .*(unreadable|EISDIR)/m);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "management output survives a pipe when it exceeds the pipe buffer",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id }] = await records();
+      const line = JSON.stringify({
+        startedAt: "2026-09-18T00:00:00.000Z",
+        finishedAt: "2026-09-18T00:00:01.000Z",
+        status: "succeeded",
+        sessionIds: ["0123456789abcdef-0123-4567-89ab-cdef01234567"],
+      });
+      await writeFile(
+        join(SCHEDULES, `${id}.runs.jsonl`),
+        Array(4000).fill(line).join("\n") + "\n",
+      );
+
+      const { code, output } = await runCli(["schedule", "sessions", "-j", recipe], scheduleEnv());
+
+      expect(code).toBe(0);
+      expect(output.trim().split("\n")).toHaveLength(4000);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "rejects a malformed --scheduled marker and an unknown platform override",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+
+      const traversal = await runCli(
+        ["-j", recipe, "--scheduled", "../../escape", ...plain],
+        scheduleEnv(),
+      );
+      expect(traversal.code).not.toBe(0);
+      expect(traversal.output).toContain("--scheduled");
+      await expect(stat(join(HOME, ".axle", "escape.runs.jsonl"))).rejects.toThrow(/ENOENT/);
+      await expect(stat(join(HOME, "escape.runs.jsonl"))).rejects.toThrow(/ENOENT/);
+      expect(requests).toHaveLength(0);
+
+      const platform = await runCli(["schedule", "register", "-j", recipe], scheduleEnv("windows"));
+      expect(platform.code).toBe(1);
+      expect(platform.output).toContain("AXLE_SCHEDULE_PLATFORM");
+      expect(await records()).toEqual([]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
     "register restores a registration whose LaunchAgent went missing, and list flags it first",
     async () => {
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");

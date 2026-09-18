@@ -8,7 +8,7 @@ import { displayNameFor, resolveScheduleIdentity, scheduleIdFor } from "./identi
 import type { ReconcileOutcome } from "./reconcile.js";
 import { reconcileSchedule, removeSchedule } from "./reconcile.js";
 import type { DesiredSchedule, ScheduleRecord } from "./records.js";
-import { listScheduleRecords, readScheduleRecord } from "./records.js";
+import { deleteScheduleRecord, listScheduleRecords, readScheduleRecord } from "./records.js";
 import type { ScheduleRun } from "./runs.js";
 import { readScheduleRuns } from "./runs.js";
 import { describeNextFiring, formatTrigger, parseScheduleTrigger } from "./trigger.js";
@@ -76,11 +76,25 @@ function describeChanges(before: DesiredSchedule, after: DesiredSchedule): strin
 export type ScheduleStateLine = { level: "info" | "warn"; message: string };
 
 /**
- * What a plain `axle -j` says about the recipe's schedule. Read-only: it
- * compares the recipe's declaration with the stored record and never
- * consults or changes the OS registration.
+ * What a plain `axle -j` says about the recipe's schedule. Read-only and
+ * never throws: it compares the recipe's declaration with the stored
+ * record, never consults or changes the OS registration, and degrades to
+ * a warning when its own state files cannot be read.
  */
 export async function describeScheduleState(
+  recipe: string,
+  jobConfig: JobConfig,
+  context: ScheduleContext,
+): Promise<ScheduleStateLine | undefined> {
+  try {
+    return await scheduleState(recipe, jobConfig, context);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    return { level: "warn", message: `Schedule state for ${recipe} is unreadable: ${reason}` };
+  }
+}
+
+async function scheduleState(
   recipe: string,
   jobConfig: JobConfig,
   context: ScheduleContext,
@@ -157,37 +171,42 @@ export async function formatScheduleList(context: ScheduleContext): Promise<stri
   return lines;
 }
 
+export type ScheduleTarget =
+  { kind: "record"; record: ScheduleRecord } | { kind: "unreadable"; id: string; reason: string };
+
 /**
  * A schedule is addressed by its recipe. A recipe that no longer exists is
- * matched against the path recorded at registration so it can still be
- * removed or inspected.
+ * matched against the path recorded at registration, and a record that
+ * cannot be parsed still resolves to its id so it can be removed.
  */
 export async function resolveScheduleByRecipe(
   recipe: string,
   home?: string,
-): Promise<ScheduleRecord> {
+): Promise<ScheduleTarget> {
+  let id: string;
   let recipePath: string;
   try {
-    const identity = await resolveScheduleIdentity(recipe);
-    recipePath = identity.recipePath;
-    const record = await readScheduleRecord(identity.id, home);
-    if (record) return record;
+    ({ id, recipePath } = await resolveScheduleIdentity(recipe));
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     recipePath = resolve(recipe);
+    id = scheduleIdFor(recipePath);
+  }
+
+  try {
+    const record = await readScheduleRecord(id, home);
+    if (record) return { kind: "record", record };
+  } catch (e) {
+    return { kind: "unreadable", id, reason: e instanceof Error ? e.message : String(e) };
   }
   for (const entry of await listScheduleRecords(home)) {
     if (entry.kind === "record" && entry.record.desired.recipePath === recipePath) {
-      return entry.record;
+      return entry;
     }
   }
   throw new Error(`${recipe} is not scheduled. See: axle schedule list`);
 }
 
-/**
- * Run history outlives the registration: a removed schedule's runs are
- * still listed, since the id derives from the recipe path alone.
- */
 export async function formatScheduleSessions(recipe: string, home?: string): Promise<string[]> {
   let id: string;
   try {
@@ -216,10 +235,17 @@ export async function removeScheduleByRecipe(
   context: ScheduleContext,
 ): Promise<string> {
   const target = await resolveScheduleByRecipe(recipe, context.home);
-  if (!context.backends.forKind(target.binding.kind)) {
-    throw unknownBackendError(target.binding.kind);
+  if (target.kind === "unreadable") {
+    const backend = context.backends.forPlatform(context.platform);
+    if (!backend) throw unsupportedPlatformError(context.platform);
+    await backend.remove(backend.bindingFor(target.id));
+    await deleteScheduleRecord(target.id, context.home);
+    return `Removed schedule for ${recipe} (its record was unreadable: ${target.reason})`;
   }
-  const record = await removeSchedule(target.desired.id, context.backends, {
+  if (!context.backends.forKind(target.record.binding.kind)) {
+    throw unknownBackendError(target.record.binding.kind);
+  }
+  const record = await removeSchedule(target.record.desired.id, context.backends, {
     home: context.home,
   });
   return `Removed schedule ${record.desired.name}`;

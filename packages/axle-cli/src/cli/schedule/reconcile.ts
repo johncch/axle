@@ -47,7 +47,8 @@ export async function reconcileSchedule(
   try {
     await writeScheduleRecord(record, options?.home);
   } catch (e) {
-    if (!previous) await backend.remove(binding).catch(() => {});
+    if (previous) await backend.apply(previous.desired, binding).catch(() => {});
+    else await backend.remove(binding).catch(() => {});
     throw e;
   }
 

@@ -180,7 +180,9 @@ against it; divergence is a defect. State ownership is defined in
     binding — never task text, provider config, arbitrary env, or
     credentials; a firing resolves those exactly as a foreground run does.
     The record is committed only after the backend succeeds: a failed first
-    apply leaves nothing, a failed update keeps the previous record.
+    apply leaves nothing, and a failed update keeps the previous record and
+    re-applies the previous registration so the OS never runs ahead of what
+    the record says.
 
     An _occurrence_ is the scheduler re-entering this same CLI build:
     `[execPath, ...execArgv, entry] -j <abs recipe> --renderer plain --no-log
@@ -202,7 +204,11 @@ against it; divergence is a defect. State ownership is defined in
     `remove` boots out the label and deletes only its own plist and record —
     recipes, sessions, CLI and schedule logs, ledgers, the runs ledger, and
     foreign LaunchAgents are untouched; re-registering the same recipe
-    reclaims its id and history.
+    reclaims its id and history. A record that cannot be parsed is still
+    removable, since every backend can name its artifacts from the id
+    alone. An occurrence that fails before its run starts still writes a
+    failed run line, and the plain-run state line degrades to a warning
+    rather than aborting the run when its own files are unreadable.
 
 ## Decisions
 

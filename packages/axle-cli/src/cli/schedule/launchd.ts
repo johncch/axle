@@ -178,6 +178,11 @@ export function createLaunchdBackend(options: LaunchdOptions): ScheduleBackend {
       await rm(binding.plistPath, { force: true });
     },
 
+    bindingFor(id) {
+      const label = launchdLabel(id);
+      return { kind: "launchd", label, plistPath: join(launchAgentsDir, `${label}.plist`) };
+    },
+
     async isLoaded(binding) {
       if (binding.kind !== "launchd") return false;
       if ((await readOptional(binding.plistPath)) === undefined) return false;

@@ -12,6 +12,8 @@ export interface ScheduleBackend {
   apply(desired: DesiredSchedule, previous?: BackendBinding): Promise<BackendBinding>;
   remove(binding: BackendBinding): Promise<void>;
   isLoaded(binding: BackendBinding): Promise<boolean>;
+  /** The binding this backend would have produced for `id`; lets a schedule whose record is unreadable still be removed. */
+  bindingFor(id: string): BackendBinding;
 }
 
 export interface ScheduleBackends {

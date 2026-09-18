@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { chmod, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ScheduleBackend, ScheduleBackends } from "../../../src/cli/schedule/backend.js";
@@ -37,6 +37,10 @@ class FakeBackend implements ScheduleBackend {
 
   async isLoaded(): Promise<boolean> {
     return this.loaded;
+  }
+
+  bindingFor(id: string): BackendBinding {
+    return { kind: "launchd", label: `test.${id}`, plistPath: `/la/${id}.plist` };
   }
 
   async remove(binding: BackendBinding): Promise<void> {
@@ -78,6 +82,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await chmod(schedulesDir(HOME), 0o700).catch(() => {});
   await rm(TEST_DIR, { recursive: true, force: true });
 });
 
@@ -137,6 +142,25 @@ describe("reconcileSchedule", () => {
       createdAt: "2026-09-12T10:00:00.000Z",
       updatedAt: "2026-09-12T11:00:00.000Z",
     });
+  });
+
+  it("restores the previous registration when the record write fails after an update", async () => {
+    const backend = new FakeBackend();
+    await reconcileSchedule(desired(), backend, { home: HOME, ...clock });
+    const before = await readScheduleRecord("abc123", HOME);
+    backend.calls = [];
+    await chmod(schedulesDir(HOME), 0o500);
+
+    await expect(
+      reconcileSchedule(desired({ trigger: { kind: "interval", seconds: 900 } }), backend, {
+        home: HOME,
+      }),
+    ).rejects.toThrow(/EACCES|EPERM/);
+
+    await chmod(schedulesDir(HOME), 0o700);
+    expect(backend.calls.map((call) => call.op)).toEqual(["apply", "apply"]);
+    expect(backend.calls[1]).toMatchObject({ op: "apply", desired: desired() });
+    expect(await readScheduleRecord("abc123", HOME)).toEqual(before);
   });
 
   it("re-applies a matching record whose OS registration has gone missing", async () => {
