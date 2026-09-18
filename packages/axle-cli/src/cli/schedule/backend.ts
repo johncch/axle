@@ -11,6 +11,7 @@ export interface ScheduleBackend {
   readonly kind: BackendKind;
   apply(desired: DesiredSchedule, previous?: BackendBinding): Promise<BackendBinding>;
   remove(binding: BackendBinding): Promise<void>;
+  isLoaded(binding: BackendBinding): Promise<boolean>;
 }
 
 export interface ScheduleBackends {
@@ -20,7 +21,7 @@ export interface ScheduleBackends {
 
 export function unsupportedPlatformError(platform: NodeJS.Platform): Error {
   return new Error(
-    `Recurring schedules are not supported on ${platform} yet (macOS only). Run the recipe once with --once instead.`,
+    `Recurring schedules are not supported on ${platform} yet (macOS only). Run the recipe once with axle -j instead.`,
   );
 }
 

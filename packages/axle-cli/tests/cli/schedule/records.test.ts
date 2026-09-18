@@ -6,7 +6,6 @@ import {
   deleteScheduleRecord,
   listScheduleRecords,
   readScheduleRecord,
-  resolveScheduleId,
   scheduleRecordPath,
   schedulesDir,
   writeScheduleRecord,
@@ -107,15 +106,5 @@ describe("schedule records", () => {
 
   it("returns an empty list when no schedules were ever written", async () => {
     expect(await listScheduleRecords(HOME)).toEqual([]);
-  });
-
-  it("resolves full ids and unique prefixes", async () => {
-    await writeScheduleRecord(record("abc123"), HOME);
-    await writeScheduleRecord(record("abd456"), HOME);
-
-    expect(await resolveScheduleId("abc123", HOME)).toBe("abc123");
-    expect(await resolveScheduleId("abd", HOME)).toBe("abd456");
-    await expect(resolveScheduleId("ab", HOME)).rejects.toThrow(/ambiguous \(2 matches\)/);
-    await expect(resolveScheduleId("zzz", HOME)).rejects.toThrow(/No schedule found with id zzz/);
   });
 });

@@ -1,19 +1,32 @@
 #!/usr/bin/env node
 
-import { Command } from "@commander-js/extra-typings";
+import { Command, Option } from "@commander-js/extra-typings";
 import type { Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
 import { resolveAgentDefinition } from "./cli/agent-config.js";
+import { runCleanup } from "./cli/cleanup.js";
 import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
 import type { CommonOpts, Invocation } from "./cli/invocation.js";
 import { buildPendingPlan, parseTemplateArgs } from "./cli/invocation.js";
+import { loadLedger } from "./cli/ledger.js";
 import { closeMcps } from "./cli/mcp.js";
 import { runAgentSession, runBatch } from "./cli/runners.js";
-import { runCleanup } from "./cli/cleanup.js";
+import type { ScheduleContext, ScheduledJobConfig } from "./cli/schedule/commands.js";
+import {
+  applyRecipeSchedule,
+  describeOutcome,
+  describeScheduleState,
+  formatScheduleList,
+  formatScheduleSessions,
+  removeScheduleByRecipe,
+} from "./cli/schedule/commands.js";
+import { createScheduleBackends } from "./cli/schedule/launchd.js";
+import { appendScheduleRun } from "./cli/schedule/runs.js";
+import { promptForInterval, writeScheduleBlock } from "./cli/schedule/wizard.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
@@ -37,10 +50,43 @@ function commonOf(opts: { renderer?: string; log: boolean; debug?: boolean }): C
 
 let invocation: Invocation | undefined;
 
+function scheduleContext(): ScheduleContext {
+  return {
+    backends: createScheduleBackends({ launchctl: process.env.AXLE_LAUNCHCTL }),
+    platform:
+      (process.env.AXLE_SCHEDULE_PLATFORM as NodeJS.Platform | undefined) ?? process.platform,
+  };
+}
+
+async function ensureScheduleBlock(recipe: string): Promise<ScheduledJobConfig | undefined> {
+  const jobConfig = await getJobConfig(recipe, {});
+  if (jobConfig.schedule) return { ...jobConfig, schedule: jobConfig.schedule };
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+    throw new Error(
+      `${recipe} has no schedule block. Add one (schedule: { every: 1h }) or run this in a terminal to be prompted.`,
+    );
+  }
+  const every = await promptForInterval(recipe);
+  if (!every) return undefined;
+  await writeScheduleBlock(recipe, every);
+  return { ...jobConfig, schedule: { every } };
+}
+
+async function manage(command: () => Promise<void>): Promise<never> {
+  try {
+    await command();
+    process.exit(0);
+  } catch (e) {
+    console.error(`✖ ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+}
+
 program
   .option("-j, --job <path>", "Run a YAML job file instead of starting a chat")
   .option("-m, --message <text>", "Send one message and exit")
   .option("-i, --interactive", "With --job: continue the conversation interactively after the task")
+  .addOption(new Option("--scheduled <id>").hideHelp())
   .option("--args <args...>", "Template variables in the form key=value")
   .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
   .option("--no-log", "Do not write the output to a log file")
@@ -62,6 +108,10 @@ Run a session (default):
       job: opts.job,
       message: opts.message,
       interactive: Boolean(opts.interactive),
+      scheduling:
+        opts.scheduled !== undefined
+          ? { kind: "occurrence", id: opts.scheduled }
+          : { kind: "none" },
       args: opts.args ?? [],
       common: commonOf(opts),
     };
@@ -101,6 +151,81 @@ program
   .option("-d, --debug", "Print additional debug information")
   .action((id, opts) => {
     invocation = { kind: "resume", id, message: opts.message, common: commonOf(opts) };
+  });
+
+const schedule = program
+  .command("schedule")
+  .description("Register a recipe's recurring schedule (macOS launchd) and run it once now")
+  .enablePositionalOptions()
+  .option(
+    "-j, --job <path>",
+    "Recipe to register and run; a terminal wizard adds a missing schedule block",
+  )
+  .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
+  .option("--no-log", "Do not write the output to a log file")
+  .option("-d, --debug", "Print additional debug information")
+  .action(async (opts) => {
+    const recipe = opts.job;
+    if (!recipe) return schedule.help();
+    try {
+      if (!(await ensureScheduleBlock(recipe))) process.exit(0);
+    } catch (e) {
+      console.error(`✖ ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    }
+    invocation = {
+      kind: "kernel",
+      job: recipe,
+      interactive: false,
+      scheduling: { kind: "register" },
+      args: [],
+      common: commonOf(opts),
+    };
+  });
+
+schedule
+  .command("register")
+  .description("Register or update a recipe's schedule without running it")
+  .requiredOption(
+    "-j, --job <path>",
+    "Recipe to register; a terminal wizard adds a missing schedule block",
+  )
+  .action(async (opts) => {
+    await manage(async () => {
+      const jobConfig = await ensureScheduleBlock(opts.job);
+      if (!jobConfig) return;
+      const outcome = await applyRecipeSchedule(opts.job, jobConfig, scheduleContext());
+      console.log(`✔ ${describeOutcome(outcome)}`);
+    });
+  });
+
+schedule
+  .command("list")
+  .description("Show registered schedules")
+  .action(async () => {
+    await manage(async () => {
+      for (const line of await formatScheduleList(scheduleContext())) console.log(line);
+    });
+  });
+
+schedule
+  .command("remove")
+  .description("Unregister a recipe's schedule; the recipe and its sessions stay")
+  .requiredOption("-j, --job <path>", "Recipe whose schedule to remove")
+  .action(async (opts) => {
+    await manage(async () => {
+      console.log(`✔ ${await removeScheduleByRecipe(opts.job, scheduleContext())}`);
+    });
+  });
+
+schedule
+  .command("sessions")
+  .description("List the sessions a recipe's scheduled runs produced")
+  .requiredOption("-j, --job <path>", "Recipe whose runs to list")
+  .action(async (opts) => {
+    await manage(async () => {
+      for (const line of await formatScheduleSessions(opts.job)) console.log(line);
+    });
   });
 
 program
@@ -225,6 +350,33 @@ const jobScope =
 
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
+async function prepareSchedule(): Promise<string | undefined> {
+  if (inv.kind !== "kernel") return undefined;
+  if (inv.scheduling.kind === "occurrence") return inv.scheduling.id;
+  if (!inv.job || !jobConfig) return undefined;
+
+  if (inv.scheduling.kind === "register") {
+    if (!jobConfig.schedule) throw new Error(`${inv.job} has no schedule block.`);
+    const outcome = await applyRecipeSchedule(
+      inv.job,
+      { ...jobConfig, schedule: jobConfig.schedule },
+      scheduleContext(),
+    );
+    console.log(`✔ ${describeOutcome(outcome)}`);
+    rootSpan.info(describeOutcome(outcome));
+    return outcome.record.desired.id;
+  }
+
+  const state = await describeScheduleState(inv.job, jobConfig, scheduleContext());
+  if (state) {
+    console.log(`${state.level === "warn" ? "⚠" : "ℹ"} ${state.message}`);
+    rootSpan[state.level](state.message);
+  }
+  return undefined;
+}
+
+const scheduleRunId = await prepareSchedule().catch(fail);
+
 // First run with no configuration resolvable anywhere → onboarding wizard.
 if (
   inv.kind !== "resume" &&
@@ -280,6 +432,7 @@ try {
 
   const stats: Stats = createStats();
   const startTime = performance.now();
+  const startedAt = new Date();
 
   let succeeded = false;
   try {
@@ -314,6 +467,25 @@ try {
   }
 
   const duration = performance.now() - startTime;
+  if (scheduleRunId !== undefined) {
+    const sessionIds =
+      pending.kind === "session"
+        ? pending.sessionStore.savedSessionId
+          ? [pending.sessionStore.savedSessionId]
+          : []
+        : [...(await loadLedger()).values()]
+            .filter(
+              (entry) =>
+                entry.job === pending.spec.jobName && entry.timestamp >= startedAt.getTime(),
+            )
+            .map((entry) => entry.sessionId);
+    await appendScheduleRun(scheduleRunId, {
+      startedAt: startedAt.toISOString(),
+      finishedAt: new Date().toISOString(),
+      status: succeeded ? "succeeded" : "failed",
+      sessionIds,
+    }).catch((e) => rootSpan.warn(`Failed to record scheduled run: ${e}`));
+  }
   rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
   rootSpan.info(`Input tokens: ${stats.in}`);
   rootSpan.info(`Output tokens: ${stats.out}`);

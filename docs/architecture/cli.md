@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-09-03 (0.31 branch)
+**Status**: current · **Last design revision**: 2026-09-17 (AXL-28)
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -32,12 +32,13 @@ against it; divergence is a defect. State ownership is defined in
    `-i` (continue after the task). Verbs are distinct machines composed on
    top of it, each with its own signature:
 
-   | Verb           | Signature              |
-   | -------------- | ---------------------- |
-   | `axle batch`   | (recipe, inputs)       |
-   | `axle resume`  | (session id, message?) |
-   | `axle setup`   | ()                     |
-   | `axle cleanup` | ()                     |
+   | Verb            | Signature                                                                            |
+   | --------------- | ------------------------------------------------------------------------------------ |
+   | `axle batch`    | (recipe, inputs)                                                                     |
+   | `axle resume`   | (session id, message?)                                                               |
+   | `axle setup`    | ()                                                                                   |
+   | `axle cleanup`  | ()                                                                                   |
+   | `axle schedule` | (recipe) · `register` (recipe) · `remove` (recipe) · `sessions` (recipe) · `list` () |
 
    The recipe↔invocation mirror governs only the kernel. Mode collisions
    are impossible by construction — there is no `--job`/`--session`
@@ -132,7 +133,116 @@ against it; divergence is a defect. State ownership is defined in
    recorded cwd produces a warning on mismatch (invariant 6), nothing
    more.
 
+10. **A schedule is a recipe property; the OS is its registrar, never its
+    memory.** `schedule: { every }` declares recurrence next to the task it
+    recurs. `every` is a fixed elapsed interval, `<positive integer><s|m|h|d>`,
+    a day being 24 hours; the floor is 60 seconds and the ceiling is what a
+    signed 32-bit backend interval holds. Calendar, cron, and one-shot
+    schedules are deferred and will take a distinct shape rather than
+    overloading `every`. Plain `-j` is a pure run and never touches the
+    registrar: it prints one read-only state line (declared but not
+    registered, scheduled with its last run, or drifted — the recipe's
+    interval changed or its block was removed while a registration
+    remains). `axle schedule -j` _reconciles_ the registration (create,
+    update, restore, or no-op — deterministic, independent of prior state)
+    and then runs once in the foreground, so a `1d` schedule is proven now
+    rather than a day later; `axle schedule register -j` reconciles only
+    and, like every management subcommand, exits before provider
+    resolution or any agent machinery. `-j` means "run this recipe"
+    everywhere it appears bare; the verb wraps that run with registration.
+    An update states what changed (`every 1h → 15m`, `cwd a → b`), and a
+    record that matches but whose OS registration is gone is re-applied
+    rather than trusted.
+    The registrar is an injected `ScheduleBackend` (`apply`, `remove`,
+    `isLoaded`) behind
+    a platform lookup; only macOS `launchd` ships. Everything above the
+    backend — identity, records, reconciliation, argv, presentation — is
+    OS-neutral, and a second backend adds a `BackendBinding` member and an
+    adapter, nothing else.
+
+    _Identity_ is the recipe's canonical absolute path: the same file is an
+    update, a moved file is a new schedule and the old one is never removed
+    silently. The path is the only handle the user ever sees — every
+    `schedule` subcommand takes `-j <recipe>`, and a recipe that no longer
+    exists is matched by its recorded path so it can still be removed. The
+    derived id (16 hex chars of the path's sha256) names the record, the
+    launchd label, and the log files, and appears in no message. _State_ is one versioned JSON
+    record per schedule at `~/.axle/schedules/<id>.json` (0600), holding the
+    desired registration (name, recipe path, install cwd, interval, the
+    shell-free occurrence argv, captured `PATH`, log paths) and the backend
+    binding — never task text, provider config, arbitrary env, or
+    credentials; a firing resolves those exactly as a foreground run does.
+    The record is committed only after the backend succeeds: a failed first
+    apply leaves nothing, a failed update keeps the previous record.
+
+    An _occurrence_ is the scheduler re-entering this same CLI build:
+    `[execPath, ...execArgv, entry] -j <abs recipe> --renderer plain --no-log
+--scheduled <id>`. The marker bypasses reconciliation, prompts, and the
+    wizard and otherwise takes the ordinary `-j` path — one fresh session, or
+    one per input for a `batch:` recipe — re-reading the recipe every time,
+    so task/model/tool edits need no re-registration while interval, cwd,
+    relaunch command, or `PATH` changes reconcile on the next apply.
+    `StartInterval` fixes overlap: a schedule never runs concurrently with
+    itself, a firing during a still-running occurrence is missed not queued,
+    sleep-missed firings are not replayed, and a hung occurrence suppresses
+    later ones until it exits. Each occurrence — and the foreground run of
+    `axle schedule -j`, the schedule's first — appends one line to
+    `~/.axle/schedules/<id>.runs.jsonl` (start, end, status, session ids),
+    which `schedule sessions` reads and `schedule list` summarizes; it is the
+    discoverability channel for work that ran while nobody was watching.
+    `remove` boots out the label and deletes only its own plist and record —
+    recipes, sessions, CLI and schedule logs, ledgers, the runs ledger, and
+    foreign LaunchAgents are untouched; re-registering the same recipe
+    reclaims its id and history.
+
 ## Decisions
+
+- **2026-09-17 — registration moves off the kernel onto the verb (AXL-28,
+  reverses 2026-09-13 below before it shipped).** Rejected: plain `-j`
+  reconciling as a side effect — running a recipe silently mutated the OS
+  scheduler, `--once` existed only to undo that, `axle -j` and
+  `axle schedule -j` differed solely in whether the task ran, and deleting
+  the block left a live registration nothing reconciled. Rejected: a y/n
+  gate on `-j` for scheduled recipes — bare `-j` never prompts, and
+  iterating on a recipe would answer it every run; a state line carries the
+  same information. Rejected: register-only as the verb's default — a `1d`
+  schedule would first fire a day later, unproven, and a `schedule -j` that
+  does not run breaks what `-j` means everywhere else. Rejected:
+  `--no-run` — a flag deciding whether the kernel boots at all is a verb's
+  job; `register` is a management machine like `setup`, and it pairs with
+  `remove`. Rejected: launchd `RunAtLoad` for the first run — it fires on
+  every login, not once at registration. `--once` is gone: plain `-j` is
+  the run-once form. Rejected the same day: a user-facing schedule id with
+  prefix lookup, mirrored from sessions — a session has no name but its
+  id, a schedule is a recipe, and the id leaked the record filename into
+  the interface. Subcommands address schedules by recipe only.
+- **2026-09-13 — recurrence lives in the recipe; `-j` reconciles (AXL-28).**
+  Rejected: an `axle schedule add <recipe> --every 1h` that stores the
+  interval only in `~/.axle` — hidden state that invariant 1 forbids (a
+  recurring job's memory is its checked-in YAML). Rejected: reconciling
+  only when the record is absent — the behavior would depend on history the
+  user cannot see; reconciliation is idempotent instead. Settled: the
+  block is the declaration and the TTY wizard writes the block into the
+  recipe rather than remembering an answer. (The apply-and-run gesture
+  moved from `-j` to `axle schedule -j` on 2026-09-17, above.)
+- **2026-09-13 — sessions are captured without changing the runners.** The
+  occurrence learns its session ids from the `SessionStore` it owns (single
+  run) or from the batch ledger entries written during the run (batch);
+  `runAgentSession`/`runBatch` keep their boolean result. Rejected: widening
+  the runner return type — the ticket held the runners fixed, and the
+  values already reach the host through owned channels. Rejected: tagging
+  session files with a schedule id — a persistence-format change for one
+  reader.
+- **2026-09-13 — `launchd` apply always boots out first.** launchctl refuses
+  to bootstrap a loaded label and reports "No such process" on an unloaded
+  one; tolerating the latter lets create, update, and crash recovery share
+  one path. Rejected: `RunAtLoad`/`KeepAlive` (an immediate run belongs to
+  the foreground `-j`, not the registrar) and a shell wrapper (PATH and
+  quoting hazards; the argv is recorded exactly).
+- **2026-09-13 — overlap policy is not a recipe field.** `StartInterval`'s
+  skip semantics are the only policy; exposing `overlap: skip` would be a
+  one-value enum. Deferred with calendar schedules, catch-up, retries,
+  Linux/Windows backends, and model-created schedules.
 
 - **2026-09-03 — batch invocation lives in the recipe.** `batch: {files,
 concurrency}`. Rejected: `--each`/`--concurrency` flags (built and

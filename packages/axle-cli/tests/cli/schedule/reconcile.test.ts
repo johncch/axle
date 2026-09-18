@@ -23,6 +23,7 @@ class FakeBackend implements ScheduleBackend {
   calls: Call[] = [];
   failNextApply?: Error;
   failNextRemove?: Error;
+  loaded = true;
 
   async apply(desired: DesiredSchedule, previous?: BackendBinding): Promise<BackendBinding> {
     this.calls.push({ op: "apply", desired, previous });
@@ -32,6 +33,10 @@ class FakeBackend implements ScheduleBackend {
       throw error;
     }
     return { kind: "launchd", label: `test.${desired.id}`, plistPath: `/la/${desired.id}.plist` };
+  }
+
+  async isLoaded(): Promise<boolean> {
+    return this.loaded;
   }
 
   async remove(binding: BackendBinding): Promise<void> {
@@ -116,7 +121,10 @@ describe("reconcileSchedule", () => {
       { home: HOME, ...later },
     );
 
-    expect(outcome.kind).toBe("updated");
+    expect(outcome).toMatchObject({
+      kind: "updated",
+      previous: { desired: { intervalSeconds: 3600, cwd: "/recipes" } },
+    });
     expect(backend.calls).toEqual([
       {
         op: "apply",
@@ -129,6 +137,18 @@ describe("reconcileSchedule", () => {
       createdAt: "2026-09-12T10:00:00.000Z",
       updatedAt: "2026-09-12T11:00:00.000Z",
     });
+  });
+
+  it("re-applies a matching record whose OS registration has gone missing", async () => {
+    const backend = new FakeBackend();
+    await reconcileSchedule(desired(), backend, { home: HOME, ...clock });
+    backend.calls = [];
+    backend.loaded = false;
+
+    const outcome = await reconcileSchedule(desired(), backend, { home: HOME });
+
+    expect(outcome.kind).toBe("restored");
+    expect(backend.calls.map((call) => call.op)).toEqual(["apply"]);
   });
 
   it("leaves no record when the first apply fails", async () => {
@@ -156,8 +176,8 @@ describe("reconcileSchedule", () => {
     expect(await readScheduleRecord("abc123", HOME)).toEqual(before);
   });
 
-  it("reports an unsupported platform by pointing at --once", () => {
-    expect(unsupportedPlatformError("linux").message).toMatch(/not supported on linux.*--once/);
+  it("reports an unsupported platform by pointing at a plain run", () => {
+    expect(unsupportedPlatformError("linux").message).toMatch(/not supported on linux.*axle -j/);
   });
 });
 
@@ -171,7 +191,7 @@ describe("removeSchedule", () => {
     });
     backend.calls = [];
 
-    const removed = await removeSchedule("abc", backendsOf(backend), { home: HOME });
+    const removed = await removeSchedule("abc123", backendsOf(backend), { home: HOME });
 
     expect(removed.desired.id).toBe("abc123");
     expect(backend.calls).toEqual([

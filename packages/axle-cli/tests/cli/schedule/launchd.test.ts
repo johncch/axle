@@ -254,6 +254,26 @@ describe("launchd backend remove", () => {
   });
 });
 
+describe("launchd backend isLoaded", () => {
+  it("is true only when the plist exists and launchctl can print the service", async () => {
+    const launchctl = new FakeLaunchctl();
+    const backend = backendWith(launchctl);
+    const binding = await backend.apply(desired());
+    launchctl.calls = [];
+
+    expect(await backend.isLoaded(binding)).toBe(true);
+    expect(launchctl.calls).toEqual([["print", "gui/501/com.fifthrevision.axle.abc123"]]);
+
+    launchctl.replies = [() => ({ code: 113, stdout: "", stderr: "Could not find service" })];
+    expect(await backend.isLoaded(binding)).toBe(false);
+
+    await rm(binding.plistPath);
+    launchctl.calls = [];
+    expect(await backend.isLoaded(binding)).toBe(false);
+    expect(launchctl.calls).toEqual([]);
+  });
+});
+
 describe("createScheduleBackends", () => {
   it("offers launchd on darwin only and resolves launchd bindings by kind", () => {
     const backends = createScheduleBackends({ run: async () => OK, home: HOME, uid: 501 });

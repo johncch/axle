@@ -104,22 +104,6 @@ export async function listScheduleRecords(home?: string): Promise<ScheduleListEn
   return listed;
 }
 
-export async function resolveScheduleId(idOrPrefix: string, home?: string): Promise<string> {
-  const ids = (await listScheduleRecords(home)).map((entry) => entry.id);
-  if (ids.includes(idOrPrefix)) return idOrPrefix;
-
-  const matches = ids.filter((id) => id.startsWith(idOrPrefix));
-  if (matches.length === 0) {
-    throw new Error(`No schedule found with id ${idOrPrefix}`);
-  }
-  if (matches.length > 1) {
-    throw new Error(
-      `Schedule id prefix "${idOrPrefix}" is ambiguous (${matches.length} matches). Use more characters.`,
-    );
-  }
-  return matches[0];
-}
-
 function parseScheduleRecord(content: string): ScheduleRecord {
   let raw: unknown;
   try {

@@ -127,6 +127,7 @@ export class SessionStore {
   private readonly home?: string;
   private readonly compaction?: boolean;
   private createdAt?: string;
+  savedSessionId?: string;
 
   constructor(
     definition: AgentDefinition,
@@ -155,6 +156,7 @@ export class SessionStore {
     await mkdir(sessionsDir(this.home), { recursive: true });
     const path = sessionFilePath(session.sessionId, this.home);
     await writeFileAtomic(path, JSON.stringify(file, null, 2));
+    this.savedSessionId = session.sessionId;
     return path;
   }
 }

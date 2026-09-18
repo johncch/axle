@@ -32,6 +32,7 @@ export interface LaunchdOptions {
   run: CommandRunner;
   uid: number;
   launchAgentsDir: string;
+  launchctl?: string;
 }
 
 export function launchdLabel(id: string): string {
@@ -86,16 +87,17 @@ function escapeXml(value: string): string {
  */
 export function createLaunchdBackend(options: LaunchdOptions): ScheduleBackend {
   const { run, uid, launchAgentsDir } = options;
+  const launchctl = options.launchctl ?? "launchctl";
   const domain = `gui/${uid}`;
 
   async function bootout(label: string): Promise<void> {
-    const result = await run("launchctl", ["bootout", `${domain}/${label}`]);
+    const result = await run(launchctl, ["bootout", `${domain}/${label}`]);
     if (result.code === 0 || isNotLoaded(result)) return;
     throw new Error(`launchctl bootout ${label} failed (${result.code}): ${result.stderr.trim()}`);
   }
 
   async function bootstrap(plistPath: string): Promise<void> {
-    const result = await run("launchctl", ["bootstrap", domain, plistPath]);
+    const result = await run(launchctl, ["bootstrap", domain, plistPath]);
     if (result.code === 0) return;
     throw new Error(
       `launchctl bootstrap ${plistPath} failed (${result.code}): ${result.stderr.trim()}`,
@@ -143,6 +145,13 @@ export function createLaunchdBackend(options: LaunchdOptions): ScheduleBackend {
       await bootout(binding.label);
       await rm(binding.plistPath, { force: true });
     },
+
+    async isLoaded(binding) {
+      if (binding.kind !== "launchd") return false;
+      if ((await readOptional(binding.plistPath)) === undefined) return false;
+      const result = await run(launchctl, ["print", `${domain}/${binding.label}`]);
+      return result.code === 0;
+    },
   };
 }
 
@@ -163,12 +172,14 @@ export function createScheduleBackends(options?: {
   run?: CommandRunner;
   home?: string;
   uid?: number;
+  launchctl?: string;
 }): ScheduleBackends {
   const home = options?.home ?? homedir();
   const launchd = createLaunchdBackend({
     run: options?.run ?? runCommand,
     uid: options?.uid ?? userInfo().uid,
     launchAgentsDir: join(home, "Library", "LaunchAgents"),
+    launchctl: options?.launchctl,
   });
   return {
     forPlatform: (platform) => (platform === "darwin" ? launchd : undefined),

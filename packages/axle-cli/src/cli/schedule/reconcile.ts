@@ -2,24 +2,21 @@ import { isDeepStrictEqual } from "node:util";
 import type { ScheduleBackend, ScheduleBackends } from "./backend.js";
 import { unknownBackendError } from "./backend.js";
 import type { DesiredSchedule, ScheduleRecord } from "./records.js";
-import {
-  deleteScheduleRecord,
-  readScheduleRecord,
-  resolveScheduleId,
-  writeScheduleRecord,
-} from "./records.js";
+import { deleteScheduleRecord, readScheduleRecord, writeScheduleRecord } from "./records.js";
 
-export type ReconcileOutcome = {
-  kind: "created" | "updated" | "unchanged";
-  record: ScheduleRecord;
-};
+export type ReconcileOutcome =
+  | { kind: "created"; record: ScheduleRecord }
+  | { kind: "updated"; record: ScheduleRecord; previous: ScheduleRecord }
+  | { kind: "restored"; record: ScheduleRecord }
+  | { kind: "unchanged"; record: ScheduleRecord };
 
 /**
  * Bring the OS registration and the stored record in line with `desired`.
  * Ordering is apply-then-commit: the backend mutates first and the record
  * is written only once the backend reports success, so a failed first
  * apply leaves nothing behind and a failed update keeps the previous record
- * authoritative.
+ * authoritative. A matching record whose OS registration has gone missing
+ * is re-applied rather than trusted.
  */
 export async function reconcileSchedule(
   desired: DesiredSchedule,
@@ -29,11 +26,11 @@ export async function reconcileSchedule(
   const now = options?.now ?? (() => new Date());
   const previous = await readScheduleRecord(desired.id, options?.home);
 
-  if (
-    previous &&
+  const matchesRecord =
+    previous !== undefined &&
     previous.binding.kind === backend.kind &&
-    isDeepStrictEqual(previous.desired, desired)
-  ) {
+    isDeepStrictEqual(previous.desired, desired);
+  if (previous && matchesRecord && (await backend.isLoaded(previous.binding))) {
     return { kind: "unchanged", record: previous };
   }
 
@@ -54,15 +51,15 @@ export async function reconcileSchedule(
     throw e;
   }
 
-  return { kind: previous ? "updated" : "created", record };
+  if (!previous) return { kind: "created", record };
+  return matchesRecord ? { kind: "restored", record } : { kind: "updated", record, previous };
 }
 
 export async function removeSchedule(
-  idOrPrefix: string,
+  id: string,
   backends: ScheduleBackends,
   options?: { home?: string },
 ): Promise<ScheduleRecord> {
-  const id = await resolveScheduleId(idOrPrefix, options?.home);
   const record = await readScheduleRecord(id, options?.home);
   if (!record) throw new Error(`No schedule found with id ${id}`);
 

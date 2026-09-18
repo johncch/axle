@@ -106,7 +106,8 @@ home in the recipe; the command line overrides selectively. "Job" survives
 in flag names (`-j`) and ledger keys as the recipe's runtime instantiation.
 
 **Invocation** — one command-line call: a kernel invocation (bare `axle`,
-`-j`, `-m`) or a verb invocation (`batch`, `resume`, `setup`, `cleanup`).
+`-j`, `-m`) or a verb invocation (`batch`, `resume`, `schedule`, `setup`,
+`cleanup`).
 
 **Kernel** — the session runner every invocation composes on: resolve a
 definition, run an agent session, persist it.
@@ -123,6 +124,27 @@ batch item; `axle resume <id>` re-enters any of them.
 **Ledger** — the project-local batch index (`.axle/batch.jsonl`): one
 append-only record per item run, keyed (job, input) with a content hash and
 session id. Read only under `--incremental`; always written.
+
+**Schedule** — a recipe's declared recurrence (`schedule: { every }`) and,
+once applied, its OS registration. Identified by the recipe's canonical
+path; recorded at `~/.axle/schedules/<id>.json`. The recipe declares, the
+registrar (a `ScheduleBackend`, macOS `launchd` only) holds the OS
+artifact, and reconciliation keeps the two in line.
+
+**Occurrence** — one scheduler-initiated run of a schedule: the same CLI
+re-entered with the `--scheduled <id>` marker, taking the ordinary `-j`
+path without reconciliation or prompts. Deliberately not "run" (Sunnyday's
+term) or "firing" (the launchd event, before the CLI is involved).
+
+**Binding** — the backend-specific half of a schedule record
+(`{ kind: "launchd", label, plistPath }`), a versioned discriminated union
+with one member per backend. Common fields never depend on it.
+
+**Runs ledger** — the per-schedule append-only index
+(`~/.axle/schedules/<id>.runs.jsonl`): one line per occurrence with start,
+end, status, and the session ids it produced. Read by `schedule sessions`
+and `schedule list`; distinct from the batch ledger, which is per project
+and keyed by input.
 
 **Host line** — renderer output that is not transcript: `info` / `success`
 / `warn` / `error` from the runner, drawn with the consola gutter. The

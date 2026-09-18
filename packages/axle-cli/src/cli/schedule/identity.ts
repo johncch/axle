@@ -14,8 +14,11 @@ export interface ScheduleIdentity {
  */
 export async function resolveScheduleIdentity(recipe: string): Promise<ScheduleIdentity> {
   const recipePath = await realpath(recipe);
-  const id = createHash("sha256").update(recipePath).digest("hex").slice(0, 16);
-  return { id, recipePath };
+  return { id: scheduleIdFor(recipePath), recipePath };
+}
+
+export function scheduleIdFor(recipePath: string): string {
+  return createHash("sha256").update(recipePath).digest("hex").slice(0, 16);
 }
 
 export function displayNameFor(recipeName: string | undefined, recipePath: string): string {

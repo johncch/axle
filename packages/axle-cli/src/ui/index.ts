@@ -1,8 +1,8 @@
 import { PlainRenderer } from "./plain.js";
 import type { Renderer } from "./renderer.js";
 
-export type { BatchProgress, BatchTotals } from "./batch.js";
 export { supportsBatchProgress } from "./batch.js";
+export type { BatchProgress, BatchTotals } from "./batch.js";
 export { PlainRenderer } from "./plain.js";
 export type { Renderer, SessionUsage } from "./renderer.js";
 

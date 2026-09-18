@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Recipes can run on a schedule (macOS).** Add a `schedule: { every: 1h }`
+  block and run `axle schedule -j <recipe>`: it registers a user
+  LaunchAgent and runs the recipe once now; each later firing re-reads the
+  recipe and runs it like `-j`, saving a session. `schedule register -j`
+  registers without running (a terminal wizard adds a missing block to the
+  recipe), `schedule list` shows registrations and their last run,
+  `schedule sessions -j` lists each run's `axle resume` command, and
+  `schedule remove -j` unregisters; schedules are addressed by recipe, never
+  by an id. Plain
+  `axle -j` never touches the schedule; it prints whether the recipe is
+  registered or has drifted. Intervals are `<integer><s|m|h|d>`, 60s
+  minimum. Linux and Windows are not supported yet.
 - **Thinking text now streams from Claude and OpenAI models.** `request.reasoning`
   with `on` or `{ effort }` asks every provider that has a disclosure field
   for its thinking; previously Anthropic and OpenAI requests inherited a
