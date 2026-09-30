@@ -16,12 +16,16 @@ export interface CommonOpts {
   debug: boolean;
 }
 
+export type KernelScheduling =
+  { kind: "none" } | { kind: "register" } | { kind: "occurrence"; id: string };
+
 export type Invocation =
   | {
       kind: "kernel";
       job?: string;
       message?: string;
       interactive: boolean;
+      scheduling: KernelScheduling;
       args: string[];
       common: CommonOpts;
     }

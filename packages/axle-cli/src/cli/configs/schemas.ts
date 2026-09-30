@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  CLOCK_TIME_PATTERN,
+  INTERVAL_PATTERN,
+  parseInterval,
+  WEEKDAY_NAMES,
+} from "../schedule/trigger.js";
 
 /* ============================================================================
  * Provider Configuration Schemas
@@ -139,6 +145,44 @@ export const BatchConfigSchema = z.strictObject({
 export type BatchConfig = z.infer<typeof BatchConfigSchema>;
 
 /* ============================================================================
+ * Schedule Config Schema
+ * ========================================================================== */
+
+const ClockTimeSchema = z
+  .string()
+  .regex(new RegExp(CLOCK_TIME_PATTERN), "expected HH:MM in 24-hour form");
+
+// `every` (elapsed interval) and `at` (machine-local clock time, optionally
+// restricted to weekdays with `on`) are distinct shapes, never merged.
+export const ScheduleConfigSchema = z.union([
+  z.strictObject({
+    every: z
+      .string()
+      .regex(
+        new RegExp(INTERVAL_PATTERN),
+        "expected <positive integer><unit> with unit s, m, h, or d",
+      )
+      .refine(
+        (every) => {
+          try {
+            parseInterval(every);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: "interval is below 60s or too large for a backend" },
+      ),
+  }),
+  z.strictObject({
+    at: z.union([ClockTimeSchema, z.array(ClockTimeSchema).min(1)]),
+    on: z.array(z.enum(WEEKDAY_NAMES)).min(1).optional(),
+  }),
+]);
+
+export type ScheduleConfig = z.infer<typeof ScheduleConfigSchema>;
+
+/* ============================================================================
  * Job Config Schema
  * ========================================================================== */
 
@@ -180,6 +224,7 @@ export const JobConfigSchema = z.strictObject({
   files: z.array(z.string()).optional(),
   mcps: z.array(MCPConfigSchema).optional(),
   batch: BatchConfigSchema.optional(),
+  schedule: ScheduleConfigSchema.optional(),
   compaction: z.boolean().optional(),
 });
 

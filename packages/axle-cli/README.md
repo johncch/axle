@@ -41,6 +41,11 @@ axle -j path/to/job.yaml --args key=value other=thing
 axle batch -j recipe.yaml 'data/*.md'   # fan a recipe out over inputs
 axle resume <id>                     # re-enter any saved session
 axle resume <id> -m "follow up"      # one-shot continuation
+axle schedule -j recipe.yaml         # register a recurring recipe (macOS) and run it once now
+axle schedule register -j recipe.yaml   # register or update without running
+axle schedule list                   # registered schedules and their last run
+axle schedule sessions -j recipe.yaml   # sessions a schedule's firings produced
+axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs stay
 axle setup                           # (re)configure providers and defaults
 axle cleanup                         # delete old sessions by age window
 ```
@@ -207,6 +212,89 @@ per settled item.
 
 Batch runs are non-interactive; a batch job cannot be combined with
 `--interactive`.
+
+## Schedules
+
+A recipe can declare its own recurrence. On macOS, `axle schedule -j`
+registers it as a user LaunchAgent and runs it once right away; every
+firing after that re-reads the recipe and runs it exactly as `-j` would.
+
+```yaml
+# monitor.yaml
+name: hourly-monitor
+provider: anthropic
+
+schedule:
+  every: 1h
+
+task: |
+  Check the API. Send an email only if the condition is met.
+```
+
+`every` is a fixed elapsed interval: `<integer><unit>` with unit `s`, `m`,
+`h`, or `d` (a day is 24 hours); `60s` is the minimum. For a fixed time of
+day use `at` instead, optionally limited to weekdays with `on`:
+
+```yaml
+schedule:
+  at: "09:00" # every day at 09:00, machine-local time
+
+schedule:
+  at: ["09:00", "17:30"] # more than one time a day
+  on: [mon, tue, wed, thu, fri]
+```
+
+Times are `HH:MM` in 24-hour form, in the machine's local time; there is no
+timezone setting. A recipe declares either `every` or `at`, not both. Cron
+expressions and day-of-month schedules are not supported yet.
+
+```bash
+axle schedule -j monitor.yaml            # register or update, then run once now
+axle schedule register -j monitor.yaml   # register or update only
+axle schedule list
+axle schedule sessions -j monitor.yaml
+axle schedule remove -j monitor.yaml
+axle -j monitor.yaml                     # just run it; the schedule is never touched
+```
+
+The first scheduled firing comes one full interval after registering, or
+at the next matching clock time, which is why `schedule -j` runs once
+immediately: a daily job is proven now, not tomorrow. Every apply prints
+when the next firing is due. Use `register` when the run itself has side effects you do not
+want repeated, such as re-applying after an interval edit.
+
+A schedule is addressed by its recipe everywhere; there is no separate
+id to learn. Applying is idempotent: the same recipe path is the same
+schedule, so repeating it prints "is current" and changes nothing. An update says what
+changed (`every 1h → 15m`, `cwd … → …`). Editing the task, model, tools, or
+`batch:` block takes effect on the next firing with no re-registration;
+changing `every`, or applying from a different directory, updates the
+registration. Both forms refuse a recipe without a `schedule` block.
+
+A plain `axle -j` on the recipe only runs it, and prints one line about its
+schedule: not registered, scheduled with its last run, or a warning when
+the recipe and the registration have drifted apart (the interval changed,
+or the block was deleted while the schedule is still registered).
+
+Each firing runs with the working directory the recipe was applied from,
+resolves credentials and config exactly like a foreground run (project and
+user `.axle/`, the directory's `.env`), and saves a fresh resumable session
+— one per input for a batch recipe. `axle schedule sessions -j` lists
+those runs newest first with their `axle resume` command; stdout and
+stderr also land in `~/.axle/logs/schedules/<id>.out.log` and `.err.log`.
+A schedule never overlaps itself: if a firing is still running when the
+next one is due, that firing is skipped rather than queued. Intervals
+missed while the machine sleeps are not replayed; a clock time missed
+while asleep runs once on wake. A failed
+firing exits non-zero into the log and leaves later firings registered.
+
+`remove` unloads the LaunchAgent and deletes only its plist and the
+schedule record. Recipes, sessions, logs, and other LaunchAgents are left
+alone, and `schedule sessions -j` still lists the runs a removed schedule
+produced. A recipe that was moved or deleted can still be removed by the
+path `list` shows. `list` flags a schedule whose LaunchAgent is no longer loaded, and
+applying again restores it. On Linux and Windows, registering fails and
+plain `axle -j` still runs the recipe.
 
 ## MCP Servers
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -405,6 +405,595 @@ describe("cli.ts end-to-end", () => {
       expect(code).toBe(1);
       expect(output).toContain("--message cannot be combined with --job");
       expect(requests).toHaveLength(0);
+    },
+    SPAWN_TIMEOUT,
+  );
+});
+
+describe("schedules end-to-end", () => {
+  const LAUNCHCTL = join(TEST_DIR, "launchctl");
+  const LAUNCHCTL_LOG = join(TEST_DIR, "launchctl.log");
+  const LAUNCH_AGENTS = join(HOME, "Library", "LaunchAgents");
+  const SCHEDULES = join(HOME, ".axle", "schedules");
+  const plain = ["--renderer", "plain", "--no-log"];
+
+  function scheduleEnv(platform = "darwin"): Record<string, string> {
+    return {
+      AXLE_LAUNCHCTL: LAUNCHCTL,
+      AXLE_SCHEDULE_PLATFORM: platform,
+      AXLE_TEST_LAUNCHCTL_LOG: LAUNCHCTL_LOG,
+    };
+  }
+
+  // `print` is the read-only loaded-check; only bootout/bootstrap mutate.
+  async function launchctlCalls(): Promise<string[]> {
+    try {
+      return (await readFile(LAUNCHCTL_LOG, "utf-8"))
+        .split("\n")
+        .filter((line) => line && !line.startsWith("print "));
+    } catch {
+      return [];
+    }
+  }
+
+  async function runsOf(id: string): Promise<any[]> {
+    try {
+      return (await readFile(join(SCHEDULES, `${id}.runs.jsonl`), "utf-8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+    } catch {
+      return [];
+    }
+  }
+
+  async function records(): Promise<Array<{ id: string; record: any }>> {
+    let names: string[];
+    try {
+      names = (await readdir(SCHEDULES)).filter((name) => name.endsWith(".json"));
+    } catch {
+      return [];
+    }
+    const parsed: Array<{ id: string; record: any }> = [];
+    for (const name of names) {
+      try {
+        parsed.push({
+          id: name.slice(0, -".json".length),
+          record: JSON.parse(await readFile(join(SCHEDULES, name), "utf-8")),
+        });
+      } catch {
+        continue;
+      }
+    }
+    return parsed;
+  }
+
+  function runOccurrence(
+    programArguments: string[],
+  ): Promise<{ code: number | null; output: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(programArguments[0], programArguments.slice(1), {
+        cwd: CWD,
+        env: { PATH: process.env.PATH!, HOME, ...scheduleEnv() },
+      });
+      let output = "";
+      child.stdout.on("data", (chunk) => (output += chunk));
+      child.stderr.on("data", (chunk) => (output += chunk));
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ code, output }));
+      child.stdin.end();
+    });
+  }
+
+  beforeEach(async () => {
+    await writeFile(LAUNCHCTL, '#!/bin/sh\necho "$@" >> "$AXLE_TEST_LAUNCHCTL_LOG"\nexit 0\n');
+    await chmod(LAUNCHCTL, 0o755);
+  });
+
+  it(
+    "axle schedule -j registers a LaunchAgent, runs once, and updates only when something changed",
+    async () => {
+      replies.push({ text: "first" }, { text: "second" }, { text: "third" });
+      const recipe = await writeRecipe(
+        "monitor.yml",
+        "name: hourly-monitor\nschedule:\n  every: 1h",
+      );
+
+      const first = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
+
+      expect(first.code).toBe(0);
+      expect(first.output).toContain("Scheduled hourly-monitor every 1h");
+      expect(first.output).toContain("Next firing in 1h.");
+      expect(first.output).toContain("first");
+      expect(requests).toHaveLength(1);
+      const [{ id, record }] = await records();
+      expect(record.desired).toMatchObject({
+        name: "hourly-monitor",
+        recipePath: recipe,
+        cwd: CWD,
+        trigger: { kind: "interval", seconds: 3600 },
+      });
+      expect(record.desired.programArguments.slice(-7)).toEqual([
+        "-j",
+        recipe,
+        "--renderer",
+        "plain",
+        "--no-log",
+        "--scheduled",
+        id,
+      ]);
+      expect(record.desired.programArguments[0]).toBe(process.execPath);
+      expect(record.binding).toEqual({
+        kind: "launchd",
+        label: `com.fifthrevision.axle.${id}`,
+        plistPath: join(LAUNCH_AGENTS, `com.fifthrevision.axle.${id}.plist`),
+      });
+      expect((await stat(join(SCHEDULES, `${id}.json`))).mode & 0o777).toBe(0o600);
+      const plist = await readFile(record.binding.plistPath, "utf-8");
+      expect(plist).toContain("<integer>3600</integer>");
+      expect(plist).toContain(`<string>${CWD}</string>`);
+      expect(await launchctlCalls()).toEqual([
+        `bootout gui/${process.getuid!()}/com.fifthrevision.axle.${id}`,
+        `bootstrap gui/${process.getuid!()} ${record.binding.plistPath}`,
+      ]);
+      const firstSession = first.output.match(/axle resume (\S+)/)?.[1];
+      expect((await runsOf(id))[0]).toMatchObject({
+        status: "succeeded",
+        sessionIds: [firstSession],
+      });
+
+      const again = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
+      expect(again.code).toBe(0);
+      expect(again.output).toContain("Schedule hourly-monitor is current: every 1h");
+      expect(await launchctlCalls()).toHaveLength(2);
+      expect(requests).toHaveLength(2);
+
+      await writeRecipe("monitor.yml", "name: hourly-monitor\nschedule:\n  every: 15m");
+      const changed = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
+      expect(changed.code).toBe(0);
+      expect(changed.output).toContain("Updated schedule hourly-monitor: every 1h → every 15m.");
+      expect(await launchctlCalls()).toHaveLength(5);
+      expect((await records())[0].record.desired.trigger).toEqual({
+        kind: "interval",
+        seconds: 900,
+      });
+      expect(await readdir(LAUNCH_AGENTS)).toHaveLength(1);
+      expect(await runsOf(id)).toHaveLength(3);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "plain axle -j never touches the scheduler and reports the schedule's state",
+    async () => {
+      replies.push({ text: "a" }, { text: "b" }, { text: "c" }, { text: "d" }, { text: "e" });
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+
+      const unregistered = await runCli(["-j", recipe, ...plain], scheduleEnv());
+      expect(unregistered.code).toBe(0);
+      expect(unregistered.output).toContain(
+        `Declares a schedule (every 1h), not registered. Register and run with: axle schedule -j ${recipe}`,
+      );
+      expect(await records()).toEqual([]);
+
+      const elsewhere = await runCli(["-j", recipe, ...plain], scheduleEnv("linux"));
+      expect(elsewhere.code).toBe(0);
+      expect(elsewhere.output).toContain("schedules are not supported on linux yet");
+
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id }] = await records();
+      const mutations = (await launchctlCalls()).length;
+
+      const current = await runCli(["-j", recipe, ...plain], scheduleEnv());
+      expect(current.output).toContain("Scheduled every 1h, never run");
+      expect(await runsOf(id)).toEqual([]);
+
+      await writeRecipe("monitor.yml", "schedule:\n  every: 15m");
+      const drifted = await runCli(["-j", recipe, ...plain], scheduleEnv());
+      expect(drifted.output).toContain(
+        `⚠ Registered every 1h, but the recipe now says every 15m. Re-apply with: axle schedule register -j ${recipe}`,
+      );
+
+      await writeRecipe("monitor.yml");
+      const orphaned = await runCli(["-j", recipe, ...plain], scheduleEnv());
+      expect(orphaned.code).toBe(0);
+      expect(orphaned.output).toContain(
+        `⚠ Registered every 1h, but the recipe no longer declares a schedule. Remove with: axle schedule remove -j ${recipe}`,
+      );
+
+      expect(await launchctlCalls()).toHaveLength(mutations);
+      expect((await records())[0].record.desired.trigger).toEqual({
+        kind: "interval",
+        seconds: 3600,
+      });
+      expect(requests).toHaveLength(5);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "an unsupported platform fails before running and points at a plain run",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+
+      const { code, output } = await runCli(
+        ["schedule", "-j", recipe, ...plain],
+        scheduleEnv("linux"),
+      );
+
+      expect(code).toBe(1);
+      expect(output).toContain("not supported on linux");
+      expect(output).toContain("axle -j");
+      expect(requests).toHaveLength(0);
+      expect(await records()).toEqual([]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "schedule register registers without running; without a block both forms refuse",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 2d");
+
+      const applied = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+
+      expect(applied.code).toBe(0);
+      expect(applied.output).toContain("Scheduled monitor every 2d");
+      expect(requests).toHaveLength(0);
+      expect(await records()).toHaveLength(1);
+      expect(await launchctlCalls()).toHaveLength(2);
+      expect(await runsOf((await records())[0].id)).toEqual([]);
+
+      const bare = await writeRecipe("bare.yml");
+      for (const args of [
+        ["schedule", "register", "-j", bare],
+        ["schedule", "-j", bare, ...plain],
+      ]) {
+        const refused = await runCli(args, scheduleEnv());
+        expect(refused.code).toBe(1);
+        expect(refused.output).toContain("has no schedule block");
+      }
+      expect(await readFile(bare, "utf-8")).not.toContain("schedule");
+      expect(await records()).toHaveLength(1);
+      expect(requests).toHaveLength(0);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "a malformed schedule block fails recipe validation before any registration",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 30s");
+
+      const { code, output } = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+
+      expect(code).toBe(1);
+      expect(output).toContain("The job file is not valid");
+      expect(await launchctlCalls()).toEqual([]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "a calendar recipe registers StartCalendarInterval entries and diffs against an interval",
+    async () => {
+      const recipe = await writeRecipe(
+        "digest.yml",
+        "name: digest\nschedule:\n  at: ['09:00', '17:30']\n  on: [mon, fri]",
+      );
+
+      const applied = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+
+      expect(applied.code).toBe(0);
+      expect(applied.output).toMatch(
+        /Scheduled digest at 09:00, 17:30 on mon,fri\. Next firing (Mon|Fri) (09:00|17:30)\./,
+      );
+      const [{ record }] = await records();
+      expect(record.desired.trigger).toEqual({
+        kind: "calendar",
+        times: [
+          { hour: 9, minute: 0 },
+          { hour: 17, minute: 30 },
+        ],
+        weekdays: [1, 5],
+      });
+      const plist = await readFile(record.binding.plistPath, "utf-8");
+      expect(plist).toContain("<key>StartCalendarInterval</key>");
+      expect(plist).not.toContain("StartInterval</key>");
+      expect(plist.match(/<key>Weekday<\/key>/g)).toHaveLength(4);
+
+      const listed = await runCli(["schedule", "list"], scheduleEnv());
+      expect(listed.output).toMatch(/digest {2}at 09:00, 17:30 on mon,fri {2}launchd/);
+
+      await writeRecipe("digest.yml", "name: digest\nschedule:\n  every: 1d");
+      const state = await runCli(["-j", recipe, ...plain], scheduleEnv());
+      expect(state.output).toContain(
+        "⚠ Registered at 09:00, 17:30 on mon,fri, but the recipe now says every 1d.",
+      );
+      const changed = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      expect(changed.output).toContain(
+        "Updated schedule digest: at 09:00, 17:30 on mon,fri → every 1d. Next firing in 1d.",
+      );
+      expect(requests).toHaveLength(1);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "remove still unloads a schedule whose record is corrupt",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id, record }] = await records();
+      await writeFile(join(SCHEDULES, `${id}.json`), "{corrupt");
+      const callsBefore = (await launchctlCalls()).length;
+
+      const removed = await runCli(["schedule", "remove", "-j", recipe], scheduleEnv());
+
+      expect(removed.code).toBe(0);
+      expect(removed.output).toContain("Removed schedule");
+      expect((await launchctlCalls()).slice(callsBefore)).toEqual([
+        `bootout gui/${process.getuid!()}/com.fifthrevision.axle.${id}`,
+      ]);
+      await expect(stat(record.binding.plistPath)).rejects.toThrow(/ENOENT/);
+      await expect(stat(join(SCHEDULES, `${id}.json`))).rejects.toThrow(/ENOENT/);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "an occurrence that fails before running still records a failed run",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id, record }] = await records();
+      await writeFile(recipe, "task: [unclosed\n");
+
+      const fired = await runOccurrence(record.desired.programArguments);
+
+      expect(fired.code).toBe(1);
+      expect(await runsOf(id)).toMatchObject([{ status: "failed", sessionIds: [] }]);
+      const listed = await runCli(["schedule", "list"], scheduleEnv());
+      expect(listed.output).toContain("last run ✖");
+      expect(requests).toHaveLength(0);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "a plain run still runs when the schedule's history file is unreadable",
+    async () => {
+      replies.push({ text: "ran anyway" });
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id }] = await records();
+      await mkdir(join(SCHEDULES, `${id}.runs.jsonl`));
+
+      const { code, output } = await runCli(["-j", recipe, ...plain], scheduleEnv());
+
+      expect(code).toBe(0);
+      expect(output).toContain("ran anyway");
+      expect(output).toMatch(/^⚠ .*(unreadable|EISDIR)/m);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "management output survives a pipe when it exceeds the pipe buffer",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id }] = await records();
+      const line = JSON.stringify({
+        startedAt: "2026-09-18T00:00:00.000Z",
+        finishedAt: "2026-09-18T00:00:01.000Z",
+        status: "succeeded",
+        sessionIds: ["0123456789abcdef-0123-4567-89ab-cdef01234567"],
+      });
+      await writeFile(
+        join(SCHEDULES, `${id}.runs.jsonl`),
+        Array(4000).fill(line).join("\n") + "\n",
+      );
+
+      const { code, output } = await runCli(["schedule", "sessions", "-j", recipe], scheduleEnv());
+
+      expect(code).toBe(0);
+      expect(output.trim().split("\n")).toHaveLength(4000);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "rejects a malformed --scheduled marker and an unknown platform override",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+
+      const traversal = await runCli(
+        ["-j", recipe, "--scheduled", "../../escape", ...plain],
+        scheduleEnv(),
+      );
+      expect(traversal.code).not.toBe(0);
+      expect(traversal.output).toContain("--scheduled");
+      await expect(stat(join(HOME, ".axle", "escape.runs.jsonl"))).rejects.toThrow(/ENOENT/);
+      await expect(stat(join(HOME, "escape.runs.jsonl"))).rejects.toThrow(/ENOENT/);
+      expect(requests).toHaveLength(0);
+
+      const platform = await runCli(["schedule", "register", "-j", recipe], scheduleEnv("windows"));
+      expect(platform.code).toBe(1);
+      expect(platform.output).toContain("AXLE_SCHEDULE_PLATFORM");
+      expect(await records()).toEqual([]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "register restores a registration whose LaunchAgent went missing, and list flags it first",
+    async () => {
+      const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ record }] = await records();
+      await rm(record.binding.plistPath);
+
+      const listed = await runCli(["schedule", "list"], scheduleEnv());
+      expect(listed.output).toContain("⚠ not loaded in launchd");
+
+      const restored = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      expect(restored.code).toBe(0);
+      expect(restored.output).toContain("Restored schedule monitor every 1h");
+      await stat(record.binding.plistPath);
+      expect((await runCli(["schedule", "list"], scheduleEnv())).output).not.toContain(
+        "not loaded",
+      );
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "the generated occurrence bypasses reconciliation, saves a session, and is listed under sessions",
+    async () => {
+      replies.push({ text: "fired" }, { error: "provider down" });
+      const recipe = await writeRecipe(
+        "monitor.yml",
+        "name: hourly-monitor\nschedule:\n  every: 1h",
+      );
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id, record }] = await records();
+      const callsBefore = (await launchctlCalls()).length;
+      await writeRecipe("monitor.yml", "name: hourly-monitor\nschedule:\n  every: 15m");
+
+      const fired = await runOccurrence(record.desired.programArguments);
+
+      expect(fired.code).toBe(0);
+      expect(fired.output).toContain("fired");
+      expect(fired.output).not.toMatch(/Scheduled|Updated schedule|is current/);
+      expect(await launchctlCalls()).toHaveLength(callsBefore);
+      expect((await records())[0].record.desired.trigger).toEqual({
+        kind: "interval",
+        seconds: 3600,
+      });
+      const sessionId = fired.output.match(/axle resume (\S+)/)?.[1];
+      expect(sessionId).toBeTruthy();
+      await stat(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`));
+
+      const failed = await runOccurrence(record.desired.programArguments);
+      expect(failed.code).toBe(1);
+
+      const sessions = await runCli(["schedule", "sessions", "-j", recipe], scheduleEnv());
+      expect(sessions.code).toBe(0);
+      const lines = sessions.output.trim().split("\n");
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toMatch(/^✖ /);
+      expect(lines[1]).toMatch(/^✔ .*axle resume /);
+      expect(lines[1]).toContain(`axle resume ${sessionId!.slice(0, 8)}`);
+      expect(sessions.output).not.toContain(id);
+
+      const bare = await runCli(["schedule", "sessions"], scheduleEnv());
+      expect(bare.code).not.toBe(0);
+      expect(bare.output).toContain("required option '-j, --job <path>' not specified");
+      expect(requests).toHaveLength(2);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "a scheduled batch occurrence records one session per input",
+    async () => {
+      replies.push({ text: "a done" }, { text: "b done" });
+      await mkdir(join(CWD, "inputs"), { recursive: true });
+      await writeFile(join(CWD, "inputs", "a.md"), "alpha");
+      await writeFile(join(CWD, "inputs", "b.md"), "beta");
+      const recipe = await writeRecipe(
+        "batch.yml",
+        ["batch:", '  files: "inputs/*.md"', "  concurrency: 1", "schedule:", "  every: 1h"].join(
+          "\n",
+        ),
+      );
+      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const [{ id, record }] = await records();
+
+      const fired = await runOccurrence(record.desired.programArguments);
+
+      expect(fired.code).toBe(0);
+      expect(fired.output).toContain("2 completed, 0 skipped, 0 failed");
+      const runs = (await readFile(join(SCHEDULES, `${id}.runs.jsonl`), "utf-8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(runs).toHaveLength(1);
+      expect(runs[0].status).toBe("succeeded");
+      expect(runs[0].sessionIds).toHaveLength(2);
+      const ledger = (await readFile(join(CWD, ".axle", "batch.jsonl"), "utf-8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line).sessionId);
+      expect([...runs[0].sessionIds].sort()).toEqual([...ledger].sort());
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "list shows registrations and remove deletes only the schedule's own artifacts",
+    async () => {
+      replies.push({ text: "ran" });
+      const monitor = await writeRecipe(
+        "monitor.yml",
+        "name: hourly-monitor\nschedule:\n  every: 1h",
+      );
+      const digest = await writeRecipe("digest.yml", "name: daily-digest\nschedule:\n  every: 1d");
+      await runCli(["schedule", "-j", monitor, ...plain], scheduleEnv());
+      await runCli(["schedule", "register", "-j", digest], scheduleEnv());
+      await writeFile(join(LAUNCH_AGENTS, "com.example.other.plist"), "<plist/>");
+      await mkdir(SCHEDULES, { recursive: true });
+      await writeFile(join(SCHEDULES, "broken.json"), "{nope");
+      const sessionsBefore = await readdir(join(HOME, ".axle", "sessions", "cli"));
+      expect(sessionsBefore).toHaveLength(1);
+
+      const listed = await runCli(["schedule", "list"], scheduleEnv());
+
+      expect(listed.code).toBe(0);
+      expect(listed.output).toMatch(/hourly-monitor {2}every 1h {2}launchd {2}last run ✔/);
+      expect(listed.output).toMatch(/daily-digest {2}every 1d {2}launchd {2}never run/);
+      expect(listed.output).toContain(monitor);
+      expect(listed.output).toContain("⚠ broken.json  skipped: corrupt record");
+      expect(requests).toHaveLength(1);
+
+      const monitorId = (await records()).find(
+        (r) => r.record.desired.name === "hourly-monitor",
+      )!.id;
+      expect(listed.output).not.toContain(monitorId);
+      const callsBefore = (await launchctlCalls()).length;
+      const removed = await runCli(["schedule", "remove", "-j", monitor], scheduleEnv());
+
+      expect(removed.code).toBe(0);
+      expect(removed.output).toContain("Removed schedule hourly-monitor");
+      expect((await launchctlCalls()).slice(callsBefore)).toEqual([
+        `bootout gui/${process.getuid!()}/com.fifthrevision.axle.${monitorId}`,
+      ]);
+      expect((await readdir(LAUNCH_AGENTS)).sort()).toEqual([
+        "com.example.other.plist",
+        `com.fifthrevision.axle.${(await records())[0].id}.plist`,
+      ]);
+      expect((await records()).map((r) => r.record.desired.name)).toEqual(["daily-digest"]);
+      await stat(monitor);
+      expect(await readdir(join(HOME, ".axle", "sessions", "cli"))).toEqual(sessionsBefore);
+
+      const gone = await runCli(["schedule", "remove", "-j", monitor], scheduleEnv());
+      expect(gone.code).toBe(1);
+      expect(gone.output).toContain(`${monitor} is not scheduled. See: axle schedule list`);
+
+      const history = await runCli(["schedule", "sessions", "-j", monitor], scheduleEnv());
+      expect(history.code).toBe(0);
+      expect(history.output).toMatch(/^✔ .*axle resume /);
+
+      await rm(digest);
+      const moved = await runCli(["schedule", "remove", "-j", digest], scheduleEnv());
+      expect(moved.code).toBe(0);
+      expect(moved.output).toContain("Removed schedule daily-digest");
+      expect(await records()).toEqual([]);
+      expect(await readdir(LAUNCH_AGENTS)).toEqual(["com.example.other.plist"]);
+      const none = await runCli(["schedule", "sessions", "-j", digest], scheduleEnv());
+      expect(none.code).toBe(0);
+      expect(none.output).toContain(`No runs recorded for ${digest}.`);
     },
     SPAWN_TIMEOUT,
   );

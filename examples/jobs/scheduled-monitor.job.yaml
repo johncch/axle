@@ -1,0 +1,7 @@
+name: monitor-smoke
+provider: anthropic
+model: claude-haiku-4-5-20251001
+schedule:
+  at: "21:38"
+task: |
+  Reply with the current date and one sentence. Today is {{date}}.

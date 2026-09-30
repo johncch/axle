@@ -1,5 +1,5 @@
 import type { Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
-import { Box, render, Static, Text, useInput } from "ink";
+import { render, Static, Text, useInput } from "ink";
 import { useSyncExternalStore } from "react";
 import type { BatchProgress, BatchTotals } from "../batch.js";
 import { formatMs, formatTokens } from "../format.js";
