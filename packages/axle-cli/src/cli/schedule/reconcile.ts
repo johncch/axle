@@ -1,8 +1,100 @@
+import { join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { ScheduleBackend, ScheduleBackends } from "./backend.js";
-import { unknownBackendError } from "./backend.js";
-import type { DesiredSchedule, ScheduleRecord } from "./records.js";
-import { deleteScheduleRecord, readScheduleRecord, writeScheduleRecord } from "./records.js";
+import type { BackendBinding, DesiredSchedule, ScheduleRecord } from "./records.js";
+import {
+  deleteScheduleRecord,
+  readScheduleRecord,
+  scheduleLogsDir,
+  writeScheduleRecord,
+} from "./records.js";
+import type { ScheduleTrigger } from "./trigger.js";
+
+export type BackendKind = BackendBinding["kind"];
+
+/**
+ * The OS-specific half of scheduling. A backend owns its own artifacts (a
+ * plist, a unit file) and must leave them as it found them when `apply`
+ * throws; the controller never commits a record for a failed apply.
+ */
+export interface ScheduleBackend {
+  readonly kind: BackendKind;
+  apply(desired: DesiredSchedule, previous?: BackendBinding): Promise<BackendBinding>;
+  remove(binding: BackendBinding): Promise<void>;
+  isLoaded(binding: BackendBinding): Promise<boolean>;
+  /** The binding this backend would have produced for `id`; lets a schedule whose record is unreadable still be removed. */
+  bindingFor(id: string): BackendBinding;
+}
+
+export interface ScheduleBackends {
+  forPlatform(platform: NodeJS.Platform): ScheduleBackend | undefined;
+  forKind(kind: string): ScheduleBackend | undefined;
+}
+
+export function unsupportedPlatformError(platform: NodeJS.Platform): Error {
+  return new Error(
+    `Recurring schedules are not supported on ${platform} yet (macOS only). Run the recipe once with axle -j instead.`,
+  );
+}
+
+export function unknownBackendError(kind: string): Error {
+  return new Error(
+    `Schedule record uses backend "${kind}", which this build of axle does not implement.`,
+  );
+}
+
+export const SCHEDULED_OCCURRENCE_FLAG = "--scheduled";
+
+/**
+ * The shell-free command that re-enters this same CLI build: the running
+ * node binary, its loader flags (tsx in development), and the entry script.
+ * Captured at apply time so the job never depends on launchd's PATH.
+ */
+export function resolveRelaunchArgv(
+  process_: Pick<NodeJS.Process, "execPath" | "execArgv" | "argv"> = process,
+): string[] {
+  return [process_.execPath, ...process_.execArgv, resolve(process_.argv[1])];
+}
+
+export function occurrenceArguments(
+  relaunch: readonly string[],
+  id: string,
+  recipePath: string,
+): string[] {
+  return [
+    ...relaunch,
+    "-j",
+    recipePath,
+    "--renderer",
+    "plain",
+    "--no-log",
+    SCHEDULED_OCCURRENCE_FLAG,
+    id,
+  ];
+}
+
+export function buildDesiredSchedule(input: {
+  id: string;
+  name: string;
+  recipePath: string;
+  cwd: string;
+  trigger: ScheduleTrigger;
+  relaunch: readonly string[];
+  path: string;
+  home?: string;
+}): DesiredSchedule {
+  const logs = scheduleLogsDir(input.home);
+  return {
+    id: input.id,
+    name: input.name,
+    recipePath: input.recipePath,
+    cwd: input.cwd,
+    trigger: input.trigger,
+    programArguments: occurrenceArguments(input.relaunch, input.id, input.recipePath),
+    path: input.path,
+    stdoutPath: join(logs, `${input.id}.out.log`),
+    stderrPath: join(logs, `${input.id}.err.log`),
+  };
+}
 
 export type ReconcileOutcome =
   | { kind: "created"; record: ScheduleRecord }

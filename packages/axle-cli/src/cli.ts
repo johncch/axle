@@ -25,7 +25,7 @@ import {
   removeScheduleByRecipe,
 } from "./cli/schedule/commands.js";
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
-import { appendScheduleRun } from "./cli/schedule/runs.js";
+import { appendScheduleRun } from "./cli/schedule/records.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";

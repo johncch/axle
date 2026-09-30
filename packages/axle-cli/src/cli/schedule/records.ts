@@ -1,8 +1,32 @@
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { appendFile, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "../atomic-write.js";
 import { resolveConfigDirs } from "../configs/paths.js";
+
+export interface ScheduleIdentity {
+  id: string;
+  recipePath: string;
+}
+
+/**
+ * A schedule's identity is its recipe's canonical absolute path: the same
+ * file applied again is an update, a moved file is a new schedule. The path
+ * must exist so symlinks and case collapse to one identity.
+ */
+export async function resolveScheduleIdentity(recipe: string): Promise<ScheduleIdentity> {
+  const recipePath = await realpath(recipe);
+  return { id: scheduleIdFor(recipePath), recipePath };
+}
+
+export function scheduleIdFor(recipePath: string): string {
+  return createHash("sha256").update(recipePath).digest("hex").slice(0, 16);
+}
+
+export function displayNameFor(recipeName: string | undefined, recipePath: string): string {
+  return recipeName ?? basename(recipePath, extname(recipePath));
+}
 
 export const SCHEDULE_RECORD_VERSION = 1;
 
@@ -140,4 +164,48 @@ function parseScheduleRecord(content: string): ScheduleRecord {
     throw new Error("corrupt record (schema mismatch)");
   }
   return parsed.data;
+}
+
+export const ScheduleRunSchema = z.strictObject({
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  status: z.enum(["succeeded", "failed"]),
+  sessionIds: z.array(z.string()),
+});
+
+export type ScheduleRun = z.infer<typeof ScheduleRunSchema>;
+
+export function scheduleRunsPath(id: string, home?: string): string {
+  return join(schedulesDir(home), `${id}.runs.jsonl`);
+}
+
+export async function appendScheduleRun(
+  id: string,
+  run: ScheduleRun,
+  home?: string,
+): Promise<void> {
+  await mkdir(schedulesDir(home), { recursive: true, mode: 0o700 });
+  await appendFile(scheduleRunsPath(id, home), JSON.stringify(run) + "\n", { mode: 0o600 });
+}
+
+/** Newest first. Lines that fail to parse are skipped. */
+export async function readScheduleRuns(id: string, home?: string): Promise<ScheduleRun[]> {
+  let content: string;
+  try {
+    content = await readFile(scheduleRunsPath(id, home), "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
+  }
+  const runs: ScheduleRun[] = [];
+  for (const line of content.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = ScheduleRunSchema.safeParse(JSON.parse(line));
+      if (parsed.success) runs.push(parsed.data);
+    } catch {
+      continue;
+    }
+  }
+  return runs.reverse();
 }

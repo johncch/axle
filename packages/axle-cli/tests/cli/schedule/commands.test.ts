@@ -1,11 +1,13 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ScheduleBackends } from "../../../src/cli/schedule/backend.js";
 import { describeScheduleState } from "../../../src/cli/schedule/commands.js";
-import { resolveScheduleIdentity } from "../../../src/cli/schedule/identity.js";
-import { schedulesDir } from "../../../src/cli/schedule/records.js";
-import { scheduleRunsPath } from "../../../src/cli/schedule/runs.js";
+import type { ScheduleBackends } from "../../../src/cli/schedule/reconcile.js";
+import {
+  resolveScheduleIdentity,
+  scheduleRunsPath,
+  schedulesDir,
+} from "../../../src/cli/schedule/records.js";
 
 const TEST_DIR = join(import.meta.dirname, "__commands_tmp__");
 const HOME = join(TEST_DIR, "home");

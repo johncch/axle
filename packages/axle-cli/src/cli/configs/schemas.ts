@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { INTERVAL_PATTERN, parseInterval } from "../schedule/duration.js";
-import { CLOCK_TIME_PATTERN, WEEKDAY_NAMES } from "../schedule/trigger.js";
+import {
+  CLOCK_TIME_PATTERN,
+  INTERVAL_PATTERN,
+  parseInterval,
+  WEEKDAY_NAMES,
+} from "../schedule/trigger.js";
 
 /* ============================================================================
  * Provider Configuration Schemas

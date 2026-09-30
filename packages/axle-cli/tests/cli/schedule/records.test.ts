@@ -1,12 +1,17 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ScheduleRecord } from "../../../src/cli/schedule/records.js";
 import {
+  appendScheduleRun,
   deleteScheduleRecord,
+  displayNameFor,
   listScheduleRecords,
   readScheduleRecord,
+  readScheduleRuns,
+  resolveScheduleIdentity,
   scheduleRecordPath,
+  scheduleRunsPath,
   schedulesDir,
   writeScheduleRecord,
 } from "../../../src/cli/schedule/records.js";
@@ -106,5 +111,107 @@ describe("schedule records", () => {
 
   it("returns an empty list when no schedules were ever written", async () => {
     expect(await listScheduleRecords(HOME)).toEqual([]);
+  });
+});
+
+describe("resolveScheduleIdentity", () => {
+  it("derives a stable id from the canonical recipe path", async () => {
+    const recipe = join(TEST_DIR, "monitor.yml");
+    await writeFile(recipe, "task: x\n");
+
+    const first = await resolveScheduleIdentity(recipe);
+    const second = await resolveScheduleIdentity(join(TEST_DIR, ".", "monitor.yml"));
+
+    expect(first.id).toMatch(/^[0-9a-f]{16}$/);
+    expect(second).toEqual(first);
+  });
+
+  it("resolves symlinks to one identity", async () => {
+    const recipe = join(TEST_DIR, "monitor.yml");
+    const link = join(TEST_DIR, "alias.yml");
+    await writeFile(recipe, "task: x\n");
+    await symlink(recipe, link);
+
+    expect(await resolveScheduleIdentity(link)).toEqual(await resolveScheduleIdentity(recipe));
+  });
+
+  it("gives a moved recipe a new identity", async () => {
+    const a = join(TEST_DIR, "a.yml");
+    const b = join(TEST_DIR, "b.yml");
+    await writeFile(a, "task: x\n");
+    await writeFile(b, "task: x\n");
+
+    expect((await resolveScheduleIdentity(a)).id).not.toBe((await resolveScheduleIdentity(b)).id);
+  });
+
+  it("requires the recipe to exist", async () => {
+    await expect(resolveScheduleIdentity(join(TEST_DIR, "missing.yml"))).rejects.toThrow(/ENOENT/);
+  });
+});
+
+describe("displayNameFor", () => {
+  it("prefers the recipe name and falls back to the file stem", () => {
+    expect(displayNameFor("hourly-monitor", "/x/monitor.yml")).toBe("hourly-monitor");
+    expect(displayNameFor(undefined, "/x/monitor.yml")).toBe("monitor");
+  });
+});
+
+describe("schedule runs ledger", () => {
+  it("appends private JSONL lines and reads them newest first", async () => {
+    await appendScheduleRun(
+      "abc123",
+      {
+        startedAt: "2026-09-12T10:00:00.000Z",
+        finishedAt: "2026-09-12T10:00:05.000Z",
+        status: "succeeded",
+        sessionIds: ["s1"],
+      },
+      HOME,
+    );
+    await appendScheduleRun(
+      "abc123",
+      {
+        startedAt: "2026-09-12T11:00:00.000Z",
+        finishedAt: "2026-09-12T11:00:02.000Z",
+        status: "failed",
+        sessionIds: [],
+      },
+      HOME,
+    );
+
+    const path = scheduleRunsPath("abc123", HOME);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await readFile(path, "utf-8")).split("\n").filter(Boolean)).toHaveLength(2);
+    expect((await readScheduleRuns("abc123", HOME)).map((run) => run.status)).toEqual([
+      "failed",
+      "succeeded",
+    ]);
+  });
+
+  it("skips unparseable lines and returns nothing for an unknown schedule", async () => {
+    await mkdir(join(HOME, ".axle", "schedules"), { recursive: true });
+    await writeFile(
+      scheduleRunsPath("abc123", HOME),
+      [
+        "{not json",
+        JSON.stringify({ startedAt: "x", status: "succeeded" }),
+        JSON.stringify({
+          startedAt: "2026-09-12T10:00:00.000Z",
+          finishedAt: "2026-09-12T10:00:05.000Z",
+          status: "succeeded",
+          sessionIds: ["s1", "s2"],
+        }),
+      ].join("\n") + "\n",
+    );
+
+    expect(await readScheduleRuns("abc123", HOME)).toEqual([
+      {
+        startedAt: "2026-09-12T10:00:00.000Z",
+        finishedAt: "2026-09-12T10:00:05.000Z",
+        status: "succeeded",
+        sessionIds: ["s1", "s2"],
+      },
+    ]);
+    expect(await readScheduleRuns("nothing", HOME)).toEqual([]);
   });
 });

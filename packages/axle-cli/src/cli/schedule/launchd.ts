@@ -3,7 +3,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { writeFileAtomic } from "../atomic-write.js";
-import type { ScheduleBackend, ScheduleBackends } from "./backend.js";
+import type { ScheduleBackend, ScheduleBackends } from "./reconcile.js";
 import type { BackendBinding, DesiredSchedule } from "./records.js";
 
 export const LAUNCHD_LABEL_PREFIX = "com.fifthrevision.axle.";
