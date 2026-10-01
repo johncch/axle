@@ -17,7 +17,7 @@ export const messageFormatCases: CheckCase[] = [
     group: "extended",
     id: "format-web-citations",
     description: "Hosted web search returns citations in Axle's normalized format.",
-    providers: ["openai", "gemini"],
+    providers: ["openai", "google"],
     async run({ provider, model, providerId, requestOptions }) {
       const result = await generate({
         provider,
@@ -28,7 +28,7 @@ export const messageFormatCases: CheckCase[] = [
           {
             role: "user",
             content:
-              providerId === "gemini"
+              providerId === "google"
                 ? "Use Google Search and answer in one sentence: what is the current Google AI Studio URL?"
                 : "Use web search and answer in one sentence: what is the current OpenAI homepage URL?",
           },
@@ -97,7 +97,7 @@ export const messageFormatCases: CheckCase[] = [
     id: "format-thinking-continuity",
     description:
       "Thinking parts carry renderable content, plus the provider continuity payload where one exists.",
-    providers: ["openai", "anthropic", "gemini"],
+    providers: ["openai", "anthropic", "google"],
     async run({ provider, model, providerId }) {
       const result = await generate({
         provider,
@@ -121,14 +121,14 @@ export const messageFormatCases: CheckCase[] = [
       // plain text turn legitimately has no continuity there.
       const failureReasons = [
         ...(thinking.length > 0 ? [] : ["No thinking part was returned."]),
-        ...(providerId !== "gemini" &&
+        ...(providerId !== "google" &&
         !thinking.some((part) => part.continuity?.provider === providerId)
           ? [`No thinking part carries ${providerId} continuity.`]
           : []),
         ...(providerId === "anthropic" && !thinking.some((part) => Boolean(part.summary))
           ? ["Anthropic thinking part has no summary."]
           : []),
-        ...(providerId === "gemini" &&
+        ...(providerId === "google" &&
         !thinking.some((part) => Boolean(part.summary) || Boolean(part.text))
           ? ["Gemini thinking part has neither summary nor text."]
           : []),
@@ -181,7 +181,7 @@ export const messageFormatCases: CheckCase[] = [
     id: "format-thinking-stream",
     description:
       "Streamed reasoning ends in a normalized thinking part; providers that stream thinking text emit raw or summary delta events.",
-    providers: ["openai", "anthropic", "gemini", "openrouter", "together"],
+    providers: ["openai", "anthropic", "google", "openrouter", "together"],
     async run({ provider, model, providerId }) {
       const handle = stream({
         provider,

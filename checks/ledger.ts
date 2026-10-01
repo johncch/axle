@@ -124,7 +124,7 @@ export async function recordLedgerRuns(runs: LedgerRun[], suiteCaseIds: string[]
   await writeFile(LEDGER_PATH, `${lines.join("\n")}\n`);
 }
 
-async function readLedger(): Promise<LedgerEntry[]> {
+export async function readLedger(): Promise<LedgerEntry[]> {
   let contents: string;
   try {
     contents = await readFile(LEDGER_PATH, "utf8");

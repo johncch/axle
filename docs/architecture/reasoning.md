@@ -133,8 +133,9 @@ all three.
 
 ### OpenAI Responses API
 
-`reasoning.effort` with `none | minimal | low | medium | high | xhigh`
-depending on model. `none` is rejected by models that always think.
+`reasoning.effort` with `none | minimal | low | medium | high | xhigh | max`
+depending on model. `none` is rejected by models that always think: GPT-6.1
+Sol accepts only `low` through `max` (harness, 2026-10-01).
 `reasoning.summary` with `auto | concise | detailed` requests a summary;
 without it no summary parts are returned. Encrypted reasoning continuity
 requires `store: false` and `include: ["reasoning.encrypted_content"]` via

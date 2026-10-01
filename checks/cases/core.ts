@@ -718,9 +718,7 @@ export const coreCases: CheckCase[] = [
         tools: [markerTool],
       });
 
-      const first = agent.send("Call record_stop_marker once with marker='initial'.", {
-        toolChoice: { type: "tool", name: "record_stop_marker" },
-      });
+      const first = agent.send("Call record_stop_marker once with marker='initial'.");
       const followUp = agent.send("Reply with exactly: stop-saffron", { toolChoice: "none" });
 
       const firstResult = await first.final;
@@ -1166,7 +1164,7 @@ export const coreCases: CheckCase[] = [
     group: "default",
     id: "generate-pdf-file",
     description: "generate() with an Instruct PDF file attachment.",
-    providers: ["openai", "anthropic", "gemini", "openrouter"],
+    providers: ["openai", "anthropic", "google", "openrouter"],
     async run({ provider, model, requestOptions }) {
       const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
       const instruct = new Instruct({

@@ -69,7 +69,7 @@ export const cacheCases: CheckCase[] = [
     id: "cache-gemini-cached-content",
     description:
       "Referencing an explicit Gemini cached-content resource reports cached input tokens.",
-    providers: ["gemini"],
+    providers: ["google"],
     async run({ provider, model, requestOptions }) {
       const client = new GoogleGenAI({ apiKey: getEnv("GEMINI_API_KEY") });
       // The raw client wants the bare model id; Axle's provider strips the
