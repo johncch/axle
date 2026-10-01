@@ -9,7 +9,7 @@ import type {
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
-import { createTools, defaultToolNames } from "./tools.js";
+import { availableTools, createTools, defaultToolNames } from "./tools.js";
 
 export interface CliAgentConfig {
   agentConfig: AgentConfig;
@@ -181,7 +181,12 @@ export function createDefaultAgentDefinition(
 }
 
 function resolveToolNames(jobTools: string[] | undefined, cliConfig: CliConfig): string[] {
-  return jobTools ?? cliConfig.defaults?.tools ?? [...defaultToolNames];
+  const names = jobTools ?? cliConfig.defaults?.tools ?? [...defaultToolNames];
+  const unknown = names.filter((name) => !(availableTools as readonly string[]).includes(name));
+  if (unknown.length > 0) {
+    throw new Error(`Unknown tool: ${unknown.join(", ")}. Available: ${availableTools.join(", ")}`);
+  }
+  return names;
 }
 
 export function createAgentDefinition(

@@ -255,6 +255,17 @@ describe("default tools", () => {
     expect(toolNames(createDefaultAgentDefinition(configured, {}))).toEqual(["read-file"]);
     expect(toolNames(createAgentDefinition({ task: "t" }, configured, {}))).toEqual(["read-file"]);
   });
+
+  test("an unknown recipe tool fails with the available names", () => {
+    expect(() => createAgentDefinition({ task: "t", tools: ["foobar"] }, cliConfig, {})).toThrow(
+      "Unknown tool: foobar. Available: exec, patch-file, read-file, write-file",
+    );
+  });
+
+  test("an unknown defaults.tools entry fails for chat", () => {
+    const configured = { defaults: { provider: "anthropic", tools: ["read-files"] } };
+    expect(() => createDefaultAgentDefinition(configured, {})).toThrow("Unknown tool: read-files.");
+  });
 });
 
 describe("resolveTarget provider name", () => {

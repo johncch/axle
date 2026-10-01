@@ -16,6 +16,7 @@
 - Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
+- Example jobs: `scripts/run-example-jobs.sh [job files...]` (runs `examples/jobs/*` sequentially against real providers; starts the HTTP MCP server)
 - Release: `pnpm run release -- <version>` (runs tests, builds, versions packages, commits, and tags)
 
 # Working with Humans
