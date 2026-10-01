@@ -2,13 +2,16 @@ import {
   generate,
   loadFileContent,
   stream,
+  type AIProvider,
   type AxleAssistantMessage,
+  type AxleMessage,
+  type AxleModelRequestOptions,
   type Citation,
   type ContentPartThinking,
   type ProviderTool,
 } from "@fifthrevision/axle";
 import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
-import type { CheckCase } from "./types.js";
+import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
@@ -90,6 +93,55 @@ export const messageFormatCases: CheckCase[] = [
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: { text: getAssistantText(result.final), citations, usage: result.usage },
       };
+    },
+  },
+  {
+    group: "extended",
+    id: "format-web-citations-follow-up",
+    description: "A follow-up request is accepted after an answer with web search citations.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      return runCitationFollowUp({
+        provider,
+        model,
+        requestOptions,
+        providerTools: [webSearchTool],
+        sourceType: "web",
+        messages: [
+          {
+            role: "user",
+            content:
+              "Use web search and answer in one sentence: what is the current Anthropic homepage URL?",
+          },
+        ],
+      });
+    },
+  },
+  {
+    group: "extended",
+    id: "format-document-citations-follow-up",
+    description: "A follow-up request is accepted after an answer with document citations.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+      return runCitationFollowUp({
+        provider,
+        model,
+        requestOptions,
+        sourceType: "document",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Answer in one sentence with a citation: what does the attached PDF say about designing a new foundation?",
+              },
+              { type: "file", file: pdf },
+            ],
+          },
+        ],
+      });
     },
   },
   {
@@ -230,6 +282,65 @@ export const messageFormatCases: CheckCase[] = [
     },
   },
 ];
+
+async function runCitationFollowUp({
+  provider,
+  model,
+  requestOptions,
+  providerTools,
+  sourceType,
+  messages,
+}: {
+  provider: AIProvider;
+  model: string;
+  requestOptions: AxleModelRequestOptions;
+  providerTools?: ProviderTool[];
+  sourceType: Citation["source"]["type"];
+  messages: AxleMessage[];
+}): Promise<CheckCaseResult> {
+  const first = await generate({
+    provider,
+    model,
+    ...requestOptions,
+    providerTools,
+    messages,
+    maxOutputTokens: 2048,
+  });
+  if (!first.ok) return fail({ error: first.error });
+
+  const citations = collectCitations(first.final);
+  if (!citations.some((citation) => citation.source.type === sourceType)) {
+    return {
+      ok: false,
+      failureReasons: [`No ${sourceType} citation was returned, so nothing was replayed.`],
+      details: { text: getAssistantText(first.final), citations },
+    };
+  }
+
+  const followUp = await generate({
+    provider,
+    model,
+    ...requestOptions,
+    providerTools,
+    messages: [
+      ...messages,
+      ...first.messages,
+      { role: "user", content: "Repeat the source you cited, in five words or fewer." },
+    ],
+    maxOutputTokens: 2048,
+  });
+  if (!followUp.ok) return fail({ error: followUp.error, citations });
+
+  return {
+    ok: true,
+    details: {
+      text: getAssistantText(first.final),
+      followUpText: getAssistantText(followUp.final),
+      citations,
+      usage: followUp.usage,
+    },
+  };
+}
 
 function collectCitations(message: AxleAssistantMessage): Citation[] {
   return message.content.flatMap((part) => {

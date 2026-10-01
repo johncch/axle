@@ -245,6 +245,10 @@ rest.
 
 - `format-web-citations` (OpenAI, Gemini hosted search)
 - `format-document-citations` (Anthropic PDF input)
+- `format-web-citations-follow-up` (Anthropic: a follow-up request after a
+  cited web search answer)
+- `format-document-citations-follow-up` (Anthropic: a follow-up request after
+  a cited PDF answer)
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
   signature, Gemini summary)
 - `format-thinking-hidden` (Anthropic hidden thinking: continuity only, not redacted)

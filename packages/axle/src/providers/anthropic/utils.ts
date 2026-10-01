@@ -37,9 +37,13 @@ async function convertMessage(
     const content: Array<Anthropic.ContentBlockParam> = [];
     for (const part of msg.content) {
       if (part.type === "text") {
+        const citations = part.citations?.flatMap(
+          (citation) => toAnthropicCitation(citation) ?? [],
+        );
         content.push({
           type: "text",
           text: part.text,
+          ...(citations?.length ? { citations } : {}),
         });
       } else if (part.type === "thinking") {
         const continuity = part.continuity?.provider === "anthropic" ? part.continuity : undefined;
@@ -452,6 +456,64 @@ export function normalizeAnthropicCitation(citation: Anthropic.Messages.TextCita
           searchResultIndex: citation.search_result_index,
         },
       };
+  }
+}
+
+function toAnthropicCitation(citation: Citation): Anthropic.TextCitationParam | undefined {
+  const { source, providerMetadata } = citation;
+  switch (providerMetadata?.type) {
+    case "char_location":
+      if (source.type !== "document" || source.locator?.type !== "char") return undefined;
+      return {
+        type: "char_location",
+        cited_text: source.citedText as string,
+        document_index: providerMetadata.documentIndex as number,
+        document_title: source.title ?? null,
+        start_char_index: source.locator.start as number,
+        end_char_index: source.locator.end as number,
+      };
+    case "page_location":
+      if (source.type !== "document" || source.locator?.type !== "page") return undefined;
+      return {
+        type: "page_location",
+        cited_text: source.citedText as string,
+        document_index: providerMetadata.documentIndex as number,
+        document_title: source.title ?? null,
+        start_page_number: source.locator.start as number,
+        end_page_number: source.locator.end as number,
+      };
+    case "content_block_location":
+      if (source.type !== "document" || source.locator?.type !== "block") return undefined;
+      return {
+        type: "content_block_location",
+        cited_text: source.citedText as string,
+        document_index: providerMetadata.documentIndex as number,
+        document_title: source.title ?? null,
+        start_block_index: source.locator.start as number,
+        end_block_index: source.locator.end as number,
+      };
+    case "web_search_result_location":
+      if (source.type !== "web") return undefined;
+      return {
+        type: "web_search_result_location",
+        cited_text: source.citedText as string,
+        encrypted_index: providerMetadata.encryptedIndex as string,
+        title: source.title ?? null,
+        url: source.url,
+      };
+    case "search_result_location":
+      if (source.type !== "search-result" || source.locator?.type !== "block") return undefined;
+      return {
+        type: "search_result_location",
+        cited_text: source.citedText as string,
+        search_result_index: providerMetadata.searchResultIndex as number,
+        source: source.url as string,
+        title: source.title ?? null,
+        start_block_index: source.locator.start as number,
+        end_block_index: source.locator.end as number,
+      };
+    default:
+      return undefined;
   }
 }
 
