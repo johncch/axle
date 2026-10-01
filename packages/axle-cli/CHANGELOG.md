@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- **Every model is assumed to have a 200,000-token context window.** The
+  usage bar and the compaction threshold (~80%) no longer look the model up
+  in a built-in registry. Set `AXLE_CONTEXT_WINDOW=<tokens>` for a model
+  with a different window; a 1M-context model otherwise compacts at about
+  160,000 tokens, and a model under 200,000 can overflow before it compacts.
+- **The model picker is a text prompt.** `axle setup`, and a run that can't
+  resolve a model, ask for a model id as free text instead of listing
+  models.
+
+### New
+
 - **Recipes can run on a schedule (macOS).** Add a `schedule: { every: 1h }`
   block and run `axle schedule -j <recipe>`: it registers a user
   LaunchAgent and runs the recipe once now; each later firing re-reads the

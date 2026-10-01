@@ -51,7 +51,8 @@ against it; divergence is a defect. State ownership is defined in
    that produced a session can be re-entered with `axle resume <id>`.
    Sessions accumulate; `axle cleanup` deletes by age window. There is no
    automatic retention. Sessions compact automatically near the context
-   window (policy: `createSessionCompaction` — ~80% threshold, ~1000-word
+   window (policy: `createSessionCompaction` — ~80% threshold of
+   `AXLE_CONTEXT_WINDOW`, else an assumed 200,000 tokens; ~1000-word
    summary, thinking inherited from the recipe; `compaction: false` opts a
    recipe out); the mechanism is core's, per
    [compaction.md](./compaction.md).
@@ -122,7 +123,7 @@ against it; divergence is a defect. State ownership is defined in
    sources, one uniform chain resolves the seat: provider name := recipe →
    `defaults.provider` → error; endpoint := `providers[name]` profile →
    built-in type → error; model := recipe → `defaults.models[name]` →
-   `*_MODEL` credential → interactive picker (TTY) or error. The provider
+   `*_MODEL` credential → interactive prompt (TTY) or error. The provider
    is never inferred from the model string.
 
 9. **The CLI never changes directory; artifacts anchor to their scope.**

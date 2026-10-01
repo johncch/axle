@@ -6,15 +6,14 @@ import {
 } from "@google/genai";
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
-import { Models } from "../../models.js";
 import type { ToolDefinition } from "../../tools/index.js";
-import { LEGACY_REASONING_BUDGETS, resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
+import { LEGACY_REASONING_BUDGETS, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
 import { AxleStopReason, type ResolvedProviderTool, ToolChoice } from "../types.js";
 
 /* To Request */
@@ -139,13 +138,13 @@ export function toGeminiThinkingConfig(reasoning: ReasoningSetting | undefined, 
  * including aliases and unknown IDs, takes the `thinkingLevel` route.
  */
 export const GEMINI_THINKING_BUDGET_MODELS: ReadonlySet<string> = new Set([
-  Models.Google.GEMINI_2_5_FLASH,
-  Models.Google.GEMINI_2_5_FLASH_LITE,
-  Models.Google.GEMINI_2_5_PRO,
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
 ]);
 
 function usesGeminiThinkingBudget(model: string): boolean {
-  return GEMINI_THINKING_BUDGET_MODELS.has(`google/${model.toLowerCase()}`);
+  return GEMINI_THINKING_BUDGET_MODELS.has(model.toLowerCase());
 }
 
 interface GeminiConversionContext {

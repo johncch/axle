@@ -150,7 +150,7 @@ describe("createStreamingRequest (Anthropic)", () => {
     });
   });
 
-  test("registry ceiling differs from the unknown-model fallback", async () => {
+  test("models outside the 64k set, known or unknown, default to 128,000", async () => {
     await drain(
       createStreamingRequest({
         client: mockClient,
@@ -163,7 +163,7 @@ describe("createStreamingRequest (Anthropic)", () => {
     await drain(
       createStreamingRequest({ client: mockClient, model: "unknown-model", messages, runtime: {} }),
     );
-    expect(mockCreate.mock.calls[1][0].max_tokens).toBe(64000);
+    expect(mockCreate.mock.calls[1][0].max_tokens).toBe(128000);
   });
 
   test("providerOptions override the portable reasoning mapping", async () => {

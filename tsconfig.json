@@ -5,8 +5,7 @@
     "moduleResolution": "node16",
     "paths": {
       "@fifthrevision/axle": ["./packages/axle/src/index.ts"],
-      "@fifthrevision/axle/ui": ["./packages/axle/src/ui.ts"],
-      "@fifthrevision/axle/models": ["./packages/axle/src/models.ts"]
+      "@fifthrevision/axle/ui": ["./packages/axle/src/ui.ts"]
     },
     "isolatedModules": true,
     "resolveJsonModule": true,

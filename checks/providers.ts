@@ -1,5 +1,4 @@
 import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
-import { Models } from "@fifthrevision/axle/models";
 
 export type ProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together" | "ollama";
 
@@ -13,25 +12,25 @@ export interface ProviderTarget {
 export const providerTargets: ProviderTarget[] = [
   {
     id: "openai",
-    model: Models.OpenAI.GPT_5_6_LUNA,
+    model: "openai/gpt-5.6-luna",
     default: true,
     createProvider: () => openai(getEnv("OPENAI_API_KEY")),
   },
   {
     id: "anthropic",
-    model: Models.Anthropic.CLAUDE_HAIKU_4_5,
+    model: "anthropic/claude-haiku-4-5",
     default: true,
     createProvider: () => anthropic(getEnv("ANTHROPIC_API_KEY")),
   },
   {
     id: "gemini",
-    model: Models.Google.GEMINI_FLASH_LITE_LATEST,
+    model: "google/gemini-flash-lite-latest",
     default: true,
     createProvider: () => gemini(getEnv("GEMINI_API_KEY")),
   },
   {
     id: "openrouter",
-    model: Models.Qwen.QWEN3_6_PLUS,
+    model: "qwen/qwen3.6-plus",
     default: false,
     createProvider: () =>
       chatCompletions("https://openrouter.ai/api/v1", {

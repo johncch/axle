@@ -18,10 +18,6 @@
     "./ui": {
       "types": "./dist/ui.d.ts",
       "import": "./dist/ui.js"
-    },
-    "./models": {
-      "types": "./dist/models.d.ts",
-      "import": "./dist/models.js"
     }
   },
   "files": [

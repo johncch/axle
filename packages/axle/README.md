@@ -253,8 +253,8 @@ such as `xhigh`, an exact budget, or an OpenAI summary length, goes through
 it.
 
 Anthropic needs an output cap on every request. When you don't pass
-`maxOutputTokens`, Axle uses the model's registry ceiling, else 64,000, on
-`stream()`, `generate()`, and `Agent` alike. The per-provider translation is
+`maxOutputTokens`, Axle sends 128,000 (64,000 for Haiku 4.5, Opus 4.5, and
+Sonnet 4.5) on `stream()`, `generate()`, and `Agent` alike. The per-provider translation is
 documented in `docs/architecture/reasoning.md`.
 
 ### Results

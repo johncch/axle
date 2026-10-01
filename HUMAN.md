@@ -2,7 +2,7 @@
 
 ## Release Workflow
 
-If model lists are part of the release, run `pnpm run update-models` first. Then pick a path:
+Pick a path:
 
 ### One-shot (preferred)
 

@@ -1,11 +1,4 @@
-import {
-  AIProvider,
-  anthropic,
-  chatCompletions,
-  gemini,
-  openai,
-} from "@fifthrevision/axle";
-import { Models } from "@fifthrevision/axle/models";
+import { AIProvider, anthropic, chatCompletions, gemini, openai } from "@fifthrevision/axle";
 import { Command, Option } from "commander";
 import dotenv from "dotenv";
 dotenv.config();
@@ -121,11 +114,11 @@ function getProvider(name: ProviderName): AIProvider {
 function getDefaultModel(name: ProviderName): string {
   switch (name) {
     case "openai":
-      return Models.OpenAI.GPT_5_4_MINI;
+      return "openai/gpt-5.6-luna";
     case "gemini":
-      return Models.Google.GEMINI_3_5_FLASH;
+      return "google/gemini-3.5-flash";
     case "anthropic":
-      return Models.Anthropic.CLAUDE_HAIKU_4_5;
+      return "anthropic/claude-haiku-4-5";
     default: {
       const preset = CHAT_COMPLETIONS_PRESETS[name];
       return preset?.defaultModel ?? "unknown";

@@ -18,7 +18,6 @@ import {
   PromptCompactor,
   Transcript,
 } from "@fifthrevision/axle";
-import { ModelInfo } from "@fifthrevision/axle/models";
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import { capitalize } from "../ui/format.js";
@@ -57,18 +56,10 @@ export interface AgentSessionSpec {
 
 const ASSUMED_CONTEXT_WINDOW = 200_000;
 
-function contextWindowFor(agent: Agent, providerLimit?: number): number {
+function contextWindowFor(providerLimit?: number): number {
   const override = Number(process.env.AXLE_CONTEXT_WINDOW);
   if (Number.isInteger(override) && override > 0) return override;
-  if (providerLimit) return providerLimit;
-  // Registry ids are publisher-qualified; Gemini's publisher key is "google".
-  const publisher =
-    agent.provider.name.toLowerCase() === "gemini" ? "google" : agent.provider.name.toLowerCase();
-  return (
-    ModelInfo[agent.model]?.contextWindow ??
-    ModelInfo[`${publisher}/${agent.model}`]?.contextWindow ??
-    ASSUMED_CONTEXT_WINDOW
-  );
+  return providerLimit || ASSUMED_CONTEXT_WINDOW;
 }
 
 const COMPACTION_THRESHOLD_FRACTION = 0.8;
@@ -82,7 +73,7 @@ const COMPACTION_PROMPT = [
 
 /** Session compaction policy; normative in docs/architecture/cli.md. */
 export function createSessionCompaction(agent: Agent): CompactionConfig {
-  const window = contextWindowFor(agent);
+  const window = contextWindowFor();
   const compactor = new PromptCompactor({
     provider: agent.provider,
     model: agent.model,
@@ -214,7 +205,7 @@ export async function runAgentSession(
 
   const reportUsage = () => {
     const context = agent.context();
-    const contextLimit = contextWindowFor(agent, context.limit);
+    const contextLimit = contextWindowFor(context.limit);
     renderer.updateUsage({
       in: stats.in,
       out: stats.out,

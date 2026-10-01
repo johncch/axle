@@ -179,19 +179,17 @@ step reader withholds it (thinking.md invariant 9).
 
 ### Legacy budget sets
 
-Both sets hold registry IDs (`Models` in `models.ts`, publisher-prefixed),
-so a legacy model must exist there first. The adapters receive the bare ID
-and normalize it to the registry key (lowercased, prefix re-added) for both
-the set lookup and the output-ceiling lookup.
+Both sets hold bare provider model IDs as literal strings. The adapters
+receive the bare ID and lowercase it for the set lookup and the
+output-ceiling lookup.
 
 - **Anthropic** (`ANTHROPIC_THINKING_BUDGET_MODELS`): Haiku 4.5, Opus 4.5,
   Sonnet 4.5, each in alias and dated form.
 - **Gemini** (`GEMINI_THINKING_BUDGET_MODELS`): Gemini 2.5 Flash, Flash
   Lite, and Pro.
 
-Retired models are not routed: the registry's roughly two-year window is the
-support horizon, and a retired ID falls to the modern route where the
-provider rejects it as unknown. Adding a model to a set is a same-diff
+Retired models are not routed: a retired ID falls to the modern route where
+the provider rejects it as unknown. Adding a model to a set is a same-diff
 change to this document.
 
 ## Anthropic output ceiling
@@ -200,9 +198,17 @@ Anthropic is the only adapter that must send an output cap, so it is the only
 one with a library-owned default. There is one request path and one implicit
 ceiling:
 
-| Path                                               | Implicit `max_tokens` when the caller sets none                    |
-| -------------------------------------------------- | ------------------------------------------------------------------ |
-| `stream()`, and therefore `generate()` and `Agent` | the model's `maxOutputTokens` from the model registry, else 64,000 |
+| Path                                               | Implicit `max_tokens` when the caller sets none |
+| -------------------------------------------------- | ----------------------------------------------- |
+| `stream()`, and therefore `generate()` and `Agent` | 128,000, or 64,000 for a model in the 64k set   |
+
+The 64k set (`ANTHROPIC_64K_OUTPUT_MODELS`) is Haiku 4.5, Opus 4.5, and
+Sonnet 4.5, each in alias and dated form. Every Claude model since Opus 4.6
+has a 128,000 ceiling, so an unknown ID is assumed to have one. A new model
+with a lower ceiling is rejected by the provider until it joins the set or
+the caller passes `maxOutputTokens`; adding it is a same-diff change to this
+document. The set lists the same IDs as the legacy budget set today and is
+kept separate because the two properties are independent.
 
 A ceiling is not spend, so a high default costs nothing on short answers and
 leaves every legacy preset room to fit. Caller-supplied `maxOutputTokens` is
@@ -281,3 +287,12 @@ and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
   invite, and the SDK's non-streaming guard only ever mattered because the
   buffered path existed. The two entries above about a `generate()` ceiling
   are kept as history; there is no longer a second ceiling to choose.
+- **The output ceiling from a generated model registry, else 64,000**
+  (2026-09-29): the default until the `Models` registry was removed. It
+  capped a new 128k model at 64,000 silently until the registry was
+  regenerated, and the ceiling was the only registry data core read. A
+  128,000 default with a fixed 64k set fails loudly on the rare lower
+  ceiling instead, and needs no per-release maintenance.
+- **The output ceiling from Anthropic's Models API** (2026-09-29): the API
+  reports `max_tokens` per model, but a library default would cost a network
+  call before the first request.
