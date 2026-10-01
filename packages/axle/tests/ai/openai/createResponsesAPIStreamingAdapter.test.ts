@@ -335,6 +335,42 @@ describe("createResponsesAPIStreamingAdapter", () => {
       }
     });
 
+    test("takes encrypted content from the completed reasoning item, not the opening one", () => {
+      const adapter = createStreamingAdapter();
+
+      const opening = adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+          encrypted_content: "partial",
+        },
+      } as ResponseStreamEvent);
+      const closing = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 4,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+          encrypted_content: "complete",
+        },
+      } as ResponseStreamEvent);
+
+      expect(opening).toEqual([{ type: "thinking-start", data: { index: 0, id: "rs_123" } }]);
+      expect(closing).toEqual([
+        {
+          type: "thinking-metadata",
+          data: { index: 0, continuity: { provider: "openai", encrypted: "complete" } },
+        },
+        { type: "thinking-complete", data: { index: 0 } },
+      ]);
+    });
+
     test("should handle multiple reasoning deltas", () => {
       const adapter = createStreamingAdapter();
 

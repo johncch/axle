@@ -150,6 +150,11 @@ export function logStepContent(span: Span | undefined, content: ContentPart[]): 
       span.trace(tool.name, { type: "provider-tool", output: tool.output });
     }
   }
+  for (const part of content) {
+    if (part.type === "provider-tool-result") {
+      span.trace(part.name, { type: "provider-tool", output: part.output });
+    }
+  }
   logCitations(span, getCitations(content));
 }
 

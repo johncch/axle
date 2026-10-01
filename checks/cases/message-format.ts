@@ -2,13 +2,18 @@ import {
   generate,
   loadFileContent,
   stream,
+  type AIProvider,
   type AxleAssistantMessage,
+  type AxleMessage,
+  type AxleModelRequestOptions,
   type Citation,
   type ContentPartThinking,
+  type ExecutableTool,
   type ProviderTool,
 } from "@fifthrevision/axle";
+import * as z from "zod";
 import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
-import type { CheckCase } from "./types.js";
+import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
 
@@ -89,6 +94,152 @@ export const messageFormatCases: CheckCase[] = [
         ok: failureReasons.length === 0,
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: { text: getAssistantText(result.final), citations, usage: result.usage },
+      };
+    },
+  },
+  {
+    group: "extended",
+    id: "format-web-citations-follow-up",
+    description: "A follow-up request is accepted after an answer with web search citations.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      return runCitationFollowUp({
+        provider,
+        model,
+        requestOptions,
+        providerTools: [webSearchTool],
+        sourceType: "web",
+        messages: [
+          {
+            role: "user",
+            content:
+              "Use web search and answer in one sentence: what is the current Anthropic homepage URL?",
+          },
+        ],
+      });
+    },
+  },
+  {
+    group: "extended",
+    id: "format-document-citations-follow-up",
+    description: "A follow-up request is accepted after an answer with document citations.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+      return runCitationFollowUp({
+        provider,
+        model,
+        requestOptions,
+        sourceType: "document",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Answer in one sentence with a citation: what does the attached PDF say about designing a new foundation?",
+              },
+              { type: "file", file: pdf },
+            ],
+          },
+        ],
+      });
+    },
+  },
+  {
+    group: "default",
+    id: "format-server-tool-with-client-tool",
+    description:
+      "A web search called alongside a local tool keeps its result from the next step, and a follow-up request is accepted.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      const schema = z.object({});
+      const getBuildNumber: ExecutableTool<typeof schema> = {
+        name: "get_build_number",
+        description: "Return the current build number of this machine.",
+        schema,
+        async execute() {
+          return "build 4127";
+        },
+      };
+      const messages: AxleMessage[] = [
+        {
+          role: "user",
+          content:
+            "Do both of these at the same time, as parallel tool calls in one response: " +
+            "(1) web search for 'Anthropic homepage', (2) call get_build_number. " +
+            "Do not wait for one before starting the other. Then report both results in one sentence.",
+        },
+      ];
+
+      const completedProviderToolIds: string[] = [];
+      const handle = stream({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools: [webSearchTool],
+        tools: [getBuildNumber],
+        messages,
+        maxOutputTokens: 2048,
+      });
+      handle.on((event) => {
+        if (event.type === "provider-tool:complete") completedProviderToolIds.push(event.id);
+      });
+      const first = await handle.final;
+      if (!first.ok) return fail({ error: first.error });
+
+      const assistantParts = first.messages.flatMap((message) =>
+        message.role === "assistant" ? message.content : [],
+      );
+      const deferredCall = assistantParts.find(
+        (part) => part.type === "provider-tool" && part.output == null,
+      );
+      if (!deferredCall || deferredCall.type !== "provider-tool") {
+        return {
+          ok: false,
+          failureReasons: [
+            "The model did not call web search alongside the local tool, so nothing was exercised.",
+          ],
+          details: { parts: assistantParts.map((part) => part.type) },
+        };
+      }
+
+      const failureReasons = [
+        ...(assistantParts.some(
+          (part) => part.type === "provider-tool-result" && part.id === deferredCall.id,
+        )
+          ? []
+          : ["The search result that arrived in the next step was not stored."]),
+        ...(completedProviderToolIds.includes(deferredCall.id)
+          ? []
+          : ["provider-tool:complete did not fire for the search."]),
+      ];
+      if (failureReasons.length > 0) {
+        return { ok: false, failureReasons, details: { text: getAssistantText(first.final) } };
+      }
+
+      const followUp = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools: [webSearchTool],
+        tools: [getBuildNumber],
+        messages: [
+          ...messages,
+          ...first.messages,
+          { role: "user", content: "What was the build number again? Answer with the number." },
+        ],
+        maxOutputTokens: 2048,
+      });
+      if (!followUp.ok) return fail({ error: followUp.error });
+
+      return {
+        ok: true,
+        details: {
+          text: getAssistantText(first.final),
+          followUpText: getAssistantText(followUp.final),
+          usage: followUp.usage,
+        },
       };
     },
   },
@@ -230,6 +381,65 @@ export const messageFormatCases: CheckCase[] = [
     },
   },
 ];
+
+async function runCitationFollowUp({
+  provider,
+  model,
+  requestOptions,
+  providerTools,
+  sourceType,
+  messages,
+}: {
+  provider: AIProvider;
+  model: string;
+  requestOptions: AxleModelRequestOptions;
+  providerTools?: ProviderTool[];
+  sourceType: Citation["source"]["type"];
+  messages: AxleMessage[];
+}): Promise<CheckCaseResult> {
+  const first = await generate({
+    provider,
+    model,
+    ...requestOptions,
+    providerTools,
+    messages,
+    maxOutputTokens: 2048,
+  });
+  if (!first.ok) return fail({ error: first.error });
+
+  const citations = collectCitations(first.final);
+  if (!citations.some((citation) => citation.source.type === sourceType)) {
+    return {
+      ok: false,
+      failureReasons: [`No ${sourceType} citation was returned, so nothing was replayed.`],
+      details: { text: getAssistantText(first.final), citations },
+    };
+  }
+
+  const followUp = await generate({
+    provider,
+    model,
+    ...requestOptions,
+    providerTools,
+    messages: [
+      ...messages,
+      ...first.messages,
+      { role: "user", content: "Repeat the source you cited, in five words or fewer." },
+    ],
+    maxOutputTokens: 2048,
+  });
+  if (!followUp.ok) return fail({ error: followUp.error, citations });
+
+  return {
+    ok: true,
+    details: {
+      text: getAssistantText(first.final),
+      followUpText: getAssistantText(followUp.final),
+      citations,
+      usage: followUp.usage,
+    },
+  };
+}
 
 function collectCitations(message: AxleAssistantMessage): Citation[] {
   return message.content.flatMap((part) => {

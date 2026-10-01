@@ -335,6 +335,25 @@ export async function readStep(
         break;
       }
 
+      case "provider-tool-result": {
+        closePart();
+        parts.push({
+          type: "provider-tool-result",
+          id: chunk.data.id,
+          name: chunk.data.name,
+          output: chunk.data.output,
+        });
+        currentPartIndex = parts.length - 1;
+        chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
+        ctx.emit({
+          type: "provider-tool:complete",
+          id: chunk.data.id,
+          name: chunk.data.name,
+          output: chunk.data.output,
+        });
+        break;
+      }
+
       case "complete": {
         closePart();
         finishReason = chunk.data.finishReason;

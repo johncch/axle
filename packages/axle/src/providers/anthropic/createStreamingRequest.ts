@@ -8,6 +8,7 @@ import {
   convertToAnthropicProviderTools,
   convertToAnthropicTools,
   convertToProviderMessages,
+  findOpenProviderToolCalls,
   getAnthropicStreamMaxTokens,
   toAnthropicThinking,
   toAnthropicToolChoice,
@@ -39,7 +40,7 @@ export async function* createStreamingRequest(
       ...convertToAnthropicProviderTools(providerTools),
     ];
 
-    const streamingAdapter = createAnthropicStreamingAdapter();
+    const streamingAdapter = createAnthropicStreamingAdapter(findOpenProviderToolCalls(messages));
 
     const providerMessages = await convertToProviderMessages(messages, {
       model,
