@@ -205,6 +205,9 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `reasoning-stream-effort`
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)
 - `stream-web-search`
+- `format-web-citations-follow-up` (Anthropic, OpenAI: a follow-up request
+  after a cited web search answer. On OpenAI the first answer usually holds a
+  reasoning item between two searches, which must be sent back in that order)
 - `format-server-tool-with-client-tool` (Anthropic: a web search called in the
   same response as a local tool; its result arrives in the next step, is
   stored, and a follow-up request is accepted)
@@ -248,8 +251,6 @@ rest.
 
 - `format-web-citations` (OpenAI, Gemini hosted search)
 - `format-document-citations` (Anthropic PDF input)
-- `format-web-citations-follow-up` (Anthropic: a follow-up request after a
-  cited web search answer)
 - `format-document-citations-follow-up` (Anthropic: a follow-up request after
   a cited PDF answer)
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic

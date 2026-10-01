@@ -339,5 +339,83 @@ describe("responsesAPI utils", () => {
         content: "The answer is 4.",
       });
     });
+
+    describe("assistant item order", () => {
+      const firstSearch = {
+        id: "ws_1",
+        type: "web_search_call",
+        status: "completed",
+        action: { type: "search", query: "OpenAI official homepage" },
+      };
+      const secondSearch = {
+        id: "ws_2",
+        type: "web_search_call",
+        status: "completed",
+        action: { type: "open_page", url: "https://openai.com/" },
+      };
+      const reasoning = {
+        type: "thinking" as const,
+        id: "rs_1",
+        continuity: { provider: "openai" as const, encrypted: "enc" },
+      };
+
+      test("sends a reasoning item back directly before the search that follows it", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "resp_1",
+            content: [
+              { type: "provider-tool", id: "ws_1", name: "web_search_call", output: firstSearch },
+              reasoning,
+              { type: "provider-tool", id: "ws_2", name: "web_search_call", output: secondSearch },
+              { type: "text", text: "OpenAI's homepage is https://openai.com/." },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([
+          firstSearch,
+          { type: "reasoning", id: "rs_1", summary: [], encrypted_content: "enc" },
+          secondSearch,
+          { role: "assistant", content: "OpenAI's homepage is https://openai.com/." },
+        ]);
+      });
+
+      test("keeps text on either side of a tool call as separate messages", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "resp_1",
+            content: [
+              { type: "text", text: "Checking." },
+              { type: "tool-call", id: "call_1", name: "lookup", parameters: { key: "a" } },
+              { type: "text", text: "Done." },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([
+          { role: "assistant", content: "Checking." },
+          { type: "function_call", call_id: "call_1", name: "lookup", arguments: '{"key":"a"}' },
+          { role: "assistant", content: "Done." },
+        ]);
+      });
+
+      test("joins text around a part that is not sent back into one message", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "msg_1",
+            content: [
+              { type: "text", text: "First." },
+              { type: "thinking", text: "Not from OpenAI." },
+              { type: "text", text: "Second." },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([{ role: "assistant", content: "First.\n\nSecond." }]);
+      });
+    });
   });
 });

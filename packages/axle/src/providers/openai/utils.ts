@@ -159,45 +159,44 @@ async function convertToolMessage(
 
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): ResponseInput {
   const result: ResponseInput = [];
+  let textRun: ContentPart[] = [];
+  const flushTextRun = () => {
+    const text = getTextContent(textRun);
+    if (text) {
+      result.push({
+        role: msg.role,
+        content: text,
+      });
+    }
+    textRun = [];
+  };
 
-  const textContent = getTextContent(msg.content);
-  if (textContent) {
-    result.push({
-      role: msg.role,
-      content: textContent,
-    });
-  }
-
-  const thinkingParts = msg.content.filter((c) => c.type === "thinking");
-  for (const part of thinkingParts) {
-    if (part.continuity?.provider !== "openai") continue;
-    result.push({
-      type: "reasoning" as const,
-      id: part.id,
-      summary: part.summary ? [{ type: "summary_text" as const, text: part.summary }] : [],
-      ...(part.text ? { content: [{ type: "reasoning_text" as const, text: part.text }] } : {}),
-      encrypted_content: part.continuity.encrypted,
-    } as any);
-  }
-
-  const toolCallParts = msg.content.filter((c) => c.type === "tool-call") as Array<
-    ContentPart & { type: "tool-call" }
-  >;
-  for (const call of toolCallParts) {
-    result.push({
-      type: "function_call" as const,
-      call_id: call.id,
-      name: call.name,
-      arguments: JSON.stringify(call.parameters),
-    });
-  }
-
-  const providerToolParts = msg.content.filter((c) => c.type === "provider-tool");
-  for (const part of providerToolParts) {
-    if (part.output != null) {
+  for (const part of msg.content) {
+    if (part.type === "thinking" && part.continuity?.provider === "openai") {
+      flushTextRun();
+      result.push({
+        type: "reasoning" as const,
+        id: part.id,
+        summary: part.summary ? [{ type: "summary_text" as const, text: part.summary }] : [],
+        ...(part.text ? { content: [{ type: "reasoning_text" as const, text: part.text }] } : {}),
+        encrypted_content: part.continuity.encrypted,
+      } as any);
+    } else if (part.type === "tool-call") {
+      flushTextRun();
+      result.push({
+        type: "function_call" as const,
+        call_id: part.id,
+        name: part.name,
+        arguments: JSON.stringify(part.parameters),
+      });
+    } else if (part.type === "provider-tool" && part.output != null) {
+      flushTextRun();
       result.push(part.output as any);
+    } else {
+      textRun.push(part);
     }
   }
+  flushTextRun();
 
   return result;
 }

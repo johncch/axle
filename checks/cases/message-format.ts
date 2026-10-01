@@ -98,22 +98,27 @@ export const messageFormatCases: CheckCase[] = [
     },
   },
   {
-    group: "extended",
+    group: "default",
     id: "format-web-citations-follow-up",
     description: "A follow-up request is accepted after an answer with web search citations.",
-    providers: ["anthropic"],
-    async run({ provider, model, requestOptions }) {
+    providers: ["anthropic", "openai"],
+    async run({ provider, model, providerId, requestOptions }) {
       return runCitationFollowUp({
         provider,
         model,
-        requestOptions,
+        requestOptions:
+          providerId === "openai"
+            ? { reasoning: { effort: "medium" }, ...requestOptions }
+            : requestOptions,
         providerTools: [webSearchTool],
         sourceType: "web",
         messages: [
           {
             role: "user",
             content:
-              "Use web search and answer in one sentence: what is the current Anthropic homepage URL?",
+              providerId === "openai"
+                ? "Use web search and answer in one sentence: what is the current OpenAI homepage URL and its headline?"
+                : "Use web search and answer in one sentence: what is the current Anthropic homepage URL?",
           },
         ],
       });
