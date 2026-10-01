@@ -718,9 +718,7 @@ export const coreCases: CheckCase[] = [
         tools: [markerTool],
       });
 
-      const first = agent.send("Call record_stop_marker once with marker='initial'.", {
-        toolChoice: { type: "tool", name: "record_stop_marker" },
-      });
+      const first = agent.send("Call record_stop_marker once with marker='initial'.");
       const followUp = agent.send("Reply with exactly: stop-saffron", { toolChoice: "none" });
 
       const firstResult = await first.final;
@@ -736,8 +734,11 @@ export const coreCases: CheckCase[] = [
         );
       const transcriptIsLinear = roles.join(",") === "user,assistant,tool,user,assistant";
       const failureReasons = [
+        ...(!firstResult.ok ? [`The stopped handle failed: ${firstResult.error.message}`] : []),
+        ...(!followUpResult.ok
+          ? [`The follow-up handle failed: ${followUpResult.error.message}`]
+          : []),
         ...(stopResult !== true ? ["stop() did not report an active turn."] : []),
-        ...(!firstResult.ok ? ["The stopped handle did not settle successfully."] : []),
         ...(!toolBatchCompleted
           ? ["The stopped handle did not complete exactly one tool batch."]
           : []),
@@ -755,6 +756,8 @@ export const coreCases: CheckCase[] = [
           roles,
           toolCalls,
           toolResults,
+          firstError: firstResult.error,
+          followUpError: followUpResult.error,
           firstUsage: firstResult.usage,
           followUpUsage: followUpResult.usage,
         },
@@ -1161,7 +1164,7 @@ export const coreCases: CheckCase[] = [
     group: "default",
     id: "generate-pdf-file",
     description: "generate() with an Instruct PDF file attachment.",
-    providers: ["openai", "anthropic", "gemini", "openrouter"],
+    providers: ["openai", "anthropic", "google", "openrouter"],
     async run({ provider, model, requestOptions }) {
       const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
       const instruct = new Instruct({

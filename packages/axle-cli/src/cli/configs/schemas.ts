@@ -197,9 +197,6 @@ export const RequestOptionsSchema = z.strictObject({
     ])
     .optional(),
   maxOutputTokens: z.number().int().positive().optional(),
-  temperature: z.number().optional(),
-  topP: z.number().optional(),
-  stop: z.union([z.string(), z.array(z.string())]).optional(),
   toolChoice: z
     .union([
       z.enum(["auto", "none", "required"]),

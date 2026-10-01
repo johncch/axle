@@ -1,5 +1,4 @@
 import * as clack from "@clack/prompts";
-import { ModelInfo } from "@fifthrevision/axle/models";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { updateCliDefaults, upsertCredentials } from "./configs/writers.js";
 
@@ -56,38 +55,10 @@ function ensureNotCancelled<T>(value: T | symbol): T {
   return value;
 }
 
-/**
- * Pick a model for a provider: registry-backed options for known publishers,
- * free text for OpenAI-compatible endpoints (and as an escape hatch).
- */
+/** Ask for a model id as free text. */
 export async function promptForModel(providerType: string): Promise<string> {
   const choice = PROVIDER_CHOICES.find((c) => c.value === providerType);
   const publisher = choice?.publisher;
-
-  if (publisher) {
-    const ids = Object.keys(ModelInfo)
-      .filter((id) => id.startsWith(publisher))
-      .sort();
-    if (ids.length > 0) {
-      const OTHER = "__other__";
-      const picked = ensureNotCancelled(
-        await clack.select({
-          message: "Pick a model",
-          options: [
-            ...ids.map((id) => {
-              const info = ModelInfo[id];
-              const window = info.contextWindow
-                ? `${Math.round(info.contextWindow / 1000)}k context`
-                : undefined;
-              return { value: id, label: id, hint: window };
-            }),
-            { value: OTHER, label: "Other (type a model id)" },
-          ],
-        }),
-      );
-      if (picked !== OTHER) return picked;
-    }
-  }
 
   return ensureNotCancelled(
     await clack.text({

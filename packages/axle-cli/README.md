@@ -26,8 +26,8 @@ On first run with no configuration anywhere — no credentials, no `cli.yaml`
 providers or defaults, no inline provider in the recipe — `axle` launches a
 setup wizard:
 pick a provider, paste a key (written to `~/.axle/credentials`, chmod 600),
-and pick a default model. Re-run it anytime with `axle setup`. A run that
-can't resolve a model drops into the same model picker.
+and enter a default model id. Re-run it anytime with `axle setup`. A run that
+can't resolve a model drops into the same model prompt.
 
 Sessions accumulate under `~/.axle/sessions/cli/` with no automatic
 retention; `axle cleanup` deletes them by age window (24h/7d/30d/all).
@@ -96,12 +96,11 @@ resolves through the config chain:
 
 - provider: job → `defaults.provider` in `cli.yaml`
 - model: job → `defaults.models.<provider name>` → `<TYPE>_MODEL` env or
-  credentials → interactive model picker
+  credentials → interactive model prompt
 
 So a model-only job runs on the configured default provider, and a job with
-neither runs entirely on defaults. `model` is a publisher-qualified registry
-id (e.g. `anthropic/claude-sonnet-5`, `openai/gpt-5.5`) or a bare
-provider-native id:
+neither runs entirely on defaults. `model` is a publisher-qualified id (e.g.
+`anthropic/claude-sonnet-5`, `openai/gpt-5.5`) or a bare provider-native id:
 
 ```yaml
 # Ollama, or any OpenAI-compatible endpoint
@@ -119,8 +118,16 @@ system: You are a terse analyst.
 
 request:
   reasoning: on
-  temperature: 0.2
   maxOutputTokens: 16000
+```
+
+Anything the portable options don't cover goes in `providerOptions`, which is
+sent to the provider as-is under its own field names:
+
+```yaml
+request:
+  providerOptions:
+    temperature: 0.2
 ```
 
 `reasoning` takes `default`, `off`, `on`, or
@@ -142,7 +149,7 @@ request:
 ```
 
 Long sessions compact automatically: when the conversation approaches the
-model's context window (~80%), the next send first replaces the history with
+context window (~80% of an assumed 200,000 tokens), the next send first replaces the history with
 a ~1000-word summary plus a slice of recent user messages kept verbatim (up
 to a tenth of the threshold), summarized by the session's own provider, model, and
 `reasoning` setting; the transcript records a `✔ Compacted context` line.
@@ -153,8 +160,8 @@ with:
 compaction: false
 ```
 
-`AXLE_CONTEXT_WINDOW=<tokens>` overrides the resolved window when the
-registry gets a model wrong — the usage bar, compaction threshold, and
+`AXLE_CONTEXT_WINDOW=<tokens>` sets the window for a model whose context
+is larger or smaller than 200,000 — the usage bar, compaction threshold, and
 summary target all scale with it. A small value (e.g. `3000`) forces a
 compaction within a few exchanges, which is also the way to see one without
 filling a real context window.

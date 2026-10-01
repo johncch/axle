@@ -2,11 +2,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import {
-  resolveChatCompletionsModel,
-  resolveChatCompletionsProviderToolName,
-  type ChatCompletionsVendor,
-} from "./utils.js";
+import { resolveChatCompletionsProviderToolName, type ChatCompletionsVendor } from "./utils.js";
 
 export interface ChatCompletionsOptions extends ProviderClientOptions {
   apiKey?: string;
@@ -56,7 +52,7 @@ export function chatCompletions(
     ): AsyncGenerator<AnyStreamChunk, void, unknown> {
       return createStreamingRequest({
         baseUrl,
-        model: resolveChatCompletionsModel(model, vendor),
+        model,
         apiKey,
         maxRetries,
         timeoutMs,

@@ -1,20 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import z from "zod";
 import { AxleMessage, Citation, type ToolResultPart } from "../../messages/message.js";
-import { ModelInfo, Models } from "../../models.js";
 import type { ToolDefinition } from "../../tools/types.js";
-import {
-  LEGACY_REASONING_BUDGETS,
-  resolveReasoning,
-  type ReasoningEffort,
-  type ReasoningSetting,
-} from "../reasoning.js";
 import {
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
+import {
+  LEGACY_REASONING_BUDGETS,
+  type ReasoningEffort,
+  type ReasoningSetting,
+  resolveReasoning,
+} from "../reasoning.js";
 import { AxleStopReason, type ResolvedProviderTool, ToolChoice } from "../types.js";
 
 interface AnthropicConversionContext {
@@ -287,28 +286,34 @@ export function toAnthropicThinking(
  * budget. Anything else, including unknown IDs, takes the adaptive route.
  */
 export const ANTHROPIC_THINKING_BUDGET_MODELS: ReadonlySet<string> = new Set([
-  Models.Anthropic.CLAUDE_HAIKU_4_5,
-  Models.Anthropic.CLAUDE_HAIKU_4_5_20251001,
-  Models.Anthropic.CLAUDE_OPUS_4_5,
-  Models.Anthropic.CLAUDE_OPUS_4_5_20251101,
-  Models.Anthropic.CLAUDE_SONNET_4_5,
-  Models.Anthropic.CLAUDE_SONNET_4_5_20250929,
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
+  "claude-opus-4-5",
+  "claude-opus-4-5-20251101",
+  "claude-sonnet-4-5",
+  "claude-sonnet-4-5-20250929",
 ]);
 
-function toAnthropicRegistryId(model: string): string {
-  return `anthropic/${model.toLowerCase()}`;
-}
-
 function usesAnthropicThinkingBudget(model: string): boolean {
-  return ANTHROPIC_THINKING_BUDGET_MODELS.has(toAnthropicRegistryId(model));
+  return ANTHROPIC_THINKING_BUDGET_MODELS.has(model.toLowerCase());
 }
 
-const ANTHROPIC_STREAM_FALLBACK_MAX_TOKENS = 64_000;
+const ANTHROPIC_64K_OUTPUT_MODELS: ReadonlySet<string> = new Set([
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
+  "claude-opus-4-5",
+  "claude-opus-4-5-20251101",
+  "claude-sonnet-4-5",
+  "claude-sonnet-4-5-20250929",
+]);
+
+const ANTHROPIC_STREAM_MAX_TOKENS = 128_000;
+const ANTHROPIC_STREAM_64K_MAX_TOKENS = 64_000;
 
 export function getAnthropicStreamMaxTokens(model: string): number {
-  return (
-    ModelInfo[toAnthropicRegistryId(model)]?.maxOutputTokens ?? ANTHROPIC_STREAM_FALLBACK_MAX_TOKENS
-  );
+  return ANTHROPIC_64K_OUTPUT_MODELS.has(model.toLowerCase())
+    ? ANTHROPIC_STREAM_64K_MAX_TOKENS
+    : ANTHROPIC_STREAM_MAX_TOKENS;
 }
 
 export function convertToAnthropicTools(

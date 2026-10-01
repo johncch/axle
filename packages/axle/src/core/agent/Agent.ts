@@ -14,9 +14,9 @@ import { stream } from "../../providers/stream.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
-import { Transcript } from "../../turns/transcript.js";
 import { TurnEventBuilder } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
+import { Transcript } from "../../turns/transcript.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
@@ -95,9 +95,6 @@ export class Agent {
     this.requestOptions = {
       reasoning: config.reasoning,
       maxOutputTokens: config.maxOutputTokens,
-      temperature: config.temperature,
-      topP: config.topP,
-      stop: config.stop,
       toolChoice: config.toolChoice,
       parallelToolCalls: config.parallelToolCalls,
       providerOptions: config.providerOptions,

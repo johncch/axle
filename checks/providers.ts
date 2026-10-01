@@ -1,7 +1,8 @@
 import { anthropic, chatCompletions, gemini, openai, type AIProvider } from "@fifthrevision/axle";
-import { Models } from "@fifthrevision/axle/models";
 
-export type ProviderId = "openai" | "anthropic" | "gemini" | "openrouter" | "together" | "ollama";
+export type ProviderId = "openai" | "anthropic" | "google" | "openrouter" | "together" | "ollama";
+
+const PROVIDER_ALIASES: Record<string, ProviderId> = { gemini: "google" };
 
 export interface ProviderTarget {
   id: ProviderId;
@@ -13,25 +14,25 @@ export interface ProviderTarget {
 export const providerTargets: ProviderTarget[] = [
   {
     id: "openai",
-    model: Models.OpenAI.GPT_5_6_LUNA,
+    model: "openai/gpt-6-luna",
     default: true,
     createProvider: () => openai(getEnv("OPENAI_API_KEY")),
   },
   {
     id: "anthropic",
-    model: Models.Anthropic.CLAUDE_HAIKU_4_5,
+    model: "anthropic/claude-haiku-4-5",
     default: true,
     createProvider: () => anthropic(getEnv("ANTHROPIC_API_KEY")),
   },
   {
-    id: "gemini",
-    model: Models.Google.GEMINI_FLASH_LITE_LATEST,
+    id: "google",
+    model: "google/gemini-flash-lite-latest",
     default: true,
     createProvider: () => gemini(getEnv("GEMINI_API_KEY")),
   },
   {
     id: "openrouter",
-    model: Models.Qwen.QWEN3_6_PLUS,
+    model: "deepseek/deepseek-v4.1-flash",
     default: false,
     createProvider: () =>
       chatCompletions("https://openrouter.ai/api/v1", {
@@ -60,7 +61,9 @@ export function resolveProviderTargets(options: {
   model?: string;
   all?: boolean;
 }): ProviderTarget[] {
-  const providerIds = [...new Set(options.providers ?? [])];
+  const providerIds = [
+    ...new Set((options.providers ?? []).map((id) => PROVIDER_ALIASES[id] ?? id)),
+  ];
   const targets =
     providerIds.length > 0
       ? providerIds.map((providerId) => {

@@ -4,14 +4,16 @@ import {
   getAnthropicStreamMaxTokens,
   toAnthropicThinking,
 } from "../../src/providers/anthropic/utils.js";
-import { LEGACY_REASONING_BUDGETS } from "../../src/providers/reasoning.js";
 import { toReasoningEffort } from "../../src/providers/chatcompletions/utils.js";
 import { toOpenRouterReasoning } from "../../src/providers/chatcompletions/vendors/openrouter/index.js";
 import { toTogetherReasoning } from "../../src/providers/chatcompletions/vendors/together.js";
 import { toGeminiThinkingConfig } from "../../src/providers/gemini/utils.js";
-import { resolveFirstPartyModel } from "../../src/providers/model.js";
 import { toOpenAIReasoning } from "../../src/providers/openai/utils.js";
-import { resolveReasoning, resolveReasoningDisplay } from "../../src/providers/reasoning.js";
+import {
+  LEGACY_REASONING_BUDGETS,
+  resolveReasoning,
+  resolveReasoningDisplay,
+} from "../../src/providers/reasoning.js";
 
 describe("reasoning translation", () => {
   describe("resolveReasoning", () => {
@@ -125,14 +127,13 @@ describe("reasoning translation", () => {
     });
 
     describe("implicit max_tokens", () => {
-      test("stream() defaults to the registry's output ceiling, else 64,000", () => {
+      test("stream() defaults to 128,000, or 64,000 for the 64k-ceiling models", () => {
         expect(getAnthropicStreamMaxTokens("claude-haiku-4-5")).toBe(64000);
         expect(getAnthropicStreamMaxTokens("claude-fable-5-1")).toBe(128000);
-        expect(getAnthropicStreamMaxTokens("claude-nova-7")).toBe(64000);
+        expect(getAnthropicStreamMaxTokens("claude-nova-7")).toBe(128000);
       });
       test("every legacy budget model's default ceiling exceeds the high preset", () => {
-        for (const registryId of ANTHROPIC_THINKING_BUDGET_MODELS) {
-          const model = resolveFirstPartyModel(registryId, ["anthropic"]);
+        for (const model of ANTHROPIC_THINKING_BUDGET_MODELS) {
           expect(toAnthropicThinking({ effort: "high" }, model)).toEqual({
             thinking: { type: "enabled", budget_tokens: 16384, display: "summarized" },
           });

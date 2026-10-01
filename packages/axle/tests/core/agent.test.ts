@@ -13,8 +13,8 @@ import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
-import { Transcript } from "../../src/turns/transcript.js";
 import type { TurnEvent } from "../../src/turns/events.js";
+import { Transcript } from "../../src/turns/transcript.js";
 import type { Turn } from "../../src/turns/types.js";
 
 function createMockStreamProvider(responses: string[]): AIProvider {
@@ -827,8 +827,8 @@ describe("Agent", () => {
         observedRequest = {
           reasoning: params.reasoning,
           maxOutputTokens: params.maxOutputTokens,
-          temperature: params.temperature,
-          topP: params.topP,
+          toolChoice: params.toolChoice,
+          parallelToolCalls: params.parallelToolCalls,
           providerOptions: params.providerOptions,
         };
         yield {
@@ -849,7 +849,7 @@ describe("Agent", () => {
       provider,
       model: "mock",
       reasoning: "on",
-      temperature: 0.7,
+      parallelToolCalls: false,
       maxOutputTokens: 100,
       providerOptions: { seed: 1, metadata: { source: "agent" } },
     });
@@ -857,15 +857,15 @@ describe("Agent", () => {
     await agent.send("Hi", {
       reasoning: "off",
       maxOutputTokens: 20,
-      topP: 0.5,
+      toolChoice: "none",
       providerOptions: { metadata: { source: "send" } },
     }).final;
 
     expect(observedRequest).toEqual({
       reasoning: "off",
       maxOutputTokens: 20,
-      temperature: 0.7,
-      topP: 0.5,
+      toolChoice: "none",
+      parallelToolCalls: false,
       providerOptions: { seed: 1, metadata: { source: "send" } },
     });
   });

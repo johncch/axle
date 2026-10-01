@@ -56,7 +56,9 @@ pnpm exec tsx checks/run.ts \
   --provider together
 ```
 
-Provider flags may also be comma-separated.
+Provider flags may also be comma-separated. The provider ids are `openai`,
+`anthropic`, `google`, `openrouter`, `together`, and `ollama`; `gemini` is
+accepted as an alias for `google`.
 
 Run every provider, including OpenRouter:
 
@@ -133,6 +135,46 @@ do
 done
 ```
 
+## Model ledger
+
+`checks/ledger.jsonl` is the committed record of which models Axle has been
+run against and what broke. Every run updates it; pass `--no-record` to leave
+it alone, or discard the change with git if a run was not worth keeping.
+
+The file holds one line per model, keyed by the model string and sorted by
+it. Each line carries the provider, status counts, and a `cases` map with one
+result per case: its status, the failure or skip reasons, the reasoning flag
+if one was set, and the time and Axle commit it was recorded at (suffixed
+`-dirty` when the tree had uncommitted changes).
+
+A run is merged into the model's line. Cases the run executed replace their
+previous result; cases it did not execute keep theirs, with their original
+time and commit. So a failing case can be re-run alone:
+
+```bash
+pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-5-5 \
+  --case cache-prompt-reuse
+```
+
+The top-level `recordedAt` and `axle` describe the latest recorded run. Cases
+that are no longer in the suite are dropped on the next record, and a line
+recorded through a different provider starts over rather than merging.
+
+Read the ledger in the terminal with:
+
+```bash
+pnpm checks ledger
+```
+
+It prints one summary line per model, a grid of the cases that are not
+passing everywhere (one column per model), and each model's failures and
+skips with their first reason. A `-` in the grid marks a case that does not
+run on that model's provider.
+
+The summary tallies are `P` passed, `F` failed, `ms` skipped because this
+model is excluded from the case, `ps` skipped because the case is not enabled
+for the provider, and `N` in the suite but not yet run on this model.
+
 ## Cases
 
 ### Default
@@ -158,7 +200,7 @@ done
 - `agent-tool-fatal` (fatal tool error terminates the send with usage intact)
 - `agent-subagent-abort` (cancel mid-delegation; no child conversation leak)
 - `agent-parallel-subagents` (parallelize + createAgentTool fan-out)
-- `reasoning-off` (explicit disable; skipped on Fable, which cannot turn thinking off)
+- `reasoning-off` (explicit disable; skipped on Fable, Opus 5.5, Sonnet 5.5, and GPT-6.1 Sol, which reject it)
 - `reasoning-efforts` (low, medium, and high each accepted on the target model)
 - `reasoning-stream-effort`
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)

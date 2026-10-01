@@ -5,6 +5,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
 import { checkCases, type CheckCase, type CheckCaseResult } from "./cases/index.js";
+import {
+  LEDGER_PATH,
+  readAxleRevision,
+  readLedger,
+  recordLedgerRuns,
+  type LedgerEntry,
+} from "./ledger.js";
 import { resolveProviderTargets, type ProviderId, type ProviderTarget } from "./providers.js";
 
 const REASONING_FLAGS = ["default", "off", "on", "low", "medium", "high"] as const;
@@ -17,6 +24,7 @@ interface RunOptions {
   extended: boolean;
   cases: string[];
   out: string;
+  record: boolean;
 }
 
 interface CheckRecord {
@@ -32,6 +40,11 @@ interface CheckRecord {
   failureReasons?: string[];
   details?: Record<string, unknown>;
   error?: unknown;
+}
+
+if (process.argv[2] === "ledger") {
+  await printLedger();
+  process.exit(0);
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -122,6 +135,111 @@ function bar(text: string): string {
   return `${"=".repeat(left)}${inner}${"=".repeat(fill - left)}`;
 }
 
+type LedgerCell = CheckRecord["status"] | "not-applicable" | "unrecorded";
+
+function ledgerCell(entry: LedgerEntry, testCase: CheckCase): LedgerCell {
+  if (testCase.providers && !testCase.providers.includes(entry.provider as ProviderId)) {
+    return "not-applicable";
+  }
+  return entry.cases[testCase.id]?.status ?? "unrecorded";
+}
+
+function ledgerGlyph(cell: LedgerCell): string {
+  if (cell === "not-applicable") return color("gray", "-");
+  if (cell === "unrecorded") return " ";
+  return glyphFor(cell);
+}
+
+function needsAttention(cell: LedgerCell): boolean {
+  return cell === "fail" || cell === "error" || cell === "skip";
+}
+
+async function printLedger(): Promise<void> {
+  const entries = await readLedger();
+  if (entries.length === 0) {
+    console.log(`No recorded runs in ${LEDGER_PATH}.`);
+    return;
+  }
+
+  const labels = entries.map((entry) => `${entry.provider}:${entry.model}`);
+  const labelWidth = Math.max(...labels.map((label) => label.length));
+  const columnWidth = String(entries.length).length + 1;
+
+  const tallies = entries.map((entry) => {
+    const cells = checkCases.map((testCase) => ledgerCell(entry, testCase));
+    const count = (cell: LedgerCell) => cells.filter((candidate) => candidate === cell).length;
+    return {
+      passed: count("pass"),
+      failed: count("fail") + count("error"),
+      modelSkipped: count("skip"),
+      providerSkipped: count("not-applicable"),
+      notRun: count("unrecorded"),
+    };
+  });
+  const tallyWidth = (key: keyof (typeof tallies)[number]) =>
+    Math.max(...tallies.map((tally) => String(tally[key]).length));
+  const tallyCell = (
+    value: number,
+    letter: string,
+    width: number,
+    tint: "green" | "red" | "yellow" | "gray",
+  ) => color(value > 0 ? tint : "gray", `${String(value).padStart(width)}${letter}`);
+
+  console.log(bar("checks ledger"));
+  for (const [index, entry] of entries.entries()) {
+    const tally = tallies[index];
+    const summary = [
+      tallyCell(tally.passed, "P", tallyWidth("passed"), "green"),
+      tallyCell(tally.failed, "F", tallyWidth("failed"), "red"),
+      tallyCell(tally.modelSkipped, "ms", tallyWidth("modelSkipped"), "yellow"),
+      tallyCell(tally.providerSkipped, "ps", tallyWidth("providerSkipped"), "gray"),
+      tallyCell(tally.notRun, "N", tallyWidth("notRun"), "gray"),
+    ].join(" ");
+    const commits = new Set(Object.values(entry.cases).map((ledgerCase) => ledgerCase.commit));
+    const revision =
+      commits.size === 1 ? [...commits][0] : `${commits.size} commits, latest ${entry.axle.commit}`;
+    console.log(
+      `${String(index + 1).padStart(columnWidth)}  ${labels[index].padEnd(labelWidth)}  ${summary}` +
+        color("gray", `  ${entry.recordedAt.slice(0, 10)}  ${revision}`),
+    );
+  }
+
+  const attentionCases = checkCases.filter((testCase) =>
+    entries.some((entry) => needsAttention(ledgerCell(entry, testCase))),
+  );
+  if (attentionCases.length === 0) {
+    console.log(`\n${color("green", "Every recorded case passes on every model.")}`);
+    return;
+  }
+
+  const caseWidth = Math.max(...attentionCases.map((testCase) => testCase.id.length));
+  console.log(
+    `\n${" ".repeat(caseWidth)} ${entries.map((_, index) => String(index + 1).padStart(columnWidth)).join("")}`,
+  );
+  for (const testCase of attentionCases) {
+    const row = entries
+      .map((entry) => `${" ".repeat(columnWidth - 1)}${ledgerGlyph(ledgerCell(entry, testCase))}`)
+      .join("");
+    console.log(`${testCase.id.padEnd(caseWidth)} ${row}`);
+  }
+  console.log(
+    color("gray", "\n. pass  F fail  E error  s model skip (ms)  - provider skip (ps)  N not run"),
+  );
+
+  for (const [index, entry] of entries.entries()) {
+    const attention = attentionCases.filter((testCase) =>
+      needsAttention(ledgerCell(entry, testCase)),
+    );
+    if (attention.length === 0) continue;
+    console.log(`\n${labels[index]}`);
+    for (const testCase of attention) {
+      const ledgerCase = entry.cases[testCase.id];
+      const reason = (ledgerCase.reasons?.[0] ?? "").replace(/\s+/g, " ");
+      console.log(`  ${glyphFor(ledgerCase.status)} ${testCase.id}  ${reason}`);
+    }
+  }
+}
+
 interface UsageTotals {
   in: number;
   out: number;
@@ -134,6 +252,7 @@ interface UsageTotals {
 
 let passed = 0;
 let skipped = 0;
+const records: CheckRecord[] = [];
 const failedRecords: CheckRecord[] = [];
 const usageTotals: UsageTotals[] = targets.map(() => ({
   in: 0,
@@ -275,9 +394,27 @@ const summaryColor = failedRecords.length > 0 ? "red" : "green";
 console.log(`\n${color(summaryColor, bar(`${summaryParts.join(", ")} in ${elapsed}s`))}`);
 console.log(`[Output] ${options.out}`);
 
+if (options.record) {
+  const axle = await readAxleRevision();
+  await recordLedgerRuns(
+    targets.map((target) => ({
+      model: target.model,
+      provider: target.id,
+      axle,
+      reasoning: options.reasoning,
+      records: records.filter(
+        (record) => record.providerId === target.id && record.model === target.model,
+      ),
+    })),
+    checkCases.map((testCase) => testCase.id),
+  );
+  console.log(`[Ledger] ${LEDGER_PATH}`);
+}
+
 if (failedRecords.length > 0) process.exitCode = 1;
 
 async function writeRecord(record: CheckRecord): Promise<void> {
+  records.push(record);
   await writeFile(options.out, `${JSON.stringify(record)}\n`, { flag: "a" });
 }
 
@@ -405,6 +542,7 @@ function parseArgs(args: string[]): RunOptions {
     extended: false,
     cases: [],
     out: join("output", "checks", `run-${Date.now()}.jsonl`),
+    record: true,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -437,6 +575,9 @@ function parseArgs(args: string[]): RunOptions {
         break;
       case "--extended":
         parsed.extended = true;
+        break;
+      case "--no-record":
+        parsed.record = false;
         break;
       case "--help":
       case "-h":
@@ -489,6 +630,7 @@ function printHelp(): void {
 
 Usage:
   pnpm exec tsx checks/run.ts [provider] [options]
+  pnpm exec tsx checks/run.ts ledger      Show the recorded results per model.
 
 Options:
   --provider <id>    Provider id. Repeat or comma-separate to run multiple providers.
@@ -499,6 +641,9 @@ Options:
   --case <id>        Case id or prefix ending in "*". Repeat or comma-separate.
                      Selected cases run regardless of group.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.
+  --no-record        Do not merge the results into checks/ledger.jsonl. By
+                     default every run updates each model's entry; cases
+                     that did not run keep theirs.
 `);
 }
 

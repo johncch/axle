@@ -1,6 +1,5 @@
 import type { AgentConfig, AgentDefinition, AIProvider, ContextUsage } from "@fifthrevision/axle";
 import { Agent, AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
-import { ModelInfo } from "@fifthrevision/axle/models";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -49,36 +48,10 @@ describe("createSessionCompaction", () => {
     expect(config.triggers).toEqual({ beforeTurn: true });
   });
 
-  it("derives the threshold from the model's registry context window", () => {
-    const registryModel = "claude-sonnet-4-5";
-    const window = ModelInfo[`anthropic/${registryModel}`]?.contextWindow;
-    expect(window).toBeGreaterThan(0);
-
+  it("assumes a 200k window for every model", () => {
     const agent = createAgent({
       provider: createCapturingProvider("anthropic", []),
-      model: registryModel,
-    });
-    const config = createSessionCompaction(agent);
-
-    const messages = [{ role: "user" as const, content: "hi" }];
-    expect(
-      config.shouldCompactOnTrigger?.(
-        { messages },
-        { usage: usage(window!), trigger: "beforeTurn" },
-      ),
-    ).toBe(true);
-    expect(
-      config.shouldCompactOnTrigger?.(
-        { messages },
-        { usage: usage(Math.floor(window! / 2)), trigger: "beforeTurn" },
-      ),
-    ).toBe(false);
-  });
-
-  it("assumes a 200k window for models the registry doesn't know", () => {
-    const agent = createAgent({
-      provider: createCapturingProvider("mock", []),
-      model: "unknown-model",
+      model: "claude-sonnet-5-5",
     });
     const config = createSessionCompaction(agent);
 

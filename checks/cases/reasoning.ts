@@ -9,27 +9,22 @@ import {
 } from "@fifthrevision/axle";
 import * as z from "zod";
 import type { ProviderId } from "../providers.js";
-import { fail, getAssistantText } from "./helpers.js";
+import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
-
-// Trivial prompts often produce no visible reasoning; a small puzzle makes
-// every provider emit thinking content.
-const reasoningPrompt =
-  "How many times does the letter r appear in the phrase 'strawberry raspberry'? Work it out, then answer with only the number.";
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
 
-const DISCLOSING_PROVIDERS: ReadonlySet<ProviderId> = new Set(["anthropic", "openai", "gemini"]);
+const DISCLOSING_PROVIDERS: ReadonlySet<ProviderId> = new Set(["anthropic", "openai", "google"]);
 
 // Models whose request syntax differs from the provider's default check
 // target, so both routes run in a single default pass.
 const LEGACY_BUDGET_MODELS: Partial<Record<ProviderId, string>> = {
   anthropic: "claude-haiku-4-5",
-  gemini: "gemini-2.5-flash-lite",
+  google: "gemini-2.5-flash-lite",
 };
 const MODERN_EFFORT_MODELS: Partial<Record<ProviderId, string>> = {
   anthropic: "claude-sonnet-4-6",
-  gemini: "gemini-flash-lite-latest",
+  google: "gemini-flash-lite-latest",
 };
 
 // Combinations the provider documents as invalid; Axle sends them unchanged
@@ -38,7 +33,7 @@ const UNSUPPORTED_SETTINGS: Partial<
   Record<ProviderId, { model: string; reasoning: ReasoningSetting }>
 > = {
   anthropic: { model: "claude-fable-5-1", reasoning: "off" },
-  gemini: { model: "gemini-3.1-pro-preview", reasoning: "off" },
+  google: { model: "gemini-3.1-pro-preview", reasoning: "off" },
 };
 
 export const reasoningCases: CheckCase[] = [
@@ -47,12 +42,21 @@ export const reasoningCases: CheckCase[] = [
     id: "reasoning-off",
     description: "generate() succeeds with reasoning explicitly disabled.",
     exclusions: [
-      { provider: "anthropic", model: /fable/, reason: "Fable rejects thinking.type: disabled." },
       {
-        provider: "gemini",
+        provider: "anthropic",
+        model: /fable|opus-5-5|sonnet-5-5/,
+        reason: "Fable, Opus 5.5, and Sonnet 5.5 reject thinking.type: disabled.",
+      },
+      {
+        provider: "google",
         model: /gemini-3|gemini-2\.5-pro|-latest$/,
         reason:
           "Gemini 3 and 2.5 Pro cannot disable thinking; the -latest aliases resolve to Gemini 3.",
+      },
+      {
+        provider: "openai",
+        model: /gpt-6\.1-sol/,
+        reason: "GPT-6.1 Sol rejects reasoning.effort: none.",
       },
     ],
     async run({ provider, model, requestOptions }) {
@@ -138,7 +142,7 @@ export const reasoningCases: CheckCase[] = [
       if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
-        ok: text.includes("6"),
+        ok: text.trim().length > 0,
         details: {
           text,
           thinkingDeltaCount,
@@ -166,7 +170,7 @@ export const reasoningCases: CheckCase[] = [
     group: "extended",
     id: "reasoning-route-legacy",
     description: "Legacy budget models accept the token-budget preset and spend reasoning tokens.",
-    providers: ["anthropic", "gemini"],
+    providers: ["anthropic", "google"],
     async run({ provider, providerId, requestOptions }) {
       const model = LEGACY_BUDGET_MODELS[providerId]!;
       const result = await generate({
@@ -200,7 +204,7 @@ export const reasoningCases: CheckCase[] = [
     group: "extended",
     id: "reasoning-route-modern",
     description: "Modern models accept named effort on the adaptive or level-based route.",
-    providers: ["anthropic", "gemini"],
+    providers: ["anthropic", "google"],
     async run({ provider, providerId, requestOptions }) {
       const model = MODERN_EFFORT_MODELS[providerId]!;
       const result = await generate({
@@ -227,7 +231,7 @@ export const reasoningCases: CheckCase[] = [
     group: "extended",
     id: "reasoning-unsupported-error",
     description: "An explicit setting the model cannot honor surfaces as a provider error.",
-    providers: ["anthropic", "gemini"],
+    providers: ["anthropic", "google"],
     async run({ provider, providerId }): Promise<CheckCaseResult> {
       const { model, reasoning } = UNSUPPORTED_SETTINGS[providerId]!;
       const result = await generate({

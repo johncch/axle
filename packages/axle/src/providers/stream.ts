@@ -33,8 +33,8 @@ import {
   type ToolCallResult,
 } from "./helpers.js";
 import { readStep, type StepReadOutcome } from "./lib/stepReader.js";
-import { resolveReasoningDisplay } from "./reasoning.js";
 import { executeStepTools, type LoopContext } from "./lib/stepTools.js";
+import { resolveReasoningDisplay } from "./reasoning.js";
 import type { AIProvider, AxleModelRequestOptions } from "./types.js";
 import { AxleStopReason } from "./types.js";
 
@@ -276,9 +276,6 @@ async function run(
     fileResolver,
     reasoning,
     maxOutputTokens,
-    temperature,
-    topP,
-    stop,
     toolChoice,
     parallelToolCalls,
     providerOptions,
@@ -358,9 +355,6 @@ async function run(
         signal,
         reasoning,
         maxOutputTokens,
-        temperature,
-        topP,
-        stop,
         toolChoice,
         parallelToolCalls,
         providerOptions,

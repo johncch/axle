@@ -3,10 +3,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@fifthrevision/axle/models": new URL(
-        "./packages/axle/src/models.ts",
-        import.meta.url,
-      ).pathname,
       "@fifthrevision/axle/ui": new URL("./packages/axle/src/ui.ts", import.meta.url).pathname,
       "@fifthrevision/axle": new URL("./packages/axle/src/index.ts", import.meta.url).pathname,
     },

@@ -19,7 +19,6 @@ import {
 } from "./types.js";
 import {
   prepareOpenRouterProviderTools,
-  resolveOpenRouterModel,
   resolveOpenRouterProviderToolName,
   toOpenRouterReasoning,
   toOpenRouterReasoningDetails,
@@ -37,15 +36,6 @@ export function resolveChatCompletionsProviderToolName(
       return resolveOpenRouterProviderToolName(name);
     default:
       return undefined;
-  }
-}
-
-export function resolveChatCompletionsModel(model: string, vendor?: ChatCompletionsVendor): string {
-  switch (vendor) {
-    case "openrouter":
-      return resolveOpenRouterModel(model);
-    default:
-      return model;
   }
 }
 

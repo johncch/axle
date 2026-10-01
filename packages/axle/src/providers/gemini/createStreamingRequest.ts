@@ -1,8 +1,8 @@
-import { normalizeProviderError } from "../utils.js";
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
+import { normalizeProviderError } from "../utils.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   addGeminiProviderTools,
@@ -26,9 +26,6 @@ export async function* createStreamingRequest(
     signal,
     reasoning,
     maxOutputTokens,
-    temperature,
-    topP,
-    stop,
     toolChoice,
     parallelToolCalls,
     providerOptions,
@@ -40,9 +37,6 @@ export async function* createStreamingRequest(
       // Axle-normalized options.
       ...toGeminiThinkingConfig(reasoning, model),
       ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-      ...(temperature !== undefined ? { temperature } : {}),
-      ...(topP !== undefined ? { topP } : {}),
-      ...(stop !== undefined ? { stopSequences: Array.isArray(stop) ? stop : [stop] } : {}),
       ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
 
       // Raw provider options are applied last so they can override Axle mappings.

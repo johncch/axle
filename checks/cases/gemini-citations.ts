@@ -7,7 +7,7 @@ export const geminiCitationCases: CheckCase[] = [
   {
     id: "format-gemini-delayed-citations",
     group: "extended",
-    providers: ["gemini"],
+    providers: ["google"],
     description:
       "Gemini grounding survives a trailing thought signature through generate and stream.",
     async run() {
