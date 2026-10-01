@@ -20,17 +20,29 @@ export interface AxleRevision {
   dirty: boolean;
 }
 
+export interface LedgerCase {
+  status: CaseStatus;
+  reasons?: string[];
+  reasoning?: ReasoningSetting;
+  recordedAt: string;
+  commit: string;
+}
+
 export interface LedgerEntry {
   model: string;
   provider: string;
   recordedAt: string;
   axle: AxleRevision;
-  group: string;
-  reasoning?: ReasoningSetting;
   counts: Record<CaseStatus, number>;
-  passed: string[];
-  failed: Array<{ case: string; status: "fail" | "error"; reasons: string[] }>;
-  skipped: Array<{ case: string; reason: string }>;
+  cases: Record<string, LedgerCase>;
+}
+
+export interface LedgerRun {
+  model: string;
+  provider: string;
+  axle: AxleRevision;
+  reasoning?: ReasoningSetting;
+  records: RecordedCase[];
 }
 
 export async function readAxleRevision(): Promise<AxleRevision> {
@@ -48,56 +60,63 @@ function git(...args: string[]): string {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
-export function buildLedgerEntry(run: {
-  model: string;
-  provider: string;
-  axle: AxleRevision;
-  group: string;
-  reasoning?: ReasoningSetting;
-  records: RecordedCase[];
-}): LedgerEntry {
-  const counts: Record<CaseStatus, number> = { pass: 0, fail: 0, error: 0, skip: 0 };
-  const passed: string[] = [];
-  const failed: LedgerEntry["failed"] = [];
-  const skipped: LedgerEntry["skipped"] = [];
+/**
+ * Folds a run into the model's ledger entry: cases the run executed replace
+ * their previous result, cases it did not execute keep theirs, and cases that
+ * are no longer in the suite are dropped.
+ */
+export function mergeLedgerRun(
+  existing: LedgerEntry | undefined,
+  run: LedgerRun,
+  suiteCaseIds: string[],
+): LedgerEntry {
+  const recordedAt = new Date().toISOString();
+  const commit = run.axle.dirty ? `${run.axle.commit}-dirty` : run.axle.commit;
+  const ran = new Map(run.records.map((record) => [record.caseId, record]));
+  const kept = existing?.provider === run.provider ? existing.cases : {};
 
-  for (const record of run.records) {
-    counts[record.status] += 1;
-    switch (record.status) {
-      case "pass":
-        passed.push(record.caseId);
-        break;
-      case "skip":
-        skipped.push({ case: record.caseId, reason: record.skipReason ?? "" });
-        break;
-      case "fail":
-      case "error":
-        failed.push({
-          case: record.caseId,
-          status: record.status,
-          reasons: record.failureReasons ?? [],
-        });
-        break;
-    }
+  const counts: Record<CaseStatus, number> = { pass: 0, fail: 0, error: 0, skip: 0 };
+  const cases: Record<string, LedgerCase> = {};
+  for (const caseId of suiteCaseIds) {
+    const record = ran.get(caseId);
+    const ledgerCase = record
+      ? toLedgerCase(record, { recordedAt, commit, reasoning: run.reasoning })
+      : kept[caseId];
+    if (!ledgerCase) continue;
+    cases[caseId] = ledgerCase;
+    counts[ledgerCase.status] += 1;
   }
 
   return {
     model: run.model,
     provider: run.provider,
-    recordedAt: new Date().toISOString(),
+    recordedAt,
     axle: run.axle,
-    group: run.group,
-    ...(run.reasoning !== undefined ? { reasoning: run.reasoning } : {}),
     counts,
-    passed,
-    failed,
-    skipped,
+    cases,
   };
 }
 
-export async function upsertLedgerEntries(entries: LedgerEntry[]): Promise<void> {
-  const byModel = new Map<string, LedgerEntry>();
-  for (const entry of [...(await readLedger()), ...entries]) byModel.set(entry.model, entry);
+function toLedgerCase(
+  record: RecordedCase,
+  stamp: { recordedAt: string; commit: string; reasoning?: ReasoningSetting },
+): LedgerCase {
+  const reasons =
+    record.status === "skip" ? [record.skipReason ?? ""] : (record.failureReasons ?? []);
+  return {
+    status: record.status,
+    ...(reasons.length > 0 ? { reasons } : {}),
+    ...(stamp.reasoning !== undefined ? { reasoning: stamp.reasoning } : {}),
+    recordedAt: stamp.recordedAt,
+    commit: stamp.commit,
+  };
+}
+
+export async function recordLedgerRuns(runs: LedgerRun[], suiteCaseIds: string[]): Promise<void> {
+  const byModel = new Map((await readLedger()).map((entry) => [entry.model, entry]));
+  for (const run of runs) {
+    byModel.set(run.model, mergeLedgerRun(byModel.get(run.model), run, suiteCaseIds));
+  }
 
   const lines = [...byModel.values()]
     .sort((a, b) => a.model.localeCompare(b.model))

@@ -7,15 +7,10 @@ import {
   type ContentPartThinking,
   type ProviderTool,
 } from "@fifthrevision/axle";
-import { fail, getAssistantText } from "./helpers.js";
+import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase } from "./types.js";
 
 const webSearchTool: ProviderTool = { type: "provider", name: "web_search" };
-
-// Trivial prompts often produce no visible reasoning; a small puzzle makes
-// every provider emit thinking content.
-const reasoningPrompt =
-  "How many times does the letter r appear in the phrase 'strawberry raspberry'? Work it out, then answer with only the number.";
 
 export const messageFormatCases: CheckCase[] = [
   {
@@ -117,7 +112,7 @@ export const messageFormatCases: CheckCase[] = [
                 reasoning: { effort: "medium", summary: "auto" },
               },
             }
-          : { reasoning: "on" }),
+          : { reasoning: { effort: "high" } }),
       });
 
       if (!result.ok) return fail({ error: result.error });
@@ -156,7 +151,7 @@ export const messageFormatCases: CheckCase[] = [
         provider,
         model,
         messages: [{ role: "user", content: reasoningPrompt }],
-        reasoning: { effort: "low", display: "hidden" },
+        reasoning: { effort: "high", display: "hidden" },
       });
 
       if (!result.ok) return fail({ error: result.error });
@@ -192,7 +187,7 @@ export const messageFormatCases: CheckCase[] = [
         provider,
         model,
         messages: [{ role: "user", content: reasoningPrompt }],
-        reasoning: "on",
+        reasoning: { effort: "high" },
         ...(providerId === "openai"
           ? { providerOptions: { reasoning: { effort: "medium", summary: "auto" } } }
           : {}),

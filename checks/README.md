@@ -143,15 +143,23 @@ pnpm exec tsx checks/run.ts --extended --provider anthropic --model claude-opus-
 ```
 
 The file holds one line per model, keyed by the model string and sorted by
-it. Recording a model again replaces its line, so the ledger always shows the
-latest recorded run and nothing older. Each line carries the provider, the
-time, the Axle version and commit (with `dirty` when the tree had uncommitted
-changes), the case group, the reasoning flag if one was set, status counts,
-the ids of the cases that passed, and every failed or skipped case with its
-reasons.
+it. Each line carries the provider, status counts, and a `cases` map with one
+result per case: its status, the failure or skip reasons, the reasoning flag
+if one was set, and the time and Axle commit it was recorded at (suffixed
+`-dirty` when the tree had uncommitted changes).
 
-A recorded run replaces the whole entry, including when `--case` selected
-only a few cases, so record full runs.
+A recorded run is merged into the model's line. Cases the run executed
+replace their previous result; cases it did not execute keep theirs, with
+their original time and commit. So a failing case can be re-recorded alone:
+
+```bash
+pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-5-5 \
+  --case cache-prompt-reuse --record
+```
+
+The top-level `recordedAt` and `axle` describe the latest recorded run. Cases
+that are no longer in the suite are dropped on the next record, and a line
+recorded through a different provider starts over rather than merging.
 
 ## Cases
 
@@ -178,7 +186,7 @@ only a few cases, so record full runs.
 - `agent-tool-fatal` (fatal tool error terminates the send with usage intact)
 - `agent-subagent-abort` (cancel mid-delegation; no child conversation leak)
 - `agent-parallel-subagents` (parallelize + createAgentTool fan-out)
-- `reasoning-off` (explicit disable; skipped on Fable, which cannot turn thinking off)
+- `reasoning-off` (explicit disable; skipped on Fable, Opus 5.5, and Sonnet 5.5, which reject it)
 - `reasoning-efforts` (low, medium, and high each accepted on the target model)
 - `reasoning-stream-effort`
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)

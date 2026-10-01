@@ -5,7 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
 import { checkCases, type CheckCase, type CheckCaseResult } from "./cases/index.js";
-import { buildLedgerEntry, LEDGER_PATH, readAxleRevision, upsertLedgerEntries } from "./ledger.js";
+import { LEDGER_PATH, readAxleRevision, recordLedgerRuns } from "./ledger.js";
 import { resolveProviderTargets, type ProviderId, type ProviderTarget } from "./providers.js";
 
 const REASONING_FLAGS = ["default", "off", "on", "low", "medium", "high"] as const;
@@ -280,19 +280,17 @@ console.log(`[Output] ${options.out}`);
 
 if (options.record) {
   const axle = await readAxleRevision();
-  await upsertLedgerEntries(
-    targets.map((target) =>
-      buildLedgerEntry({
-        model: target.model,
-        provider: target.id,
-        axle,
-        group: groupLabel,
-        reasoning: options.reasoning,
-        records: records.filter(
-          (record) => record.providerId === target.id && record.model === target.model,
-        ),
-      }),
-    ),
+  await recordLedgerRuns(
+    targets.map((target) => ({
+      model: target.model,
+      provider: target.id,
+      axle,
+      reasoning: options.reasoning,
+      records: records.filter(
+        (record) => record.providerId === target.id && record.model === target.model,
+      ),
+    })),
+    checkCases.map((testCase) => testCase.id),
   );
   console.log(`[Ledger] ${LEDGER_PATH}`);
 }
@@ -526,8 +524,8 @@ Options:
   --case <id>        Case id or prefix ending in "*". Repeat or comma-separate.
                      Selected cases run regardless of group.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.
-  --record           Write each model's result summary to checks/ledger.jsonl,
-                     replacing that model's previous entry.
+  --record           Merge the results into each model's entry in
+                     checks/ledger.jsonl; cases that did not run keep theirs.
 `);
 }
 

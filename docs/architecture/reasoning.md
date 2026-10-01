@@ -72,20 +72,27 @@ can be re-checked when they change.
 ## Provider and model requirements
 
 Researched 2026-09-07 against the vendors' current documentation and the
-`checks/` harness. Re-verify this section when a model generation ships.
+`checks/` harness; the Opus 5.5 and Sonnet 5.5 rows were added 2026-10-01.
+Re-verify this section when a model generation ships.
 
 ### Anthropic Messages API
 
-| Generation                      | Thinking modes                                           | Disable                                                    | Effort values                                                           | Default                  |
-| ------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------ |
-| Fable 5 / 5.1, Mythos           | adaptive only                                            | rejected (400)                                             | low, medium, high, xhigh, max                                           | thinking on, effort high |
-| Opus 5, Sonnet 5                | adaptive only                                            | `thinking.type: disabled` (Opus 5 rejects it at xhigh/max) | low, medium, high, xhigh, max                                           | thinking on, effort high |
-| Opus 4.7, 4.8                   | adaptive only; `enabled` + budget returns 400            | `disabled`                                                 | low, medium, high, xhigh, max                                           | thinking off             |
-| Opus 4.6, Sonnet 4.6            | adaptive or `enabled` + budget (budget deprecated)       | `disabled`                                                 | low, medium, high, max                                                  | thinking off             |
-| Haiku 4.5, Opus 4.5, Sonnet 4.5 | `enabled` + `budget_tokens` only; `adaptive` returns 400 | `disabled`                                                 | Opus 4.5 accepts `output_config.effort` alongside a budget; others none | thinking off             |
+| Generation                      | Thinking modes                                           | Disable                                                                                                   | Effort values                                                           | Default                    |
+| ------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
+| Fable 5 / 5.1, Mythos           | adaptive only                                            | rejected (400)                                                                                            | low, medium, high, xhigh, max                                           | thinking on, effort high   |
+| Opus 5.5                        | adaptive only                                            | rejected (400)                                                                                            | low, medium, high, xhigh, max                                           | thinking on, effort medium |
+| Sonnet 5.5                      | adaptive only                                            | `disabled` rejected (400); `thinking.type: between_tools` stops up-front thinking at effort high or below | low, medium, high, xhigh, max                                           | thinking on, effort high   |
+| Opus 5, Sonnet 5                | adaptive only                                            | `thinking.type: disabled` (Opus 5 rejects it at xhigh/max)                                                | low, medium, high, xhigh, max                                           | thinking on, effort high   |
+| Opus 4.7, 4.8                   | adaptive only; `enabled` + budget returns 400            | `disabled`                                                                                                | low, medium, high, xhigh, max                                           | thinking off               |
+| Opus 4.6, Sonnet 4.6            | adaptive or `enabled` + budget (budget deprecated)       | `disabled`                                                                                                | low, medium, high, max                                                  | thinking off               |
+| Haiku 4.5, Opus 4.5, Sonnet 4.5 | `enabled` + `budget_tokens` only; `adaptive` returns 400 | `disabled`                                                                                                | Opus 4.5 accepts `output_config.effort` alongside a budget; others none | thinking off               |
 
 Opus 4, Opus 4.1, Sonnet 4, and Sonnet 3.7 also used budgets but are retired
 (June, August, June, and February 2026); Axle does not route for them.
+
+Axle sends `disabled` for `off` on every Anthropic model, so `off` is
+rejected on Sonnet 5.5 as it is on Opus 5.5 and Fable. `between_tools` is
+reachable only through `providerOptions`.
 
 Constraints that shape the translation:
 

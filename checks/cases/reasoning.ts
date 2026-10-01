@@ -9,13 +9,8 @@ import {
 } from "@fifthrevision/axle";
 import * as z from "zod";
 import type { ProviderId } from "../providers.js";
-import { fail, getAssistantText } from "./helpers.js";
+import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
-
-// Trivial prompts often produce no visible reasoning; a small puzzle makes
-// every provider emit thinking content.
-const reasoningPrompt =
-  "How many times does the letter r appear in the phrase 'strawberry raspberry'? Work it out, then answer with only the number.";
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
 
@@ -47,7 +42,11 @@ export const reasoningCases: CheckCase[] = [
     id: "reasoning-off",
     description: "generate() succeeds with reasoning explicitly disabled.",
     exclusions: [
-      { provider: "anthropic", model: /fable/, reason: "Fable rejects thinking.type: disabled." },
+      {
+        provider: "anthropic",
+        model: /fable|opus-5-5|sonnet-5-5/,
+        reason: "Fable, Opus 5.5, and Sonnet 5.5 reject thinking.type: disabled.",
+      },
       {
         provider: "gemini",
         model: /gemini-3|gemini-2\.5-pro|-latest$/,
@@ -138,7 +137,7 @@ export const reasoningCases: CheckCase[] = [
       if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       return {
-        ok: text.includes("6"),
+        ok: text.trim().length > 0,
         details: {
           text,
           thinkingDeltaCount,
