@@ -16,6 +16,7 @@
 - Test single: `pnpm test -- path/to/file.test.ts` or `pnpm test -- -t "test name pattern"`
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
+- Example jobs: `scripts/run-example-jobs.sh [job files...]` (runs `examples/jobs/*` sequentially against real providers; starts the HTTP MCP server)
 - Release: `pnpm run release -- <version>` (runs tests, builds, versions packages, commits, and tags)
 
 # Working with Humans
@@ -64,7 +65,7 @@
 - `packages/axle-cli/`: CLI harness package
   - `src/cli.ts`: CLI entrypoint
   - `src/cli/`: YAML loading, runners, tool factory, ledger
-  - `src/tools/`: CLI local workflow tools (calculator, exec, read-file, write-file, patch-file)
+  - `src/tools/`: CLI local workflow tools (exec, read-file, write-file, patch-file)
   - `tests/`: CLI package tests
 - `examples/`: Sample job definitions and scripts
 - `scripts/`: Utility scripts

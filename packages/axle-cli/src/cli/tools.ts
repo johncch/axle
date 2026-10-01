@@ -1,5 +1,4 @@
 import {
-  calculatorTool,
   execTool,
   patchFileTool,
   readFileTool,
@@ -13,9 +12,6 @@ import {
  */
 export function createTool(name: string): ExecutableTool {
   switch (name) {
-    case "calculator": {
-      return calculatorTool;
-    }
     case "exec": {
       return execTool;
     }
@@ -44,10 +40,11 @@ export function createTools(names: string[]): ExecutableTool[] {
  * Available tool names for reference.
  */
 export const availableTools = [
-  "calculator",
   "exec",
   "patch-file",
   "read-file",
   "write-file",
 ] as const;
 export type AvailableToolName = (typeof availableTools)[number];
+
+export const defaultToolNames: readonly AvailableToolName[] = availableTools;

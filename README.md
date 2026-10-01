@@ -10,7 +10,7 @@ task runner built on it.
 | [`@fifthrevision/axle`](packages/axle/)         | The Typescript library for building reliable agents            |
 | [`@fifthrevision/axle-cli`](packages/axle-cli/) | The CLI harness for running repeatable or one-off AI workloads |
 
-# A brief history
+## A brief history
 
 Axle started as a TypeScript native CLI task runner. Back then, context windows
 were small and tool use were limited and there was a lot of utility in building
@@ -26,7 +26,7 @@ interact with LLM APIs in more and more sophisticated ways.
 
 Thus, Axle the library was born. Today, Axle is shared not just between the CLI, [Sunnyday](https://www.sunnyday.run), and [Axle Code](https://github.com/johncch/axle-code), but also in various other projects and experiments.
 
-# Axle (TypeScript Library)
+## Axle (TypeScript Library)
 
 ```bash
 npm install @fifthrevision/axle        # the library
@@ -39,7 +39,7 @@ const agent = new Agent({ provider: anthropic(), model: "claude-sonnet-5" });
 const result = await agent.send("What should I name my new library?").final;
 ```
 
-# Axle CLI
+## Axle CLI
 
 ```bash
 npm install -g @fifthrevision/axle-cli # the CLI

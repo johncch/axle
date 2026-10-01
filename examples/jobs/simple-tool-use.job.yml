@@ -2,7 +2,7 @@
 provider: anthropic
 
 task: |
-  Use the calculator tool to add 2 and 2 together.
+  Use the read-file tool to read README.md and summarize it in one sentence.
 
 tools:
-  - calculator
+  - read-file

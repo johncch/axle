@@ -1,6 +1,7 @@
 import type { Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  createAgentDefinition,
   createCliAgentConfig,
   createDefaultAgentDefinition,
   resolveTarget,
@@ -35,8 +36,8 @@ describe("createCliAgentConfig", () => {
     const { agentConfig, mcps } = await createCliAgentConfig(
       {
         provider: { type: "chatcompletions" },
-        task: "Calculate something",
-        tools: ["calculator"],
+        task: "Read something",
+        tools: ["read-file"],
       },
       {},
       serviceConfig,
@@ -45,7 +46,7 @@ describe("createCliAgentConfig", () => {
 
     expect(agentConfig.provider.name).toBe("ChatCompletions");
     expect(agentConfig.model).toBe("test-model");
-    expect(agentConfig.tools?.map((tool) => tool.name)).toEqual(["calculator"]);
+    expect(agentConfig.tools?.map((tool) => tool.name)).toEqual(["read-file"]);
     expect(agentConfig).not.toHaveProperty("memory");
     expect(mcps).toEqual([]);
   });
@@ -223,6 +224,47 @@ describe("createDefaultAgentDefinition", () => {
     expect(() => createDefaultAgentDefinition({}, {})).toThrow(
       /No provider specified and no default provider configured/,
     );
+  });
+});
+
+describe("default tools", () => {
+  const cliConfig = { defaults: { provider: "anthropic" } };
+  const allTools = ["exec", "patch-file", "read-file", "write-file"];
+  const toolNames = (definition: { tools?: { name: string }[] }) =>
+    definition.tools?.map((tool) => tool.name);
+
+  test("chat gets every built-in tool", () => {
+    expect(toolNames(createDefaultAgentDefinition(cliConfig, {}))).toEqual(allTools);
+  });
+
+  test("a recipe without tools inherits the defaults", () => {
+    expect(toolNames(createAgentDefinition({ task: "t" }, cliConfig, {}))).toEqual(allTools);
+  });
+
+  test("a recipe's tools replace the defaults", () => {
+    const definition = createAgentDefinition({ task: "t", tools: ["exec"] }, cliConfig, {});
+    expect(toolNames(definition)).toEqual(["exec"]);
+  });
+
+  test("an empty tools list opts out", () => {
+    expect(toolNames(createAgentDefinition({ task: "t", tools: [] }, cliConfig, {}))).toEqual([]);
+  });
+
+  test("defaults.tools overrides the built-in set for chat and recipes", () => {
+    const configured = { defaults: { provider: "anthropic", tools: ["read-file"] } };
+    expect(toolNames(createDefaultAgentDefinition(configured, {}))).toEqual(["read-file"]);
+    expect(toolNames(createAgentDefinition({ task: "t" }, configured, {}))).toEqual(["read-file"]);
+  });
+
+  test("an unknown recipe tool fails with the available names", () => {
+    expect(() => createAgentDefinition({ task: "t", tools: ["foobar"] }, cliConfig, {})).toThrow(
+      "Unknown tool: foobar. Available: exec, patch-file, read-file, write-file",
+    );
+  });
+
+  test("an unknown defaults.tools entry fails for chat", () => {
+    const configured = { defaults: { provider: "anthropic", tools: ["read-files"] } };
+    expect(() => createDefaultAgentDefinition(configured, {})).toThrow("Unknown tool: read-files.");
   });
 });
 
