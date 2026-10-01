@@ -47,8 +47,8 @@ export function needsSetupWizard(
   return true;
 }
 
-function ensureNotCancelled<T>(value: T | symbol): T {
-  if (typeof value === "symbol") {
+function ensureNotCancelled<T>(value: T | typeof clack.CANCEL_SYMBOL): T {
+  if (clack.isCancel(value)) {
     clack.cancel("Setup cancelled.");
     process.exit(1);
   }
