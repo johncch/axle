@@ -216,22 +216,10 @@ export function createStreamingAdapter() {
 
       case "response.output_item.added": {
         if (event.item?.type === "reasoning") {
-          const reasoning = event.item as { id?: string; encrypted_content?: string | null };
           currentPartIndex = partIndex++;
           chunks.push({
             type: "thinking-start",
-            data: {
-              index: currentPartIndex,
-              id: reasoning.id,
-              ...(reasoning.encrypted_content
-                ? {
-                    continuity: {
-                      provider: "openai" as const,
-                      encrypted: reasoning.encrypted_content,
-                    },
-                  }
-                : {}),
-            },
+            data: { index: currentPartIndex, id: event.item.id },
           });
         } else if (event.item?.type === "function_call") {
           const item = event.item as { id?: string; name: string; call_id: string };
@@ -260,6 +248,15 @@ export function createStreamingAdapter() {
 
       case "response.output_item.done": {
         if (event.item?.type === "reasoning" && currentPartIndex >= 0) {
+          if (event.item.encrypted_content) {
+            chunks.push({
+              type: "thinking-metadata",
+              data: {
+                index: currentPartIndex,
+                continuity: { provider: "openai", encrypted: event.item.encrypted_content },
+              },
+            });
+          }
           chunks.push({
             type: "thinking-complete",
             data: { index: currentPartIndex },
