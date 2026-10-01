@@ -79,7 +79,7 @@ task: |
   Summarize the attached document.
 
 tools:
-  - calculator
+  - read-file
 
 providerTools:
   - web_search
@@ -166,13 +166,17 @@ summary target all scale with it. A small value (e.g. `3000`) forces a
 compaction within a few exchanges, which is also the way to see one without
 filling a real context window.
 
-CLI job files can use these local tool names:
+Chat and job files get these local tools by default:
 
-- `calculator`
 - `exec`
 - `patch-file`
 - `read-file`
 - `write-file`
+
+They run without asking for approval — including `exec` and `write-file`,
+and including in scheduled and batch runs. A job's `tools:` list replaces
+the defaults; `tools: []` runs with no local tools. `defaults.tools` in
+`cli.yaml` replaces the built-in default set for both chat and jobs.
 
 ## Batch
 
@@ -386,6 +390,7 @@ defaults:
   models: # per-provider default models
     openrouter: z-ai/glm-4.6
     anthropic: anthropic/claude-sonnet-5
+  tools: [read-file, exec] # replaces the built-in default tool set
 ```
 
 Profile names share a namespace with the built-in types and may shadow

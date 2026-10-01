@@ -17,9 +17,9 @@ describe("CLI Factories", () => {
 
   describe("createTools", () => {
     it("should create multiple tools", () => {
-      const tools = createTools(["calculator", "exec"]);
+      const tools = createTools(["read-file", "exec"]);
       expect(tools).toHaveLength(2);
-      expect(tools[0].name).toBe("calculator");
+      expect(tools[0].name).toBe("read-file");
       expect(tools[1].name).toBe("exec");
     });
 
@@ -29,13 +29,12 @@ describe("CLI Factories", () => {
     });
 
     it("should throw if any tool name is unknown", () => {
-      expect(() => createTools(["calculator", "unknown"])).toThrow("Unknown tool: unknown");
+      expect(() => createTools(["read-file", "unknown"])).toThrow("Unknown tool: unknown");
     });
   });
 
   describe("availableTools", () => {
     it("should contain all available tools", () => {
-      expect(availableTools).toContain("calculator");
       expect(availableTools).toContain("exec");
       expect(availableTools).toContain("patch-file");
       expect(availableTools).toContain("read-file");

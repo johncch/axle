@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-09-17 (AXL-28)
+**Status**: current · **Last design revision**: 2026-10-01 (AXL-32)
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -211,8 +211,31 @@ against it; divergence is a defect. State ownership is defined in
     failed run line, and the plain-run state line degrades to a warning
     rather than aborting the run when its own files are unreadable.
 
+11. **Local tools are on by default and run unapproved.** Chat and any
+    recipe without a `tools:` key get the default set — `exec`,
+    `patch-file`, `read-file`, `write-file` — or `defaults.tools` from
+    `cli.yaml` when set. A recipe's `tools:` replaces the set wholesale;
+    `tools: []` is the opt-out. Nothing gates a tool call: shell and writes
+    execute as soon as the model asks, in chat, `-j`, batch, and scheduled
+    occurrences alike, so content the model reads (attached files, MCP
+    results, web search) can drive them. Resume replays the tools stored
+    in the session's definition, not the current defaults.
+
 ## Decisions
 
+- **2026-10-01 — the CLI is open: default tools include shell and writes,
+  with no approval step (AXL-32).** The CLI is a power tool; the user owns
+  what a run does. Recipes without `tools:` inherit the defaults, so an
+  existing tool-less recipe gained `exec`/`write-file` silently — disclosed
+  as a breaking change, not designed around. Rejected: a read-only default
+  set (`read-file` only) — a chat without shell is not useful enough to be
+  the default. Rejected: defaults for chat only — recipes and chat should
+  resolve tools the same way. Rejected: dedicated `glob`/`grep` tools —
+  `exec` covers search while nothing is gated. Deferred: a classifier or
+  approval layer intercepting tool calls before `execute`; when it lands it
+  revisits this decision, and read-only search tools become worth adding
+  because they can be auto-approved while `exec` is checked. `calculator`
+  was deleted the same day as a test-only tool.
 - **2026-09-18 — clock-time schedules are a second field, not a richer
   `every`.** `at: HH:MM | [HH:MM]` with optional `on: [weekday]`. Rejected:
   a string grammar (`"mon-fri 09:00"`) — a second parser for what YAML

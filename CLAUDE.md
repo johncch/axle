@@ -64,7 +64,7 @@
 - `packages/axle-cli/`: CLI harness package
   - `src/cli.ts`: CLI entrypoint
   - `src/cli/`: YAML loading, runners, tool factory, ledger
-  - `src/tools/`: CLI local workflow tools (calculator, exec, read-file, write-file, patch-file)
+  - `src/tools/`: CLI local workflow tools (exec, read-file, write-file, patch-file)
   - `tests/`: CLI package tests
 - `examples/`: Sample job definitions and scripts
 - `scripts/`: Utility scripts

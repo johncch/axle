@@ -4,6 +4,15 @@
 
 ### Breaking changes
 
+- **Local tools are on by default.** Chat, and any recipe without a
+  `tools:` key, now get `exec`, `patch-file`, `read-file`, and
+  `write-file`. They run without approval, including in batch and
+  scheduled runs, so a recipe that previously could only return text can
+  now run shell commands and write files. Add `tools: []` to keep a recipe
+  tool-free, or set `defaults.tools` in `cli.yaml` to change the default
+  set everywhere. Resumed sessions keep the tools they were saved with.
+- **The `calculator` tool is removed.** A recipe that lists it fails with
+  `Unknown tool: calculator`; delete the entry.
 - **Every model is assumed to have a 200,000-token context window.** The
   usage bar and the compaction threshold (~80%) no longer look the model up
   in a built-in registry. Set `AXLE_CONTEXT_WINDOW=<tokens>` for a model

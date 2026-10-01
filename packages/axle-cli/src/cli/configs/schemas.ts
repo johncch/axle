@@ -100,6 +100,7 @@ export const CliConfigSchema = z.object({
     .object({
       provider: z.string().optional(),
       models: z.record(z.string(), z.string()).optional(),
+      tools: z.array(z.string()).optional(),
     })
     .optional(),
 });
