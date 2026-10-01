@@ -1,13 +1,13 @@
 import { FileInfo } from "../utils/file.js";
 import {
+  Citation,
   ContentPart,
-  ContentPartFile,
   ContentPartCitation,
+  ContentPartFile,
   ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
-  Citation,
 } from "./message.js";
 
 export function toContentParts(params: {
@@ -32,10 +32,19 @@ export function toContentParts(params: {
 
 export function getTextContent(content: string | ContentPart[]): string {
   if (typeof content === "string") return content;
-  return content
-    .filter((item) => item.type === "text")
-    .map((item) => (item as ContentPartText).text)
-    .join("\n\n");
+
+  let text = "";
+  let separatedFromPreviousText = false;
+  for (const part of content) {
+    if (part.type === "citation") continue;
+    if (part.type !== "text") {
+      separatedFromPreviousText = text !== "";
+      continue;
+    }
+    text += separatedFromPreviousText ? `\n\n${part.text}` : part.text;
+    separatedFromPreviousText = false;
+  }
+  return text;
 }
 
 export function getThinkingContent(content: ContentPart[]): string {

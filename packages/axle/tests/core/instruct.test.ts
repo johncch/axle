@@ -59,6 +59,25 @@ describe("Instruct", () => {
       ).toEqual({ answer: "yes" });
       expect(instruct.parse(undefined)).toBeNull();
     });
+
+    test("parses a response the provider split across several text parts", () => {
+      const instruct = new Instruct({
+        prompt: "Return a result",
+        schema: z.object({ answer: z.string() }),
+      });
+
+      expect(
+        instruct.parse({
+          role: "assistant",
+          id: "response-1",
+          content: [
+            { type: "text", text: '{"answer":"The article reflects ' },
+            { type: "text", text: "on a design theory." },
+            { type: "text", text: '"}' },
+          ],
+        }),
+      ).toEqual({ answer: "The article reflects on a design theory." });
+    });
   });
 
   describe("input binding", () => {
