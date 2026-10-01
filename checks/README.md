@@ -205,6 +205,9 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `reasoning-stream-effort`
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)
 - `stream-web-search`
+- `format-server-tool-with-client-tool` (Anthropic: a web search called in the
+  same response as a local tool; its result arrives in the next step, is
+  stored, and a follow-up request is accepted)
 - `instruct-text-reference`
 - `instruct-context`
 - `generate-image-file`

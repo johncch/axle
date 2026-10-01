@@ -125,6 +125,7 @@ export type {
   ContentPartCitation,
   ContentPartFile,
   ContentPartProviderTool,
+  ContentPartProviderToolResult,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,

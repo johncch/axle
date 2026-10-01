@@ -76,6 +76,8 @@ async function convertMessage(
         if (part.output != null) {
           content.push(part.output as any);
         }
+      } else if (part.type === "provider-tool-result") {
+        content.push(part.output as any);
       }
     }
     return {
@@ -370,6 +372,23 @@ export function toAnthropicToolChoice(
     providerTools?.some((tool) => tool.name === choice.name);
   if (!exists) throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
   return { tool_choice: { type: "tool" as const, name: choice.name, ...disable } };
+}
+
+export function findOpenProviderToolCalls(
+  messages: Array<AxleMessage>,
+): Array<{ id: string; name: string }> {
+  const openCallNames = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const part of message.content) {
+      if (part.type === "provider-tool" && part.output == null) {
+        openCallNames.set(part.id, part.name);
+      } else if (part.type === "provider-tool-result") {
+        openCallNames.delete(part.id);
+      }
+    }
+  }
+  return [...openCallNames].map(([id, name]) => ({ id, name }));
 }
 
 export function normalizeAnthropicCitation(citation: Anthropic.Messages.TextCitation): Citation {

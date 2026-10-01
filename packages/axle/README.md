@@ -575,6 +575,12 @@ part, is the provider's own result object, unchanged. On Anthropic that is the
 whole result block (for example `{ type: "web_search_tool_result",
 tool_use_id, content }`).
 
+When Claude calls an Anthropic-run tool and one of your tools in the same
+response, Anthropic runs its tool after your tool results come back. The
+first assistant message then holds a `provider-tool` part with no `output`,
+and the next one starts with a `provider-tool-result` part carrying the same
+`id`. `provider-tool:complete` fires when that result arrives.
+
 Anthropic can pause a long provider-tool turn (`pause_turn`). Axle continues
 it automatically: the step keeps streaming, yields one assistant message, and
 reports the summed usage of every request it took. A paused turn counts as one

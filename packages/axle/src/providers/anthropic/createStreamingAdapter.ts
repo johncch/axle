@@ -8,9 +8,12 @@ import { withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
 import { convertStopReason, normalizeAnthropicCitation } from "./utils.js";
 
-export function createAnthropicStreamingAdapter() {
+export function createAnthropicStreamingAdapter(
+  openProviderToolCalls: Array<{ id: string; name: string }> = [],
+) {
   const blockTypes = new Map<number, "text" | "thinking" | "tool" | "provider-tool">();
   const providerToolInfo = new Map<string, { index: number; name: string }>();
+  const earlierCallNames = new Map(openProviderToolCalls.map((call) => [call.id, call.name]));
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheReadInputTokens = 0;
@@ -165,6 +168,7 @@ export function createAnthropicStreamingAdapter() {
         } else if ("tool_use_id" in event.content_block) {
           const block = event.content_block;
           const info = providerToolInfo.get(block.tool_use_id);
+          const earlierCallName = earlierCallNames.get(block.tool_use_id);
           if (info) {
             chunks.push({
               type: "provider-tool-complete",
@@ -176,6 +180,17 @@ export function createAnthropicStreamingAdapter() {
               },
             });
             providerToolInfo.delete(block.tool_use_id);
+          } else if (earlierCallName !== undefined) {
+            chunks.push({
+              type: "provider-tool-result",
+              data: {
+                index,
+                id: block.tool_use_id,
+                name: earlierCallName,
+                output: block,
+              },
+            });
+            earlierCallNames.delete(block.tool_use_id);
           }
         }
         break;

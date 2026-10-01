@@ -8,8 +8,10 @@ import {
   type AxleModelRequestOptions,
   type Citation,
   type ContentPartThinking,
+  type ExecutableTool,
   type ProviderTool,
 } from "@fifthrevision/axle";
+import * as z from "zod";
 import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
 
@@ -142,6 +144,103 @@ export const messageFormatCases: CheckCase[] = [
           },
         ],
       });
+    },
+  },
+  {
+    group: "default",
+    id: "format-server-tool-with-client-tool",
+    description:
+      "A web search called alongside a local tool keeps its result from the next step, and a follow-up request is accepted.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      const schema = z.object({});
+      const getBuildNumber: ExecutableTool<typeof schema> = {
+        name: "get_build_number",
+        description: "Return the current build number of this machine.",
+        schema,
+        async execute() {
+          return "build 4127";
+        },
+      };
+      const messages: AxleMessage[] = [
+        {
+          role: "user",
+          content:
+            "Do both of these at the same time, as parallel tool calls in one response: " +
+            "(1) web search for 'Anthropic homepage', (2) call get_build_number. " +
+            "Do not wait for one before starting the other. Then report both results in one sentence.",
+        },
+      ];
+
+      const completedProviderToolIds: string[] = [];
+      const handle = stream({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools: [webSearchTool],
+        tools: [getBuildNumber],
+        messages,
+        maxOutputTokens: 2048,
+      });
+      handle.on((event) => {
+        if (event.type === "provider-tool:complete") completedProviderToolIds.push(event.id);
+      });
+      const first = await handle.final;
+      if (!first.ok) return fail({ error: first.error });
+
+      const assistantParts = first.messages.flatMap((message) =>
+        message.role === "assistant" ? message.content : [],
+      );
+      const deferredCall = assistantParts.find(
+        (part) => part.type === "provider-tool" && part.output == null,
+      );
+      if (!deferredCall || deferredCall.type !== "provider-tool") {
+        return {
+          ok: false,
+          failureReasons: [
+            "The model did not call web search alongside the local tool, so nothing was exercised.",
+          ],
+          details: { parts: assistantParts.map((part) => part.type) },
+        };
+      }
+
+      const failureReasons = [
+        ...(assistantParts.some(
+          (part) => part.type === "provider-tool-result" && part.id === deferredCall.id,
+        )
+          ? []
+          : ["The search result that arrived in the next step was not stored."]),
+        ...(completedProviderToolIds.includes(deferredCall.id)
+          ? []
+          : ["provider-tool:complete did not fire for the search."]),
+      ];
+      if (failureReasons.length > 0) {
+        return { ok: false, failureReasons, details: { text: getAssistantText(first.final) } };
+      }
+
+      const followUp = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools: [webSearchTool],
+        tools: [getBuildNumber],
+        messages: [
+          ...messages,
+          ...first.messages,
+          { role: "user", content: "What was the build number again? Answer with the number." },
+        ],
+        maxOutputTokens: 2048,
+      });
+      if (!followUp.ok) return fail({ error: followUp.error });
+
+      return {
+        ok: true,
+        details: {
+          text: getAssistantText(first.final),
+          followUpText: getAssistantText(followUp.final),
+          usage: followUp.usage,
+        },
+      };
     },
   },
   {

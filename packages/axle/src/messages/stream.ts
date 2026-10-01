@@ -21,6 +21,7 @@ export interface StreamChunk {
     | "provider-tool-start"
     | "provider-tool-input"
     | "provider-tool-complete"
+    | "provider-tool-result"
     | "complete"
     | "error";
   id?: string;
@@ -222,6 +223,16 @@ export interface StreamProviderToolCompleteChunk extends StreamChunk {
   };
 }
 
+export interface StreamProviderToolResultChunk extends StreamChunk {
+  type: "provider-tool-result";
+  data: {
+    index: number;
+    id: string;
+    name: string;
+    output: unknown;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Union
 // ---------------------------------------------------------------------------
@@ -245,4 +256,5 @@ export type AnyStreamChunk =
   | StreamToolCallCompleteChunk
   | StreamProviderToolStartChunk
   | StreamProviderToolInputChunk
-  | StreamProviderToolCompleteChunk;
+  | StreamProviderToolCompleteChunk
+  | StreamProviderToolResultChunk;

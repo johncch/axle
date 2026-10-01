@@ -59,6 +59,7 @@ export interface AxleAssistantMessage {
     | ContentPartThinking
     | ContentPartToolCall
     | ContentPartProviderTool
+    | ContentPartProviderToolResult
     | ContentPartCitation
   >;
   /** Provider-normalized reason the assistant message stopped. */
@@ -100,6 +101,7 @@ export type ContentPart =
   | ContentPartToolCall
   | ContentPartThinking
   | ContentPartProviderTool
+  | ContentPartProviderToolResult
   | ContentPartCitation;
 
 /**
@@ -264,6 +266,20 @@ export interface ContentPartProviderTool {
   input?: unknown;
   /** Provider-specific tool output. */
   output?: unknown;
+}
+
+/**
+ * Result of a provider tool call that an earlier assistant message holds.
+ */
+export interface ContentPartProviderToolResult {
+  /** Part discriminator. */
+  type: "provider-tool-result";
+  /** Id of the provider tool call this result answers. */
+  id: string;
+  /** Provider tool name. */
+  name: string;
+  /** Provider-specific tool output. */
+  output: unknown;
 }
 
 /**
