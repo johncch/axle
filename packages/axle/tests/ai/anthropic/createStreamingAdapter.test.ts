@@ -782,8 +782,77 @@ describe("createAnthropicStreamingAdapter", () => {
       if (chunks[0].type === "provider-tool-complete") {
         expect(chunks[0].data.id).toBe("srvtoolu_123");
         expect(chunks[0].data.name).toBe("web_search");
-        expect(chunks[0].data.output).toBeDefined();
+        expect(chunks[0].data.output).toEqual({
+          type: "web_search_tool_result",
+          tool_use_id: "srvtoolu_123",
+          content: [{ type: "web_search_result", url: "https://example.com", title: "Example" }],
+        });
       }
+    });
+
+    test("should emit the server tool input once its block closes", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "server_tool_use",
+          id: "srvtoolu_123",
+          name: "web_search",
+          input: {},
+        } as any,
+      });
+      adapter.handleEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '{"query":' },
+      });
+      adapter.handleEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '"test"}' },
+      });
+      const chunks = adapter.handleEvent({ type: "content_block_stop", index: 0 });
+
+      expect(chunks).toEqual([
+        {
+          type: "provider-tool-input",
+          data: { index: 0, id: "srvtoolu_123", name: "web_search", input: { query: "test" } },
+        },
+      ]);
+    });
+
+    test("should complete a server tool from a result block of any type", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      const result = {
+        type: "web_fetch_tool_result",
+        tool_use_id: "srvtoolu_123",
+        content: { type: "web_fetch_result", url: "https://example.com" },
+      };
+
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "server_tool_use",
+          id: "srvtoolu_123",
+          name: "web_fetch",
+          input: {},
+        } as any,
+      });
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 1,
+        content_block: result as any,
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: "provider-tool-complete",
+          data: { index: 0, id: "srvtoolu_123", name: "web_fetch", output: result },
+        },
+      ]);
     });
   });
 });

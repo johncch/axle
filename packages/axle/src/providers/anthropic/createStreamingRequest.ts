@@ -47,7 +47,7 @@ export async function* createStreamingRequest(
       signal,
     });
 
-    const request = {
+    const initialRequest = {
       model: model,
       max_tokens: maxOutputTokens ?? getAnthropicStreamMaxTokens(model),
       messages: providerMessages,
@@ -61,21 +61,32 @@ export async function* createStreamingRequest(
       // Raw provider options are applied last so they can override Axle mappings.
       ...providerOptions,
     };
-    span?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
 
-    const stream = await client.messages.create(
-      {
-        ...request,
-        stream: true as const,
-      },
-      { signal },
-    );
+    let request = initialRequest;
+    while (true) {
+      span?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
 
-    for await (const messageStreamEvent of stream) {
-      const chunks = streamingAdapter.handleEvent(messageStreamEvent);
-      for (const chunk of chunks) {
-        yield chunk;
+      const stream = await client.messages.create(
+        {
+          ...request,
+          stream: true as const,
+        },
+        { signal },
+      );
+
+      for await (const messageStreamEvent of stream) {
+        const chunks = streamingAdapter.handleEvent(messageStreamEvent);
+        for (const chunk of chunks) {
+          yield chunk;
+        }
       }
+
+      const pausedContent = streamingAdapter.pausedContent();
+      if (!pausedContent || signal?.aborted) break;
+      request = {
+        ...initialRequest,
+        messages: [...initialRequest.messages, { role: "assistant", content: pausedContent }],
+      };
     }
   } catch (error) {
     if (signal?.aborted) return;

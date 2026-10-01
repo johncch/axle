@@ -313,6 +313,13 @@ export async function readStep(
         break;
       }
 
+      case "provider-tool-input": {
+        const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
+        const part = parts[partIndex];
+        if (part && part.type === "provider-tool") part.input = chunk.data.input;
+        break;
+      }
+
       case "provider-tool-complete": {
         const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
         const part = parts[partIndex] as ContentPartProviderTool;
