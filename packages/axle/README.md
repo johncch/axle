@@ -570,6 +570,15 @@ field for provider-specific options:
 ```
 
 Provider tool events stream as `provider-tool:start` and `provider-tool:complete`.
+The `output` on `provider-tool:complete`, and on the stored `provider-tool`
+part, is the provider's own result object, unchanged. On Anthropic that is the
+whole result block (for example `{ type: "web_search_tool_result",
+tool_use_id, content }`).
+
+Anthropic can pause a long provider-tool turn (`pause_turn`). Axle continues
+it automatically: the step keeps streaming, yields one assistant message, and
+reports the summed usage of every request it took. A paused turn counts as one
+step toward `maxSteps`.
 
 ### Web Search Fallback
 

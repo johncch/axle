@@ -1,4 +1,8 @@
-import { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages.js";
+import type {
+  ContentBlock,
+  ContentBlockParam,
+  MessageStreamEvent,
+} from "@anthropic-ai/sdk/resources/messages.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
@@ -11,6 +15,12 @@ export function createAnthropicStreamingAdapter() {
   let outputTokens = 0;
   let cacheReadInputTokens = 0;
   let cacheWriteInputTokens = 0;
+  const pausedUsage = { in: 0, out: 0, cachedIn: 0, cacheWriteIn: 0 };
+  let turn: "not-started" | "streaming" | "paused" = "not-started";
+  const responseBlocks: Array<ContentBlock> = [];
+  const pausedBlocks: Array<ContentBlock> = [];
+  const serverToolInputJson = new Map<number, string>();
+  let indexOffset = 0;
   const toolCallBuffers = new Map<
     number,
     {
@@ -31,14 +41,17 @@ export function createAnthropicStreamingAdapter() {
           (event.message.usage?.cache_read_input_tokens ?? 0);
         cacheWriteInputTokens = event.message.usage?.cache_creation_input_tokens ?? 0;
         cacheReadInputTokens = event.message.usage?.cache_read_input_tokens ?? 0;
-        chunks.push({
-          type: "start",
-          id: event.message.id,
-          data: {
-            model: event.message.model,
-            timestamp: Date.now(),
-          },
-        });
+        if (turn === "not-started") {
+          chunks.push({
+            type: "start",
+            id: event.message.id,
+            data: {
+              model: event.message.model,
+              timestamp: Date.now(),
+            },
+          });
+        }
+        turn = "streaming";
         break;
 
       case "message_delta":
@@ -53,16 +66,29 @@ export function createAnthropicStreamingAdapter() {
           cacheWriteInputTokens = event.usage.cache_creation_input_tokens ?? cacheWriteInputTokens;
           cacheReadInputTokens = event.usage.cache_read_input_tokens ?? cacheReadInputTokens;
         }
-        if (event.delta.stop_reason) {
+        if (event.delta.stop_reason === "pause_turn") {
+          pausedUsage.in += inputTokens;
+          pausedUsage.out += outputTokens;
+          pausedUsage.cachedIn += cacheReadInputTokens;
+          pausedUsage.cacheWriteIn += cacheWriteInputTokens;
+          inputTokens = 0;
+          outputTokens = 0;
+          cacheReadInputTokens = 0;
+          cacheWriteInputTokens = 0;
+          pausedBlocks.push(...responseBlocks);
+          indexOffset += responseBlocks.length;
+          responseBlocks.length = 0;
+          turn = "paused";
+        } else if (event.delta.stop_reason) {
           chunks.push({
             type: "complete",
             data: {
               finishReason: convertStopReason(event.delta.stop_reason),
               usage: withUsageDetails(
-                { in: inputTokens, out: outputTokens },
+                { in: pausedUsage.in + inputTokens, out: pausedUsage.out + outputTokens },
                 {
-                  cachedIn: cacheReadInputTokens,
-                  cacheWriteIn: cacheWriteInputTokens,
+                  cachedIn: pausedUsage.cachedIn + cacheReadInputTokens,
+                  cacheWriteIn: pausedUsage.cacheWriteIn + cacheWriteInputTokens,
                 },
               ),
             },
@@ -73,17 +99,19 @@ export function createAnthropicStreamingAdapter() {
         // No action taken
         break;
 
-      case "content_block_start":
+      case "content_block_start": {
+        const index = event.index + indexOffset;
+        responseBlocks[event.index] = { ...event.content_block };
         if (event.content_block.type === "text") {
-          blockTypes.set(event.index, "text");
+          blockTypes.set(index, "text");
           chunks.push({
             type: "text-start",
-            data: { index: event.index },
+            data: { index },
           });
         } else if (event.content_block.type === "tool_use") {
-          blockTypes.set(event.index, "tool");
+          blockTypes.set(index, "tool");
           const toolBlock = event.content_block;
-          toolCallBuffers.set(event.index, {
+          toolCallBuffers.set(index, {
             id: toolBlock.id,
             name: toolBlock.name,
             argumentsBuffer: "",
@@ -92,17 +120,17 @@ export function createAnthropicStreamingAdapter() {
           chunks.push({
             type: "tool-call-start",
             data: {
-              index: event.index,
+              index,
               id: toolBlock.id,
               name: toolBlock.name,
             },
           });
         } else if (event.content_block.type === "thinking") {
-          blockTypes.set(event.index, "thinking");
+          blockTypes.set(index, "thinking");
           chunks.push({
             type: "thinking-start",
             data: {
-              index: event.index,
+              index,
               continuity: {
                 provider: "anthropic",
                 signature: event.content_block.signature,
@@ -110,11 +138,11 @@ export function createAnthropicStreamingAdapter() {
             },
           });
         } else if (event.content_block.type === "redacted_thinking") {
-          blockTypes.set(event.index, "thinking");
+          blockTypes.set(index, "thinking");
           chunks.push({
             type: "thinking-start",
             data: {
-              index: event.index,
+              index,
               redacted: true,
               continuity: {
                 provider: "anthropic",
@@ -123,18 +151,18 @@ export function createAnthropicStreamingAdapter() {
             },
           });
         } else if (event.content_block.type === "server_tool_use") {
-          blockTypes.set(event.index, "provider-tool");
+          blockTypes.set(index, "provider-tool");
           const block = event.content_block;
-          providerToolInfo.set(block.id, { index: event.index, name: block.name });
+          providerToolInfo.set(block.id, { index, name: block.name });
           chunks.push({
             type: "provider-tool-start",
             data: {
-              index: event.index,
+              index,
               id: block.id,
               name: block.name,
             },
           });
-        } else if (event.content_block.type === "web_search_tool_result") {
+        } else if ("tool_use_id" in event.content_block) {
           const block = event.content_block;
           const info = providerToolInfo.get(block.tool_use_id);
           if (info) {
@@ -144,31 +172,41 @@ export function createAnthropicStreamingAdapter() {
                 index: info.index,
                 id: block.tool_use_id,
                 name: info.name,
-                output: block.content,
+                output: block,
               },
             });
             providerToolInfo.delete(block.tool_use_id);
           }
         }
         break;
+      }
 
-      case "content_block_delta":
+      case "content_block_delta": {
+        const index = event.index + indexOffset;
+        const responseBlock = responseBlocks[event.index];
         if (event.delta.type === "text_delta") {
+          if (responseBlock?.type === "text") responseBlock.text += event.delta.text;
           chunks.push({
             type: "text-delta",
             data: {
               text: event.delta.text,
-              index: event.index,
+              index,
             },
           });
         } else if (event.delta.type === "input_json_delta") {
-          const buffer = toolCallBuffers.get(event.index);
+          if (responseBlock?.type === "server_tool_use") {
+            serverToolInputJson.set(
+              index,
+              (serverToolInputJson.get(index) ?? "") + event.delta.partial_json,
+            );
+          }
+          const buffer = toolCallBuffers.get(index);
           if (buffer) {
             buffer.argumentsBuffer += event.delta.partial_json;
             chunks.push({
               type: "tool-call-args-delta",
               data: {
-                index: event.index,
+                index,
                 id: buffer.id,
                 name: buffer.name,
                 delta: event.delta.partial_json,
@@ -177,56 +215,78 @@ export function createAnthropicStreamingAdapter() {
             });
           }
         } else if (event.delta.type === "thinking_delta") {
+          if (responseBlock?.type === "thinking") responseBlock.thinking += event.delta.thinking;
           chunks.push({
             type: "thinking-summary-delta",
             data: {
               text: event.delta.thinking,
-              index: event.index,
+              index,
             },
           });
         } else if (event.delta.type === "signature_delta") {
+          if (responseBlock?.type === "thinking") responseBlock.signature = event.delta.signature;
           chunks.push({
             type: "thinking-metadata",
             data: {
-              index: event.index,
+              index,
               continuity: { provider: "anthropic", signature: event.delta.signature },
             },
           });
         } else if (event.delta.type === "citations_delta") {
-          if (blockTypes.get(event.index) !== "text") {
+          if (responseBlock?.type === "text") {
+            responseBlock.citations = [...(responseBlock.citations ?? []), event.delta.citation];
+          }
+          if (blockTypes.get(index) !== "text") {
             console.warn("[Anthropic] received citation delta outside a text block", {
-              index: event.index,
-              blockType: blockTypes.get(event.index),
+              index,
+              blockType: blockTypes.get(index),
             });
           }
           chunks.push({
             type: "text-citation",
             data: {
-              index: event.index,
+              index,
               citation: normalizeAnthropicCitation(event.delta.citation),
             },
           });
         }
         break;
+      }
 
       case "content_block_stop": {
-        const blockType = blockTypes.get(event.index);
+        const index = event.index + indexOffset;
+        const responseBlock = responseBlocks[event.index];
+        const blockType = blockTypes.get(index);
 
         if (blockType === "text") {
-          chunks.push({ type: "text-complete", data: { index: event.index } });
+          chunks.push({ type: "text-complete", data: { index } });
         } else if (blockType === "thinking") {
-          chunks.push({ type: "thinking-complete", data: { index: event.index } });
+          chunks.push({ type: "thinking-complete", data: { index } });
         } else if (blockType === "provider-tool") {
-          // Completion already emitted via web_search_tool_result
+          const inputJson = serverToolInputJson.get(index);
+          if (responseBlock?.type === "server_tool_use") {
+            if (inputJson) responseBlock.input = JSON.parse(inputJson);
+            chunks.push({
+              type: "provider-tool-input",
+              data: {
+                index,
+                id: responseBlock.id,
+                name: responseBlock.name,
+                input: responseBlock.input,
+              },
+            });
+          }
+          serverToolInputJson.delete(index);
         } else if (blockType === "tool") {
-          const buffer = toolCallBuffers.get(event.index);
+          const buffer = toolCallBuffers.get(index);
           if (buffer) {
             try {
               const parsedArgs = buffer.argumentsBuffer ? JSON.parse(buffer.argumentsBuffer) : {};
+              if (responseBlock?.type === "tool_use") responseBlock.input = parsedArgs;
               chunks.push({
                 type: "tool-call-complete",
                 data: {
-                  index: event.index,
+                  index,
                   id: buffer.id,
                   name: buffer.name,
                   arguments: parsedArgs,
@@ -237,11 +297,11 @@ export function createAnthropicStreamingAdapter() {
                 `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${truncateMiddle(buffer.argumentsBuffer)}`,
               );
             }
-            toolCallBuffers.delete(event.index);
+            toolCallBuffers.delete(index);
           }
         }
 
-        blockTypes.delete(event.index);
+        blockTypes.delete(index);
         break;
       }
     }
@@ -249,5 +309,9 @@ export function createAnthropicStreamingAdapter() {
     return chunks;
   }
 
-  return { handleEvent };
+  function pausedContent(): Array<ContentBlockParam> | undefined {
+    return turn === "paused" ? ([...pausedBlocks] as Array<ContentBlockParam>) : undefined;
+  }
+
+  return { handleEvent, pausedContent };
 }

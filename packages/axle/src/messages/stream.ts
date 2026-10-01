@@ -19,6 +19,7 @@ export interface StreamChunk {
     | "thinking-metadata"
     | "thinking-complete"
     | "provider-tool-start"
+    | "provider-tool-input"
     | "provider-tool-complete"
     | "complete"
     | "error";
@@ -201,6 +202,16 @@ export interface StreamProviderToolStartChunk extends StreamChunk {
   };
 }
 
+export interface StreamProviderToolInputChunk extends StreamChunk {
+  type: "provider-tool-input";
+  data: {
+    index: number;
+    id: string;
+    name: string;
+    input: unknown;
+  };
+}
+
 export interface StreamProviderToolCompleteChunk extends StreamChunk {
   type: "provider-tool-complete";
   data: {
@@ -233,4 +244,5 @@ export type AnyStreamChunk =
   | StreamToolCallArgsDeltaChunk
   | StreamToolCallCompleteChunk
   | StreamProviderToolStartChunk
+  | StreamProviderToolInputChunk
   | StreamProviderToolCompleteChunk;

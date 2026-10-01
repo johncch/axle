@@ -41,7 +41,10 @@ stops the loop. Steps are invisible in conversation state — each step's
 output is flattened into messages and into the agent turn's parts. Spans are
 named `step-N`; stream events are `step:start` / `step:complete`. This
 matches the unit's industry usage (Vercel AI SDK `maxSteps`, OpenAI run
-steps).
+steps). One exception to "one provider request": when Anthropic pauses a
+response (`pause_turn`), the adapter sends the follow-up requests itself, and
+the step still yields one assistant message and counts once toward
+`maxSteps`.
 
 **Turn** — the render-layer unit only: one conversation entry in a transcript — a
 user turn or an agent turn. One send produces one user turn and one agent
