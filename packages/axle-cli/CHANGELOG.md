@@ -9,6 +9,11 @@
   in a built-in registry. Set `AXLE_CONTEXT_WINDOW=<tokens>` for a model
   with a different window; a 1M-context model otherwise compacts at about
   160,000 tokens, and a model under 200,000 can overflow before it compacts.
+- **`request.temperature`, `request.topP`, and `request.stop` are removed.**
+  A recipe that sets one now fails to load. Move it under
+  `request.providerOptions` using the provider's own field name
+  (`temperature`; `top_p`, or `topP` on Gemini; `stop_sequences`,
+  `stopSequences`, or `stop`).
 - **The model picker is a text prompt.** `axle setup`, and a run that can't
   resolve a model, ask for a model id as free text instead of listing
   models.

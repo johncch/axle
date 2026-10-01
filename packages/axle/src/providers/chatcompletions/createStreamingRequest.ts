@@ -1,7 +1,7 @@
-import { normalizeProviderError } from "../utils.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
+import { normalizeProviderError } from "../utils.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { withRetry } from "./retry.js";
 import { ChatCompletionChunk, ChatCompletionStreamError } from "./types.js";
@@ -38,9 +38,6 @@ export async function* createStreamingRequest(
     timeoutMs,
     reasoning,
     maxOutputTokens,
-    temperature,
-    topP,
-    stop,
     toolChoice,
     parallelToolCalls,
     providerOptions,
@@ -71,9 +68,6 @@ export async function* createStreamingRequest(
       ...(requestTools.length > 0 ? { tools: requestTools } : {}),
       ...toChatCompletionsReasoning(reasoning, vendor),
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
-      ...(temperature !== undefined ? { temperature } : {}),
-      ...(topP !== undefined ? { top_p: topP } : {}),
-      ...(stop !== undefined ? { stop } : {}),
       ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
       ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
 

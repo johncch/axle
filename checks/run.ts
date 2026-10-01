@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
 import { checkCases, type CheckCase, type CheckCaseResult } from "./cases/index.js";
+import { buildLedgerEntry, LEDGER_PATH, readAxleRevision, upsertLedgerEntries } from "./ledger.js";
 import { resolveProviderTargets, type ProviderId, type ProviderTarget } from "./providers.js";
 
 const REASONING_FLAGS = ["default", "off", "on", "low", "medium", "high"] as const;
@@ -17,6 +18,7 @@ interface RunOptions {
   extended: boolean;
   cases: string[];
   out: string;
+  record: boolean;
 }
 
 interface CheckRecord {
@@ -134,6 +136,7 @@ interface UsageTotals {
 
 let passed = 0;
 let skipped = 0;
+const records: CheckRecord[] = [];
 const failedRecords: CheckRecord[] = [];
 const usageTotals: UsageTotals[] = targets.map(() => ({
   in: 0,
@@ -275,9 +278,29 @@ const summaryColor = failedRecords.length > 0 ? "red" : "green";
 console.log(`\n${color(summaryColor, bar(`${summaryParts.join(", ")} in ${elapsed}s`))}`);
 console.log(`[Output] ${options.out}`);
 
+if (options.record) {
+  const axle = await readAxleRevision();
+  await upsertLedgerEntries(
+    targets.map((target) =>
+      buildLedgerEntry({
+        model: target.model,
+        provider: target.id,
+        axle,
+        group: groupLabel,
+        reasoning: options.reasoning,
+        records: records.filter(
+          (record) => record.providerId === target.id && record.model === target.model,
+        ),
+      }),
+    ),
+  );
+  console.log(`[Ledger] ${LEDGER_PATH}`);
+}
+
 if (failedRecords.length > 0) process.exitCode = 1;
 
 async function writeRecord(record: CheckRecord): Promise<void> {
+  records.push(record);
   await writeFile(options.out, `${JSON.stringify(record)}\n`, { flag: "a" });
 }
 
@@ -405,6 +428,7 @@ function parseArgs(args: string[]): RunOptions {
     extended: false,
     cases: [],
     out: join("output", "checks", `run-${Date.now()}.jsonl`),
+    record: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -437,6 +461,9 @@ function parseArgs(args: string[]): RunOptions {
         break;
       case "--extended":
         parsed.extended = true;
+        break;
+      case "--record":
+        parsed.record = true;
         break;
       case "--help":
       case "-h":
@@ -499,6 +526,8 @@ Options:
   --case <id>        Case id or prefix ending in "*". Repeat or comma-separate.
                      Selected cases run regardless of group.
   --out <path>       JSONL output path. Defaults to output/checks/*.jsonl.
+  --record           Write each model's result summary to checks/ledger.jsonl,
+                     replacing that model's previous entry.
 `);
 }
 

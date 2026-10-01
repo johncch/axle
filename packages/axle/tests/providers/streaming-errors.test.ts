@@ -1,15 +1,15 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { generate } from "../../src/providers/generate.js";
-import { stream } from "../../src/providers/stream.js";
-import { createStreamingRequest as openai } from "../../src/providers/openai/createStreamingRequest.js";
 import { createStreamingRequest as anthropic } from "../../src/providers/anthropic/createStreamingRequest.js";
-import { createStreamingRequest as gemini } from "../../src/providers/gemini/createStreamingRequest.js";
 import { createStreamingRequest as chat } from "../../src/providers/chatcompletions/createStreamingRequest.js";
-import { createStreamingAdapter } from "../../src/providers/openai/createStreamingAdapter.js";
 import { createGeminiStreamingAdapter } from "../../src/providers/gemini/createStreamingAdapter.js";
-import { normalizeProviderError } from "../../src/providers/utils.js";
+import { createStreamingRequest as gemini } from "../../src/providers/gemini/createStreamingRequest.js";
+import { generate } from "../../src/providers/generate.js";
+import { createStreamingAdapter } from "../../src/providers/openai/createStreamingAdapter.js";
+import { createStreamingRequest as openai } from "../../src/providers/openai/createStreamingRequest.js";
+import { stream } from "../../src/providers/stream.js";
 import type { AIProvider, ProviderStreamParams } from "../../src/providers/types.js";
+import { normalizeProviderError } from "../../src/providers/utils.js";
 import { createTracerAndWriter } from "../scenarios/helpers/recording-writer.js";
 
 const messages = [{ role: "user" as const, content: "hello" }];
@@ -87,7 +87,7 @@ test.each([401, 429])("Chat Completions retains HTTP %s", async (status) => {
 });
 
 test.each([
-  ["openai", { stop: "stop" }],
+  ["openai", { toolChoice: { type: "tool", name: "missing" } }],
   ["anthropic", { tools: [{ name: "invalid", schema: z.string(), description: "invalid" }] }],
   [
     "gemini",

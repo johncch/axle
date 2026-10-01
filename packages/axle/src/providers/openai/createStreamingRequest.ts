@@ -1,8 +1,8 @@
-import { normalizeProviderError } from "../utils.js";
 import OpenAI from "openai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
+import { normalizeProviderError } from "../utils.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   convertAxleMessageToResponseInput,
@@ -26,9 +26,6 @@ export async function* createStreamingRequest(
     signal,
     reasoning,
     maxOutputTokens,
-    temperature,
-    topP,
-    stop,
     toolChoice,
     parallelToolCalls,
     providerOptions,
@@ -36,10 +33,6 @@ export async function* createStreamingRequest(
   const span = runtime?.span;
 
   try {
-    if (stop !== undefined) {
-      throw new Error("OpenAI Responses does not support normalized stop sequences");
-    }
-
     const modelTools: any[] = [
       ...(prepareTools(tools) ?? []),
       ...(prepareProviderTools(providerTools) ?? []),
@@ -63,8 +56,6 @@ export async function* createStreamingRequest(
       ...(modelTools.length > 0 ? { tools: modelTools } : {}),
       ...toOpenAIReasoning(reasoning),
       ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
-      ...(temperature !== undefined ? { temperature } : {}),
-      ...(topP !== undefined ? { top_p: topP } : {}),
       ...toOpenAIToolChoice(toolChoice, tools, providerTools),
       ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
 

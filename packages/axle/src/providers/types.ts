@@ -1,10 +1,4 @@
-import {
-  AxleMessage,
-  ContentPartCitation,
-  ContentPartText,
-  ContentPartThinking,
-  ContentPartToolCall,
-} from "../messages/message.js";
+import { AxleMessage } from "../messages/message.js";
 import { AnyStreamChunk } from "../messages/stream.js";
 import type { Span } from "../observability/types.js";
 import type { ProviderTool, ToolDefinition } from "../tools/types.js";
@@ -58,12 +52,6 @@ export interface AxleModelRequestOptions {
   reasoning?: ReasoningSetting;
   /** Maximum output tokens to request from the model. */
   maxOutputTokens?: number;
-  /** Sampling temperature, when supported by the provider/model. */
-  temperature?: number;
-  /** Nucleus sampling value, mapped to provider-specific casing. */
-  topP?: number;
-  /** Stop sequence or sequences for text generation. */
-  stop?: string | string[];
   /** Constrains tool use for this model request. */
   toolChoice?: ToolChoice;
   /** Requests that the provider avoid parallel tool calls when supported. */

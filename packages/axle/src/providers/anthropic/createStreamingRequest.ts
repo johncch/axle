@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
-import { arrayify } from "../../utils/utils.js";
 import { ProviderStreamParams } from "../types.js";
 import { normalizeProviderError } from "../utils.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
@@ -28,9 +27,6 @@ export async function* createStreamingRequest(
     signal,
     reasoning,
     maxOutputTokens,
-    temperature,
-    topP,
-    stop,
     toolChoice,
     parallelToolCalls,
     providerOptions,
@@ -58,11 +54,8 @@ export async function* createStreamingRequest(
       ...(system && { system }),
 
       // Axle-normalized options.
-      ...(stop && { stop_sequences: arrayify(stop) }),
       ...(apiTools.length > 0 && { tools: apiTools }),
       ...toAnthropicThinking(reasoning, model),
-      ...(temperature !== undefined ? { temperature } : {}),
-      ...(topP !== undefined ? { top_p: topP } : {}),
       ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
 
       // Raw provider options are applied last so they can override Axle mappings.

@@ -34,7 +34,6 @@ describe("createAgentConfig", () => {
       model: "mock-model",
       system: "Be direct.",
       request: {
-        temperature: 0.2,
         maxOutputTokens: 1000,
         providerOptions: { seed: 7 },
       },
@@ -58,7 +57,6 @@ describe("createAgentConfig", () => {
       name: "assistant",
       tools: [tool],
       providerTools: [{ type: "provider", name: "web_search", config: { region: "us" } }],
-      temperature: 0.2,
       maxOutputTokens: 1000,
       providerOptions: { seed: 7 },
     });

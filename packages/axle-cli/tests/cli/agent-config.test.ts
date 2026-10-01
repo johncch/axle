@@ -182,7 +182,7 @@ describe("createCliAgentConfig", () => {
         system: "You are terse.",
         request: {
           reasoning: { effort: "low" },
-          temperature: 0.2,
+          parallelToolCalls: false,
           maxOutputTokens: 2048,
         },
         model: "anthropic/claude-sonnet-5",
@@ -195,7 +195,7 @@ describe("createCliAgentConfig", () => {
 
     expect(agentConfig.system).toBe("You are terse.");
     expect(agentConfig.reasoning).toEqual({ effort: "low" });
-    expect(agentConfig.temperature).toBe(0.2);
+    expect(agentConfig.parallelToolCalls).toBe(false);
     expect(agentConfig.maxOutputTokens).toBe(2048);
   });
 });

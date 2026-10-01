@@ -81,15 +81,11 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
         messages,
         runtime: {},
         reasoning: "on",
-        temperature: 0.5,
-        topP: 0.9,
         maxOutputTokens: 100,
         providerOptions: { max_output_tokens: 200, reasoning: { effort: "medium" } },
       }),
     );
     expect(request()).toMatchObject({
-      temperature: 0.5,
-      top_p: 0.9,
       max_output_tokens: 200,
       reasoning: { effort: "medium" },
     });
@@ -135,28 +131,5 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
       tools: [expect.objectContaining({ type: "resolved_web_search" })],
       tool_choice: { type: "resolved_web_search" },
     });
-  });
-
-  test("yields an error for normalized stop sequences", async () => {
-    await expect(
-      drain(
-        createStreamingRequest({
-          client: mockClient,
-          model: MODEL,
-          messages,
-          runtime: {},
-          stop: "STOP",
-        }),
-      ),
-    ).resolves.toMatchObject([
-      {
-        type: "error",
-        data: {
-          type: "Error",
-          message: "OpenAI Responses does not support normalized stop sequences",
-        },
-      },
-    ]);
-    expect(mockStream).not.toHaveBeenCalled();
   });
 });

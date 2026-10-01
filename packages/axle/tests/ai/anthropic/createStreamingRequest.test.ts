@@ -68,32 +68,6 @@ describe("createStreamingRequest (Anthropic)", () => {
     expect(chunks.at(-1)?.type).toBe("complete");
   });
 
-  test("converts stop to stop_sequences", async () => {
-    await drain(
-      createStreamingRequest({
-        client: mockClient,
-        model: "claude-haiku-4-5",
-        messages,
-        runtime: {},
-        stop: "STOP",
-      }),
-    );
-    expect(request()).toMatchObject({ stop_sequences: ["STOP"] });
-    expect(request()).not.toHaveProperty("stop");
-
-    mockCreate.mockResolvedValue(events());
-    await drain(
-      createStreamingRequest({
-        client: mockClient,
-        model: "claude-haiku-4-5",
-        messages,
-        runtime: {},
-        stop: ["A", "B"],
-      }),
-    );
-    expect(mockCreate.mock.calls[1][0]).toMatchObject({ stop_sequences: ["A", "B"] });
-  });
-
   test("maps normalized options, passes providerOptions through, and includes system", async () => {
     await drain(
       createStreamingRequest({
@@ -102,15 +76,11 @@ describe("createStreamingRequest (Anthropic)", () => {
         messages,
         system: "You are a helpful assistant",
         runtime: {},
-        temperature: 0.7,
-        topP: 0.9,
         maxOutputTokens: 1000,
         providerOptions: { metadata: { user_id: "u1" } },
       }),
     );
     expect(request()).toMatchObject({
-      temperature: 0.7,
-      top_p: 0.9,
       max_tokens: 1000,
       metadata: { user_id: "u1" },
       system: "You are a helpful assistant",

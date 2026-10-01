@@ -118,8 +118,16 @@ system: You are a terse analyst.
 
 request:
   reasoning: on
-  temperature: 0.2
   maxOutputTokens: 16000
+```
+
+Anything the portable options don't cover goes in `providerOptions`, which is
+sent to the provider as-is under its own field names:
+
+```yaml
+request:
+  providerOptions:
+    temperature: 0.2
 ```
 
 `reasoning` takes `default`, `off`, `on`, or

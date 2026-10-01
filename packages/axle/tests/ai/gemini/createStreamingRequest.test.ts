@@ -32,7 +32,7 @@ describe("createStreamingRequest (Gemini)", () => {
 
   const config = () => mockStream.mock.calls[0][0].config;
 
-  test("maps maxOutputTokens, temperature, and topP", async () => {
+  test("maps maxOutputTokens", async () => {
     const out = await drain(
       createStreamingRequest({
         client: mockClient,
@@ -40,37 +40,10 @@ describe("createStreamingRequest (Gemini)", () => {
         messages,
         runtime: {},
         maxOutputTokens: 1000,
-        temperature: 0.7,
-        topP: 0.9,
       }),
     );
-    expect(config()).toMatchObject({ maxOutputTokens: 1000, temperature: 0.7, topP: 0.9 });
+    expect(config()).toMatchObject({ maxOutputTokens: 1000 });
     expect(out.at(-1)?.type).toBe("complete");
-  });
-
-  test("converts stop to stopSequences", async () => {
-    await drain(
-      createStreamingRequest({
-        client: mockClient,
-        model: "gemini-2.0-flash",
-        messages,
-        runtime: {},
-        stop: "STOP",
-      }),
-    );
-    expect(config()).toMatchObject({ stopSequences: ["STOP"] });
-
-    mockStream.mockResolvedValue(chunks());
-    await drain(
-      createStreamingRequest({
-        client: mockClient,
-        model: "gemini-2.0-flash",
-        messages,
-        runtime: {},
-        stop: ["A", "B"],
-      }),
-    );
-    expect(mockStream.mock.calls[1][0].config).toMatchObject({ stopSequences: ["A", "B"] });
   });
 
   test("omits provider tools when toolChoice is none", async () => {

@@ -133,6 +133,26 @@ do
 done
 ```
 
+## Model ledger
+
+`checks/ledger.jsonl` is the committed record of which models Axle has been
+run against and what broke. Add `--record` to write it:
+
+```bash
+pnpm exec tsx checks/run.ts --extended --provider anthropic --model claude-opus-5-5 --record
+```
+
+The file holds one line per model, keyed by the model string and sorted by
+it. Recording a model again replaces its line, so the ledger always shows the
+latest recorded run and nothing older. Each line carries the provider, the
+time, the Axle version and commit (with `dirty` when the tree had uncommitted
+changes), the case group, the reasoning flag if one was set, status counts,
+the ids of the cases that passed, and every failed or skipped case with its
+reasons.
+
+A recorded run replaces the whole entry, including when `--case` selected
+only a few cases, so record full runs.
+
 ## Cases
 
 ### Default

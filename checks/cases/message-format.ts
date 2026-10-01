@@ -155,7 +155,7 @@ export const messageFormatCases: CheckCase[] = [
       const result = await generate({
         provider,
         model,
-        messages: [{ role: "user", content: "Answer exactly: hidden ok" }],
+        messages: [{ role: "user", content: reasoningPrompt }],
         reasoning: { effort: "low", display: "hidden" },
       });
 
