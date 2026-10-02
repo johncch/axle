@@ -205,6 +205,9 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `reasoning-stream-effort`
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)
 - `stream-web-search`
+- `format-web-citations-follow-up` (Anthropic, OpenAI, Gemini: a follow-up
+  request after a cited web search answer. On OpenAI the first answer usually holds a
+  reasoning item between two searches, which must be sent back in that order)
 - `format-server-tool-with-client-tool` (Anthropic: a web search called in the
   same response as a local tool; its result arrives in the next step, is
   stored, and a follow-up request is accepted)
@@ -248,8 +251,6 @@ rest.
 
 - `format-web-citations` (OpenAI, Gemini hosted search)
 - `format-document-citations` (Anthropic PDF input)
-- `format-web-citations-follow-up` (Anthropic: a follow-up request after a
-  cited web search answer)
 - `format-document-citations-follow-up` (Anthropic: a follow-up request after
   a cited PDF answer)
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
@@ -257,6 +258,12 @@ rest.
 - `format-thinking-hidden` (Anthropic hidden thinking: continuity only, not redacted)
 - `format-thinking-stream` (a raw or summary delta required for Anthropic,
   OpenRouter, and Together, which stream thinking text)
+
+Provider tool outcomes:
+
+- `stream-web-search-error` (Anthropic: a second search past `max_uses: 1`
+  must surface as `provider-tool:error` with `max_uses_exceeded`, and a
+  follow-up request must be accepted)
 
 Reasoning routes (`reasoning-route-*`, `reasoning-unsupported-error`): the
 request syntax Axle picks per model generation, pinned to models the default

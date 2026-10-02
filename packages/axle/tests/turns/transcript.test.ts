@@ -125,6 +125,34 @@ describe("Transcript", () => {
     });
   });
 
+  test("records a provider tool's input on its action", () => {
+    const transcript = new Transcript();
+
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: {
+        id: "p1",
+        type: "action",
+        kind: "provider-tool",
+        status: "running",
+        detail: { name: "web_search" },
+      },
+    });
+    transcript.apply({
+      type: "action:input",
+      turnId: "t1",
+      partId: "p1",
+      input: { type: "search", queries: ["axle"] },
+    });
+
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
+      status: "running",
+      detail: { name: "web_search", input: { type: "search", queries: ["axle"] } },
+    });
+  });
+
   test("accumulates citations and thinking summary metadata", () => {
     const transcript = new Transcript();
 

@@ -86,14 +86,22 @@ async function requireScheduleBlock(recipe: string): Promise<ScheduledJobConfig>
   return { ...jobConfig, schedule: jobConfig.schedule };
 }
 
+// process.exit drops whatever a pipe has not accepted yet, so a slow reader
+// would lose the tail of a long listing.
+function exitAfterStdoutDrains(code: number): Promise<never> {
+  return new Promise<never>(() => {
+    process.stdout.write("", () => process.exit(code));
+  });
+}
+
 async function manage(command: () => Promise<void>): Promise<never> {
   try {
     await command();
-    process.exit(0);
   } catch (e) {
     console.error(`✖ ${e instanceof Error ? e.message : String(e)}`);
-    process.exit(1);
+    return exitAfterStdoutDrains(1);
   }
+  return exitAfterStdoutDrains(0);
 }
 
 program

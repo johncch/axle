@@ -67,17 +67,11 @@ async function convertMessage(
           input: part.parameters,
         } satisfies Anthropic.ToolUseBlockParam);
       } else if (part.type === "provider-tool") {
-        content.push({
-          type: "server_tool_use",
-          id: part.id,
-          name: part.name,
-          input: part.input ?? {},
-        } as any);
-        if (part.output != null) {
-          content.push(part.output as any);
-        }
+        if (part.continuity?.provider !== "anthropic") continue;
+        content.push(part.continuity.call);
+        if (part.continuity.result) content.push(part.continuity.result);
       } else if (part.type === "provider-tool-result") {
-        content.push(part.output as any);
+        if (part.continuity?.provider === "anthropic") content.push(part.continuity.result);
       }
     }
     return {
@@ -335,7 +329,11 @@ export function convertToAnthropicTools(
 }
 
 const PROVIDER_TOOL_MAP: Record<string, string> = {
-  web_search: "web_search_20250305",
+  web_search: "web_search_20260318",
+};
+
+const PROVIDER_TOOL_DEFAULT_CONFIG: Record<string, Record<string, unknown>> = {
+  web_search: { allowed_callers: ["direct"] },
 };
 
 export function resolveAnthropicProviderToolName(name: string): string {
@@ -348,6 +346,7 @@ export function convertToAnthropicProviderTools(
   return (providerTools ?? []).map((tool) => ({
     type: tool.nativeName ?? resolveAnthropicProviderToolName(tool.name),
     name: tool.name,
+    ...PROVIDER_TOOL_DEFAULT_CONFIG[tool.name],
     ...tool.config,
   }));
 }
@@ -381,7 +380,7 @@ export function findOpenProviderToolCalls(
   for (const message of messages) {
     if (message.role !== "assistant") continue;
     for (const part of message.content) {
-      if (part.type === "provider-tool" && part.output == null) {
+      if (part.type === "provider-tool" && !part.result) {
         openCallNames.set(part.id, part.name);
       } else if (part.type === "provider-tool-result") {
         openCallNames.delete(part.id);

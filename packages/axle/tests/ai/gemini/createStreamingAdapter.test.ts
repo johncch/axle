@@ -497,6 +497,82 @@ describe("createGeminiStreamingAdapter", () => {
       warn.mockRestore();
     });
   });
+
+  describe("google search", () => {
+    const searched = { webSearchQueries: ["Anthropic company type overview"] };
+    const providerToolChunks = (chunks: Array<{ type: string }>) =>
+      chunks.filter((chunk) => chunk.type.startsWith("provider-tool"));
+
+    test("reports the search and its queries when the grounding metadata arrives", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "Anthropic is an AI company." }] }));
+
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: FinishReason.STOP, groundingMetadata: searched }),
+      );
+
+      expect(providerToolChunks(chunks)).toEqual([
+        {
+          type: "provider-tool-start",
+          data: { index: 1, id: "resp_123:web_search", name: "web_search" },
+        },
+        {
+          type: "provider-tool-input",
+          data: {
+            index: 1,
+            id: "resp_123:web_search",
+            name: "web_search",
+            input: { type: "search", queries: ["Anthropic company type overview"] },
+          },
+        },
+        {
+          type: "provider-tool-complete",
+          data: {
+            index: 1,
+            id: "resp_123:web_search",
+            name: "web_search",
+            result: { type: "success" },
+          },
+        },
+      ]);
+      expect(chunks.map((chunk) => chunk.type)).toEqual([
+        "text-complete",
+        "provider-tool-start",
+        "provider-tool-input",
+        "provider-tool-complete",
+        "complete",
+      ]);
+    });
+
+    test("reports the search once when the metadata is repeated", () => {
+      const adapter = createGeminiStreamingAdapter();
+      const first = adapter.handleChunk(
+        makeChunk({ parts: [{ text: "Anthropic is" }], groundingMetadata: searched }),
+      );
+      const second = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: FinishReason.STOP, groundingMetadata: searched }),
+      );
+
+      expect(providerToolChunks(first)).toHaveLength(3);
+      expect(providerToolChunks(second)).toEqual([]);
+    });
+
+    test("reports nothing when the grounding metadata lists no queries", () => {
+      const adapter = createGeminiStreamingAdapter();
+
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          parts: [{ text: "The answer is grounded." }],
+          finishReason: FinishReason.STOP,
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: "Source", uri: "https://example.com" } }],
+          },
+        }),
+      );
+
+      expect(providerToolChunks(chunks)).toEqual([]);
+    });
+  });
 });
 
 // Helpers

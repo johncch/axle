@@ -1,5 +1,6 @@
 import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, test, vi } from "vitest";
+import type { OpenAIProviderToolItem } from "../../../src/messages/providerTool.js";
 import { createStreamingAdapter } from "../../../src/providers/openai/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -694,27 +695,126 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
   });
 
-  describe("internal tools", () => {
-    test("should emit provider-tool-start for web_search_call", () => {
-      const adapter = createStreamingAdapter();
+  describe("provider tools", () => {
+    const search: OpenAIProviderToolItem = {
+      id: "ws_123",
+      type: "web_search_call",
+      status: "completed",
+      action: { type: "search", query: "axle", queries: ["axle"] },
+    };
 
-      const chunks = adapter.handleEvent({
+    const run = (item: OpenAIProviderToolItem) => {
+      const adapter = createStreamingAdapter();
+      const added = adapter.handleEvent({
         type: "response.output_item.added",
         sequence_number: 1,
         output_index: 0,
-        item: {
-          id: "ws_123",
-          type: "web_search_call",
-          status: "in_progress",
-        },
-      } as ResponseStreamEvent);
+        item: { ...item, status: "in_progress" },
+      });
+      const done = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 2,
+        output_index: 0,
+        item,
+      });
+      return { added, done };
+    };
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("provider-tool-start");
-      if (chunks[0].type === "provider-tool-start") {
-        expect(chunks[0].data.id).toBe("ws_123");
-        expect(chunks[0].data.name).toBe("web_search_call");
-      }
+    test("starts a web search under Axle's tool name", () => {
+      expect(run(search).added).toEqual([
+        { type: "provider-tool-start", data: { index: 0, id: "ws_123", name: "web_search" } },
+      ]);
+    });
+
+    test("reports the search, then completes with the item kept for replay", () => {
+      const continuity = { provider: "openai", item: search };
+
+      expect(run(search).done).toEqual([
+        {
+          type: "provider-tool-input",
+          data: {
+            index: 0,
+            id: "ws_123",
+            name: "web_search",
+            input: { type: "search", queries: ["axle"] },
+            continuity,
+          },
+        },
+        {
+          type: "provider-tool-complete",
+          data: {
+            index: 0,
+            id: "ws_123",
+            name: "web_search",
+            result: { type: "success" },
+            continuity,
+          },
+        },
+      ]);
+    });
+
+    const items: Array<[string, OpenAIProviderToolItem, string, unknown]> = [
+      [
+        "a search that lists only one query",
+        { ...search, action: { type: "search", query: "axle" } },
+        "web_search",
+        { type: "search", queries: ["axle"] },
+      ],
+      [
+        "an opened page",
+        { ...search, action: { type: "open_page", url: "https://example.com" } },
+        "web_search",
+        { type: "open", url: "https://example.com" },
+      ],
+      [
+        "a find in page",
+        {
+          ...search,
+          action: { type: "find_in_page", url: "https://example.com", pattern: "axle" },
+        },
+        "web_search",
+        { type: "find", url: "https://example.com", pattern: "axle" },
+      ],
+      [
+        "code interpreter",
+        {
+          id: "ci_1",
+          type: "code_interpreter_call",
+          status: "completed",
+          code: "print(1)",
+          container_id: "cntr_1",
+          outputs: null,
+        },
+        "code_execution",
+        { type: "code", code: "print(1)" },
+      ],
+      [
+        "file search",
+        { id: "fs_1", type: "file_search_call", status: "completed", queries: ["axle"] },
+        "file_search",
+        { type: "search", queries: ["axle"] },
+      ],
+    ];
+
+    test.each(items)("gives %s Axle's name and input", (_label, item, name, input) => {
+      const { added, done } = run(item);
+
+      expect(added[0].data).toMatchObject({ name });
+      expect(done[0]).toMatchObject({ type: "provider-tool-input", data: { name, input } });
+    });
+
+    test("completes without an input event when the item says nothing Axle can show", () => {
+      const { done } = run({ ...search, action: { type: "open_page", url: null } });
+
+      expect(done.map((chunk) => chunk.type)).toEqual(["provider-tool-complete"]);
+    });
+
+    test("reports an item whose status is failed as a failure", () => {
+      const { done } = run({ ...search, status: "failed" });
+
+      expect(done.at(-1)?.data).toMatchObject({
+        result: { type: "error", error: { type: "failed", message: "web_search failed" } },
+      });
     });
 
     test("counts web_search_call items in completion usage", () => {
@@ -751,38 +851,40 @@ describe("createResponsesAPIStreamingAdapter", () => {
 
       expect(chunks[0].type).toBe("complete");
     });
+  });
 
-    test("should emit provider-tool-complete on output_item.done", () => {
+  describe("message phase", () => {
+    const textStart = (item: Record<string, unknown>) => {
       const adapter = createStreamingAdapter();
-
       adapter.handleEvent({
         type: "response.output_item.added",
         sequence_number: 1,
         output_index: 0,
-        item: {
-          id: "ws_123",
-          type: "web_search_call",
-          status: "in_progress",
-        },
-      } as ResponseStreamEvent);
-
-      const chunks = adapter.handleEvent({
-        type: "response.output_item.done",
-        sequence_number: 2,
+        item,
+      } as unknown as ResponseStreamEvent);
+      return adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Checking.",
+        item_id: "msg_1",
         output_index: 0,
-        item: {
-          id: "ws_123",
-          type: "web_search_call",
-          status: "completed",
-        },
-      } as ResponseStreamEvent);
+        content_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent)[0];
+    };
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("provider-tool-complete");
-      if (chunks[0].type === "provider-tool-complete") {
-        expect(chunks[0].data.id).toBe("ws_123");
-        expect(chunks[0].data.name).toBe("web_search_call");
-      }
+    test("carries the message item's phase on the text part", () => {
+      const chunk = textStart({ id: "msg_1", type: "message", phase: "commentary" });
+
+      expect(chunk).toEqual({
+        type: "text-start",
+        data: { index: 0, providerMetadata: { provider: "openai", phase: "commentary" } },
+      });
+    });
+
+    test("adds nothing when the message item has no phase", () => {
+      const chunk = textStart({ id: "msg_1", type: "message" });
+
+      expect(chunk).toEqual({ type: "text-start", data: { index: 0 } });
     });
   });
 });

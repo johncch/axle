@@ -214,7 +214,6 @@ describe("TurnEventBuilder", () => {
         type: "provider-tool:complete",
         id: "it1",
         name: "web_search",
-        output: "search results",
       }),
     );
 
@@ -222,6 +221,52 @@ describe("TurnEventBuilder", () => {
       "part:start",
       "action:running",
       "action:complete",
+    ]);
+  });
+
+  test("provider tool input reaches the action", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+
+    const [start] = builder.handleStreamEvent({
+      type: "provider-tool:start",
+      id: "it1",
+      name: "web_search",
+    });
+    const events = builder.handleStreamEvent({
+      type: "provider-tool:input",
+      id: "it1",
+      name: "web_search",
+      input: { type: "search", queries: ["axle"] },
+    });
+
+    expect(events).toEqual([
+      {
+        type: "action:input",
+        turnId: expect.any(String),
+        partId: start.type === "part:start" ? start.part.id : undefined,
+        input: { type: "search", queries: ["axle"] },
+      },
+    ]);
+  });
+
+  test("provider tool error emits action:error instead of action:complete", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+
+    builder.handleStreamEvent({ type: "provider-tool:start", id: "it1", name: "web_search" });
+    const events = builder.handleStreamEvent({
+      type: "provider-tool:error",
+      id: "it1",
+      name: "web_search",
+      error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: "action:error",
+        error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
+      },
     ]);
   });
 

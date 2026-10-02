@@ -10,6 +10,7 @@ import type {
   ContentPartToolCall,
   ThinkingContinuity,
 } from "../messages/message.js";
+import type { ProviderToolInput } from "../messages/providerTool.js";
 import type { LLMResult, Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import type {
@@ -108,7 +109,14 @@ export type StreamEvent =
     }
   // Provider tools (provider-managed: web search, code interpreter, etc.)
   | { type: "provider-tool:start"; id: string; name: string }
-  | { type: "provider-tool:complete"; id: string; name: string; output?: unknown }
+  | { type: "provider-tool:input"; id: string; name: string; input: ProviderToolInput }
+  | { type: "provider-tool:complete"; id: string; name: string }
+  | {
+      type: "provider-tool:error";
+      id: string;
+      name: string;
+      error: { type: string; message: string };
+    }
   // Error
   | { type: "error"; error: AxleFailure };
 

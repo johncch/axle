@@ -1,4 +1,5 @@
-import type { Citation, ThinkingContinuity } from "../messages/message.js";
+import type { Citation, ThinkingContinuity, ToolResultPart } from "../messages/message.js";
+import type { ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
 
@@ -303,7 +304,7 @@ export interface ProviderToolAction<
     /** Provider tool name. */
     name: string;
     /** Provider-specific input, when surfaced. */
-    input?: unknown;
+    input?: ProviderToolInput;
     /** Provider tool result, when surfaced. */
     result?: ActionResult;
   };
@@ -320,5 +321,5 @@ export type ActionPart<TAnnotation extends Annotation = Annotation> =
  */
 export type ActionResult =
   | { type: "in-progress"; content: string }
-  | { type: "success"; content: unknown }
+  | { type: "success"; content?: string | ToolResultPart[] }
   | { type: "error"; error: { type: string; message: string } };

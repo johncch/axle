@@ -21,7 +21,7 @@ describe("provider client factory options", () => {
       maxRetries: 4,
       timeout: 1_000,
     });
-    expect(provider.resolveProviderToolName?.("web_search", "gpt-test")).toBe("web_search_preview");
+    expect(provider.resolveProviderToolName?.("web_search", "gpt-test")).toBe("web_search");
   });
 
   test("rejects invalid OpenAI client options", async () => {
@@ -53,7 +53,7 @@ describe("provider client factory options", () => {
       timeout: 1_000,
     });
     expect(provider.resolveProviderToolName?.("web_search", "claude-test")).toBe(
-      "web_search_20250305",
+      "web_search_20260318",
     );
   });
 

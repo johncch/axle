@@ -1,5 +1,11 @@
 import { AxleStopReason } from "../providers/types.js";
 import type { FileInfo } from "../utils/file.js";
+import type {
+  ProviderToolContinuity,
+  ProviderToolInput,
+  ProviderToolResult,
+  ProviderToolResultContinuity,
+} from "./providerTool.js";
 
 /**
  * Model-facing conversation message.
@@ -262,10 +268,12 @@ export interface ContentPartProviderTool {
   id: string;
   /** Provider tool name. */
   name: string;
-  /** Provider-specific tool input. */
-  input?: unknown;
-  /** Provider-specific tool output. */
-  output?: unknown;
+  /** What the tool was asked to do, when Axle has a shape for it. */
+  input?: ProviderToolInput;
+  /** How the call ended. Absent while the tool has not run in this message. */
+  result?: ProviderToolResult;
+  /** The provider's own objects, kept to send back to that provider. */
+  continuity?: ProviderToolContinuity;
 }
 
 /**
@@ -278,8 +286,10 @@ export interface ContentPartProviderToolResult {
   id: string;
   /** Provider tool name. */
   name: string;
-  /** Provider-specific tool output. */
-  output: unknown;
+  /** How the call ended. */
+  result: ProviderToolResult;
+  /** The provider's own result, kept to send back to that provider. */
+  continuity?: ProviderToolResultContinuity;
 }
 
 /**

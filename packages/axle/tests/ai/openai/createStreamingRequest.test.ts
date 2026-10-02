@@ -107,9 +107,9 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
     expect(request()).toMatchObject({
       tools: expect.arrayContaining([
         expect.objectContaining({ type: "function", name: "lookup" }),
-        expect.objectContaining({ type: "web_search_preview" }),
+        expect.objectContaining({ type: "web_search" }),
       ]),
-      tool_choice: { type: "web_search_preview" },
+      tool_choice: { type: "web_search" },
       parallel_tool_calls: true,
     });
   });

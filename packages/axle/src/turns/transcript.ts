@@ -42,6 +42,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "part:end": true,
   "action:args-delta": true,
   "action:running": true,
+  "action:input": true,
   "action:progress": true,
   "action:complete": true,
   "action:error": true,
@@ -211,6 +212,12 @@ export class Transcript<
             };
           }
           return { ...part, status: "running" };
+        });
+
+      case "action:input":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action" || part.kind !== "provider-tool") return part;
+          return { ...part, detail: { ...part.detail, input: event.input } };
         });
 
       case "action:progress":

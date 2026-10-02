@@ -557,10 +557,10 @@ const agent = new Agent({
 
 Axle maps common names to provider-specific identifiers automatically:
 
-| Name             | Anthropic             | OpenAI               | Gemini          |
-| ---------------- | --------------------- | -------------------- | --------------- |
-| `web_search`     | `web_search_20250305` | `web_search_preview` | `googleSearch`  |
-| `code_execution` | —                     | `code_interpreter`   | `codeExecution` |
+| Name             | Anthropic             | OpenAI             | Gemini          |
+| ---------------- | --------------------- | ------------------ | --------------- |
+| `web_search`     | `web_search_20260318` | `web_search`       | `googleSearch`  |
+| `code_execution` | —                     | `code_interpreter` | `codeExecution` |
 
 You can also pass provider-specific names directly. Use the optional `config`
 field for provider-specific options:
@@ -569,15 +569,77 @@ field for provider-specific options:
 { type: "provider", name: "web_search", config: { max_results: 5 } }
 ```
 
-Provider tool events stream as `provider-tool:start` and `provider-tool:complete`.
-The `output` on `provider-tool:complete`, and on the stored `provider-tool`
-part, is the provider's own result object, unchanged. On Anthropic that is the
-whole result block (for example `{ type: "web_search_tool_result",
-tool_use_id, content }`).
+These are the versions each Axle release was tested with; they do not follow
+the provider's latest. `config` is merged into the provider's tool definition
+last, so `config.type` pins another version:
+
+```typescript
+{ type: "provider", name: "web_search", config: { type: "web_search_20250305" } }
+```
+
+On Anthropic, Axle sends `allowed_callers: ["direct"]` with `web_search`, so
+Claude calls the search itself and every result reaches the context. To let
+Claude filter results with code before they reach the context (Anthropic's
+dynamic filtering, Claude 4.6 and later), override it:
+
+```typescript
+{
+  type: "provider",
+  name: "web_search",
+  config: { allowed_callers: ["code_execution_20260120"] },
+}
+```
+
+A provider tool call is stored as a `provider-tool` part with the same
+fields on every provider:
+
+```typescript
+{
+  type: "provider-tool",
+  id: "srvtoolu_01…",
+  name: "web_search",
+  input: { type: "search", queries: ["anthropic homepage"] },
+  result: { type: "success" },
+  continuity: { provider: "anthropic", call, result },
+}
+```
+
+| Field        | Meaning                                                                                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Axle's tool name: `web_search`, `web_fetch`, `code_execution`, `file_search`                                                                             |
+| `input`      | What the tool was asked to do: `search` (`queries`), `open` (`url`), `find` (`url`, `pattern`), `code` (`code`). Absent for a tool Axle has no shape for |
+| `result`     | `{ type: "success" }` or `{ type: "error", error }`. Absent while the tool has not run in that message                                                   |
+| `continuity` | The provider's own objects, typed with its SDK types and sent back only to that provider                                                                 |
+
+Render from `name`, `input`, and `result`. `continuity` is for sending the
+call back and for provider-specific detail: Anthropic's search results are
+`continuity.result.content`; OpenAI's item is `continuity.item` and carries
+no results.
+
+Provider tool events stream as `provider-tool:start`, `provider-tool:input`,
+and then `provider-tool:complete` or `provider-tool:error`. They carry the
+same `name` and `input`, and no provider objects. `provider-tool:input` fills
+`detail.input` on the turn's provider-tool action; it fires before the search
+runs on Anthropic and together with the result on OpenAI.
+
+`provider-tool:error` replaces `provider-tool:complete` when the provider
+reports that its tool failed, and the turn's action settles as `error`.
+
+| Provider           | What counts as a failure                           | `error.type`                                          |
+| ------------------ | -------------------------------------------------- | ----------------------------------------------------- |
+| Anthropic          | A result block whose `content` has an `error_code` | Anthropic's `error_code`, such as `max_uses_exceeded` |
+| OpenAI             | A tool item whose `status` is `failed`             | `failed`; OpenAI gives no code                        |
+| Gemini, OpenRouter | Nothing: neither reports a failed search           | —                                                     |
+
+Gemini names the queries it ran only when the answer ends, so its
+`web_search` part comes after the text, and its three events fire together
+at the end. It has no `continuity`: Gemini needs nothing sent back for a
+search. OpenRouter reports a search only through citations, so it produces no
+provider-tool part and no provider-tool events.
 
 When Claude calls an Anthropic-run tool and one of your tools in the same
 response, Anthropic runs its tool after your tool results come back. The
-first assistant message then holds a `provider-tool` part with no `output`,
+first assistant message then holds a `provider-tool` part with no `result`,
 and the next one starts with a `provider-tool-result` part carrying the same
 `id`. `provider-tool:complete` fires when that result arrives.
 
@@ -743,7 +805,8 @@ try {
 `TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
-`action:running`, `action:progress`, `action:complete`, `action:error`,
+`action:running`, `action:input`, `action:progress`, `action:complete`,
+`action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:error`, `annotation:start`, `annotation:update`,
 `annotation:end`, `error`.
@@ -881,7 +944,8 @@ and completion.
 `text:end`, `citation`, `thinking:start`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
 `tool:args-delta`, `tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
-`tool:exec-error`, `provider-tool:start`, `provider-tool:complete`, `error`.
+`tool:exec-error`, `provider-tool:start`, `provider-tool:input`,
+`provider-tool:complete`, `provider-tool:error`, `error`.
 
 Tool and provider-tool events correlate by `id`. Text and thinking parts
 stream sequentially within a step, so their deltas belong to the most

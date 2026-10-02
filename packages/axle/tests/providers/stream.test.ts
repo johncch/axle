@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import type { ProviderToolContinuity } from "../../src/messages/providerTool.js";
 import type {
   AnyStreamChunk,
   StreamCitationChunk,
@@ -690,8 +691,16 @@ describe("stream()", () => {
   });
 
   describe("provider tools", () => {
-    test("a deferred provider-tool-complete lands output on its own part, not the active one", async () => {
-      const output = { results: ["r1", "r2"] };
+    test("a provider-tool-complete that arrives after later text lands on its own part", async () => {
+      const continuity: ProviderToolContinuity = {
+        provider: "openai",
+        item: {
+          id: "ps_1",
+          type: "web_search_call",
+          status: "completed",
+          action: { type: "search", query: "axle" },
+        },
+      };
       const chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),
         { type: "provider-tool-start", data: { index: 0, id: "ps_1", name: "web_search" } },
@@ -700,7 +709,13 @@ describe("stream()", () => {
         textCompleteChunk(1),
         {
           type: "provider-tool-complete",
-          data: { index: 0, id: "ps_1", name: "web_search", output },
+          data: {
+            index: 0,
+            id: "ps_1",
+            name: "web_search",
+            result: { type: "success" },
+            continuity,
+          },
         },
         completeChunk(),
       ];
@@ -712,12 +727,16 @@ describe("stream()", () => {
       expect(final.ok).toBe(true);
       if (!final.ok) return;
 
-      const providerToolPart = final.final.content.find((p) => p.type === "provider-tool");
-      expect(providerToolPart).toBeDefined();
-      expect((providerToolPart as any).output).toEqual(output);
-
-      const textPart = final.final.content.find((p) => p.type === "text");
-      expect((textPart as any).output).toBeUndefined();
+      expect(final.final.content).toEqual([
+        {
+          type: "provider-tool",
+          id: "ps_1",
+          name: "web_search",
+          result: { type: "success" },
+          continuity,
+        },
+        { type: "text", text: "searching the web" },
+      ]);
     });
   });
 

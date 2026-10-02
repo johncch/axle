@@ -12,6 +12,7 @@ import {
   stream,
   type AIProvider,
   type AxleAssistantMessage,
+  type AxleMessage,
   type AxleModelRequestOptions,
   type CompactionUpdate,
   type ExecutableTool,
@@ -1079,6 +1080,65 @@ export const coreCases: CheckCase[] = [
     },
   },
   {
+    group: "extended",
+    id: "stream-web-search-error",
+    description:
+      "A web search that Anthropic refuses is reported as a provider-tool error, and a follow-up request is accepted.",
+    providers: ["anthropic"],
+    async run({ provider, model, requestOptions }) {
+      const providerTools: ProviderTool[] = [
+        { type: "provider", name: "web_search", config: { max_uses: 1 } },
+      ];
+      const messages: AxleMessage[] = [
+        {
+          role: "user",
+          content:
+            "Run two separate web searches, one after the other: first 'Anthropic homepage', then 'OpenAI homepage'. " +
+            "You must run both searches even if the first one answers the question. Then summarize in one sentence.",
+        },
+      ];
+
+      const errorTypes: string[] = [];
+      const handle = stream({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools,
+        messages,
+        maxOutputTokens: 2048,
+      });
+      handle.on((event) => {
+        if (event.type === "provider-tool:error") errorTypes.push(event.error.type);
+      });
+      const first = await handle.final;
+      if (!first.ok) return fail({ error: first.error });
+      if (!errorTypes.includes("max_uses_exceeded")) {
+        return {
+          ok: false,
+          failureReasons: [
+            "No search went over max_uses, or the refused search was not reported as an error.",
+          ],
+          details: { errorTypes, text: getAssistantText(first.final) },
+        };
+      }
+
+      const followUp = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools,
+        messages: [...messages, ...first.messages, { role: "user", content: "Thanks. Say OK." }],
+        maxOutputTokens: 256,
+      });
+      if (!followUp.ok) return fail({ error: followUp.error, errorTypes });
+
+      return {
+        ok: true,
+        details: { errorTypes, text: getAssistantText(first.final), usage: followUp.usage },
+      };
+    },
+  },
+  {
     group: "default",
     id: "instruct-text-reference",
     description: "Instruct text references are included in the user turn.",
@@ -1240,17 +1300,23 @@ async function runStreamingWebSearchCitationCase({
     webSearchTool: webSearchToolResults.length > 0,
   };
   const hasSearchEvidence = Object.values(searchEvidence).some(Boolean) && !unexpectedFallback;
+  const providerToolInputMissing =
+    eventTypes.includes("provider-tool:start") && !eventTypes.includes("provider-tool:input");
+  const failureReasons = [
+    ...(hasSearchEvidence
+      ? []
+      : [
+          unexpectedFallback
+            ? "Provider reported native web_search support but Axle used the configured fallback."
+            : "No citations, provider-tool activity, or successful web_search result.",
+        ]),
+    ...(providerToolInputMissing
+      ? ["A provider tool started but its input never reached the event stream."]
+      : []),
+  ];
   return {
-    ok: hasSearchEvidence,
-    ...(!hasSearchEvidence
-      ? {
-          failureReasons: [
-            unexpectedFallback
-              ? "Provider reported native web_search support but Axle used the configured fallback."
-              : "No citations, provider-tool activity, or successful web_search result.",
-          ],
-        }
-      : {}),
+    ok: failureReasons.length === 0,
+    ...(failureReasons.length > 0 ? { failureReasons } : {}),
     details: {
       text,
       finishReason: result.final.finishReason,

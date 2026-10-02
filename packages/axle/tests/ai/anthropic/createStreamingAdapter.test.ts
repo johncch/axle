@@ -1,4 +1,6 @@
+import type { ServerToolUseBlock } from "@anthropic-ai/sdk/resources/messages.js";
 import { describe, expect, test, vi } from "vitest";
+import type { AnthropicServerToolResultBlock } from "../../../src/messages/providerTool.js";
 import { createAnthropicStreamingAdapter } from "../../../src/providers/anthropic/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
 
@@ -728,131 +730,171 @@ describe("createAnthropicStreamingAdapter", () => {
     });
   });
 
-  describe("internal tools", () => {
-    test("should emit provider-tool-start for server_tool_use", () => {
-      const adapter = createAnthropicStreamingAdapter();
-
-      const chunks = adapter.handleEvent({
-        type: "content_block_start",
-        index: 0,
-        content_block: {
-          type: "server_tool_use",
-          id: "srvtoolu_123",
-          name: "web_search",
-          input: { query: "test" },
-        } as any,
-      });
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("provider-tool-start");
-      if (chunks[0].type === "provider-tool-start") {
-        expect(chunks[0].data.id).toBe("srvtoolu_123");
-        expect(chunks[0].data.name).toBe("web_search");
-      }
+  describe("server tools", () => {
+    const callBlock = (name: ServerToolUseBlock["name"]): ServerToolUseBlock => ({
+      type: "server_tool_use",
+      id: "srvtoolu_123",
+      name,
+      input: {},
+      caller: directCaller,
     });
 
-    test("should emit provider-tool-complete for web_search_tool_result", () => {
-      const adapter = createAnthropicStreamingAdapter();
+    const searchResults: AnthropicServerToolResultBlock = {
+      type: "web_search_tool_result",
+      tool_use_id: "srvtoolu_123",
+      caller: directCaller,
+      content: [
+        {
+          type: "web_search_result",
+          url: "https://example.com",
+          title: "Example",
+          encrypted_content: "enc",
+          page_age: null,
+        },
+      ],
+    };
 
-      // Start the server tool
-      adapter.handleEvent({
+    const call = (
+      adapter: ReturnType<typeof createAnthropicStreamingAdapter>,
+      name: ServerToolUseBlock["name"],
+      inputJson: string,
+    ) => {
+      const started = adapter.handleEvent({
         type: "content_block_start",
         index: 0,
-        content_block: {
-          type: "server_tool_use",
-          id: "srvtoolu_123",
-          name: "web_search",
-          input: { query: "test" },
-        } as any,
-      });
-
-      // Result arrives as a separate content block
-      const chunks = adapter.handleEvent({
-        type: "content_block_start",
-        index: 1,
-        content_block: {
-          type: "web_search_tool_result",
-          tool_use_id: "srvtoolu_123",
-          content: [{ type: "web_search_result", url: "https://example.com", title: "Example" }],
-        } as any,
-      });
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0].type).toBe("provider-tool-complete");
-      if (chunks[0].type === "provider-tool-complete") {
-        expect(chunks[0].data.id).toBe("srvtoolu_123");
-        expect(chunks[0].data.name).toBe("web_search");
-        expect(chunks[0].data.output).toEqual({
-          type: "web_search_tool_result",
-          tool_use_id: "srvtoolu_123",
-          content: [{ type: "web_search_result", url: "https://example.com", title: "Example" }],
-        });
-      }
-    });
-
-    test("should emit the server tool input once its block closes", () => {
-      const adapter = createAnthropicStreamingAdapter();
-
-      adapter.handleEvent({
-        type: "content_block_start",
-        index: 0,
-        content_block: {
-          type: "server_tool_use",
-          id: "srvtoolu_123",
-          name: "web_search",
-          input: {},
-        } as any,
+        content_block: callBlock(name),
       });
       adapter.handleEvent({
         type: "content_block_delta",
         index: 0,
-        delta: { type: "input_json_delta", partial_json: '{"query":' },
+        delta: { type: "input_json_delta", partial_json: inputJson.slice(0, 5) },
       });
       adapter.handleEvent({
         type: "content_block_delta",
         index: 0,
-        delta: { type: "input_json_delta", partial_json: '"test"}' },
+        delta: { type: "input_json_delta", partial_json: inputJson.slice(5) },
       });
+      const closed = adapter.handleEvent({ type: "content_block_stop", index: 0 });
+      return { started, closed };
+    };
+
+    test("starts a provider tool when a server_tool_use block opens", () => {
+      const { started } = call(createAnthropicStreamingAdapter(), "web_search", "{}");
+
+      expect(started).toEqual([
+        { type: "provider-tool-start", data: { index: 0, id: "srvtoolu_123", name: "web_search" } },
+      ]);
+    });
+
+    test("reports the search once its block closes, keeping the call block for replay", () => {
+      const { closed } = call(createAnthropicStreamingAdapter(), "web_search", '{"query":"test"}');
+
+      expect(closed).toEqual([
+        {
+          type: "provider-tool-input",
+          data: {
+            index: 0,
+            id: "srvtoolu_123",
+            name: "web_search",
+            input: { type: "search", queries: ["test"] },
+            continuity: {
+              provider: "anthropic",
+              call: { ...callBlock("web_search"), input: { query: "test" } },
+            },
+          },
+        },
+      ]);
+    });
+
+    test.each([
+      ["web_fetch", '{"url":"https://example.com"}', { type: "open", url: "https://example.com" }],
+      ["code_execution", '{"code":"print(1)"}', { type: "code", code: "print(1)" }],
+      ["bash_code_execution", '{"command":"ls"}', undefined],
+    ] as const)("gives %s input Axle's shape", (name, inputJson, input) => {
+      const { closed } = call(createAnthropicStreamingAdapter(), name, inputJson);
+
+      const [chunk] = closed;
+
+      expect(chunk.type === "provider-tool-input" ? chunk.data.input : chunk.type).toEqual(input);
+    });
+
+    test("keeps an input that arrives complete on the block, with no JSON deltas", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      const nestedSearch: ServerToolUseBlock = {
+        ...callBlock("web_search"),
+        input: { query: "test" },
+        caller: { type: "code_execution_20260120", tool_id: "srvtoolu_code" },
+      };
+
+      adapter.handleEvent({ type: "content_block_start", index: 0, content_block: nestedSearch });
       const chunks = adapter.handleEvent({ type: "content_block_stop", index: 0 });
 
       expect(chunks).toEqual([
         {
           type: "provider-tool-input",
-          data: { index: 0, id: "srvtoolu_123", name: "web_search", input: { query: "test" } },
+          data: {
+            index: 0,
+            id: "srvtoolu_123",
+            name: "web_search",
+            input: { type: "search", queries: ["test"] },
+            continuity: { provider: "anthropic", call: nestedSearch },
+          },
         },
       ]);
     });
 
-    test("should complete a server tool from a result block of any type", () => {
+    test("completes the tool when its result block arrives", () => {
       const adapter = createAnthropicStreamingAdapter();
-      const result = {
-        type: "web_fetch_tool_result",
-        tool_use_id: "srvtoolu_123",
-        content: { type: "web_fetch_result", url: "https://example.com" },
-      };
+      call(adapter, "web_search", '{"query":"test"}');
 
-      adapter.handleEvent({
-        type: "content_block_start",
-        index: 0,
-        content_block: {
-          type: "server_tool_use",
-          id: "srvtoolu_123",
-          name: "web_fetch",
-          input: {},
-        } as any,
-      });
       const chunks = adapter.handleEvent({
         type: "content_block_start",
         index: 1,
-        content_block: result as any,
+        content_block: searchResults,
       });
 
       expect(chunks).toEqual([
         {
           type: "provider-tool-complete",
-          data: { index: 0, id: "srvtoolu_123", name: "web_fetch", output: result },
+          data: {
+            index: 0,
+            id: "srvtoolu_123",
+            name: "web_search",
+            result: { type: "success" },
+            continuity: {
+              provider: "anthropic",
+              call: { ...callBlock("web_search"), input: { query: "test" } },
+              result: searchResults,
+            },
+          },
         },
       ]);
+    });
+
+    test("reports a result block that holds an error code as a failure", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      const limitReached: AnthropicServerToolResultBlock = {
+        type: "web_search_tool_result",
+        tool_use_id: "srvtoolu_123",
+        caller: directCaller,
+        content: { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" },
+      };
+      call(adapter, "web_search", '{"query":"test"}');
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 1,
+        content_block: limitReached,
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].data).toMatchObject({
+        result: {
+          type: "error",
+          error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
+        },
+        continuity: { provider: "anthropic", result: limitReached },
+      });
     });
   });
 });

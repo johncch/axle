@@ -12,12 +12,7 @@ import type {
   ContentPartToolCall,
   ToolResultPart,
 } from "../messages/message.js";
-import {
-  getCitations,
-  getProviderTools,
-  getTextContent,
-  getThinkingContent,
-} from "../messages/utils.js";
+import { getCitations, getTextContent, getThinkingContent } from "../messages/utils.js";
 import { logContent } from "../observability/log.js";
 import type { Span } from "../observability/types.js";
 import { ToolRegistry } from "../tools/registry.js";
@@ -144,16 +139,16 @@ export function logStepContent(span: Span | undefined, content: ContentPart[]): 
   logContent(span, "text", getTextContent(content));
   const thinking = getThinkingContent(content);
   if (thinking) span.debug("thinking", { thinking });
-  for (const tool of getProviderTools(content)) {
-    span.info(tool.name, { type: "provider-tool", input: tool.input });
-    if (tool.output !== undefined) {
-      span.trace(tool.name, { type: "provider-tool", output: tool.output });
-    }
-  }
   for (const part of content) {
-    if (part.type === "provider-tool-result") {
-      span.trace(part.name, { type: "provider-tool", output: part.output });
+    if (part.type === "provider-tool") {
+      span.info(part.name, { type: "provider-tool", input: part.input, result: part.result });
+    } else if (part.type === "provider-tool-result") {
+      span.info(part.name, { type: "provider-tool", result: part.result });
+    } else {
+      continue;
     }
+    if (part.continuity)
+      span.trace(part.name, { type: "provider-tool", continuity: part.continuity });
   }
   logCitations(span, getCitations(content));
 }

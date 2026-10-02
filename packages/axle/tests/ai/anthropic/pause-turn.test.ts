@@ -159,7 +159,7 @@ describe("Anthropic pause_turn continuation", () => {
           client: mockClient,
           model: "claude-opus-4-8",
           messages: userMessages,
-          providerTools: [{ ...webSearch, nativeName: "web_search_20250305" }],
+          providerTools: [{ ...webSearch, nativeName: "web_search_20260318" }],
           runtime: {},
           signal,
         }),
@@ -381,8 +381,13 @@ describe("Anthropic pause_turn continuation", () => {
         ],
       });
       expect(result.final?.content[1]).toMatchObject({
-        input: { query: "axle" },
-        output: searchResult("srvtoolu_1"),
+        input: { type: "search", queries: ["axle"] },
+        result: { type: "success" },
+        continuity: {
+          provider: "anthropic",
+          call: { type: "server_tool_use", id: "srvtoolu_1", input: { query: "axle" } },
+          result: searchResult("srvtoolu_1"),
+        },
       });
       expect(result.usage).toMatchObject({ in: 50, out: 27 });
     });
@@ -458,6 +463,7 @@ describe("Anthropic pause_turn continuation", () => {
             id: "srvtoolu_1",
             name: "web_search",
             input: { query: "axle" },
+            caller: directCaller,
           },
           searchResult("srvtoolu_1"),
           { type: "tool_use", id: "toolu_1", name: "lookup", input: { key: "a" } },
