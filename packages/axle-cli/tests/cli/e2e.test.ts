@@ -1,16 +1,15 @@
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, test } from "vitest";
+import type { ScheduleRecord, ScheduleRun } from "../../src/cli/schedule/records.js";
 
 const PKG_ROOT = join(import.meta.dirname, "..", "..");
 const TSX_BIN = join(PKG_ROOT, "node_modules", ".bin", "tsx");
 const CLI_PATH = join(PKG_ROOT, "src", "cli.ts");
-const TEST_DIR = join(import.meta.dirname, "__e2e_tmp__");
-const HOME = join(TEST_DIR, "home");
-const CWD = join(TEST_DIR, "cwd");
+const TEST_ROOT = join(import.meta.dirname, "__e2e_tmp__");
 
 const SPAWN_TIMEOUT = 30_000;
 
@@ -21,120 +20,235 @@ interface ChatRequest {
   messages: Array<{ role: string; content: unknown }>;
 }
 
-let server: Server;
-let baseUrl: string;
-let replies: StubReply[];
-let requests: ChatRequest[];
+interface CliRun {
+  code: number | null;
+  output: string;
+}
+
+interface CliFixture {
+  HOME: string;
+  CWD: string;
+  baseUrl: string;
+  replies: StubReply[];
+  requests: ChatRequest[];
+  runCli(args: string[], env?: Record<string, string>, stdin?: string): Promise<CliRun>;
+  runCliWithSlowReader(args: string[], env?: Record<string, string>): Promise<CliRun>;
+  writeRecipe(name: string, extra?: string): Promise<string>;
+  writeOverThresholdRecipe(name: string, extra?: string): Promise<string>;
+}
+
+interface ScheduleFixture {
+  LAUNCH_AGENTS: string;
+  SCHEDULES: string;
+  scheduleEnv(platform?: string): Record<string, string>;
+  launchctlCalls(): Promise<string[]>;
+  runsOf(id: string): Promise<ScheduleRun[]>;
+  records(): Promise<Array<{ id: string; record: ScheduleRecord }>>;
+  runOccurrence(programArguments: string[]): Promise<CliRun>;
+}
 
 function sse(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-beforeEach(async () => {
-  await mkdir(HOME, { recursive: true });
-  await mkdir(CWD, { recursive: true });
-
-  replies = [];
-  requests = [];
-  server = createServer((req, res) => {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      requests.push(JSON.parse(body));
-      const reply = replies.shift() ?? { text: "stub reply" };
-      res.writeHead(200, { "Content-Type": "text/event-stream" });
-      if ("error" in reply) {
-        res.write(sse({ error: { type: "server_error", message: reply.error } }));
-      } else {
-        res.write(
-          sse({
-            id: "stub-1",
-            model: "stub-model",
-            choices: [{ index: 0, delta: { role: "assistant", content: reply.text } }],
-          }),
-        );
-        res.write(
-          sse({
-            id: "stub-1",
-            model: "stub-model",
-            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-            usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
-          }),
-        );
-      }
-      res.write("data: [DONE]\n\n");
-      res.end();
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
-});
-
-afterEach(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  await rm(TEST_DIR, { recursive: true, force: true });
-});
-
-function runCli(
+function run(
+  command: string,
   args: string[],
-  env: Record<string, string> = {},
-  stdin = "",
-): Promise<{ code: number | null; output: string }> {
+  options: { cwd: string; env: Record<string, string>; stdin: string; readAfterMs?: number },
+): Promise<CliRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn(TSX_BIN, [CLI_PATH, ...args], {
-      cwd: CWD,
-      env: { PATH: process.env.PATH!, HOME, ...env },
-    });
+    const child = spawn(command, args, { cwd: options.cwd, env: options.env });
+    if (options.readAfterMs !== undefined) {
+      child.stdout.pause();
+      setTimeout(() => child.stdout.resume(), options.readAfterMs);
+    }
     let output = "";
     child.stdout.on("data", (chunk) => (output += chunk));
     child.stderr.on("data", (chunk) => (output += chunk));
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, output }));
-    child.stdin.end(stdin);
+    child.stdin.end(options.stdin);
   });
 }
 
-async function writeRecipe(name: string, extra = ""): Promise<string> {
-  const path = join(CWD, name);
-  await writeFile(
-    path,
-    [
-      "provider:",
-      "  type: chatcompletions",
-      `  baseUrl: ${baseUrl}`,
-      "model: stub-model",
-      "task: |",
-      "  Say hello.",
-      extra,
-    ].join("\n"),
-  );
-  return path;
-}
+// Every test gets its own home, working directory, and stub server, so the
+// tests in this file can run concurrently.
+const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
+  cli: async ({}, use) => {
+    await mkdir(TEST_ROOT, { recursive: true });
+    const testDir = await mkdtemp(join(TEST_ROOT, "test-"));
+    const HOME = join(testDir, "home");
+    const CWD = join(testDir, "cwd");
+    await mkdir(HOME, { recursive: true });
+    await mkdir(CWD, { recursive: true });
 
-// With AXLE_CONTEXT_WINDOW=1000 the compaction threshold is 800 tokens
-// (~2400 chars); this task alone crosses it, so a resumed session is over
-// the threshold before its next send.
-async function writeOverThresholdRecipe(name: string, extra = ""): Promise<string> {
-  const path = join(CWD, name);
-  await writeFile(
-    path,
-    [
-      "provider:",
-      "  type: chatcompletions",
-      `  baseUrl: ${baseUrl}`,
-      "model: stub-model",
-      extra,
-      "task: |",
-      `  Analyze this. ${"filler words here ".repeat(200)}`,
-    ].join("\n"),
-  );
-  return path;
-}
+    const replies: StubReply[] = [];
+    const requests: ChatRequest[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", () => {
+        requests.push(JSON.parse(body));
+        const reply = replies.shift() ?? { text: "stub reply" };
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        if ("error" in reply) {
+          res.write(sse({ error: { type: "server_error", message: reply.error } }));
+        } else {
+          res.write(
+            sse({
+              id: "stub-1",
+              model: "stub-model",
+              choices: [{ index: 0, delta: { role: "assistant", content: reply.text } }],
+            }),
+          );
+          res.write(
+            sse({
+              id: "stub-1",
+              model: "stub-model",
+              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+              usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+            }),
+          );
+        }
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
 
-describe("cli.ts end-to-end", () => {
+    const writeRecipeFile = async (name: string, lines: string[]): Promise<string> => {
+      const path = join(CWD, name);
+      await writeFile(path, lines.join("\n"));
+      return path;
+    };
+
+    await use({
+      HOME,
+      CWD,
+      baseUrl,
+      replies,
+      requests,
+      runCli: (args, env = {}, stdin = "") =>
+        run(TSX_BIN, [CLI_PATH, ...args], {
+          cwd: CWD,
+          env: { PATH: process.env.PATH!, HOME, ...env },
+          stdin,
+        }),
+      runCliWithSlowReader: (args, env = {}) =>
+        run(TSX_BIN, [CLI_PATH, ...args], {
+          cwd: CWD,
+          env: { PATH: process.env.PATH!, HOME, ...env },
+          stdin: "",
+          readAfterMs: 3000,
+        }),
+      writeRecipe: (name, extra = "") =>
+        writeRecipeFile(name, [
+          "provider:",
+          "  type: chatcompletions",
+          `  baseUrl: ${baseUrl}`,
+          "model: stub-model",
+          "task: |",
+          "  Say hello.",
+          extra,
+        ]),
+      // With AXLE_CONTEXT_WINDOW=1000 the compaction threshold is 800 tokens
+      // (~2400 chars); this task alone crosses it, so a resumed session is over
+      // the threshold before its next send.
+      writeOverThresholdRecipe: (name, extra = "") =>
+        writeRecipeFile(name, [
+          "provider:",
+          "  type: chatcompletions",
+          `  baseUrl: ${baseUrl}`,
+          "model: stub-model",
+          extra,
+          "task: |",
+          `  Analyze this. ${"filler words here ".repeat(200)}`,
+        ]),
+    });
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(testDir, { recursive: true, force: true });
+  },
+
+  schedule: async ({ cli }, use) => {
+    const testDir = join(cli.HOME, "..");
+    const launchctl = join(testDir, "launchctl");
+    const launchctlLog = join(testDir, "launchctl.log");
+    const LAUNCH_AGENTS = join(cli.HOME, "Library", "LaunchAgents");
+    const SCHEDULES = join(cli.HOME, ".axle", "schedules");
+    await writeFile(launchctl, '#!/bin/sh\necho "$@" >> "$AXLE_TEST_LAUNCHCTL_LOG"\nexit 0\n');
+    await chmod(launchctl, 0o755);
+
+    const scheduleEnv = (platform = "darwin"): Record<string, string> => ({
+      AXLE_LAUNCHCTL: launchctl,
+      AXLE_SCHEDULE_PLATFORM: platform,
+      AXLE_TEST_LAUNCHCTL_LOG: launchctlLog,
+    });
+
+    await use({
+      LAUNCH_AGENTS,
+      SCHEDULES,
+      scheduleEnv,
+      // `print` is the read-only loaded-check; only bootout/bootstrap mutate.
+      launchctlCalls: async () => {
+        try {
+          return (await readFile(launchctlLog, "utf-8"))
+            .split("\n")
+            .filter((line) => line && !line.startsWith("print "));
+        } catch {
+          return [];
+        }
+      },
+      runsOf: async (id) => {
+        try {
+          return (await readFile(join(SCHEDULES, `${id}.runs.jsonl`), "utf-8"))
+            .trim()
+            .split("\n")
+            .map((line): ScheduleRun => JSON.parse(line));
+        } catch {
+          return [];
+        }
+      },
+      records: async () => {
+        let names: string[];
+        try {
+          names = (await readdir(SCHEDULES)).filter((name) => name.endsWith(".json"));
+        } catch {
+          return [];
+        }
+        const parsed: Array<{ id: string; record: ScheduleRecord }> = [];
+        for (const name of names) {
+          try {
+            parsed.push({
+              id: name.slice(0, -".json".length),
+              record: JSON.parse(await readFile(join(SCHEDULES, name), "utf-8")),
+            });
+          } catch {
+            continue;
+          }
+        }
+        return parsed;
+      },
+      runOccurrence: (programArguments) =>
+        run(programArguments[0], programArguments.slice(1), {
+          cwd: cli.CWD,
+          env: { PATH: process.env.PATH!, HOME: cli.HOME, ...scheduleEnv() },
+          stdin: "",
+        }),
+    });
+  },
+});
+
+afterAll(async () => {
+  await rm(TEST_ROOT, { recursive: true, force: true });
+});
+
+describe.concurrent("cli.ts end-to-end", () => {
   it(
     "runs a recipe: exit 0, response on stdout, session file written",
-    async () => {
+    async ({ cli }) => {
+      const { replies, requests, runCli, writeRecipe, HOME } = cli;
       replies.push({ text: "hello from the stub" });
       const recipe = await writeRecipe("job.yml");
 
@@ -158,7 +272,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "a failed recipe run renders the model error and exits 1",
-    async () => {
+    async ({ cli }) => {
+      const { replies, runCli, writeRecipe } = cli;
       replies.push({ error: "stub exploded" });
       const recipe = await writeRecipe("job.yml");
 
@@ -174,7 +289,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "one-shot -m resolves provider and model through cli.yaml defaults and env",
-    async () => {
+    async ({ cli }) => {
+      const { replies, requests, runCli, HOME, baseUrl } = cli;
       replies.push({ text: "one-shot answer" });
       await mkdir(join(HOME, ".axle"), { recursive: true });
       await writeFile(join(HOME, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
@@ -194,7 +310,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "preserves equals signs in recipe arguments",
-    async () => {
+    async ({ cli }) => {
+      const { replies, requests, runCli, CWD, baseUrl } = cli;
       replies.push({ text: "argument received" });
       const recipe = join(CWD, "args.yml");
       await writeFile(
@@ -226,7 +343,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "piped chat reads a line at the prompt, answers, and exits cleanly at EOF",
-    async () => {
+    async ({ cli }) => {
+      const { replies, requests, runCli, HOME, baseUrl } = cli;
       replies.push({ text: "chat answer" });
       await mkdir(join(HOME, ".axle"), { recursive: true });
       await writeFile(join(HOME, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
@@ -248,7 +366,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "resume re-enters a saved run and sends the prior conversation to the model",
-    async () => {
+    async ({ cli }) => {
+      const { replies, requests, runCli, writeRecipe } = cli;
       replies.push({ text: "first answer" }, { text: "second answer" });
       const recipe = await writeRecipe("job.yml");
 
@@ -278,7 +397,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "batch with a mid-batch failure exits 1 and indexes both outcomes in the ledger",
-    async () => {
+    async ({ cli }) => {
+      const { replies, runCli, writeRecipe, CWD } = cli;
       replies.push({ text: "processed a" }, { error: "stub exploded" });
       await mkdir(join(CWD, "inputs"), { recursive: true });
       await writeFile(join(CWD, "inputs", "a.md"), "alpha");
@@ -312,7 +432,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "resume over the compaction threshold summarizes before sending",
-    async () => {
+    async ({ cli }) => {
+      const { requests, runCli, writeOverThresholdRecipe } = cli;
       const recipe = await writeOverThresholdRecipe("compacting.yml");
 
       const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"], {
@@ -335,7 +456,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "compaction: false survives resume — no summarization request over the threshold",
-    async () => {
+    async ({ cli }) => {
+      const { requests, runCli, writeOverThresholdRecipe, HOME } = cli;
       const recipe = await writeOverThresholdRecipe("optout.yml", "compaction: false");
 
       const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"], {
@@ -361,7 +483,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "same-named recipe files in different directories get distinct ledger scopes",
-    async () => {
+    async ({ cli }) => {
+      const { runCli, writeRecipe, CWD } = cli;
       await mkdir(join(CWD, "inputs"), { recursive: true });
       await mkdir(join(CWD, "jobs", "first"), { recursive: true });
       await mkdir(join(CWD, "jobs", "second"), { recursive: true });
@@ -399,7 +522,8 @@ describe("cli.ts end-to-end", () => {
 
   it(
     "rejects --message combined with --job before running anything",
-    async () => {
+    async ({ cli }) => {
+      const { requests, runCli } = cli;
       const { code, output } = await runCli(["-j", "whatever.yml", "-m", "hi"]);
 
       expect(code).toBe(1);
@@ -410,89 +534,14 @@ describe("cli.ts end-to-end", () => {
   );
 });
 
-describe("schedules end-to-end", () => {
-  const LAUNCHCTL = join(TEST_DIR, "launchctl");
-  const LAUNCHCTL_LOG = join(TEST_DIR, "launchctl.log");
-  const LAUNCH_AGENTS = join(HOME, "Library", "LaunchAgents");
-  const SCHEDULES = join(HOME, ".axle", "schedules");
+describe.concurrent("schedules end-to-end", () => {
   const plain = ["--renderer", "plain", "--no-log"];
-
-  function scheduleEnv(platform = "darwin"): Record<string, string> {
-    return {
-      AXLE_LAUNCHCTL: LAUNCHCTL,
-      AXLE_SCHEDULE_PLATFORM: platform,
-      AXLE_TEST_LAUNCHCTL_LOG: LAUNCHCTL_LOG,
-    };
-  }
-
-  // `print` is the read-only loaded-check; only bootout/bootstrap mutate.
-  async function launchctlCalls(): Promise<string[]> {
-    try {
-      return (await readFile(LAUNCHCTL_LOG, "utf-8"))
-        .split("\n")
-        .filter((line) => line && !line.startsWith("print "));
-    } catch {
-      return [];
-    }
-  }
-
-  async function runsOf(id: string): Promise<any[]> {
-    try {
-      return (await readFile(join(SCHEDULES, `${id}.runs.jsonl`), "utf-8"))
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-    } catch {
-      return [];
-    }
-  }
-
-  async function records(): Promise<Array<{ id: string; record: any }>> {
-    let names: string[];
-    try {
-      names = (await readdir(SCHEDULES)).filter((name) => name.endsWith(".json"));
-    } catch {
-      return [];
-    }
-    const parsed: Array<{ id: string; record: any }> = [];
-    for (const name of names) {
-      try {
-        parsed.push({
-          id: name.slice(0, -".json".length),
-          record: JSON.parse(await readFile(join(SCHEDULES, name), "utf-8")),
-        });
-      } catch {
-        continue;
-      }
-    }
-    return parsed;
-  }
-
-  function runOccurrence(
-    programArguments: string[],
-  ): Promise<{ code: number | null; output: string }> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(programArguments[0], programArguments.slice(1), {
-        cwd: CWD,
-        env: { PATH: process.env.PATH!, HOME, ...scheduleEnv() },
-      });
-      let output = "";
-      child.stdout.on("data", (chunk) => (output += chunk));
-      child.stderr.on("data", (chunk) => (output += chunk));
-      child.on("error", reject);
-      child.on("close", (code) => resolve({ code, output }));
-      child.stdin.end();
-    });
-  }
-
-  beforeEach(async () => {
-    await writeFile(LAUNCHCTL, '#!/bin/sh\necho "$@" >> "$AXLE_TEST_LAUNCHCTL_LOG"\nexit 0\n');
-    await chmod(LAUNCHCTL, 0o755);
-  });
 
   it(
     "axle schedule -j registers a LaunchAgent, runs once, and updates only when something changed",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { replies, requests, runCli, writeRecipe, CWD } = cli;
+      const { scheduleEnv, launchctlCalls, runsOf, records, LAUNCH_AGENTS, SCHEDULES } = schedule;
       replies.push({ text: "first" }, { text: "second" }, { text: "third" });
       const recipe = await writeRecipe(
         "monitor.yml",
@@ -565,7 +614,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "plain axle -j never touches the scheduler and reports the schedule's state",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { replies, requests, runCli, writeRecipe } = cli;
+      const { scheduleEnv, launchctlCalls, runsOf, records } = schedule;
       replies.push({ text: "a" }, { text: "b" }, { text: "c" }, { text: "d" }, { text: "e" });
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
 
@@ -613,7 +664,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "an unsupported platform fails before running and points at a plain run",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { requests, runCli, writeRecipe } = cli;
+      const { scheduleEnv, records } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
 
       const { code, output } = await runCli(
@@ -632,7 +685,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "schedule register registers without running; without a block both forms refuse",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { requests, runCli, writeRecipe } = cli;
+      const { scheduleEnv, launchctlCalls, runsOf, records } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 2d");
 
       const applied = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
@@ -662,7 +717,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "a malformed schedule block fails recipe validation before any registration",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { runCli, writeRecipe } = cli;
+      const { scheduleEnv, launchctlCalls } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 30s");
 
       const { code, output } = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
@@ -676,7 +733,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "a calendar recipe registers StartCalendarInterval entries and diffs against an interval",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { requests, runCli, writeRecipe } = cli;
+      const { scheduleEnv, records } = schedule;
       const recipe = await writeRecipe(
         "digest.yml",
         "name: digest\nschedule:\n  at: ['09:00', '17:30']\n  on: [mon, fri]",
@@ -721,7 +780,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "remove still unloads a schedule whose record is corrupt",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { runCli, writeRecipe } = cli;
+      const { scheduleEnv, launchctlCalls, records, SCHEDULES } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
       await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
       const [{ id, record }] = await records();
@@ -743,7 +804,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "an occurrence that fails before running still records a failed run",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { requests, runCli, writeRecipe } = cli;
+      const { scheduleEnv, runsOf, records, runOccurrence } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
       await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
       const [{ id, record }] = await records();
@@ -762,7 +825,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "a plain run still runs when the schedule's history file is unreadable",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { replies, runCli, writeRecipe } = cli;
+      const { scheduleEnv, records, SCHEDULES } = schedule;
       replies.push({ text: "ran anyway" });
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
       await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
@@ -780,7 +845,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "management output survives a pipe when it exceeds the pipe buffer",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { runCli, runCliWithSlowReader, writeRecipe } = cli;
+      const { scheduleEnv, records, SCHEDULES } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
       await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
       const [{ id }] = await records();
@@ -795,7 +862,10 @@ describe("schedules end-to-end", () => {
         Array(4000).fill(line).join("\n") + "\n",
       );
 
-      const { code, output } = await runCli(["schedule", "sessions", "-j", recipe], scheduleEnv());
+      const { code, output } = await runCliWithSlowReader(
+        ["schedule", "sessions", "-j", recipe],
+        scheduleEnv(),
+      );
 
       expect(code).toBe(0);
       expect(output.trim().split("\n")).toHaveLength(4000);
@@ -805,7 +875,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "rejects a malformed --scheduled marker and an unknown platform override",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { requests, runCli, writeRecipe, HOME } = cli;
+      const { scheduleEnv, records } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
 
       const traversal = await runCli(
@@ -828,7 +900,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "register restores a registration whose LaunchAgent went missing, and list flags it first",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { runCli, writeRecipe } = cli;
+      const { scheduleEnv, records } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
       await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
       const [{ record }] = await records();
@@ -850,7 +924,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "the generated occurrence bypasses reconciliation, saves a session, and is listed under sessions",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { replies, requests, runCli, writeRecipe, HOME } = cli;
+      const { scheduleEnv, launchctlCalls, records, runOccurrence } = schedule;
       replies.push({ text: "fired" }, { error: "provider down" });
       const recipe = await writeRecipe(
         "monitor.yml",
@@ -897,7 +973,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "a scheduled batch occurrence records one session per input",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { replies, runCli, writeRecipe, CWD } = cli;
+      const { scheduleEnv, records, runOccurrence, SCHEDULES } = schedule;
       replies.push({ text: "a done" }, { text: "b done" });
       await mkdir(join(CWD, "inputs"), { recursive: true });
       await writeFile(join(CWD, "inputs", "a.md"), "alpha");
@@ -933,7 +1011,9 @@ describe("schedules end-to-end", () => {
 
   it(
     "list shows registrations and remove deletes only the schedule's own artifacts",
-    async () => {
+    async ({ cli, schedule }) => {
+      const { replies, requests, runCli, writeRecipe, HOME } = cli;
+      const { scheduleEnv, launchctlCalls, records, LAUNCH_AGENTS, SCHEDULES } = schedule;
       replies.push({ text: "ran" });
       const monitor = await writeRecipe(
         "monitor.yml",
