@@ -609,10 +609,15 @@ Gemini and OpenRouter report a search only through citations, so they emit no
 provider-tool events.
 
 `provider-tool:error` replaces `provider-tool:complete` when the provider
-reports that its tool failed. On Anthropic the `error.type` is the provider's
-error code (for example `max_uses_exceeded`), and `output` is still the result
-block, which is stored and sent back like any other. The turn's action settles
+reports that its tool failed. `output` is still the provider's result object,
+which is stored and sent back like any other, and the turn's action settles
 as `error`.
+
+| Provider           | What counts as a failure                                         | `error.type`                                          |
+| ------------------ | ---------------------------------------------------------------- | ----------------------------------------------------- |
+| Anthropic          | A result block whose `content` is a `*_tool_result_error` object | Anthropic's `error_code`, such as `max_uses_exceeded` |
+| OpenAI             | A tool item whose `status` is `failed`                           | `failed`; OpenAI gives no code                        |
+| Gemini, OpenRouter | Nothing: neither reports a failed search                         | —                                                     |
 
 When Claude calls an Anthropic-run tool and one of your tools in the same
 response, Anthropic runs its tool after your tool results come back. The

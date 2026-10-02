@@ -333,14 +333,13 @@ export function createAnthropicStreamingAdapter(
   return { handleEvent, pausedContent };
 }
 
+type ServerToolResultBlock = Extract<ContentBlock, { tool_use_id: string }>;
+
 function providerToolError(
   name: string,
-  resultBlock: { content?: unknown },
+  resultBlock: ServerToolResultBlock,
 ): { error?: { type: string; message: string } } {
   const content = resultBlock.content;
-  if (typeof content !== "object" || content === null || Array.isArray(content)) return {};
-  const { type, error_code: errorCode } = content as { type?: unknown; error_code?: unknown };
-  if (typeof type !== "string" || !type.endsWith("_tool_result_error")) return {};
-  if (typeof errorCode !== "string") return {};
-  return { error: { type: errorCode, message: `${name} failed: ${errorCode}` } };
+  if (Array.isArray(content) || !("error_code" in content)) return {};
+  return { error: { type: content.error_code, message: `${name} failed: ${content.error_code}` } };
 }

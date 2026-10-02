@@ -814,6 +814,49 @@ describe("createResponsesAPIStreamingAdapter", () => {
     });
   });
 
+  describe("failed provider tools", () => {
+    const completion = (item: Record<string, unknown>) => {
+      const adapter = createStreamingAdapter();
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: { ...item, status: "in_progress" },
+      } as unknown as ResponseStreamEvent);
+      return adapter
+        .handleEvent({
+          type: "response.output_item.done",
+          sequence_number: 2,
+          output_index: 0,
+          item,
+        } as unknown as ResponseStreamEvent)
+        .find((chunk) => chunk.type === "provider-tool-complete");
+    };
+
+    test("marks a tool item whose status is failed", () => {
+      const item = { id: "ws_1", type: "web_search_call", status: "failed" };
+
+      expect(completion(item)?.data).toEqual({
+        index: 0,
+        id: "ws_1",
+        name: "web_search_call",
+        output: item,
+        error: { type: "failed", message: "web_search_call failed" },
+      });
+    });
+
+    test("leaves a completed tool item unmarked", () => {
+      const item = { id: "ws_1", type: "web_search_call", status: "completed" };
+
+      expect(completion(item)?.data).toEqual({
+        index: 0,
+        id: "ws_1",
+        name: "web_search_call",
+        output: item,
+      });
+    });
+  });
+
   describe("message phase", () => {
     const textStart = (item: Record<string, unknown>) => {
       const adapter = createStreamingAdapter();
