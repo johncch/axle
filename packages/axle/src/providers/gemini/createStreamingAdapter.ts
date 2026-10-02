@@ -10,6 +10,7 @@ export function createGeminiStreamingAdapter() {
   let currentPartIndex = -1;
   let lastTextPartIndex = -1;
   let hasFunctionCalls = false;
+  let searchReported = false;
   let messageId = "";
   let model = "";
   let inputTokens = 0;
@@ -226,6 +227,24 @@ export function createGeminiStreamingAdapter() {
       chunks.push({
         type: "text-citation",
         data: { index: streamPartIndex, citation },
+      });
+    }
+
+    const searchQueries = candidate.groundingMetadata?.webSearchQueries ?? [];
+    if (!searchReported && searchQueries.length > 0) {
+      searchReported = true;
+      closeActivePart(chunks);
+      const index = partIndex++;
+      const id = `${messageId}:web_search`;
+      const name = "web_search";
+      chunks.push({ type: "provider-tool-start", data: { index, id, name } });
+      chunks.push({
+        type: "provider-tool-input",
+        data: { index, id, name, input: { type: "search", queries: searchQueries } },
+      });
+      chunks.push({
+        type: "provider-tool-complete",
+        data: { index, id, name, result: { type: "success" } },
       });
     }
 

@@ -2,7 +2,13 @@ import type {
   ContentBlock,
   ContentBlockParam,
   MessageStreamEvent,
+  ServerToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import type {
+  AnthropicServerToolResultBlock,
+  ProviderToolInput,
+  ProviderToolResult,
+} from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
@@ -12,7 +18,7 @@ export function createAnthropicStreamingAdapter(
   openProviderToolCalls: Array<{ id: string; name: string }> = [],
 ) {
   const blockTypes = new Map<number, "text" | "thinking" | "tool" | "provider-tool">();
-  const providerToolInfo = new Map<string, { index: number; name: string }>();
+  const providerToolInfo = new Map<string, { index: number; call: ServerToolUseBlock }>();
   const earlierCallNames = new Map(openProviderToolCalls.map((call) => [call.id, call.name]));
   let inputTokens = 0;
   let outputTokens = 0;
@@ -155,44 +161,45 @@ export function createAnthropicStreamingAdapter(
           });
         } else if (event.content_block.type === "server_tool_use") {
           blockTypes.set(index, "provider-tool");
-          const block = event.content_block;
-          providerToolInfo.set(block.id, { index, name: block.name });
+          const call: ServerToolUseBlock = { ...event.content_block };
+          responseBlocks[event.index] = call;
+          providerToolInfo.set(call.id, { index, call });
           chunks.push({
             type: "provider-tool-start",
             data: {
               index,
-              id: block.id,
-              name: block.name,
+              id: call.id,
+              name: call.name,
             },
           });
         } else if ("tool_use_id" in event.content_block) {
-          const block = event.content_block;
-          const info = providerToolInfo.get(block.tool_use_id);
-          const earlierCallName = earlierCallNames.get(block.tool_use_id);
+          const result = event.content_block;
+          const info = providerToolInfo.get(result.tool_use_id);
+          const earlierCallName = earlierCallNames.get(result.tool_use_id);
           if (info) {
             chunks.push({
               type: "provider-tool-complete",
               data: {
                 index: info.index,
-                id: block.tool_use_id,
-                name: info.name,
-                output: block,
-                ...providerToolError(info.name, block),
+                id: result.tool_use_id,
+                name: info.call.name,
+                result: toProviderToolResult(info.call.name, result),
+                continuity: { provider: "anthropic", call: info.call, result },
               },
             });
-            providerToolInfo.delete(block.tool_use_id);
+            providerToolInfo.delete(result.tool_use_id);
           } else if (earlierCallName !== undefined) {
             chunks.push({
               type: "provider-tool-result",
               data: {
                 index,
-                id: block.tool_use_id,
+                id: result.tool_use_id,
                 name: earlierCallName,
-                output: block,
-                ...providerToolError(earlierCallName, block),
+                result: toProviderToolResult(earlierCallName, result),
+                continuity: { provider: "anthropic", result },
               },
             });
-            earlierCallNames.delete(block.tool_use_id);
+            earlierCallNames.delete(result.tool_use_id);
           }
         }
         break;
@@ -289,7 +296,8 @@ export function createAnthropicStreamingAdapter(
                 index,
                 id: responseBlock.id,
                 name: responseBlock.name,
-                input: responseBlock.input,
+                input: toProviderToolInput(responseBlock),
+                continuity: { provider: "anthropic", call: responseBlock },
               },
             });
           }
@@ -327,19 +335,35 @@ export function createAnthropicStreamingAdapter(
   }
 
   function pausedContent(): Array<ContentBlockParam> | undefined {
-    return turn === "paused" ? ([...pausedBlocks] as Array<ContentBlockParam>) : undefined;
+    return turn === "paused" ? [...pausedBlocks] : undefined;
   }
 
   return { handleEvent, pausedContent };
 }
 
-type ServerToolResultBlock = Extract<ContentBlock, { tool_use_id: string }>;
+interface AnthropicServerToolInput {
+  query?: string;
+  url?: string;
+  code?: string;
+}
 
-function providerToolError(
+function toProviderToolInput(call: ServerToolUseBlock): ProviderToolInput | undefined {
+  if (typeof call.input !== "object" || call.input === null) return undefined;
+  const input: AnthropicServerToolInput = call.input;
+  if (call.name === "web_search" && input.query) return { type: "search", queries: [input.query] };
+  if (call.name === "web_fetch" && input.url) return { type: "open", url: input.url };
+  if (call.name === "code_execution" && input.code) return { type: "code", code: input.code };
+  return undefined;
+}
+
+function toProviderToolResult(
   name: string,
-  resultBlock: ServerToolResultBlock,
-): { error?: { type: string; message: string } } {
+  resultBlock: AnthropicServerToolResultBlock,
+): ProviderToolResult {
   const content = resultBlock.content;
-  if (Array.isArray(content) || !("error_code" in content)) return {};
-  return { error: { type: content.error_code, message: `${name} failed: ${content.error_code}` } };
+  if (Array.isArray(content) || !("error_code" in content)) return { type: "success" };
+  return {
+    type: "error",
+    error: { type: content.error_code, message: `${name} failed: ${content.error_code}` },
+  };
 }

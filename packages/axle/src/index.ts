@@ -1,4 +1,6 @@
 // Core
+export { PromptCompactor } from "./compaction/index.js";
+export type { PromptCompactorOptions } from "./compaction/index.js";
 export { configureAxle } from "./config.js";
 export type { AxleConfiguration } from "./config.js";
 export { Agent, createAgentConfig } from "./core/agent/index.js";
@@ -33,8 +35,6 @@ export type {
   ParsedSchema,
 } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
-export { PromptCompactor } from "./compaction/index.js";
-export type { PromptCompactorOptions } from "./compaction/index.js";
 export {
   AxleAbortError,
   AxleAgentAbortError,
@@ -66,6 +66,7 @@ export type {
 } from "./providers/helpers.js";
 export { generate, stream } from "./providers/index.js";
 export { openai } from "./providers/openai/index.js";
+export type { ReasoningEffort, ReasoningSetting } from "./providers/reasoning.js";
 export type {
   StreamEvent,
   StreamEventCallback,
@@ -85,7 +86,6 @@ export type {
   ProviderOptions,
   ToolChoice,
 } from "./providers/types.js";
-export type { ReasoningEffort, ReasoningSetting } from "./providers/reasoning.js";
 
 // Tools
 export { braveWebSearch, createAgentTool, parallelize } from "./tools/index.js";
@@ -134,23 +134,31 @@ export type {
   ThinkingContinuity,
   ToolResultPart,
 } from "./messages/message.js";
+export type {
+  AnthropicServerToolResultBlock,
+  OpenAIProviderToolItem,
+  ProviderToolContinuity,
+  ProviderToolInput,
+  ProviderToolResult,
+  ProviderToolResultContinuity,
+} from "./messages/providerTool.js";
 
 // Compaction (@experimental)
 export type {
   AutomaticCompactionTrigger,
   CompactionCallback,
-  ShouldCompactOnTriggerCallback,
   CompactionConfig,
   CompactionTrigger,
+  ShouldCompactOnTriggerCallback,
 } from "./core/agent/index.js";
 export { getCompactionStamp, validateCompactedMessages } from "./messages/compaction.js";
 export type { CompactionStamp } from "./messages/compaction.js";
 
 // Turns (public format)
-export { Transcript } from "./turns/transcript.js";
-export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export { Transcript } from "./turns/transcript.js";
+export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export type {
   ActionPart,
   ActionResult,

@@ -67,17 +67,11 @@ async function convertMessage(
           input: part.parameters,
         } satisfies Anthropic.ToolUseBlockParam);
       } else if (part.type === "provider-tool") {
-        content.push({
-          type: "server_tool_use",
-          id: part.id,
-          name: part.name,
-          input: part.input ?? {},
-        } as any);
-        if (part.output != null) {
-          content.push(part.output as any);
-        }
+        if (part.continuity?.provider !== "anthropic") continue;
+        content.push(part.continuity.call);
+        if (part.continuity.result) content.push(part.continuity.result);
       } else if (part.type === "provider-tool-result") {
-        content.push(part.output as any);
+        if (part.continuity?.provider === "anthropic") content.push(part.continuity.result);
       }
     }
     return {
@@ -386,7 +380,7 @@ export function findOpenProviderToolCalls(
   for (const message of messages) {
     if (message.role !== "assistant") continue;
     for (const part of message.content) {
-      if (part.type === "provider-tool" && part.output == null) {
+      if (part.type === "provider-tool" && !part.result) {
         openCallNames.set(part.id, part.name);
       } else if (part.type === "provider-tool-result") {
         openCallNames.delete(part.id);

@@ -1,10 +1,10 @@
 import type {
   AxleAssistantMessage,
-  ContentPartProviderTool,
   ContentPartText,
   ContentPartThinking,
   ContentPartToolCall,
 } from "../../messages/message.js";
+import type { ProviderToolResult } from "../../messages/providerTool.js";
 import type { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { createStats } from "../../utils/stats.js";
@@ -98,27 +98,11 @@ export async function readStep(
     });
   };
 
-  const emitProviderToolOutcome = (outcome: {
-    id: string;
-    name: string;
-    output?: unknown;
-    error?: { type: string; message: string };
-  }) => {
-    if (outcome.error) {
-      ctx.emit({
-        type: "provider-tool:error",
-        id: outcome.id,
-        name: outcome.name,
-        error: outcome.error,
-        output: outcome.output,
-      });
+  const emitProviderToolResult = (id: string, name: string, result: ProviderToolResult) => {
+    if (result.type === "error") {
+      ctx.emit({ type: "provider-tool:error", id, name, error: result.error });
     } else {
-      ctx.emit({
-        type: "provider-tool:complete",
-        id: outcome.id,
-        name: outcome.name,
-        output: outcome.output,
-      });
+      ctx.emit({ type: "provider-tool:complete", id, name });
     }
   };
 
@@ -344,23 +328,29 @@ export async function readStep(
       case "provider-tool-input": {
         const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
         const part = parts[partIndex];
-        if (part && part.type === "provider-tool") part.input = chunk.data.input;
-        ctx.emit({
-          type: "provider-tool:input",
-          id: chunk.data.id,
-          name: chunk.data.name,
-          input: chunk.data.input,
-        });
+        if (part && part.type === "provider-tool") {
+          if (chunk.data.continuity) part.continuity = chunk.data.continuity;
+          if (chunk.data.input) part.input = chunk.data.input;
+        }
+        if (chunk.data.input) {
+          ctx.emit({
+            type: "provider-tool:input",
+            id: chunk.data.id,
+            name: chunk.data.name,
+            input: chunk.data.input,
+          });
+        }
         break;
       }
 
       case "provider-tool-complete": {
         const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
-        const part = parts[partIndex] as ContentPartProviderTool;
-        if (part && part.type === "provider-tool" && chunk.data.output != null) {
-          part.output = chunk.data.output;
+        const part = parts[partIndex];
+        if (part && part.type === "provider-tool") {
+          part.result = chunk.data.result;
+          if (chunk.data.continuity) part.continuity = chunk.data.continuity;
         }
-        emitProviderToolOutcome(chunk.data);
+        emitProviderToolResult(chunk.data.id, chunk.data.name, chunk.data.result);
         break;
       }
 
@@ -370,11 +360,12 @@ export async function readStep(
           type: "provider-tool-result",
           id: chunk.data.id,
           name: chunk.data.name,
-          output: chunk.data.output,
+          result: chunk.data.result,
+          continuity: chunk.data.continuity,
         });
         currentPartIndex = parts.length - 1;
         chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
-        emitProviderToolOutcome(chunk.data);
+        emitProviderToolResult(chunk.data.id, chunk.data.name, chunk.data.result);
         break;
       }
 

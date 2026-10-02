@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { ContentPartText, ContentPartThinking } from "../../../../src/messages/message.js";
+import type { OpenAIProviderToolItem } from "../../../../src/messages/providerTool.js";
 import { convertAxleMessageToResponseInput } from "../../../../src/providers/openai/utils.js";
 
 describe("responsesAPI utils", () => {
@@ -341,13 +342,13 @@ describe("responsesAPI utils", () => {
     });
 
     describe("assistant item order", () => {
-      const firstSearch = {
+      const firstSearch: OpenAIProviderToolItem = {
         id: "ws_1",
         type: "web_search_call",
         status: "completed",
         action: { type: "search", query: "OpenAI official homepage" },
       };
-      const secondSearch = {
+      const secondSearch: OpenAIProviderToolItem = {
         id: "ws_2",
         type: "web_search_call",
         status: "completed",
@@ -365,9 +366,19 @@ describe("responsesAPI utils", () => {
             role: "assistant",
             id: "resp_1",
             content: [
-              { type: "provider-tool", id: "ws_1", name: "web_search_call", output: firstSearch },
+              {
+                type: "provider-tool",
+                id: "ws_1",
+                name: "web_search",
+                continuity: { provider: "openai", item: firstSearch },
+              },
               reasoning,
-              { type: "provider-tool", id: "ws_2", name: "web_search_call", output: secondSearch },
+              {
+                type: "provider-tool",
+                id: "ws_2",
+                name: "web_search",
+                continuity: { provider: "openai", item: secondSearch },
+              },
               { type: "text", text: "OpenAI's homepage is https://openai.com/." },
             ],
           },
@@ -379,6 +390,21 @@ describe("responsesAPI utils", () => {
           secondSearch,
           { role: "assistant", content: "OpenAI's homepage is https://openai.com/." },
         ]);
+      });
+
+      test("leaves out a reasoning part that has no item id", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "resp_1",
+            content: [
+              { type: "thinking", continuity: { provider: "openai", encrypted: "enc" } },
+              { type: "text", text: "Done." },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([{ role: "assistant", content: "Done." }]);
       });
 
       test("keeps text on either side of a tool call as separate messages", async () => {
@@ -462,6 +488,43 @@ describe("responsesAPI utils", () => {
         ]);
 
         expect(result).toEqual([{ role: "assistant", content: "Hello." }]);
+      });
+
+      test("leaves out a provider tool result that another provider returned", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "msg_1",
+            content: [
+              {
+                type: "provider-tool",
+                id: "srvtoolu_1",
+                name: "web_search",
+                input: { type: "search", queries: ["axle"] },
+                result: { type: "success" },
+                continuity: {
+                  provider: "anthropic",
+                  call: {
+                    type: "server_tool_use",
+                    id: "srvtoolu_1",
+                    name: "web_search",
+                    input: { query: "axle" },
+                    caller: { type: "direct" },
+                  },
+                  result: {
+                    type: "web_search_tool_result",
+                    tool_use_id: "srvtoolu_1",
+                    caller: { type: "direct" },
+                    content: [],
+                  },
+                },
+              },
+              { type: "text", text: "Found it." },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([{ role: "assistant", content: "Found it." }]);
       });
 
       test("joins text around a part that is not sent back into one message", async () => {

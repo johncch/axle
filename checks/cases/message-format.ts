@@ -101,7 +101,7 @@ export const messageFormatCases: CheckCase[] = [
     group: "default",
     id: "format-web-citations-follow-up",
     description: "A follow-up request is accepted after an answer with web search citations.",
-    providers: ["anthropic", "openai"],
+    providers: ["anthropic", "openai", "google"],
     async run({ provider, model, providerId, requestOptions }) {
       return runCitationFollowUp({
         provider,
@@ -118,7 +118,9 @@ export const messageFormatCases: CheckCase[] = [
             content:
               providerId === "openai"
                 ? "Use web search and answer in one sentence: what is the current OpenAI homepage URL and its headline?"
-                : "Use web search and answer in one sentence, citing your source: what kind of company is Anthropic?",
+                : providerId === "google"
+                  ? "Use Google Search and answer in one sentence, citing your source: what kind of company is Anthropic?"
+                  : "Use web search and answer in one sentence, citing your source: what kind of company is Anthropic?",
           },
         ],
       });
@@ -197,7 +199,7 @@ export const messageFormatCases: CheckCase[] = [
         message.role === "assistant" ? message.content : [],
       );
       const deferredCall = assistantParts.find(
-        (part) => part.type === "provider-tool" && part.output == null,
+        (part) => part.type === "provider-tool" && !part.result,
       );
       if (!deferredCall || deferredCall.type !== "provider-tool") {
         return {

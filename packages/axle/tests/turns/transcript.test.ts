@@ -144,12 +144,12 @@ describe("Transcript", () => {
       type: "action:input",
       turnId: "t1",
       partId: "p1",
-      input: { query: "axle" },
+      input: { type: "search", queries: ["axle"] },
     });
 
     expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       status: "running",
-      detail: { name: "web_search", input: { query: "axle" } },
+      detail: { name: "web_search", input: { type: "search", queries: ["axle"] } },
     });
   });
 

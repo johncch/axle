@@ -1,8 +1,51 @@
-import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
+import { ResponseOutputItem, ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import type { Citation } from "../../messages/message.js";
+import type { OpenAIProviderToolItem, ProviderToolInput } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
+
+function isProviderToolItem(item: ResponseOutputItem): item is OpenAIProviderToolItem {
+  return (
+    item.type === "web_search_call" ||
+    item.type === "file_search_call" ||
+    item.type === "code_interpreter_call"
+  );
+}
+
+function toProviderToolName(item: OpenAIProviderToolItem): string {
+  switch (item.type) {
+    case "web_search_call":
+      return "web_search";
+    case "code_interpreter_call":
+      return "code_execution";
+    case "file_search_call":
+      return "file_search";
+  }
+}
+
+function toProviderToolInput(item: OpenAIProviderToolItem): ProviderToolInput | undefined {
+  switch (item.type) {
+    case "web_search_call": {
+      const action = item.action;
+      if (!action) return undefined;
+      switch (action.type) {
+        case "search": {
+          const queries = action.queries ?? (action.query ? [action.query] : []);
+          return queries.length > 0 ? { type: "search", queries } : undefined;
+        }
+        case "open_page":
+          return action.url ? { type: "open", url: action.url } : undefined;
+        case "find_in_page":
+          return { type: "find", url: action.url, pattern: action.pattern };
+      }
+    }
+    case "code_interpreter_call":
+      return item.code ? { type: "code", code: item.code } : undefined;
+    case "file_search_call":
+      return item.queries.length > 0 ? { type: "search", queries: item.queries } : undefined;
+  }
+}
 
 export function createStreamingAdapter() {
   let messageId = "";
@@ -14,11 +57,6 @@ export function createStreamingAdapter() {
   const messagePhases = new Map<string, string>();
   const functionInfo = new Map<string, { name: string; callId: string }>();
   const providerToolIndices = new Map<string, number>();
-  const PROVIDER_TOOL_TYPES = new Set([
-    "web_search_call",
-    "file_search_call",
-    "code_interpreter_call",
-  ]);
   const toolCallBuffers = new Map<
     string,
     {
@@ -237,8 +275,8 @@ export function createStreamingAdapter() {
               callId: item.call_id || itemId,
             });
           }
-        } else if (event.item && PROVIDER_TOOL_TYPES.has(event.item.type)) {
-          const item = event.item as { id: string; type: string };
+        } else if (event.item && isProviderToolItem(event.item)) {
+          const item = event.item;
           const idx = partIndex++;
           providerToolIndices.set(item.id, idx);
           chunks.push({
@@ -246,7 +284,7 @@ export function createStreamingAdapter() {
             data: {
               index: idx,
               id: item.id,
-              name: item.type,
+              name: toProviderToolName(item),
             },
           });
         }
@@ -269,23 +307,21 @@ export function createStreamingAdapter() {
             data: { index: currentPartIndex },
           });
           currentPartIndex = -1;
-        } else if (event.item && PROVIDER_TOOL_TYPES.has(event.item.type)) {
-          const item = event.item as {
-            id: string;
-            type: string;
-            status?: string;
-            action?: unknown;
-          };
+        } else if (event.item && isProviderToolItem(event.item)) {
+          const item = event.item;
           const idx = providerToolIndices.get(item.id);
           if (idx !== undefined) {
-            if (item.type === "web_search_call" && item.action !== undefined) {
+            const name = toProviderToolName(item);
+            const input = toProviderToolInput(item);
+            if (input) {
               chunks.push({
                 type: "provider-tool-input",
                 data: {
                   index: idx,
                   id: item.id,
-                  name: item.type,
-                  input: item.action,
+                  name,
+                  input,
+                  continuity: { provider: "openai", item },
                 },
               });
             }
@@ -294,11 +330,12 @@ export function createStreamingAdapter() {
               data: {
                 index: idx,
                 id: item.id,
-                name: item.type,
-                output: event.item,
-                ...(item.status === "failed"
-                  ? { error: { type: "failed", message: `${item.type} failed` } }
-                  : {}),
+                name,
+                result:
+                  item.status === "failed"
+                    ? { type: "error", error: { type: "failed", message: `${name} failed` } }
+                    : { type: "success" },
+                continuity: { provider: "openai", item },
               },
             });
             providerToolIndices.delete(item.id);

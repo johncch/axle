@@ -160,12 +160,7 @@ describe("Anthropic server tool called alongside a client tool", () => {
       { id: "srvtoolu_1", name: "web_search" },
     ]);
     expect(events.filter((event) => event.type === "provider-tool:complete")).toEqual([
-      {
-        type: "provider-tool:complete",
-        id: "srvtoolu_1",
-        name: "web_search",
-        output: searchResult,
-      },
+      { type: "provider-tool:complete", id: "srvtoolu_1", name: "web_search" },
     ]);
   });
 
@@ -190,12 +185,27 @@ describe("Anthropic server tool called alongside a client tool", () => {
         type: "provider-tool",
         id: "srvtoolu_1",
         name: "web_search",
-        input: { query: "Anthropic homepage" },
+        input: { type: "search", queries: ["Anthropic homepage"] },
+        continuity: {
+          provider: "anthropic",
+          call: {
+            type: "server_tool_use",
+            id: "srvtoolu_1",
+            name: "web_search",
+            input: { query: "Anthropic homepage" },
+          },
+        },
       },
       { type: "tool-call", id: "toolu_1", name: "get_build_number", parameters: {} },
     ]);
     expect(result.messages[2].content).toEqual([
-      { type: "provider-tool-result", id: "srvtoolu_1", name: "web_search", output: searchResult },
+      {
+        type: "provider-tool-result",
+        id: "srvtoolu_1",
+        name: "web_search",
+        result: { type: "success" },
+        continuity: { provider: "anthropic", result: searchResult },
+      },
       { type: "text", text: "Anthropic is an AI safety company, and the build number is 4127." },
     ]);
   });
@@ -253,7 +263,13 @@ describe("Anthropic server tool called alongside a client tool", () => {
       expect(resultChunks(adapter)).toEqual([
         {
           type: "provider-tool-result",
-          data: { index: 0, id: "srvtoolu_1", name: "web_search", output: searchResult },
+          data: {
+            index: 0,
+            id: "srvtoolu_1",
+            name: "web_search",
+            result: { type: "success" },
+            continuity: { provider: "anthropic", result: searchResult },
+          },
         },
       ]);
     });
@@ -282,7 +298,7 @@ describe("Anthropic server tool called alongside a client tool", () => {
     });
 
     test("leaves out a call that carries its own result", () => {
-      const answered = { ...openCall, output: searchResult };
+      const answered = { ...openCall, result: { type: "success" } };
 
       expect(findOpenProviderToolCalls([assistant("msg_1", [answered])])).toEqual([]);
     });
@@ -292,7 +308,7 @@ describe("Anthropic server tool called alongside a client tool", () => {
         type: "provider-tool-result",
         id: "srvtoolu_1",
         name: "web_search",
-        output: searchResult,
+        result: { type: "success" },
       };
 
       expect(

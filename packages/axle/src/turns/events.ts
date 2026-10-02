@@ -1,4 +1,5 @@
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
+import type { ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
 import type {
   ActionResult,
@@ -56,7 +57,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       accumulated: string;
     }
   | { type: "action:running"; turnId: string; partId: string; parameters?: Record<string, unknown> }
-  | { type: "action:input"; turnId: string; partId: string; input: unknown }
+  | { type: "action:input"; turnId: string; partId: string; input: ProviderToolInput }
   | { type: "action:progress"; turnId: string; partId: string; chunk: string }
   | {
       type: "action:complete";

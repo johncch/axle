@@ -133,7 +133,7 @@ describe("Anthropic provider tool events", () => {
       type: "provider-tool:input",
       id: "srvtoolu_1",
       name: "web_search",
-      input: { query: "Anthropic homepage" },
+      input: { type: "search", queries: ["Anthropic homepage"] },
     });
   });
 
@@ -145,7 +145,6 @@ describe("Anthropic provider tool events", () => {
       id: "srvtoolu_2",
       name: "web_search",
       error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
-      output: limitReached,
     });
   });
 
@@ -156,8 +155,21 @@ describe("Anthropic provider tool events", () => {
       type: "provider-tool",
       id: "srvtoolu_2",
       name: "web_search",
-      input: { query: "OpenAI homepage" },
-      output: limitReached,
+      input: { type: "search", queries: ["OpenAI homepage"] },
+      result: {
+        type: "error",
+        error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
+      },
+      continuity: {
+        provider: "anthropic",
+        call: {
+          type: "server_tool_use",
+          id: "srvtoolu_2",
+          name: "web_search",
+          input: { query: "OpenAI homepage" },
+        },
+        result: limitReached,
+      },
     });
     const [replayed] = await convertToProviderMessages(result.messages);
     expect((replayed.content as unknown[])[3]).toEqual(limitReached);

@@ -63,9 +63,8 @@ function estimatePart(part: ContentPart): number {
     case "tool-call":
       return estimateTokens(part.name) + estimateJson(part.parameters);
     case "provider-tool":
-      return estimateTokens(part.name) + estimateJson(part.input) + estimateJson(part.output);
     case "provider-tool-result":
-      return estimateTokens(part.name) + estimateJson(part.output);
+      return estimateTokens(part.name) + estimateJson(part.continuity);
     case "citation":
       return estimateJson(part.citations);
     case "file":

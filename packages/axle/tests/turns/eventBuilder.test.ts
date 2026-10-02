@@ -214,7 +214,6 @@ describe("TurnEventBuilder", () => {
         type: "provider-tool:complete",
         id: "it1",
         name: "web_search",
-        output: "search results",
       }),
     );
 
@@ -238,7 +237,7 @@ describe("TurnEventBuilder", () => {
       type: "provider-tool:input",
       id: "it1",
       name: "web_search",
-      input: { query: "axle" },
+      input: { type: "search", queries: ["axle"] },
     });
 
     expect(events).toEqual([
@@ -246,7 +245,7 @@ describe("TurnEventBuilder", () => {
         type: "action:input",
         turnId: expect.any(String),
         partId: start.type === "part:start" ? start.part.id : undefined,
-        input: { query: "axle" },
+        input: { type: "search", queries: ["axle"] },
       },
     ]);
   });
@@ -261,7 +260,6 @@ describe("TurnEventBuilder", () => {
       id: "it1",
       name: "web_search",
       error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
-      output: { type: "web_search_tool_result" },
     });
 
     expect(events).toMatchObject([

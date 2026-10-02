@@ -590,38 +590,56 @@ dynamic filtering, Claude 4.6 and later), override it:
 }
 ```
 
+A provider tool call is stored as a `provider-tool` part with the same
+fields on every provider:
+
+```typescript
+{
+  type: "provider-tool",
+  id: "srvtoolu_01…",
+  name: "web_search",
+  input: { type: "search", queries: ["anthropic homepage"] },
+  result: { type: "success" },
+  continuity: { provider: "anthropic", call, result },
+}
+```
+
+| Field        | Meaning                                                                                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Axle's tool name: `web_search`, `web_fetch`, `code_execution`, `file_search`                                                                             |
+| `input`      | What the tool was asked to do: `search` (`queries`), `open` (`url`), `find` (`url`, `pattern`), `code` (`code`). Absent for a tool Axle has no shape for |
+| `result`     | `{ type: "success" }` or `{ type: "error", error }`. Absent while the tool has not run in that message                                                   |
+| `continuity` | The provider's own objects, typed with its SDK types and sent back only to that provider                                                                 |
+
+Render from `name`, `input`, and `result`. `continuity` is for sending the
+call back and for provider-specific detail: Anthropic's search results are
+`continuity.result.content`; OpenAI's item is `continuity.item` and carries
+no results.
+
 Provider tool events stream as `provider-tool:start`, `provider-tool:input`,
-and then `provider-tool:complete` or `provider-tool:error`.
-The `output` on `provider-tool:complete`, and on the stored `provider-tool`
-part, is the provider's own result object, unchanged. On Anthropic that is the
-whole result block (for example `{ type: "web_search_tool_result",
-tool_use_id, content }`).
-
-`provider-tool:input` carries what the tool was asked to do, in the provider's
-own shape, and fills `detail.input` on the turn's provider-tool action:
-
-| Provider  | `input` for a web search                                 | When it fires                           |
-| --------- | -------------------------------------------------------- | --------------------------------------- |
-| Anthropic | `{ query }`                                              | Before the search runs                  |
-| OpenAI    | The item's `action`, such as `{ type: "search", query }` | With the result, just before `complete` |
-
-Gemini and OpenRouter report a search only through citations, so they emit no
-provider-tool events.
+and then `provider-tool:complete` or `provider-tool:error`. They carry the
+same `name` and `input`, and no provider objects. `provider-tool:input` fills
+`detail.input` on the turn's provider-tool action; it fires before the search
+runs on Anthropic and together with the result on OpenAI.
 
 `provider-tool:error` replaces `provider-tool:complete` when the provider
-reports that its tool failed. `output` is still the provider's result object,
-which is stored and sent back like any other, and the turn's action settles
-as `error`.
+reports that its tool failed, and the turn's action settles as `error`.
 
-| Provider           | What counts as a failure                                         | `error.type`                                          |
-| ------------------ | ---------------------------------------------------------------- | ----------------------------------------------------- |
-| Anthropic          | A result block whose `content` is a `*_tool_result_error` object | Anthropic's `error_code`, such as `max_uses_exceeded` |
-| OpenAI             | A tool item whose `status` is `failed`                           | `failed`; OpenAI gives no code                        |
-| Gemini, OpenRouter | Nothing: neither reports a failed search                         | —                                                     |
+| Provider           | What counts as a failure                           | `error.type`                                          |
+| ------------------ | -------------------------------------------------- | ----------------------------------------------------- |
+| Anthropic          | A result block whose `content` has an `error_code` | Anthropic's `error_code`, such as `max_uses_exceeded` |
+| OpenAI             | A tool item whose `status` is `failed`             | `failed`; OpenAI gives no code                        |
+| Gemini, OpenRouter | Nothing: neither reports a failed search           | —                                                     |
+
+Gemini names the queries it ran only when the answer ends, so its
+`web_search` part comes after the text, and its three events fire together
+at the end. It has no `continuity`: Gemini needs nothing sent back for a
+search. OpenRouter reports a search only through citations, so it produces no
+provider-tool part and no provider-tool events.
 
 When Claude calls an Anthropic-run tool and one of your tools in the same
 response, Anthropic runs its tool after your tool results come back. The
-first assistant message then holds a `provider-tool` part with no `output`,
+first assistant message then holds a `provider-tool` part with no `result`,
 and the next one starts with a `provider-tool-result` part carrying the same
 `id`. `provider-tool:complete` fires when that result arrives.
 

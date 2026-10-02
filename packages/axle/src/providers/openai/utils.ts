@@ -173,15 +173,15 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
   };
 
   for (const part of msg.content) {
-    if (part.type === "thinking" && part.continuity?.provider === "openai") {
+    if (part.type === "thinking" && part.continuity?.provider === "openai" && part.id) {
       flushTextRun();
       result.push({
-        type: "reasoning" as const,
+        type: "reasoning",
         id: part.id,
-        summary: part.summary ? [{ type: "summary_text" as const, text: part.summary }] : [],
-        ...(part.text ? { content: [{ type: "reasoning_text" as const, text: part.text }] } : {}),
+        summary: part.summary ? [{ type: "summary_text", text: part.summary }] : [],
+        ...(part.text ? { content: [{ type: "reasoning_text", text: part.text }] } : {}),
         encrypted_content: part.continuity.encrypted,
-      } as any);
+      });
     } else if (part.type === "tool-call") {
       flushTextRun();
       result.push({
@@ -190,9 +190,9 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
         name: part.name,
         arguments: JSON.stringify(part.parameters),
       });
-    } else if (part.type === "provider-tool" && part.output != null) {
+    } else if (part.type === "provider-tool" && part.continuity?.provider === "openai") {
       flushTextRun();
-      result.push(part.output as any);
+      result.push(part.continuity.item);
     } else if (part.type === "text") {
       const phase = openAIPhase(part);
       if (textRun.parts.some((runPart) => runPart.type === "text") && phase !== textRun.phase) {

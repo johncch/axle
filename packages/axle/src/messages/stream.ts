@@ -1,6 +1,12 @@
 import { AxleStopReason } from "../providers/types.js";
 import { Stats } from "../types.js";
 import type { Citation, ThinkingContinuity } from "./message.js";
+import type {
+  ProviderToolContinuity,
+  ProviderToolInput,
+  ProviderToolResult,
+  ProviderToolResultContinuity,
+} from "./providerTool.js";
 
 export interface StreamChunk {
   type:
@@ -210,7 +216,8 @@ export interface StreamProviderToolInputChunk extends StreamChunk {
     index: number;
     id: string;
     name: string;
-    input: unknown;
+    input?: ProviderToolInput;
+    continuity?: ProviderToolContinuity;
   };
 }
 
@@ -220,8 +227,8 @@ export interface StreamProviderToolCompleteChunk extends StreamChunk {
     index: number;
     id: string;
     name: string;
-    output?: unknown;
-    error?: { type: string; message: string };
+    result: ProviderToolResult;
+    continuity?: ProviderToolContinuity;
   };
 }
 
@@ -231,8 +238,8 @@ export interface StreamProviderToolResultChunk extends StreamChunk {
     index: number;
     id: string;
     name: string;
-    output: unknown;
-    error?: { type: string; message: string };
+    result: ProviderToolResult;
+    continuity: ProviderToolResultContinuity;
   };
 }
 
