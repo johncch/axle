@@ -335,7 +335,11 @@ export function convertToAnthropicTools(
 }
 
 const PROVIDER_TOOL_MAP: Record<string, string> = {
-  web_search: "web_search_20250305",
+  web_search: "web_search_20260318",
+};
+
+const PROVIDER_TOOL_DEFAULT_CONFIG: Record<string, Record<string, unknown>> = {
+  web_search: { allowed_callers: ["direct"] },
 };
 
 export function resolveAnthropicProviderToolName(name: string): string {
@@ -348,6 +352,7 @@ export function convertToAnthropicProviderTools(
   return (providerTools ?? []).map((tool) => ({
     type: tool.nativeName ?? resolveAnthropicProviderToolName(tool.name),
     name: tool.name,
+    ...PROVIDER_TOOL_DEFAULT_CONFIG[tool.name],
     ...tool.config,
   }));
 }

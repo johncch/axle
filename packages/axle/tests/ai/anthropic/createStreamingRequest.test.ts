@@ -190,4 +190,52 @@ describe("createStreamingRequest (Anthropic)", () => {
       { type: "redacted_thinking", data: "opaque" },
     ]);
   });
+
+  describe("web search tool", () => {
+    const requestTools = async (config?: Record<string, unknown>) => {
+      await drain(
+        createStreamingRequest({
+          client: mockClient,
+          model: "claude-haiku-4-5",
+          messages,
+          runtime: {},
+          providerTools: [{ type: "provider", name: "web_search", ...(config ? { config } : {}) }],
+        }),
+      );
+      return request().tools;
+    };
+
+    test("defaults to the current version, called directly", async () => {
+      expect(await requestTools()).toEqual([
+        { type: "web_search_20260318", name: "web_search", allowed_callers: ["direct"] },
+      ]);
+    });
+
+    test("keeps the direct default next to other config", async () => {
+      expect(await requestTools({ max_uses: 3 })).toEqual([
+        {
+          type: "web_search_20260318",
+          name: "web_search",
+          allowed_callers: ["direct"],
+          max_uses: 3,
+        },
+      ]);
+    });
+
+    test("lets config opt in to dynamic filtering", async () => {
+      expect(await requestTools({ allowed_callers: ["code_execution_20260120"] })).toEqual([
+        {
+          type: "web_search_20260318",
+          name: "web_search",
+          allowed_callers: ["code_execution_20260120"],
+        },
+      ]);
+    });
+
+    test("lets config pin another version", async () => {
+      expect(await requestTools({ type: "web_search_20250305" })).toMatchObject([
+        { type: "web_search_20250305", name: "web_search" },
+      ]);
+    });
+  });
 });

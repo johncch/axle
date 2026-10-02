@@ -263,9 +263,20 @@ export function createStreamingAdapter() {
           });
           currentPartIndex = -1;
         } else if (event.item && PROVIDER_TOOL_TYPES.has(event.item.type)) {
-          const item = event.item as { id: string; type: string };
+          const item = event.item as { id: string; type: string; action?: unknown };
           const idx = providerToolIndices.get(item.id);
           if (idx !== undefined) {
+            if (item.type === "web_search_call" && item.action !== undefined) {
+              chunks.push({
+                type: "provider-tool-input",
+                data: {
+                  index: idx,
+                  id: item.id,
+                  name: item.type,
+                  input: item.action,
+                },
+              });
+            }
             chunks.push({
               type: "provider-tool-complete",
               data: {

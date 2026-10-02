@@ -108,7 +108,15 @@ export type StreamEvent =
     }
   // Provider tools (provider-managed: web search, code interpreter, etc.)
   | { type: "provider-tool:start"; id: string; name: string }
+  | { type: "provider-tool:input"; id: string; name: string; input: unknown }
   | { type: "provider-tool:complete"; id: string; name: string; output?: unknown }
+  | {
+      type: "provider-tool:error";
+      id: string;
+      name: string;
+      error: { type: string; message: string };
+      output?: unknown;
+    }
   // Error
   | { type: "error"; error: AxleFailure };
 

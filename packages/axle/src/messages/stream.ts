@@ -220,6 +220,7 @@ export interface StreamProviderToolCompleteChunk extends StreamChunk {
     id: string;
     name: string;
     output?: unknown;
+    error?: { type: string; message: string };
   };
 }
 
@@ -230,6 +231,7 @@ export interface StreamProviderToolResultChunk extends StreamChunk {
     id: string;
     name: string;
     output: unknown;
+    error?: { type: string; message: string };
   };
 }
 

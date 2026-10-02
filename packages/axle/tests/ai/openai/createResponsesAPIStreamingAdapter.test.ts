@@ -784,5 +784,33 @@ describe("createResponsesAPIStreamingAdapter", () => {
         expect(chunks[0].data.name).toBe("web_search_call");
       }
     });
+
+    test("should emit the search action as the tool input before completing", () => {
+      const adapter = createStreamingAdapter();
+      const action = { type: "search", query: "OpenAI official homepage" };
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: { id: "ws_123", type: "web_search_call", status: "in_progress" },
+      } as ResponseStreamEvent);
+      const chunks = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 2,
+        output_index: 0,
+        item: { id: "ws_123", type: "web_search_call", status: "completed", action },
+      } as ResponseStreamEvent);
+
+      expect(chunks.map((chunk) => chunk.type)).toEqual([
+        "provider-tool-input",
+        "provider-tool-complete",
+      ]);
+      expect(chunks[0].data).toMatchObject({
+        id: "ws_123",
+        name: "web_search_call",
+        input: action,
+      });
+    });
   });
 });

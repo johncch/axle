@@ -98,6 +98,30 @@ export async function readStep(
     });
   };
 
+  const emitProviderToolOutcome = (outcome: {
+    id: string;
+    name: string;
+    output?: unknown;
+    error?: { type: string; message: string };
+  }) => {
+    if (outcome.error) {
+      ctx.emit({
+        type: "provider-tool:error",
+        id: outcome.id,
+        name: outcome.name,
+        error: outcome.error,
+        output: outcome.output,
+      });
+    } else {
+      ctx.emit({
+        type: "provider-tool:complete",
+        id: outcome.id,
+        name: outcome.name,
+        output: outcome.output,
+      });
+    }
+  };
+
   // Index of the most recently pushed parts entry.
   // Provider block indices can have gaps (e.g. web_search_tool_result), but
   // blocks stream sequentially so the current part is always the last pushed.
@@ -317,6 +341,12 @@ export async function readStep(
         const partIndex = chunkIndexToPartIndex.get(chunk.data.index) ?? currentPartIndex;
         const part = parts[partIndex];
         if (part && part.type === "provider-tool") part.input = chunk.data.input;
+        ctx.emit({
+          type: "provider-tool:input",
+          id: chunk.data.id,
+          name: chunk.data.name,
+          input: chunk.data.input,
+        });
         break;
       }
 
@@ -326,12 +356,7 @@ export async function readStep(
         if (part && part.type === "provider-tool" && chunk.data.output != null) {
           part.output = chunk.data.output;
         }
-        ctx.emit({
-          type: "provider-tool:complete",
-          id: chunk.data.id,
-          name: chunk.data.name,
-          output: chunk.data.output,
-        });
+        emitProviderToolOutcome(chunk.data);
         break;
       }
 
@@ -345,12 +370,7 @@ export async function readStep(
         });
         currentPartIndex = parts.length - 1;
         chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
-        ctx.emit({
-          type: "provider-tool:complete",
-          id: chunk.data.id,
-          name: chunk.data.name,
-          output: chunk.data.output,
-        });
+        emitProviderToolOutcome(chunk.data);
         break;
       }
 

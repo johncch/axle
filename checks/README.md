@@ -259,6 +259,12 @@ rest.
 - `format-thinking-stream` (a raw or summary delta required for Anthropic,
   OpenRouter, and Together, which stream thinking text)
 
+Provider tool outcomes:
+
+- `stream-web-search-error` (Anthropic: a second search past `max_uses: 1`
+  must surface as `provider-tool:error` with `max_uses_exceeded`, and a
+  follow-up request must be accepted)
+
 Reasoning routes (`reasoning-route-*`, `reasoning-unsupported-error`): the
 request syntax Axle picks per model generation, pinned to models the default
 targets don't cover. Normative in `docs/architecture/reasoning.md`.

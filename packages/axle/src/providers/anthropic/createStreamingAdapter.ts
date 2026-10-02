@@ -177,6 +177,7 @@ export function createAnthropicStreamingAdapter(
                 id: block.tool_use_id,
                 name: info.name,
                 output: block,
+                ...providerToolError(info.name, block),
               },
             });
             providerToolInfo.delete(block.tool_use_id);
@@ -188,6 +189,7 @@ export function createAnthropicStreamingAdapter(
                 id: block.tool_use_id,
                 name: earlierCallName,
                 output: block,
+                ...providerToolError(earlierCallName, block),
               },
             });
             earlierCallNames.delete(block.tool_use_id);
@@ -329,4 +331,16 @@ export function createAnthropicStreamingAdapter(
   }
 
   return { handleEvent, pausedContent };
+}
+
+function providerToolError(
+  name: string,
+  resultBlock: { content?: unknown },
+): { error?: { type: string; message: string } } {
+  const content = resultBlock.content;
+  if (typeof content !== "object" || content === null || Array.isArray(content)) return {};
+  const { type, error_code: errorCode } = content as { type?: unknown; error_code?: unknown };
+  if (typeof type !== "string" || !type.endsWith("_tool_result_error")) return {};
+  if (typeof errorCode !== "string") return {};
+  return { error: { type: errorCode, message: `${name} failed: ${errorCode}` } };
 }

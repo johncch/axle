@@ -854,5 +854,43 @@ describe("createAnthropicStreamingAdapter", () => {
         },
       ]);
     });
+
+    test("should mark a result block that holds an error", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      const result = {
+        type: "web_search_tool_result",
+        tool_use_id: "srvtoolu_123",
+        content: { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" },
+      };
+
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "server_tool_use",
+          id: "srvtoolu_123",
+          name: "web_search",
+          input: {},
+        } as any,
+      });
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 1,
+        content_block: result as any,
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: "provider-tool-complete",
+          data: {
+            index: 0,
+            id: "srvtoolu_123",
+            name: "web_search",
+            output: result,
+            error: { type: "max_uses_exceeded", message: "web_search failed: max_uses_exceeded" },
+          },
+        },
+      ]);
+    });
   });
 });

@@ -118,7 +118,7 @@ export const messageFormatCases: CheckCase[] = [
             content:
               providerId === "openai"
                 ? "Use web search and answer in one sentence: what is the current OpenAI homepage URL and its headline?"
-                : "Use web search and answer in one sentence: what is the current Anthropic homepage URL?",
+                : "Use web search and answer in one sentence, citing your source: what kind of company is Anthropic?",
           },
         ],
       });

@@ -56,6 +56,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       accumulated: string;
     }
   | { type: "action:running"; turnId: string; partId: string; parameters?: Record<string, unknown> }
+  | { type: "action:input"; turnId: string; partId: string; input: unknown }
   | { type: "action:progress"; turnId: string; partId: string; chunk: string }
   | {
       type: "action:complete";

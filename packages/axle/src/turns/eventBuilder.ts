@@ -388,6 +388,19 @@ export class TurnEventBuilder {
         break;
       }
 
+      case "provider-tool:input": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          events.push({
+            type: "action:input",
+            turnId,
+            partId: mapping.partId,
+            input: event.input,
+          });
+        }
+        break;
+      }
+
       case "provider-tool:complete": {
         const mapping = this.toolIdMap.get(event.id);
         if (mapping) {
@@ -398,6 +411,22 @@ export class TurnEventBuilder {
             turnId,
             partId: mapping.partId,
             result: { type: "success", content: event.output },
+            timing,
+          });
+        }
+        break;
+      }
+
+      case "provider-tool:error": {
+        const mapping = this.toolIdMap.get(event.id);
+        if (mapping) {
+          const timing = completeTiming(mapping.timing);
+          mapping.timing = timing;
+          events.push({
+            type: "action:error",
+            turnId,
+            partId: mapping.partId,
+            error: event.error,
             timing,
           });
         }

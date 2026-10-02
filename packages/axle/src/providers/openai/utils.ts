@@ -57,7 +57,7 @@ function allPropertiesRequired(schema: unknown): boolean {
 }
 
 const PROVIDER_TOOL_MAP: Record<string, string> = {
-  web_search: "web_search_preview",
+  web_search: "web_search",
   code_execution: "code_interpreter",
 };
 

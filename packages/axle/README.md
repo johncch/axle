@@ -557,10 +557,10 @@ const agent = new Agent({
 
 Axle maps common names to provider-specific identifiers automatically:
 
-| Name             | Anthropic             | OpenAI               | Gemini          |
-| ---------------- | --------------------- | -------------------- | --------------- |
-| `web_search`     | `web_search_20250305` | `web_search_preview` | `googleSearch`  |
-| `code_execution` | —                     | `code_interpreter`   | `codeExecution` |
+| Name             | Anthropic             | OpenAI             | Gemini          |
+| ---------------- | --------------------- | ------------------ | --------------- |
+| `web_search`     | `web_search_20260318` | `web_search`       | `googleSearch`  |
+| `code_execution` | —                     | `code_interpreter` | `codeExecution` |
 
 You can also pass provider-specific names directly. Use the optional `config`
 field for provider-specific options:
@@ -569,11 +569,50 @@ field for provider-specific options:
 { type: "provider", name: "web_search", config: { max_results: 5 } }
 ```
 
-Provider tool events stream as `provider-tool:start` and `provider-tool:complete`.
+These are the versions each Axle release was tested with; they do not follow
+the provider's latest. `config` is merged into the provider's tool definition
+last, so `config.type` pins another version:
+
+```typescript
+{ type: "provider", name: "web_search", config: { type: "web_search_20250305" } }
+```
+
+On Anthropic, Axle sends `allowed_callers: ["direct"]` with `web_search`, so
+Claude calls the search itself and every result reaches the context. To let
+Claude filter results with code before they reach the context (Anthropic's
+dynamic filtering, Claude 4.6 and later), override it:
+
+```typescript
+{
+  type: "provider",
+  name: "web_search",
+  config: { allowed_callers: ["code_execution_20260120"] },
+}
+```
+
+Provider tool events stream as `provider-tool:start`, `provider-tool:input`,
+and then `provider-tool:complete` or `provider-tool:error`.
 The `output` on `provider-tool:complete`, and on the stored `provider-tool`
 part, is the provider's own result object, unchanged. On Anthropic that is the
 whole result block (for example `{ type: "web_search_tool_result",
 tool_use_id, content }`).
+
+`provider-tool:input` carries what the tool was asked to do, in the provider's
+own shape, and fills `detail.input` on the turn's provider-tool action:
+
+| Provider  | `input` for a web search                                 | When it fires                           |
+| --------- | -------------------------------------------------------- | --------------------------------------- |
+| Anthropic | `{ query }`                                              | Before the search runs                  |
+| OpenAI    | The item's `action`, such as `{ type: "search", query }` | With the result, just before `complete` |
+
+Gemini and OpenRouter report a search only through citations, so they emit no
+provider-tool events.
+
+`provider-tool:error` replaces `provider-tool:complete` when the provider
+reports that its tool failed. On Anthropic the `error.type` is the provider's
+error code (for example `max_uses_exceeded`), and `output` is still the result
+block, which is stored and sent back like any other. The turn's action settles
+as `error`.
 
 When Claude calls an Anthropic-run tool and one of your tools in the same
 response, Anthropic runs its tool after your tool results come back. The
@@ -743,7 +782,8 @@ try {
 `TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
-`action:running`, `action:progress`, `action:complete`, `action:error`,
+`action:running`, `action:input`, `action:progress`, `action:complete`,
+`action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:error`, `annotation:start`, `annotation:update`,
 `annotation:end`, `error`.
@@ -881,7 +921,8 @@ and completion.
 `text:end`, `citation`, `thinking:start`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
 `tool:args-delta`, `tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
-`tool:exec-error`, `provider-tool:start`, `provider-tool:complete`, `error`.
+`tool:exec-error`, `provider-tool:start`, `provider-tool:input`,
+`provider-tool:complete`, `provider-tool:error`, `error`.
 
 Tool and provider-tool events correlate by `id`. Text and thinking parts
 stream sequentially within a step, so their deltas belong to the most
