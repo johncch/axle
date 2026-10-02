@@ -148,7 +148,11 @@ export async function readStep(
 
       case "text-start": {
         closePart();
-        parts.push({ type: "text", text: "" });
+        parts.push({
+          type: "text",
+          text: "",
+          ...(chunk.data.providerMetadata ? { providerMetadata: chunk.data.providerMetadata } : {}),
+        });
         currentPartIndex = parts.length - 1;
         chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
         openPartType = "text";

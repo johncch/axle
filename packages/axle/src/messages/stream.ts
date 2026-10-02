@@ -67,6 +67,7 @@ export interface StreamTextStartChunk extends StreamChunk {
   type: "text-start";
   data: {
     index: number;
+    providerMetadata?: Record<string, unknown>;
   };
 }
 

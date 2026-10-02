@@ -11,6 +11,7 @@ export function createStreamingAdapter() {
   let currentPartIndex = -1;
   let hasFunctionCalls = false;
   const textPartIndices = new Map<string, number>();
+  const messagePhases = new Map<string, string>();
   const functionInfo = new Map<string, { name: string; callId: string }>();
   const providerToolIndices = new Map<string, number>();
   const PROVIDER_TOOL_TYPES = new Set([
@@ -48,9 +49,13 @@ export function createStreamingAdapter() {
         if (currentPartIndex === -1) {
           currentPartIndex = partIndex++;
           textPartIndices.set(key, currentPartIndex);
+          const phase = messagePhases.get(event.item_id);
           chunks.push({
             type: "text-start",
-            data: { index: currentPartIndex },
+            data: {
+              index: currentPartIndex,
+              ...(phase ? { providerMetadata: { provider: "openai", phase } } : {}),
+            },
           });
         }
         chunks.push({
@@ -221,6 +226,8 @@ export function createStreamingAdapter() {
             type: "thinking-start",
             data: { index: currentPartIndex, id: event.item.id },
           });
+        } else if (event.item?.type === "message") {
+          if (event.item.phase) messagePhases.set(event.item.id, event.item.phase);
         } else if (event.item?.type === "function_call") {
           const item = event.item as { id?: string; name: string; call_id: string };
           const itemId = item.id || item.call_id;

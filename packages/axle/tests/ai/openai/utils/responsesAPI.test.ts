@@ -401,6 +401,69 @@ describe("responsesAPI utils", () => {
         ]);
       });
 
+      test("sends a text part's phase back on its message", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "resp_1",
+            content: [
+              {
+                type: "text",
+                text: "Checking.",
+                providerMetadata: { provider: "openai", phase: "commentary" },
+              },
+              { type: "tool-call", id: "call_1", name: "lookup", parameters: {} },
+            ],
+          },
+        ]);
+
+        expect(result[0]).toEqual({ role: "assistant", content: "Checking.", phase: "commentary" });
+      });
+
+      test("keeps adjacent text with different phases as separate messages", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "resp_1",
+            content: [
+              {
+                type: "text",
+                text: "Checking.",
+                providerMetadata: { provider: "openai", phase: "commentary" },
+              },
+              {
+                type: "text",
+                text: "It is 4127.",
+                providerMetadata: { provider: "openai", phase: "final_answer" },
+              },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([
+          { role: "assistant", content: "Checking.", phase: "commentary" },
+          { role: "assistant", content: "It is 4127.", phase: "final_answer" },
+        ]);
+      });
+
+      test("ignores a phase recorded by another provider", async () => {
+        const result = await convertAxleMessageToResponseInput([
+          {
+            role: "assistant",
+            id: "msg_1",
+            content: [
+              {
+                type: "text",
+                text: "Hello.",
+                providerMetadata: { provider: "other", phase: "commentary" },
+              },
+            ],
+          },
+        ]);
+
+        expect(result).toEqual([{ role: "assistant", content: "Hello." }]);
+      });
+
       test("joins text around a part that is not sent back into one message", async () => {
         const result = await convertAxleMessageToResponseInput([
           {

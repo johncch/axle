@@ -1,6 +1,6 @@
 import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
-import { AxleMessage, ContentPart } from "../../messages/message.js";
+import { AxleMessage, ContentPart, ContentPartText } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import {
@@ -159,16 +159,17 @@ async function convertToolMessage(
 
 function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): ResponseInput {
   const result: ResponseInput = [];
-  let textRun: ContentPart[] = [];
+  let textRun: { parts: ContentPart[]; phase?: "commentary" | "final_answer" } = { parts: [] };
   const flushTextRun = () => {
-    const text = getTextContent(textRun);
+    const text = getTextContent(textRun.parts);
     if (text) {
       result.push({
         role: msg.role,
         content: text,
+        ...(textRun.phase ? { phase: textRun.phase } : {}),
       });
     }
-    textRun = [];
+    textRun = { parts: [] };
   };
 
   for (const part of msg.content) {
@@ -192,13 +193,26 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Resp
     } else if (part.type === "provider-tool" && part.output != null) {
       flushTextRun();
       result.push(part.output as any);
+    } else if (part.type === "text") {
+      const phase = openAIPhase(part);
+      if (textRun.parts.some((runPart) => runPart.type === "text") && phase !== textRun.phase) {
+        flushTextRun();
+      }
+      textRun.phase = phase;
+      textRun.parts.push(part);
     } else {
-      textRun.push(part);
+      textRun.parts.push(part);
     }
   }
   flushTextRun();
 
   return result;
+}
+
+function openAIPhase(part: ContentPartText): "commentary" | "final_answer" | undefined {
+  if (part.providerMetadata?.provider !== "openai") return undefined;
+  const phase = part.providerMetadata.phase;
+  return phase === "commentary" || phase === "final_answer" ? phase : undefined;
 }
 
 async function convertUserMessage(

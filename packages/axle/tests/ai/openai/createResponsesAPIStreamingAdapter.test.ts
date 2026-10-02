@@ -813,4 +813,39 @@ describe("createResponsesAPIStreamingAdapter", () => {
       });
     });
   });
+
+  describe("message phase", () => {
+    const textStart = (item: Record<string, unknown>) => {
+      const adapter = createStreamingAdapter();
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item,
+      } as unknown as ResponseStreamEvent);
+      return adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Checking.",
+        item_id: "msg_1",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent)[0];
+    };
+
+    test("carries the message item's phase on the text part", () => {
+      const chunk = textStart({ id: "msg_1", type: "message", phase: "commentary" });
+
+      expect(chunk).toEqual({
+        type: "text-start",
+        data: { index: 0, providerMetadata: { provider: "openai", phase: "commentary" } },
+      });
+    });
+
+    test("adds nothing when the message item has no phase", () => {
+      const chunk = textStart({ id: "msg_1", type: "message" });
+
+      expect(chunk).toEqual({ type: "text-start", data: { index: 0 } });
+    });
+  });
 });
