@@ -29,6 +29,13 @@
 
 ### New
 
+- **A provider's code execution shows what it printed.** When a recipe
+  lists `code_execution` under `providerTools`, the action line now carries
+  the first line of the sandbox's stdout, or its stderr and exit code in
+  red when the script exited non-zero, the way an `exec` call does. Works
+  on OpenAI, Anthropic and Gemini; Anthropic's code execution is newly
+  available and reports its steps as `bash_code_execution` and
+  `text_editor_code_execution` actions.
 - **Recipes can run on a schedule (macOS).** Add a `schedule: { every: 1h }`
   block and run `axle schedule -j <recipe>`: it registers a user
   LaunchAgent and runs the recipe once now; each later firing re-reads the

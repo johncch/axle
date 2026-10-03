@@ -8,6 +8,7 @@ import {
   convertAxleMessageToResponseInput,
   prepareProviderTools,
   prepareTools,
+  toOpenAIInclude,
   toOpenAIReasoning,
   toOpenAIToolChoice,
 } from "./utils.js";
@@ -37,6 +38,7 @@ export async function* createStreamingRequest(
       ...(prepareTools(tools) ?? []),
       ...(prepareProviderTools(providerTools) ?? []),
     ];
+    const include = toOpenAIInclude(providerTools);
 
     const streamingAdapter = createStreamingAdapter();
 
@@ -54,6 +56,7 @@ export async function* createStreamingRequest(
 
       // Axle-normalized options.
       ...(modelTools.length > 0 ? { tools: modelTools } : {}),
+      ...(include.length > 0 ? { include } : {}),
       ...toOpenAIReasoning(reasoning),
       ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
       ...toOpenAIToolChoice(toolChoice, tools, providerTools),

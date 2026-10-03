@@ -809,6 +809,25 @@ describe("createResponsesAPIStreamingAdapter", () => {
       expect(done.map((chunk) => chunk.type)).toEqual(["provider-tool-complete"]);
     });
 
+    test("keeps code interpreter logs as the result output", () => {
+      const { done } = run({
+        id: "ci_1",
+        type: "code_interpreter_call",
+        status: "completed",
+        code: "print(1)",
+        container_id: "cntr_1",
+        outputs: [
+          { type: "logs", logs: "1\n" },
+          { type: "image", url: "https://example.com/plot.png" },
+          { type: "logs", logs: "done" },
+        ],
+      });
+
+      expect(done.at(-1)?.data).toMatchObject({
+        result: { type: "success", output: "1\n\ndone" },
+      });
+    });
+
     test("reports an item whose status is failed as a failure", () => {
       const { done } = run({ ...search, status: "failed" });
 

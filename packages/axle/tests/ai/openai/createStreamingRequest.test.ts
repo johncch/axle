@@ -114,6 +114,37 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
     });
   });
 
+  test("asks for code interpreter outputs when code execution is a provider tool", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: MODEL,
+        messages,
+        runtime: {},
+        providerTools: [
+          { type: "provider", name: "code_execution", config: { container: { type: "auto" } } },
+        ],
+      }),
+    );
+    expect(request()).toMatchObject({
+      tools: [{ type: "code_interpreter", container: { type: "auto" } }],
+      include: ["code_interpreter_call.outputs"],
+    });
+  });
+
+  test("sends no include list for a search-only provider tool", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: MODEL,
+        messages,
+        runtime: {},
+        providerTools: [{ type: "provider", name: "web_search" }],
+      }),
+    );
+    expect(request().include).toBeUndefined();
+  });
+
   test("serializes a finalized provider tool without resolving its name again", async () => {
     await drain(
       createStreamingRequest({

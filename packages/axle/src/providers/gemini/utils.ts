@@ -66,9 +66,13 @@ export function addGeminiProviderTools(
 ) {
   if (!providerTools || providerTools.length === 0) return;
   if (!config.tools) config.tools = [];
+  const hasFunctionTools = config.tools.some((tool) => "functionDeclarations" in tool);
   for (const tool of providerTools) {
     const key = tool.nativeName ?? resolveGeminiProviderToolName(tool.name);
     config.tools.push({ [key]: tool.config ?? {} } as any);
+  }
+  if (hasFunctionTools) {
+    config.toolConfig = { ...config.toolConfig, includeServerSideToolInvocations: true };
   }
 }
 
@@ -244,6 +248,9 @@ function convertAssistantMessage(msg: AxleMessage & { role: "assistant" }): Cont
         part.thoughtSignature = item.providerMetadata.thoughtSignature;
       }
       parts.push(part);
+    } else if (item.type === "provider-tool") {
+      if (item.continuity?.provider !== "gemini") continue;
+      parts.push(...item.continuity.parts);
     }
   }
 

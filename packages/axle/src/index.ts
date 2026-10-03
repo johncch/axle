@@ -137,6 +137,7 @@ export type {
 } from "./messages/message.js";
 export type {
   AnthropicServerToolResultBlock,
+  ConsoleOutput,
   OpenAIProviderToolItem,
   ProviderToolContinuity,
   ProviderToolInput,

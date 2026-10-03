@@ -264,6 +264,10 @@ Provider tool outcomes:
 - `stream-web-search-error` (Anthropic: a second search past `max_uses: 1`
   must surface as `provider-tool:error` with `max_uses_exceeded`, and a
   follow-up request must be accepted)
+- `stream-code-execution-round-trip` (OpenAI, Gemini: code execution is
+  stored as a `provider-tool` part whose continuity holds the provider's
+  objects and the stdout, the three provider-tool events fire, and a
+  follow-up that depends on the output is accepted)
 
 Reasoning routes (`reasoning-route-*`, `reasoning-unsupported-error`): the
 request syntax Axle picks per model generation, pinned to models the default

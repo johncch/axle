@@ -224,6 +224,26 @@ describe("TurnEventBuilder", () => {
     ]);
   });
 
+  test("provider tool output reaches the action result", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+
+    builder.handleStreamEvent({ type: "provider-tool:start", id: "it1", name: "code_execution" });
+    const events = builder.handleStreamEvent({
+      type: "provider-tool:complete",
+      id: "it1",
+      name: "code_execution",
+      output: { stdout: "5117\n", exitCode: 0 },
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: "action:complete",
+        result: { type: "success", content: { stdout: "5117\n", exitCode: 0 } },
+      },
+    ]);
+  });
+
   test("provider tool input reaches the action", () => {
     const builder = new TurnEventBuilder();
     builder.startAgentTurn();

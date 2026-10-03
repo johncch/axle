@@ -104,7 +104,12 @@ export async function readStep(
     if (result.type === "error") {
       ctx.emit({ type: "provider-tool:error", id, name, error: result.error });
     } else {
-      ctx.emit({ type: "provider-tool:complete", id, name });
+      ctx.emit({
+        type: "provider-tool:complete",
+        id,
+        name,
+        ...(result.output !== undefined ? { output: result.output } : {}),
+      });
     }
   };
 

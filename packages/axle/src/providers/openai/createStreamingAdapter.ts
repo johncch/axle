@@ -4,7 +4,11 @@ import {
   ResponseUsage,
 } from "openai/resources/responses/responses.js";
 import type { Citation } from "../../messages/message.js";
-import type { OpenAIProviderToolItem, ProviderToolInput } from "../../messages/providerTool.js";
+import type {
+  OpenAIProviderToolItem,
+  ProviderToolInput,
+  ProviderToolResult,
+} from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { withUsageDetails } from "../../utils/stats.js";
@@ -50,6 +54,15 @@ function toProviderToolInput(item: OpenAIProviderToolItem): ProviderToolInput | 
     case "file_search_call":
       return item.queries.length > 0 ? { type: "search", queries: item.queries } : undefined;
   }
+}
+
+function toProviderToolResult(name: string, item: OpenAIProviderToolItem): ProviderToolResult {
+  if (item.status === "failed") {
+    return { type: "error", error: { type: "failed", message: `${name} failed` } };
+  }
+  if (item.type !== "code_interpreter_call" || !item.outputs) return { type: "success" };
+  const logs = item.outputs.flatMap((output) => (output.type === "logs" ? [output.logs] : []));
+  return logs.length > 0 ? { type: "success", output: logs.join("\n") } : { type: "success" };
 }
 
 export function createStreamingAdapter() {
@@ -343,10 +356,7 @@ export function createStreamingAdapter() {
                 index: idx,
                 id: item.id,
                 name,
-                result:
-                  item.status === "failed"
-                    ? { type: "error", error: { type: "failed", message: `${name} failed` } }
-                    : { type: "success" },
+                result: toProviderToolResult(name, item),
                 continuity: { provider: "openai", item },
               },
             });
@@ -393,6 +403,11 @@ export function createStreamingAdapter() {
       case "response.web_search_call.in_progress":
       case "response.web_search_call.searching":
       case "response.web_search_call.completed":
+      case "response.code_interpreter_call.in_progress":
+      case "response.code_interpreter_call.interpreting":
+      case "response.code_interpreter_call.completed":
+      case "response.code_interpreter_call_code.delta":
+      case "response.code_interpreter_call_code.done":
         // No-op
         break;
 

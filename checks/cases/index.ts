@@ -1,4 +1,5 @@
 import { cacheCases } from "./cache.js";
+import { codeExecutionCases } from "./code-execution.js";
 import { compactionCases } from "./compaction.js";
 import { coreCases } from "./core.js";
 import { geminiCitationCases } from "./gemini-citations.js";
@@ -13,6 +14,7 @@ export type * from "./types.js";
 export const checkCases = [
   ...coreCases,
   ...streamErrorCases,
+  ...codeExecutionCases,
   ...toolSchemaCases,
   ...instructJsonCases,
   ...messageFormatCases,

@@ -114,15 +114,16 @@ continuity-only part, on the open thinking part if one is open.
 
 ## What each provider echoes back
 
-| Provider          | Block sent on the next turn                                   | Built from                                               |
-| ----------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
-| Anthropic         | `thinking: { thinking, signature }`                           | message `summary ?? text` + `continuity.signature`       |
-| Anthropic         | `redacted_thinking: { data }`                                 | `redacted` + `continuity.redactedData`                   |
-| OpenAI            | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`        |
-| Gemini            | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`  |
-| Gemini            | `thoughtSignature` on a text or function-call part            | `providerMetadata.thoughtSignature`                      |
-| OpenRouter        | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data` |
-| Generic, Together | nothing                                                       | —                                                        |
+| Provider          | Block sent on the next turn                                   | Built from                                                |
+| ----------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
+| Anthropic         | `thinking: { thinking, signature }`                           | message `summary ?? text` + `continuity.signature`        |
+| Anthropic         | `redacted_thinking: { data }`                                 | `redacted` + `continuity.redactedData`                    |
+| OpenAI            | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`         |
+| Gemini            | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`   |
+| Gemini            | `thoughtSignature` on a function-call part                    | `providerMetadata.thoughtSignature`                       |
+| Gemini            | `thoughtSignature` on an `executableCode` part                | the part itself, in the `provider-tool` part's continuity |
+| OpenRouter        | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data`  |
+| Generic, Together | nothing                                                       | —                                                         |
 
 Anthropic signs whatever it put in the block's `thinking` field. Under
 `summarized` that is the summary, so the echo sends the summary; under

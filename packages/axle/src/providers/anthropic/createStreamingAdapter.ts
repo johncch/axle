@@ -367,6 +367,7 @@ interface AnthropicServerToolInput {
   query?: string;
   url?: string;
   code?: string;
+  command?: string;
 }
 
 function toProviderToolInput(call: ServerToolUseBlock): ProviderToolInput | undefined {
@@ -375,6 +376,9 @@ function toProviderToolInput(call: ServerToolUseBlock): ProviderToolInput | unde
   if (call.name === "web_search" && input.query) return { type: "search", queries: [input.query] };
   if (call.name === "web_fetch" && input.url) return { type: "open", url: input.url };
   if (call.name === "code_execution" && input.code) return { type: "code", code: input.code };
+  if (call.name === "bash_code_execution" && input.command) {
+    return { type: "command", command: input.command };
+  }
   return undefined;
 }
 
@@ -383,9 +387,22 @@ function toProviderToolResult(
   resultBlock: AnthropicServerToolResultBlock,
 ): ProviderToolResult {
   const content = resultBlock.content;
-  if (Array.isArray(content) || !("error_code" in content)) return { type: "success" };
-  return {
-    type: "error",
-    error: { type: content.error_code, message: `${name} failed: ${content.error_code}` },
-  };
+  if (Array.isArray(content)) return { type: "success" };
+  if ("error_code" in content) {
+    return {
+      type: "error",
+      error: { type: content.error_code, message: `${name} failed: ${content.error_code}` },
+    };
+  }
+  if ("stdout" in content) {
+    return {
+      type: "success",
+      output: {
+        stdout: content.stdout,
+        ...(content.stderr ? { stderr: content.stderr } : {}),
+        exitCode: content.return_code,
+      },
+    };
+  }
+  return { type: "success" };
 }

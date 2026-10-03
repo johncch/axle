@@ -1,5 +1,6 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest";
+import z from "zod";
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/gemini/createStreamingRequest.js";
 
@@ -44,6 +45,40 @@ describe("createStreamingRequest (Gemini)", () => {
     );
     expect(config()).toMatchObject({ maxOutputTokens: 1000 });
     expect(out.at(-1)?.type).toBe("complete");
+  });
+
+  test("asks for server-side tool invocations when provider tools join function tools", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: "gemini-3-flash-preview",
+        messages,
+        runtime: {},
+        tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
+        providerTools: [{ type: "provider", name: "code_execution" }],
+      }),
+    );
+    expect(config().tools).toEqual([
+      expect.objectContaining({
+        functionDeclarations: [expect.objectContaining({ name: "lookup" })],
+      }),
+      { codeExecution: {} },
+    ]);
+    expect(config().toolConfig).toEqual({ includeServerSideToolInvocations: true });
+  });
+
+  test("leaves tool config alone when only provider tools are present", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: "gemini-3-flash-preview",
+        messages,
+        runtime: {},
+        providerTools: [{ type: "provider", name: "code_execution" }],
+      }),
+    );
+    expect(config().tools).toEqual([{ codeExecution: {} }]);
+    expect(config().toolConfig).toBeUndefined();
   });
 
   test("omits provider tools when toolChoice is none", async () => {

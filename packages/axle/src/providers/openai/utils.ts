@@ -1,3 +1,4 @@
+import type { ResponseIncludable } from "openai/resources/responses/responses.js";
 import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
 import { AxleMessage, ContentPart, ContentPartText } from "../../messages/message.js";
@@ -72,6 +73,13 @@ export function prepareProviderTools(
     type: tool.nativeName ?? resolveOpenAIProviderToolName(tool.name),
     ...tool.config,
   }));
+}
+
+export function toOpenAIInclude(providerTools?: Array<ResolvedProviderTool>): ResponseIncludable[] {
+  const runsCode = providerTools?.some(
+    (tool) => (tool.nativeName ?? resolveOpenAIProviderToolName(tool.name)) === "code_interpreter",
+  );
+  return runsCode ? ["code_interpreter_call.outputs"] : [];
 }
 
 export function toOpenAIToolChoice(

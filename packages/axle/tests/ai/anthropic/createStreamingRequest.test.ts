@@ -232,6 +232,21 @@ describe("createStreamingRequest (Anthropic)", () => {
       ]);
     });
 
+    test("maps code_execution to the current version with no default callers", async () => {
+      await drain(
+        createStreamingRequest({
+          client: mockClient,
+          model: "claude-haiku-4-5",
+          messages,
+          runtime: {},
+          providerTools: [{ type: "provider", name: "code_execution" }],
+        }),
+      );
+      expect(request().tools).toEqual([
+        { type: "code_execution_20260521", name: "code_execution" },
+      ]);
+    });
+
     test("lets config pin another version", async () => {
       expect(await requestTools({ type: "web_search_20250305" })).toMatchObject([
         { type: "web_search_20250305", name: "web_search" },

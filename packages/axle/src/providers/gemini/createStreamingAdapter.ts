@@ -1,5 +1,12 @@
-import { FinishReason, GenerateContentResponse } from "@google/genai";
+import {
+  type CodeExecutionResult,
+  FinishReason,
+  GenerateContentResponse,
+  Outcome,
+  type Part,
+} from "@google/genai";
 import type { Citation } from "../../messages/message.js";
+import type { ProviderToolResult } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
@@ -20,6 +27,7 @@ export function createGeminiStreamingAdapter() {
 
   let activePart: "text" | "thinking" | null = null;
   const modelPartToStreamPart = new Map<number, number>();
+  const openCodeExecutions: Array<{ index: number; id: string; codePart: Part }> = [];
 
   function closeActivePart(chunks: Array<AnyStreamChunk>) {
     if (currentPartIndex < 0) return;
@@ -90,6 +98,50 @@ export function createGeminiStreamingAdapter() {
         (partKeys.length === 2 && "text" in part && "thoughtSignature" in part && !part.text);
 
       if (isEmptyText) continue;
+
+      if (part.executableCode) {
+        closeActivePart(chunks);
+        const index = partIndex++;
+        const id = part.executableCode.id ?? `${messageId}:code_execution:${index}`;
+        const name = "code_execution";
+        openCodeExecutions.push({ index, id, codePart: part });
+        chunks.push({ type: "provider-tool-start", data: { index, id, name } });
+        chunks.push({
+          type: "provider-tool-input",
+          data: {
+            index,
+            id,
+            name,
+            input: { type: "code", code: part.executableCode.code ?? "" },
+            continuity: { provider: "gemini", parts: [part] },
+          },
+        });
+        continue;
+      }
+
+      if (part.codeExecutionResult) {
+        const resultId = part.codeExecutionResult.id;
+        const openIndex = resultId
+          ? openCodeExecutions.findIndex((open) => open.id === resultId)
+          : openCodeExecutions.length - 1;
+        const open = openCodeExecutions[openIndex];
+        if (!open) {
+          console.log(`[gemini] code execution result without a call: ${resultId ?? "no id"}`);
+          continue;
+        }
+        openCodeExecutions.splice(openIndex, 1);
+        chunks.push({
+          type: "provider-tool-complete",
+          data: {
+            index: open.index,
+            id: open.id,
+            name: "code_execution",
+            result: toCodeExecutionResult(part.codeExecutionResult),
+            continuity: { provider: "gemini", parts: [open.codePart, part] },
+          },
+        });
+        continue;
+      }
 
       if (isSignatureOnly) {
         const continuity = {
@@ -296,6 +348,17 @@ export function createGeminiStreamingAdapter() {
   }
 
   return { handleChunk };
+}
+
+function toCodeExecutionResult(result: CodeExecutionResult): ProviderToolResult {
+  const outcome = result.outcome;
+  if (outcome === undefined || outcome === Outcome.OUTCOME_OK) {
+    return { type: "success", ...(result.output !== undefined ? { output: result.output } : {}) };
+  }
+  return {
+    type: "error",
+    error: { type: outcome, message: `code_execution failed: ${outcome}` },
+  };
 }
 
 function normalizeGeminiCitations(

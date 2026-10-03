@@ -1,3 +1,4 @@
+import type { ConsoleOutput } from "@fifthrevision/axle/ui";
 export function capitalize(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
@@ -32,4 +33,40 @@ export function formatActionArgs(part: { kind: string; detail: object }): string
   const parameters = (part.detail as { parameters?: Record<string, unknown> }).parameters ?? {};
   if (Object.keys(parameters).length === 0) return undefined;
   return truncate(JSON.stringify(parameters), 80);
+}
+
+export function formatActionResult(result?: {
+  type: string;
+  content?: unknown;
+  error?: { message: string };
+}): { text: string; tone: "error" | "dim" } | undefined {
+  if (!result) return undefined;
+  if (result.type === "error" && result.error) {
+    return { text: truncate(result.error.message, 200), tone: "error" };
+  }
+  const content = result.content;
+  if (typeof content === "string") {
+    return content.trim() ? { text: truncate(firstLine(content), 200), tone: "dim" } : undefined;
+  }
+  if (isConsoleOutput(content)) {
+    const failed = content.exitCode !== undefined && content.exitCode !== 0;
+    const stream = failed && content.stderr?.trim() ? content.stderr : content.stdout;
+    const line = stream.trim() ? firstLine(stream) : "";
+    const suffix = failed ? ` (exit ${content.exitCode})` : "";
+    if (!line && !suffix) return undefined;
+    return { text: truncate(`${line}${suffix}`, 200), tone: failed ? "error" : "dim" };
+  }
+  return undefined;
+}
+
+function isConsoleOutput(value: unknown): value is ConsoleOutput {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as ConsoleOutput).stdout === "string"
+  );
+}
+
+function firstLine(text: string): string {
+  return text.trim().split("\n", 1)[0];
 }
