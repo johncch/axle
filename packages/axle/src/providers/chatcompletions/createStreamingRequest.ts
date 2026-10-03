@@ -120,11 +120,7 @@ export async function* createStreamingRequest(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      throw {
-        status: response.status,
-        message: `HTTP error! status: ${response.status}${errorText ? ` - ${errorText}` : ""}`,
-        body: errorText,
-      };
+      throw describeHttpError(response.status, errorText);
     }
 
     if (!response.body) {
@@ -197,6 +193,34 @@ export async function* createStreamingRequest(
       data: normalizeProviderError(error),
     };
   }
+}
+
+function describeHttpError(
+  status: number,
+  text: string,
+): { status: number; type: string; message: string; body: unknown } {
+  const fallback = {
+    status,
+    type: String(status),
+    message: `HTTP error! status: ${status}${text ? ` - ${text}` : ""}`,
+    body: text,
+  };
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return fallback;
+  }
+  const upstream =
+    body && typeof body === "object" && "error" in body ? (body as { error: unknown }).error : null;
+  if (!upstream || typeof upstream !== "object") return { ...fallback, body };
+  const { type, code, message } = upstream as ChatCompletionStreamError;
+  return {
+    status,
+    type: type ?? (code === undefined ? fallback.type : String(code)),
+    message: message ?? fallback.message,
+    body,
+  };
 }
 
 function normalizeStreamError(error: ChatCompletionStreamError | string): {
