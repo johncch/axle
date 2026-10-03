@@ -26,10 +26,6 @@ export interface StepReaderContext {
   /** Registry-resolved tools, for the kind on `tool:request` events. */
   tools: ResolvedTools;
   signal: AbortSignal;
-  /**
-   * Whether thinking content reaches the event stream. The message always
-   * receives what the wire carried; `false` withholds it from the turn.
-   */
   discloseThinking?: boolean;
 }
 

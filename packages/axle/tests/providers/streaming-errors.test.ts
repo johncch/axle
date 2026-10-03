@@ -60,6 +60,8 @@ test.each([
     "bad key",
   ],
   [{ code: "invalid_api_key", message: "bad key" }, "invalid_api_key", "bad key"],
+  [{ error: { code: "rate_limited" } }, "Undetermined", "Unexpected error"],
+  [{ error: "quota exceeded" }, "Undetermined", "quota exceeded"],
   [null, "Undetermined", "Unknown error occurred"],
   ["oops", "Undetermined", "oops"],
 ])("normalizes structured and unknown errors", (error, type, message) => {

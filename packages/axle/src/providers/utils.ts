@@ -36,7 +36,11 @@ export function normalizeProviderError(error: unknown): {
     const innerNested = nested?.error as Record<string, unknown> | undefined;
     const status = httpStatusOf(value);
     const message = String(
-      innerNested?.message || nested?.message || value.message || value.error || "Unexpected error",
+      innerNested?.message ||
+        nested?.message ||
+        value.message ||
+        (typeof value.error === "string" ? value.error : undefined) ||
+        "Unexpected error",
     );
     const type = String(
       innerNested?.type || nested?.type || value.type || value.code || status || "Undetermined",
