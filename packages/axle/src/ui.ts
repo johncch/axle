@@ -6,9 +6,9 @@ export type {
   DocumentLocator,
   ThinkingContinuity,
 } from "./messages/message.js";
+export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput, UnknownEvent } from "./turns/transcript.js";
-export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export type {
   ActionPart,
   ActionResult,

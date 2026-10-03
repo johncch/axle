@@ -308,7 +308,7 @@ describe.each(cases)("$name", ({ api, wire, refusal, message, usage }) => {
     const result = await (entry === "generate" ? generate(options) : stream(options).final);
 
     expect(result).toMatchObject({ ok: false, messages: [], usage });
-    expect(result.error).toEqual({ kind: "refusal", refusal, message });
+    expect(result.error).toEqual({ kind: "refusal", message, ...refusal });
   });
 
   test("stream ends with a refusal error event and no completed step", async () => {
@@ -318,7 +318,10 @@ describe.each(cases)("$name", ({ api, wire, refusal, message, usage }) => {
     handle.on((event) => events.push(event));
     await handle.final;
 
-    expect(events.at(-1)).toEqual({ type: "error", error: { kind: "refusal", refusal, message } });
+    expect(events.at(-1)).toEqual({
+      type: "error",
+      error: { kind: "refusal", message, ...refusal },
+    });
     expect(events.map((event) => event.type)).not.toContain("step:complete");
   });
 
@@ -345,7 +348,7 @@ test("an Instruct call that is refused returns the refusal, not a parse failure"
 
   expect(result).toMatchObject({
     ok: false,
-    error: { kind: "refusal", refusal: { text: REFUSAL_TEXT } },
+    error: { kind: "refusal", text: REFUSAL_TEXT },
   });
 });
 
@@ -357,7 +360,7 @@ test("Agent reports a refusal on the result and the turn, and can send again", a
 
   expect(result).toMatchObject({
     ok: false,
-    error: { kind: "refusal", refusal: { category: "cyber", text: EXPLANATION } },
+    error: { kind: "refusal", category: "cyber", text: EXPLANATION },
     turn: { status: "error", error: { type: "refusal", message: EXPLANATION } },
   });
 

@@ -396,9 +396,7 @@ describe("stream() error paths", () => {
     expect(result.ok).toBe(false);
     if (!result.ok && result.error.kind === "model") {
       expect(result.error.message).toBe("Stream ended without a completion signal");
-      const inner = result.error.error.error;
-      expect(inner.type).toBe("IncompleteStream");
-      expect(inner.message).toBe("Stream ended without a completion signal");
+      expect(result.error.type).toBe("IncompleteStream");
     }
 
     const { spans } = writer;

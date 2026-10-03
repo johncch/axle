@@ -285,7 +285,7 @@ to a two-state result:
 
 ```typescript
 if (!result.ok) {
-  result.error.kind; // "model" | "refusal" | "tool" | "parse"
+  result.error.kind; // "model" | "refusal" | "parse"
   result.error.message; // present for every error kind
   return;
 }
@@ -296,9 +296,23 @@ result.stopped; // "max-steps" | "token-limit" when a loop limit ended the run
 
 For `generate()` and `stream()`, plain calls return the final assistant message.
 For `Agent.send("...")`, plain calls return the assistant text. `Instruct`
-calls return the parsed schema value. Model, refusal, tool, and parse failures
+calls return the parsed schema value. Model, refusal, and parse failures
 return `ok: false`; abort, fatal tool, configuration, and unexpected execution
 errors still throw.
+
+A `model` failure means the provider failed the request. `type` is
+`"authentication"` when the provider rejected the API key or token, on every
+provider; otherwise it is the provider's own error type. `status` is the HTTP
+status when the failure was an HTTP response, and `raw` is the SDK error or
+the response body as the provider produced it.
+
+```typescript
+if (!result.ok && result.error.kind === "model") {
+  result.error.type; // "authentication", or the provider's own type
+  result.error.status; // 401, 429, 500, ... when the failure was an HTTP response
+  result.error.raw; // the SDK error, or { status, body } from a Chat Completions endpoint
+}
+```
 
 A `refusal` failure means the provider declined the request or blocked its
 output: Anthropic's `refusal` stop reason, an OpenAI refusal or content
@@ -307,8 +321,8 @@ filter, a Gemini safety block, or a Chat Completions `refusal` or
 
 ```typescript
 if (!result.ok && result.error.kind === "refusal") {
-  result.error.refusal.text; // the provider's refusal text or explanation, if it gave one
-  result.error.refusal.category; // the provider's reason, e.g. "cyber", "SAFETY", "content_filter"
+  result.error.text; // the provider's refusal text or explanation, if it gave one
+  result.error.category; // the provider's reason, e.g. "cyber", "SAFETY", "content_filter"
 }
 ```
 

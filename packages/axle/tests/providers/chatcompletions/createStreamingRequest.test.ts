@@ -219,12 +219,9 @@ describe("createStreamingRequest", () => {
     if (!result.ok) {
       expect(result.error.kind).toBe("model");
       if (result.error.kind !== "model") throw new Error("Expected model error");
-      expect(result.error.error).toMatchObject({
-        type: "error",
-        error: {
-          type: "server_error",
-          message: "Provider disconnected unexpectedly",
-        },
+      expect(result.error).toMatchObject({
+        type: "server_error",
+        message: "Provider disconnected unexpectedly",
       });
     }
   });
@@ -267,14 +264,9 @@ describe("createStreamingRequest", () => {
     if (!result.ok) {
       expect(result.error.kind).toBe("model");
       if (result.error.kind !== "model") throw new Error("Expected model error");
-      expect(result.error.error).toMatchObject({
-        type: "error",
-        error: {
-          type: "IncompleteStream",
-        },
-      });
-      expect(result.error.error.error.message).toContain("search");
-      expect(result.error.error.error.message).toContain("truncated or incomplete");
+      expect(result.error.type).toBe("IncompleteStream");
+      expect(result.error.message).toContain("search");
+      expect(result.error.message).toContain("truncated or incomplete");
     }
   });
 

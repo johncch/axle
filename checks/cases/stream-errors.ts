@@ -32,8 +32,8 @@ export const streamErrorCases: CheckCase[] = [
         if (
           result.ok ||
           result.error.kind !== "model" ||
-          result.error.error.raw !== raw ||
-          result.error.error.error.type !== "rate_limit_error" ||
+          result.error.raw !== raw ||
+          result.error.type !== "rate_limit_error" ||
           result.error.message !== "slow down" ||
           result.usage?.in !== 7 ||
           result.usage.out !== 2

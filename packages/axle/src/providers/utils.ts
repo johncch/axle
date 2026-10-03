@@ -17,33 +17,34 @@ export function requireInteger(
 export function normalizeProviderError(error: unknown): {
   type: string;
   message: string;
+  status?: number;
   raw: unknown;
 } {
   if (error instanceof Error) {
+    const status = httpStatusOf(error);
+    const message = error.message || "Unexpected error";
     return {
-      type: error.name || "Error",
-      message: error.message || "Unexpected error",
+      type: isRejectedCredential(status, message) ? "authentication" : error.name || "Error",
+      message,
+      ...(status === undefined ? {} : { status }),
       raw: error,
     };
   }
   if (error && typeof error === "object") {
-    const value = error as Record<string, any>;
+    const value = error as Record<string, unknown>;
+    const nested = value.error as Record<string, unknown> | undefined;
+    const innerNested = nested?.error as Record<string, unknown> | undefined;
+    const status = httpStatusOf(value);
+    const message = String(
+      innerNested?.message || nested?.message || value.message || value.error || "Unexpected error",
+    );
+    const type = String(
+      innerNested?.type || nested?.type || value.type || value.code || status || "Undetermined",
+    );
     return {
-      type: String(
-        value.error?.error?.type ||
-          value.error?.type ||
-          value.type ||
-          value.code ||
-          value.status ||
-          "Undetermined",
-      ),
-      message: String(
-        value.error?.error?.message ||
-          value.error?.message ||
-          value.message ||
-          value.error ||
-          "Unexpected error",
-      ),
+      type: isRejectedCredential(status, message) ? "authentication" : type,
+      message,
+      ...(status === undefined ? {} : { status }),
       raw: error,
     };
   }
@@ -52,4 +53,14 @@ export function normalizeProviderError(error: unknown): {
     message: error == null ? "Unknown error occurred" : String(error),
     raw: error,
   };
+}
+
+function httpStatusOf(value: object): number | undefined {
+  const status = (value as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
+
+function isRejectedCredential(status: number | undefined, message: string): boolean {
+  if (status === 401) return true;
+  return status === 400 && message.includes("API_KEY_INVALID");
 }

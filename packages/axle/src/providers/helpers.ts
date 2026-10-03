@@ -25,7 +25,7 @@ import type {
 import { createWebSearchFallbackTool } from "../tools/webSearch.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats, mergeStats } from "../utils/stats.js";
-import type { AIProvider, ModelError, Refusal, ResolvedProviderTool } from "./types.js";
+import type { AIProvider, ResolvedProviderTool } from "./types.js";
 
 export type ToolCallResult =
   | { type: "success"; content: string | ToolResultPart[] }
@@ -52,11 +52,26 @@ export interface ToolExecutionOutcome {
   usage?: Stats;
 }
 
+/**
+ * Why a `generate()`, `stream()`, or `agent.send()` resolved `ok: false`.
+ *
+ * - `model`: the provider failed the request. `type` is `"authentication"`
+ *   when the provider rejected the credential, else the provider's own error
+ *   type. `status` is the HTTP status when the failure was an HTTP response.
+ * - `refusal`: the provider declined the request or blocked its output.
+ * - `parse`: the response did not match the `Instruct` schema.
+ */
 export type AxleFailure =
-  | { kind: "model"; error: ModelError; message: string }
-  | { kind: "refusal"; refusal: Refusal; message: string }
-  | { kind: "tool"; error: { name: string; message: string }; message: string }
-  | { kind: "parse"; error: unknown; message: string };
+  | {
+      kind: "model";
+      type: string;
+      message: string;
+      status?: number;
+      usage?: Stats;
+      raw?: unknown;
+    }
+  | { kind: "refusal"; message: string; text?: string; category?: string }
+  | { kind: "parse"; message: string; cause: unknown };
 
 /** @deprecated Use AxleFailure. */
 export type GenerateError = AxleFailure;

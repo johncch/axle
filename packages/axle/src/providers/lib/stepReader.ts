@@ -54,6 +54,7 @@ export type StepReadOutcome =
       kind: "provider-error";
       errorType: string;
       message: string;
+      status?: number;
       raw?: unknown;
       usage?: Stats;
       model: string;
@@ -392,6 +393,7 @@ export async function readStep(
         return {
           kind: "provider-error",
           errorType: chunk.data.type,
+          status: chunk.data.status,
           raw: chunk.data.raw,
           message: chunk.data.message,
           usage: chunk.data.usage,

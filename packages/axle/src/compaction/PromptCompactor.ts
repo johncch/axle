@@ -174,7 +174,7 @@ export class PromptCompactor {
     if (!result.ok) {
       throw new AxleError(`Prompt compaction failed: ${result.error.message}`, {
         code: "COMPACTION_GENERATION_FAILED",
-        cause: result.error.kind === "refusal" ? result.error.refusal : result.error.error,
+        cause: result.error,
       });
     }
 

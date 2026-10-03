@@ -242,8 +242,8 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
             ...(result.stopped ? { stopped: result.stopped } : {}),
             error: {
               kind: "parse",
-              error: parseError,
               message: parseError instanceof Error ? parseError.message : String(parseError),
+              cause: parseError,
             },
           });
         }
@@ -424,13 +424,11 @@ async function run(
         messages: newMessages,
         error: {
           kind: "model",
+          type: outcome.errorType,
           message: outcome.message,
-          error: {
-            type: "error",
-            error: { type: outcome.errorType, message: outcome.message },
-            raw: outcome.raw,
-            usage: outcome.usage,
-          },
+          ...(outcome.status === undefined ? {} : { status: outcome.status }),
+          ...(outcome.usage ? { usage: outcome.usage } : {}),
+          ...(outcome.raw === undefined ? {} : { raw: outcome.raw }),
         },
         usage,
       });
@@ -451,7 +449,7 @@ async function run(
       return endWithResult({
         ok: false,
         messages: newMessages,
-        error: { kind: "refusal", refusal: outcome.refusal, message },
+        error: { kind: "refusal", message, ...outcome.refusal },
         usage,
       });
     }
@@ -463,14 +461,8 @@ async function run(
         messages: newMessages,
         error: {
           kind: "model",
+          type: "IncompleteStream",
           message: "Stream ended without a completion signal",
-          error: {
-            type: "error",
-            error: {
-              type: "IncompleteStream",
-              message: "Stream ended without a completion signal",
-            },
-          },
         },
         usage,
       });
