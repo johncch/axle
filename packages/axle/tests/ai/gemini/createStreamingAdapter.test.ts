@@ -1,4 +1,11 @@
-import { FinishReason } from "@google/genai";
+import {
+  FinishReason,
+  type GenerateContentResponse,
+  Language,
+  Outcome,
+  type Part,
+} from "@google/genai";
+import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 import { createGeminiStreamingAdapter } from "../../../src/providers/gemini/createStreamingAdapter.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
@@ -601,4 +608,141 @@ function makeChunk(options: {
     ],
     ...(options.usage && { usageMetadata: options.usage }),
   } as any;
+}
+
+describe("createGeminiStreamingAdapter code execution", () => {
+  const providerToolChunks = (chunks: Array<{ type: string }>) =>
+    chunks.filter((chunk) => chunk.type.startsWith("provider-tool"));
+
+  test("replays a captured gemini-3-flash-preview code execution answer", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { chunks, parts } = replayFixture("../../fixtures/gemini-code-execution.jsonl");
+
+    expect(chunks.map((chunk) => chunk.type)).toEqual([
+      "start",
+      "provider-tool-start",
+      "provider-tool-input",
+      "provider-tool-complete",
+      "text-start",
+      "text-delta",
+      "text-delta",
+      "text-complete",
+      "thinking-start",
+      "thinking-complete",
+      "complete",
+    ]);
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
+
+    const [codePart, resultPart] = parts;
+    expect(providerToolChunks(chunks)).toEqual([
+      {
+        type: "provider-tool-start",
+        data: { index: 0, id: "call_675927", name: "code_execution" },
+      },
+      {
+        type: "provider-tool-input",
+        data: {
+          index: 0,
+          id: "call_675927",
+          name: "code_execution",
+          input: { type: "code", code: codePart.executableCode?.code },
+          continuity: { provider: "gemini", parts: [codePart] },
+        },
+      },
+      {
+        type: "provider-tool-complete",
+        data: {
+          index: 0,
+          id: "call_675927",
+          name: "code_execution",
+          result: { type: "success" },
+          continuity: { provider: "gemini", parts: [codePart, resultPart] },
+        },
+      },
+    ]);
+    expect(codePart.thoughtSignature).toBeDefined();
+  });
+
+  test("pairs a result that carries no id with the open call", () => {
+    const adapter = createGeminiStreamingAdapter();
+    const code = { executableCode: { language: Language.PYTHON, code: "print(1)" } };
+    const result = { codeExecutionResult: { outcome: Outcome.OUTCOME_OK, output: "1\n" } };
+
+    adapter.handleChunk(makeChunk({ parts: [code] }));
+    const chunks = adapter.handleChunk(makeChunk({ parts: [result] }));
+
+    expect(chunks).toEqual([
+      {
+        type: "provider-tool-complete",
+        data: {
+          index: 0,
+          id: "resp_123:code_execution:0",
+          name: "code_execution",
+          result: { type: "success" },
+          continuity: { provider: "gemini", parts: [code, result] },
+        },
+      },
+    ]);
+  });
+
+  test("reports a failed outcome as an error", () => {
+    const adapter = createGeminiStreamingAdapter();
+    adapter.handleChunk(
+      makeChunk({ parts: [{ executableCode: { language: Language.PYTHON, code: "1/0" } }] }),
+    );
+    const chunks = adapter.handleChunk(
+      makeChunk({
+        parts: [
+          {
+            codeExecutionResult: {
+              outcome: Outcome.OUTCOME_FAILED,
+              output: "ZeroDivisionError: division by zero",
+            },
+          },
+        ],
+      }),
+    );
+
+    const complete = chunks.find((chunk) => chunk.type === "provider-tool-complete");
+    expect(complete?.type === "provider-tool-complete" ? complete.data.result : complete).toEqual({
+      type: "error",
+      error: { type: "OUTCOME_FAILED", message: "code_execution failed: OUTCOME_FAILED" },
+    });
+  });
+
+  test("closes open text before the code part and starts fresh text after the result", () => {
+    const adapter = createGeminiStreamingAdapter();
+    adapter.handleChunk(makeChunk({ parts: [{ text: "Let me compute." }] }));
+    const code = adapter.handleChunk(
+      makeChunk({ parts: [{ executableCode: { language: Language.PYTHON, code: "print(1)" } }] }),
+    );
+    adapter.handleChunk(
+      makeChunk({ parts: [{ codeExecutionResult: { outcome: Outcome.OUTCOME_OK, output: "1" } }] }),
+    );
+    const text = adapter.handleChunk(makeChunk({ parts: [{ text: "It is 1." }] }));
+
+    expect(code.map((chunk) => chunk.type)).toEqual([
+      "text-complete",
+      "provider-tool-start",
+      "provider-tool-input",
+    ]);
+    expect(text.map((chunk) => chunk.type)).toEqual(["text-start", "text-delta"]);
+    const delta = text.find((chunk) => chunk.type === "text-delta");
+    expect(delta?.type === "text-delta" ? delta.data.index : delta).toBe(2);
+  });
+});
+
+function replayFixture(path: string) {
+  const adapter = createGeminiStreamingAdapter();
+  const fixture = readFileSync(new URL(path, import.meta.url), "utf8");
+  const chunks = [];
+  const parts: Part[] = [];
+  for (const line of fixture.split("\n")) {
+    if (!line.trim()) continue;
+    const response = JSON.parse(line) as GenerateContentResponse;
+    parts.push(...(response.candidates?.[0]?.content?.parts ?? []));
+    chunks.push(...adapter.handleChunk(response));
+  }
+  return { chunks, parts };
 }

@@ -668,7 +668,9 @@ fields on every provider:
 Render from `name`, `input`, and `result`. `continuity` is for sending the
 call back and for provider-specific detail: Anthropic's search results are
 `continuity.result.content`; OpenAI's item is `continuity.item` and carries
-no results.
+no results; Gemini's code execution keeps its `executableCode` and
+`codeExecutionResult` parts in `continuity.parts`, and the stdout is
+`continuity.parts[1].codeExecutionResult.output`.
 
 Provider tool events stream as `provider-tool:start`, `provider-tool:input`,
 and then `provider-tool:complete` or `provider-tool:error`. They carry the
@@ -679,11 +681,16 @@ runs on Anthropic and together with the result on OpenAI.
 `provider-tool:error` replaces `provider-tool:complete` when the provider
 reports that its tool failed, and the turn's action settles as `error`.
 
-| Provider           | What counts as a failure                           | `error.type`                                          |
-| ------------------ | -------------------------------------------------- | ----------------------------------------------------- |
-| Anthropic          | A result block whose `content` has an `error_code` | Anthropic's `error_code`, such as `max_uses_exceeded` |
-| OpenAI             | A tool item whose `status` is `failed`             | `failed`; OpenAI gives no code                        |
-| Gemini, OpenRouter | Nothing: neither reports a failed search           | —                                                     |
+| Provider   | What counts as a failure                                    | `error.type`                                          |
+| ---------- | ----------------------------------------------------------- | ----------------------------------------------------- |
+| Anthropic  | A result block whose `content` has an `error_code`          | Anthropic's `error_code`, such as `max_uses_exceeded` |
+| OpenAI     | A tool item whose `status` is `failed`                      | `failed`; OpenAI gives no code                        |
+| Gemini     | A `codeExecutionResult` whose `outcome` is not `OUTCOME_OK` | Gemini's `outcome`, such as `OUTCOME_FAILED`          |
+| OpenRouter | Nothing: it does not report a failed search                 | —                                                     |
+
+On Gemini, a provider tool next to your own tools needs Gemini 3 or later:
+Axle sets `includeServerSideToolInvocations` for the combination, and Gemini
+2.5 rejects it regardless.
 
 Gemini names the queries it ran only when the answer ends, so its
 `web_search` part comes after the text, and its three events fire together

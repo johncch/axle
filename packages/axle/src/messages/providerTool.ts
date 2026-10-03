@@ -1,4 +1,5 @@
 import type { ContentBlock, ServerToolUseBlock } from "@anthropic-ai/sdk/resources/messages.js";
+import type { Part } from "@google/genai";
 import type {
   ResponseCodeInterpreterToolCall,
   ResponseFileSearchToolCall,
@@ -26,7 +27,8 @@ export type OpenAIProviderToolItem =
 /** The provider's own objects for a provider tool call, kept to send back to that provider. */
 export type ProviderToolContinuity =
   | { provider: "anthropic"; call: ServerToolUseBlock; result?: AnthropicServerToolResultBlock }
-  | { provider: "openai"; item: OpenAIProviderToolItem };
+  | { provider: "openai"; item: OpenAIProviderToolItem }
+  | { provider: "gemini"; parts: Part[] };
 
 /** The provider's own result for a call that an earlier assistant message holds. */
 export type ProviderToolResultContinuity = {
