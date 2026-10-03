@@ -67,8 +67,9 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 10. **Adapters read block identity where the wire carries it.** Anthropic
     keys parts on the block index, OpenAI on the reasoning item, OpenRouter
     on the detail `index` (a bare `reasoning` string continues the open part
-    by adjacency and the first indexed detail joins it). Gemini has no block
-    identity and uses adjacency.
+    by adjacency and the first indexed detail joins it; a chunk that carries
+    both fields is read from its entries and the bare string skipped as a
+    duplicate). Gemini has no block identity and uses adjacency.
 
 ## Where fields get written
 

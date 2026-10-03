@@ -448,7 +448,7 @@ describe("createStreamingAdapter", () => {
       expect(chunks[1]).toMatchObject({ data: { index: 1 } });
     });
 
-    test("entries never join a part opened by the bare reasoning string", () => {
+    test("the first indexed entry joins a part opened by the bare reasoning string", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ reasoning: "Let me" }));
       const chunks = adapter.handleChunk(
@@ -465,22 +465,54 @@ describe("createStreamingAdapter", () => {
         }),
       );
 
-      expect(chunks.map((chunk) => chunk.type)).toEqual([
-        "thinking-complete",
-        "thinking-start",
-        "thinking-summary-delta",
+      expect(chunks).toEqual([
+        {
+          type: "thinking-metadata",
+          data: {
+            index: 0,
+            continuity: {
+              provider: "openrouter",
+              type: "reasoning.text",
+              format: "anthropic-claude-v1",
+              index: 0,
+              signature: "sig",
+            },
+            providerMetadata: {
+              reasoningDetail: {
+                type: "reasoning.text",
+                format: "anthropic-claude-v1",
+                index: 0,
+                signature: "sig",
+              },
+            },
+          },
+        },
+        { type: "thinking-summary-delta", data: { index: 0, text: " think." } },
       ]);
-      expect(chunks[0]).toMatchObject({ data: { index: 0 } });
-      expect(chunks[1]).toMatchObject({ data: { index: 1, continuity: { signature: "sig" } } });
     });
 
-    test("once entries have appeared, the bare reasoning string is ignored for the rest of the stream", () => {
+    test("a later bare reasoning string continues the part an entry opened", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(
         makeChunk({ reasoning_details: [{ type: "reasoning.text", text: "entry", index: 0 }] }),
       );
-      const chunks = adapter.handleChunk(makeChunk({ reasoning: "stray string" }));
-      expect(chunks).toEqual([]);
+      const chunks = adapter.handleChunk(makeChunk({ reasoning: " and more" }));
+      expect(chunks).toEqual([
+        { type: "thinking-raw-delta", data: { index: 0, text: " and more" } },
+      ]);
+    });
+
+    test("the bare reasoning string is skipped in a chunk that also carries entries", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          reasoning: "entry",
+          reasoning_details: [{ type: "reasoning.text", text: "entry", index: 0 }],
+        }),
+      );
+      expect(chunks.filter((chunk) => chunk.type === "thinking-raw-delta")).toEqual([
+        { type: "thinking-raw-delta", data: { index: 0, text: "entry" } },
+      ]);
     });
 
     test("emits summary and redaction chunks for structured OpenRouter reasoning details", () => {

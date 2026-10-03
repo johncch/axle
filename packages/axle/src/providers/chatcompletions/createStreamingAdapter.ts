@@ -1,4 +1,4 @@
-import { AnyStreamChunk } from "../../messages/stream.js";
+import { AnyStreamChunk, StreamThinkingMetadataChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { truncateMiddle } from "../../utils/truncate.js";
 import { AxleStopReason, type Refusal } from "../types.js";
@@ -33,7 +33,6 @@ export function createStreamingAdapter() {
   let activePart: "text" | "thinking" | null = null;
   let activeDetailIndex: number | undefined;
   let activeContinuity: OpenRouterThinkingContinuity | undefined;
-  let sawReasoningDetails = false;
 
   // Deferred completion: finish_reason arrives before the usage-only chunk,
   // so we hold the complete event until finalize() is called.
@@ -61,17 +60,28 @@ export function createStreamingAdapter() {
   function ensureThinkingPart(
     chunks: Array<AnyStreamChunk>,
     detail?: ChatCompletionReasoningDetail,
-  ): { continuityChanged: boolean } {
-    const openedByDetail = activeContinuity !== undefined;
-    const continuesOpenBlock =
-      activePart === "thinking" &&
-      (detail ? openedByDetail && detail.index === activeDetailIndex : !openedByDetail);
-    if (continuesOpenBlock) {
-      if (!detail) return { continuityChanged: false };
-      const merged = reasoningDetailContinuity(detail, activeContinuity);
-      const continuityChanged = !sameContinuity(merged, activeContinuity);
-      activeContinuity = merged;
-      return { continuityChanged };
+  ): { metadata?: StreamThinkingMetadataChunk["data"] } {
+    if (activePart === "thinking") {
+      if (!detail) return {};
+      const adopts = activeDetailIndex === undefined;
+      if (adopts || detail.index === activeDetailIndex) {
+        const merged = reasoningDetailContinuity(detail, activeContinuity);
+        const continuityChanged = !sameContinuity(merged, activeContinuity);
+        activeDetailIndex = detail.index;
+        activeContinuity = merged;
+        if (adopts) {
+          return {
+            metadata: {
+              index: currentPartIndex,
+              ...(merged ? { continuity: merged } : {}),
+              providerMetadata: reasoningDetailMetadata(detail),
+            },
+          };
+        }
+        return continuityChanged
+          ? { metadata: { index: currentPartIndex, continuity: merged } }
+          : {};
+      }
     }
 
     closeActivePart(chunks);
@@ -89,7 +99,7 @@ export function createStreamingAdapter() {
         ...(detail ? { providerMetadata: reasoningDetailMetadata(detail) } : {}),
       },
     });
-    return { continuityChanged: false };
+    return {};
   }
 
   function handleChunk(chunk: ChatCompletionChunk): Array<AnyStreamChunk> {
@@ -118,7 +128,6 @@ export function createStreamingAdapter() {
 
     const delta = choice.delta;
 
-    if (delta.reasoning_details?.length) sawReasoningDetails = true;
     for (const detail of delta.reasoning_details ?? []) {
       const field = reasoningDetailContentField(detail);
       const text = reasoningDetailContentText(detail);
@@ -136,13 +145,8 @@ export function createStreamingAdapter() {
         continue;
       }
       if (!(field && text) && !reasoningDetailCarriesContinuity(detail)) continue;
-      const { continuityChanged } = ensureThinkingPart(chunks, detail);
-      if (continuityChanged) {
-        chunks.push({
-          type: "thinking-metadata",
-          data: { index: currentPartIndex, continuity: activeContinuity },
-        });
-      }
+      const { metadata } = ensureThinkingPart(chunks, detail);
+      if (metadata) chunks.push({ type: "thinking-metadata", data: metadata });
       if (field && text) {
         chunks.push({
           type: field === "summary" ? "thinking-summary-delta" : "thinking-raw-delta",
@@ -152,7 +156,7 @@ export function createStreamingAdapter() {
     }
 
     const reasoningDelta = delta.reasoning_content ?? delta.reasoning;
-    if (!sawReasoningDetails && reasoningDelta) {
+    if (!delta.reasoning_details?.length && reasoningDelta) {
       ensureThinkingPart(chunks);
       chunks.push({
         type: "thinking-raw-delta",
