@@ -97,6 +97,12 @@ export interface ProviderStreamParams extends AxleModelRequestOptions {
   tools?: Array<ToolDefinition>;
   /** Provider-managed tools such as web search or code execution. */
   providerTools?: Array<ResolvedProviderTool>;
+  /**
+   * Identity of the conversation this request belongs to. Providers that
+   * group or route by session (OpenRouter `session_id`) send it; others
+   * ignore it.
+   */
+  sessionId?: string;
   /** Internal services available during provider request creation. */
   runtime: ProviderRuntime;
 }

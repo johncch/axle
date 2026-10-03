@@ -275,6 +275,7 @@ export class Agent {
         messages: [...this.messagesInternal],
         system: this.system,
         registry: this.registry,
+        sessionId: this.sessionId,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
         ...streamRequestOptions,
