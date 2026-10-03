@@ -321,8 +321,8 @@ export class Agent {
       } catch (parseError) {
         parseFailure = {
           kind: "parse",
-          error: parseError,
           message: parseError instanceof Error ? parseError.message : String(parseError),
+          cause: parseError,
         };
       }
 

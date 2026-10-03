@@ -31,12 +31,10 @@ function describeFailure(failure: AxleFailure): string {
     case "model":
       return `Model error: ${failure.message}`;
     case "refusal": {
-      const { text, category } = failure.refusal;
+      const { text, category } = failure;
       const label = category ? `Refused (${category})` : "Refused";
       return text ? `${label}: ${text}` : label;
     }
-    case "tool":
-      return `Tool error (${failure.error.name}): ${failure.message}`;
     case "parse":
       return `Parse error: ${failure.message}`;
   }

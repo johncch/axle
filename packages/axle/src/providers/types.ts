@@ -2,7 +2,6 @@ import { AxleMessage } from "../messages/message.js";
 import { AnyStreamChunk } from "../messages/stream.js";
 import type { Span } from "../observability/types.js";
 import type { ProviderTool, ToolDefinition } from "../tools/types.js";
-import { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
 import type { ReasoningSetting } from "./reasoning.js";
 
@@ -105,16 +104,6 @@ export interface ProviderStreamParams extends AxleModelRequestOptions {
   sessionId?: string;
   /** Internal services available during provider request creation. */
   runtime: ProviderRuntime;
-}
-
-export interface ModelError {
-  type: "error";
-  error: {
-    type: string;
-    message: string;
-  };
-  usage?: Stats;
-  raw?: any;
 }
 
 /**

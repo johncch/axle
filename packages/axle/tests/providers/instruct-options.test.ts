@@ -1,10 +1,3 @@
-import {
-  startChunk,
-  textStartChunk,
-  textChunk,
-  textCompleteChunk,
-  completeChunk,
-} from "../scenarios/helpers/chunks.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
@@ -14,6 +7,13 @@ import { generate } from "../../src/providers/generate.js";
 import { stream } from "../../src/providers/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
+import {
+  completeChunk,
+  startChunk,
+  textChunk,
+  textCompleteChunk,
+  textStartChunk,
+} from "../scenarios/helpers/chunks.js";
 
 describe("Instruct options", () => {
   test("generate() appends instruct as latest user turn and returns parsed response", async () => {

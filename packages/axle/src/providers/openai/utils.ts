@@ -4,10 +4,10 @@ import { AxleMessage, ContentPart, ContentPartText } from "../../messages/messag
 import { getTextContent } from "../../messages/utils.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import {
+  resolveFileSource,
   type FileInfo,
   type FileResolver,
   type ResolvedFileSource,
-  resolveFileSource,
 } from "../../utils/file.js";
 import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import type { ResolvedProviderTool, ToolChoice } from "../types.js";

@@ -316,9 +316,9 @@ from an answer without a second check.
 A refusal is a provider declining a request, or blocking its output, through
 a signal on the response. Axle reports every one the same way: the step
 fails, and `generate()`, `stream().final`, and `agent.send().final` resolve
-`ok: false` with `error: { kind: "refusal", refusal, message }`.
+`ok: false` with `error: { kind: "refusal", message, text?, category? }`.
 
-| Provider         | Signal                                                                                                                                                                                    | `refusal.text`             | `refusal.category`      |
+| Provider         | Signal                                                                                                                                                                                    | `text`                     | `category`              |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------- |
 | Anthropic        | `stop_reason: "refusal"`                                                                                                                                                                  | `stop_details.explanation` | `stop_details.category` |
 | OpenAI           | A `refusal` content part, read from `response.refusal.done`                                                                                                                               | The refusal text           | —                       |
@@ -370,6 +370,41 @@ the defect this replaces. Rejected: storing the refused message with a
 `refusal` part. Anthropic and Gemini return nothing to send back, Anthropic
 says to discard what did arrive, and a seventh part type would need a
 send-back rule on every provider for content no provider requires.
+
+## Request failures
+
+A request the provider rejects outright, or a transport failure, is
+`ok: false` with `error: { kind: "model", type, message, status?, usage?, raw? }`.
+`type` is `"authentication"` when the provider rejected the credential. For
+every other failure it is the provider's own type: the SDK error class name
+for Anthropic, OpenAI, and Gemini; the HTTP status as a string for a Chat
+Completions response; an upstream `code` for a mid-stream OpenRouter error;
+or one of Axle's own (`FinishReasonError`, `IncompleteStream`,
+`RESPONSES_API_INCOMPLETE`). `status` is the HTTP status when there was one,
+and `raw` is what the provider threw.
+
+| Provider         | A rejected key arrives as                                                                                          | `status` | `type`                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------ |
+| Anthropic        | SDK `AuthenticationError`, `status: 401`; the class leaves `name` as `Error`                                       | `401`    | `authentication`                                                         |
+| OpenAI           | SDK `AuthenticationError`, `status: 401`; the class leaves `name` as `Error`                                       | `401`    | `authentication`                                                         |
+| Gemini           | SDK `ApiError`, `status: 400`; `message` is the JSON error body, whose `details` carry `reason: "API_KEY_INVALID"` | `400`    | `authentication`                                                         |
+| Chat Completions | A non-2xx response; Axle throws `{ status, message, body }`                                                        | `401`    | `authentication`                                                         |
+| Any              | Any other HTTP failure (`400` without `API_KEY_INVALID`, `403`, `429`, `5xx`)                                      | As sent  | The class name, or the status as a string on Chat Completions, as before |
+
+Observed on 2026-10-01 (AXL-70, 0.32.0) with a bogus key on each factory.
+The Gemini check is a substring match on the message because the SDK gives
+the body only as a string, and the same body is wrapped in
+`got status: ... ` text when it arrives mid-stream.
+
+A `403` is not reported as `authentication`. No provider has been observed
+returning one for a bad key; Anthropic and OpenAI use it for a key that is
+valid but not permitted, which a consumer should not treat as "send the user
+to their key settings".
+
+Rejected (2026-10-02): a separate failure kind for rejected credentials. The
+failure is still the provider failing the request, and a consumer that
+switches on `kind` to decide whether to retry wants it under `model`; the
+`type` is the finer distinction, the same place the provider's own type sits.
 
 ## Sources
 

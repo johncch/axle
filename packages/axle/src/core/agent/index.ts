@@ -11,7 +11,6 @@ export type {
   AgentSession,
   AutomaticCompactionTrigger,
   CompactionCallback,
-  ShouldCompactOnTriggerCallback,
   CompactionConfig,
   CompactionTrigger,
   MaybePromise,
@@ -21,6 +20,7 @@ export type {
   ResolvedAgentDefinition,
   SavedAgent,
   SendMessageOptions,
+  ShouldCompactOnTriggerCallback,
   ToolDefinitionRef,
   TurnEventCallback,
 } from "./types.js";

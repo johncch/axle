@@ -61,8 +61,9 @@ export interface StreamErrorChunk extends StreamChunk {
   data: {
     type: string;
     message: string;
+    status?: number;
     usage?: Stats;
-    raw?: any;
+    raw?: unknown;
   };
 }
 

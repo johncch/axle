@@ -46,12 +46,9 @@ test.each(["openai", "anthropic", "gemini"] as const)(
     });
     expect(result).toMatchObject({
       ok: false,
-      error: {
-        kind: "model",
-        error: { error: { type: "RateLimitError", message: "rate limited" } },
-      },
+      error: { kind: "model", type: "RateLimitError", message: "rate limited" },
     });
-    if (!result.ok && result.error.kind === "model") expect(result.error.error.raw).toBe(error);
+    if (!result.ok && result.error.kind === "model") expect(result.error.raw).toBe(error);
   },
 );
 
@@ -63,11 +60,20 @@ test.each([
     "bad key",
   ],
   [{ code: "invalid_api_key", message: "bad key" }, "invalid_api_key", "bad key"],
-  [{ status: 429, message: "slow down" }, "429", "slow down"],
   [null, "Undetermined", "Unknown error occurred"],
   ["oops", "Undetermined", "oops"],
 ])("normalizes structured and unknown errors", (error, type, message) => {
   expect(normalizeProviderError(error)).toEqual({ type, message, raw: error });
+});
+
+test("a numeric status on the error becomes status", () => {
+  const error = { status: 429, message: "slow down" };
+  expect(normalizeProviderError(error)).toEqual({
+    type: "429",
+    message: "slow down",
+    status: 429,
+    raw: error,
+  });
 });
 
 test.each([401, 429])("Chat Completions retains HTTP %s", async (status) => {
@@ -80,7 +86,7 @@ test.each([401, 429])("Chat Completions retains HTTP %s", async (status) => {
   const result = await generate({ provider, model: "test", messages });
   expect(result).toMatchObject({
     ok: false,
-    error: { error: { error: { type: String(status) }, raw: { status, body: "bad request" } } },
+    error: { status, raw: { status, body: "bad request" } },
   });
 });
 
@@ -138,7 +144,7 @@ test("OpenAI failed response preserves code, message and usage", async () => {
   expect(result).toMatchObject({
     ok: false,
     usage: { in: 12, out: 3 },
-    error: { error: { error: { type: "server_error", message: "upstream failed" }, raw } },
+    error: { type: "server_error", message: "upstream failed", raw },
   });
 });
 
