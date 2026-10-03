@@ -52,6 +52,16 @@ not run at all. The request builder now sets it whenever both kinds of tool
 are present. This is outside the ticket's text but was the only way to
 check the `toolCall` item.
 
+## OpenAI, found by the check
+
+The code execution check runs on OpenAI too, since `code_execution` maps to
+`code_interpreter` there. Its first OpenAI run stored the call with
+`outputs: null`: the Responses API returns code interpreter outputs only
+when the request lists `code_interpreter_call.outputs` in `include`, and
+Axle never did. The request builder now adds it whenever a provider tool
+resolves to `code_interpreter`. Observed 2026-10-03 on `gpt-6-luna`: with
+the include, `outputs` holds a `logs` entry with the stdout.
+
 ## Decision: one `provider-tool` part holding both Gemini parts
 
 `ProviderToolContinuity` gains `{ provider: "gemini"; parts: Part[] }`. The
@@ -91,6 +101,13 @@ result branches now run before that check.
 - Request builder: a request with both tools sets
   `includeServerSideToolInvocations`; one with a provider tool alone does
   not.
+- Check: `stream-code-execution-round-trip` in
+  `checks/cases/code-execution.ts` (extended, OpenAI and Gemini) runs the
+  same two turns through `stream()` and `generate()` and asserts the part,
+  its continuity, the stdout read from that continuity, the three events,
+  and the follow-up answer. Passed on 2026-10-03 on
+  `gemini-flash-lite-latest`, `gemini-3-flash-preview`, and OpenAI
+  `gpt-6-luna`.
 - Live, 2026-10-03, `gemini-3-flash-preview` through `Agent` with
   `code_execution`: the three provider-tool events fired, the stored part
   held both Gemini parts with the signature and the stdout, and the

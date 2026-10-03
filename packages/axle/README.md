@@ -668,8 +668,10 @@ fields on every provider:
 Render from `name`, `input`, and `result`. `continuity` is for sending the
 call back and for provider-specific detail: Anthropic's search results are
 `continuity.result.content`; OpenAI's item is `continuity.item` and carries
-no results; Gemini's code execution keeps its `executableCode` and
-`codeExecutionResult` parts in `continuity.parts`, and the stdout is
+no search results; OpenAI's code interpreter stdout is in
+`continuity.item.outputs`, which Axle asks for with `include`; Gemini's
+code execution keeps its `executableCode` and `codeExecutionResult` parts
+in `continuity.parts`, and the stdout is
 `continuity.parts[1].codeExecutionResult.output`.
 
 Provider tool events stream as `provider-tool:start`, `provider-tool:input`,
