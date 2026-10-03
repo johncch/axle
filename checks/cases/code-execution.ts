@@ -15,16 +15,8 @@ function codeExecutionTool(providerId: CheckCaseContext["providerId"]): Provider
 }
 
 function readStdout(part: ContentPartProviderTool): string | undefined {
-  const continuity = part.continuity;
-  if (continuity?.provider === "gemini") {
-    return continuity.parts.find((item) => item.codeExecutionResult)?.codeExecutionResult?.output;
-  }
-  if (continuity?.provider === "openai" && continuity.item.type === "code_interpreter_call") {
-    return continuity.item.outputs
-      ?.flatMap((output) => (output.type === "logs" ? [output.logs] : []))
-      .join("\n");
-  }
-  return undefined;
+  const output = part.result?.type === "success" ? part.result.output : undefined;
+  return typeof output === "string" ? output : output?.stdout;
 }
 
 export const codeExecutionCases: CheckCase[] = [
@@ -33,7 +25,7 @@ export const codeExecutionCases: CheckCase[] = [
     id: "stream-code-execution-round-trip",
     description:
       "Code execution is stored as a provider-tool part with the provider's objects and the stdout, fires provider-tool events, and a follow-up that depends on the output is accepted.",
-    providers: ["openai", "google"],
+    providers: ["openai", "anthropic", "google"],
     async run({ provider, model, providerId, requestOptions }) {
       const providerTools = [codeExecutionTool(providerId)];
       const events: string[] = [];
@@ -56,13 +48,17 @@ export const codeExecutionCases: CheckCase[] = [
       const first = await handle.final;
       if (!first.ok) return fail({ error: first.error });
 
-      const part = first.final.content.find((item) => item.type === "provider-tool");
+      const part = first.final.content.find(
+        (item): item is ContentPartProviderTool =>
+          item.type === "provider-tool" &&
+          (item.name === "code_execution" || item.name === "bash_code_execution"),
+      );
       const output = part ? readStdout(part) : undefined;
       const failureReasons: string[] = [];
       if (!part) failureReasons.push("No provider-tool part was stored.");
-      if (part && part.name !== "code_execution")
-        failureReasons.push(`Part is named ${part.name}.`);
-      if (part?.input?.type !== "code") failureReasons.push("Input is not the code shape.");
+      if (part && part.input?.type !== "code" && part.input?.type !== "command") {
+        failureReasons.push("Input is neither the code nor the command shape.");
+      }
       if (part?.result?.type !== "success") failureReasons.push("Result is not success.");
       if (!part?.continuity) failureReasons.push("No continuity was stored.");
       if (part?.continuity?.provider === "gemini" && part.continuity.parts.length !== 2) {

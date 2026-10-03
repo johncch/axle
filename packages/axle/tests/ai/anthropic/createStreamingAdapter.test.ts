@@ -844,7 +844,8 @@ describe("createAnthropicStreamingAdapter", () => {
     test.each([
       ["web_fetch", '{"url":"https://example.com"}', { type: "open", url: "https://example.com" }],
       ["code_execution", '{"code":"print(1)"}', { type: "code", code: "print(1)" }],
-      ["bash_code_execution", '{"command":"ls"}', undefined],
+      ["bash_code_execution", '{"command":"ls"}', { type: "command", command: "ls" }],
+      ["text_editor_code_execution", '{"command":"view","path":"/tmp/a.py"}', undefined],
     ] as const)("gives %s input Axle's shape", (name, inputJson, input) => {
       const { closed } = call(createAnthropicStreamingAdapter(), name, inputJson);
 
@@ -904,6 +905,60 @@ describe("createAnthropicStreamingAdapter", () => {
           },
         },
       ]);
+    });
+
+    test("reports a bash result's stdout, stderr and exit code as the output", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      const ran: AnthropicServerToolResultBlock = {
+        type: "bash_code_execution_tool_result",
+        tool_use_id: "srvtoolu_123",
+        content: {
+          type: "bash_code_execution_result",
+          stdout: "5117\n",
+          stderr: "warning: slow\n",
+          return_code: 0,
+          content: [],
+        },
+      };
+      call(adapter, "bash_code_execution", '{"command":"python primes.py"}');
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 1,
+        content_block: ran,
+      });
+
+      expect(chunks[0].data).toMatchObject({
+        result: {
+          type: "success",
+          output: { stdout: "5117\n", stderr: "warning: slow\n", exitCode: 0 },
+        },
+      });
+    });
+
+    test("omits an empty stderr from the output", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      call(adapter, "code_execution", '{"code":"print(1)"}');
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 1,
+        content_block: {
+          type: "code_execution_tool_result",
+          tool_use_id: "srvtoolu_123",
+          content: {
+            type: "code_execution_result",
+            stdout: "1\n",
+            stderr: "",
+            return_code: 1,
+            content: [],
+          },
+        },
+      });
+
+      const result =
+        chunks[0].type === "provider-tool-complete" ? chunks[0].data.result : chunks[0];
+      expect(result).toEqual({ type: "success", output: { stdout: "1\n", exitCode: 1 } });
     });
 
     test("reports a result block that holds an error code as a failure", () => {

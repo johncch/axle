@@ -330,6 +330,7 @@ export function convertToAnthropicTools(
 
 const PROVIDER_TOOL_MAP: Record<string, string> = {
   web_search: "web_search_20260318",
+  code_execution: "code_execution_20260521",
 };
 
 const PROVIDER_TOOL_DEFAULT_CONFIG: Record<string, Record<string, unknown>> = {

@@ -11,11 +11,20 @@ export type ProviderToolInput =
   | { type: "search"; queries: string[] }
   | { type: "open"; url: string }
   | { type: "find"; url: string; pattern: string }
-  | { type: "code"; code: string };
+  | { type: "code"; code: string }
+  | { type: "command"; command: string };
 
-/** How a provider tool call ended. */
+/** What a sandboxed run printed, with the streams apart when the provider separates them. */
+export interface ConsoleOutput {
+  stdout: string;
+  stderr?: string;
+  exitCode?: number;
+}
+
+/** How a provider tool call ended, and what it printed when the provider reports that. */
 export type ProviderToolResult =
-  { type: "success" } | { type: "error"; error: { type: string; message: string } };
+  | { type: "success"; output?: string | ConsoleOutput }
+  | { type: "error"; error: { type: string; message: string } };
 
 /** Result block Anthropic returns for a server tool call. */
 export type AnthropicServerToolResultBlock = Extract<ContentBlock, { tool_use_id: string }>;

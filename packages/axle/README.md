@@ -611,10 +611,10 @@ const agent = new Agent({
 
 Axle maps common names to provider-specific identifiers automatically:
 
-| Name             | Anthropic             | OpenAI             | Gemini          |
-| ---------------- | --------------------- | ------------------ | --------------- |
-| `web_search`     | `web_search_20260318` | `web_search`       | `googleSearch`  |
-| `code_execution` | —                     | `code_interpreter` | `codeExecution` |
+| Name             | Anthropic                 | OpenAI             | Gemini          |
+| ---------------- | ------------------------- | ------------------ | --------------- |
+| `web_search`     | `web_search_20260318`     | `web_search`       | `googleSearch`  |
+| `code_execution` | `code_execution_20260521` | `code_interpreter` | `codeExecution` |
 
 You can also pass provider-specific names directly. Use the optional `config`
 field for provider-specific options:
@@ -658,12 +658,12 @@ fields on every provider:
 }
 ```
 
-| Field        | Meaning                                                                                                                                                  |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`       | Axle's tool name: `web_search`, `web_fetch`, `code_execution`, `file_search`                                                                             |
-| `input`      | What the tool was asked to do: `search` (`queries`), `open` (`url`), `find` (`url`, `pattern`), `code` (`code`). Absent for a tool Axle has no shape for |
-| `result`     | `{ type: "success" }` or `{ type: "error", error }`. Absent while the tool has not run in that message                                                   |
-| `continuity` | The provider's own objects, typed with its SDK types and sent back only to that provider                                                                 |
+| Field        | Meaning                                                                                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`       | Axle's tool name: `web_search`, `web_fetch`, `code_execution`, `file_search`                                                                                                    |
+| `input`      | What the tool was asked to do: `search` (`queries`), `open` (`url`), `find` (`url`, `pattern`), `code` (`code`), `command` (`command`). Absent for a tool Axle has no shape for |
+| `result`     | `{ type: "success" }` or `{ type: "error", error }`. Absent while the tool has not run in that message                                                                          |
+| `continuity` | The provider's own objects, typed with its SDK types and sent back only to that provider                                                                                        |
 
 Render from `name`, `input`, and `result`. `continuity` is for sending the
 call back and for provider-specific detail: Anthropic's search results are
@@ -689,6 +689,14 @@ reports that its tool failed, and the turn's action settles as `error`.
 | OpenAI     | A tool item whose `status` is `failed`                      | `failed`; OpenAI gives no code                        |
 | Gemini     | A `codeExecutionResult` whose `outcome` is not `OUTCOME_OK` | Gemini's `outcome`, such as `OUTCOME_FAILED`          |
 | OpenRouter | Nothing: it does not report a failed search                 | —                                                     |
+
+On Anthropic, `code_execution` maps to the current programmatic version.
+Claude works in a container and reports each step as its own server tool:
+`bash_code_execution` runs a command and `text_editor_code_execution` views,
+creates or edits a file. Each arrives as a `provider-tool` part under that
+name, the bash call with a `command` input and the text editor call with no
+`input`. Pin `code_execution_20250825` through `config.type` to get a single
+`code_execution` call carrying the code instead.
 
 On Gemini, a provider tool next to your own tools needs Gemini 3 or later:
 Axle sets `includeServerSideToolInvocations` for the combination, and Gemini

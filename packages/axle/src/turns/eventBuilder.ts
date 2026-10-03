@@ -410,7 +410,10 @@ export class TurnEventBuilder {
             type: "action:complete",
             turnId,
             partId: mapping.partId,
-            result: { type: "success" },
+            result: {
+              type: "success",
+              ...(event.output !== undefined ? { content: event.output } : {}),
+            },
             timing,
           });
         }

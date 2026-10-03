@@ -4,10 +4,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   capitalize,
   formatActionArgs,
+  formatActionResult,
   formatDuration,
   formatTokens,
   indentContinuation,
-  truncate,
 } from "../format.js";
 import type { SessionUsage } from "../renderer.js";
 import type { StaticItem, UiStore } from "./store.js";
@@ -353,13 +353,10 @@ function ActionResultView({
 }: {
   result?: { type: string; content?: unknown; error?: { message: string } };
 }) {
-  if (!result) return null;
-  if (result.type === "error" && result.error) {
-    return <Text color="red"> {truncate(result.error.message, 200)}</Text>;
-  }
-  const content = typeof result.content === "string" ? result.content : undefined;
-  if (!content?.trim()) return null;
-  return <Text dimColor> {truncate(firstLine(content), 200)}</Text>;
+  const formatted = formatActionResult(result);
+  if (!formatted) return null;
+  if (formatted.tone === "error") return <Text color="red"> {formatted.text}</Text>;
+  return <Text dimColor> {formatted.text}</Text>;
 }
 
 // Called on every streaming re-render, so it scans backward for the last N
@@ -373,8 +370,4 @@ function lastLines(text: string, count: number): string {
     index = next;
   }
   return trimmed.slice(index + 1);
-}
-
-function firstLine(text: string): string {
-  return text.trim().split("\n", 1)[0];
 }

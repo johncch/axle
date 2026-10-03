@@ -1,4 +1,10 @@
-import { FinishReason, GenerateContentResponse, Outcome, type Part } from "@google/genai";
+import {
+  type CodeExecutionResult,
+  FinishReason,
+  GenerateContentResponse,
+  Outcome,
+  type Part,
+} from "@google/genai";
 import type { Citation } from "../../messages/message.js";
 import type { ProviderToolResult } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
@@ -130,7 +136,7 @@ export function createGeminiStreamingAdapter() {
             index: open.index,
             id: open.id,
             name: "code_execution",
-            result: toCodeExecutionResult(part.codeExecutionResult.outcome),
+            result: toCodeExecutionResult(part.codeExecutionResult),
             continuity: { provider: "gemini", parts: [open.codePart, part] },
           },
         });
@@ -344,8 +350,11 @@ export function createGeminiStreamingAdapter() {
   return { handleChunk };
 }
 
-function toCodeExecutionResult(outcome: Outcome | undefined): ProviderToolResult {
-  if (outcome === undefined || outcome === Outcome.OUTCOME_OK) return { type: "success" };
+function toCodeExecutionResult(result: CodeExecutionResult): ProviderToolResult {
+  const outcome = result.outcome;
+  if (outcome === undefined || outcome === Outcome.OUTCOME_OK) {
+    return { type: "success", ...(result.output !== undefined ? { output: result.output } : {}) };
+  }
   return {
     type: "error",
     error: { type: outcome, message: `code_execution failed: ${outcome}` },

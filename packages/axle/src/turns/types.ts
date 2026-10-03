@@ -1,5 +1,5 @@
 import type { Citation, ThinkingContinuity, ToolResultPart } from "../messages/message.js";
-import type { ProviderToolInput } from "../messages/providerTool.js";
+import type { ConsoleOutput, ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
 import type { FileInfo } from "../utils/file.js";
 
@@ -321,5 +321,5 @@ export type ActionPart<TAnnotation extends Annotation = Annotation> =
  */
 export type ActionResult =
   | { type: "in-progress"; content: string }
-  | { type: "success"; content?: string | ToolResultPart[] }
+  | { type: "success"; content?: string | ConsoleOutput | ToolResultPart[] }
   | { type: "error"; error: { type: string; message: string } };
