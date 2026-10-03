@@ -1,8 +1,8 @@
 import AnthropicSDK from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { resolveFirstPartyModel } from "../model.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
-import { resolveFirstPartyModel } from "../model.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { resolveAnthropicProviderToolName } from "./utils.js";
 export const NAME = "anthropic" as const;
@@ -14,6 +14,7 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
     ...(options.timeoutMs !== undefined
       ? { timeout: requireInteger(options.timeoutMs, "timeoutMs", { min: 1 }) }
       : {}),
+    ...(options.headers !== undefined ? { defaultHeaders: options.headers } : {}),
   });
 
   return {

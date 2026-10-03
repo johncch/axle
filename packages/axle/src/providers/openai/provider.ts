@@ -1,8 +1,8 @@
 import OpenAISDK from "openai";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { resolveFirstPartyModel } from "../model.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
-import { resolveFirstPartyModel } from "../model.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { resolveOpenAIProviderToolName } from "./utils.js";
 export const NAME = "OpenAI" as const;
@@ -14,6 +14,7 @@ export function openai(apiKey: string, options: ProviderClientOptions = {}): AIP
     ...(options.timeoutMs !== undefined
       ? { timeout: requireInteger(options.timeoutMs, "timeoutMs", { min: 1 }) }
       : {}),
+    ...(options.headers !== undefined ? { defaultHeaders: options.headers } : {}),
   });
 
   return {

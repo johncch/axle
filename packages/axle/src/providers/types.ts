@@ -154,6 +154,12 @@ export interface ProviderClientOptions {
    * Request timeout in milliseconds. Omit to use the provider SDK default.
    */
   timeoutMs?: number;
+  /**
+   * HTTP headers sent with every request. Passed to the provider SDK's
+   * default-header option as-is; on Chat Completions they are added after
+   * Axle's own headers.
+   */
+  headers?: Record<string, string>;
 }
 
 export enum AxleStopReason {

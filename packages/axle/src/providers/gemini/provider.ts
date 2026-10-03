@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import { resolveFirstPartyModel } from "../model.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
-import { resolveFirstPartyModel } from "../model.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import { resolveGeminiProviderToolName } from "./utils.js";
 export const NAME = "Gemini" as const;
@@ -15,6 +15,7 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
       ...(options.timeoutMs !== undefined
         ? { timeout: requireInteger(options.timeoutMs, "timeoutMs", { min: 1 }) }
         : {}),
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
     },
   });
 

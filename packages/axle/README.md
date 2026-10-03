@@ -137,6 +137,23 @@ const g = gemini(process.env.GEMINI_API_KEY);
 const local = chatCompletions("http://localhost:11434/v1");
 ```
 
+Every factory takes the same client options, applied when the client is
+built rather than per request:
+
+```typescript
+const provider = chatCompletions("https://gateway.example.com/v1", {
+  apiKey: process.env.GATEWAY_API_KEY,
+  maxRetries: 2, // retries after the first attempt; 0 disables
+  timeoutMs: 60_000, // per-request timeout; omit for the SDK default
+  headers: { "X-App-Name": "my-app", "X-App-Version": "1.4.0" },
+});
+```
+
+`headers` are passed straight to the SDK's default-header option, and on
+ChatCompletions they are added after Axle's own `Content-Type` and
+`Authorization`. Axle does not reserve any header name, so a caller-supplied
+`Authorization` replaces the one derived from the API key on every provider.
+
 ### `stream()` and `generate()`
 
 Agent is built on two lower-level primitives that can be used directly when you
