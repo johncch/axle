@@ -195,6 +195,10 @@ export async function readStep(
       }
 
       case "text-complete": {
+        const part = parts[currentPartIndex];
+        if (chunk.data.providerMetadata && part?.type === "text") {
+          part.providerMetadata = chunk.data.providerMetadata;
+        }
         closePart();
         break;
       }

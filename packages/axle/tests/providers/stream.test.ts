@@ -209,6 +209,29 @@ describe("stream()", () => {
       expect(partEvents).toEqual(["thinking:start", "thinking:end", "text:start", "text:end"]);
     });
 
+    test("text-complete provider metadata lands on the text part", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Answer"),
+        {
+          type: "text-complete",
+          data: { index: 0, providerMetadata: { thoughtSignature: "sig" } },
+        },
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([
+        { type: "text", text: "Answer", providerMetadata: { thoughtSignature: "sig" } },
+      ]);
+    });
+
     test("accumulates citations and thinking summary metadata", async () => {
       const citation = {
         source: { type: "web" as const, title: "OpenAI", url: "https://openai.com" },

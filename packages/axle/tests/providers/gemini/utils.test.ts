@@ -30,6 +30,7 @@ describe("convertAxleMessagesToGemini", () => {
             providerMetadata: { thoughtSignature: "sig-call" },
           },
           { type: "text", text: "Calling the tool." },
+          { type: "text", text: "Done.", providerMetadata: { thoughtSignature: "sig-text" } },
         ],
       },
     ]);
@@ -44,6 +45,7 @@ describe("convertAxleMessagesToGemini", () => {
           thoughtSignature: "sig-call",
         },
         { text: "Calling the tool." },
+        { text: "Done.", thoughtSignature: "sig-text" },
       ],
     });
   });

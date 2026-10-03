@@ -122,6 +122,7 @@ continuity-only part, on the open thinking part if one is open.
 | OpenAI            | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`         |
 | Gemini            | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`   |
 | Gemini            | `thoughtSignature` on a function-call part                    | `providerMetadata.thoughtSignature`                       |
+| Gemini            | `thoughtSignature` on a text part                             | text part `providerMetadata.thoughtSignature`             |
 | Gemini            | `thoughtSignature` on an `executableCode` part                | the part itself, in the `provider-tool` part's continuity |
 | OpenRouter        | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data`  |
 | Generic, Together | nothing                                                       | —                                                         |
