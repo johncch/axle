@@ -666,6 +666,62 @@ describe("createStreamingRequest", () => {
       expect(body.parallel_tool_calls).toBe(true);
     });
 
+    test("sends sessionId as session_id for the OpenRouter vendor only", async () => {
+      const request = (vendor?: "openrouter" | "together") =>
+        collectChunks(
+          createStreamingRequest({
+            baseUrl: BASE_URL,
+            model: MODEL,
+            vendor,
+            sessionId: "conversation-1",
+            messages: [{ role: "user", content: "Hi" }],
+            runtime: {},
+          }),
+        );
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request("openrouter");
+      expect(JSON.parse((fetch as any).mock.calls[0][1].body).session_id).toBe("conversation-1");
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request("together");
+      expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("session_id");
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request(undefined);
+      expect(JSON.parse((fetch as any).mock.calls[2][1].body)).not.toHaveProperty("session_id");
+    });
+
+    test("omits session_id when no sessionId is given", async () => {
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          vendor: "openrouter",
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+        }),
+      );
+      expect(JSON.parse((fetch as any).mock.calls[0][1].body)).not.toHaveProperty("session_id");
+    });
+
+    test("providerOptions.session_id overrides sessionId", async () => {
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          vendor: "openrouter",
+          sessionId: "conversation-1",
+          providerOptions: { session_id: "host-key" },
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+        }),
+      );
+      expect(JSON.parse((fetch as any).mock.calls[0][1].body).session_id).toBe("host-key");
+    });
+
     test("echoes reasoning_details on assistant messages for the OpenRouter vendor only", async () => {
       const messages = [
         { role: "user" as const, content: "Question" },

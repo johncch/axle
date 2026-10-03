@@ -135,6 +135,12 @@ export interface StreamParams extends AxleModelRequestOptions {
   providerTools?: ProviderTool[];
   registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
+  /**
+   * Identity of the conversation this stream continues. Forwarded to the
+   * provider; OpenRouter uses it as `session_id` for sticky routing and
+   * dashboard grouping. `Agent` passes its own `sessionId`.
+   */
+  sessionId?: string;
   maxSteps?: number;
   /**
    * Context budget for the tool loop, in tokens. Checked after each step's
@@ -282,6 +288,7 @@ async function run(
     maxContextTokens,
     span,
     fileResolver,
+    sessionId,
     reasoning,
     maxOutputTokens,
     toolChoice,
@@ -359,6 +366,7 @@ async function run(
         system,
         tools,
         providerTools: providerTools.length > 0 ? providerTools : undefined,
+        sessionId,
         runtime: { span: stepSpan, fileResolver },
         signal,
         reasoning,

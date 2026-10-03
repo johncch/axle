@@ -545,6 +545,35 @@ describe("Agent", () => {
     });
   });
 
+  test("passes its sessionId to the provider on every request", async () => {
+    const sessionIds: Array<string | undefined> = [];
+    const provider: AIProvider = {
+      name: "session-provider",
+      async *createStreamingRequest(_model, { sessionId }): AsyncGenerator<AnyStreamChunk, void> {
+        sessionIds.push(sessionId);
+        yield {
+          type: "start",
+          id: `mock-${sessionIds.length}`,
+          data: { model: "mock", timestamp: Date.now() },
+        };
+        yield { type: "text-start", data: { index: 0 } };
+        yield { type: "text-delta", data: { index: 0, text: "ok" } };
+        yield { type: "text-complete", data: { index: 0 } };
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        };
+      },
+    };
+
+    const agent = new Agent({ provider, model: "mock", sessionId: "conversation-1" });
+    await agent.send("one").final;
+    const restored = new Agent({ provider, model: "mock" }, await agent.snapshot());
+    await restored.send("two").final;
+
+    expect(sessionIds).toEqual(["conversation-1", "conversation-1"]);
+  });
+
   test("snapshot and restore preserve model and render state", async () => {
     const requests: unknown[][] = [];
     const provider: AIProvider = {

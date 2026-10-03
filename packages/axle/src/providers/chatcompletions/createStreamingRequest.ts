@@ -30,6 +30,7 @@ export async function* createStreamingRequest(
     system,
     tools,
     providerTools,
+    sessionId,
     runtime,
     signal,
     apiKey,
@@ -70,6 +71,7 @@ export async function* createStreamingRequest(
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
       ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+      ...(vendor === "openrouter" && sessionId !== undefined ? { session_id: sessionId } : {}),
 
       // Raw provider options are applied last so they can override Axle mappings.
       ...providerOptions,

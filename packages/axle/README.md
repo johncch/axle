@@ -220,6 +220,10 @@ everything accumulated so far and `stopped` set to `"max-steps"` or
 `"token-limit"`. The caller decides what happens next — e.g. compact the
 conversation and start a new call. Non-positive limits throw at call time.
 
+`sessionId` names the conversation a call continues. Providers that route or
+group by session use it (OpenRouter's `session_id`); the rest ignore it.
+`Agent` passes its own.
+
 ### Reasoning
 
 `reasoning` is the one portable control over provider thinking. It is
@@ -707,6 +711,14 @@ const together = chatCompletions("https://api.together.ai/v1", {
 
 Set `vendor: "openrouter"` or `vendor: "together"` explicitly when using a
 proxy or gateway with a different hostname.
+
+On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,
+so every request in a conversation routes to the same upstream provider and
+keeps its prompt cache warm, and the requests are grouped under that id in the
+OpenRouter dashboard. A host-chosen `sessionId` is sent as-is; OpenRouter
+accepts up to 256 characters. Pass `sessionId` to `stream()` or `generate()`
+to get the same without an agent, and set `providerOptions.session_id` to
+send a different key.
 
 Application code continues to request the provider-neutral capability:
 
