@@ -428,6 +428,26 @@ async function run(
       });
     }
 
+    if (outcome.kind === "refused") {
+      addStats(
+        usage,
+        attributeStats(outcome.usage, { provider: provider.name, model: outcome.model || model }),
+      );
+      const message =
+        outcome.refusal.text ??
+        (outcome.refusal.category
+          ? `Request refused: ${outcome.refusal.category}`
+          : "Request refused");
+      stepSpan?.warn("Request refused", { ...outcome.refusal });
+      stepSpan?.end("error");
+      return endWithResult({
+        ok: false,
+        messages: newMessages,
+        error: { kind: "refusal", refusal: outcome.refusal, message },
+        usage,
+      });
+    }
+
     if (outcome.kind === "incomplete") {
       stepSpan?.end("error");
       return endWithResult({

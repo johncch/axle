@@ -25,7 +25,7 @@ import type {
 import { createWebSearchFallbackTool } from "../tools/webSearch.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats, mergeStats } from "../utils/stats.js";
-import type { AIProvider, ModelError, ResolvedProviderTool } from "./types.js";
+import type { AIProvider, ModelError, Refusal, ResolvedProviderTool } from "./types.js";
 
 export type ToolCallResult =
   | { type: "success"; content: string | ToolResultPart[] }
@@ -54,6 +54,7 @@ export interface ToolExecutionOutcome {
 
 export type AxleFailure =
   | { kind: "model"; error: ModelError; message: string }
+  | { kind: "refusal"; refusal: Refusal; message: string }
   | { kind: "tool"; error: { name: string; message: string }; message: string }
   | { kind: "parse"; error: unknown; message: string };
 

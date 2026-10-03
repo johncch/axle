@@ -1,4 +1,4 @@
-import { AxleStopReason } from "../providers/types.js";
+import { AxleStopReason, type Refusal } from "../providers/types.js";
 import { Stats } from "../types.js";
 import type { Citation, ThinkingContinuity } from "./message.js";
 import type {
@@ -29,6 +29,7 @@ export interface StreamChunk {
     | "provider-tool-complete"
     | "provider-tool-result"
     | "complete"
+    | "refusal"
     | "error";
   id?: string;
   data?: any;
@@ -62,6 +63,14 @@ export interface StreamErrorChunk extends StreamChunk {
     message: string;
     usage?: Stats;
     raw?: any;
+  };
+}
+
+export interface StreamRefusalChunk extends StreamChunk {
+  type: "refusal";
+  data: {
+    refusal: Refusal;
+    usage: Stats;
   };
 }
 
@@ -250,6 +259,7 @@ export interface StreamProviderToolResultChunk extends StreamChunk {
 export type AnyStreamChunk =
   | StreamStartChunk
   | StreamCompleteChunk
+  | StreamRefusalChunk
   | StreamErrorChunk
   | StreamTextStartChunk
   | StreamTextDeltaChunk

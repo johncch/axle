@@ -10,7 +10,7 @@ import type { Stats } from "../../types.js";
 import { createStats } from "../../utils/stats.js";
 import type { ResolvedTools } from "../helpers.js";
 import type { StreamEvent } from "../stream.js";
-import { AxleStopReason } from "../types.js";
+import { AxleStopReason, type Refusal } from "../types.js";
 
 export type ToolCallArgumentError = {
   type: string;
@@ -49,6 +49,7 @@ export type StepReadOutcome =
   | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
   | { kind: "incomplete" }
+  | { kind: "refused"; refusal: Refusal; usage: Stats; model: string }
   | {
       kind: "provider-error";
       errorType: string;
@@ -374,6 +375,16 @@ export async function readStep(
         finishReason = chunk.data.finishReason;
         usage = chunk.data.usage;
         break;
+      }
+
+      case "refusal": {
+        closePart();
+        return {
+          kind: "refused",
+          refusal: chunk.data.refusal,
+          usage: chunk.data.usage,
+          model: stepModel,
+        };
       }
 
       case "error": {

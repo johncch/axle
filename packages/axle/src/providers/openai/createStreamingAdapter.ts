@@ -1,7 +1,12 @@
-import { ResponseOutputItem, ResponseStreamEvent } from "openai/resources/responses/responses.js";
+import {
+  ResponseOutputItem,
+  ResponseStreamEvent,
+  ResponseUsage,
+} from "openai/resources/responses/responses.js";
 import type { Citation } from "../../messages/message.js";
 import type { OpenAIProviderToolItem, ProviderToolInput } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
+import type { Stats } from "../../types.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
 
@@ -53,6 +58,7 @@ export function createStreamingAdapter() {
   let partIndex = 0;
   let currentPartIndex = -1;
   let hasFunctionCalls = false;
+  let refusalText: string | undefined;
   const textPartIndices = new Map<string, number>();
   const messagePhases = new Map<string, string>();
   const functionInfo = new Map<string, { name: string; callId: string }>();
@@ -208,29 +214,45 @@ export function createStreamingAdapter() {
         break;
       }
 
+      case "response.refusal.done": {
+        refusalText = event.refusal;
+        break;
+      }
+
       case "response.completed": {
-        const usage = event.response.usage;
+        const usage = toStats(event.response.usage);
+        if (refusalText !== undefined) {
+          chunks.push({ type: "refusal", data: { refusal: { text: refusalText }, usage } });
+          break;
+        }
         chunks.push({
           type: "complete",
           data: {
-            finishReason: event.response.incomplete_details
-              ? AxleStopReason.Error
-              : hasFunctionCalls
-                ? AxleStopReason.FunctionCall
-                : AxleStopReason.Stop,
-            usage: withUsageDetails(
-              {
-                in: usage?.input_tokens || 0,
-                out: usage?.output_tokens || 0,
-              },
-              {
-                cachedIn: usage?.input_tokens_details?.cached_tokens,
-                cacheWriteIn: usage?.input_tokens_details?.cache_write_tokens,
-                reasoningOut: usage?.output_tokens_details?.reasoning_tokens,
-              },
-            ),
+            finishReason: hasFunctionCalls ? AxleStopReason.FunctionCall : AxleStopReason.Stop,
+            usage,
           },
         });
+        break;
+      }
+
+      case "response.incomplete": {
+        const usage = toStats(event.response.usage);
+        const reason = event.response.incomplete_details?.reason;
+        if (reason === "content_filter") {
+          chunks.push({ type: "refusal", data: { refusal: { category: reason }, usage } });
+        } else if (reason === "max_output_tokens") {
+          chunks.push({ type: "complete", data: { finishReason: AxleStopReason.Length, usage } });
+        } else {
+          chunks.push({
+            type: "error",
+            data: {
+              type: "RESPONSES_API_INCOMPLETE",
+              message: `Response incomplete: ${reason ?? "no reason given"}`,
+              usage,
+              raw: event,
+            },
+          });
+        }
         break;
       }
 
@@ -240,17 +262,7 @@ export function createStreamingAdapter() {
           data: {
             type: event.response.error?.code || "RESPONSES_API_ERROR",
             message: event.response.error?.message || `Response failed: ${event.response.status}`,
-            usage: withUsageDetails(
-              {
-                in: event.response.usage?.input_tokens || 0,
-                out: event.response.usage?.output_tokens || 0,
-              },
-              {
-                cachedIn: event.response.usage?.input_tokens_details?.cached_tokens,
-                cacheWriteIn: event.response.usage?.input_tokens_details?.cache_write_tokens,
-                reasoningOut: event.response.usage?.output_tokens_details?.reasoning_tokens,
-              },
-            ),
+            usage: toStats(event.response.usage),
             raw: event,
           },
         });
@@ -377,6 +389,7 @@ export function createStreamingAdapter() {
       case "response.reasoning_summary_part.done":
       case "response.reasoning_summary_text.done":
       case "response.reasoning_text.done":
+      case "response.refusal.delta":
       case "response.web_search_call.in_progress":
       case "response.web_search_call.searching":
       case "response.web_search_call.completed":
@@ -391,6 +404,17 @@ export function createStreamingAdapter() {
   }
 
   return { handleEvent };
+}
+
+function toStats(usage: ResponseUsage | undefined): Stats {
+  return withUsageDetails(
+    { in: usage?.input_tokens || 0, out: usage?.output_tokens || 0 },
+    {
+      cachedIn: usage?.input_tokens_details?.cached_tokens,
+      cacheWriteIn: usage?.input_tokens_details?.cache_write_tokens,
+      reasoningOut: usage?.output_tokens_details?.reasoning_tokens,
+    },
+  );
 }
 
 function textKey(itemId: string, contentIndex: number): string {

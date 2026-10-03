@@ -535,19 +535,18 @@ function toAnthropicCitation(citation: Citation): Anthropic.TextCitationParam | 
   }
 }
 
-export function convertStopReason(reason: string | null | undefined) {
+export function convertStopReason(reason: Anthropic.StopReason): AxleStopReason | undefined {
   switch (reason) {
     case "max_tokens":
+    case "model_context_window_exceeded":
       return AxleStopReason.Length;
     case "end_turn":
-      return AxleStopReason.Stop;
     case "stop_sequence":
       return AxleStopReason.Stop;
     case "tool_use":
       return AxleStopReason.FunctionCall;
-    case "refusal":
     default:
-      return AxleStopReason.Error;
+      return undefined;
   }
 }
 

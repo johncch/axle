@@ -3,7 +3,7 @@ import type { Citation } from "../../messages/message.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { AxleStopReason } from "../types.js";
-import { convertStopReason } from "./utils.js";
+import { convertStopReason, isRefusalFinishReason } from "./utils.js";
 
 export function createGeminiStreamingAdapter() {
   let partIndex = 0;
@@ -57,15 +57,18 @@ export function createGeminiStreamingAdapter() {
     if (chunk.promptFeedback?.blockReason) {
       closeActivePart(chunks);
       chunks.push({
-        type: "error",
+        type: "refusal",
         data: {
-          type: "Blocked",
-          message: `Response blocked by Google AI: ${chunk.promptFeedback.blockReason}${chunk.promptFeedback.blockReasonMessage ? `, ${chunk.promptFeedback.blockReasonMessage}` : ""}`,
+          refusal: {
+            ...(chunk.promptFeedback.blockReasonMessage
+              ? { text: chunk.promptFeedback.blockReasonMessage }
+              : {}),
+            category: chunk.promptFeedback.blockReason,
+          },
           usage: withUsageDetails(
             { in: inputTokens, out: outputTokens },
             { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
           ),
-          raw: chunk,
         },
       });
       return chunks;
@@ -254,31 +257,36 @@ export function createGeminiStreamingAdapter() {
       candidate.finishReason !== FinishReason.FINISH_REASON_UNSPECIFIED
     ) {
       closeActivePart(chunks);
-      const [success, baseStopReason] = convertStopReason(candidate.finishReason);
-      const stopReason = hasFunctionCalls ? AxleStopReason.FunctionCall : baseStopReason;
+      const finishReason = hasFunctionCalls
+        ? AxleStopReason.FunctionCall
+        : convertStopReason(candidate.finishReason);
 
-      if (!success && !hasFunctionCalls) {
+      const usage = withUsageDetails(
+        { in: inputTokens, out: outputTokens },
+        { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
+      );
+
+      if (finishReason !== undefined) {
+        chunks.push({ type: "complete", data: { finishReason, usage } });
+      } else if (isRefusalFinishReason(candidate.finishReason)) {
+        chunks.push({
+          type: "refusal",
+          data: {
+            refusal: {
+              ...(candidate.finishMessage ? { text: candidate.finishMessage } : {}),
+              category: candidate.finishReason,
+            },
+            usage,
+          },
+        });
+      } else {
         chunks.push({
           type: "error",
           data: {
             type: "FinishReasonError",
             message: `Unexpected finish reason: ${candidate.finishReason}`,
-            usage: withUsageDetails(
-              { in: inputTokens, out: outputTokens },
-              { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
-            ),
+            usage,
             raw: chunk,
-          },
-        });
-      } else {
-        chunks.push({
-          type: "complete",
-          data: {
-            finishReason: stopReason,
-            usage: withUsageDetails(
-              { in: inputTokens, out: outputTokens },
-              { cachedIn: cachedInputTokens, reasoningOut: reasoningOutputTokens },
-            ),
           },
         });
       }

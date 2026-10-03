@@ -75,11 +75,11 @@ docs say a later user message is then rejected. Axle does not repair this.
 
 Response-level state:
 
-| Content                                  | Stored as                                  | Sent back | Provider requires                                                                                                                                      | Owner                                                                                                                                 |
-| ---------------------------------------- | ------------------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `container` (`id`, `expires_at`)         | Dropped                                    | No        | "Each request runs in a new container unless you pass an earlier response's container ID back." A request naming an expired container returns an error | Accepted: only carries code execution state. Observed on 2026-10-01 (AXL-51, `claude-sonnet-5-5`): a follow-up without it is accepted |
-| `stop_reason: "pause_turn"`              | Not stored; the adapter continues the turn | —         | "Pass the paused response back as-is"; include the same tools                                                                                          | —                                                                                                                                     |
-| `stop_reason: "refusal"`, `stop_details` | `finishReason: "error"`; details dropped   | No        | Not checked                                                                                                                                            | AXL-67                                                                                                                                |
+| Content                                  | Stored as                                                                                                             | Sent back | Provider requires                                                                                                                                      | Owner                                                                                                                                 |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `container` (`id`, `expires_at`)         | Dropped                                                                                                               | No        | "Each request runs in a new container unless you pass an earlier response's container ID back." A request naming an expired container returns an error | Accepted: only carries code execution state. Observed on 2026-10-01 (AXL-51, `claude-sonnet-5-5`): a follow-up without it is accepted |
+| `stop_reason: "pause_turn"`              | Not stored; the adapter continues the turn                                                                            | —         | "Pass the paused response back as-is"; include the same tools                                                                                          | —                                                                                                                                     |
+| `stop_reason: "refusal"`, `stop_details` | Not stored; a [refusal](#refusals) carrying `category` and `explanation`. The refused response's blocks are discarded | No        | "Treat any partial output as incomplete and discard it." Continuing "without resetting will result in continued refusals"                              | —                                                                                                                                     |
 
 ## OpenAI (Responses API)
 
@@ -91,7 +91,7 @@ union.
 | Content                                                                                                                                                                                                                                                                                                         | Stored as                                                                                                                                      | Sent back                                                                                  | Provider requires                                                                                                                                                                                                                                                                            | Owner                                                   |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `message` with `output_text`                                                                                                                                                                                                                                                                                    | One `text` part per text content part; `annotations` normalized into `citations`; the item's `phase` kept in `providerMetadata`                | Rebuilt: each run of adjacent text with the same `phase` as one `{ role, content, phase }` | "Preserve every item in the response's `output` array." `phase`: "preserve and resend phase on all assistant messages — dropping it can degrade performance"                                                                                                                                 | The item `id` and annotations are not sent back: AXL-71 |
-| `message` with `refusal`                                                                                                                                                                                                                                                                                        | Dropped; `response.refusal.*` events have no handler                                                                                           | No                                                                                         | Not checked                                                                                                                                                                                                                                                                                  | AXL-67                                                  |
+| `message` with `refusal`                                                                                                                                                                                                                                                                                        | Not stored; a [refusal](#refusals) carrying the refusal text                                                                                   | No                                                                                         | Not checked                                                                                                                                                                                                                                                                                  | —                                                       |
 | `reasoning`                                                                                                                                                                                                                                                                                                     | `thinking` part; `encrypted_content` is taken from `response.output_item.done`                                                                 | Rebuilt, only when `encrypted_content` was captured                                        | "We highly recommend you pass back any reasoning items returned with the last function call." The SDK says the `encrypted_content` on `output_item.added` "may be incomplete". Observed on 2026-10-01 (`gpt-6-luna`): the two values differ, and a follow-up request is accepted with either | —                                                       |
 | `function_call`                                                                                                                                                                                                                                                                                                 | `tool-call` part (`call_id` as id, name, parsed arguments)                                                                                     | Rebuilt, without the item `id`                                                             | "Ensure all items between the last user message and your function call output are passed into the next response untouched"                                                                                                                                                                   | —                                                       |
 | `web_search_call`, `file_search_call`, `code_interpreter_call`                                                                                                                                                                                                                                                  | `provider-tool` part: Axle's `name`, normalized `input`, `result` (`error` when `status` is `failed`), and the whole item as `continuity.item` | As received                                                                                | Same "preserve every item" rule. A search that followed a reasoning item needs that item directly before it                                                                                                                                                                                  | —                                                       |
@@ -108,11 +108,11 @@ between them are joined into one message item.
 
 Response-level state:
 
-| Content                         | Stored as                                           | Sent back            | Provider requires                                                                                                                                                              | Owner    |
-| ------------------------------- | --------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
-| `response.id`                   | The assistant message `id`                          | No                   | Only needed for `previous_response_id`, which Axle does not use                                                                                                                | —        |
-| Code interpreter `container_id` | Kept inside the stored `code_interpreter_call` item | As part of that item | Auto mode "reuses an active container that was used by a previous `code_interpreter_call` item in the model's context". "A container expires if it is not used for 20 minutes" | —        |
-| `incomplete_details`            | `finishReason: "error"`; the reason is dropped      | No                   | Not checked                                                                                                                                                                    | Accepted |
+| Content                                       | Stored as                                                                                                                          | Sent back            | Provider requires                                                                                                                                                              | Owner |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| `response.id`                                 | The assistant message `id`                                                                                                         | No                   | Only needed for `previous_response_id`, which Axle does not use                                                                                                                | —     |
+| Code interpreter `container_id`               | Kept inside the stored `code_interpreter_call` item                                                                                | As part of that item | Auto mode "reuses an active container that was used by a previous `code_interpreter_call` item in the model's context". "A container expires if it is not used for 20 minutes" | —     |
+| `incomplete_details` on `response.incomplete` | `max_output_tokens`: `finishReason: "length"`. `content_filter`: a [refusal](#refusals). Any other reason: a model error naming it | No                   | Not checked                                                                                                                                                                    | —     |
 
 ## Gemini (`generateContent`)
 
@@ -134,13 +134,17 @@ fields on a `Part`.
 
 Fields on the candidate, outside its parts:
 
-| Content                                                      | Stored as                                            | Sent back | Provider requires                                                                                        | Owner    |
-| ------------------------------------------------------------ | ---------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------- | -------- |
-| `groundingMetadata.groundingChunks` with `groundingSupports` | `citations` on the text part they point at           | No        | Not stated                                                                                               | —        |
-| `groundingMetadata.searchEntryPoint`                         | Dropped                                              | No        | "Contains the HTML and CSS to render the required Search Suggestions." A display rule, not a replay rule | Accepted |
-| `groundingMetadata.webSearchQueries`                         | `input` of a `provider-tool` part named `web_search` | No        | Not stated                                                                                               | —        |
-| `citationMetadata`                                           | `citations` on the last text part                    | No        | Not checked                                                                                              | —        |
-| `urlContextMetadata`                                         | Dropped                                              | No        | Not checked                                                                                              | Accepted |
+| Content                                                         | Stored as                                            | Sent back | Provider requires                                                                                        | Owner    |
+| --------------------------------------------------------------- | ---------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------- | -------- |
+| `groundingMetadata.groundingChunks` with `groundingSupports`    | `citations` on the text part they point at           | No        | Not stated                                                                                               | —        |
+| `groundingMetadata.searchEntryPoint`                            | Dropped                                              | No        | "Contains the HTML and CSS to render the required Search Suggestions." A display rule, not a replay rule | Accepted |
+| `groundingMetadata.webSearchQueries`                            | `input` of a `provider-tool` part named `web_search` | No        | Not stated                                                                                               | —        |
+| `citationMetadata`                                              | `citations` on the last text part                    | No        | Not checked                                                                                              | —        |
+| `urlContextMetadata`                                            | Dropped                                              | No        | Not checked                                                                                              | Accepted |
+| `finishReason` that reports blocked output, and `finishMessage` | Not stored; a [refusal](#refusals)                   | No        | Not checked                                                                                              | —        |
+
+A blocked prompt arrives outside the candidates, as
+`promptFeedback.blockReason`. It is a [refusal](#refusals) too.
 
 Google Search returns no part of its own. Axle builds a `provider-tool`
 part from `groundingMetadata.webSearchQueries`: `name` is `web_search`,
@@ -157,15 +161,16 @@ Axle speaks the wire format directly, with its own types in
 `providers/chatcompletions/types.ts`. A field those types do not list is
 ignored.
 
-| Content                                                         | Stored as                                                                 | Sent back                                   | Provider requires                         | Owner                                 |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------- | ------------------------------------- |
-| `content`                                                       | `text` part                                                               | Rebuilt: all text joined into one `content` | Not checked                               | —                                     |
-| `tool_calls`                                                    | `tool-call` part                                                          | Rebuilt                                     | Not checked                               | —                                     |
-| `reasoning_details` (OpenRouter)                                | `thinking` parts with continuity                                          | Rebuilt, for the `openrouter` vendor only   | See [thinking.md](thinking.md)            | —                                     |
-| `reasoning`, `reasoning_content`                                | `thinking` part                                                           | No                                          | See [thinking.md](thinking.md)            | —                                     |
-| `annotations` of type `url_citation`                            | `citations` on the open text part, or a `citation` part when not anchored | No                                          | OpenRouter's web search guide: not stated | —                                     |
-| `annotations` of any other type                                 | Dropped                                                                   | No                                          | Not checked                               | Accepted                              |
-| Fields outside Axle's wire types, such as `refusal` and `audio` | Dropped                                                                   | No                                          | Not checked                               | `refusal`: AXL-67. The rest: accepted |
+| Content                                           | Stored as                                                                 | Sent back                                   | Provider requires                         | Owner    |
+| ------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------- | -------- |
+| `content`                                         | `text` part                                                               | Rebuilt: all text joined into one `content` | Not checked                               | —        |
+| `tool_calls`                                      | `tool-call` part                                                          | Rebuilt                                     | Not checked                               | —        |
+| `reasoning_details` (OpenRouter)                  | `thinking` parts with continuity                                          | Rebuilt, for the `openrouter` vendor only   | See [thinking.md](thinking.md)            | —        |
+| `reasoning`, `reasoning_content`                  | `thinking` part                                                           | No                                          | See [thinking.md](thinking.md)            | —        |
+| `annotations` of type `url_citation`              | `citations` on the open text part, or a `citation` part when not anchored | No                                          | OpenRouter's web search guide: not stated | —        |
+| `annotations` of any other type                   | Dropped                                                                   | No                                          | Not checked                               | Accepted |
+| `refusal`, and `finish_reason: "content_filter"`  | Not stored; a [refusal](#refusals)                                        | No                                          | Not checked                               | —        |
+| Fields outside Axle's wire types, such as `audio` | Dropped                                                                   | No                                          | Not checked                               | Accepted |
 
 OpenRouter's `openrouter:web_search` server tool reports its results as
 `url_citation` annotations, so it too produces no `provider-tool` part.
@@ -235,13 +240,147 @@ result's `content`, which only the six error types carry. It does not list
 their type names, so a server tool Anthropic adds later is covered if its
 error has that field.
 
+## How a response ends
+
+Every value each provider can end a response with, and what Axle returns.
+"Finish reason" is `finishReason` on the stored assistant message, with
+`ok: true`. A failure is `ok: false` and stores no message for that step.
+
+Anthropic, `stop_reason`:
+
+| Value                           | Meaning                                                                                                                                             | Axle                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `end_turn`                      | The model finished                                                                                                                                  | Finish reason `stop`                                  |
+| `stop_sequence`                 | A caller-supplied stop sequence was produced                                                                                                        | Finish reason `stop`                                  |
+| `max_tokens`                    | The request's output cap was reached                                                                                                                | Finish reason `length`                                |
+| `model_context_window_exceeded` | The context window filled before the output cap. "The response is still valid but was limited by context window"; "treat the response as truncated" | Finish reason `length`                                |
+| `tool_use`                      | The model called a client tool                                                                                                                      | Finish reason `function_call`; the loop runs the tool |
+| `pause_turn`                    | Anthropic's own tool loop hit its iteration limit                                                                                                   | Not surfaced; the adapter continues the turn          |
+| `refusal`                       | The request was declined                                                                                                                            | [Refusal](#refusals)                                  |
+| Any other value                 | —                                                                                                                                                   | Model error `FinishReasonError`                       |
+
+OpenAI Responses, the terminal stream event:
+
+| Event                                                     | Meaning                                                    | Axle                                                                                                                            |
+| --------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `response.completed`                                      | The response finished                                      | Finish reason `function_call` when it holds a function call, else `stop`. A [refusal](#refusals) when it holds a `refusal` part |
+| `response.incomplete`, reason `max_output_tokens`         | The output cap was reached                                 | Finish reason `length`                                                                                                          |
+| `response.incomplete`, reason `content_filter`            | Output was blocked                                         | [Refusal](#refusals)                                                                                                            |
+| `response.incomplete`, reason `max_messages` or `steered` | Not observed; the SDK ties `steered` to WebSocket steering | Model error `RESPONSES_API_INCOMPLETE`                                                                                          |
+| `response.failed`                                         | The response failed                                        | Model error with OpenAI's `code`                                                                                                |
+| No terminal event                                         | The stream was cut                                         | Model error `IncompleteStream`                                                                                                  |
+
+Gemini, `finishReason` on the candidate:
+
+| Value                                                                                                                             | Meaning                                            | Axle                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `STOP`                                                                                                                            | The model finished, or produced a stop sequence    | Finish reason `stop`, or `function_call` when the response holds a function call |
+| `MAX_TOKENS`                                                                                                                      | The output cap was reached                         | Finish reason `length`                                                           |
+| `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, `IMAGE_RECITATION` | Output was blocked                                 | [Refusal](#refusals)                                                             |
+| `LANGUAGE`, `OTHER`, `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `NO_IMAGE`, `IMAGE_OTHER`          | The model stopped for a reason that is not a block | Model error `FinishReasonError`                                                  |
+| `FINISH_REASON_UNSPECIFIED`                                                                                                       | Still streaming                                    | Ignored                                                                          |
+
+A Gemini response that holds a function call finishes as `function_call`
+whatever its `finishReason` is. A blocked prompt has no candidate; it arrives
+as `promptFeedback.blockReason` and is a refusal.
+
+Chat Completions, `finish_reason`:
+
+| Value                                                | Sent by            | Axle                                           |
+| ---------------------------------------------------- | ------------------ | ---------------------------------------------- |
+| `stop`                                               | All                | Finish reason `stop`                           |
+| `eos`                                                | Together           | Finish reason `stop`                           |
+| `length`                                             | All                | Finish reason `length`                         |
+| `tool_calls`, `function_call`                        | All                | Finish reason `function_call`                  |
+| `content_filter`                                     | OpenAI, OpenRouter | [Refusal](#refusals)                           |
+| `error` with a top-level `error` object on the chunk | OpenRouter         | Model error with the upstream code and message |
+| `error` with no `error` object                       | OpenRouter         | Model error `FinishReasonError`                |
+| Any other value                                      | —                  | Finish reason `stop`                           |
+
+OpenRouter normalizes every model's reason to `tool_calls`, `stop`, `length`,
+`content_filter`, or `error`, and reports the model's own string as
+`native_finish_reason`, which Axle does not read.
+
+A finish reason is always `stop`, `length`, or `function_call`; `cancelled`
+is set only on the partial message of an aborted stream. A stop reason Axle
+does not know (any Anthropic value not in its table, or an OpenRouter
+`error` finish without an error object) fails the step as a model error
+rather than returning content under an unknown ending. An unknown Chat
+Completions reason is read as `stop`, because OpenAI-compatible vendors add
+reasons of their own. Rejected (2026-10-02): keeping `AxleStopReason.Error`
+for these; it put a message in the conversation that no caller could tell
+from an answer without a second check.
+
+## Refusals
+
+A refusal is a provider declining a request, or blocking its output, through
+a signal on the response. Axle reports every one the same way: the step
+fails, and `generate()`, `stream().final`, and `agent.send().final` resolve
+`ok: false` with `error: { kind: "refusal", refusal, message }`.
+
+| Provider         | Signal                                                                                                                                                                                    | `refusal.text`             | `refusal.category`      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------- |
+| Anthropic        | `stop_reason: "refusal"`                                                                                                                                                                  | `stop_details.explanation` | `stop_details.category` |
+| OpenAI           | A `refusal` content part, read from `response.refusal.done`                                                                                                                               | The refusal text           | —                       |
+| OpenAI           | `response.incomplete` with reason `content_filter`                                                                                                                                        | —                          | `content_filter`        |
+| Gemini           | `promptFeedback.blockReason`                                                                                                                                                              | `blockReasonMessage`       | The block reason        |
+| Gemini           | A candidate `finishReason` of `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, or `IMAGE_RECITATION`, with no function call | `finishMessage`            | The finish reason       |
+| Chat Completions | `delta.refusal`                                                                                                                                                                           | The accumulated text       | —                       |
+| Chat Completions | `finish_reason: "content_filter"`                                                                                                                                                         | —                          | `content_filter`        |
+
+Either field is absent when the provider gave none; Anthropic documents
+`null` for both as a normal value. `message` is the text, or
+`Request refused: <category>`, or `Request refused`.
+
+Invariants:
+
+1. A refusal is never `ok: true`. An `Instruct` call returns the refusal,
+   not a parse failure.
+2. The refused step is not stored. `messages` holds only the steps that
+   completed before it, text that streamed before a mid-stream refusal is
+   not kept, and `step:complete` does not fire. The stream's last event is
+   `error` with the same failure.
+3. Usage the provider reported with the refusal is counted.
+4. Because nothing is stored, the next request needs no refusal-specific
+   conversion. After a refused `agent.send()` the history ends with the
+   user message, as it does after a model error.
+
+None of these signals has been observed live. The Anthropic rows follow the
+refusals guide and the SDK's `RefusalStopDetails`; the others follow the SDK
+types. Tried on 2026-10-02: Anthropic's documented test string was answered
+as ordinary text (`claude-haiku-4-5`, `claude-sonnet-5-5`), and a structured
+output request that asked the model to decline was answered with JSON
+(`gpt-6-luna`). One neighbouring event was observed the same day: a response
+cut off at `max_output_tokens` ends with `response.incomplete`, not
+`response.completed` (`gpt-6-luna`).
+
+Not covered:
+
+- A refusal the model writes as ordinary text. No provider marks it, so it
+  is a normal `ok: true` answer.
+- Anthropic says a conversation must drop or rephrase the refused turn, or
+  move to another model, before continuing. Axle leaves the user message in
+  place; the caller decides.
+- `stop_details.recommended_model`, the fallback credit token, and Gemini's
+  `safetyRatings` are dropped.
+
+Rejected (2026-10-02): `ok: true` with a `refusal` finish reason. A caller
+that checks only `ok` would still take the refusal for an answer, which is
+the defect this replaces. Rejected: storing the refused message with a
+`refusal` part. Anthropic and Gemini return nothing to send back, Anthropic
+says to discard what did arrive, and a seventh part type would need a
+send-back rule on every provider for content no provider requires.
+
 ## Sources
 
 Read on 2026-10-01:
 
 - Anthropic: [server tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools),
   [web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool),
-  [code execution](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool)
+  [code execution](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool).
+  Read on 2026-10-02: [refusals and fallback](https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback),
+  [streaming refusals](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/handle-streaming-refusals),
+  [stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
 - OpenAI: [reasoning](https://developers.openai.com/api/docs/guides/reasoning),
   [conversation state](https://developers.openai.com/api/docs/guides/conversation-state),
   [code interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter),
@@ -250,4 +389,9 @@ Read on 2026-10-01:
   [code execution](https://ai.google.dev/gemini-api/docs/generate-content/code-execution),
   [Google Search](https://ai.google.dev/gemini-api/docs/generate-content/google-search),
   and the `Part` type in `@google/genai`
-- OpenRouter: [web search server tool](https://openrouter.ai/docs/guides/features/server-tools/web-search)
+- OpenRouter: [web search server tool](https://openrouter.ai/docs/guides/features/server-tools/web-search).
+  Read on 2026-10-02: [API overview](https://openrouter.ai/docs/api/reference/overview)
+  for finish reasons
+- Together: the `FinishReason` enum in the
+  [chat completions reference](https://docs.together.ai/reference/chat-completions-1),
+  read on 2026-10-02

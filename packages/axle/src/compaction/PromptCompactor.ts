@@ -4,8 +4,8 @@ import { getCompactionStamp } from "../messages/compaction.js";
 import type { AxleMessage } from "../messages/message.js";
 import { getTextContent } from "../messages/utils.js";
 import { estimateContextUsage } from "../providers/context.js";
-import { stream } from "../providers/stream.js";
 import type { ReasoningSetting } from "../providers/reasoning.js";
+import { stream } from "../providers/stream.js";
 import type { AIProvider, ProviderOptions } from "../providers/types.js";
 
 export interface PromptCompactorOptions {
@@ -174,7 +174,7 @@ export class PromptCompactor {
     if (!result.ok) {
       throw new AxleError(`Prompt compaction failed: ${result.error.message}`, {
         code: "COMPACTION_GENERATION_FAILED",
-        cause: result.error.error,
+        cause: result.error.kind === "refusal" ? result.error.refusal : result.error.error,
       });
     }
 

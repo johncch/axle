@@ -84,6 +84,7 @@ export type {
   ContextUsage,
   ProviderClientOptions,
   ProviderOptions,
+  Refusal,
   ToolChoice,
 } from "./providers/types.js";
 

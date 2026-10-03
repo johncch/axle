@@ -120,7 +120,7 @@ describe("createGeminiStreamingAdapter", () => {
       adapter.handleChunk(makeChunk({ parts: [] }));
 
       const chunks = adapter.handleChunk(
-        makeChunk({ parts: [], finishReason: FinishReason.SAFETY }),
+        makeChunk({ parts: [], finishReason: FinishReason.MALFORMED_FUNCTION_CALL }),
       );
 
       const errorChunk = chunks.find((c) => c.type === "error");

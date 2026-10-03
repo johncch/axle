@@ -89,19 +89,41 @@ export function createAnthropicStreamingAdapter(
           responseBlocks.length = 0;
           turn = "paused";
         } else if (event.delta.stop_reason) {
-          chunks.push({
-            type: "complete",
-            data: {
-              finishReason: convertStopReason(event.delta.stop_reason),
-              usage: withUsageDetails(
-                { in: pausedUsage.in + inputTokens, out: pausedUsage.out + outputTokens },
-                {
-                  cachedIn: pausedUsage.cachedIn + cacheReadInputTokens,
-                  cacheWriteIn: pausedUsage.cacheWriteIn + cacheWriteInputTokens,
-                },
-              ),
+          const usage = withUsageDetails(
+            { in: pausedUsage.in + inputTokens, out: pausedUsage.out + outputTokens },
+            {
+              cachedIn: pausedUsage.cachedIn + cacheReadInputTokens,
+              cacheWriteIn: pausedUsage.cacheWriteIn + cacheWriteInputTokens,
             },
-          });
+          );
+          if (event.delta.stop_reason === "refusal") {
+            const details = event.delta.stop_details;
+            chunks.push({
+              type: "refusal",
+              data: {
+                refusal: {
+                  ...(details?.explanation ? { text: details.explanation } : {}),
+                  ...(details?.category ? { category: details.category } : {}),
+                },
+                usage,
+              },
+            });
+          } else {
+            const finishReason = convertStopReason(event.delta.stop_reason);
+            chunks.push(
+              finishReason === undefined
+                ? {
+                    type: "error",
+                    data: {
+                      type: "FinishReasonError",
+                      message: `Unexpected stop reason: ${event.delta.stop_reason}`,
+                      usage,
+                      raw: event,
+                    },
+                  }
+                : { type: "complete", data: { finishReason, usage } },
+            );
+          }
         }
 
       case "message_stop":

@@ -30,6 +30,11 @@ function describeFailure(failure: AxleFailure): string {
   switch (failure.kind) {
     case "model":
       return `Model error: ${failure.message}`;
+    case "refusal": {
+      const { text, category } = failure.refusal;
+      const label = category ? `Refused (${category})` : "Refused";
+      return text ? `${label}: ${text}` : label;
+    }
     case "tool":
       return `Tool error (${failure.error.name}): ${failure.message}`;
     case "parse":

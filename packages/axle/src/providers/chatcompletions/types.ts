@@ -69,6 +69,7 @@ export interface ChatCompletionChoice {
   message: {
     role: string;
     content: string | null;
+    refusal?: string | null;
     reasoning_content?: string | null;
     reasoning?: string | null;
     reasoning_details?: ChatCompletionReasoningDetail[];
@@ -131,6 +132,7 @@ export interface ChatCompletionChunkChoice {
   delta: {
     role?: string;
     content?: string;
+    refusal?: string | null;
     reasoning_content?: string;
     reasoning?: string;
     reasoning_details?: ChatCompletionReasoningDetail[];

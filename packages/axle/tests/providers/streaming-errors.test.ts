@@ -2,12 +2,10 @@ import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createStreamingRequest as anthropic } from "../../src/providers/anthropic/createStreamingRequest.js";
 import { createStreamingRequest as chat } from "../../src/providers/chatcompletions/createStreamingRequest.js";
-import { createGeminiStreamingAdapter } from "../../src/providers/gemini/createStreamingAdapter.js";
 import { createStreamingRequest as gemini } from "../../src/providers/gemini/createStreamingRequest.js";
 import { generate } from "../../src/providers/generate.js";
 import { createStreamingAdapter } from "../../src/providers/openai/createStreamingAdapter.js";
 import { createStreamingRequest as openai } from "../../src/providers/openai/createStreamingRequest.js";
-import { stream } from "../../src/providers/stream.js";
 import type { AIProvider, ProviderStreamParams } from "../../src/providers/types.js";
 import { normalizeProviderError } from "../../src/providers/utils.js";
 import { createTracerAndWriter } from "../scenarios/helpers/recording-writer.js";
@@ -120,35 +118,6 @@ test.each([
   expect(invoke).not.toHaveBeenCalled();
   expect([...writer.spans.values()].map((s) => s.status)).toEqual(["error", "error"]);
 });
-
-test.each(["generate", "stream"])(
-  "%s preserves Gemini safety block diagnostics and usage",
-  async (api) => {
-    const raw = {
-      responseId: "blocked",
-      promptFeedback: { blockReason: "SAFETY", blockReasonMessage: "unsafe" },
-      usageMetadata: { promptTokenCount: 10 },
-    };
-    const provider: AIProvider = {
-      name: "gemini",
-      async *createStreamingRequest() {
-        yield* createGeminiStreamingAdapter().handleChunk(raw as any);
-      },
-    };
-    const options = { provider, model: "test", messages };
-    const result = await (api === "generate" ? generate(options) : stream(options).final);
-    expect(result).toMatchObject({
-      ok: false,
-      usage: { in: 10, out: 0 },
-      error: {
-        error: {
-          error: { type: "Blocked", message: "Response blocked by Google AI: SAFETY, unsafe" },
-        },
-      },
-    });
-    if (!result.ok && result.error.kind === "model") expect(result.error.error.raw).toBe(raw);
-  },
-);
 
 test("OpenAI failed response preserves code, message and usage", async () => {
   const raw = {

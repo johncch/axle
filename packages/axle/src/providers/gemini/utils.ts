@@ -365,24 +365,29 @@ function formatTextFileContent(
 
 /* To Response */
 
-export function convertStopReason(reason: FinishReason | undefined): [boolean, AxleStopReason] {
+export function convertStopReason(reason: FinishReason | undefined): AxleStopReason | undefined {
   switch (reason) {
     case FinishReason.STOP:
-      return [true, AxleStopReason.Stop];
+      return AxleStopReason.Stop;
     case FinishReason.MAX_TOKENS:
-      return [true, AxleStopReason.Length];
-    case FinishReason.FINISH_REASON_UNSPECIFIED:
+      return AxleStopReason.Length;
+    default:
+      return undefined;
+  }
+}
+
+export function isRefusalFinishReason(reason: FinishReason): boolean {
+  switch (reason) {
     case FinishReason.SAFETY:
     case FinishReason.RECITATION:
-    case FinishReason.LANGUAGE:
-    case FinishReason.OTHER:
     case FinishReason.BLOCKLIST:
     case FinishReason.PROHIBITED_CONTENT:
     case FinishReason.SPII:
-    case FinishReason.MALFORMED_FUNCTION_CALL:
     case FinishReason.IMAGE_SAFETY:
-      return [false, AxleStopReason.Error];
+    case FinishReason.IMAGE_PROHIBITED_CONTENT:
+    case FinishReason.IMAGE_RECITATION:
+      return true;
+    default:
+      return false;
   }
-
-  return [false, AxleStopReason.Error];
 }

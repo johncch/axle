@@ -264,7 +264,7 @@ to a two-state result:
 
 ```typescript
 if (!result.ok) {
-  result.error.kind; // "model" | "tool" | "parse"
+  result.error.kind; // "model" | "refusal" | "tool" | "parse"
   result.error.message; // present for every error kind
   return;
 }
@@ -275,9 +275,28 @@ result.stopped; // "max-steps" | "token-limit" when a loop limit ended the run
 
 For `generate()` and `stream()`, plain calls return the final assistant message.
 For `Agent.send("...")`, plain calls return the assistant text. `Instruct`
-calls return the parsed schema value. Model, tool, and parse failures return
-`ok: false`; abort, fatal tool, configuration, and unexpected execution errors
-still throw.
+calls return the parsed schema value. Model, refusal, tool, and parse failures
+return `ok: false`; abort, fatal tool, configuration, and unexpected execution
+errors still throw.
+
+A `refusal` failure means the provider declined the request or blocked its
+output: Anthropic's `refusal` stop reason, an OpenAI refusal or content
+filter, a Gemini safety block, or a Chat Completions `refusal` or
+`content_filter`.
+
+```typescript
+if (!result.ok && result.error.kind === "refusal") {
+  result.error.refusal.text; // the provider's refusal text or explanation, if it gave one
+  result.error.refusal.category; // the provider's reason, e.g. "cyber", "SAFETY", "content_filter"
+}
+```
+
+The refused step is not added to `result.messages` or to an agent's history,
+and an `Instruct` call returns the refusal rather than a parse failure. A
+refusal the model writes as ordinary text is not marked by any provider and
+is a normal `ok: true` answer. After an Anthropic refusal, sending the same
+conversation again is likely to be refused again; rephrase or remove the
+refused message, or switch models.
 
 Cancellation follows standard JavaScript abort semantics:
 

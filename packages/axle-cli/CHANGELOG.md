@@ -51,6 +51,12 @@
   read and echoed back, so summaries render as summaries and multi-turn tool
   loops on a Claude model keep their signatures. `display: hidden` keeps
   thinking out of the transcript on every provider, OpenRouter included.
+- **A refused request says so.** When a provider declines a request or
+  blocks its output, the run fails with `Refused`, the provider's reason,
+  and its explanation in full, in the form `Refused (cyber): <explanation>`.
+  Before, a refusal from Claude or an OpenAI model printed an empty answer
+  and counted as a success, and a Gemini safety block read as a generic
+  model error.
 
 ## 0.31.0
 

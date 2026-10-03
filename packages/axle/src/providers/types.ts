@@ -111,6 +111,16 @@ export interface ModelError {
   raw?: any;
 }
 
+/**
+ * What a provider reported when it declined a request or blocked its output.
+ */
+export interface Refusal {
+  /** The refusal text or explanation the provider gave, when it gave one. */
+  text?: string;
+  /** The provider's own name for the reason, such as `cyber` or `SAFETY`. */
+  category?: string;
+}
+
 export interface ContextUsage {
   total: number;
   system: number;
@@ -144,7 +154,5 @@ export enum AxleStopReason {
   Stop = "stop",
   Length = "length",
   FunctionCall = "function_call",
-  Error = "error",
-  Custom = "custom",
   Cancelled = "cancelled",
 }

@@ -766,14 +766,17 @@ describe("createStreamingAdapter", () => {
       expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.FunctionCall);
     });
 
-    test("converts error finish reason", () => {
+    test("an error finish reason without an error object fails the step", () => {
       const adapter = createStreamingAdapter();
       adapter.handleChunk(makeChunk({ content: "Hi" }));
       adapter.handleChunk(makeChunk({}, "error"));
-      const final = adapter.finalize();
 
-      const complete = final.filter((c) => c.type === "complete");
-      expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.Error);
+      expect(adapter.finalize()).toMatchObject([
+        {
+          type: "error",
+          data: { type: "FinishReasonError", message: "Unexpected finish reason: error" },
+        },
+      ]);
     });
   });
 

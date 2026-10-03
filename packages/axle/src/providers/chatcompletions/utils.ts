@@ -155,15 +155,13 @@ export function toChatCompletionsToolChoice(
 export function convertFinishReason(reason: string | null): AxleStopReason {
   switch (reason) {
     case "stop":
+    case "eos":
       return AxleStopReason.Stop;
     case "length":
       return AxleStopReason.Length;
     case "tool_calls":
     case "function_call":
       return AxleStopReason.FunctionCall;
-    case "content_filter":
-    case "error":
-      return AxleStopReason.Error;
     default:
       return AxleStopReason.Stop;
   }

@@ -1,7 +1,7 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { truncateMiddle } from "../../utils/truncate.js";
-import { AxleStopReason } from "../types.js";
+import { AxleStopReason, type Refusal } from "../types.js";
 import { ChatCompletionChunk, ChatCompletionReasoningDetail } from "./types.js";
 import { chatUsageToStats, convertFinishReason } from "./utils.js";
 import {
@@ -37,8 +37,13 @@ export function createStreamingAdapter() {
 
   // Deferred completion: finish_reason arrives before the usage-only chunk,
   // so we hold the complete event until finalize() is called.
-  let pendingFinishReason: AxleStopReason | undefined;
+  let pendingEnd:
+    | { type: "complete"; finishReason: AxleStopReason }
+    | { type: "refusal"; refusal: Refusal }
+    | { type: "error"; message: string }
+    | undefined;
   let pendingUsage: Stats | undefined;
+  let refusalText = "";
 
   function closeActivePart(chunks: Array<AnyStreamChunk>) {
     if (currentPartIndex < 0) return;
@@ -155,6 +160,8 @@ export function createStreamingAdapter() {
       });
     }
 
+    if (delta.refusal) refusalText += delta.refusal;
+
     // Text content
     if (delta.content) {
       if (activePart !== "text") {
@@ -248,7 +255,7 @@ export function createStreamingAdapter() {
     }
 
     // Completion — defer emitting until finalize() so usage-only chunk can arrive
-    if (choice.finish_reason && pendingFinishReason === undefined) {
+    if (choice.finish_reason && pendingEnd === undefined) {
       closeActivePart(chunks);
 
       // Flush pending tool calls
@@ -284,14 +291,27 @@ export function createStreamingAdapter() {
       }
       toolCallBuffers.clear();
 
-      pendingFinishReason = convertFinishReason(choice.finish_reason);
+      const contentFiltered = choice.finish_reason === "content_filter";
+      if (refusalText || contentFiltered) {
+        pendingEnd = {
+          type: "refusal",
+          refusal: {
+            ...(refusalText ? { text: refusalText } : {}),
+            ...(contentFiltered ? { category: "content_filter" } : {}),
+          },
+        };
+      } else if (choice.finish_reason === "error") {
+        pendingEnd = { type: "error", message: "Unexpected finish reason: error" };
+      } else {
+        pendingEnd = { type: "complete", finishReason: convertFinishReason(choice.finish_reason) };
+      }
     }
 
     return chunks;
   }
 
   function finalize(): Array<AnyStreamChunk> {
-    if (pendingFinishReason === undefined) {
+    if (pendingEnd === undefined) {
       if (toolCallBuffers.size === 0) return [];
 
       const tools = [...toolCallBuffers.values()]
@@ -312,15 +332,20 @@ export function createStreamingAdapter() {
       ];
     }
 
-    return [
-      {
-        type: "complete",
-        data: {
-          finishReason: pendingFinishReason,
-          usage: pendingUsage ?? { in: 0, out: 0 },
-        },
-      },
-    ];
+    const usage = pendingUsage ?? { in: 0, out: 0 };
+    switch (pendingEnd.type) {
+      case "complete":
+        return [{ type: "complete", data: { finishReason: pendingEnd.finishReason, usage } }];
+      case "refusal":
+        return [{ type: "refusal", data: { refusal: pendingEnd.refusal, usage } }];
+      case "error":
+        return [
+          {
+            type: "error",
+            data: { type: "FinishReasonError", message: pendingEnd.message, usage },
+          },
+        ];
+    }
   }
 
   return { handleChunk, finalize };

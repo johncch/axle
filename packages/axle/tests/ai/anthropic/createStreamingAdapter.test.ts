@@ -131,6 +131,41 @@ describe("createAnthropicStreamingAdapter", () => {
       }
     });
 
+    test.each([
+      ["end_turn", AxleStopReason.Stop],
+      ["stop_sequence", AxleStopReason.Stop],
+      ["max_tokens", AxleStopReason.Length],
+      ["model_context_window_exceeded", AxleStopReason.Length],
+      ["tool_use", AxleStopReason.FunctionCall],
+    ])("should map stop_reason %s to finish reason %s", (stopReason, finishReason) => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "message_delta",
+        delta: { stop_reason: stopReason, stop_sequence: null },
+        usage: { output_tokens: 25 },
+      } as any);
+
+      expect(chunks).toMatchObject([{ type: "complete", data: { finishReason } }]);
+    });
+
+    test("should fail the step on a stop_reason it does not know", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "message_delta",
+        delta: { stop_reason: "something_new", stop_sequence: null },
+        usage: { output_tokens: 25 },
+      } as any);
+
+      expect(chunks).toMatchObject([
+        {
+          type: "error",
+          data: { type: "FinishReasonError", message: "Unexpected stop reason: something_new" },
+        },
+      ]);
+    });
+
     test("should include cache usage details from the streamed usage snapshot", () => {
       const adapter = createAnthropicStreamingAdapter();
 
