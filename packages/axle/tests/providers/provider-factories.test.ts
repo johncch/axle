@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+const HEADERS = { "X-App-Name": "axle-test", "X-App-Version": "1.2.3" };
+
 describe("provider client factory options", () => {
   afterEach(() => {
     vi.doUnmock("openai");
@@ -22,6 +24,20 @@ describe("provider client factory options", () => {
       timeout: 1_000,
     });
     expect(provider.resolveProviderToolName?.("web_search", "gpt-test")).toBe("web_search");
+  });
+
+  test("passes client headers to the OpenAI SDK", async () => {
+    const OpenAI = vi.fn();
+    vi.doMock("openai", () => ({ default: OpenAI }));
+
+    const { openai } = await import("../../src/providers/openai/provider.js");
+    openai("sk-test", { headers: HEADERS });
+
+    expect(OpenAI).toHaveBeenCalledWith({
+      apiKey: "sk-test",
+      maxRetries: 2,
+      defaultHeaders: HEADERS,
+    });
   });
 
   test("rejects invalid OpenAI client options", async () => {
@@ -57,6 +73,20 @@ describe("provider client factory options", () => {
     );
   });
 
+  test("passes client headers to the Anthropic SDK", async () => {
+    const Anthropic = vi.fn();
+    vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
+
+    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    anthropic("sk-ant-test", { headers: HEADERS });
+
+    expect(Anthropic).toHaveBeenCalledWith({
+      apiKey: "sk-ant-test",
+      maxRetries: 2,
+      defaultHeaders: HEADERS,
+    });
+  });
+
   test("rejects invalid Anthropic client options", async () => {
     const Anthropic = vi.fn();
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
@@ -89,6 +119,19 @@ describe("provider client factory options", () => {
       httpOptions: { retryOptions: { attempts: 5 }, timeout: 1_000 },
     });
     expect(provider.resolveProviderToolName?.("web_search", "gemini-test")).toBe("googleSearch");
+  });
+
+  test("passes client headers to Gemini HTTP options", async () => {
+    const GoogleGenAI = vi.fn();
+    vi.doMock("@google/genai", () => ({ GoogleGenAI }));
+
+    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    gemini("gemini-test", { headers: HEADERS });
+
+    expect(GoogleGenAI).toHaveBeenCalledWith({
+      apiKey: "gemini-test",
+      httpOptions: { retryOptions: { attempts: 3 }, headers: HEADERS },
+    });
   });
 
   test("rejects invalid Gemini client options", async () => {

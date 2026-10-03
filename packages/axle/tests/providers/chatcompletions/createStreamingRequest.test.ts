@@ -648,6 +648,30 @@ describe("createStreamingRequest", () => {
       expect((fetch as any).mock.calls[1][1].headers["Authorization"]).toBeUndefined();
     });
 
+    test("sends client headers after Axle's own and keeps them out of the span", async () => {
+      const span = makeSpan();
+      (fetch as any).mockResolvedValue(okStream());
+      await collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: { span },
+          apiKey: "sk-test",
+          headers: { "X-App-Name": "axle-test", Authorization: "Bearer gateway-token" },
+        }),
+      );
+
+      expect((fetch as any).mock.calls[0][1].headers).toEqual({
+        "Content-Type": "application/json",
+        Authorization: "Bearer gateway-token",
+        "X-App-Name": "axle-test",
+      });
+      const logged = JSON.stringify([span.debug.mock.calls, span.trace.mock.calls]);
+      expect(logged).not.toContain("axle-test");
+      expect(logged).not.toContain("gateway-token");
+    });
+
     test("maps named tool choice and parallel tool calls", async () => {
       (fetch as any).mockResolvedValue(okStream());
       await collectChunks(

@@ -37,6 +37,7 @@ export async function* createStreamingRequest(
     vendor,
     maxRetries,
     timeoutMs,
+    headers: clientHeaders,
     reasoning,
     maxOutputTokens,
     toolChoice,
@@ -89,10 +90,9 @@ export async function* createStreamingRequest(
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      ...clientHeaders,
     };
-    if (apiKey) {
-      headers["Authorization"] = `Bearer ${apiKey}`;
-    }
 
     const response = await withRetry(
       ({ signal }) =>

@@ -56,6 +56,7 @@ export function chatCompletions(
         apiKey,
         maxRetries,
         timeoutMs,
+        headers: clientOptions?.headers,
         vendor,
         ...params,
       });
