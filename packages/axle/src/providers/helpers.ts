@@ -149,7 +149,6 @@ export function checkLoopStop(
   return undefined;
 }
 
-// Logs a step's content (text/thinking/provider-tools/citations) onto its span.
 export function logStepContent(span: Span | undefined, content: ContentPart[]): void {
   if (!span) return;
   logContent(span, "text", getTextContent(content));

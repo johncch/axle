@@ -213,7 +213,7 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   }
 
   validateLoopLimits(streamOptions);
-  resolveReasoningDisplay(streamOptions.reasoning);
+  const discloseThinking = resolveReasoningDisplay(streamOptions.reasoning) === "visible";
 
   const controller = new AbortController();
   const effectiveSignal = streamOptions.signal
@@ -225,8 +225,10 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   const control: { onToolBatchComplete?: ToolBatchCompleteCallback } = {};
 
   // Kick off processing on next microtask so callers can register callbacks first
+  const runStream = () =>
+    run(streamOptions, effectiveSignal, callbacks, configuration, control, discloseThinking);
   Promise.resolve().then(() =>
-    run(streamOptions, effectiveSignal, callbacks, configuration, control).then((result) => {
+    runStream().then((result) => {
       if (parse && result.ok) {
         try {
           resolve({ ...result, response: parse(result.final) });
@@ -277,6 +279,7 @@ async function run(
   cbs: StreamEventCallback[],
   configuration: AxleConfiguration,
   control: { onToolBatchComplete?: ToolBatchCompleteCallback },
+  discloseThinking: boolean,
 ): Promise<StreamResult> {
   const {
     provider,
@@ -295,7 +298,6 @@ async function run(
     parallelToolCalls,
     providerOptions,
   } = options;
-  const discloseThinking = resolveReasoningDisplay(reasoning) === "visible";
   const registry = resolveToolRegistry(options);
   const resolvedTools = resolveTools(registry, {
     provider,

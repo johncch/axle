@@ -116,6 +116,7 @@ export interface StreamTextCompleteChunk extends StreamChunk {
   type: "text-complete";
   data: {
     index: number;
+    providerMetadata?: Record<string, unknown>;
   };
 }
 

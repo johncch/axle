@@ -9,10 +9,6 @@ import type { ChatCompletionAnnotation, ChatCompletionReasoningDetail } from "..
 
 export type OpenRouterThinkingContinuity = Extract<ThinkingContinuity, { provider: "openrouter" }>;
 
-/**
- * `reasoning.text` formats whose upstream never discloses raw reasoning, so
- * the text is a summary. Bounded set, extended as formats are observed.
- */
 export const OPENROUTER_SUMMARY_REASONING_FORMATS: ReadonlySet<string> = new Set([
   "anthropic-claude-v1",
   "google-gemini-v1",

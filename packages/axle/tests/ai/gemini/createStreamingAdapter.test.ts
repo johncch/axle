@@ -201,6 +201,20 @@ describe("createGeminiStreamingAdapter", () => {
       });
     });
 
+    test("a text part carrying a signature closes with it as provider metadata", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [{ text: "The answer" }] }));
+      adapter.handleChunk(
+        makeChunk({ parts: [{ text: " is 42.", thoughtSignature: "sig_text" }] }),
+      );
+      const chunks = adapter.handleChunk(makeChunk({ parts: [], finishReason: FinishReason.STOP }));
+
+      expect(chunks[0]).toEqual({
+        type: "text-complete",
+        data: { index: 0, providerMetadata: { thoughtSignature: "sig_text" } },
+      });
+    });
+
     test("a signature-only part after text becomes a continuity-only thinking part", () => {
       const adapter = createGeminiStreamingAdapter();
       adapter.handleChunk(makeChunk({ parts: [{ text: "Answer" }] }));

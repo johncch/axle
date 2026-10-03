@@ -67,8 +67,9 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 10. **Adapters read block identity where the wire carries it.** Anthropic
     keys parts on the block index, OpenAI on the reasoning item, OpenRouter
     on the detail `index` (a bare `reasoning` string continues the open part
-    by adjacency and the first indexed detail joins it). Gemini has no block
-    identity and uses adjacency.
+    by adjacency and the first indexed detail joins it; a chunk that carries
+    both fields is read from its entries and the bare string skipped as a
+    duplicate). Gemini has no block identity and uses adjacency.
 
 ## Where fields get written
 
@@ -121,6 +122,7 @@ continuity-only part, on the open thinking part if one is open.
 | OpenAI            | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`         |
 | Gemini            | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`   |
 | Gemini            | `thoughtSignature` on a function-call part                    | `providerMetadata.thoughtSignature`                       |
+| Gemini            | `thoughtSignature` on a text part                             | text part `providerMetadata.thoughtSignature`             |
 | Gemini            | `thoughtSignature` on an `executableCode` part                | the part itself, in the `provider-tool` part's continuity |
 | OpenRouter        | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data`  |
 | Generic, Together | nothing                                                       | —                                                         |

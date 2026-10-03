@@ -26,17 +26,27 @@ export function createGeminiStreamingAdapter() {
   let reasoningOutputTokens = 0;
 
   let activePart: "text" | "thinking" | null = null;
+  let activeTextSignature: string | undefined;
   const modelPartToStreamPart = new Map<number, number>();
   const openCodeExecutions: Array<{ index: number; id: string; codePart: Part }> = [];
 
   function closeActivePart(chunks: Array<AnyStreamChunk>) {
     if (currentPartIndex < 0) return;
     if (activePart === "text") {
-      chunks.push({ type: "text-complete", data: { index: currentPartIndex } });
+      chunks.push({
+        type: "text-complete",
+        data: {
+          index: currentPartIndex,
+          ...(activeTextSignature
+            ? { providerMetadata: { thoughtSignature: activeTextSignature } }
+            : {}),
+        },
+      });
     } else if (activePart === "thinking") {
       chunks.push({ type: "thinking-complete", data: { index: currentPartIndex } });
     }
     activePart = null;
+    activeTextSignature = undefined;
     currentPartIndex = -1;
   }
 
@@ -210,6 +220,7 @@ export function createGeminiStreamingAdapter() {
         }
         lastTextPartIndex = currentPartIndex;
         modelPartToStreamPart.set(modelPartIndex, currentPartIndex);
+        if (part.thoughtSignature) activeTextSignature = part.thoughtSignature;
         chunks.push({
           type: "text-delta",
           data: { text: part.text, index: currentPartIndex },
