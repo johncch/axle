@@ -140,3 +140,54 @@ test.each(notRejected)("%s is not authentication", async (_, make, type, status)
   const result = await generate({ provider: make(), model: "test", messages });
   expect(result).toMatchObject({ ok: false, error: { kind: "model", type, status } });
 });
+
+const httpBodies: Array<[string, number, string, string, string]> = [
+  [
+    "OpenAI-shaped body uses the body's type and message",
+    404,
+    '{"error":{"message":"The model `gpt-9` does not exist","type":"invalid_request_error","code":"model_not_found"}}',
+    "invalid_request_error",
+    "The model `gpt-9` does not exist",
+  ],
+  [
+    "OpenRouter-shaped body with a numeric code uses the code",
+    402,
+    '{"error":{"code":402,"message":"Insufficient credits"}}',
+    "402",
+    "Insufficient credits",
+  ],
+  [
+    "non-JSON body keeps the status string and the text",
+    502,
+    "<html>Bad Gateway</html>",
+    "502",
+    "HTTP error! status: 502 - <html>Bad Gateway</html>",
+  ],
+  ["empty body keeps the status string", 503, "", "503", "HTTP error! status: 503"],
+  [
+    "JSON without an error object keeps the status string",
+    500,
+    '{"detail":"boom"}',
+    "500",
+    'HTTP error! status: 500 - {"detail":"boom"}',
+  ],
+];
+
+test.each(httpBodies)("Chat Completions %s", async (_, status, body, type, message) => {
+  const result = await generate({ provider: chatProvider(status, body), model: "test", messages });
+  expect(result).toMatchObject({ ok: false, error: { kind: "model", type, status, message } });
+});
+
+test("Chat Completions 401 is authentication and keeps the body's type under raw", async () => {
+  const body = '{"error":{"type":"unauthenticated","code":"unauthenticated","message":"Sign in"}}';
+  const result = await generate({ provider: chatProvider(401, body), model: "test", messages });
+  expect(result).toMatchObject({
+    ok: false,
+    error: {
+      type: "authentication",
+      status: 401,
+      message: "Sign in",
+      raw: { status: 401, body: { error: { type: "unauthenticated" } } },
+    },
+  });
+});

@@ -377,18 +377,29 @@ A request the provider rejects outright, or a transport failure, is
 `ok: false` with `error: { kind: "model", type, message, status?, usage?, raw? }`.
 `type` is `"authentication"` when the provider rejected the credential. For
 every other failure it is the provider's own type: the SDK error class name
-for Anthropic, OpenAI, and Gemini; the HTTP status as a string for a Chat
-Completions response; an upstream `code` for a mid-stream OpenRouter error;
-or one of Axle's own (`FinishReasonError`, `IncompleteStream`,
+for Anthropic, OpenAI, and Gemini; for a Chat Completions response, the
+body's `error.type`, else its `error.code` as a string, else the status as a
+string; an upstream `code` for a mid-stream OpenRouter error; or one of
+Axle's own (`FinishReasonError`, `IncompleteStream`,
 `RESPONSES_API_INCOMPLETE`). `status` is the HTTP status when there was one,
 and `raw` is what the provider threw.
+
+A Chat Completions non-2xx body is parsed as JSON. When it holds an `error`
+object in the OpenAI shape (`{ error: { type?, code?, message? } }`), that
+object supplies `type` and `message`, and `raw.body` is the parsed body. Any
+other body (HTML from a proxy, empty, JSON without `error`) gives
+`type: "<status>"`, a message of `HTTP error! status: <status> - <text>`, and
+`raw.body` as text. OpenRouter sets a numeric `code` equal to the status and
+no `type`, so its `type` is the status string either way; its `message` is
+the readable one. `withRetry` decides on the status before the body is read,
+so parsing changes nothing about retries.
 
 | Provider         | A rejected key arrives as                                                                                          | `status` | `type`                                                                   |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------ |
 | Anthropic        | SDK `AuthenticationError`, `status: 401`; the class leaves `name` as `Error`                                       | `401`    | `authentication`                                                         |
 | OpenAI           | SDK `AuthenticationError`, `status: 401`; the class leaves `name` as `Error`                                       | `401`    | `authentication`                                                         |
 | Gemini           | SDK `ApiError`, `status: 400`; `message` is the JSON error body, whose `details` carry `reason: "API_KEY_INVALID"` | `400`    | `authentication`                                                         |
-| Chat Completions | A non-2xx response; Axle throws `{ status, message, body }`                                                        | `401`    | `authentication`                                                         |
+| Chat Completions | A non-2xx response; Axle throws `{ status, type, message, body }` with the body parsed when it is JSON             | `401`    | `authentication`; the body's own `error.type` stays under `raw.body`     |
 | Any              | Any other HTTP failure (`400` without `API_KEY_INVALID`, `403`, `429`, `5xx`)                                      | As sent  | The class name, or the status as a string on Chat Completions, as before |
 
 Observed on 2026-10-01 (AXL-70, 0.32.0) with a bogus key on each factory.
