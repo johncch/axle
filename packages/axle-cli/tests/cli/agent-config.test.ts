@@ -229,7 +229,7 @@ describe("createDefaultAgentDefinition", () => {
 
 describe("default tools", () => {
   const cliConfig = { defaults: { provider: "anthropic" } };
-  const allTools = ["exec", "patch-file", "read-file", "write-file"];
+  const allTools = ["axle-help", "exec", "patch-file", "read-file", "write-file"];
   const toolNames = (definition: { tools?: { name: string }[] }) =>
     definition.tools?.map((tool) => tool.name);
 
@@ -258,7 +258,7 @@ describe("default tools", () => {
 
   test("an unknown recipe tool fails with the available names", () => {
     expect(() => createAgentDefinition({ task: "t", tools: ["foobar"] }, cliConfig, {})).toThrow(
-      "Unknown tool: foobar. Available: exec, patch-file, read-file, write-file",
+      "Unknown tool: foobar. Available: axle-help, exec, patch-file, read-file, write-file",
     );
   });
 

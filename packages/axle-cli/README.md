@@ -168,6 +168,8 @@ filling a real context window.
 
 Chat and job files get these local tools by default:
 
+- `axle-help` — this README, by topic, so the model can answer questions
+  about axle itself
 - `exec`
 - `patch-file`
 - `read-file`

@@ -29,6 +29,11 @@
 
 ### New
 
+- **The model can explain axle.** A new default tool, `axle-help`, returns
+  this CLI's usage documentation by topic (overview, chat, recipes, batch,
+  resume, schedule, mcp, config, tools), so asking the chat how to write a
+  batch recipe or register a schedule gets an answer grounded in the
+  installed version. Remove it with a `tools:` list that omits it.
 - **Prompts look like the GitHub CLI.** `axle setup`, `axle cleanup`, and
   the missing-model fallback ask with a green `?`, echo the answer in cyan
   on the same line, and use a `>` cursor for lists. A confirm answers to

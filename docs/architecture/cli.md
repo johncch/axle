@@ -222,7 +222,7 @@ against it; divergence is a defect. State ownership is defined in
 
 11. **Local tools are on by default and run unapproved.** Chat and any
     recipe without a `tools:` key get the default set — `exec`,
-    `patch-file`, `read-file`, `write-file` — or `defaults.tools` from
+    `patch-file`, `read-file`, `write-file`, `axle-help` — or `defaults.tools` from
     `cli.yaml` when set. A recipe's `tools:` replaces the set wholesale;
     `tools: []` is the opt-out. Nothing gates a tool call: shell and writes
     execute as soon as the model asks, in chat, `-j`, batch, and scheduled
