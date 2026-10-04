@@ -22,7 +22,7 @@ export const messageFormatCases: CheckCase[] = [
     group: "extended",
     id: "format-web-citations",
     description: "Hosted web search returns citations in Axle's normalized format.",
-    providers: ["openai", "google"],
+    providers: ["openai", "google", "openrouter"],
     async run({ provider, model, providerId, requestOptions }) {
       const result = await generate({
         provider,
@@ -101,7 +101,7 @@ export const messageFormatCases: CheckCase[] = [
     group: "default",
     id: "format-web-citations-follow-up",
     description: "A follow-up request is accepted after an answer with web search citations.",
-    providers: ["anthropic", "openai", "google"],
+    providers: ["anthropic", "openai", "google", "openrouter"],
     async run({ provider, model, providerId, requestOptions }) {
       return runCitationFollowUp({
         provider,
@@ -255,7 +255,7 @@ export const messageFormatCases: CheckCase[] = [
     id: "format-thinking-continuity",
     description:
       "Thinking parts carry renderable content, plus the provider continuity payload where one exists.",
-    providers: ["openai", "anthropic", "google"],
+    providers: ["openai", "anthropic", "google", "openrouter"],
     async run({ provider, model, providerId }) {
       const result = await generate({
         provider,

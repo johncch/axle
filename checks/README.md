@@ -205,8 +205,8 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `reasoning-stream-effort`
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)
 - `stream-web-search`
-- `format-web-citations-follow-up` (Anthropic, OpenAI, Gemini: a follow-up
-  request after a cited web search answer. On OpenAI the first answer usually holds a
+- `format-web-citations-follow-up` (Anthropic, OpenAI, Gemini, OpenRouter: a
+  follow-up request after a cited web search answer. On OpenAI the first answer usually holds a
   reasoning item between two searches, which must be sent back in that order)
 - `format-server-tool-with-client-tool` (Anthropic: a web search called in the
   same response as a local tool; its result arrives in the next step, is
@@ -249,12 +249,12 @@ assistant message. Provider coverage is uneven because providers expose
 different surfaces; each case lists the providers it runs on and skips the
 rest.
 
-- `format-web-citations` (OpenAI, Gemini hosted search)
+- `format-web-citations` (OpenAI, Gemini, OpenRouter hosted search)
 - `format-document-citations` (Anthropic PDF input)
 - `format-document-citations-follow-up` (Anthropic: a follow-up request after
   a cited PDF answer)
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
-  signature, Gemini summary)
+  signature, Gemini summary, OpenRouter reasoning entries)
 - `format-thinking-hidden` (Anthropic hidden thinking: continuity only, not redacted)
 - `format-thinking-stream` (a raw or summary delta required for Anthropic,
   OpenRouter, and Together, which stream thinking text)
@@ -283,7 +283,8 @@ targets don't cover. Normative in `docs/architecture/reasoning.md`.
 Cache telemetry (`cache-*`): provider cache counters surface on `usage`.
 
 - `cache-prompt-reuse` (OpenAI `prompt_cache_key`, Anthropic `cache_control`
-  with `cacheWriteIn` on the first call)
+  with `cacheWriteIn` on the first call; OpenRouter and Together report only
+  `cachedIn` on the second)
 - `cache-gemini-cached-content` (explicit cached-content resource passed via
   `providerOptions.cachedContent`; created and deleted by the case)
 

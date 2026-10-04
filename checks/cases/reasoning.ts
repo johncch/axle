@@ -14,7 +14,12 @@ import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
 
-const DISCLOSING_PROVIDERS: ReadonlySet<ProviderId> = new Set(["anthropic", "openai", "google"]);
+const DISCLOSING_PROVIDERS: ReadonlySet<ProviderId> = new Set([
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+]);
 
 // Models whose request syntax differs from the provider's default check
 // target, so both routes run in a single default pass.
@@ -101,7 +106,7 @@ export const reasoningCases: CheckCase[] = [
           continue;
         }
         usage = result.usage;
-        const summary = getThinkingSummary(result.final);
+        const summary = getThinkingContent(result.final);
         disclosed ||= summary.length > 0;
         perEffort[effort] = {
           text: getAssistantText(result.final),
@@ -111,7 +116,7 @@ export const reasoningCases: CheckCase[] = [
         };
       }
       if (DISCLOSING_PROVIDERS.has(providerId) && !disclosed) {
-        failureReasons.push("No effort returned a thinking summary.");
+        failureReasons.push("No effort returned thinking content.");
       }
 
       return {
@@ -319,10 +324,10 @@ function countThinking(message: AxleMessage | undefined): number {
   return message.content.filter((part) => part.type === "thinking").length;
 }
 
-function getThinkingSummary(message: AxleMessage | undefined): string {
+function getThinkingContent(message: AxleMessage | undefined): string {
   if (!message || message.role !== "assistant") return "";
   return message.content
     .filter((part) => part.type === "thinking")
-    .map((part) => part.summary ?? "")
+    .map((part) => part.summary ?? part.text ?? "")
     .join("");
 }

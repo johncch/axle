@@ -1,5 +1,6 @@
 import { generate, type Stats } from "@fifthrevision/axle";
 import { GoogleGenAI } from "@google/genai";
+import type { ProviderId } from "../providers.js";
 import { fail } from "./helpers.js";
 import type { CheckCase } from "./types.js";
 
@@ -10,6 +11,7 @@ import type { CheckCase } from "./types.js";
 // nonce keeps a rerun inside the provider's cache TTL from finding the
 // previous run's entry, which would turn the first call into a read.
 const runNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const CACHE_WRITE_REPORTING_PROVIDERS: ReadonlySet<ProviderId> = new Set(["openai", "anthropic"]);
 const stableContext = [
   `Cache check run ${runNonce}.`,
   ...Array.from(
@@ -24,12 +26,14 @@ export const cacheCases: CheckCase[] = [
     group: "extended",
     id: "cache-prompt-reuse",
     description: "Repeating a long prompt reports cached input tokens on the second call.",
-    providers: ["openai", "anthropic"],
+    providers: ["openai", "anthropic", "openrouter", "together"],
     async run({ provider, model, providerId, requestOptions }) {
       const providerOptions =
         providerId === "openai"
           ? { prompt_cache_key: `axle-checks-cache-${runNonce}` }
-          : { cache_control: { type: "ephemeral" } };
+          : providerId === "anthropic"
+            ? { cache_control: { type: "ephemeral" } }
+            : undefined;
 
       const call = async (): Promise<Stats | { error: unknown }> => {
         const result = await generate({
@@ -55,7 +59,9 @@ export const cacheCases: CheckCase[] = [
 
       const failureReasons = [
         ...((second.cachedIn ?? 0) > 0 ? [] : ["Second call did not report cachedIn > 0."]),
-        ...((first.cacheWriteIn ?? 0) > 0 ? [] : ["First call did not report cacheWriteIn > 0."]),
+        ...(!CACHE_WRITE_REPORTING_PROVIDERS.has(providerId) || (first.cacheWriteIn ?? 0) > 0
+          ? []
+          : ["First call did not report cacheWriteIn > 0."]),
       ];
       return {
         ok: failureReasons.length === 0,
