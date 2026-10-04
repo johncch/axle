@@ -110,6 +110,15 @@ against it; divergence is a defect. State ownership is defined in
    interrupt handler — a cooked-mode SIGINT would hit the ancestor process
    group (pnpm/tsx) and kill the tree before graceful stop could run.
    `close()` is async and paints one final frame before unmounting.
+   Questions the host asks (`setup`, `cleanup`, the missing-model fallback)
+   speak the GitHub CLI dialect: a green `?` before the question, the
+   answer echoed in cyan on the same line once given, a `>` cursor for
+   lists, `y`/`n` answering a confirm without Enter. They are rendered over
+   `@clack/core`'s prompt state machines (`src/ui/ask.ts`); the
+   `@clack/prompts` theme — a guide bar down the left, diamond step
+   markers, radio circles — was dropped 2026-10-04 because it reads as a
+   scaffolding wizard, not a task runner, and its glyphs are not
+   configurable.
 
 8. **Configuration layers by home; credentials are shared property.** Two
    homes — project `.axle/` and user `~/.axle/` — each may hold

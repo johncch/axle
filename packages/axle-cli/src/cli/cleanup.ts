@@ -1,4 +1,4 @@
-import * as clack from "@clack/prompts";
+import * as ask from "../ui/ask.js";
 import { rm } from "node:fs/promises";
 import type { SessionSummary } from "./sessions.js";
 import { listSessionSummaries } from "./sessions.js";
@@ -17,11 +17,9 @@ const WINDOWS = [
  * sweeps them.
  */
 export async function runCleanup(home?: string): Promise<void> {
-  clack.intro("axle cleanup");
-
   const sessions = await listSessionSummaries(home);
   if (sessions.length === 0) {
-    clack.outro("No saved sessions.");
+    ask.outro("No saved sessions.");
     return;
   }
 
@@ -43,37 +41,37 @@ export async function runCleanup(home?: string): Promise<void> {
   }).filter((option) => option.matched.length > 0);
 
   if (options.length === 0) {
-    clack.outro(`Nothing old enough to clean up (${sessions.length} recent sessions).`);
+    ask.outro(`Nothing old enough to clean up (${sessions.length} recent sessions).`);
     return;
   }
 
   const CANCEL = "__cancel__";
-  const picked = await clack.select({
+  const picked = await ask.select({
     message: "What should be cleaned up?",
     options: [
       ...options.map((option, index) => ({ value: String(index), label: option.label })),
       { value: CANCEL, label: "Nothing, cancel" },
     ],
   });
-  if (clack.isCancel(picked) || picked === CANCEL) {
-    clack.outro("Nothing deleted.");
+  if (ask.isCancel(picked) || picked === CANCEL) {
+    ask.outro("Nothing deleted.");
     return;
   }
 
   const chosen = options[Number(picked)];
-  const sure = await clack.confirm({
+  const sure = await ask.confirm({
     message: `Delete ${chosen.matched.length} session(s)? This cannot be undone.`,
     initialValue: false,
   });
-  if (clack.isCancel(sure) || !sure) {
-    clack.outro("Nothing deleted.");
+  if (ask.isCancel(sure) || !sure) {
+    ask.outro("Nothing deleted.");
     return;
   }
 
   for (const session of chosen.matched) {
     await rm(session.path, { force: true });
   }
-  clack.outro(`Deleted ${chosen.matched.length} session(s).`);
+  ask.outro(`Deleted ${chosen.matched.length} session(s).`);
 }
 
 function formatBytes(bytes: number): string {

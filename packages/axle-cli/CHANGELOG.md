@@ -29,6 +29,11 @@
 
 ### New
 
+- **Prompts look like the GitHub CLI.** `axle setup`, `axle cleanup`, and
+  the missing-model fallback ask with a green `?`, echo the answer in cyan
+  on the same line, and use a `>` cursor for lists. A confirm answers to
+  `y` or `n` without Enter. The vertical guide bar and diamond markers are
+  gone.
 - **A provider's code execution shows what it printed.** When a recipe
   lists `code_execution` under `providerTools`, the action line now carries
   the first line of the sandbox's stdout, or its stderr and exit code in
