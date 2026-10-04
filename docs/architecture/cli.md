@@ -102,7 +102,17 @@ against it; divergence is a defect. State ownership is defined in
    task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for host
    lines, work lines that settle with a duration (`✔ Calculator {…}
 (430ms)`), model text as unadorned stdout, and the user's `❯` as the
-   only persona glyph. Render mode is fixed at launch: ink when stdin and
+   only persona glyph. Under ink an agent text part, streaming or
+   settled, and the summary on a settled thinking line are drawn as
+   terminal markdown (core's `renderTerminalMarkdown`: blocks separated
+   by a blank line, bold headings, yellow inline code, fenced code behind
+   a dim `│` gutter with no language label, plain list markers, tables as
+   padded columns under a dim rule, no boxes). The live tail is
+   the last lines of the rendered text, so a style flips in place when a
+   closing marker arrives; that is accepted over a screen of raw
+   asterisks. The plain renderer shows raw text: it streams deltas and
+   never reprints, and a piped log should carry what the model said, not
+   ANSI. Render mode is fixed at launch: ink when stdin and
    stdout are both TTYs (a batch-progress variant when batch runs without
    `--verbose`), else the plain renderer — piped output reads as a frozen
    ink transcript. Under ink the terminal stays in raw mode for the whole

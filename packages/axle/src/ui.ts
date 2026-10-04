@@ -33,3 +33,4 @@ export type {
 } from "./turns/types.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
 export type { FileInfo } from "./utils/file.js";
+export { renderTerminalMarkdown } from "./utils/markdown.js";

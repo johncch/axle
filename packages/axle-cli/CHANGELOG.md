@@ -29,6 +29,12 @@
 
 ### New
 
+- **Replies render as markdown.** Under the ink renderer, a reply shows
+  headings in bold, inline `code` in yellow, fenced code behind a `│`
+  gutter, lists with plain markers, and tables as aligned columns instead
+  of raw `#`, `**`, pipes, and backticks. The reasoning summary on a
+  `✔ Thinking` line renders the same way, and so does text while it is
+  still streaming. `--renderer plain` and piped output are unchanged.
 - **The model can explain axle.** A new default tool, `axle-help`, returns
   this CLI's usage documentation by topic (overview, chat, recipes, batch,
   resume, schedule, mcp, config, tools), so asking the chat how to write a

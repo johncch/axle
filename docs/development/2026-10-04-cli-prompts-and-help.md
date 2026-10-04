@@ -40,3 +40,32 @@ machinery than nine string constants.
 
 The copy is derived from the README and must be kept in step with it the
 same way the README is kept in step with `docs/architecture/cli.md`.
+
+## Markdown replies
+
+The help tool returns markdown, which made the raw `#` and backticks in the
+ink transcript hard to ignore. Core already had a terminal markdown renderer,
+private to `SimpleWriter` for `--debug` output. Settled: move it to
+`src/utils/markdown.ts`, export it from `@fifthrevision/axle/ui` as
+`renderTerminalMarkdown`, and have ink's `PartView` run a settled agent text
+part through it. The first cut left the live tail raw, on the theory that
+re-lexing a partial document on every delta would flicker as half-open
+emphasis changes meaning. In use the flicker is a style flip on one word
+when its closing marker lands, and a screenful of raw asterisks while a
+long reply streams was the worse experience, so the same day the live tail
+became the last lines of the rendered text. The plain renderer stays raw;
+it streams deltas and never reprints a part, and a piped log should carry
+the model's text, not ANSI.
+
+The first transcript showed what the debug-log origin had left out: blocks
+ran together with no blank line, a fenced block was a dim language label
+over yellow text and read as more inline code, and a table was its cells
+pipe-joined. Settled: blocks join with a blank line (tight lists stay
+tight, `loose` lists space their items), fenced code drops the label and
+sits behind a dim `│` gutter in default color so inline yellow stays the
+inline signal, and tables pad to column width under a dim rule.
+
+Rejected: `marked-terminal`. It pulls in cli-table3, cardinal and
+node-emoji for boxed tables, syntax highlighting and emoji substitution
+the runner aesthetic does not want, and the gaps were four small changes
+to a renderer core already had.

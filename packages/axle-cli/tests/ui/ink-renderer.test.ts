@@ -65,6 +65,38 @@ describe("App", () => {
     expect(renderApp(true)).toContain("↑ 1.0k ↓ 200");
     expect(renderApp(false)).not.toContain("↑ 1.0k ↓ 200");
   });
+
+  it("renders agent replies as markdown, settled or streaming", () => {
+    const markdown = "# Title\n\nSome **bold** text.";
+    const agentTurn = (id: string): Turn => ({
+      id,
+      owner: "agent",
+      status: "complete",
+      parts: [
+        { id: `${id}-think`, type: "thinking", summary: "**Plan**\n\nRead the file first." },
+        textPart(`${id}-p`, markdown),
+      ],
+    });
+    const settled = new UiStore<UiState>({
+      staticItems: [{ kind: "turn", turn: agentTurn("a1") }],
+      awaitingInput: false,
+      queuedInputs: [],
+    });
+    const streaming = new UiStore<UiState>({
+      staticItems: [],
+      liveTurn: { ...agentTurn("a2"), status: "streaming" },
+      awaitingInput: false,
+      queuedInputs: [],
+    });
+    const render = (store: UiStore<UiState>) =>
+      renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(render(settled)).toContain("Title\n\nSome bold text.");
+    expect(render(settled)).not.toContain("**");
+    expect(render(settled)).toContain("✔ Thinking — Plan\n\n  Read the file first.");
+    expect(render(streaming)).toContain("Some bold text.");
+    expect(render(streaming)).not.toContain("**");
+  });
 });
 
 describe("partitionTurns", () => {

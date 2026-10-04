@@ -1,4 +1,9 @@
-import type { ActionPart, Turn, TurnPart } from "@fifthrevision/axle/ui";
+import {
+  renderTerminalMarkdown,
+  type ActionPart,
+  type Turn,
+  type TurnPart,
+} from "@fifthrevision/axle/ui";
 import { Box, Static, Text, useInput } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
@@ -219,8 +224,8 @@ function PartView({
       if (!part.text) {
         return spinner ? <Text color="cyan">{spinner}</Text> : null;
       }
-      const text = live ? lastLines(part.text, LIVE_TAIL_LINES) : part.text.trim();
       if (owner === "user") {
+        const text = live ? lastLines(part.text, LIVE_TAIL_LINES) : part.text.trim();
         return (
           <Text>
             {"\u276f "}
@@ -228,7 +233,8 @@ function PartView({
           </Text>
         );
       }
-      return <Text>{text}</Text>;
+      const rendered = renderTerminalMarkdown(part.text).trimEnd();
+      return <Text>{live ? lastLines(rendered, LIVE_TAIL_LINES) : rendered}</Text>;
     }
 
     case "thinking": {
@@ -240,11 +246,11 @@ function PartView({
         );
       }
       const duration = formatDuration(part.timing);
-      const summary = part.summary?.trim();
+      const summary = part.summary ? renderTerminalMarkdown(part.summary).trimEnd() : "";
       return (
         <Text dimColor>
           ✔ Thinking{duration ? ` (${duration})` : ""}
-          {summary ? ` — ${summary}` : ""}
+          {summary ? ` — ${indentContinuation(summary)}` : ""}
         </Text>
       );
     }
