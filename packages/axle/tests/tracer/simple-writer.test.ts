@@ -32,7 +32,7 @@ describe("SimpleWriter", () => {
       attributes: { markdown: true },
     });
 
-    expect(stripAnsi(lines[0])).toBe("  INFO  Result\n- Done with code");
+    expect(stripAnsi(lines[0])).toBe("  INFO  Result\n\n- Done with code");
   });
 
   it("leaves markdown text unchanged without event opt-in", () => {

@@ -1,4 +1,4 @@
-import * as clack from "@clack/prompts";
+import * as ask from "../ui/ask.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { updateCliDefaults, upsertCredentials } from "./configs/writers.js";
 
@@ -47,9 +47,9 @@ export function needsSetupWizard(
   return true;
 }
 
-function ensureNotCancelled<T>(value: T | typeof clack.CANCEL_SYMBOL): T {
-  if (clack.isCancel(value)) {
-    clack.cancel("Setup cancelled.");
+function ensureNotCancelled<T>(value: T | typeof ask.CANCEL_SYMBOL): T {
+  if (ask.isCancel(value)) {
+    ask.cancel("Setup cancelled.");
     process.exit(1);
   }
   return value;
@@ -61,7 +61,7 @@ export async function promptForModel(providerType: string): Promise<string> {
   const publisher = choice?.publisher;
 
   return ensureNotCancelled(
-    await clack.text({
+    await ask.text({
       message: "Model id",
       placeholder: publisher ? `${publisher}model-name` : "e.g. qwen/qwen-3-coder",
       validate: (value) =>
@@ -73,7 +73,7 @@ export async function promptForModel(providerType: string): Promise<string> {
 /** `axle batch` with no inputs anywhere: ask for a glob. */
 export async function promptForInputs(): Promise<string> {
   return ensureNotCancelled(
-    await clack.text({
+    await ask.text({
       message: "Input files (glob or path)",
       placeholder: "data/*.md",
       validate: (value) => ((value ?? "").trim().length === 0 ? "Inputs are required" : undefined),
@@ -93,18 +93,18 @@ export async function promptForMissingModel(
   options?: { offerSave?: boolean; saveAs?: string },
 ): Promise<string> {
   const saveAs = options?.saveAs ?? providerType;
-  clack.log.warn(`No model configured for provider ${saveAs}.`);
+  ask.log.warn(`No model configured for provider ${saveAs}.`);
   const model = await promptForModel(providerType);
   if (options?.offerSave !== false) {
     const save = ensureNotCancelled(
-      await clack.confirm({
+      await ask.confirm({
         message: `Save ${model} as the default model for ${saveAs}?`,
         initialValue: true,
       }),
     );
     if (save) {
       const path = await updateCliDefaults({ models: { [saveAs]: model } });
-      clack.log.success(`Saved to ${path}`);
+      ask.log.success(`Saved to ${path}`);
     }
   }
   return model;
@@ -116,10 +116,8 @@ export async function promptForMissingModel(
  * ~/.axle/cli.yaml. Programmatic — no LLM involved.
  */
 export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void> {
-  clack.intro("axle setup");
-
   const provider = ensureNotCancelled(
-    await clack.select({
+    await ask.select({
       message: "Which provider should axle use by default?",
       options: PROVIDER_CHOICES.map((c) => ({ value: c.value, label: c.label })),
     }),
@@ -130,7 +128,7 @@ export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void
 
   if (provider === "chatcompletions") {
     const baseUrl = ensureNotCancelled(
-      await clack.text({
+      await ask.text({
         message: "Base URL of the endpoint",
         placeholder: "http://localhost:11434/v1",
         initialValue: serviceConfig.chatcompletions?.baseUrl ?? "",
@@ -145,7 +143,7 @@ export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void
   let writeKey = true;
   if (existingKey) {
     writeKey = ensureNotCancelled(
-      await clack.confirm({
+      await ask.confirm({
         message: `A key for ${choice.label} is already configured — replace it?`,
         initialValue: false,
       }),
@@ -153,7 +151,7 @@ export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void
   }
   if (writeKey) {
     const key = ensureNotCancelled(
-      await clack.password({
+      await ask.password({
         message:
           provider === "chatcompletions"
             ? "API key (leave empty if the endpoint needs none)"
@@ -171,7 +169,7 @@ export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void
 
   if (Object.keys(credentials).length > 0) {
     const path = await upsertCredentials(credentials);
-    clack.log.success(`Credentials written to ${path}`);
+    ask.log.success(`Credentials written to ${path}`);
   }
 
   const model = await promptForModel(provider);
@@ -179,7 +177,7 @@ export async function runSetupWizard(serviceConfig: ServiceConfig): Promise<void
     provider,
     models: { [provider]: model },
   });
-  clack.log.success(`Defaults saved to ${configPath}`);
+  ask.log.success(`Defaults saved to ${configPath}`);
 
-  clack.outro(`Ready — run axle to chat with ${model}. Re-run anytime with: axle setup`);
+  ask.outro(`Ready — run axle to chat with ${model}. Re-run anytime with: axle setup`);
 }

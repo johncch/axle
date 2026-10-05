@@ -29,6 +29,22 @@
 
 ### New
 
+- **Replies render as markdown.** Under the ink renderer, a reply shows
+  headings in bold, inline `code` in yellow, fenced code behind a `│`
+  gutter, lists with plain markers, and tables as aligned columns instead
+  of raw `#`, `**`, pipes, and backticks. The reasoning summary on a
+  `✔ Thinking` line renders the same way, and so does text while it is
+  still streaming. `--renderer plain` and piped output are unchanged.
+- **The model can explain axle.** A new default tool, `axle-help`, returns
+  this CLI's usage documentation by topic (overview, chat, recipes, batch,
+  resume, schedule, mcp, config, tools), so asking the chat how to write a
+  batch recipe or register a schedule gets an answer grounded in the
+  installed version. Remove it with a `tools:` list that omits it.
+- **Prompts look like the GitHub CLI.** `axle setup`, `axle cleanup`, and
+  the missing-model fallback ask with a green `?`, echo the answer in cyan
+  on the same line, and use a `>` cursor for lists. A confirm answers to
+  `y` or `n` without Enter. The vertical guide bar and diamond markers are
+  gone.
 - **A provider's code execution shows what it printed.** When a recipe
   lists `code_execution` under `providerTools`, the action line now carries
   the first line of the sandbox's stdout, or its stderr and exit code in

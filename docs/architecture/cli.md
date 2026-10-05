@@ -102,7 +102,17 @@ against it; divergence is a defect. State ownership is defined in
    task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for host
    lines, work lines that settle with a duration (`✔ Calculator {…}
 (430ms)`), model text as unadorned stdout, and the user's `❯` as the
-   only persona glyph. Render mode is fixed at launch: ink when stdin and
+   only persona glyph. Under ink an agent text part, streaming or
+   settled, and the summary on a settled thinking line are drawn as
+   terminal markdown (core's `renderTerminalMarkdown`: blocks separated
+   by a blank line, bold headings, yellow inline code, fenced code behind
+   a dim `│` gutter with no language label, plain list markers, tables as
+   padded columns under a dim rule, no boxes). The live tail is
+   the last lines of the rendered text, so a style flips in place when a
+   closing marker arrives; that is accepted over a screen of raw
+   asterisks. The plain renderer shows raw text: it streams deltas and
+   never reprints, and a piped log should carry what the model said, not
+   ANSI. Render mode is fixed at launch: ink when stdin and
    stdout are both TTYs (a batch-progress variant when batch runs without
    `--verbose`), else the plain renderer — piped output reads as a frozen
    ink transcript. Under ink the terminal stays in raw mode for the whole
@@ -110,6 +120,15 @@ against it; divergence is a defect. State ownership is defined in
    interrupt handler — a cooked-mode SIGINT would hit the ancestor process
    group (pnpm/tsx) and kill the tree before graceful stop could run.
    `close()` is async and paints one final frame before unmounting.
+   Questions the host asks (`setup`, `cleanup`, the missing-model fallback)
+   speak the GitHub CLI dialect: a green `?` before the question, the
+   answer echoed in cyan on the same line once given, a `>` cursor for
+   lists, `y`/`n` answering a confirm without Enter. They are rendered over
+   `@clack/core`'s prompt state machines (`src/ui/ask.ts`); the
+   `@clack/prompts` theme — a guide bar down the left, diamond step
+   markers, radio circles — was dropped 2026-10-04 because it reads as a
+   scaffolding wizard, not a task runner, and its glyphs are not
+   configurable.
 
 8. **Configuration layers by home; credentials are shared property.** Two
    homes — project `.axle/` and user `~/.axle/` — each may hold
@@ -213,7 +232,7 @@ against it; divergence is a defect. State ownership is defined in
 
 11. **Local tools are on by default and run unapproved.** Chat and any
     recipe without a `tools:` key get the default set — `exec`,
-    `patch-file`, `read-file`, `write-file` — or `defaults.tools` from
+    `patch-file`, `read-file`, `write-file`, `axle-help` — or `defaults.tools` from
     `cli.yaml` when set. A recipe's `tools:` replaces the set wholesale;
     `tools: []` is the opt-out. Nothing gates a tool call: shell and writes
     execute as soon as the model asks, in chat, `-j`, batch, and scheduled

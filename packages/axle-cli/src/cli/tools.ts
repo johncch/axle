@@ -1,5 +1,6 @@
 import {
   execTool,
+  helpTool,
   patchFileTool,
   readFileTool,
   writeFileTool,
@@ -14,6 +15,9 @@ export function createTool(name: string): ExecutableTool {
   switch (name) {
     case "exec": {
       return execTool;
+    }
+    case "axle-help": {
+      return helpTool;
     }
     case "patch-file": {
       return patchFileTool;
@@ -40,6 +44,7 @@ export function createTools(names: string[]): ExecutableTool[] {
  * Available tool names for reference.
  */
 export const availableTools = [
+  "axle-help",
   "exec",
   "patch-file",
   "read-file",

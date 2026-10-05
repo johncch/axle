@@ -1,4 +1,5 @@
 export { default as execTool } from "./exec/index.js";
+export { default as helpTool } from "./help.js";
 export { default as patchFileTool } from "./patch-file.js";
 export { default as readFileTool } from "./read-file.js";
 export type { ExecutableTool, ProviderTool, ToolContext, ToolDefinition } from "./types.js";

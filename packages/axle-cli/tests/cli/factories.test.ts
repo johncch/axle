@@ -35,6 +35,7 @@ describe("CLI Factories", () => {
 
   describe("availableTools", () => {
     it("should contain all available tools", () => {
+      expect(availableTools).toContain("axle-help");
       expect(availableTools).toContain("exec");
       expect(availableTools).toContain("patch-file");
       expect(availableTools).toContain("read-file");

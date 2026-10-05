@@ -32,7 +32,7 @@
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
-    "@clack/prompts": "^1.8.1",
+    "@clack/core": "^1.5.1",
     "@commander-js/extra-typings": "^15.0.0",
     "@fifthrevision/axle": "workspace:*",
     "commander": "^15.0.0",
