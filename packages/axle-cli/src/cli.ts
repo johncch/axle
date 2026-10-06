@@ -8,8 +8,15 @@ import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
 import { resolveAgentDefinition } from "./cli/agent-config.js";
 import { runCleanup } from "./cli/cleanup.js";
-import { getCliConfig, getJobConfig, getServiceConfig } from "./cli/configs/loaders.js";
+import {
+  getCliConfig,
+  getCliConfigSources,
+  getCredentialSources,
+  getJobConfig,
+  getServiceConfig,
+} from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
+import { formatInfo } from "./cli/info.js";
 import type { CommonOpts, Invocation } from "./cli/invocation.js";
 import { buildPendingPlan, parseTemplateArgs } from "./cli/invocation.js";
 import { loadLedger } from "./cli/ledger.js";
@@ -253,6 +260,24 @@ program
     const serviceConfig = await getServiceConfig({});
     await runSetupWizard(serviceConfig);
     process.exit(0);
+  });
+
+program
+  .command("info")
+  .description("Print version, config file locations, and resolved configuration")
+  .action(async () => {
+    await manage(async () => {
+      const lines = formatInfo({
+        version: pkg.version,
+        dirs: resolveConfigDirs(),
+        cliConfig: await getCliConfig({}),
+        cliConfigSources: await getCliConfigSources({}),
+        serviceConfig: await getServiceConfig({}),
+        credentialSources: await getCredentialSources({}),
+        env: process.env,
+      });
+      for (const line of lines) console.log(line);
+    });
   });
 
 program

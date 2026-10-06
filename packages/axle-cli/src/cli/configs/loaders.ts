@@ -49,18 +49,11 @@ export async function getServiceConfig(context: {
   home?: string;
 }): Promise<ServiceConfig> {
   const { span } = context;
-  loadDotenv({ quiet: true });
-
-  const dirs = resolveConfigDirs(context);
-  const layers: Record<string, string | undefined>[] = [process.env];
-  for (const dir of [dirs.project, dirs.user]) {
-    const parsed = await readCredentialsFile(join(dir, CREDENTIALS_FILE));
-    if (parsed) layers.push(parsed);
-  }
+  const layers = await loadCredentialLayers(context);
 
   const lookup = (key: string): string | undefined => {
     for (const layer of layers) {
-      if (layer[key]) return layer[key];
+      if (layer.values[key]) return layer.values[key];
     }
     return undefined;
   };
@@ -70,15 +63,120 @@ export async function getServiceConfig(context: {
   return config;
 }
 
+export const ENVIRONMENT_SOURCE = "environment";
+
+export const API_KEY_VARIABLES = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  chatcompletions: "CHATCOMPLETIONS_API_KEY",
+} as const;
+
+/**
+ * Maps each credential variable to where its effective value comes from:
+ * "environment", the `.env` file path, or a `credentials` file path.
+ */
+export async function getCredentialSources(context: {
+  cwd?: string;
+  home?: string;
+}): Promise<Record<string, string>> {
+  const layers = await loadCredentialLayers(context);
+  const sources: Record<string, string> = {};
+  for (const layer of layers.toReversed()) {
+    for (const [key, value] of Object.entries(layer.values)) {
+      if (value) sources[key] = layer.source;
+    }
+  }
+  return sources;
+}
+
+interface CredentialLayer {
+  source: string;
+  values: Record<string, string | undefined>;
+}
+
+async function loadCredentialLayers(context: {
+  cwd?: string;
+  home?: string;
+}): Promise<CredentialLayer[]> {
+  const dotenvPath = join(process.cwd(), ".env");
+  const dotenvFile = loadDotenv({ quiet: true, path: dotenvPath }).parsed ?? {};
+  const fromDotenv = Object.fromEntries(
+    Object.entries(dotenvFile).filter(([key, value]) => process.env[key] === value),
+  );
+  const fromShell = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !(key in fromDotenv)),
+  );
+
+  const layers: CredentialLayer[] = [
+    { source: ENVIRONMENT_SOURCE, values: fromShell },
+    { source: dotenvPath, values: fromDotenv },
+  ];
+
+  const dirs = resolveConfigDirs(context);
+  for (const dir of [dirs.project, dirs.user]) {
+    const path = join(dir, CREDENTIALS_FILE);
+    const parsed = await readCredentialsFile(path);
+    if (parsed) layers.push({ source: path, values: parsed });
+  }
+  return layers;
+}
+
 export async function getCliConfig(context: {
   span?: Span;
   cwd?: string;
   home?: string;
 }): Promise<CliConfig> {
   const { span } = context;
-  const dirs = resolveConfigDirs(context);
 
   let merged: CliConfig = {};
+  for (const layer of await loadCliConfigLayers(context)) {
+    merged = mergeCliConfig(merged, layer.config);
+  }
+
+  span?.debug("CLI config: " + JSON.stringify(merged, null, 2));
+  return merged;
+}
+
+export interface CliConfigSources {
+  providers: Record<string, string>;
+  defaultProvider?: string;
+  defaultTools?: string;
+  defaultModels: Record<string, string>;
+}
+
+/**
+ * Names the `cli.yaml` path that supplies each merged value, following the
+ * same precedence as `getCliConfig`.
+ */
+export async function getCliConfigSources(context: {
+  cwd?: string;
+  home?: string;
+}): Promise<CliConfigSources> {
+  const sources: CliConfigSources = { providers: {}, defaultModels: {} };
+  for (const { path, config } of await loadCliConfigLayers(context)) {
+    for (const name of Object.keys(config.providers ?? {})) sources.providers[name] = path;
+    if (config.defaults?.provider !== undefined) sources.defaultProvider = path;
+    if (config.defaults?.tools !== undefined) sources.defaultTools = path;
+    for (const name of Object.keys(config.defaults?.models ?? {})) {
+      sources.defaultModels[name] = path;
+    }
+  }
+  return sources;
+}
+
+interface CliConfigLayer {
+  path: string;
+  config: CliConfig;
+}
+
+async function loadCliConfigLayers(context: {
+  cwd?: string;
+  home?: string;
+}): Promise<CliConfigLayer[]> {
+  const dirs = resolveConfigDirs(context);
+
+  const layers: CliConfigLayer[] = [];
   for (const dir of [dirs.user, dirs.project]) {
     const path = join(dir, CONFIG_FILE);
     const content = await readOptionalFile(path);
@@ -96,11 +194,9 @@ export async function getCliConfig(context: {
     if (!parsed.success) {
       throw new Error(`Invalid config file at ${path}:\n${formatZodError(parsed.error)}`);
     }
-    merged = mergeCliConfig(merged, parsed.data);
+    layers.push({ path, config: parsed.data });
   }
-
-  span?.debug("CLI config: " + JSON.stringify(merged, null, 2));
-  return merged;
+  return layers;
 }
 
 // Provider profiles replace wholesale across layers; field-merging two
@@ -136,21 +232,21 @@ async function readCredentialsFile(path: string): Promise<Record<string, string>
 
 function buildServiceConfig(lookup: (key: string) => string | undefined): ServiceConfig {
   return compactServiceConfig({
-    openai: lookup("OPENAI_API_KEY")
+    openai: lookup(API_KEY_VARIABLES.openai)
       ? {
-          apiKey: lookup("OPENAI_API_KEY"),
+          apiKey: lookup(API_KEY_VARIABLES.openai),
           model: lookup("OPENAI_MODEL"),
         }
       : undefined,
-    anthropic: lookup("ANTHROPIC_API_KEY")
+    anthropic: lookup(API_KEY_VARIABLES.anthropic)
       ? {
-          apiKey: lookup("ANTHROPIC_API_KEY"),
+          apiKey: lookup(API_KEY_VARIABLES.anthropic),
           model: lookup("ANTHROPIC_MODEL"),
         }
       : undefined,
-    gemini: lookup("GEMINI_API_KEY")
+    gemini: lookup(API_KEY_VARIABLES.gemini)
       ? {
-          apiKey: lookup("GEMINI_API_KEY"),
+          apiKey: lookup(API_KEY_VARIABLES.gemini),
           model: lookup("GEMINI_MODEL"),
         }
       : undefined,
@@ -158,7 +254,7 @@ function buildServiceConfig(lookup: (key: string) => string | undefined): Servic
       ? {
           baseUrl: lookup("CHATCOMPLETIONS_BASE_URL"),
           model: lookup("CHATCOMPLETIONS_MODEL"),
-          apiKey: lookup("CHATCOMPLETIONS_API_KEY"),
+          apiKey: lookup(API_KEY_VARIABLES.chatcompletions),
         }
       : undefined,
   });

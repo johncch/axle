@@ -42,6 +42,7 @@ has a home in the YAML, and the command line overrides selectively.
     axle schedule -j recipe.yaml          register a recurring recipe (macOS), run once now
     axle schedule register|list|sessions|remove
     axle setup                            configure providers and defaults
+    axle info                             print version, config files, and resolved config
     axle cleanup                          delete old sessions by age window
 
 Global flags: --renderer ink|plain, --no-log, -d/--debug, --args key=value.

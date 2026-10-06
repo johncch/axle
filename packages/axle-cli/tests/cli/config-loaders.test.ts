@@ -1,7 +1,13 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getCliConfig, getJobConfig, getServiceConfig } from "../../src/cli/configs/loaders.js";
+import {
+  getCliConfig,
+  getCliConfigSources,
+  getCredentialSources,
+  getJobConfig,
+  getServiceConfig,
+} from "../../src/cli/configs/loaders.js";
 
 const TEST_DIR = join(import.meta.dirname, "__config_loader_tmp__");
 const ORIGINAL_CWD = process.cwd();
@@ -175,6 +181,78 @@ describe("config loaders", () => {
     expect(config.anthropic).toEqual({ apiKey: "project-key", model: "user-model" });
     expect(config.openai).toEqual({ apiKey: "env-openai", model: undefined });
     expect(config.gemini).toEqual({ apiKey: "user-gemini", model: undefined });
+  });
+
+  it("names the layer each credential comes from", async () => {
+    process.chdir(TEST_DIR);
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "shell-openai");
+    vi.stubEnv("CHATCOMPLETIONS_API_KEY", undefined);
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "credentials"),
+      "ANTHROPIC_API_KEY=user-key\nGEMINI_API_KEY=user-gemini\n",
+    );
+    await writeFile(
+      join(cwd, ".axle", "credentials"),
+      "ANTHROPIC_API_KEY=project-key\nOPENAI_API_KEY=project-openai\n",
+    );
+    await writeFile(join(TEST_DIR, ".env"), "CHATCOMPLETIONS_API_KEY=dotenv-key\n");
+
+    const sources = await getCredentialSources({ cwd, home });
+
+    expect(sources.OPENAI_API_KEY).toBe("environment");
+    expect(sources.CHATCOMPLETIONS_API_KEY).toBe(join(process.cwd(), ".env"));
+    expect(sources.ANTHROPIC_API_KEY).toBe(join(cwd, ".axle", "credentials"));
+    expect(sources.GEMINI_API_KEY).toBe(join(home, ".axle", "credentials"));
+  });
+
+  it("names the cli.yaml that supplies each merged value", async () => {
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    const userFile = join(home, ".axle", "cli.yaml");
+    const projectFile = join(cwd, ".axle", "cli.yaml");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(
+      userFile,
+      [
+        "providers:",
+        "  work:",
+        "    type: anthropic",
+        "  local:",
+        "    type: chatcompletions",
+        "defaults:",
+        "  provider: work",
+        "  tools: [exec]",
+        "  models:",
+        "    work: user-model",
+        "    local: local-model",
+      ].join("\n"),
+    );
+    await writeFile(
+      projectFile,
+      [
+        "providers:",
+        "  work:",
+        "    type: openai",
+        "defaults:",
+        "  provider: local",
+        "  models:",
+        "    work: project-model",
+      ].join("\n"),
+    );
+
+    expect(await getCliConfigSources({ cwd, home })).toEqual({
+      providers: { work: projectFile, local: userFile },
+      defaultProvider: projectFile,
+      defaultTools: userFile,
+      defaultModels: { work: projectFile, local: userFile },
+    });
   });
 
   it("merges cli.yaml with project winning over user", async () => {
