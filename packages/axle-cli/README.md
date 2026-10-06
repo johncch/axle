@@ -47,6 +47,7 @@ axle schedule list                   # registered schedules and their last run
 axle schedule sessions -j recipe.yaml   # sessions a schedule's firings produced
 axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs stay
 axle setup                           # (re)configure providers and defaults
+axle info                            # print version, config files, and resolved config
 axle cleanup                         # delete old sessions by age window
 ```
 

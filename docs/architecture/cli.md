@@ -37,6 +37,7 @@ against it; divergence is a defect. State ownership is defined in
    | `axle batch`    | (recipe, inputs)                                                                     |
    | `axle resume`   | (session id, message?)                                                               |
    | `axle setup`    | ()                                                                                   |
+   | `axle info`     | ()                                                                                   |
    | `axle cleanup`  | ()                                                                                   |
    | `axle schedule` | (recipe) · `register` (recipe) · `remove` (recipe) · `sessions` (recipe) · `list` () |
 

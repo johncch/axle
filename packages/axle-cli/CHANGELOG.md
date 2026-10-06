@@ -29,6 +29,13 @@
 
 ### New
 
+- **`axle info` prints the resolved configuration.** It lists the version,
+  runtime, which `cli.yaml` and `credentials` files exist, the default
+  provider and tools, every configured provider with its model, and the
+  `AXLE_*` environment variables. Each value is followed by where it came
+  from: `~/.axle/cli.yaml`, `./.axle/cli.yaml`, a `credentials` file,
+  `.env`, or the environment. An API key shows as set or unset, never its
+  value.
 - **Replies render as markdown.** Under the ink renderer, a reply shows
   headings in bold, inline `code` in yellow, fenced code behind a `│`
   gutter, lists with plain markers, and tables as aligned columns instead
