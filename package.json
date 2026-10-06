@@ -10,6 +10,8 @@
     "build": "pnpm -r --filter @fifthrevision/axle --filter @fifthrevision/axle-cli build",
     "build:watch": "pnpm --filter @fifthrevision/axle build:watch",
     "build-dev": "pnpm -r --filter @fifthrevision/axle --filter @fifthrevision/axle-cli build-dev",
+    "build:binary": "pnpm run build && pnpm --filter @fifthrevision/axle-cli build:binary",
+    "install:binary": "pnpm run build && pnpm --filter @fifthrevision/axle-cli build:binary --install ~/bin",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "pnpm run typecheck && pnpm test && pnpm run build",

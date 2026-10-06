@@ -10,6 +10,8 @@
 - Build: `pnpm run build` (tsdown with clean-dist and minify)
 - Build (dev): `pnpm run build-dev` (tsdown without minify)
 - Build (watch): `pnpm run build:watch` (for npm link development scenarios)
+- Build (binary): `pnpm run build:binary` (Bun single executable at `packages/axle-cli/dist-bin/axle`; requires `bun`)
+- Install (binary): `pnpm run install:binary` (builds, then copies the binary to `~/bin/axle`)
 - Test all: `pnpm test`
 - Typecheck: `pnpm run typecheck` (tsc --noEmit; CI runs this — vitest and tsdown don't typecheck tests)
 - Full CI mirror: `pnpm run check` (typecheck + test + build, same order as CI)

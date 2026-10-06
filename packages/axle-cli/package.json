@@ -27,6 +27,7 @@
     "generate:job-schema": "tsx ./scripts/generate-job-schema.ts",
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
+    "build:binary": "bun scripts/build-binary.mjs",
     "build-dev": "tsdown"
   },
   "author": "Chong Han Chua",

@@ -87,7 +87,7 @@ export function formatInfo(input: InfoInput): string[] {
   ];
 
   return [
-    `axle ${version} · node ${process.version} · ${process.platform} ${process.arch}`,
+    `axle ${version} · ${describeRuntime()} · ${process.platform} ${process.arch}`,
     `cwd ${cwd}`,
     "",
     "Config files",
@@ -121,6 +121,11 @@ export function formatInfo(input: InfoInput): string[] {
       ENVIRONMENT_VARIABLES.map((name) => ({ label: name, value: env[name] ?? UNSET })),
     ),
   ];
+}
+
+function describeRuntime(): string {
+  const bun = process.versions.bun;
+  return bun === undefined ? `node ${process.version}` : `bun ${bun}`;
 }
 
 function defaultProviderProblem(cliConfig: CliConfig, serviceConfig: ServiceConfig): string[] {

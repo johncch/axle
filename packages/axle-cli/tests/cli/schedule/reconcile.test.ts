@@ -296,6 +296,16 @@ describe("resolveRelaunchArgv", () => {
       }),
     ).toEqual(["/usr/local/bin/node", "/usr/local/lib/axle/dist/cli.js"]);
   });
+
+  it("re-enters a compiled binary by its executable alone", () => {
+    expect(
+      resolveRelaunchArgv({
+        execPath: "/Users/me/.local/bin/axle",
+        execArgv: [],
+        argv: ["bun", "/$bunfs/root/axle", "schedule", "-j", "x.yml"],
+      }),
+    ).toEqual(["/Users/me/.local/bin/axle"]);
+  });
 });
 
 describe("buildDesiredSchedule", () => {

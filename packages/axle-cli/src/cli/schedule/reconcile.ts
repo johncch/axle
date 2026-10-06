@@ -44,14 +44,20 @@ export function unknownBackendError(kind: string): Error {
 
 export const SCHEDULED_OCCURRENCE_FLAG = "--scheduled";
 
+const COMPILED_ENTRY_PREFIX = "/$bunfs/";
+
 /**
  * The shell-free command that re-enters this same CLI build: the running
- * node binary, its loader flags (tsx in development), and the entry script.
+ * node binary, its loader flags (tsx in development), and the entry script —
+ * or just the executable when running as a compiled single binary.
  * Captured at apply time so the job never depends on launchd's PATH.
  */
 export function resolveRelaunchArgv(
   process_: Pick<NodeJS.Process, "execPath" | "execArgv" | "argv"> = process,
 ): string[] {
+  if (process_.argv[1]?.startsWith(COMPILED_ENTRY_PREFIX)) {
+    return [process_.execPath];
+  }
   return [process_.execPath, ...process_.execArgv, resolve(process_.argv[1])];
 }
 
