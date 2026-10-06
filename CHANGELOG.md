@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.33.0] - 2026-10-06
+
+- **Breaking:** removed the model registry. The `@fifthrevision/axle/models` entry point no longer exists; pass model IDs as plain strings (`"openai/gpt-5.5"`), and OpenRouter IDs are sent unchanged.
+- **Breaking:** removed `temperature`, `topP`, and `stop` from `generate()`, `stream()`, and agent request options; send them through `providerOptions` using the provider's own field names.
+- **Breaking:** normalized provider tool parts across providers with portable `input` and `result` fields and per-provider `continuity`; added `provider-tool-result` content parts and `provider-tool:input`/`provider-tool:error` events, and removed `output` from `provider-tool:complete`.
+- **Breaking:** provider refusals are now reported as a dedicated `refusal` failure kind instead of empty or mislabeled successes.
+- **Breaking:** flattened failure results so `type`, `message`, `status`, and `usage` sit directly on `model` failures, and rejected API keys are detected as `type: "authentication"`.
+- **Breaking:** removed `AxleStopReason.Error` and `AxleStopReason.Custom`; unknown stop reasons now fail the request.
+- **Breaking (CLI):** local tools (`exec`, `read-file`, `write-file`, `patch-file`) are enabled by default in chat and recipes, and the `calculator` tool was removed. Add `tools: []` to keep a recipe tool-free.
+- Added `axle info` to print the version, config files, defaults, and every configured provider, showing where each value came from and API keys only as set or unset.
+- Added recipe scheduling on macOS: declare `schedule: { every: 1h }` or `at: "09:00"` in a recipe and use `axle schedule` commands to register, list, inspect sessions, and remove LaunchAgent-based runs.
+- CLI replies now render as markdown (headings, code, lists, tables), prompts use GitHub CLI-style glyphs, and a default `axle-help` tool lets the model answer questions about axle itself.
+- Thinking text now streams from Claude and OpenAI models when `request.reasoning` is enabled.
+- Anthropic `pause_turn` responses continue automatically within a single step, with usage summed across the follow-up requests.
+- Surfaced provider code execution output (stdout/stderr/exit code) in action results, newly enabled Anthropic code execution, and preserved Gemini code execution parts across turns.
+- Kept Anthropic server tool results when a server tool runs alongside client tools, so follow-up requests no longer fail.
+- Chat Completions HTTP errors now report the provider's error type and message instead of the raw status and body, and custom headers can be passed through provider client options.
+- Agent session IDs are forwarded to OpenRouter so conversations stick to one upstream provider.
+- OpenAI assistant items are replayed in their original order, fixing requests that reasoned between web searches.
+- Adjacent text parts are joined without separators, fixing broken sentences and unparseable `Instruct` JSON.
+- OpenAI responses cut off at `maxOutputTokens` and Anthropic's `model_context_window_exceeded` now finish with `length` and keep partial content.
+- `web_search` resolves to newer provider versions, and Gemini searches now surface a `provider-tool` part with the queries used.
+- Anthropic's implicit `max_tokens` default is now 128,000.
+
 ## [0.32.0] - 2026-09-12
 
 - **Breaking:** renamed thinking stream events and separated displayable thinking summaries from raw reasoning content for clearer reasoning handling.
