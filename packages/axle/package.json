@@ -11,15 +11,19 @@
     "node": ">=22"
   },
   "exports": {
-    ".": {
-      "axle-source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./ui": {
-      "axle-source": "./src/ui.ts",
-      "types": "./dist/ui.d.ts",
-      "import": "./dist/ui.js"
+    ".": "./src/index.ts",
+    "./ui": "./src/ui.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./ui": {
+        "types": "./dist/ui.d.ts",
+        "import": "./dist/ui.js"
+      }
     }
   },
   "files": [
@@ -47,6 +51,8 @@
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",
+    "commander": "^15.0.0",
+    "dotenv": "^18.0.5",
     "publint": "^0.3.24",
     "tsdown": "^0.23.0",
     "typescript": "^6.0.3",

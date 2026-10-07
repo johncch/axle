@@ -4,7 +4,7 @@ import { useCLIHelper } from "./helpers/cli.js";
 const [provider, model] = useCLIHelper();
 
 async function summarizePdf() {
-  const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+  const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
 
   const instruct = new Instruct({ prompt: "Summarize this document in 2-3 sentences." });
   instruct.addFile(pdf);

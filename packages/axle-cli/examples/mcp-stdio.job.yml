@@ -3,7 +3,7 @@ provider: anthropic
 mcps:
   - transport: stdio
     command: npx
-    args: ["tsx", "examples/mcps/wordcount-server.ts"]
+    args: ["tsx", "packages/axle/examples/mcps/wordcount-server.ts"]
 
 task: |
   Can you tell me a 3 sentence story with a character's name

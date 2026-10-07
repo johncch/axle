@@ -4,7 +4,7 @@ import { useCLIHelper } from "./helpers/cli.js";
 const [provider, model] = useCLIHelper();
 
 async function analyzeImage() {
-  const imageFile = await loadFileContent("./examples/data/economist-brainy-imports.png");
+  const imageFile = await loadFileContent("./packages/axle/examples/data/economist-brainy-imports.png");
 
   const instruct = new Instruct({ prompt: "What are the data that is shown in the image." });
   instruct.addFile(imageFile);

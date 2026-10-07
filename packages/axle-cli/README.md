@@ -324,7 +324,7 @@ mcps:
   - name: wc
     transport: stdio
     command: npx
-    args: ["tsx", "examples/mcps/wordcount-server.ts"]
+    args: ["tsx", "packages/axle/examples/mcps/wordcount-server.ts"]
   - transport: http
     url: http://localhost:3100/mcp
 

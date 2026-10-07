@@ -59,7 +59,7 @@ Each package README carries its full usage documentation.
   release; the CLI's release notes live in
   [its changelog](packages/axle-cli/CHANGELOG.md)
 - `docs/terminology.md` — normative vocabulary
-- `examples/` — runnable scripts and job definitions
+- `packages/axle/examples/` — runnable library scripts · `packages/axle-cli/examples/` — job definitions
 
 ## Development
 

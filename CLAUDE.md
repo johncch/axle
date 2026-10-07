@@ -9,17 +9,17 @@
 
 - Build: `pnpm run build` (tsdown with clean-dist and minify)
 - Build (dev): `pnpm run build-dev` (tsdown without minify)
-- Build (watch): `cd packages/axle && pnpm build:watch` (for npm link development scenarios)
+- Build (watch): `cd packages/axle && pnpm build:watch` (only for a consumer that needs built output; linked TypeScript projects don't)
 - Build (binary): `cd packages/axle-cli && pnpm build:binary` (Bun single executable at `dist-bin/axle`; requires `bun`)
 - Install (binary): `cd packages/axle-cli && pnpm install:binary` (builds, then copies the binary to `~/bin/axle`)
 - Test all: `pnpm test` (vitest projects over `packages/*`)
-- Typecheck: `pnpm run typecheck` (root tsconfig for `checks/`, `examples/`, `scripts/`, then `pnpm -r typecheck`; CI runs this — vitest and tsdown don't typecheck tests)
+- Typecheck: `pnpm run typecheck` (`pnpm -r typecheck` over every workspace package, including `checks/` and `examples/`; CI runs this — vitest and tsdown don't typecheck tests)
 - Full CI mirror: `pnpm run check` (typecheck + test + build, same order as CI)
 - Test single: `pnpm test path/to/file.test.ts` or `pnpm test -t "test name pattern"` (no `--`; pnpm would pass it through literally and vitest runs everything)
 - Per package: `cd packages/<name>` then `pnpm test`, `pnpm typecheck`, `pnpm build` — each package has its own `tsconfig.json` and `vitest.config.ts`
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
-- Example jobs: `scripts/run-example-jobs.sh [job files...]` (runs `examples/jobs/*` sequentially against real providers; starts the HTTP MCP server)
+- Example jobs: `scripts/run-example-jobs.sh [job files...]` (runs `packages/axle-cli/examples/*` sequentially against real providers; starts the HTTP MCP server)
 - Release: `pnpm run release -- <version>` (runs tests, builds, versions packages, commits, and tags)
 
 # Working with Humans
@@ -65,13 +65,15 @@
   - `src/errors/`: Custom error classes
   - `src/utils/`: Helper functions
   - `tests/`: Core package tests
+  - `examples/`: Runnable library scripts, the wordcount MCP server (`mcps/`), and shared fixture files (`data/`); run from the repo root
 - `packages/axle-cli/`: CLI harness package
   - `src/cli.ts`: CLI entrypoint
   - `src/cli/`: YAML loading, runners, tool factory, ledger
   - `src/tools/`: CLI local workflow tools (exec, read-file, write-file, patch-file)
   - `tests/`: CLI package tests
-- `examples/`: Sample job definitions and scripts
-- `scripts/`: Utility scripts
+  - `examples/`: Example job definitions; run from the repo root
+- `checks/`: Live provider checks (`pnpm run checks`) and wire captures (`checks/captures/`) — a private workspace package, same root-cwd rule
+- `scripts/`: Release and workflow scripts (`release.mjs`, `cut-release.mjs`, `run-example-jobs.sh`)
 - `docs/`: Documentation
   - `architecture/`: Normative per-subsystem design docs (see Documentation below)
   - `development/`: Dated working notes, one per change (frozen)
@@ -79,10 +81,10 @@
 
 # Build Notes
 
-- **`axle-source` export condition** — core's `package.json` exposes `src` under a custom condition. tsc (`customConditions`), tsx (`--conditions=axle-source`) and the CLI's vitest config opt in, so development and tests run against core source with no build; Bun, Node and npm consumers never ask for it and get `dist`. Never alias the package name with tsconfig `paths` — bundlers honour that on every file and would bundle core from source.
+- **Root `package.json` is orchestration only** — fan-out scripts (`build`, `test`, `typecheck`, `check`), release tooling, and `start`/`checks` (which need root cwd). Its devDependencies are prettier, tsx and vitest. A dependency used by code in a package belongs in that package's `package.json`, including `checks/` and `examples/`.
+- **Core resolves to source inside the repo, dist in the tarball** — core's `exports` point at `src/*.ts`; `publishConfig.exports` holds the `dist` entries and `pnpm pack` swaps them in. tsx, tsc, vitest and tsdown all see source with no flags and no build. Nothing in the repo reads core's `dist`: the CLI build bundles core in (`deps.alwaysBundle` in its tsdown config, with types left external), so `dist/cli.js` is self-contained and the binary build only needs the CLI's own `pnpm build`. Core's runtime dependencies are therefore listed in the CLI's `package.json` too; keep the two lists in step. Never alias the package name with tsconfig `paths`.
 - **`dist/` is not checked in** — It's generated during build and ignored by git
-- **`prepare` script** — Runs `pnpm run build` automatically when installing from git URLs
-- **npm link workflow** — Use `pnpm run build:watch` for live rebuilding during development
+- **Linking into another project** — `cd packages/axle && pnpm link` (the root is a private workspace package, not the library). The link resolves to `src`, so a TypeScript project (tsx, vitest, Vite) needs no build and no watcher. Plain Node can't run the linked source; a consumer that needs built output installs a tarball from `pnpm --filter @fifthrevision/axle pack` instead, which applies `publishConfig`. Git-URL installs also skip `publishConfig` and are not a supported pathway.
 
 # Key Concepts
 

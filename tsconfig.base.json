@@ -3,7 +3,6 @@
     "target": "es2024",
     "module": "node16",
     "moduleResolution": "node16",
-    "customConditions": ["axle-source"],
     "isolatedModules": true,
     "resolveJsonModule": true,
     "skipLibCheck": true

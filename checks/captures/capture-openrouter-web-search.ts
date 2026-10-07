@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-// pnpm exec tsx scripts/capture-openrouter-web-search.ts \
+// pnpm exec tsx checks/captures/capture-openrouter-web-search.ts \
 //   --model "your/openrouter-model" \
 //   > /tmp/openrouter-web-search.sse
 
@@ -50,7 +50,7 @@ function parseArgs(argv: string[]): CaptureOptions {
 
 function printHelp() {
   console.error(`Usage:
-  OPENROUTER_API_KEY=... pnpm exec tsx scripts/capture-openrouter-web-search.ts --model <model-id> > /tmp/openrouter-web-search.sse
+  OPENROUTER_API_KEY=... pnpm exec tsx checks/captures/capture-openrouter-web-search.ts --model <model-id> > /tmp/openrouter-web-search.sse
 
 Options:
   --model <id>            OpenRouter model id. Defaults to OPENROUTER_MODEL.

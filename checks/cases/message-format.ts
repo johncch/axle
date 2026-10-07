@@ -62,7 +62,7 @@ export const messageFormatCases: CheckCase[] = [
     description: "PDF inputs return document citations in Axle's normalized format.",
     providers: ["anthropic"],
     async run({ provider, model, requestOptions }) {
-      const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+      const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
       const result = await generate({
         provider,
         model,
@@ -132,7 +132,7 @@ export const messageFormatCases: CheckCase[] = [
     description: "A follow-up request is accepted after an answer with document citations.",
     providers: ["anthropic"],
     async run({ provider, model, requestOptions }) {
-      const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+      const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
       return runCitationFollowUp({
         provider,
         model,

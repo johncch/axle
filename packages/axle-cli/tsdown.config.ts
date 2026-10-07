@@ -2,6 +2,10 @@ import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: ["src/cli.ts", "src/tools/index.ts"],
+  deps: {
+    alwaysBundle: ["@fifthrevision/axle"],
+    dts: { neverBundle: ["@fifthrevision/axle"] },
+  },
   publint: true,
   attw: {
     profile: "esm-only",

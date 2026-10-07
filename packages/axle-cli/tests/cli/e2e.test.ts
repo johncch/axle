@@ -130,13 +130,13 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
       replies,
       requests,
       runCli: (args, env = {}, stdin = "") =>
-        run(TSX_BIN, ["--conditions=axle-source", CLI_PATH, ...args], {
+        run(TSX_BIN, [CLI_PATH, ...args], {
           cwd: CWD,
           env: { PATH: process.env.PATH!, HOME, ...env },
           stdin,
         }),
       runCliWithSlowReader: (args, env = {}) =>
-        run(TSX_BIN, ["--conditions=axle-source", CLI_PATH, ...args], {
+        run(TSX_BIN, [CLI_PATH, ...args], {
           cwd: CWD,
           env: { PATH: process.env.PATH!, HOME, ...env },
           stdin: "",

@@ -1194,7 +1194,7 @@ export const coreCases: CheckCase[] = [
       },
     ],
     async run({ provider, model, requestOptions }) {
-      const image = await loadFileContent("./examples/data/economist-brainy-imports.png");
+      const image = await loadFileContent("./packages/axle/examples/data/economist-brainy-imports.png");
       const instruct = new Instruct({
         prompt: "Inspect the attached chart. Return the chart title and the top listed university.",
         schema: z.object({
@@ -1226,7 +1226,7 @@ export const coreCases: CheckCase[] = [
     description: "generate() with an Instruct PDF file attachment.",
     providers: ["openai", "anthropic", "google", "openrouter"],
     async run({ provider, model, requestOptions }) {
-      const pdf = await loadFileContent("./examples/data/designing-a-new-foundation.pdf");
+      const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
       const instruct = new Instruct({
         prompt:
           "Inspect the attached document. Return fileType exactly as 'pdf' and provide a short summary.",
