@@ -1,4 +1,4 @@
-# Start server first: pnpm tsx examples/mcps/wordcount-server.ts --http --port 3100
+# Start server first: pnpm tsx packages/axle/examples/mcps/wordcount-server.ts --http --port 3100
 provider: anthropic
 
 mcps:

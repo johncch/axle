@@ -325,3 +325,10 @@ safety blocks are injected in `packages/axle/tests/providers/refusals.test.ts`.
 Live providers cannot reliably produce these exact failure conditions; these
 fixtures cover the vendor adapters and public API together. The live harness
 does not validate actual socket cancellation or provoke provider refusals.
+
+## Wire captures
+
+`checks/captures/` holds one-off scripts that record a provider's raw
+streaming output to disk for fixture-building — `capture-gemini-code-execution.ts`
+and `capture-openrouter-web-search.ts`. Each script's header comment gives
+its invocation; like the checks, run them from the repository root.

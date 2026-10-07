@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schemas/v3/job.yaml
+# yaml-language-server: $schema=../../../schemas/v3/job.yaml
 provider: gemini
 
 task: |
@@ -7,5 +7,5 @@ task: |
   action items for addressing them.
 
 files:
-  - examples/data/meeting_notes.md
-  - examples/data/research_paper.md
+  - packages/axle/examples/data/meeting_notes.md
+  - packages/axle/examples/data/research_paper.md

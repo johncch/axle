@@ -11,13 +11,19 @@
     "node": ">=22"
   },
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./ui": {
-      "types": "./dist/ui.d.ts",
-      "import": "./dist/ui.js"
+    ".": "./src/index.ts",
+    "./ui": "./src/ui.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./ui": {
+        "types": "./dist/ui.d.ts",
+        "import": "./dist/ui.js"
+      }
     }
   },
   "files": [
@@ -26,7 +32,9 @@
   "scripts": {
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
-    "build-dev": "tsdown"
+    "build-dev": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Chong Han Chua",
   "license": "ISC",
@@ -43,8 +51,11 @@
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.5",
+    "commander": "^15.0.0",
+    "dotenv": "^18.0.5",
     "publint": "^0.3.24",
     "tsdown": "^0.23.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
   }
 }

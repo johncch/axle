@@ -27,18 +27,29 @@
     "generate:job-schema": "tsx ./scripts/generate-job-schema.ts",
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
-    "build-dev": "tsdown"
+    "build:binary": "pnpm build && bun scripts/build-binary.mjs",
+    "install:binary": "pnpm build && bun scripts/build-binary.mjs --install ~/bin",
+    "build-dev": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Chong Han Chua",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@clack/core": "^1.5.1",
     "@commander-js/extra-typings": "^15.0.0",
     "@fifthrevision/axle": "workspace:*",
+    "@google/genai": "^2.24.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "chalk": "^6.0.1",
     "commander": "^15.0.0",
     "dotenv": "^18.0.5",
     "glob": "^13.0.6",
     "ink": "^7.1.1",
+    "marked": "^18.0.14",
+    "mime": "^4.1.0",
+    "openai": "^7.25.0",
     "react": "^19.3.0",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
@@ -49,6 +60,7 @@
     "publint": "^0.3.24",
     "tsdown": "^0.23.0",
     "tsx": "^4.23.15",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
   }
 }

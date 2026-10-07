@@ -6,7 +6,7 @@ const [provider, model] = useCLIHelper();
 const wordCountMCP = new MCP({
   transport: "stdio",
   command: "npx",
-  args: ["tsx", "examples/mcps/wordcount-server.ts"],
+  args: ["tsx", "packages/axle/examples/mcps/wordcount-server.ts"],
 });
 await wordCountMCP.connect();
 

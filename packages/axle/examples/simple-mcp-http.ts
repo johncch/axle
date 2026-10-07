@@ -4,7 +4,7 @@ import { useCLIHelper } from "./helpers/cli.js";
 const [provider, model] = useCLIHelper();
 
 // Must start the http server separately
-// pnpm tsx examples/mcps/wordcount-server.ts --http --port 3100
+// pnpm tsx packages/axle/examples/mcps/wordcount-server.ts --http --port 3100
 const wordCountMCP = new MCP({
   transport: "http",
   url: "http://localhost:3100/mcp",

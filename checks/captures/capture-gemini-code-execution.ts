@@ -10,7 +10,7 @@ import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-// pnpm exec tsx scripts/capture-gemini-code-execution.ts \
+// pnpm exec tsx checks/captures/capture-gemini-code-execution.ts \
 //   --model gemini-2.5-flash --out /tmp/gemini-code-execution
 //
 // With --with-function a client function is declared next to code execution
@@ -70,7 +70,7 @@ function parseArgs(argv: string[]): CaptureOptions {
 
 function printHelp() {
   console.error(`Usage:
-  GEMINI_API_KEY=... pnpm exec tsx scripts/capture-gemini-code-execution.ts [--model <id>] [--out <dir>]
+  GEMINI_API_KEY=... pnpm exec tsx checks/captures/capture-gemini-code-execution.ts [--model <id>] [--out <dir>]
 
 Writes <dir>/turn-1.jsonl (streamed chunks of the code execution answer),
 <dir>/turn-2-request.json (the contents echoed back) and <dir>/turn-2.jsonl

@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../../schemas/v3/job.yaml
+provider: gemini
+
+task: |
+  Get me the first paragraph of the document.
+
+files:
+  - packages/axle/examples/data/designing-a-new-foundation.pdf

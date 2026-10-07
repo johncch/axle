@@ -5,6 +5,8 @@ input
 axle.config.yml
 logs
 dist
+dist-bin
+*.bun-build
 package-lock.json
 .claude/settings.local.json
 .axle

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schemas/v3/job.yaml
+# yaml-language-server: $schema=../../../schemas/v3/job.yaml
 provider:
   type: chatcompletions
   baseUrl: http://localhost:11434/v1
@@ -9,4 +9,4 @@ task: |
   What are the data that is shown in the image.
 
 files:
-  - examples/data/economist-brainy-imports.png
+  - packages/axle/examples/data/economist-brainy-imports.png

@@ -10,7 +10,7 @@ const showChartTool: ExecutableTool = {
   description: "Returns a chart image for the given topic.",
   schema: z.object({ topic: z.string() }),
   async execute() {
-    const image = await loadFileContent("./examples/data/economist-brainy-imports.png", "base64");
+    const image = await loadFileContent("./packages/axle/examples/data/economist-brainy-imports.png", "base64");
     return [
       { type: "text", text: "Chart attached." },
       { type: "file", file: image },

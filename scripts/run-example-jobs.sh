@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: scripts/run-example-jobs.sh [job files...]   (default: examples/jobs/*)
+# Usage: scripts/run-example-jobs.sh [job files...]   (default: packages/axle-cli/examples/*)
 # Starts the wordcount MCP server on :3100 for mcp-http.job.yml.
 set -o pipefail
 
@@ -7,12 +7,11 @@ cd "$(dirname "$0")/.."
 
 jobs=("$@")
 if [ ${#jobs[@]} -eq 0 ]; then
-  jobs=(examples/jobs/*.y*ml)
+  jobs=(packages/axle-cli/examples/*.y*ml)
 fi
 
-pnpm --filter @fifthrevision/axle build-dev >/dev/null || exit 1
 
-node --import tsx examples/mcps/wordcount-server.ts --http --port 3100 >/dev/null 2>&1 &
+node --import tsx packages/axle/examples/mcps/wordcount-server.ts --http --port 3100 >/dev/null 2>&1 &
 mcp_pid=$!
 trap 'kill $mcp_pid 2>/dev/null' EXIT
 

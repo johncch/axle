@@ -18,7 +18,7 @@ const agent = new Agent({
     // For demo: inspect what the resolver receives. Drop in real code.
     console.log(params);
     const imageFile = await loadFileContent(
-      "./examples/data/economist-brainy-imports.png",
+      "./packages/axle/examples/data/economist-brainy-imports.png",
       "base64",
     );
     return { type: "base64", data: imageFile.source.data };
