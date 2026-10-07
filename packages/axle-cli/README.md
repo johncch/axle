@@ -48,6 +48,7 @@ axle schedule sessions -j recipe.yaml   # sessions a schedule's firings produced
 axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs stay
 axle setup                           # (re)configure providers and defaults
 axle info                            # print version, config files, and resolved config
+axle explain recipe.batch            # describe the keys a recipe or cli.yaml accepts
 axle cleanup                         # delete old sessions by age window
 ```
 
@@ -340,6 +341,12 @@ Each entry supports:
 - `url` / `headers` — for HTTP transport
 
 ## Configuration
+
+`axle explain` prints every key a recipe and `cli.yaml` accept, and
+`axle explain <path>` describes one, for example
+`axle explain recipe.request.reasoning` or `axle explain config.providers`
+(`config` is `cli.yaml`). Each key lists the keys beneath it, which are the
+next path segments.
 
 For CLI use, put provider secrets in your environment, a local `.env` file, or
 a credentials file. Credentials files use the same key names as the

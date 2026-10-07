@@ -5,33 +5,50 @@ $schema: http://json-schema.org/draft-07/schema#
 type: object
 properties:
   name:
+    description: Name of the recipe. Scopes its batch ledger entries; the recipe's
+      path when omitted.
     type: string
   provider:
+    description: "Where requests go: a provider name, or inline endpoint
+      configuration. Falls back to defaults.provider in cli.yaml."
     anyOf:
       - type: string
         minLength: 1
+        description: "A cli.yaml provider profile or a built-in type: anthropic, openai,
+          gemini, chatcompletions."
       - oneOf:
           - type: object
             properties:
               type:
                 type: string
                 const: chatcompletions
+                description: Provider API the endpoint speaks.
               baseUrl:
+                description: Base URL of the OpenAI-compatible endpoint, e.g.
+                  http://localhost:11434/v1.
                 type: string
               vendor:
+                description: Vendor behind the endpoint; turns on that vendor's own request
+                  fields.
                 type: string
                 enum:
                   - openrouter
                   - together
               apiKey:
+                description: API key, inline. Prefer apiKeyEnv or a credentials file.
                 type: string
               apiKeyEnv:
+                description: Name of the environment variable or credentials entry that holds
+                  the API key.
                 type: string
               maxRetries:
+                description: Retries after a failed request. Defaults to 2.
                 type: integer
                 minimum: 0
                 maximum: 9007199254740991
               timeoutMs:
+                description: Timeout for one request attempt, in milliseconds. The provider
+                  SDK's default when omitted.
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
@@ -43,15 +60,22 @@ properties:
               type:
                 type: string
                 const: anthropic
+                description: Provider API the endpoint speaks.
               apiKey:
+                description: API key, inline. Prefer apiKeyEnv or a credentials file.
                 type: string
               apiKeyEnv:
+                description: Name of the environment variable or credentials entry that holds
+                  the API key.
                 type: string
               maxRetries:
+                description: Retries after a failed request. Defaults to 2.
                 type: integer
                 minimum: 0
                 maximum: 9007199254740991
               timeoutMs:
+                description: Timeout for one request attempt, in milliseconds. The provider
+                  SDK's default when omitted.
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
@@ -63,15 +87,22 @@ properties:
               type:
                 type: string
                 const: openai
+                description: Provider API the endpoint speaks.
               apiKey:
+                description: API key, inline. Prefer apiKeyEnv or a credentials file.
                 type: string
               apiKeyEnv:
+                description: Name of the environment variable or credentials entry that holds
+                  the API key.
                 type: string
               maxRetries:
+                description: Retries after a failed request. Defaults to 2.
                 type: integer
                 minimum: 0
                 maximum: 9007199254740991
               timeoutMs:
+                description: Timeout for one request attempt, in milliseconds. The provider
+                  SDK's default when omitted.
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
@@ -83,15 +114,22 @@ properties:
               type:
                 type: string
                 const: gemini
+                description: Provider API the endpoint speaks.
               apiKey:
+                description: API key, inline. Prefer apiKeyEnv or a credentials file.
                 type: string
               apiKeyEnv:
+                description: Name of the environment variable or credentials entry that holds
+                  the API key.
                 type: string
               maxRetries:
+                description: Retries after a failed request. Defaults to 2.
                 type: integer
                 minimum: 0
                 maximum: 9007199254740991
               timeoutMs:
+                description: Timeout for one request attempt, in milliseconds. The provider
+                  SDK's default when omitted.
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
@@ -99,13 +137,19 @@ properties:
               - type
             additionalProperties: false
   model:
+    description: Model id, publisher-qualified (anthropic/claude-sonnet-5) or
+      provider-native. Falls back to defaults.models in cli.yaml.
     type: string
   system:
+    description: System prompt.
     type: string
   request:
+    description: Request options that work across providers.
     type: object
     properties:
       reasoning:
+        description: Model thinking. default leaves the provider's own default, on is
+          medium effort, off sends the provider's explicit disable.
         anyOf:
           - type: string
             enum:
@@ -120,7 +164,10 @@ properties:
                   - low
                   - medium
                   - high
+                description: How much the model thinks.
               display:
+                description: hidden asks the provider not to return its thinking. Defaults to
+                  visible.
                 type: string
                 enum:
                   - visible
@@ -129,10 +176,13 @@ properties:
               - effort
             additionalProperties: false
       maxOutputTokens:
+        description: Upper limit on tokens the model generates per response.
         type: integer
         exclusiveMinimum: 0
         maximum: 9007199254740991
       toolChoice:
+        description: Whether the model may, must not, or must call a tool, or the one
+          tool it must call.
         anyOf:
           - type: string
             enum:
@@ -144,15 +194,19 @@ properties:
               type:
                 type: string
                 const: tool
+                description: Force one specific tool.
               name:
                 type: string
+                description: Name of the tool the model must call.
             required:
               - type
               - name
             additionalProperties: false
       parallelToolCalls:
+        description: Whether the model may request several tool calls in one response.
         type: boolean
       providerOptions:
+        description: Sent to the provider as-is under its own field names, e.g. temperature.
         type: object
         propertyNames:
           type: string
@@ -160,19 +214,25 @@ properties:
     additionalProperties: false
   task:
     type: string
+    description: The prompt to run. {{name}} placeholders are filled from --args.
   tools:
+    description: "Local tools the model may call: axle-help, exec, patch-file,
+      read-file, write-file. Replaces the defaults; [] means none."
     type: array
     items:
       type: string
   providerTools:
+    description: Tools the provider runs on its side, e.g. web_search, code_execution.
     type: array
     items:
       type: string
   files:
+    description: Paths of files attached to the task.
     type: array
     items:
       type: string
   mcps:
+    description: MCP servers whose tools the model may call.
     type: array
     items:
       oneOf:
@@ -181,15 +241,20 @@ properties:
             transport:
               type: string
               const: stdio
+              description: Run the server as a child process.
             name:
+              description: Prefix for the names of this server's tools.
               type: string
             command:
               type: string
+              description: Executable that starts the server.
             args:
+              description: Arguments passed to command.
               type: array
               items:
                 type: string
             env:
+              description: Environment variables set for the server process.
               type: object
               propertyNames:
                 type: string
@@ -203,11 +268,15 @@ properties:
             transport:
               type: string
               const: http
+              description: Connect to a running server over HTTP.
             name:
+              description: Prefix for the names of this server's tools.
               type: string
             url:
               type: string
+              description: URL of the server's MCP endpoint.
             headers:
+              description: HTTP headers sent with every request.
               type: object
               propertyNames:
                 type: string
@@ -217,28 +286,36 @@ properties:
             - transport
             - url
   batch:
+    description: Run the recipe once per input file, each in its own session.
     type: object
     properties:
       files:
         type: string
+        description: Glob of input files. Each match runs as its own session, available
+          as {{file}}.
       concurrency:
         default: 3
+        description: Inputs processed in parallel.
         type: integer
         exclusiveMinimum: 0
         maximum: 9007199254740991
       incremental:
         default: false
+        description: Skip inputs that already completed and whose content is unchanged.
         type: boolean
     required:
       - files
     additionalProperties: false
   schedule:
+    description: "Recurrence, registered with axle schedule: either every or at."
     anyOf:
       - type: object
         properties:
           every:
             type: string
             pattern: ^([1-9][0-9]*)([smhd])$
+            description: "Fixed interval between runs: <integer><unit>, unit s, m, h or d.
+              Minimum 60s."
         required:
           - every
         additionalProperties: false
@@ -253,7 +330,10 @@ properties:
                 items:
                   type: string
                   pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+            description: Time of day to run, HH:MM in 24-hour machine-local time; a list for
+              several.
           on:
+            description: Weekdays the at times apply to. Every day when omitted.
             minItems: 1
             type: array
             items:
@@ -270,6 +350,8 @@ properties:
           - at
         additionalProperties: false
   compaction:
+    description: Summarize the conversation when it nears the context window.
+      Defaults to true.
     type: boolean
 required:
   - task

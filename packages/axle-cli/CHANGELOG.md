@@ -31,11 +31,19 @@
 
 - **`axle info` prints the resolved configuration.** It lists the version,
   runtime, which `cli.yaml` and `credentials` files exist, the default
-  provider and tools, every configured provider with its model, and the
-  `AXLE_*` environment variables. Each value is followed by where it came
+  provider and tools, every configured provider with its model, and
+  `AXLE_CONTEXT_WINDOW`. Each value is followed by where it came
   from: `~/.axle/cli.yaml`, `./.axle/cli.yaml`, a `credentials` file,
   `.env`, or the environment. An API key shows as set or unset, never its
   value.
+- **`axle explain` describes the configuration keys.** `axle explain` lists
+  the top-level keys of a recipe and of `cli.yaml`, each with its type, what
+  it does, and the keys beneath it. A dotted path such as
+  `axle explain recipe.request.reasoning` or `axle explain config.defaults`
+  goes one level down. Lists and maps are skipped in a path
+  (`recipe.mcps.command`). Output wraps to the terminal, up to 100 columns.
+  The same descriptions appear as hover text in editors that use the job
+  schema.
 - **Replies render as markdown.** Under the ink renderer, a reply shows
   headings in bold, inline `code` in yellow, fenced code behind a `│`
   gutter, lists with plain markers, and tables as aligned columns instead

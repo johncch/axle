@@ -43,6 +43,7 @@ has a home in the YAML, and the command line overrides selectively.
     axle schedule register|list|sessions|remove
     axle setup                            configure providers and defaults
     axle info                             print version, config files, and resolved config
+    axle explain [path]                   describe the keys a recipe or cli.yaml accepts
     axle cleanup                          delete old sessions by age window
 
 Global flags: --renderer ink|plain, --no-log, -d/--debug, --args key=value.
