@@ -1,10 +1,4 @@
 {
   "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "paths": {
-      "@fifthrevision/axle": ["./packages/axle/src/index.ts"],
-      "@fifthrevision/axle/ui": ["./packages/axle/src/ui.ts"]
-    }
-  },
   "exclude": ["packages/**", "**/dist/**", "node_modules"]
 }

@@ -1,10 +1,9 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      "@fifthrevision/axle/ui": new URL("../axle/src/ui.ts", import.meta.url).pathname,
-      "@fifthrevision/axle": new URL("../axle/src/index.ts", import.meta.url).pathname,
+  ssr: {
+    resolve: {
+      conditions: ["axle-source", "module", "node", "development|production"],
     },
   },
   test: {

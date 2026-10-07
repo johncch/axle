@@ -10,7 +10,6 @@ if [ ${#jobs[@]} -eq 0 ]; then
   jobs=(examples/jobs/*.y*ml)
 fi
 
-pnpm --filter @fifthrevision/axle build-dev >/dev/null || exit 1
 
 node --import tsx examples/mcps/wordcount-server.ts --http --port 3100 >/dev/null 2>&1 &
 mcp_pid=$!
@@ -26,7 +25,7 @@ failed=()
 for job in "${jobs[@]}"; do
   echo
   echo "━━━ $job"
-  if pnpm exec tsx packages/axle-cli/src/cli.ts -j "$job" --renderer plain --no-log </dev/null; then
+  if pnpm exec tsx --conditions=axle-source packages/axle-cli/src/cli.ts -j "$job" --renderer plain --no-log </dev/null; then
     passed+=("$job")
   else
     failed+=("$job")

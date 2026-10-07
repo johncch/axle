@@ -42,9 +42,41 @@ user-facing result.
 ## What gets bundled
 
 Bun's bundler starts at `dist/cli.js` and follows every static `import`:
-`@fifthrevision/axle` through the workspace symlink to `packages/axle/dist`,
-then the Anthropic, OpenAI, Gemini and MCP SDKs, ink, react, and so on down
-to leaves — 1403 modules. They are concatenated into one JavaScript blob
+`@fifthrevision/axle` through the workspace symlink and core's `exports`
+to `packages/axle/dist`, then the Anthropic, OpenAI, Gemini and MCP SDKs,
+ink, react, and so on down to leaves — 1403 modules.
+
+That core resolution was not always true. The repo used to map
+`@fifthrevision/axle` to core's `src` through tsconfig `paths` so that tsc,
+vitest and tsx could see source without a build. Bundlers honour `paths`
+as a project-wide alias on every file under the tsconfig, `dist/cli.js`
+included, and Bun bundles TypeScript natively — so from the first spike the
+binary had quietly been bundling core from source, and built fine with
+core's `dist` deleted. The alias was the exotic part, not Bun.
+
+Settled: core's `package.json` declares an `axle-source` export condition
+(`"axle-source": "./src/index.ts"` ahead of `types`/`import`). Tools that
+want source opt in — `customConditions` in `tsconfig.base.json`,
+`tsx --conditions=axle-source` in the `start`/`checks` scripts and the e2e
+test's spawn, `ssr.resolve.conditions` in the CLI's vitest config —
+and everything else, Bun and npm consumers included, resolves to `dist`
+by ordinary rules. No `paths`, no vitest alias, no bundler plugin for
+core; building the binary without core's `dist` now fails loudly.
+
+Rejected: a resolver plugin in the build script pinning the two core
+entries to `../axle/dist/*.js`. It worked, but it fought the alias in one
+tool instead of removing the alias. Rejected: naming the condition
+`source`. `eventsource-parser`, a transitive dependency of the SDKs,
+declares its own `source` condition pointing at its TypeScript, and Node
+tried to load that under vitest. Custom conditions share one namespace;
+the name must be unique to the project.
+
+Two vitest details: Vite 7 scopes conditions per environment and vitest
+runs tests in the SSR one, so the setting is `ssr.resolve.conditions`,
+not `resolve.conditions`; and setting it replaces Vite's defaults, so the
+list restates `module`, `node` and `development|production` (`vite` is not
+importable from the package under pnpm, so `defaultServerConditions`
+cannot be spread in). They are concatenated into one JavaScript blob
 inside the executable. The versions frozen in are whatever `pnpm-lock.yaml`
 resolved at build time; nothing is fetched on the user's machine and there
 is no `node_modules` beside the binary. `import pkg from "../package.json"`

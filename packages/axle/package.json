@@ -12,10 +12,12 @@
   },
   "exports": {
     ".": {
+      "axle-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./ui": {
+      "axle-source": "./src/ui.ts",
       "types": "./dist/ui.d.ts",
       "import": "./dist/ui.js"
     }

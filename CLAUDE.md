@@ -9,9 +9,9 @@
 
 - Build: `pnpm run build` (tsdown with clean-dist and minify)
 - Build (dev): `pnpm run build-dev` (tsdown without minify)
-- Build (watch): `pnpm run build:watch` (for npm link development scenarios)
-- Build (binary): `pnpm run build:binary` (Bun single executable at `packages/axle-cli/dist-bin/axle`; requires `bun`)
-- Install (binary): `pnpm run install:binary` (builds, then copies the binary to `~/bin/axle`)
+- Build (watch): `cd packages/axle && pnpm build:watch` (for npm link development scenarios)
+- Build (binary): `cd packages/axle-cli && pnpm build:binary` (Bun single executable at `dist-bin/axle`; requires `bun`)
+- Install (binary): `cd packages/axle-cli && pnpm install:binary` (builds, then copies the binary to `~/bin/axle`)
 - Test all: `pnpm test` (vitest projects over `packages/*`)
 - Typecheck: `pnpm run typecheck` (root tsconfig for `checks/`, `examples/`, `scripts/`, then `pnpm -r typecheck`; CI runs this — vitest and tsdown don't typecheck tests)
 - Full CI mirror: `pnpm run check` (typecheck + test + build, same order as CI)
@@ -79,6 +79,7 @@
 
 # Build Notes
 
+- **`axle-source` export condition** — core's `package.json` exposes `src` under a custom condition. tsc (`customConditions`), tsx (`--conditions=axle-source`) and the CLI's vitest config opt in, so development and tests run against core source with no build; Bun, Node and npm consumers never ask for it and get `dist`. Never alias the package name with tsconfig `paths` — bundlers honour that on every file and would bundle core from source.
 - **`dist/` is not checked in** — It's generated during build and ignored by git
 - **`prepare` script** — Runs `pnpm run build` automatically when installing from git URLs
 - **npm link workflow** — Use `pnpm run build:watch` for live rebuilding during development

@@ -23,11 +23,12 @@
     "dist"
   ],
   "scripts": {
-    "start": "tsx ./src/cli.ts",
-    "generate:job-schema": "tsx ./scripts/generate-job-schema.ts",
+    "start": "tsx --conditions=axle-source ./src/cli.ts",
+    "generate:job-schema": "tsx --conditions=axle-source ./scripts/generate-job-schema.ts",
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
-    "build:binary": "bun scripts/build-binary.mjs",
+    "build:binary": "pnpm -w build && bun scripts/build-binary.mjs",
+    "install:binary": "pnpm -w build && bun scripts/build-binary.mjs --install ~/bin",
     "build-dev": "tsdown",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
