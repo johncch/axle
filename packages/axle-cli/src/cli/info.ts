@@ -10,7 +10,7 @@ import { defaultToolNames } from "./tools.js";
 
 const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"] as const;
 
-const ENVIRONMENT_VARIABLES = ["AXLE_CONTEXT_WINDOW", "AXLE_SCHEDULE_PLATFORM", "AXLE_LAUNCHCTL"];
+const ENVIRONMENT_VARIABLES = ["AXLE_CONTEXT_WINDOW"];
 
 const UNSET = "unset";
 const ALIGNED_VALUE_WIDTH = 32;

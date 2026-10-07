@@ -916,6 +916,36 @@ describe("createStreamingRequest", () => {
     });
   });
 
+  test("times out a request that never responds after ten minutes by default", async () => {
+    vi.useFakeTimers();
+    (fetch as any).mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    const pending = collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        maxRetries: 0,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(599_999);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const chunks = await pending;
+    expect(chunks.at(-1)).toMatchObject({
+      type: "error",
+      data: { type: "TimeoutError", message: "Request timed out after 600000ms" },
+    });
+    vi.useRealTimers();
+  });
+
   test("includes stream: true and stream_options in request body", async () => {
     const sseLines = [
       `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,

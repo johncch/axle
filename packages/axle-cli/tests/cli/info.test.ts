@@ -126,4 +126,16 @@ describe("formatInfo", () => {
       "  not configured: anthropic, openai, chatcompletions",
     ]);
   });
+
+  it("leaves development overrides out of the environment section", () => {
+    const lines = info({
+      env: {
+        AXLE_CONTEXT_WINDOW: "3000",
+        AXLE_SCHEDULE_PLATFORM: "linux",
+        AXLE_LAUNCHCTL: "/tmp/fake-launchctl",
+      },
+    });
+
+    expect(section(lines, "Environment")).toEqual(["  AXLE_CONTEXT_WINDOW  3000"]);
+  });
 });

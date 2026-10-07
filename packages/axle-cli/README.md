@@ -48,6 +48,7 @@ axle schedule sessions -j recipe.yaml   # sessions a schedule's firings produced
 axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs stay
 axle setup                           # (re)configure providers and defaults
 axle info                            # print version, config files, and resolved config
+axle explain recipe.batch            # describe the keys a recipe or cli.yaml accepts
 axle cleanup                         # delete old sessions by age window
 ```
 
@@ -88,6 +89,11 @@ providerTools:
 files:
   - ./data/report.txt
 ```
+
+The sections below cover the common keys. `axle explain recipe` lists every
+key a recipe accepts, with its type and what it does, and
+`axle explain recipe.<key>` goes one level down (for example
+`axle explain recipe.request`).
 
 `provider` says where requests go. A string names a provider — a built-in
 type (`anthropic`, `openai`, `gemini`, `chatcompletions`) or a provider
@@ -339,7 +345,26 @@ Each entry supports:
 - `command` / `args` / `env` — for stdio transport
 - `url` / `headers` — for HTTP transport
 
+`axle explain recipe.mcps` prints the same keys with their types.
+
 ## Configuration
+
+`axle explain` prints every key a recipe and `cli.yaml` accept, and
+`axle explain <path>` describes one, for example
+`axle explain recipe.request.reasoning` or `axle explain config.providers`
+(`config` is `cli.yaml`). Each key lists the keys beneath it, which are the
+next path segments.
+
+For completion and hover text in an editor that runs the YAML language
+server, put the matching line at the top of the file:
+
+```yaml
+# a recipe
+# yaml-language-server: $schema=https://raw.githubusercontent.com/johncch/axle/main/schemas/v3/job.yaml
+
+# cli.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/johncch/axle/main/schemas/v3/config.yaml
+```
 
 For CLI use, put provider secrets in your environment, a local `.env` file, or
 a credentials file. Credentials files use the same key names as the
@@ -358,7 +383,7 @@ Optional model overrides use provider-specific variables:
 ```bash
 OPENAI_MODEL=openai/gpt-5.5
 ANTHROPIC_MODEL=anthropic/claude-sonnet-5
-GEMINI_MODEL=google/gemini-3.5-pro
+GEMINI_MODEL=google/gemini-3.5-flash
 ```
 
 For OpenAI-compatible endpoints:

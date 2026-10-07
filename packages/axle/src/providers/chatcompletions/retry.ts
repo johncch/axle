@@ -19,15 +19,16 @@ export interface RetryOperationContext {
   signal?: AbortSignal;
 }
 
+const DEFAULT_TIMEOUT_MS = 600_000;
+
 export async function withRetry(
   operation: (context: RetryOperationContext) => Promise<Response>,
   options: ChatCompletionsRetryOptions = {},
 ): Promise<Response> {
   const maxRetries = requireInteger(options.maxRetries ?? 2, "maxRetries", { min: 0 });
-  const timeoutMs =
-    options.timeoutMs === undefined
-      ? undefined
-      : requireInteger(options.timeoutMs, "timeoutMs", { min: 1 });
+  const timeoutMs = requireInteger(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, "timeoutMs", {
+    min: 1,
+  });
   let attempt = 0;
 
   while (true) {
@@ -48,8 +49,13 @@ export async function withRetry(
       options.onRetry?.({ attempt: attempt + 1, delayMs, status: response.status });
       await sleep(delayMs, options.signal);
       attempt += 1;
-    } catch (error) {
+    } catch (thrown) {
       throwIfAborted(options.signal, "Request aborted");
+      const abortReason = attemptSignal.signal.reason;
+      const error =
+        abortReason instanceof DOMException && abortReason.name === "TimeoutError"
+          ? abortReason
+          : thrown;
       if (attempt >= maxRetries) {
         throw error;
       }
@@ -66,12 +72,8 @@ export async function withRetry(
 
 function createAttemptSignal(
   signal: AbortSignal | undefined,
-  timeoutMs: number | undefined,
-): { signal?: AbortSignal; cleanup: () => void } {
-  if (timeoutMs === undefined) {
-    return { signal, cleanup: () => {} };
-  }
-
+  timeoutMs: number,
+): { signal: AbortSignal; cleanup: () => void } {
   const controller = new AbortController();
   const timeout = setTimeout(() => {
     controller.abort(new DOMException(`Request timed out after ${timeoutMs}ms`, "TimeoutError"));

@@ -16,6 +16,7 @@ import {
   getServiceConfig,
 } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
+import { formatExplain } from "./cli/explain.js";
 import { formatInfo } from "./cli/info.js";
 import type { CommonOpts, Invocation } from "./cli/invocation.js";
 import { buildPendingPlan, parseTemplateArgs } from "./cli/invocation.js";
@@ -53,6 +54,9 @@ function commonOf(opts: { renderer?: string; log: boolean; debug?: boolean }): C
   }
   return { renderer: renderer as "plain" | "ink", log: opts.log, debug: Boolean(opts.debug) };
 }
+
+const EXPLAIN_DEFAULT_WIDTH = 80;
+const EXPLAIN_MAX_WIDTH = 100;
 
 let invocation: Invocation | undefined;
 
@@ -277,6 +281,17 @@ program
         env: process.env,
       });
       for (const line of lines) console.log(line);
+    });
+  });
+
+program
+  .command("explain")
+  .description("Describe the keys a recipe or cli.yaml accepts")
+  .argument("[path]", "Dotted key path, e.g. recipe.request.reasoning or config.defaults")
+  .action(async (path) => {
+    await manage(async () => {
+      const width = Math.min(process.stdout.columns ?? EXPLAIN_DEFAULT_WIDTH, EXPLAIN_MAX_WIDTH);
+      for (const line of formatExplain(path, width)) console.log(line);
     });
   });
 

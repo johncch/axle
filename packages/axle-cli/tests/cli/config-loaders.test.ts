@@ -390,6 +390,32 @@ describe("config loaders", () => {
     );
   });
 
+  it("rejects a misspelled key in an mcps entry instead of dropping it", async () => {
+    const jobPath = join(TEST_DIR, "job.yaml");
+    await writeFile(
+      jobPath,
+      "task: hi\nmcps:\n  - transport: stdio\n    command: npx\n    arg: [tsx]\n",
+    );
+    await expect(getJobConfig(jobPath, {})).rejects.toThrow(/arg/);
+
+    await writeFile(
+      jobPath,
+      "task: hi\nmcps:\n  - transport: http\n    url: http://x\n    header: {}\n",
+    );
+    await expect(getJobConfig(jobPath, {})).rejects.toThrow(/header/);
+  });
+
+  it("rejects a misspelled cli.yaml key instead of dropping it", async () => {
+    const home = join(TEST_DIR, "home");
+    await mkdir(join(home, ".axle"), { recursive: true });
+
+    await writeFile(join(home, ".axle", "cli.yaml"), "default:\n  provider: anthropic\n");
+    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(/default/);
+
+    await writeFile(join(home, ".axle", "cli.yaml"), "defaults:\n  model: anthropic/x\n");
+    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(/model/);
+  });
+
   it("reports validation errors with paths", async () => {
     const path = join(TEST_DIR, "bad.yml");
     await writeFile(path, "provider:\n  type: nope\ntask: test\n");

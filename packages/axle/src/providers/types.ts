@@ -140,7 +140,8 @@ export interface ProviderClientOptions {
    */
   maxRetries?: number;
   /**
-   * Request timeout in milliseconds. Omit to use the provider SDK default.
+   * Timeout for one request attempt, in milliseconds. Omit to use the
+   * provider SDK default; `chatCompletions()` defaults to ten minutes.
    */
   timeoutMs?: number;
   /**
