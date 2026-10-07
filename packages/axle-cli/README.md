@@ -348,6 +348,17 @@ Each entry supports:
 (`config` is `cli.yaml`). Each key lists the keys beneath it, which are the
 next path segments.
 
+For completion and hover text in an editor that runs the YAML language
+server, put the matching line at the top of the file:
+
+```yaml
+# a recipe
+# yaml-language-server: $schema=https://raw.githubusercontent.com/johncch/axle/main/schemas/v3/job.yaml
+
+# cli.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/johncch/axle/main/schemas/v3/config.yaml
+```
+
 For CLI use, put provider secrets in your environment, a local `.env` file, or
 a credentials file. Credentials files use the same key names as the
 environment variables, one `KEY=value` per line, and are read in order —
@@ -365,7 +376,7 @@ Optional model overrides use provider-specific variables:
 ```bash
 OPENAI_MODEL=openai/gpt-5.5
 ANTHROPIC_MODEL=anthropic/claude-sonnet-5
-GEMINI_MODEL=google/gemini-3.5-pro
+GEMINI_MODEL=google/gemini-3.5-flash
 ```
 
 For OpenAI-compatible endpoints:

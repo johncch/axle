@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "start": "tsx ./src/cli.ts",
-    "generate:job-schema": "tsx ./scripts/generate-job-schema.ts",
+    "generate:schemas": "tsx ./scripts/generate-schemas.ts",
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
     "build:binary": "pnpm build && bun scripts/build-binary.mjs",

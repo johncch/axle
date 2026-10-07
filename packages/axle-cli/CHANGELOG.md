@@ -23,6 +23,18 @@
   `request.providerOptions` using the provider's own field name
   (`temperature`; `top_p`, or `topP` on Gemini; `stop_sequences`,
   `stopSequences`, or `stop`).
+- **`cli.yaml` rejects keys it does not know.** A misspelled or stale key
+  at the top level or under `defaults` (for example `default:` instead of
+  `defaults:`) used to be ignored; it now stops the CLI with the key named.
+  Remove or correct it.
+- **`mcps:` entries reject keys they do not know.** A misspelled key in an
+  MCP server entry (for example `arg:` instead of `args:`) used to be
+  ignored; the recipe now fails to load with the key named.
+- **OpenAI-compatible endpoints time out after 10 minutes.** A
+  `chatcompletions` request that has not started responding within 10
+  minutes is abandoned and retried, where it used to wait forever. Set
+  `timeoutMs` on the provider to change it. The other providers already
+  had their SDK's timeout.
 - **The model picker is a text prompt.** `axle setup`, and a run that can't
   resolve a model, ask for a model id as free text instead of listing
   models.
@@ -44,6 +56,13 @@
   (`recipe.mcps.command`). Output wraps to the terminal, up to 100 columns.
   The same descriptions appear as hover text in editors that use the job
   schema.
+- **Editor schemas for recipes and `cli.yaml`.** The schemas at
+  `schemas/v3/job.yaml` and the new `schemas/v3/config.yaml` carry a
+  description for every key. Point the YAML language server at them by URL
+  (see Configuration in the README) for completion and hover text.
+- **The model sees the full key reference.** The `axle-help` tool's
+  `recipes` and `config` topics now end with every key, its type, and its
+  description, generated from the same schemas as `axle explain`.
 - **Replies render as markdown.** Under the ink renderer, a reply shows
   headings in bold, inline `code` in yellow, fenced code behind a `│`
   gutter, lists with plain markers, and tables as aligned columns instead

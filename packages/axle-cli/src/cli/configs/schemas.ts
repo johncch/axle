@@ -34,7 +34,7 @@ const ProviderClientFieldsSchema = {
     .positive()
     .optional()
     .describe(
-      "Timeout for one request attempt, in milliseconds. The provider SDK's default when omitted.",
+      "Timeout for one request attempt, in milliseconds. Defaults to the provider SDK's own; 10 minutes for chatcompletions.",
     ),
 };
 
@@ -121,13 +121,13 @@ export interface ServiceConfig {
  * CLI Config Schema (cli.yaml)
  * ========================================================================== */
 
-export const CliConfigSchema = z.object({
+export const CliConfigSchema = z.strictObject({
   providers: z
     .record(z.string(), AIProviderUseSchema)
     .optional()
     .describe("Named provider profiles: endpoint configuration a recipe refers to by name."),
   defaults: z
-    .object({
+    .strictObject({
       provider: z
         .string()
         .optional()
@@ -155,7 +155,7 @@ export type CliConfig = z.infer<typeof CliConfigSchema>;
  * MCP Config Schemas
  * ========================================================================== */
 
-const MCPStdioConfigSchema = z.object({
+const MCPStdioConfigSchema = z.strictObject({
   transport: z.literal("stdio").describe("Run the server as a child process."),
   name: z.string().optional().describe("Prefix for the names of this server's tools."),
   command: z.string().describe("Executable that starts the server."),
@@ -166,7 +166,7 @@ const MCPStdioConfigSchema = z.object({
     .describe("Environment variables set for the server process."),
 });
 
-const MCPHttpConfigSchema = z.object({
+const MCPHttpConfigSchema = z.strictObject({
   transport: z.literal("http").describe("Connect to a running server over HTTP."),
   name: z.string().optional().describe("Prefix for the names of this server's tools."),
   url: z.string().describe("URL of the server's MCP endpoint."),

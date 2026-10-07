@@ -30,18 +30,14 @@ const ROOTS = [
  * `recipe.mcps.command`, `config.providers.baseUrl`. Text wraps at `width`.
  */
 export function formatExplain(path: string | undefined, width: number): string[] {
-  const roots = ROOTS.map((root): Field => ({
-    key: root.key,
-    schemas: [z.toJSONSchema(root.schema, { io: "input" })],
-    required: true,
-  }));
+  const roots = rootFields();
 
   if (path === undefined) {
     return [
       ...wrap("Run axle explain <path> for one key, e.g. axle explain recipe.batch", "", width),
       ...ROOTS.flatMap((root, index) => [
         "",
-        `${styleText(KEY_STYLE, root.key)}  ${root.title}`,
+        `${paintKey(root.key)}  ${root.title}`,
         ...formatFields(childrenOf(roots[index]), width),
       ]),
     ];
@@ -73,10 +69,43 @@ export function formatExplain(path: string | undefined, width: number): string[]
 
   const root = ROOTS.find((candidate) => candidate.key === path);
   return [
-    root ? `${styleText(KEY_STYLE, path)}  ${root.title}` : headingOf(path, field),
+    root ? `${paintKey(path)}  ${root.title}` : headingOf(paintKey(path), field),
     ...wrap(descriptionOf(field), "  ", width),
     ...formatFields(childrenOf(field), width),
   ];
+}
+
+/**
+ * Every key of one file at every depth, as unstyled, unwrapped text: the
+ * same reference `axle explain` prints, in a form to hand to a model.
+ */
+export function formatReference(rootKey: "recipe" | "config"): string[] {
+  const visit = (path: string, field: Field): string[] =>
+    childrenOf(field).flatMap((child) => {
+      const childPath = `${path}.${child.key}`;
+      return [
+        "",
+        headingOf(childPath, child),
+        `  ${descriptionOf(child)}`,
+        ...visit(childPath, child),
+      ];
+    });
+
+  return rootFields()
+    .filter((root) => root.key === rootKey)
+    .flatMap((root) => visit(root.key, root));
+}
+
+function rootFields(): Field[] {
+  return ROOTS.map((root) => ({
+    key: root.key,
+    schemas: [z.toJSONSchema(root.schema, { io: "input" })],
+    required: true,
+  }));
+}
+
+function paintKey(key: string): string {
+  return styleText(KEY_STYLE, key);
 }
 
 function formatFields(fields: Field[], width: number): string[] {
@@ -84,7 +113,7 @@ function formatFields(fields: Field[], width: number): string[] {
     const keys = childrenOf(field).map((child) => child.key);
     return [
       "",
-      `  ${headingOf(field.key, field)}`,
+      `  ${headingOf(paintKey(field.key), field)}`,
       ...wrap(descriptionOf(field), "    ", width),
       ...wrap(keys.length > 0 ? `keys: ${keys.join(", ")}` : "", "    ", width),
     ];
@@ -98,7 +127,7 @@ function headingOf(label: string, field: Field): string {
     ...(defaultValue === undefined ? [] : [`default ${JSON.stringify(defaultValue)}`]),
     ...(field.condition === undefined ? [] : [field.condition]),
   ];
-  const heading = `${styleText(KEY_STYLE, label)}  ${typeOf(field.schemas)}`;
+  const heading = `${label}  ${typeOf(field.schemas)}`;
   return notes.length > 0 ? `${heading}  (${notes.join("; ")})` : heading;
 }
 

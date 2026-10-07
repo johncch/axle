@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatReference } from "../cli/explain.js";
 import type { ExecutableTool } from "./types.js";
 
 export const HELP_TOPICS = [
@@ -278,13 +279,30 @@ chat and recipes alike.
 \`mcps:\` connects MCP servers whose tools join the list (topic: mcp).`,
 };
 
+function referenceFor(topic: (typeof HELP_TOPICS)[number]): string[] {
+  if (topic === "recipes") {
+    return ["", "## Every recipe key", ...formatReference("recipe")];
+  }
+  if (topic === "config") {
+    return [
+      "",
+      "## Every cli.yaml key",
+      ...formatReference("config"),
+      "",
+      "The user can print this with `axle explain config`, and one key with",
+      "`axle explain config.defaults`. Recipe keys are under `axle explain recipe`.",
+    ];
+  }
+  return [];
+}
+
 const helpTool: ExecutableTool<typeof helpSchema> = {
   name: "axle-help",
   description:
     "Documentation for axle, the CLI this conversation is running inside: commands, recipe YAML, batch runs, sessions and resume, schedules, MCP servers, configuration, and tools. Call this when the user asks how to use axle or what it can do.",
   schema: helpSchema,
   summarize: ({ topic }) => topic,
-  execute: async ({ topic }) => HELP[topic],
+  execute: async ({ topic }) => [HELP[topic], ...referenceFor(topic)].join("\n"),
 };
 
 export default helpTool;

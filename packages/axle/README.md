@@ -144,7 +144,7 @@ built rather than per request:
 const provider = chatCompletions("https://gateway.example.com/v1", {
   apiKey: process.env.GATEWAY_API_KEY,
   maxRetries: 2, // retries after the first attempt; 0 disables
-  timeoutMs: 60_000, // per-request timeout; omit for the SDK default
+  timeoutMs: 60_000, // per attempt; omit for the SDK default (chatCompletions: 10 minutes)
   headers: { "X-App-Name": "my-app", "X-App-Version": "1.4.0" },
 });
 ```
