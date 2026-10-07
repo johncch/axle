@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@fifthrevision/axle": ["../axle/src/index.ts"],
+      "@fifthrevision/axle/ui": ["../axle/src/ui.ts"]
+    }
+  },
+  "include": ["src", "tests", "scripts", "tsdown.config.ts", "vitest.config.ts"],
+  "exclude": ["dist", "dist-bin"]
+}

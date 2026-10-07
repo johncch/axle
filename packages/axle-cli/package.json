@@ -28,7 +28,9 @@
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
     "build:binary": "bun scripts/build-binary.mjs",
-    "build-dev": "tsdown"
+    "build-dev": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Chong Han Chua",
   "license": "ISC",
@@ -50,6 +52,7 @@
     "publint": "^0.3.24",
     "tsdown": "^0.23.0",
     "tsx": "^4.23.15",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
   }
 }

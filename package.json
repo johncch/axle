@@ -13,7 +13,7 @@
     "build:binary": "pnpm run build && pnpm --filter @fifthrevision/axle-cli build:binary",
     "install:binary": "pnpm run build && pnpm --filter @fifthrevision/axle-cli build:binary --install ~/bin",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm -r typecheck",
     "check": "pnpm run typecheck && pnpm test && pnpm run build",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
     "generate:job-schema": "pnpm --filter @fifthrevision/axle-cli run generate:job-schema",

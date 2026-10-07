@@ -197,6 +197,9 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^5.0.3
+        version: 5.0.3
 
   packages/axle-cli:
     dependencies:
@@ -249,6 +252,9 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^5.0.3
+        version: 5.0.3
 
 packages:
 

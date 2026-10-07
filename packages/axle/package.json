@@ -26,7 +26,9 @@
   "scripts": {
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
-    "build-dev": "tsdown"
+    "build-dev": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Chong Han Chua",
   "license": "ISC",
@@ -45,6 +47,7 @@
     "@arethetypeswrong/core": "^0.18.5",
     "publint": "^0.3.24",
     "tsdown": "^0.23.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
   }
 }

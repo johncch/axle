@@ -83,7 +83,7 @@ measured the binary cost at ~0.7 MB.
 Settled: a bundler plugin in `scripts/build-binary.mjs` that resolves
 `react-devtools-core` to an empty module. The branch stays in the bundle
 and remains dead at runtime. The script is `.mjs` rather than `.ts` so the
-root `tsc --noEmit` does not need Bun's type definitions; it is run with
+`tsc --noEmit` does not need Bun's type definitions; it is run with
 `bun`, never with Node.
 
 Rejected: the devDependency route. It is the well-trodden path and cheap
