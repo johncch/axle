@@ -49,8 +49,13 @@ export async function withRetry(
       options.onRetry?.({ attempt: attempt + 1, delayMs, status: response.status });
       await sleep(delayMs, options.signal);
       attempt += 1;
-    } catch (error) {
+    } catch (thrown) {
       throwIfAborted(options.signal, "Request aborted");
+      const abortReason = attemptSignal.signal.reason;
+      const error =
+        abortReason instanceof DOMException && abortReason.name === "TimeoutError"
+          ? abortReason
+          : thrown;
       if (attempt >= maxRetries) {
         throw error;
       }

@@ -33,8 +33,9 @@
 - **OpenAI-compatible endpoints time out after 10 minutes.** A
   `chatcompletions` request that has not started responding within 10
   minutes is abandoned and retried, where it used to wait forever. Set
-  `timeoutMs` on the provider to change it. The other providers already
-  had their SDK's timeout.
+  `timeoutMs` on the provider to change it. A timeout that runs out of
+  retries now reports `Request timed out after 600000ms` instead of
+  `Request aborted`.
 - **The model picker is a text prompt.** `axle setup`, and a run that can't
   resolve a model, ask for a model id as free text instead of listing
   models.

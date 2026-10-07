@@ -939,7 +939,10 @@ describe("createStreamingRequest", () => {
     expect(vi.getTimerCount()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
     const chunks = await pending;
-    expect(chunks.at(-1)).toMatchObject({ type: "error" });
+    expect(chunks.at(-1)).toMatchObject({
+      type: "error",
+      data: { type: "TimeoutError", message: "Request timed out after 600000ms" },
+    });
     vi.useRealTimers();
   });
 

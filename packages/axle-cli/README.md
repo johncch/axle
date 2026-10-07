@@ -90,6 +90,11 @@ files:
   - ./data/report.txt
 ```
 
+The sections below cover the common keys. `axle explain recipe` lists every
+key a recipe accepts, with its type and what it does, and
+`axle explain recipe.<key>` goes one level down (for example
+`axle explain recipe.request`).
+
 `provider` says where requests go. A string names a provider — a built-in
 type (`anthropic`, `openai`, `gemini`, `chatcompletions`) or a provider
 profile from `cli.yaml` — and an object is inline endpoint configuration.
@@ -339,6 +344,8 @@ Each entry supports:
 - `name` — prefix for tool names from this server (optional)
 - `command` / `args` / `env` — for stdio transport
 - `url` / `headers` — for HTTP transport
+
+`axle explain recipe.mcps` prints the same keys with their types.
 
 ## Configuration
 
