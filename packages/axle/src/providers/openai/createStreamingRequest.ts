@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
@@ -48,7 +49,7 @@ export async function* createStreamingRequest(
       signal,
     });
 
-    const request = {
+    const request: ResponseCreateParamsStreaming = {
       model,
       input,
       ...(system && { instructions: system }),
@@ -70,7 +71,7 @@ export async function* createStreamingRequest(
       request: redactResolvedFileValues(request),
     });
 
-    const stream = client.responses.stream(request as any, ...(signal ? [{ signal }] : []));
+    const stream = await client.responses.create(request, ...(signal ? [{ signal }] : []));
 
     for await (const event of stream) {
       const chunks = streamingAdapter.handleEvent(event);

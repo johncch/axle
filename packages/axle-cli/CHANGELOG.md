@@ -175,6 +175,16 @@
   and counted as a success, and a Gemini safety block read as a generic
   model error.
 
+### Fixed
+
+- **OpenAI runs no longer die when the model cites inside a tool call.**
+  With `web_search` on, `gpt-6-luna` can attach a citation to the arguments
+  of a function call, and the OpenAI SDK's stream helper rejected the event
+  with "expected output item type 'message', got 'function_call'", ending
+  the run mid tool call. Axle now reads the raw event stream and drops a
+  citation that has no text part to attach to; the tool call completes as
+  normal.
+
 ## 0.31.0
 
 ### Breaking changes

@@ -17,7 +17,7 @@ function sdkProvider(name: keyof typeof adapters, error: Error): AIProvider {
     throw error;
   });
   const clients = {
-    openai: { responses: { stream: invoke } },
+    openai: { responses: { create: invoke } },
     anthropic: { messages: { create: invoke } },
     gemini: { models: { generateContentStream: invoke } },
   };

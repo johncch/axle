@@ -14,7 +14,7 @@ const messages = [{ role: "user" as const, content: "hello" }];
 const adapters = { openai, anthropic, gemini };
 function providerFor(name: keyof typeof adapters, invoke: ReturnType<typeof vi.fn>): AIProvider {
   const clients = {
-    openai: { responses: { stream: invoke } },
+    openai: { responses: { create: invoke } },
     anthropic: { messages: { create: invoke } },
     gemini: { models: { generateContentStream: invoke } },
   };
