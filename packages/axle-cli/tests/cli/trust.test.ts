@@ -1,7 +1,13 @@
 import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isFolderTrusted, trustFilePath, trustFolder, untrustFolder } from "../../src/cli/trust.js";
+import {
+  isFolderTrusted,
+  trustFilePath,
+  trustFolder,
+  trustWouldChange,
+  untrustFolder,
+} from "../../src/cli/trust.js";
 
 const TEST_DIR = join(import.meta.dirname, "__trust_tmp__");
 const HOME = join(TEST_DIR, "home");
@@ -72,5 +78,20 @@ describe("folder trust", () => {
     await writeFile(trustFilePath(HOME), '{"version":1,"folders":"nope"}');
 
     await expect(isFolderTrusted(PROJECT, HOME)).rejects.toThrow(trustFilePath(HOME));
+  });
+});
+
+describe("trustWouldChange", () => {
+  it("is false when nothing would be skipped or dropped", () => {
+    expect(trustWouldChange([], ["read-file", "axle-help"])).toBe(false);
+    expect(trustWouldChange([], [])).toBe(false);
+  });
+
+  it("is true when the project has an input file", () => {
+    expect(trustWouldChange([".axle/cli.yaml"], ["read-file"])).toBe(true);
+  });
+
+  it("is true when a requested tool needs trust", () => {
+    expect(trustWouldChange([], ["read-file", "exec"])).toBe(true);
   });
 });

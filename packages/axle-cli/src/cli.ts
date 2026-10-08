@@ -6,7 +6,7 @@ import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
-import { resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
+import { requestedToolNames, resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
   getCliConfig,
@@ -40,8 +40,10 @@ import {
 } from "./cli/schedule/commands.js";
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
+import { loadSession } from "./cli/sessions.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
-import { isFolderTrusted, trustFolder, untrustFolder } from "./cli/trust.js";
+import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
+import * as ask from "./ui/ask.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
@@ -442,8 +444,8 @@ async function fail(e: unknown): Promise<never> {
 /**
  * Read and load config, job
  */
-const trusted = await isFolderTrusted(process.cwd()).catch(fail);
-const ignoredProjectInputs = trusted ? [] : await listProjectInputs();
+let trusted = await isFolderTrusted(process.cwd()).catch(fail);
+let ignoredProjectInputs = trusted ? [] : await listProjectInputs();
 let cliConfig = await getCliConfig({ span: rootSpan, trusted }).catch(fail);
 let serviceConfig = await getServiceConfig({ span: rootSpan, trusted }).catch(fail);
 const jobConfig =
@@ -454,8 +456,31 @@ const jobScope =
   inv.kind !== "resume" && inv.job && jobConfig
     ? (jobConfig.name ?? relative(process.cwd(), resolve(inv.job)))
     : "job";
+const savedSession = inv.kind === "resume" ? await loadSession(inv.id).catch(fail) : undefined;
 
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+// Asked only when the answer changes the run, and before anything reads
+// the project layer or registers a schedule on this folder's behalf.
+if (!trusted && interactiveTerminal) {
+  const requestedTools = requestedToolNames(
+    savedSession ? savedSession.definition.tools?.map((ref) => ref.name) : jobConfig?.tools,
+    cliConfig,
+  );
+  if (trustWouldChange(ignoredProjectInputs, requestedTools)) {
+    const answer = await ask.confirm({
+      message: "It looks like this folder is untrusted, trust it?",
+      initialValue: false,
+    });
+    if (answer === true) {
+      await trustFolder(process.cwd()).catch(fail);
+      trusted = true;
+      ignoredProjectInputs = [];
+      cliConfig = await getCliConfig({ span: rootSpan, trusted }).catch(fail);
+      serviceConfig = await getServiceConfig({ span: rootSpan, trusted }).catch(fail);
+    }
+  }
+}
 
 async function prepareSchedule(): Promise<string | undefined> {
   if (inv.kind !== "kernel") return undefined;
@@ -508,6 +533,7 @@ const pending = await buildPendingPlan({
   jobScope,
   variables,
   interactiveTerminal,
+  saved: savedSession,
 }).catch(fail);
 
 /**

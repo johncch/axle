@@ -284,10 +284,17 @@ against it; divergence is a defect. State ownership is defined in
     project `.axle/` layer (`cli.yaml`, `credentials`) is not read, and
     trust-needing tools are dropped from the resolved set whichever layer
     named them — built-in default, `defaults.tools`, or the recipe. Each
-    consequence prints one notice naming what was skipped and `axle
-trust`. User scope is trusted by definition: nothing under `~/.axle/`
-    is gated, and a `-j` recipe stays trusted on invocation because naming
-    a file is running a script. MCP servers are outside folder trust;
+    consequence prints one notice naming what was skipped and the verb to
+    run. On a TTY the CLI asks once, "It looks like this folder is
+    untrusted, trust it? (y/N)", but only when the answer would change the
+    run — an input file exists in `.axle/`, or the requested tool set has
+    a trust-needing tool — so a read-only recipe in a bare folder never
+    asks; y records the folder and reloads the configuration, N is not
+    recorded, and headless runs take the N path silently. The question
+    comes before any schedule is registered on the folder's behalf. User
+    scope is trusted by definition: nothing under `~/.axle/` is gated, and
+    a `-j` recipe stays trusted on invocation because naming a file is
+    running a script. MCP servers are outside folder trust;
     their tools act on services, not the folder. The entrypoint looks the
     folder up once and threads the boolean; every input sourced from cwd
     consults it before use (today: the two config loaders and the tool

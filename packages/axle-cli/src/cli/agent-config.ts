@@ -201,6 +201,14 @@ export function createDefaultAgentDefinition(
   };
 }
 
+/**
+ * The tool names a run asks for before trust is applied: the definition's
+ * own list, else `defaults.tools`, else the built-in set.
+ */
+export function requestedToolNames(tools: string[] | undefined, cliConfig: CliConfig): string[] {
+  return tools ?? validateToolNames(cliConfig.defaults?.tools ?? [...defaultToolNames]);
+}
+
 function validateToolNames(names: string[]): string[] {
   const unknown = names.filter((name) => !(availableTools as readonly string[]).includes(name));
   if (unknown.length > 0) {
@@ -266,9 +274,10 @@ export async function resolveAgentDefinition(
       serviceConfig,
       definition.model,
     );
-    const requested =
-      definition.tools?.map((ref) => ref.name) ??
-      validateToolNames(cliConfig.defaults?.tools ?? [...defaultToolNames]);
+    const requested = requestedToolNames(
+      definition.tools?.map((ref) => ref.name),
+      cliConfig,
+    );
     const { kept, dropped } = trust.trusted
       ? { kept: requested, dropped: [] }
       : partitionByTrust(requested);

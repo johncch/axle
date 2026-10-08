@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "./atomic-write.js";
 import { resolveConfigDirs } from "./configs/paths.js";
+import { partitionByTrust } from "./tools.js";
 
 export const TRUST_FILE_VERSION = 1;
 
@@ -25,6 +26,14 @@ export function trustFilePath(home?: string): string {
 export async function isFolderTrusted(folder: string, home?: string): Promise<boolean> {
   const file = await readTrustFile(home);
   return (await realpath(folder)) in file.folders;
+}
+
+/**
+ * Whether trusting the folder would change the run: the prompt is only
+ * worth asking when an untrusted answer skips or drops something.
+ */
+export function trustWouldChange(projectInputs: string[], requestedTools: string[]): boolean {
+  return projectInputs.length > 0 || partitionByTrust(requestedTools).dropped.length > 0;
 }
 
 export interface TrustOutcome {
