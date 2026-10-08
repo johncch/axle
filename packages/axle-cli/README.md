@@ -49,6 +49,7 @@ axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs
 axle setup                           # (re)configure providers and defaults
 axle info                            # print version, config files, and resolved config
 axle explain recipe.batch            # describe the keys a recipe or cli.yaml accepts
+axle trust                           # trust the current folder's .axle/ and tools that act; --revoke undoes it
 axle cleanup                         # delete old sessions by age window
 ```
 

@@ -41,6 +41,7 @@ import {
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
+import { trustFolder, untrustFolder } from "./cli/trust.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
@@ -301,6 +302,21 @@ program
     await manage(async () => {
       const width = Math.min(process.stdout.columns ?? EXPLAIN_DEFAULT_WIDTH, EXPLAIN_MAX_WIDTH);
       for (const line of formatExplain(path, width)) console.log(line);
+    });
+  });
+
+program
+  .command("trust")
+  .description("Trust the current folder: load its .axle/ and allow tools that act here")
+  .option("--revoke", "Stop trusting the current folder")
+  .action(async (opts: { revoke?: boolean }) => {
+    await manage(async () => {
+      const outcome = opts.revoke
+        ? await untrustFolder(process.cwd())
+        : await trustFolder(process.cwd());
+      const verb = opts.revoke ? "No longer trusted" : "Trusted";
+      const unchanged = opts.revoke ? "Was not trusted" : "Already trusted";
+      console.log(`✔ ${outcome.changed ? verb : unchanged}: ${outcome.path}`);
     });
   });
 
