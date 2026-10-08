@@ -4,6 +4,11 @@
 
 ### Breaking changes
 
+- **The working directory's `.env` is no longer read.** Credentials come
+  from the process environment, then `.axle/credentials`, then
+  `~/.axle/credentials`. Move keys from `.env` into one of those files, or
+  pass them for a single run (`ANTHROPIC_API_KEY=... axle`). A host
+  project's own `.env` no longer overrides the user's credentials.
 - **A recipe's inline `provider:` no longer accepts `apiKey`.** A job file
   is meant to be checked in, so it holds no secrets; one with `apiKey:`
   fails to load with `provider: Unrecognized key: "apiKey"`. Move the key

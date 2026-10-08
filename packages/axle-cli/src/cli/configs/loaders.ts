@@ -1,5 +1,5 @@
 import type { Span } from "@fifthrevision/axle";
-import { config as loadDotenv, parse as parseDotenv } from "dotenv";
+import { parse as parseDotenv } from "dotenv";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import YAML from "yaml";
@@ -74,7 +74,7 @@ export const API_KEY_VARIABLES = {
 
 /**
  * Maps each credential variable to where its effective value comes from:
- * "environment", the `.env` file path, or a `credentials` file path.
+ * "environment" or a `credentials` file path.
  */
 export async function getCredentialSources(context: {
   cwd?: string;
@@ -99,19 +99,7 @@ async function loadCredentialLayers(context: {
   cwd?: string;
   home?: string;
 }): Promise<CredentialLayer[]> {
-  const dotenvPath = join(process.cwd(), ".env");
-  const dotenvFile = loadDotenv({ quiet: true, path: dotenvPath }).parsed ?? {};
-  const fromDotenv = Object.fromEntries(
-    Object.entries(dotenvFile).filter(([key, value]) => process.env[key] === value),
-  );
-  const fromShell = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !(key in fromDotenv)),
-  );
-
-  const layers: CredentialLayer[] = [
-    { source: ENVIRONMENT_SOURCE, values: fromShell },
-    { source: dotenvPath, values: fromDotenv },
-  ];
+  const layers: CredentialLayer[] = [{ source: ENVIRONMENT_SOURCE, values: process.env }];
 
   const dirs = resolveConfigDirs(context);
   for (const dir of [dirs.project, dirs.user]) {

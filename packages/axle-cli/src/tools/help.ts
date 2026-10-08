@@ -234,9 +234,9 @@ and they are saved with the session so \`resume\` reconnects them.`,
 
   config: `# Configuration
 
-Credentials: process environment (including a local \`.env\`), then the
-project's \`.axle/credentials\`, then \`~/.axle/credentials\`. Files use the
-same KEY=value names as the environment:
+Credentials: process environment, then the project's \`.axle/credentials\`,
+then \`~/.axle/credentials\`. A \`.env\` in the working directory is not
+read. Files use the same KEY=value names as the environment:
 
     ANTHROPIC_API_KEY=...   OPENAI_API_KEY=...   GEMINI_API_KEY=...
     ANTHROPIC_MODEL=anthropic/claude-sonnet-5          # optional per-provider model

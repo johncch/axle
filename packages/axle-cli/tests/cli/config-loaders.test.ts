@@ -194,11 +194,9 @@ describe("config loaders", () => {
   });
 
   it("names the layer each credential comes from", async () => {
-    process.chdir(TEST_DIR);
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("GEMINI_API_KEY", "");
     vi.stubEnv("OPENAI_API_KEY", "shell-openai");
-    vi.stubEnv("CHATCOMPLETIONS_API_KEY", undefined);
     const home = join(TEST_DIR, "home");
     const cwd = join(TEST_DIR, "proj");
     await mkdir(join(home, ".axle"), { recursive: true });
@@ -211,12 +209,10 @@ describe("config loaders", () => {
       join(cwd, ".axle", "credentials"),
       "ANTHROPIC_API_KEY=project-key\nOPENAI_API_KEY=project-openai\n",
     );
-    await writeFile(join(TEST_DIR, ".env"), "CHATCOMPLETIONS_API_KEY=dotenv-key\n");
 
     const sources = await getCredentialSources({ cwd, home });
 
     expect(sources.OPENAI_API_KEY).toBe("environment");
-    expect(sources.CHATCOMPLETIONS_API_KEY).toBe(join(process.cwd(), ".env"));
     expect(sources.ANTHROPIC_API_KEY).toBe(join(cwd, ".axle", "credentials"));
     expect(sources.GEMINI_API_KEY).toBe(join(home, ".axle", "credentials"));
   });

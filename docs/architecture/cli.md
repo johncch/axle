@@ -158,13 +158,16 @@ against it; divergence is a defect. State ownership is defined in
 8. **Configuration layers by home; credentials are shared property.** Two
    homes — project `.axle/` and user `~/.axle/` — each may hold
    `credentials` (dotenv format) and `cli.yaml`. Credentials resolve per
-   key: process env (including `.env`) → project → user; an empty string
-   counts as unset and falls through. The credentials files are shared
-   with sibling tools (axle-code): writers upsert individual keys and
-   preserve foreign lines verbatim — never rewrite the file. `cli.yaml`
-   merges user-then-project with project winning; `defaults` merge per
-   key, provider profiles replace wholesale. On top of the layered
-   sources, one uniform chain resolves the seat: provider name := recipe →
+   key: process env → project → user; an empty string counts as unset and
+   falls through. The working directory's `.env` is not read (dropped
+   2026-10-08): it was the one project input outside `.axle/`, and a host
+   project's own `.env` silently overrode the user's credentials. The
+   credentials files are shared with sibling tools (axle-code): writers
+   upsert individual keys and preserve foreign lines verbatim — never
+   rewrite the file. `cli.yaml` merges user-then-project with project
+   winning; `defaults` merge per key, provider profiles replace wholesale.
+   On top of the layered sources, one uniform chain resolves the seat:
+   provider name := recipe →
    `defaults.provider` → error; endpoint := `providers[name]` profile →
    built-in type → error; model := recipe → `defaults.models[name]` →
    `*_MODEL` credential → interactive prompt (TTY) or error. The provider

@@ -318,7 +318,7 @@ or the block was deleted while the schedule is still registered).
 
 Each firing runs with the working directory the recipe was applied from,
 resolves credentials and config exactly like a foreground run (project and
-user `.axle/`, the directory's `.env`), and saves a fresh resumable session
+user `.axle/`), and saves a fresh resumable session
 — one per input for a batch recipe. `axle schedule sessions -j` lists
 those runs newest first with their `axle resume` command; stdout and
 stderr also land in `~/.axle/logs/schedules/<id>.out.log` and `.err.log`.
@@ -386,11 +386,12 @@ server, put the matching line at the top of the file:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/johncch/axle/main/schemas/v3/config.yaml
 ```
 
-For CLI use, put provider secrets in your environment, a local `.env` file, or
-a credentials file. Credentials files use the same key names as the
-environment variables, one `KEY=value` per line, and are read in order —
-environment first, then the project's `.axle/credentials`, then the
-user-level `~/.axle/credentials`:
+For CLI use, put provider secrets in your environment or a credentials
+file. Credentials files use the same key names as the environment
+variables, one `KEY=value` per line, and are read in order — environment
+first, then the project's `.axle/credentials`, then the user-level
+`~/.axle/credentials`. A `.env` in the working directory is not read, so a
+host project's own `.env` never leaks into the CLI:
 
 ```bash
 OPENAI_API_KEY=...
