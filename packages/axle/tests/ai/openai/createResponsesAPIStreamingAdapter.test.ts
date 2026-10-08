@@ -129,11 +129,10 @@ describe("createResponsesAPIStreamingAdapter", () => {
       }
     });
 
-    test("warns when an output text annotation has no resolved text part", () => {
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    test("drops an output text annotation that has no text part", () => {
       const adapter = createStreamingAdapter();
 
-      adapter.handleEvent({
+      const chunks = adapter.handleEvent({
         type: "response.output_text.annotation.added",
         item_id: "missing_item",
         output_index: 0,
@@ -147,11 +146,7 @@ describe("createResponsesAPIStreamingAdapter", () => {
         },
       } as ResponseStreamEvent);
 
-      expect(warn).toHaveBeenCalledWith(
-        "[OpenAI] received text annotation without a resolved text part; falling back to current part",
-        { itemId: "missing_item", contentIndex: 0 },
-      );
-      warn.mockRestore();
+      expect(chunks).toEqual([]);
     });
 
     test("should handle response.completed event", () => {
@@ -904,6 +899,63 @@ describe("createResponsesAPIStreamingAdapter", () => {
       const chunk = textStart({ id: "msg_1", type: "message" });
 
       expect(chunk).toEqual({ type: "text-start", data: { index: 0 } });
+    });
+  });
+  describe("citations attached to a function call", () => {
+    test("drops the citation and still completes the tool call", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = createStreamingAdapter();
+      const argumentsJson = '{"path":"journal.md","content":"MSFT rose \ue200cite\ue202turn1search4\ue201"}';
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        output_index: 10,
+        sequence_number: 28,
+        item: {
+          id: "fc_1",
+          type: "function_call",
+          status: "in_progress",
+          arguments: "",
+          call_id: "call_1",
+          name: "write-file",
+        },
+      } as ResponseStreamEvent);
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: argumentsJson,
+        item_id: "fc_1",
+        output_index: 10,
+        sequence_number: 29,
+      } as ResponseStreamEvent);
+
+      const annotationChunks = adapter.handleEvent({
+        type: "response.output_text.annotation.added",
+        item_id: "fc_1",
+        output_index: 10,
+        content_index: 0,
+        annotation_index: 0,
+        sequence_number: 85,
+        annotation: {
+          type: "url_citation",
+          title: "MSFT News",
+          url: "https://example.com/msft",
+          start_index: 1708,
+          end_index: 1727,
+        },
+      } as ResponseStreamEvent);
+      const doneChunks = adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "write-file",
+        arguments: argumentsJson,
+        item_id: "fc_1",
+        output_index: 10,
+        sequence_number: 86,
+      } as ResponseStreamEvent);
+
+      expect(annotationChunks).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+      expect(doneChunks.map((chunk) => chunk.type)).toEqual(["tool-call-complete"]);
+      warn.mockRestore();
     });
   });
 });

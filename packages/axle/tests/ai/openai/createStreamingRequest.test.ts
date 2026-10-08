@@ -51,7 +51,7 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
 
   beforeEach(() => {
     mockStream = vi.fn().mockImplementation(() => events()) as any;
-    mockClient = { responses: { stream: mockStream } } as any;
+    mockClient = { responses: { create: mockStream } } as any;
   });
 
   const request = () => mockStream.mock.calls[0][0];

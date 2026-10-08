@@ -274,7 +274,7 @@ function harness(
 
   const invoke = vi.fn().mockImplementation(() => replay(wire));
   const clients = {
-    openai: { responses: { stream: invoke } },
+    openai: { responses: { create: invoke } },
     anthropic: { messages: { create: invoke } },
     gemini: { models: { generateContentStream: invoke } },
   };
