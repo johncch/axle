@@ -4,6 +4,22 @@
 
 ### Breaking changes
 
+- **An untrusted folder drops `exec`, `patch-file`, and `write-file`, and
+  its `.axle/` is not read.** Every folder starts untrusted. In one, the
+  trust-needing tools are removed from the resolved set whichever layer
+  named them (built-in default, `defaults.tools`, or the recipe's
+  `tools:`), and the project `.axle/cli.yaml` and `.axle/credentials` are
+  skipped; `read-file` and `axle-help` still work. Each consequence prints
+  one warning naming what was dropped or ignored. Run `axle trust` in the
+  folder to lift both; `axle trust --revoke` undoes it. The record is
+  `~/.axle/trust.json`, keyed by the folder's real path with no
+  inheritance to subfolders. On a terminal the CLI asks once, "It looks
+  like this folder is untrusted, trust it? (y/N)", but only when the
+  answer would change the run; a read-only recipe in a bare folder never
+  asks, and a headless run (cron, a pipe, a scheduled firing) takes the
+  untrusted path without asking. Nothing under `~/.axle/` is gated, and
+  MCP servers are unaffected. `axle info` shows the folder's trust state
+  and marks ignored project files.
 - **The working directory's `.env` is no longer read.** Credentials come
   from the process environment, then `.axle/credentials`, then
   `~/.axle/credentials`. Move keys from `.env` into one of those files, or

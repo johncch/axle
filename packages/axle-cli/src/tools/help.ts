@@ -245,8 +245,8 @@ read. Files use the same KEY=value names as the environment:
     CHATCOMPLETIONS_MODEL=llama3
     CHATCOMPLETIONS_API_KEY=...
 
-\`cli.yaml\` (\`~/.axle/cli.yaml\`, overridden per project by \`.axle/cli.yaml\`)
-holds provider profiles and defaults:
+\`cli.yaml\` (\`~/.axle/cli.yaml\`, overridden per project by \`.axle/cli.yaml\`
+once the folder is trusted) holds provider profiles and defaults:
 
     providers:
       openrouter:                     # a profile: endpoint config, no model
@@ -263,7 +263,19 @@ holds provider profiles and defaults:
 Profile names share a namespace with the built-in types and may shadow
 them. Across user and project layers, \`defaults\` merge per key while
 profiles replace wholesale. Resolution order everywhere is: environment and
-credentials < cli.yaml defaults < recipe < command line.`,
+credentials < cli.yaml defaults < recipe < command line.
+
+Folder trust: every folder starts untrusted. In an untrusted folder the
+project's \`.axle/cli.yaml\` and \`.axle/credentials\` are not read, and
+\`exec\`, \`patch-file\`, and \`write-file\` are dropped from the tool set;
+each prints one warning and the run continues. \`axle trust\` records the
+folder in \`~/.axle/trust.json\` (real path, exact match, no inheritance to
+subfolders); \`axle trust --revoke\` removes it. On a terminal the CLI asks
+"It looks like this folder is untrusted, trust it? (y/N)" only when the
+answer would change the run: the folder has a project input file, or the
+tool set has a trust-needing tool. N is not remembered. Headless runs
+never ask and take the untrusted path. \`~/.axle/\` is never gated and MCP
+servers are unaffected. \`axle info\` shows the trust state.`,
 
   tools: `# Tools
 
@@ -276,9 +288,11 @@ Chat and recipes get these local tools by default:
     axle-help     this documentation
 
 They run without asking for approval, including in batch and scheduled
-runs. A recipe's \`tools:\` list replaces the defaults; \`tools: []\` runs with
-no local tools. \`defaults.tools\` in cli.yaml replaces the default set for
-chat and recipes alike.
+runs, once the folder is trusted (topic: config). In an untrusted folder
+\`exec\`, \`patch-file\`, and \`write-file\` are dropped with a warning;
+\`read-file\` and \`axle-help\` stay. A recipe's \`tools:\` list replaces the
+defaults; \`tools: []\` runs with no local tools. \`defaults.tools\` in
+cli.yaml replaces the default set for chat and recipes alike.
 
 \`providerTools:\` lists tools the provider hosts, such as \`web_search\` and
 \`code_execution\`; availability depends on the provider and model.
