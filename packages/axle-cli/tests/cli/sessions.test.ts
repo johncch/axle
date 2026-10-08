@@ -248,7 +248,13 @@ describe("runSingle session persistence", () => {
     const span = tracer.startSpan("test");
 
     const succeeded = await runAgentSession(
-      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
+      {
+        agentConfig,
+        spanName: "job",
+        contextWindow: 200_000,
+        initial: "Say hi",
+        interactive: false,
+      },
       createStats(),
       span,
       nullRenderer,
@@ -275,7 +281,13 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
 
     await runAgentSession(
-      { agentConfig: firstConfig, spanName: "job", initial: "Say hi", interactive: false },
+      {
+        agentConfig: firstConfig,
+        spanName: "job",
+        contextWindow: 200_000,
+        initial: "Say hi",
+        interactive: false,
+      },
       createStats(),
       tracer.startSpan("first"),
       nullRenderer,
@@ -298,6 +310,7 @@ describe("runSingle session persistence", () => {
       {
         agentConfig: resumeConfig,
         spanName: "resume",
+        contextWindow: 200_000,
         session: saved.session,
         priorTurns: saved.turns,
         resumedFromCwd: saved.cwd,
@@ -338,7 +351,7 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
 
     const succeeded = await runAgentSession(
-      { agentConfig, spanName: "chat", interactive: true },
+      { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
       createStats(),
       tracer.startSpan("chat"),
       scriptedRenderer,
@@ -371,7 +384,7 @@ describe("runSingle session persistence", () => {
       const tracer = new Tracer();
 
       const succeeded = await runAgentSession(
-        { agentConfig, spanName: "chat", interactive: true },
+        { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
         createStats(),
         tracer.startSpan("chat"),
         scriptedRenderer,
@@ -394,6 +407,7 @@ describe("runSingle session persistence", () => {
           sessionId: "idle-resume",
         },
         spanName: "job",
+        contextWindow: 200_000,
         initial: "Say hi",
         interactive: false,
       },
@@ -410,6 +424,7 @@ describe("runSingle session persistence", () => {
       {
         agentConfig: { provider: createMockProvider("unused"), model: "test-model" },
         spanName: "resume",
+        contextWindow: 200_000,
         session: saved.session,
         priorTurns: saved.turns,
         interactive: true,
@@ -435,7 +450,13 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
 
     const succeeded = await runAgentSession(
-      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
+      {
+        agentConfig,
+        spanName: "job",
+        contextWindow: 200_000,
+        initial: "Say hi",
+        interactive: false,
+      },
       createStats(),
       tracer.startSpan("job"),
       renderer,
@@ -463,7 +484,13 @@ describe("runSingle session persistence", () => {
     };
 
     const succeeded = await runAgentSession(
-      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
+      {
+        agentConfig,
+        spanName: "job",
+        contextWindow: 200_000,
+        initial: "Say hi",
+        interactive: false,
+      },
       createStats(),
       new Tracer().startSpan("job"),
       renderer,
@@ -486,7 +513,7 @@ describe("runSingle session persistence", () => {
     const tracer = new Tracer();
 
     const succeeded = await runAgentSession(
-      { agentConfig, spanName: "chat", interactive: true },
+      { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
       createStats(),
       tracer.startSpan("chat"),
       renderer,
@@ -507,7 +534,13 @@ describe("runSingle session persistence", () => {
     const span = tracer.startSpan("test");
 
     const succeeded = await runAgentSession(
-      { agentConfig, spanName: "job", initial: "Say hi", interactive: false },
+      {
+        agentConfig,
+        spanName: "job",
+        contextWindow: 200_000,
+        initial: "Say hi",
+        interactive: false,
+      },
       createStats(),
       span,
       nullRenderer,

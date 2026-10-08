@@ -97,6 +97,17 @@ describe("ModelCatalog.lookup", () => {
     });
   });
 
+  it("matches a publisher-qualified id against a first-party host by its model part", () => {
+    expect(catalog.lookup("anthropic/claude-sonnet-5", { host: "anthropic" })).toMatchObject({
+      id: "anthropic/claude-sonnet-5",
+      match: "host",
+      cost: { input: 2, output: 10 },
+    });
+    const otherPublisher = catalog.lookup("openai/claude-sonnet-5", { host: "anthropic" });
+    expect(otherPublisher?.match).toBe("exact");
+    expect(otherPublisher?.cost).toBeUndefined();
+  });
+
   it("keeps a host-only model's record when the catalog has no canonical entry", () => {
     expect(catalog.lookup("zai-org/GLM-5.1", { host: "togetherai" })).toMatchObject({
       id: "togetherai/zai-org/GLM-5.1",

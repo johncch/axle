@@ -64,7 +64,7 @@ export function chatCompletions(
   };
 }
 
-function inferChatCompletionsVendor(baseUrl: string): ChatCompletionsVendor | undefined {
+export function inferChatCompletionsVendor(baseUrl: string): ChatCompletionsVendor | undefined {
   try {
     return CHAT_COMPLETIONS_VENDOR_HOSTS[new URL(baseUrl).hostname.toLowerCase()];
   } catch {

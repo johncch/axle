@@ -6,7 +6,7 @@ import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
-import { resolveAgentDefinition } from "./cli/agent-config.js";
+import { resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
   getCliConfig,
@@ -16,6 +16,12 @@ import {
   getServiceConfig,
 } from "./cli/configs/loaders.js";
 import { resolveConfigDirs } from "./cli/configs/paths.js";
+import {
+  describeContextWindowSource,
+  formatTokens,
+  openModelCatalog,
+  resolveContextWindow,
+} from "./cli/context-window.js";
 import { formatExplain } from "./cli/explain.js";
 import { formatInfo } from "./cli/info.js";
 import type { CommonOpts, Invocation } from "./cli/invocation.js";
@@ -271,6 +277,8 @@ program
   .description("Print version, config file locations, and resolved configuration")
   .action(async () => {
     await manage(async () => {
+      const catalog = await openModelCatalog();
+      if (catalog.stale) await catalog.refresh();
       const lines = formatInfo({
         version: pkg.version,
         dirs: resolveConfigDirs(),
@@ -279,6 +287,7 @@ program
         serviceConfig: await getServiceConfig({}),
         credentialSources: await getCredentialSources({}),
         env: process.env,
+        catalog,
       });
       for (const line of lines) console.log(line);
     });
@@ -505,6 +514,16 @@ const { mcps, agentConfig } = await resolveAgentDefinition(
   serviceConfig,
   rootSpan,
 ).catch(fail);
+const catalog = await openModelCatalog();
+if (catalog.stale) void catalog.refresh();
+const contextWindow = resolveContextWindow(
+  resolveEndpoint(pending.definition.provider, cliConfig),
+  agentConfig.model,
+  catalog,
+);
+rootSpan.info(
+  `Context window: ${formatTokens(contextWindow.window)} (${describeContextWindowSource(contextWindow.source)})`,
+);
 
 try {
   rootSpan.info("All systems operational. Running job...");
@@ -516,7 +535,12 @@ try {
   try {
     if (pending.kind === "batch") {
       succeeded = await runBatch(
-        { ...pending.spec, definition: pending.definition, agentConfig },
+        {
+          ...pending.spec,
+          definition: pending.definition,
+          agentConfig,
+          contextWindow: contextWindow.window,
+        },
         variables,
         stats,
         rootSpan,
@@ -525,7 +549,7 @@ try {
       );
     } else {
       succeeded = await runAgentSession(
-        { ...pending.spec, agentConfig },
+        { ...pending.spec, agentConfig, contextWindow: contextWindow.window },
         stats,
         rootSpan,
         renderer,

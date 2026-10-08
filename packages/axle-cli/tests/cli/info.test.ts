@@ -1,8 +1,43 @@
+import { ModelCatalog } from "@fifthrevision/axle";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InfoInput } from "../../src/cli/info.js";
 import { formatInfo } from "../../src/cli/info.js";
+
+const emptyCatalog = await ModelCatalog.open();
+
+const catalogEntry = {
+  name: "Claude X",
+  attachment: true,
+  reasoning: true,
+  tool_call: true,
+  release_date: "2026-01-01",
+  last_updated: "2026-01-01",
+  modalities: { input: ["text"], output: ["text"] },
+  open_weights: false,
+  limit: { context: 1_000_000, output: 64_000 },
+};
+
+async function catalogWith(models: Record<string, unknown>, hosts: Record<string, unknown>) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        new Response(JSON.stringify(url.endsWith("/models.json") ? models : hosts), {
+          status: 200,
+        }),
+      ),
+    ),
+  );
+  try {
+    const catalog = await ModelCatalog.open();
+    await catalog.refresh();
+    return catalog;
+  } finally {
+    vi.unstubAllGlobals();
+  }
+}
 
 const TEST_DIR = join(import.meta.dirname, "__info_tmp__");
 const dirs = { user: join(TEST_DIR, "home", ".axle"), project: join(TEST_DIR, "cwd", ".axle") };
@@ -26,6 +61,7 @@ function info(overrides: Partial<InfoInput>): string[] {
     serviceConfig: {},
     credentialSources: {},
     env: {},
+    catalog: emptyCatalog,
     ...overrides,
   });
 }
@@ -102,11 +138,12 @@ describe("formatInfo", () => {
     });
 
     expect(lines.join("\n")).not.toMatch(/sk-/);
-    expect(section(lines, "Providers", "Environment")).toEqual([
-      "  work (default)      ./.axle/cli.yaml",
-      "    type   anthropic",
-      "    model  claude-x   ./.axle/cli.yaml",
-      "    key    $WORK_KEY  environment",
+    expect(section(lines, "Providers")).toEqual([
+      "  work (default)       ./.axle/cli.yaml",
+      "    type    anthropic",
+      "    model   claude-x   ./.axle/cli.yaml",
+      "    window  200,000    assumed (models.dev not cached)",
+      "    key     $WORK_KEY  environment",
       "",
       "  inline           ~/.axle/cli.yaml",
       "    type   openai",
@@ -120,22 +157,83 @@ describe("formatInfo", () => {
       "    key    $NOPE                   unset",
       "",
       "  gemini",
-      "    model  gemini-x  ./.axle/credentials",
-      "    key    set       ~/.axle/credentials",
+      "    model   gemini-x  ./.axle/credentials",
+      "    window  200,000   assumed (models.dev not cached)",
+      "    key     set       ~/.axle/credentials",
       "",
       "  not configured: anthropic, openai, chatcompletions",
     ]);
   });
 
-  it("leaves development overrides out of the environment section", () => {
-    const lines = info({
-      env: {
-        AXLE_CONTEXT_WINDOW: "3000",
-        AXLE_SCHEDULE_PLATFORM: "linux",
-        AXLE_LAUNCHCTL: "/tmp/fake-launchctl",
+  it("shows each provider's context window and where it came from", async () => {
+    const catalog = await catalogWith(
+      { "anthropic/claude-x": catalogEntry, "zhipuai/glm-x": catalogEntry },
+      {
+        openrouter: {
+          models: {
+            "z-ai/glm-x": {
+              ...catalogEntry,
+              limit: { context: 131_072 },
+              cost: { input: 0.1, output: 0.2 },
+              canonical_model_id: "zhipuai/glm-x",
+            },
+          },
+        },
       },
+    );
+    const lines = info({
+      catalog,
+      cliConfig: {
+        providers: {
+          router: { type: "chatcompletions", vendor: "openrouter", baseUrl: "https://r.test/v1" },
+          ollama: {
+            type: "chatcompletions",
+            baseUrl: "http://localhost:11434/v1",
+            contextWindow: 32_768,
+          },
+        },
+        defaults: {
+          provider: "anthropic",
+          models: { anthropic: "claude-x", router: "z-ai/glm-x", ollama: "gemma4:26b-mlx" },
+        },
+      },
+      cliConfigSources: {
+        providers: { router: USER_CONFIG, ollama: PROJECT_CONFIG },
+        defaultModels: { anthropic: USER_CONFIG, router: USER_CONFIG, ollama: USER_CONFIG },
+      },
+      serviceConfig: { anthropic: { apiKey: "sk-a" } },
     });
 
-    expect(section(lines, "Environment")).toEqual(["  AXLE_CONTEXT_WINDOW  3000"]);
+    expect(section(lines, "Providers")).toEqual([
+      "  router                       ~/.axle/cli.yaml",
+      "    type    chatcompletions",
+      "    url     https://r.test/v1",
+      "    model   z-ai/glm-x         ~/.axle/cli.yaml",
+      "    window  131,072            models.dev (zhipuai/glm-x)",
+      "    key     unset              expects $CHATCOMPLETIONS_API_KEY",
+      "",
+      "  ollama                               ./.axle/cli.yaml",
+      "    type    chatcompletions",
+      "    url     http://localhost:11434/v1",
+      "    model   gemma4:26b-mlx             ~/.axle/cli.yaml",
+      "    window  32,768                     ./.axle/cli.yaml",
+      "    key     unset                      expects $CHATCOMPLETIONS_API_KEY",
+      "",
+      "  anthropic (default)",
+      "    model   claude-x   ~/.axle/cli.yaml",
+      "    window  1,000,000  models.dev (anthropic/claude-x)",
+      "    key     set",
+      "",
+      "  not configured: openai, gemini, chatcompletions",
+    ]);
+  });
+
+  it("marks the window as assumed when the catalog has never been fetched", () => {
+    const lines = info({
+      cliConfig: { defaults: { provider: "anthropic", models: { anthropic: "claude-x" } } },
+      serviceConfig: { anthropic: { apiKey: "sk-a" } },
+    });
+
+    expect(lines).toContain("    window  200,000   assumed (models.dev not cached)");
   });
 });

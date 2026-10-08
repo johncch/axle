@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
+import { splitModelId } from "../providers/model.js";
 
 const MODELS_DEV_URL = "https://models.dev";
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -233,10 +234,14 @@ export class ModelCatalog {
 
   lookup(model: string, options?: { host?: string; publisher?: string }): CatalogMatch | undefined {
     if (!this.cache) return undefined;
+    const { publisher, name } = splitModelId(model);
 
     if (options?.host) {
       const entries = this.cache.hosts[options.host];
-      const hostId = entries ? findKey(entries, model) : undefined;
+      const publisherIsHost = publisher === options.host.toLowerCase();
+      const hostId = entries
+        ? (findKey(entries, model) ?? (publisherIsHost ? findKey(entries, name) : undefined))
+        : undefined;
       if (entries && hostId !== undefined) {
         const entry = entries[hostId];
         const base = entry.canonical ? this.cache.models[entry.canonical] : entry.model;
@@ -251,15 +256,17 @@ export class ModelCatalog {
       }
     }
 
-    const separator = model.indexOf("/");
     const qualified =
-      separator === -1 ? (options?.publisher ? `${options.publisher}/${model}` : undefined) : model;
+      publisher === undefined
+        ? options?.publisher
+          ? `${options.publisher}/${model}`
+          : undefined
+        : model;
     if (qualified) {
       const id = findKey(this.cache.models, qualified);
       if (id !== undefined) return { id, match: "exact", model: this.cache.models[id] };
     }
 
-    const name = separator === -1 ? model : model.slice(separator + 1);
     const key = normalizeModelName(name);
     if (key.length === 0) return undefined;
     const exact = this.normalized.filter((entry) => entry.key === key);
@@ -305,7 +312,7 @@ export class ModelCatalog {
     this.cache = cache;
     this.normalized = Object.keys(cache?.models ?? {}).map((id) => ({
       id,
-      key: normalizeModelName(id.slice(id.indexOf("/") + 1)),
+      key: normalizeModelName(splitModelId(id).name),
     }));
   }
 

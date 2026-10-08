@@ -1203,8 +1203,10 @@ The catalog has two layers. The canonical layer keys models by
 `publisher/model`, independent of who serves them. The host layer keys each
 models.dev provider's own ids (`anthropic`, `openrouter`, `togetherai`, …)
 with that host's limits and prices, linked back to the canonical entry.
-`lookup(model, { host })` tries the host's id first, then the canonical key
-(a bare id is qualified with `publisher` if given), then a best-effort match
+`lookup(model, { host })` tries the host's id first (for a first-party host,
+`anthropic/claude-sonnet-5` also matches its `claude-sonnet-5`), then the
+canonical key (a bare id is qualified with `publisher` if given), then a
+best-effort match
 for local runtimes' names — trailing build tags such as `-mlx` or `:q8_0`
 dropped, punctuation and case ignored, publisher ignored, exact normalized
 match first, else a unique prefix. The result's `match` and `id` say how it

@@ -45,12 +45,12 @@ export type PendingPlan =
   | {
       kind: "batch";
       definition: AgentDefinition;
-      spec: Omit<BatchRunSpec, "agentConfig" | "definition">;
+      spec: Omit<BatchRunSpec, "agentConfig" | "definition" | "contextWindow">;
     }
   | {
       kind: "session";
       definition: AgentDefinition;
-      spec: Omit<AgentSessionSpec, "agentConfig">;
+      spec: Omit<AgentSessionSpec, "agentConfig" | "contextWindow">;
       sessionStore: SessionStore;
     };
 

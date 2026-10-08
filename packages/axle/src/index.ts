@@ -47,6 +47,7 @@ export {
 // AI Providers
 export { anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
+export { inferChatCompletionsVendor } from "./providers/chatcompletions/provider.js";
 export type {
   ChatCompletionsOptions,
   ChatCompletionsVendor,
