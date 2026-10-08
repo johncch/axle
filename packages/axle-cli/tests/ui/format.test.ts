@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { formatActionResult } from "../../src/ui/format.js";
+import { contextPie, formatActionResult } from "../../src/ui/format.js";
+
+describe("contextPie", () => {
+  it.each([
+    [0, "○ 0%"],
+    [0.03, "○ 3%"],
+    [0.125, "◔ 13%"],
+    [0.21, "◔ 21%"],
+    [0.48, "◑ 48%"],
+    [0.71, "◕ 71%"],
+    [0.79, "◕ 79%"],
+    [0.8, "● 80%"],
+    [1.1, "● 110%"],
+  ])("renders %s as %s", (fraction, expected) => {
+    expect(contextPie(fraction)).toBe(expected);
+  });
+});
 
 describe("formatActionResult", () => {
   it("shows the first line of a string result", () => {

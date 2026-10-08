@@ -8,6 +8,7 @@ import { Box, Static, Text, useInput } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   capitalize,
+  contextPie,
   formatActionArgs,
   formatActionResult,
   formatDuration,
@@ -57,20 +58,13 @@ export function App({
 
 function UsageBar({ usage }: { usage: SessionUsage }) {
   const context = usage.contextLimit
-    ? `${contextBar(usage.contextTokens / usage.contextLimit)} ~${formatTokens(usage.contextTokens)}tok`
+    ? contextPie(usage.contextTokens / usage.contextLimit)
     : `ctx ~${formatTokens(usage.contextTokens)}`;
   return (
     <Text dimColor>
-      {"  "}↑ {formatTokens(usage.in)} ↓ {formatTokens(usage.out)} · {context}
+      {"  "}↑ {formatTokens(usage.in)} ↓ {formatTokens(usage.out)} {context}
     </Text>
   );
-}
-
-const CONTEXT_BAR_CELLS = 8;
-
-function contextBar(fraction: number): string {
-  const filled = Math.min(CONTEXT_BAR_CELLS, Math.round(fraction * CONTEXT_BAR_CELLS));
-  return "█".repeat(filled) + "░".repeat(CONTEXT_BAR_CELLS - filled);
 }
 
 function InputLine({

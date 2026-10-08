@@ -549,7 +549,12 @@ try {
       );
     } else {
       succeeded = await runAgentSession(
-        { ...pending.spec, agentConfig, contextWindow: contextWindow.window },
+        {
+          ...pending.spec,
+          agentConfig,
+          contextWindow: contextWindow.window,
+          providerName: pending.definition.provider.type,
+        },
         stats,
         rootSpan,
         renderer,

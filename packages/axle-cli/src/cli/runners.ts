@@ -57,6 +57,8 @@ export interface AgentSessionSpec {
   compaction?: boolean;
   /** The model's context window in tokens; drives the compaction threshold and the usage bar. */
   contextWindow: number;
+  /** The provider as the recipe named it (profile name or type), for the model line. */
+  providerName?: string;
 }
 
 const COMPACTION_THRESHOLD_FRACTION = 0.8;
@@ -197,6 +199,11 @@ export async function runAgentSession(
     renderer.info(line);
     parentSpan.info(line);
   }
+  const modelLine = spec.providerName
+    ? `Model ${agent.model} · ${spec.providerName}`
+    : `Model ${agent.model}`;
+  renderer.info(modelLine);
+  parentSpan.info(modelLine);
   if (spec.priorTurns?.length) {
     renderer.renderPriorTurns(spec.priorTurns);
   }
