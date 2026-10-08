@@ -12,6 +12,7 @@ import type { Span, SpanStatus } from "../../observability/types.js";
 import { estimateContextUsage } from "../../providers/context.js";
 import { stream } from "../../providers/stream.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
+import { createViewSkillTool, renderSkillsCatalog } from "../../skills/prompt.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
 import { TurnEventBuilder } from "../../turns/eventBuilder.js";
@@ -103,6 +104,12 @@ export class Agent {
       tools: config.tools,
       providerTools: config.providerTools,
     });
+    if (config.skills && config.skills.length > 0) {
+      this.system = [config.system, renderSkillsCatalog(config.skills)]
+        .filter((section) => section !== undefined)
+        .join("\n\n");
+      this.registry.add(createViewSkillTool(config.skills));
+    }
     if (config.mcps) {
       this.mcps = [...config.mcps];
     }

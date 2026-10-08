@@ -109,6 +109,15 @@ export type {
 } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
 
+// Skills
+export {
+  createViewSkillTool,
+  loadSkill,
+  parseSkillMarkdown,
+  renderSkillsCatalog,
+} from "./skills/index.js";
+export type { Skill, SkillDefinitionRef, SkillFrontmatter } from "./skills/index.js";
+
 // MCP
 export { MCP } from "./mcp/index.js";
 export type { MCPConfig, MCPHttpConfig, MCPStdioConfig } from "./mcp/index.js";

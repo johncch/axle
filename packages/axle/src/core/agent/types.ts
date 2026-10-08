@@ -5,6 +5,7 @@ import type { Tracer } from "../../observability/tracer.js";
 import type { EventLevel, Span } from "../../observability/types.js";
 import type { AxleFailure } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
+import type { Skill, SkillDefinitionRef } from "../../skills/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";
 import type { CompactionUpdate, Turn } from "../../turns/types.js";
@@ -36,6 +37,8 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   providerTools?: ProviderTool[];
   /** MCP clients whose tools should be lazily resolved. */
   mcps?: MCP[];
+  /** Skills disclosed in the system prompt and loaded on demand through the view-skill tool. */
+  skills?: Skill[];
   /** Observability: structured logging and optional span tracing. */
   observability?: ObservabilityOptions;
   /** Optional file resolver for request file references. */
@@ -126,6 +129,8 @@ export interface AgentDefinition {
   providerTools?: ProviderToolDefinitionRef[];
   /** Serializable MCP client configuration. */
   mcps?: MCPConfig[];
+  /** Serializable skill references, resolved by the host. */
+  skills?: SkillDefinitionRef[];
 }
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -144,6 +149,8 @@ export interface ResolvedAgentDefinition {
   providerTools?: ProviderTool[];
   /** MCP clients resolved from `AgentDefinition.mcps`. */
   mcps?: MCP[];
+  /** Skills resolved from `AgentDefinition.skills`. */
+  skills?: Skill[];
 }
 
 /**
