@@ -1169,6 +1169,57 @@ and [docs/architecture/agent-state.md](../../docs/architecture/agent-state.md).
 See [Migrating to Axle 0.30.0](../../docs/0.30.0-migration.md) for the turn
 ownership and compaction protocol changes.
 
+### Model Catalog
+
+Axle ships no table of models. A host that needs a model's context window,
+output ceiling, capabilities, or price can look them up in the
+[models.dev](https://models.dev) catalog through `ModelCatalog`, which keeps
+a slimmed copy at a path you choose, or in memory:
+
+```ts
+import { ModelCatalog } from "@fifthrevision/axle";
+
+const catalog = await ModelCatalog.open({ cachePath: "~/.myapp/models.json" });
+if (catalog.stale) void catalog.refresh(); // or await it — never throws
+
+catalog.lookup("z-ai/glm-5.3-flash", { host: "openrouter" });
+// → { id: "zhipuai/glm-5.3-flash", match: "host", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
+catalog.lookup("claude-sonnet-5", { host: "anthropic" });
+// → { id: "anthropic/claude-sonnet-5", match: "host", model: {…}, cost: {…} }
+catalog.lookup("anthropic/claude-sonnet-5");
+// → { id: "anthropic/claude-sonnet-5", match: "exact", model: {…} }   (no host: no price)
+catalog.lookup("gemma4:26b-mlx");
+// → { id: "google/gemma-4-26b-a4b-it", match: "prefix", model: {…} }
+catalog.contextWindow("gemma4:26b-mlx");
+// → { window: 262144, id: "google/gemma-4-26b-a4b-it", match: "prefix" }
+catalog.lookup("something-unlisted"); // → undefined
+```
+
+`model` is a `CatalogModel`: `name`, `limit.context` / `limit.output`,
+`reasoning`, `toolCall`, `structuredOutput`, `attachment`, `modalities`, and
+`knowledge` cutoff. `cost` is per million tokens as that host charges it.
+
+The catalog has two layers. The canonical layer keys models by
+`publisher/model`, independent of who serves them. The host layer keys each
+models.dev provider's own ids (`anthropic`, `openrouter`, `togetherai`, …)
+with that host's limits and prices, linked back to the canonical entry.
+`lookup(model, { host })` tries the host's id first, then the canonical key
+(a bare id is qualified with `publisher` if given), then a best-effort match
+for local runtimes' names — trailing build tags such as `-mlx` or `:q8_0`
+dropped, punctuation and case ignored, publisher ignored, exact normalized
+match first, else a unique prefix. The result's `match` and `id` say how it
+was found, so a best-effort guess is visible. No match returns `undefined`;
+what to assume then is yours.
+
+`open()` reads the cache and never touches the network; without `cachePath`
+the catalog lives in memory for the process. `stale` is true when there is
+no cache or it is older than `maxAge` (default one day); when to act on that
+is yours. `refresh()` always fetches both layers (about 0.4 MB and 0.5 MB
+compressed), sends each layer's ETag so an unchanged file downloads
+nothing, and keeps the cached copy on any failure, so an offline run is
+never blocked. `hosts: ["anthropic", "openrouter"]` keeps only those hosts
+(the full host layer is about 1.9 MB on disk); `hosts: []` skips it.
+
 ### Hosting / Sessions
 
 Axle stops at the agent runtime boundary. If you need long-lived sessions,

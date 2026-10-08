@@ -1,0 +1,695 @@
+{
+  "anthropic/claude-sonnet-5": {
+    "id": "anthropic/claude-sonnet-5",
+    "name": "Claude Sonnet 5",
+    "description": "Everyday Claude agent model for coding, planning, browsing, and general work",
+    "family": "claude-sonnet",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-01-31",
+    "release_date": "2026-06-30",
+    "last_updated": "2026-06-30",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    },
+    "benchmarks": [
+      {
+        "name": "SWE-Bench Verified",
+        "score": 85.2,
+        "metric": "resolved",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      },
+      {
+        "name": "SWE-Bench Pro",
+        "score": 63.2,
+        "metric": "resolve rate",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      },
+      {
+        "name": "SWE-Bench Multilingual",
+        "score": 78.3,
+        "metric": "resolve rate",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      },
+      {
+        "name": "Terminal-Bench",
+        "score": 80.4,
+        "metric": "success rate",
+        "harness": "Terminus-2",
+        "version": "2.1",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      },
+      {
+        "name": "OSWorld-Verified",
+        "score": 81.2,
+        "metric": "success rate",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      },
+      {
+        "name": "BrowseComp",
+        "score": 84.7,
+        "metric": "accuracy",
+        "variant": "single agent",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      },
+      {
+        "name": "FrontierCode",
+        "score": 38.8,
+        "metric": "pass rate",
+        "version": "v1",
+        "source": "https://www.anthropic.com/news/claude-sonnet-5",
+        "date": "2026-06-30"
+      }
+    ]
+  },
+  "openai/gpt-oss-20b": {
+    "id": "openai/gpt-oss-20b",
+    "name": "GPT OSS 20B",
+    "description": "Open GPT reasoning model for self-hosted agents and controllable deployments",
+    "family": "gpt-oss",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "release_date": "2025-08-05",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 131072,
+      "output": 32768
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/openai/gpt-oss-20b"
+      }
+    ]
+  },
+  "zhipuai/glm-4.7-flash": {
+    "id": "zhipuai/glm-4.7-flash",
+    "name": "GLM-4.7-Flash",
+    "description": "Budget GLM lane for fast coding help, routing, and everyday automation",
+    "family": "glm-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-01-19",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/zai-org/GLM-4.7-Flash"
+      }
+    ],
+    "benchmarks": [
+      {
+        "name": "SWE-Bench Verified",
+        "score": 59.2,
+        "metric": "resolved",
+        "source": "https://huggingface.co/zai-org/GLM-4.7-Flash"
+      }
+    ]
+  },
+  "zhipuai/glm-4.7-flashx": {
+    "id": "zhipuai/glm-4.7-flashx",
+    "name": "GLM-4.7-FlashX",
+    "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+    "family": "glm-flash",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-04",
+    "release_date": "2026-01-19",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 200000,
+      "output": 131072
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/zai-org/GLM-4.7-Flash"
+      }
+    ]
+  },
+  "zhipuai/glm-5.3-flash": {
+    "id": "zhipuai/glm-5.3-flash",
+    "name": "GLM-5.3-Flash",
+    "description": "Native multimodal GLM model for efficient coding and long-horizon agent tasks",
+    "family": "glm-flash",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "release_date": "2026-08-26",
+    "last_updated": "2026-08-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 1000000,
+      "output": 131072
+    },
+    "benchmarks": [
+      {
+        "name": "Terminal-Bench",
+        "score": 84.3,
+        "metric": "pass@1",
+        "harness": "Claude Code 2.1.207",
+        "variant": "max effort",
+        "version": "2.1",
+        "source": "https://huggingface.co/zai-org/GLM-5.3-Flash"
+      },
+      {
+        "name": "DeepSWE",
+        "score": 63.4,
+        "metric": "resolved",
+        "harness": "mini-swe-agent",
+        "variant": "max effort",
+        "version": "1.1",
+        "source": "https://huggingface.co/zai-org/GLM-5.3-Flash"
+      },
+      {
+        "name": "Agents' Last Exam",
+        "score": 26.3,
+        "metric": "score",
+        "variant": "max effort",
+        "source": "https://huggingface.co/zai-org/GLM-5.3-Flash"
+      },
+      {
+        "name": "AutomationBench",
+        "score": 48.8,
+        "metric": "pass@1",
+        "variant": "max effort",
+        "version": "1.0.6",
+        "source": "https://huggingface.co/zai-org/GLM-5.3-Flash"
+      },
+      {
+        "name": "Humanity's Last Exam",
+        "score": 55.3,
+        "metric": "accuracy",
+        "variant": "max effort; with tools",
+        "dataset": "full set",
+        "source": "https://huggingface.co/zai-org/GLM-5.3-Flash"
+      },
+      {
+        "name": "GDPval-AA",
+        "score": 1773,
+        "metric": "Elo",
+        "variant": "max effort",
+        "version": "2",
+        "source": "https://huggingface.co/zai-org/GLM-5.3-Flash"
+      }
+    ]
+  },
+  "meta/muse-glimmer-30b": {
+    "id": "meta/muse-glimmer-30b",
+    "name": "Muse Glimmer 30B",
+    "description": "Muse Glimmer is a 30-billion-parameter open-weight multimodal model from Meta Superintelligence Labs, distilled from Muse Spark for always-on local agents, tool use, coding, and image understanding.",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "knowledge": "2026-01-04",
+    "release_date": "2026-08-10",
+    "last_updated": "2026-08-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 131072,
+      "output": 131072
+    },
+    "license": "Apache 2.0",
+    "links": [
+      {
+        "label": "Announcement",
+        "url": "https://research.meta.ai/blog/introducing-muse-glimmer-open-agentic-model",
+        "type": "announcement"
+      },
+      {
+        "label": "Model card",
+        "url": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "type": "model_card"
+      },
+      {
+        "label": "Developer docs",
+        "url": "https://developer.meta.com/ai/models/muse-glimmer/",
+        "type": "docs"
+      }
+    ],
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/meta-models/Muse-Glimmer-30B"
+      }
+    ],
+    "benchmarks": [
+      {
+        "name": "MCP Atlas",
+        "score": 75.5,
+        "metric": "success rate",
+        "variant": "public",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "DeepSearch QA",
+        "score": 74.6,
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "SWE-Bench Pro",
+        "score": 51.2,
+        "metric": "resolve rate",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "SWE-Bench Verified",
+        "score": 76,
+        "metric": "resolve rate",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "Terminal-Bench",
+        "score": 51.7,
+        "metric": "success rate",
+        "variant": "with terminus2",
+        "version": "2.1",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "OSWorld-Verified",
+        "score": 65.9,
+        "metric": "success rate",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "AIME 2026",
+        "score": 94.7,
+        "metric": "accuracy",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "GPQA Diamond",
+        "score": 83.5,
+        "metric": "accuracy",
+        "variant": "AA",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      },
+      {
+        "name": "CharXiv Reasoning",
+        "score": 78.8,
+        "metric": "accuracy",
+        "source": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        "date": "2026-08-10"
+      }
+    ]
+  },
+  "google/gemma-4-26b-a4b-it": {
+    "id": "google/gemma-4-26b-a4b-it",
+    "name": "Gemma 4 26B A4B IT",
+    "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "release_date": "2026-04-02",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/google/gemma-4-26B-A4B-it"
+      }
+    ]
+  },
+  "google/gemma-4-E4B-it": {
+    "id": "google/gemma-4-E4B-it",
+    "name": "Gemma 4 E4B IT",
+    "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "release_date": "2026-04-02",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/google/gemma-4-E4B-it"
+      }
+    ]
+  },
+  "google/gemma-4-E2B-it": {
+    "id": "google/gemma-4-E2B-it",
+    "name": "Gemma 4 E2B IT",
+    "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "release_date": "2026-04-02",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 131072,
+      "output": 8192
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/google/gemma-4-E2B-it"
+      }
+    ]
+  },
+  "google/gemma-3-12b-it": {
+    "id": "google/gemma-3-12b-it",
+    "name": "Gemma 3 12B IT",
+    "description": "Open multimodal Gemma instruction model for multilingual text generation and image understanding",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-08",
+    "release_date": "2025-03-12",
+    "last_updated": "2025-03-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 131072,
+      "output": 131072
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/google/gemma-3-12b-it"
+      }
+    ]
+  },
+  "google/gemma-3-27b-it": {
+    "id": "google/gemma-3-27b-it",
+    "name": "Gemma 3 27B IT",
+    "description": "Largest open Gemma 3 instruction model for multilingual text generation and visual understanding",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2024-08",
+    "release_date": "2025-03-12",
+    "last_updated": "2025-03-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 131072,
+      "output": 131072
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/google/gemma-3-27b-it"
+      }
+    ]
+  },
+  "google/gemma-4-31b-it": {
+    "id": "google/gemma-4-31b-it",
+    "name": "Gemma 4 31B IT",
+    "description": "Largest Gemma 4 instruction model for open, self-hosted chat and reasoning",
+    "family": "gemma",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "release_date": "2026-04-02",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    },
+    "weights": [
+      {
+        "label": "Hugging Face",
+        "url": "https://huggingface.co/google/gemma-4-31B-it"
+      }
+    ]
+  },
+  "google/gemini-2.5-pro": {
+    "id": "google/gemini-2.5-pro",
+    "name": "Gemini 2.5 Pro",
+    "description": "Google's proven reasoning model for coding, math, and multimodal analysis",
+    "family": "gemini-pro",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": true,
+    "knowledge": "2025-01",
+    "release_date": "2025-06-17",
+    "last_updated": "2025-06-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    },
+    "benchmarks": [
+      {
+        "name": "Aider Polyglot",
+        "score": 83.1,
+        "metric": "percent correct",
+        "source": "https://aider.chat/docs/leaderboards/",
+        "date": "2025-06-06"
+      },
+      {
+        "name": "Artificial Analysis Coding Index",
+        "score": 32,
+        "metric": "index",
+        "source": "https://openrouter.ai/google/gemini-2.5-pro/benchmarks",
+        "date": "2026-06-02"
+      },
+      {
+        "name": "SciCode",
+        "score": 42.8,
+        "metric": "percent correct",
+        "source": "https://openrouter.ai/google/gemini-2.5-pro/benchmarks",
+        "date": "2026-06-02"
+      },
+      {
+        "name": "Terminal-Bench Hard",
+        "score": 26.5,
+        "metric": "success rate",
+        "source": "https://openrouter.ai/google/gemini-2.5-pro/benchmarks",
+        "date": "2026-06-02"
+      }
+    ]
+  },
+  "openai/gpt-5": {
+    "id": "openai/gpt-5",
+    "name": "GPT-5",
+    "description": "Original GPT-5 workhorse for reasoning, coding, writing, and tool workflows",
+    "family": "gpt",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "temperature": false,
+    "knowledge": "2024-09-30",
+    "release_date": "2025-08-07",
+    "last_updated": "2025-08-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "limit": {
+      "context": 400000,
+      "input": 272000,
+      "output": 128000
+    },
+    "benchmarks": [
+      {
+        "name": "Aider Polyglot",
+        "score": 88,
+        "metric": "percent correct",
+        "source": "https://aider.chat/docs/leaderboards/",
+        "date": "2025-08-23"
+      },
+      {
+        "name": "SWE-Bench Pro",
+        "score": 41.78,
+        "metric": "resolve rate",
+        "dataset": "public",
+        "source": "https://labs.scale.com/leaderboard/swe_bench_pro_public"
+      }
+    ]
+  }
+}

@@ -206,6 +206,16 @@ export type {
 } from "./observability/index.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
 
+// Models
+export { ModelCatalog } from "./models/catalog.js";
+export type {
+  CatalogMatch,
+  CatalogModel,
+  ContextWindowMatch,
+  ModelCatalogOptions,
+  ModelCost,
+} from "./models/catalog.js";
+
 // Utils
 export { loadFileContent } from "./utils/file.js";
 export type {
