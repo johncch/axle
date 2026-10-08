@@ -98,6 +98,22 @@ describe("parseSkillMarkdown", () => {
     expect(() => parseSkillMarkdown("---\n- a\n- b\n---\n")).toThrow(/mapping/);
   });
 
+  it("reads unquoted numbers and booleans as text, as the specification types them", () => {
+    const skill = parseSkillMarkdown(
+      [
+        "---",
+        "name: a",
+        "description: b",
+        "metadata:",
+        "  version: 1.0",
+        "  experimental: true",
+        "---",
+      ].join("\n"),
+    );
+
+    expect(skill.frontmatter?.metadata).toEqual({ version: "1.0", experimental: "true" });
+  });
+
   it("type-checks the optional fields the specification names", () => {
     expect(() => parseSkillMarkdown("---\nname: a\ndescription: b\nmetadata: nope\n---\n")).toThrow(
       /metadata/,

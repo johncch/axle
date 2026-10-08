@@ -19,7 +19,9 @@ export type SkillFrontmatter = Omit<z.infer<typeof FrontmatterSchema>, "name" | 
 /**
  * Parse the text of a `SKILL.md`. Requires the frontmatter block with a
  * non-empty `name` and `description`; the optional fields the specification
- * names are type-checked, anything else is carried through as written.
+ * names are type-checked, anything else is carried through as written. Every
+ * scalar is read as text (YAML failsafe schema), so an unquoted
+ * `version: 1.0` under `metadata` stays "1.0" rather than failing as a number.
  */
 export function parseSkillMarkdown(text: string): Omit<Skill, "root" | "files"> {
   const match = FRONTMATTER.exec(text.trimStart());
@@ -32,7 +34,7 @@ export function parseSkillMarkdown(text: string): Omit<Skill, "root" | "files"> 
 
   let yaml;
   try {
-    yaml = parseYaml(frontmatterText);
+    yaml = parseYaml(frontmatterText, { schema: "failsafe" });
   } catch (error) {
     throw new AxleError("SKILL.md frontmatter is not valid YAML", {
       code: "SKILL_INVALID",
