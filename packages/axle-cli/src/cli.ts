@@ -5,7 +5,6 @@ import type { Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import pkg from "../package.json";
 import { requestedToolNames, resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
@@ -42,16 +41,18 @@ import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
 import { loadSession } from "./cli/sessions.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
+import { resolveBuildInfo } from "./cli/build.js";
 import { discoverSkills } from "./cli/skills.js";
 import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
 import * as ask from "./ui/ask.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
+const build = resolveBuildInfo();
 const program = new Command()
   .name("axle")
   .description("Axle is a CLI tool for running AI workflows")
-  .version(pkg.version)
+  .version(build.version)
   // Kernel and subcommands share flag names (-j, -m); positional parsing
   // keeps each command's flags its own.
   .enablePositionalOptions()
@@ -285,7 +286,8 @@ program
       if (catalog.stale) await catalog.refresh();
       const trusted = await isFolderTrusted(process.cwd());
       const lines = formatInfo({
-        version: pkg.version,
+        version: build.version,
+        build: build.detail,
         dirs: resolveConfigDirs(),
         trusted,
         cliConfig: await getCliConfig({ trusted }),

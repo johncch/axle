@@ -27,8 +27,8 @@
     "generate:schemas": "tsx ./scripts/generate-schemas.ts",
     "build": "tsdown --clean --minify",
     "build:watch": "tsdown --watch",
-    "build:binary": "pnpm build && bun scripts/build-binary.mjs",
-    "install:binary": "pnpm build && bun scripts/build-binary.mjs --install ~/bin",
+    "package": "pnpm build && bun scripts/build-binary.mjs",
+    "package:install": "pnpm build && bun scripts/build-binary.mjs --install ~/bin",
     "build-dev": "tsdown",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

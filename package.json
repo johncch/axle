@@ -15,7 +15,7 @@
     "release": "node scripts/release.mjs",
     "cut-release": "node scripts/cut-release.mjs",
     "checks": "pnpm exec tsx checks/run.ts",
-    "checks:extended": "pnpm exec tsx checks/run.ts --extended"
+    "cli:install": "pnpm --filter axle-cli run package:install"
   },
   "devDependencies": {
     "prettier": "^3.9.9",

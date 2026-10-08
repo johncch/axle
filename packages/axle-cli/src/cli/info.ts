@@ -19,6 +19,7 @@ const ALIGNED_VALUE_WIDTH = 32;
 
 export interface InfoInput {
   version: string;
+  build?: string;
   dirs: ConfigDirs;
   trusted: boolean;
   cliConfig: CliConfig;
@@ -42,7 +43,7 @@ interface Row {
  * supplied each value. API keys are reported as set or unset, never printed.
  */
 export function formatInfo(input: InfoInput): string[] {
-  const { version, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills, env } = input;
+  const { version, build, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills, env } = input;
   const cwd = dirname(dirs.project);
   const home = dirname(dirs.user);
 
@@ -95,7 +96,7 @@ export function formatInfo(input: InfoInput): string[] {
   ];
 
   const lines = [
-    `axle ${version} · ${describeRuntime()} · ${process.platform} ${process.arch}`,
+    `axle ${version}${build ? ` · ${build}` : ""} · ${describeRuntime()} · ${process.platform} ${process.arch}`,
     `cwd ${cwd} · ${trusted ? "trusted" : "not trusted (run axle trust)"}`,
     "",
     "Config files",

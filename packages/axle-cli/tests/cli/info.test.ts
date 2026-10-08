@@ -75,6 +75,17 @@ function section(lines: string[], title: string, nextTitle?: string): string[] {
 }
 
 describe("formatInfo", () => {
+  it("names the build in the header when the binary carries a stamp", () => {
+    const lines = info({
+      version: "1.2.3-dev",
+      build: "built 2026-10-08 14:50 from v1.2.3-9-g1d0e237-dirty",
+    });
+
+    expect(lines[0]).toMatch(
+      /^axle 1\.2\.3-dev · built 2026-10-08 14:50 from v1\.2\.3-9-g1d0e237-dirty · node /,
+    );
+  });
+
   it("reports which config files exist, relative to home and cwd", async () => {
     await writeFile(USER_CONFIG, "");
     const lines = info({});

@@ -175,6 +175,11 @@
   and counted as a success, and a Gemini safety block read as a generic
   model error.
 
+- **Dev builds identify themselves.** A binary packaged from anything but
+  the clean release tag reports its version as `<version>-dev`, and
+  `axle info` adds when and from which commit it was built. A run from
+  source says `source`; an npm install shows the plain version.
+
 ### Fixed
 
 - **OpenAI runs no longer die when the model cites inside a tool call.**
