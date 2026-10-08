@@ -729,23 +729,21 @@ describe.concurrent("schedules end-to-end", () => {
   const plain = ["--renderer", "plain", "--no-log"];
 
   it(
-    "axle schedule -j registers a LaunchAgent, runs once, and updates only when something changed",
+    "axle schedule add registers a LaunchAgent without running, and updates only when something changed",
     async ({ cli, schedule }) => {
-      const { replies, requests, runCli, writeRecipe, CWD } = cli;
+      const { requests, runCli, writeRecipe, CWD } = cli;
       const { scheduleEnv, launchctlCalls, runsOf, records, LAUNCH_AGENTS, SCHEDULES } = schedule;
-      replies.push({ text: "first" }, { text: "second" }, { text: "third" });
       const recipe = await writeRecipe(
         "monitor.yml",
         "name: hourly-monitor\nschedule:\n  every: 1h",
       );
 
-      const first = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
+      const first = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
 
       expect(first.code).toBe(0);
       expect(first.output).toContain("Scheduled hourly-monitor every 1h");
       expect(first.output).toContain("Next firing in 1h.");
-      expect(first.output).toContain("first");
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(0);
       const [{ id, record }] = await records();
       expect(record.desired).toMatchObject({
         name: "hourly-monitor",
@@ -776,20 +774,15 @@ describe.concurrent("schedules end-to-end", () => {
         `bootout gui/${process.getuid!()}/com.fifthrevision.axle.${id}`,
         `bootstrap gui/${process.getuid!()} ${record.binding.plistPath}`,
       ]);
-      const firstSession = first.output.match(/axle resume (\S+)/)?.[1];
-      expect((await runsOf(id))[0]).toMatchObject({
-        status: "succeeded",
-        sessionIds: [firstSession],
-      });
+      expect(await runsOf(id)).toEqual([]);
 
-      const again = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
+      const again = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       expect(again.code).toBe(0);
       expect(again.output).toContain("Schedule hourly-monitor is current: every 1h");
       expect(await launchctlCalls()).toHaveLength(2);
-      expect(requests).toHaveLength(2);
 
       await writeRecipe("monitor.yml", "name: hourly-monitor\nschedule:\n  every: 15m");
-      const changed = await runCli(["schedule", "-j", recipe, ...plain], scheduleEnv());
+      const changed = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       expect(changed.code).toBe(0);
       expect(changed.output).toContain("Updated schedule hourly-monitor: every 1h → every 15m.");
       expect(await launchctlCalls()).toHaveLength(5);
@@ -798,7 +791,18 @@ describe.concurrent("schedules end-to-end", () => {
         seconds: 900,
       });
       expect(await readdir(LAUNCH_AGENTS)).toHaveLength(1);
-      expect(await runsOf(id)).toHaveLength(3);
+      expect(await runsOf(id)).toEqual([]);
+      expect(requests).toHaveLength(0);
+
+      const old = await runCli(["schedule", "-j", recipe], scheduleEnv());
+      expect(old.code).toBe(1);
+      expect(old.output).toContain("Register with: axle schedule add -j <recipe>");
+
+      const bare = await runCli(["schedule"], scheduleEnv());
+      expect(bare.code).toBe(1);
+      expect(bare.output).toContain("Usage: axle schedule [options] [command]");
+      expect(bare.output).toContain("remove [options]");
+      expect(requests).toHaveLength(0);
     },
     SPAWN_TIMEOUT,
   );
@@ -814,7 +818,7 @@ describe.concurrent("schedules end-to-end", () => {
       const unregistered = await runCli(["-j", recipe, ...plain], scheduleEnv());
       expect(unregistered.code).toBe(0);
       expect(unregistered.output).toContain(
-        `Declares a schedule (every 1h), not registered. Register and run with: axle schedule -j ${recipe}`,
+        `Declares a schedule (every 1h), not registered. Register with: axle schedule add -j ${recipe}`,
       );
       expect(await records()).toEqual([]);
 
@@ -822,7 +826,7 @@ describe.concurrent("schedules end-to-end", () => {
       expect(elsewhere.code).toBe(0);
       expect(elsewhere.output).toContain("schedules are not supported on linux yet");
 
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id }] = await records();
       const mutations = (await launchctlCalls()).length;
 
@@ -833,7 +837,7 @@ describe.concurrent("schedules end-to-end", () => {
       await writeRecipe("monitor.yml", "schedule:\n  every: 15m");
       const drifted = await runCli(["-j", recipe, ...plain], scheduleEnv());
       expect(drifted.output).toContain(
-        `⚠ Registered every 1h, but the recipe now says every 15m. Re-apply with: axle schedule register -j ${recipe}`,
+        `⚠ Registered every 1h, but the recipe now says every 15m. Re-apply with: axle schedule add -j ${recipe}`,
       );
 
       await writeRecipe("monitor.yml");
@@ -861,7 +865,7 @@ describe.concurrent("schedules end-to-end", () => {
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
 
       const { code, output } = await runCli(
-        ["schedule", "-j", recipe, ...plain],
+        ["schedule", "add", "-j", recipe],
         scheduleEnv("linux"),
       );
 
@@ -875,13 +879,13 @@ describe.concurrent("schedules end-to-end", () => {
   );
 
   it(
-    "schedule register registers without running; without a block both forms refuse",
+    "schedule add refuses a recipe without a schedule block",
     async ({ cli, schedule }) => {
       const { requests, runCli, writeRecipe } = cli;
       const { scheduleEnv, launchctlCalls, runsOf, records } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 2d");
 
-      const applied = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const applied = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
 
       expect(applied.code).toBe(0);
       expect(applied.output).toContain("Scheduled monitor every 2d");
@@ -891,14 +895,9 @@ describe.concurrent("schedules end-to-end", () => {
       expect(await runsOf((await records())[0].id)).toEqual([]);
 
       const bare = await writeRecipe("bare.yml");
-      for (const args of [
-        ["schedule", "register", "-j", bare],
-        ["schedule", "-j", bare, ...plain],
-      ]) {
-        const refused = await runCli(args, scheduleEnv());
-        expect(refused.code).toBe(1);
-        expect(refused.output).toContain("has no schedule block");
-      }
+      const refused = await runCli(["schedule", "add", "-j", bare], scheduleEnv());
+      expect(refused.code).toBe(1);
+      expect(refused.output).toContain("has no schedule block");
       expect(await readFile(bare, "utf-8")).not.toContain("schedule");
       expect(await records()).toHaveLength(1);
       expect(requests).toHaveLength(0);
@@ -913,7 +912,7 @@ describe.concurrent("schedules end-to-end", () => {
       const { scheduleEnv, launchctlCalls } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 30s");
 
-      const { code, output } = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const { code, output } = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
 
       expect(code).toBe(1);
       expect(output).toContain("The job file is not valid");
@@ -932,7 +931,7 @@ describe.concurrent("schedules end-to-end", () => {
         "name: digest\nschedule:\n  at: ['09:00', '17:30']\n  on: [mon, fri]",
       );
 
-      const applied = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const applied = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
 
       expect(applied.code).toBe(0);
       expect(applied.output).toMatch(
@@ -960,7 +959,7 @@ describe.concurrent("schedules end-to-end", () => {
       expect(state.output).toContain(
         "⚠ Registered at 09:00, 17:30 on mon,fri, but the recipe now says every 1d.",
       );
-      const changed = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const changed = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       expect(changed.output).toContain(
         "Updated schedule digest: at 09:00, 17:30 on mon,fri → every 1d. Next firing in 1d.",
       );
@@ -975,7 +974,7 @@ describe.concurrent("schedules end-to-end", () => {
       const { runCli, writeRecipe } = cli;
       const { scheduleEnv, launchctlCalls, records, SCHEDULES } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id, record }] = await records();
       await writeFile(join(SCHEDULES, `${id}.json`), "{corrupt");
       const callsBefore = (await launchctlCalls()).length;
@@ -999,7 +998,7 @@ describe.concurrent("schedules end-to-end", () => {
       const { requests, runCli, writeRecipe } = cli;
       const { scheduleEnv, runsOf, records, runOccurrence } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id, record }] = await records();
       await writeFile(recipe, "task: [unclosed\n");
 
@@ -1021,7 +1020,7 @@ describe.concurrent("schedules end-to-end", () => {
       const { scheduleEnv, records, SCHEDULES } = schedule;
       replies.push({ text: "ran anyway" });
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id }] = await records();
       await mkdir(join(SCHEDULES, `${id}.runs.jsonl`));
 
@@ -1040,7 +1039,7 @@ describe.concurrent("schedules end-to-end", () => {
       const { runCli, runCliWithSlowReader, writeRecipe } = cli;
       const { scheduleEnv, records, SCHEDULES } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id }] = await records();
       const line = JSON.stringify({
         startedAt: "2026-09-18T00:00:00.000Z",
@@ -1081,7 +1080,7 @@ describe.concurrent("schedules end-to-end", () => {
       await expect(stat(join(HOME, "escape.runs.jsonl"))).rejects.toThrow(/ENOENT/);
       expect(requests).toHaveLength(0);
 
-      const platform = await runCli(["schedule", "register", "-j", recipe], scheduleEnv("windows"));
+      const platform = await runCli(["schedule", "add", "-j", recipe], scheduleEnv("windows"));
       expect(platform.code).toBe(1);
       expect(platform.output).toContain("AXLE_SCHEDULE_PLATFORM");
       expect(await records()).toEqual([]);
@@ -1095,14 +1094,14 @@ describe.concurrent("schedules end-to-end", () => {
       const { runCli, writeRecipe } = cli;
       const { scheduleEnv, records } = schedule;
       const recipe = await writeRecipe("monitor.yml", "schedule:\n  every: 1h");
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ record }] = await records();
       await rm(record.binding.plistPath);
 
       const listed = await runCli(["schedule", "list"], scheduleEnv());
       expect(listed.output).toContain("⚠ not loaded in launchd");
 
-      const restored = await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      const restored = await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       expect(restored.code).toBe(0);
       expect(restored.output).toContain("Restored schedule monitor every 1h");
       await stat(record.binding.plistPath);
@@ -1123,7 +1122,7 @@ describe.concurrent("schedules end-to-end", () => {
         "monitor.yml",
         "name: hourly-monitor\nschedule:\n  every: 1h",
       );
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id, record }] = await records();
       const callsBefore = (await launchctlCalls()).length;
       await writeRecipe("monitor.yml", "name: hourly-monitor\nschedule:\n  every: 15m");
@@ -1156,7 +1155,7 @@ describe.concurrent("schedules end-to-end", () => {
 
       const bare = await runCli(["schedule", "sessions"], scheduleEnv());
       expect(bare.code).not.toBe(0);
-      expect(bare.output).toContain("required option '-j, --job <path>' not specified");
+      expect(bare.output).toContain("Name the schedule with -n <name> or -j <recipe>");
       expect(requests).toHaveLength(2);
     },
     SPAWN_TIMEOUT,
@@ -1177,7 +1176,7 @@ describe.concurrent("schedules end-to-end", () => {
           "\n",
         ),
       );
-      await runCli(["schedule", "register", "-j", recipe], scheduleEnv());
+      await runCli(["schedule", "add", "-j", recipe], scheduleEnv());
       const [{ id, record }] = await records();
 
       const fired = await runOccurrence(record.desired.programArguments);
@@ -1211,8 +1210,12 @@ describe.concurrent("schedules end-to-end", () => {
         "name: hourly-monitor\nschedule:\n  every: 1h",
       );
       const digest = await writeRecipe("digest.yml", "name: daily-digest\nschedule:\n  every: 1d");
-      await runCli(["schedule", "-j", monitor, ...plain], scheduleEnv());
-      await runCli(["schedule", "register", "-j", digest], scheduleEnv());
+      await runCli(["schedule", "add", "-j", monitor], scheduleEnv());
+      await runCli(["schedule", "add", "-j", digest], scheduleEnv());
+      const monitorRecord = (await records()).find(
+        (r) => r.record.desired.name === "hourly-monitor",
+      )!;
+      await runCli(["-j", monitor, ...plain, "--scheduled", monitorRecord.id], scheduleEnv());
       await writeFile(join(LAUNCH_AGENTS, "com.example.other.plist"), "<plist/>");
       await mkdir(SCHEDULES, { recursive: true });
       await writeFile(join(SCHEDULES, "broken.json"), "{nope");
@@ -1257,7 +1260,7 @@ describe.concurrent("schedules end-to-end", () => {
       expect(history.output).toMatch(/^✔ .*axle resume /);
 
       await rm(digest);
-      const moved = await runCli(["schedule", "remove", "-j", digest], scheduleEnv());
+      const moved = await runCli(["schedule", "remove", "-n", "daily-digest"], scheduleEnv());
       expect(moved.code).toBe(0);
       expect(moved.output).toContain("Removed schedule daily-digest");
       expect(await records()).toEqual([]);

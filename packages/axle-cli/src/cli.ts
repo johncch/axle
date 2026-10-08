@@ -6,6 +6,7 @@ import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { requestedToolNames, resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
+import { resolveBuildInfo } from "./cli/build.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
   getCliConfig,
@@ -35,13 +36,13 @@ import {
   describeScheduleState,
   formatScheduleList,
   formatScheduleSessions,
-  removeScheduleByRecipe,
+  removeScheduleTarget,
+  selectorFrom,
 } from "./cli/schedule/commands.js";
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
 import { loadSession } from "./cli/sessions.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
-import { resolveBuildInfo } from "./cli/build.js";
 import { discoverSkills } from "./cli/skills.js";
 import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
 import * as ask from "./ui/ask.js";
@@ -202,34 +203,22 @@ program
 
 const schedule = program
   .command("schedule")
-  .description("Register a recipe's recurring schedule (macOS launchd) and run it once now")
+  .description("Manage recurring schedules (macOS launchd): add, list, sessions, remove")
   .enablePositionalOptions()
-  .option("-j, --job <path>", "Recipe with a schedule block to register and run")
-  .option("--renderer <mode>", "Screen renderer: ink or plain (pipes always get plain)", "ink")
-  .option("--no-log", "Do not write the output to a log file")
-  .option("-d, --debug", "Print additional debug information")
+  .addOption(new Option("-j, --job <path>").hideHelp())
   .action(async (opts) => {
-    const recipe = opts.job;
-    if (!recipe) return schedule.help();
-    try {
-      await requireScheduleBlock(recipe);
-    } catch (e) {
-      console.error(`✖ ${e instanceof Error ? e.message : String(e)}`);
+    if (opts.job !== undefined) {
+      console.error(
+        "✖ axle schedule -j no longer registers and runs. Register with: axle schedule add -j <recipe>. Run with: axle -j <recipe>.",
+      );
       process.exit(1);
     }
-    invocation = {
-      kind: "kernel",
-      job: recipe,
-      interactive: false,
-      scheduling: { kind: "register" },
-      args: [],
-      common: commonOf(opts),
-    };
+    schedule.help({ error: true });
   });
 
 schedule
-  .command("register")
-  .description("Register or update a recipe's schedule without running it")
+  .command("add")
+  .description("Register or update a recipe's schedule and print its next firing; nothing runs")
   .requiredOption("-j, --job <path>", "Recipe with a schedule block to register")
   .action(async (opts) => {
     await manage(async () => {
@@ -250,21 +239,23 @@ schedule
 
 schedule
   .command("remove")
-  .description("Unregister a recipe's schedule; the recipe and its sessions stay")
-  .requiredOption("-j, --job <path>", "Recipe whose schedule to remove")
+  .description("Unregister a schedule; the recipe and its sessions stay")
+  .option("-n, --name <name>", "Schedule name as shown by axle schedule list")
+  .option("-j, --job <path>", "Recipe whose schedule to remove")
   .action(async (opts) => {
     await manage(async () => {
-      console.log(`✔ ${await removeScheduleByRecipe(opts.job, scheduleContext())}`);
+      console.log(`✔ ${await removeScheduleTarget(selectorFrom(opts), scheduleContext())}`);
     });
   });
 
 schedule
   .command("sessions")
-  .description("List the sessions a recipe's scheduled runs produced")
-  .requiredOption("-j, --job <path>", "Recipe whose runs to list")
+  .description("List the sessions a schedule's runs produced")
+  .option("-n, --name <name>", "Schedule name as shown by axle schedule list")
+  .option("-j, --job <path>", "Recipe whose runs to list")
   .action(async (opts) => {
     await manage(async () => {
-      for (const line of await formatScheduleSessions(opts.job)) console.log(line);
+      for (const line of await formatScheduleSessions(selectorFrom(opts))) console.log(line);
     });
   });
 
@@ -492,18 +483,6 @@ async function prepareSchedule(): Promise<string | undefined> {
   if (inv.kind !== "kernel") return undefined;
   if (inv.scheduling.kind === "occurrence") return inv.scheduling.id;
   if (!inv.job || !jobConfig) return undefined;
-
-  if (inv.scheduling.kind === "register") {
-    if (!jobConfig.schedule) throw new Error(`${inv.job} has no schedule block.`);
-    const outcome = await applyRecipeSchedule(
-      inv.job,
-      { ...jobConfig, schedule: jobConfig.schedule },
-      scheduleContext(),
-    );
-    console.log(`✔ ${describeOutcome(outcome)}`);
-    rootSpan.info(describeOutcome(outcome));
-    return outcome.record.desired.id;
-  }
 
   const state = await describeScheduleState(inv.job, jobConfig, scheduleContext());
   if (state) {

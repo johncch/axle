@@ -10,7 +10,7 @@ import {
   unknownBackendError,
   unsupportedPlatformError,
 } from "./reconcile.js";
-import type { DesiredSchedule, ScheduleRecord, ScheduleRun } from "./records.js";
+import type { DesiredSchedule, ScheduleListEntry, ScheduleRecord, ScheduleRun } from "./records.js";
 import {
   deleteScheduleRecord,
   displayNameFor,
@@ -125,7 +125,7 @@ async function scheduleState(
     return context.backends.forPlatform(context.platform)
       ? {
           level: "info",
-          message: `Declares a schedule (${when}), not registered. Register and run with: axle schedule -j ${recipe}`,
+          message: `Declares a schedule (${when}), not registered. Register with: axle schedule add -j ${recipe}`,
         }
       : {
           level: "info",
@@ -143,7 +143,7 @@ async function scheduleState(
   if (!isDeepStrictEqual(declared, record!.desired.trigger)) {
     return {
       level: "warn",
-      message: `Registered ${registered}, but the recipe now says ${formatTrigger(declared)}. Re-apply with: axle schedule register -j ${recipe}`,
+      message: `Registered ${registered}, but the recipe now says ${formatTrigger(declared)}. Re-apply with: axle schedule add -j ${recipe}`,
     };
   }
   const last = (await readScheduleRuns(id, context.home))[0];
@@ -173,7 +173,7 @@ export async function formatScheduleList(context: ScheduleContext): Promise<stri
     const backend = context.backends.forKind(binding.kind);
     if (backend && !(await backend.isLoaded(binding))) {
       lines.push(
-        `  ⚠ not loaded in ${binding.kind}. Re-apply with: axle schedule register -j ${desired.recipePath}`,
+        `  ⚠ not loaded in ${binding.kind}. Re-apply with: axle schedule add -j ${desired.recipePath}`,
       );
     }
   }
@@ -182,6 +182,42 @@ export async function formatScheduleList(context: ScheduleContext): Promise<stri
 
 export type ScheduleTarget =
   { kind: "record"; record: ScheduleRecord } | { kind: "unreadable"; id: string; reason: string };
+
+/** How a management subcommand names a schedule: by its recipe, or by the name `list` shows. */
+export type ScheduleSelector = { kind: "recipe"; recipe: string } | { kind: "name"; name: string };
+
+export function selectorFrom(opts: { job?: string; name?: string }): ScheduleSelector {
+  if (opts.job !== undefined && opts.name !== undefined) {
+    throw new Error("Name the schedule with -n <name> or -j <recipe>, not both.");
+  }
+  if (opts.job !== undefined) return { kind: "recipe", recipe: opts.job };
+  if (opts.name !== undefined) return { kind: "name", name: opts.name };
+  throw new Error("Name the schedule with -n <name> or -j <recipe>. See: axle schedule list");
+}
+
+function describeSelector(selector: ScheduleSelector): string {
+  return selector.kind === "recipe" ? selector.recipe : selector.name;
+}
+
+export async function resolveScheduleByName(name: string, home?: string): Promise<ScheduleTarget> {
+  const matches = (await listScheduleRecords(home)).filter(
+    (entry): entry is Extract<ScheduleListEntry, { kind: "record" }> =>
+      entry.kind === "record" && entry.record.desired.name === name,
+  );
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) throw new Error(`No schedule named ${name}. See: axle schedule list`);
+  const paths = matches.map((entry) => `  ${entry.record.desired.recipePath}`).join("\n");
+  throw new Error(`${matches.length} schedules are named ${name}; pick one with -j:\n${paths}`);
+}
+
+export async function resolveScheduleTarget(
+  selector: ScheduleSelector,
+  home?: string,
+): Promise<ScheduleTarget> {
+  return selector.kind === "recipe"
+    ? resolveScheduleByRecipe(selector.recipe, home)
+    : resolveScheduleByName(selector.name, home);
+}
 
 /**
  * A schedule is addressed by its recipe. A recipe that no longer exists is
@@ -216,16 +252,24 @@ export async function resolveScheduleByRecipe(
   throw new Error(`${recipe} is not scheduled. See: axle schedule list`);
 }
 
-export async function formatScheduleSessions(recipe: string, home?: string): Promise<string[]> {
+export async function formatScheduleSessions(
+  selector: ScheduleSelector,
+  home?: string,
+): Promise<string[]> {
   let id: string;
-  try {
-    id = (await resolveScheduleIdentity(recipe)).id;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    id = scheduleIdFor(resolve(recipe));
+  if (selector.kind === "name") {
+    const target = await resolveScheduleByName(selector.name, home);
+    id = target.kind === "record" ? target.record.desired.id : target.id;
+  } else {
+    try {
+      id = (await resolveScheduleIdentity(selector.recipe)).id;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      id = scheduleIdFor(resolve(selector.recipe));
+    }
   }
   const runs = await readScheduleRuns(id, home);
-  if (runs.length === 0) return [`No runs recorded for ${recipe}.`];
+  if (runs.length === 0) return [`No runs recorded for ${describeSelector(selector)}.`];
 
   return runs.map((run) => {
     const glyph = run.status === "succeeded" ? "✔" : "✖";
@@ -239,17 +283,17 @@ export async function formatScheduleSessions(recipe: string, home?: string): Pro
   });
 }
 
-export async function removeScheduleByRecipe(
-  recipe: string,
+export async function removeScheduleTarget(
+  selector: ScheduleSelector,
   context: ScheduleContext,
 ): Promise<string> {
-  const target = await resolveScheduleByRecipe(recipe, context.home);
+  const target = await resolveScheduleTarget(selector, context.home);
   if (target.kind === "unreadable") {
     const backend = context.backends.forPlatform(context.platform);
     if (!backend) throw unsupportedPlatformError(context.platform);
     await backend.remove(backend.bindingFor(target.id));
     await deleteScheduleRecord(target.id, context.home);
-    return `Removed schedule for ${recipe} (its record was unreadable: ${target.reason})`;
+    return `Removed schedule for ${describeSelector(selector)} (its record was unreadable: ${target.reason})`;
   }
   if (!context.backends.forKind(target.record.binding.kind)) {
     throw unknownBackendError(target.record.binding.kind);

@@ -147,13 +147,16 @@
   available and reports its steps as `bash_code_execution` and
   `text_editor_code_execution` actions.
 - **Recipes can run on a schedule (macOS).** Add a `schedule: { every: 1h }`
-  block and run `axle schedule -j <recipe>`: it registers a user
-  LaunchAgent and runs the recipe once now; each later firing re-reads the
-  recipe and runs it like `-j`, saving a session. `schedule register -j` registers without running, `schedule list` shows registrations and their last run,
-  `schedule sessions -j` lists each run's `axle resume` command, and
-  `schedule remove -j` unregisters; schedules are addressed by recipe, never
-  by an id. Plain `axle -j` never touches the schedule; it prints whether
-  the recipe is registered or has drifted. Intervals are
+  block and run `axle schedule add -j <recipe>`: it registers a user
+  LaunchAgent and prints the next firing; nothing runs until then. Each
+  firing re-reads the recipe and runs it like `-j`, saving a session, so
+  a plain `axle -j` is how to prove the recipe first. `schedule list`
+  shows registrations and their last run, `schedule sessions` lists each
+  run's `axle resume` command, and `schedule remove` unregisters; both
+  take `-j <recipe>` or `-n <name>`, the name `list` shows, and refuse a
+  name two schedules share. There is no schedule id. Plain `axle -j`
+  never touches the schedule; it prints whether the recipe is registered
+  or has drifted. Intervals are
   `<integer><s|m|h|d>`, 60s minimum. Fixed times of day use
   `schedule: { at: "09:00" }`, or a list of times, with optional
   `on: [mon, fri]`; times are machine-local. Linux and Windows are not

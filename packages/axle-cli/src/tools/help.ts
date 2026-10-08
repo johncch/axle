@@ -41,8 +41,8 @@ has a home in the YAML, and the command line overrides selectively.
     axle batch -j recipe.yaml 'data/*.md' one isolated session per input
     axle resume <id>                      re-enter any saved session
     axle resume <id> -m "follow up"       one-shot continuation
-    axle schedule -j recipe.yaml          register a recurring recipe (macOS), run once now
-    axle schedule register|list|sessions|remove
+    axle schedule add -j recipe.yaml      register a recurring recipe (macOS); nothing runs
+    axle schedule list|sessions|remove
     axle setup                            configure providers and defaults
     axle info                             print version, config files, and resolved config
     axle explain [path]                   describe the keys a recipe or cli.yaml accepts
@@ -185,8 +185,9 @@ them by age window: older than 24 hours, 7 days, 30 days, or everything.`,
   schedule: `# Schedules (macOS)
 
 A recipe declares its own recurrence in a \`schedule:\` block. \`axle schedule
--j\` registers it as a user LaunchAgent and runs it once right away; every
-later firing re-reads the recipe and runs it exactly as \`-j\` would.
+add -j\` registers it as a user LaunchAgent; every firing re-reads the recipe
+and runs it exactly as \`-j\` would. Registering runs nothing: prove the
+recipe first with \`axle -j\`.
 
     schedule:
       every: 1h                  # <integer><unit>, unit s|m|h|d, minimum 60s
@@ -198,17 +199,18 @@ later firing re-reads the recipe and runs it exactly as \`-j\` would.
 A recipe uses \`every\` or \`at\`, not both. Cron expressions and
 day-of-month schedules are not supported.
 
-    axle schedule -j monitor.yaml            # register or update, then run once now
-    axle schedule register -j monitor.yaml   # register or update only
+    axle schedule add -j monitor.yaml        # register or update; prints the next firing
     axle schedule list                       # registrations and last run
-    axle schedule sessions -j monitor.yaml   # sessions the firings produced
-    axle schedule remove -j monitor.yaml     # unregister; recipe, sessions, logs stay
+    axle schedule sessions -n hourly-monitor # sessions the firings produced
+    axle schedule remove -n hourly-monitor   # unregister; recipe, sessions, logs stay
     axle -j monitor.yaml                     # just run it; the schedule is untouched
 
-Schedules are addressed by recipe path; there is no separate id. Applying is
-idempotent. Editing the task, model, tools, or batch block takes effect on
-the next firing; changing \`every\`, \`at\`, or the directory updates the
-registration. Both forms refuse a recipe without a \`schedule\` block.
+A schedule is addressed by its recipe (\`-j\`); \`sessions\` and \`remove\`
+also take the name \`list\` shows (\`-n\`), and refuse a name two schedules
+share. There is no separate id. Applying is idempotent. Editing the task,
+model, tools, or batch block takes effect on the next firing; changing
+\`every\`, \`at\`, or the directory updates the registration. \`add\` refuses
+a recipe without a \`schedule\` block.
 
 Each firing runs from the directory the recipe was applied in, resolves
 credentials like a foreground run, and saves a session. Output lands in
