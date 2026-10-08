@@ -71,10 +71,12 @@ always gets plain. \`--no-log\` disables the run log, otherwise written to
 \`~/.axle/logs/cli/<timestamp>.log\`. \`-d\` prints debug detail.
 
 Long sessions compact automatically: near the context window (about 80% of
-an assumed 200,000 tokens) the history is replaced with a summary plus the
-most recent user messages, and the transcript shows a "Compacted context"
-line. \`AXLE_CONTEXT_WINDOW=<tokens>\` changes the assumed window. A recipe
-can opt out with \`compaction: false\`.
+the model's window, looked up in the models.dev catalog, else 200,000) the
+history is replaced with a summary plus the most recent user messages, and
+the transcript shows a "Compacted context" line. A provider's
+\`contextWindow\` in cli.yaml or an inline provider block overrides the
+lookup; \`axle info\` shows the window in use. A recipe can opt out with
+\`compaction: false\`.
 
 On first run with no configuration anywhere, axle launches the setup wizard
 (\`axle setup\`): pick a provider, paste a key (written to
