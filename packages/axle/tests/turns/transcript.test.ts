@@ -496,6 +496,93 @@ describe("Transcript", () => {
     expect(restored.turns.map((turn) => turn.id)).toEqual(["restored", "next"]);
   });
 
+  describe("pending entries", () => {
+    const queuedSend = (id: string) =>
+      ({
+        type: "pending:queued",
+        entry: {
+          id,
+          kind: "send",
+          turn: { id, owner: "user", parts: [], status: "complete" },
+        },
+      }) as const;
+
+    test("a queued send is pending and absent from turns", () => {
+      const transcript = new Transcript();
+
+      const result = transcript.apply(queuedSend("u1"));
+
+      expect(result.handled).toBe(true);
+      expect(transcript.pending.map((entry) => entry.id)).toEqual(["u1"]);
+      expect(transcript.turns).toEqual([]);
+    });
+
+    test("a send leaves pending when its user turn commits", () => {
+      const transcript = new Transcript();
+      transcript.apply(queuedSend("u1"));
+      transcript.apply(queuedSend("u2"));
+
+      transcript.apply({
+        type: "turn:user",
+        turn: { id: "u1", owner: "user", parts: [], status: "complete" },
+      });
+
+      expect(transcript.pending.map((entry) => entry.id)).toEqual(["u2"]);
+      expect(transcript.turns.map((turn) => turn.id)).toEqual(["u1"]);
+    });
+
+    test("a compaction leaves pending when its agent turn starts", () => {
+      const transcript = new Transcript();
+      transcript.apply({ type: "pending:queued", entry: { id: "c1", kind: "compaction" } });
+
+      transcript.apply({ type: "turn:start", turnId: "c1" });
+
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns.map((turn) => turn.id)).toEqual(["c1"]);
+    });
+
+    test("a dropped entry leaves pending without reaching turns", () => {
+      const transcript = new Transcript();
+      transcript.apply(queuedSend("u1"));
+      transcript.apply({ type: "pending:queued", entry: { id: "c1", kind: "compaction" } });
+      transcript.apply(queuedSend("u2"));
+
+      transcript.apply({ type: "pending:dropped", id: "c1", reason: { type: "cancelled" } });
+      transcript.apply({
+        type: "pending:dropped",
+        id: "u1",
+        reason: { type: "error", error: { type: "mcp", message: "unreachable" } },
+      });
+
+      expect(transcript.pending.map((entry) => entry.id)).toEqual(["u2"]);
+      expect(transcript.turns).toEqual([]);
+    });
+
+    test("an unrelated turn leaves pending entries in place", () => {
+      const transcript = new Transcript();
+      transcript.apply(queuedSend("u1"));
+      const before = transcript.pending;
+
+      transcript.apply({ type: "turn:start", turnId: "other" });
+
+      expect(transcript.pending).toBe(before);
+    });
+
+    test("a transcript restored from saved turns has nothing pending", () => {
+      const saved = new Transcript();
+      saved.apply({
+        type: "turn:user",
+        turn: { id: "u1", owner: "user", parts: [], status: "complete" },
+      });
+      saved.apply(queuedSend("u2"));
+
+      const restored = new Transcript(saved.turns);
+
+      expect(restored.turns.map((turn) => turn.id)).toEqual(["u1"]);
+      expect(restored.pending).toEqual([]);
+    });
+  });
+
   test("annotation generics preserve consumer data types", () => {
     type AppAnnotation =
       | Annotation<{ image: string }, "sandbox">

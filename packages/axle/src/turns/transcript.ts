@@ -1,5 +1,5 @@
 import type { AnnotationEvent, TurnEvent } from "./events.js";
-import type { Annotation, Turn, TurnPart } from "./types.js";
+import type { Annotation, PendingEntry, Turn, TurnPart } from "./types.js";
 
 export type UnknownEvent = { type: string };
 
@@ -27,6 +27,8 @@ export type TranscriptApplyResult<
  * key is a type error, so the runtime guard cannot drift from the union.
  */
 const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
+  "pending:queued": true,
+  "pending:dropped": true,
   "turn:user": true,
   "turn:start": true,
   "turn:end": true,
@@ -66,6 +68,7 @@ export class Transcript<
   THostEvent extends UnknownEvent = UnknownEvent,
 > {
   private _turns: Turn<TAnnotation>[];
+  private _pending: PendingEntry<TAnnotation>[] = [];
 
   constructor(turns: readonly Turn<TAnnotation>[] = []) {
     this._turns = [...turns];
@@ -73,6 +76,10 @@ export class Transcript<
 
   get turns(): readonly Turn<TAnnotation>[] {
     return this._turns;
+  }
+
+  get pending(): readonly PendingEntry<TAnnotation>[] {
+    return this._pending;
   }
 
   getTurn(turnId: string): Turn<TAnnotation> | undefined {
@@ -92,6 +99,14 @@ export class Transcript<
     event: TurnEvent<TAnnotation>,
   ): TranscriptApplyResult<TAnnotation, THostEvent> {
     switch (event.type) {
+      case "pending:queued":
+        this._pending = [...this._pending, event.entry];
+        return this.handled(event);
+
+      case "pending:dropped":
+        this.removePending(event.id);
+        return this.handled(event);
+
       case "compaction:update":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
           if (part.type !== "compaction") return part;
@@ -126,9 +141,11 @@ export class Transcript<
         });
 
       case "turn:user":
+        this.removePending(event.turn.id);
         return this.replaceTurns([...this._turns, event.turn], event);
 
       case "turn:start": {
+        this.removePending(event.turnId);
         const turn: Turn<TAnnotation> = {
           id: event.turnId,
           owner: "agent",
@@ -309,6 +326,11 @@ export class Transcript<
         return this.handled(event);
       }
     }
+  }
+
+  private removePending(id: string): void {
+    if (!this._pending.some((entry) => entry.id === id)) return;
+    this._pending = this._pending.filter((entry) => entry.id !== id);
   }
 
   private replaceTurns(

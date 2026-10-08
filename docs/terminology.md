@@ -73,6 +73,13 @@ view is readonly; structural changes go through `apply`. The Agent holds no
 transcript — it emits events and keeps only the active `messages` (folded
 working memory, bounded by compaction). Lose the turns, lose the transcript.
 
+**Pending entry** — a placeholder for a turn the Agent has accepted but not
+yet opened: a queued `send()` or a queued manual compaction. It is keyed by
+the id its turn will carry and lives in `Transcript.pending`, never in
+`turns`. It ends when that turn opens or when the operation is dropped
+(cancelled, or failed during setup). Pending entries are live state: they are
+not saved, and a transcript restored from saved turns has none.
+
 **Session** — the continuable identity of a conversation (`sessionId`).
 `AgentSession` is its serialized form — the pure continuation
 `{ sessionId, messages }` that `agent.snapshot()` captures and the `Agent`

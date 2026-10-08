@@ -323,3 +323,28 @@ export type ActionResult =
   | { type: "in-progress"; content: string }
   | { type: "success"; content?: string | ConsoleOutput | ToolResultPart[] }
   | { type: "error"; error: { type: string; message: string } };
+
+/**
+ * Placeholder for a turn the Agent has accepted but not yet opened, keyed by
+ * the id that turn will carry. Live state only: it leaves `Transcript.pending`
+ * when its turn opens or when it is dropped, and is never part of `turns`.
+ */
+export type PendingEntry<TAnnotation extends Annotation = Annotation> =
+  | {
+      /** Id of the user turn this send will open. */
+      id: string;
+      kind: "send";
+      /** Preview of the user turn. */
+      turn: Turn<TAnnotation>;
+    }
+  | {
+      /** Id of the agent turn this compaction will open. */
+      id: string;
+      kind: "compaction";
+    };
+
+/**
+ * Why a pending entry ended without opening its turn.
+ */
+export type PendingDropReason =
+  { type: "cancelled" } | { type: "error"; error: { type: string; message: string } };
