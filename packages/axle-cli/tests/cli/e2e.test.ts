@@ -797,6 +797,11 @@ describe.concurrent("schedules end-to-end", () => {
       const old = await runCli(["schedule", "-j", recipe], scheduleEnv());
       expect(old.code).toBe(1);
       expect(old.output).toContain("Register with: axle schedule add -j <recipe>");
+
+      const bare = await runCli(["schedule"], scheduleEnv());
+      expect(bare.code).toBe(1);
+      expect(bare.output).toContain("Usage: axle schedule [options] [command]");
+      expect(bare.output).toContain("remove [options]");
       expect(requests).toHaveLength(0);
     },
     SPAWN_TIMEOUT,

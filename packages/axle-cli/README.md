@@ -41,11 +41,10 @@ axle -j path/to/job.yaml --args key=value other=thing
 axle batch -j recipe.yaml 'data/*.md'   # fan a recipe out over inputs
 axle resume <id>                     # re-enter any saved session
 axle resume <id> -m "follow up"      # one-shot continuation
-axle schedule -j recipe.yaml         # register a recurring recipe (macOS) and run it once now
-axle schedule register -j recipe.yaml   # register or update without running
+axle schedule add -j recipe.yaml     # register a recurring recipe (macOS); nothing runs
 axle schedule list                   # registered schedules and their last run
-axle schedule sessions -j recipe.yaml   # sessions a schedule's firings produced
-axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs stay
+axle schedule sessions -n <name>     # sessions a schedule's firings produced
+axle schedule remove -n <name>       # unregister; recipe, sessions, and logs stay
 axle setup                           # (re)configure providers and defaults
 axle info                            # print version, config files, and resolved config
 axle explain recipe.batch            # describe the keys a recipe or cli.yaml accepts
@@ -258,9 +257,10 @@ Batch runs are non-interactive; a batch job cannot be combined with
 
 ## Schedules
 
-A recipe can declare its own recurrence. On macOS, `axle schedule -j`
-registers it as a user LaunchAgent and runs it once right away; every
-firing after that re-reads the recipe and runs it exactly as `-j` would.
+A recipe can declare its own recurrence. On macOS, `axle schedule add -j`
+registers it as a user LaunchAgent; every firing re-reads the recipe and
+runs it exactly as `-j` would. Registering runs nothing, so prove the
+recipe first with a plain `axle -j`.
 
 ```yaml
 # monitor.yaml
@@ -292,27 +292,28 @@ timezone setting. A recipe declares either `every` or `at`, not both. Cron
 expressions and day-of-month schedules are not supported yet.
 
 ```bash
-axle schedule -j monitor.yaml            # register or update, then run once now
-axle schedule register -j monitor.yaml   # register or update only
+axle schedule add -j monitor.yaml        # register or update; prints the next firing
 axle schedule list
-axle schedule sessions -j monitor.yaml
-axle schedule remove -j monitor.yaml
+axle schedule sessions -n hourly-monitor # or -j monitor.yaml
+axle schedule remove -n hourly-monitor   # or -j monitor.yaml
 axle -j monitor.yaml                     # just run it; the schedule is never touched
 ```
 
 The first scheduled firing comes one full interval after registering, or
-at the next matching clock time, which is why `schedule -j` runs once
-immediately: a daily job is proven now, not tomorrow. Every apply prints
-when the next firing is due. Use `register` when the run itself has side effects you do not
-want repeated, such as re-applying after an interval edit.
+at the next matching clock time, and every apply prints when that is.
+Nothing runs at registration: a plain `axle -j` is the run, with the same
+tools, credentials, and session a firing gets.
 
-A schedule is addressed by its recipe everywhere; there is no separate
-id to learn. Applying is idempotent: the same recipe path is the same
-schedule, so repeating it prints "is current" and changes nothing. An update says what
-changed (`every 1h → 15m`, `cwd … → …`). Editing the task, model, tools, or
-`batch:` block takes effect on the next firing with no re-registration;
-changing `every`, or applying from a different directory, updates the
-registration. Both forms refuse a recipe without a `schedule` block.
+A schedule is addressed by its recipe, and `sessions` and `remove` also
+take the name `list` shows, which is the recipe's `name:` or its file
+stem; a name two schedules share is refused with both paths. There is no
+separate id to learn. Applying is idempotent: the same recipe path is the
+same schedule, so repeating it prints "is current" and changes nothing.
+An update says what changed (`every 1h → 15m`, `cwd … → …`). Editing the
+task, model, tools, or `batch:` block takes effect on the next firing with
+no re-registration; changing `every`, or applying from a different
+directory, updates the registration. `add` refuses a recipe without a
+`schedule` block.
 
 A plain `axle -j` on the recipe only runs it, and prints one line about its
 schedule: not registered, scheduled with its last run, or a warning when

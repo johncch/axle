@@ -41,7 +41,7 @@ against it; divergence is a defect. State ownership is defined in
    | `axle explain`  | (key path?)                                                                          |
    | `axle trust`    | (`--revoke`?)                                                                        |
    | `axle cleanup`  | ()                                                                                   |
-   | `axle schedule` | (recipe) · `register` (recipe) · `remove` (recipe) · `sessions` (recipe) · `list` () |
+   | `axle schedule` | `add` (recipe) · `remove` (recipe \| name) · `sessions` (recipe \| name) · `list` () |
 
    The recipe↔invocation mirror governs only the kernel. Mode collisions
    are impossible by construction — there is no `--job`/`--session`
@@ -200,17 +200,16 @@ against it; divergence is a defect. State ownership is defined in
     registrar: it prints one read-only state line (declared but not
     registered, scheduled with its last run, or drifted — the recipe's
     interval changed or its block was removed while a registration
-    remains). `axle schedule -j` _reconciles_ the registration (create,
+    remains). `axle schedule add -j` _reconciles_ the registration (create,
     update, restore, or no-op — deterministic, independent of prior state)
-    and then runs once in the foreground, so a `1d` schedule is proven now
-    rather than a day later; `axle schedule register -j` reconciles only
-    and, like every management subcommand, exits before provider
-    resolution or any agent machinery. `-j` means "run this recipe"
-    everywhere it appears bare; the verb wraps that run with registration.
-    An update states what changed (`every 1h → at 09:00 on mon,fri`,
-    `cwd a → b`) and every apply names the next firing (`in 1h`,
-    `Mon 09:00`), and a record that matches but whose OS registration is
-    gone is re-applied rather than trusted.
+    and runs nothing; like every management subcommand it exits before
+    provider resolution or any agent machinery. Proving a recipe is plain
+    `-j`, the same run a firing performs. On the kernel `-j` means "run
+    this recipe"; under `schedule` it only names the recipe. An update
+    states what changed (`every 1h → at 09:00 on mon,fri`, `cwd a → b`)
+    and every apply names the next firing (`in 1h`, `Mon 09:00`), and a
+    record that matches but whose OS registration is gone is re-applied
+    rather than trusted.
     The registrar is an injected `ScheduleBackend` (`apply`, `remove`,
     `isLoaded`) behind
     a platform lookup; only macOS `launchd` ships. Everything above the
@@ -220,11 +219,14 @@ against it; divergence is a defect. State ownership is defined in
 
     _Identity_ is the recipe's canonical absolute path: the same file is an
     update, a moved file is a new schedule and the old one is never removed
-    silently. The path is the only handle the user ever sees — every
-    `schedule` subcommand takes `-j <recipe>`, and a recipe that no longer
-    exists is matched by its recorded path so it can still be removed. The
-    derived id (16 hex chars of the path's sha256) names the record, the
-    launchd label, and the log files, and appears in no message. _State_ is one versioned JSON
+    silently. The path is the handle every `schedule` subcommand takes as
+    `-j <recipe>`, and a recipe that no longer exists is matched by its
+    recorded path so it can still be removed. `remove` and `sessions` also
+    accept `-n <name>`, the display name `list` prints (the recipe's
+    `name:` or its file stem); it is looked up across the records and
+    refused with both paths when two schedules share it. The derived id
+    (16 hex chars of the path's sha256) names the record, the launchd
+    label, and the log files, and appears in no message. _State_ is one versioned JSON
     record per schedule at `~/.axle/schedules/<id>.json` (0600), holding the
     desired registration (name, recipe path, install cwd, interval, the
     shell-free occurrence argv, captured `PATH`, log paths) and the backend
@@ -247,8 +249,7 @@ against it; divergence is a defect. State ownership is defined in
     to `StartInterval` or one `StartCalendarInterval` entry per time and
     weekday. Either way a schedule never runs concurrently with itself, a
     firing during a still-running occurrence is missed not queued, and a
-    hung occurrence suppresses later ones until it exits. Each occurrence — and the foreground run of
-    `axle schedule -j`, the schedule's first — appends one line to
+    hung occurrence suppresses later ones until it exits. Each occurrence appends one line to
     `~/.axle/schedules/<id>.runs.jsonl` (start, end, status, session ids),
     which `schedule sessions` reads and `schedule list` summarizes; it is the
     discoverability channel for work that ran while nobody was watching.
@@ -321,6 +322,24 @@ against it; divergence is a defect. State ownership is defined in
 
 ## Decisions
 
+- **2026-10-08 — `schedule add` registers only; `remove` and `sessions`
+  take a name (reverses the run-once default of 2026-09-17).** The
+  run-once default made the shortest form the consequential one: `axle
+schedule -j` kicked off a live run with side effects when the user only
+  meant to register, and the safe form was the one that had to be spelled
+  out. Registration is now the verb `add`, prints the next firing, and
+  runs nothing; `axle -j` is the proof run, as it already was. Rejected:
+  keeping the run behind `--now` — `axle -j` is that run, and a flag
+  deciding whether the kernel boots is a verb's job, as the 2026-09-17
+  entry already held. Rejected: a flat `-d`/`-n` surface in the style of
+  `git branch` — git's own later commands (`remote`, `worktree`, `stash`)
+  and current CLIs (`claude mcp`, `gh`, `docker`) are noun-then-verb, and
+  verbs keep scaling where mode flags stop at three or four. Rejected: a
+  positional name on `remove` — the positional is held for the recipe path
+  pending `axle <path>`, and a name that is also a file would need a
+  tie-break. The display name is not unique by construction, so a clash
+  is an error naming both paths, never a guess. A schedule id stays
+  rejected as before.
 - **2026-10-08 — skills are ambient; no `skills:` recipe key (AXL-48).**
   A first cut shipped `skills:` as an allowlist over the discovered set, in
   the shape of `tools:`. Revised out the same day: naming could only

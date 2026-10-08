@@ -213,9 +213,7 @@ const schedule = program
       );
       process.exit(1);
     }
-    await manage(async () => {
-      for (const line of await formatScheduleList(scheduleContext())) console.log(line);
-    });
+    schedule.help({ error: true });
   });
 
 schedule
