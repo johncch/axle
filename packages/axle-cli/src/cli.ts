@@ -292,6 +292,7 @@ program
         cliConfigSources: await getCliConfigSources({ trusted }),
         serviceConfig: await getServiceConfig({ trusted }),
         credentialSources: await getCredentialSources({ trusted }),
+        skills: (await discoverSkills({ trusted })).entries,
         env: process.env,
         catalog,
       });

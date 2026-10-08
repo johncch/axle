@@ -31,7 +31,36 @@ describe("discoverSkills", () => {
     expect(await discoverSkills({ cwd: CWD, home: HOME, trusted: true })).toEqual({
       skills: [],
       warnings: [],
+      entries: [],
     });
+  });
+
+  it("reports every directory and what became of it", async () => {
+    const userPdf = join(HOME, ".axle", "skills", "pdf");
+    const agentsPdf = join(HOME, ".agents", "skills", "pdf");
+    const projectPdf = join(CWD, ".axle", "skills", "pdf");
+    const bad = join(HOME, ".axle", "skills", "bad");
+    await writeSkill(userPdf, "pdf");
+    await writeSkill(agentsPdf, "pdf");
+    await writeSkill(projectPdf, "pdf");
+    await mkdir(bad, { recursive: true });
+    await writeFile(join(bad, "SKILL.md"), "nope\n");
+
+    const trusted = await discoverSkills({ cwd: CWD, home: HOME, trusted: true });
+    const untrusted = await discoverSkills({ cwd: CWD, home: HOME, trusted: false });
+
+    expect(trusted.entries.map((entry) => [entry.dir, entry.scope, entry.outcome.kind])).toEqual([
+      [bad, "user", "failed"],
+      [userPdf, "user", "shadowed"],
+      [agentsPdf, "user", "shadowed"],
+      [projectPdf, "project", "loaded"],
+    ]);
+    expect(untrusted.entries.map((entry) => [entry.dir, entry.outcome.kind])).toEqual([
+      [bad, "failed"],
+      [userPdf, "loaded"],
+      [agentsPdf, "shadowed"],
+      [projectPdf, "ignored"],
+    ]);
   });
 
   it("loads user skills from .axle and .agents, sorted by name", async () => {
