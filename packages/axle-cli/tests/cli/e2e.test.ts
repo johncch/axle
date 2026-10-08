@@ -18,6 +18,7 @@ type StubReply = { text: string } | { error: string };
 interface ChatRequest {
   model: string;
   messages: Array<{ role: string; content: unknown }>;
+  tools?: Array<{ function: { name: string } }>;
 }
 
 interface CliRun {
@@ -391,6 +392,88 @@ describe.concurrent("cli.ts end-to-end", () => {
       expect(requests).toHaveLength(2);
       expect(requests[1].messages).toHaveLength(3);
       expect(requests[1].messages.at(-1)?.content).toContain("follow up");
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "resume follows the current provider profile, not the one the run started with",
+    async ({ cli }) => {
+      const { requests, runCli, CWD, HOME, baseUrl } = cli;
+      const configPath = join(HOME, ".axle", "cli.yaml");
+      const profile = (url: string) =>
+        [
+          "providers:",
+          "  stub:",
+          "    type: chatcompletions",
+          `    baseUrl: ${url}`,
+          "    maxRetries: 0",
+          "",
+        ].join("\n");
+      await mkdir(join(HOME, ".axle"), { recursive: true });
+      await writeFile(configPath, profile(baseUrl));
+      const recipe = join(CWD, "named.yml");
+      await writeFile(
+        recipe,
+        ["provider: stub", "model: stub-model", "task: Say hello."].join("\n"),
+      );
+
+      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
+      expect(first.code).toBe(0);
+      const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
+      const saved = JSON.parse(
+        await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
+      );
+      expect(saved.definition.provider).toEqual({ type: "stub" });
+
+      await writeFile(configPath, profile("http://127.0.0.1:1/v1"));
+      const { code } = await runCli([
+        "resume",
+        sessionId!,
+        "-m",
+        "follow up",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
+
+      expect(code).toBe(1);
+      expect(requests).toHaveLength(1);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "resume follows the current defaults.tools when the run named no tools",
+    async ({ cli }) => {
+      const { requests, runCli, HOME, baseUrl } = cli;
+      const configPath = join(HOME, ".axle", "cli.yaml");
+      const env = { CHATCOMPLETIONS_BASE_URL: baseUrl, CHATCOMPLETIONS_MODEL: "stub-model" };
+      await mkdir(join(HOME, ".axle"), { recursive: true });
+      await writeFile(configPath, "defaults:\n  provider: chatcompletions\n");
+
+      const first = await runCli(["-m", "hello", "--renderer", "plain", "--no-log"], env);
+      const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
+      const saved = JSON.parse(
+        await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
+      );
+      expect(saved.definition.tools).toBeUndefined();
+
+      await writeFile(configPath, "defaults:\n  provider: chatcompletions\n  tools: [read-file]\n");
+      const { code } = await runCli(
+        ["resume", sessionId!, "-m", "follow up", "--renderer", "plain", "--no-log"],
+        env,
+      );
+
+      expect(code).toBe(0);
+      expect(requests[0].tools?.map((tool) => tool.function.name)).toEqual([
+        "axle-help",
+        "exec",
+        "patch-file",
+        "read-file",
+        "write-file",
+      ]);
+      expect(requests[1].tools?.map((tool) => tool.function.name)).toEqual(["read-file"]);
     },
     SPAWN_TIMEOUT,
   );

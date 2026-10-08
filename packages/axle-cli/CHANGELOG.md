@@ -4,13 +4,27 @@
 
 ### Breaking changes
 
+- **A recipe's inline `provider:` no longer accepts `apiKey`.** A job file
+  is meant to be checked in, so it holds no secrets; one with `apiKey:`
+  fails to load with `provider: Unrecognized key: "apiKey"`. Move the key
+  to the environment (`ANTHROPIC_API_KEY=... axle -j job.yml`),
+  `~/.axle/credentials`, or a `cli.yaml` profile, or point at it with
+  `apiKeyEnv`. A run with no key now stops with the variable to set.
+- **Resumed sessions follow the current `cli.yaml`.** A session saves a
+  provider by name and no longer copies the profile's `baseUrl`, key
+  reference, or client options into the session file; `axle resume`
+  resolves the profile again, so editing it reaches existing sessions. A
+  session whose recipe named no `tools:` likewise takes the current
+  `defaults.tools` on resume. Sessions saved before this release still
+  carry their copied endpoint and resume as before. An inline provider
+  object in a recipe is still frozen with the session.
 - **Local tools are on by default.** Chat, and any recipe without a
   `tools:` key, now get `exec`, `patch-file`, `read-file`, and
   `write-file`. They run without approval, including in batch and
   scheduled runs, so a recipe that previously could only return text can
   now run shell commands and write files. Add `tools: []` to keep a recipe
   tool-free, or set `defaults.tools` in `cli.yaml` to change the default
-  set everywhere. Resumed sessions keep the tools they were saved with.
+  set everywhere.
 - **The `calculator` tool is removed.** A recipe that lists it fails with
   `Unknown tool: calculator`; delete the entry.
 - **Every model is assumed to have a 200,000-token context window.** The

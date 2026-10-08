@@ -1,9 +1,10 @@
-import type { Span } from "@fifthrevision/axle";
+import type { AgentDefinition, Span } from "@fifthrevision/axle";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createAgentDefinition,
   createCliAgentConfig,
   createDefaultAgentDefinition,
+  resolveAgentDefinition,
   resolveTarget,
 } from "../../src/cli/agent-config.js";
 import type { ServiceConfig } from "../../src/cli/configs/schemas.js";
@@ -111,9 +112,24 @@ describe("createCliAgentConfig", () => {
 
     expect(agentConfig.provider.name).toBe("ChatCompletions");
     expect(agentConfig.model).toBe("some/model");
+    expect(definition.provider).toEqual({ type: "gw" });
+  });
+
+  test("an inline provider object is carried in the definition", async () => {
+    const { definition } = await createCliAgentConfig(
+      {
+        provider: { type: "chatcompletions", baseUrl: "https://inline.example.test/v1" },
+        model: "some/model",
+        task: "Run",
+      },
+      {},
+      {},
+      tracer,
+    );
+
     expect(definition.provider).toEqual({
       type: "chatcompletions",
-      config: { baseUrl: "https://gw.example.test/v1", apiKeyEnv: "GW_KEY" },
+      config: { baseUrl: "https://inline.example.test/v1" },
     });
   });
 
@@ -153,23 +169,53 @@ describe("createCliAgentConfig", () => {
   test("no hardcoded model defaults: an unresolvable model is an error", async () => {
     await expect(
       createCliAgentConfig(
-        { provider: { type: "anthropic", apiKey: "key" }, task: "Run" },
+        { provider: { type: "anthropic" }, task: "Run" },
         {},
-        {},
+        { anthropic: { apiKey: "key" } },
         tracer,
       ),
     ).rejects.toThrow(/No model resolved for provider anthropic/);
   });
 
+  test("a missing api key names the variable to set", async () => {
+    await expect(
+      createCliAgentConfig(
+        { provider: { type: "anthropic" }, model: "anthropic/claude-sonnet-5", task: "Run" },
+        {},
+        {},
+        tracer,
+      ),
+    ).rejects.toThrow(
+      "No API key for anthropic. Set ANTHROPIC_API_KEY in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.",
+    );
+  });
+
+  test("an unset apiKeyEnv variable is named", async () => {
+    await expect(
+      createCliAgentConfig(
+        {
+          provider: { type: "openai", apiKeyEnv: "AXLE_TEST_MISSING_KEY" },
+          model: "openai/gpt-test",
+          task: "Run",
+        },
+        {},
+        {},
+        tracer,
+      ),
+    ).rejects.toThrow(
+      "No API key for openai: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
+    );
+  });
+
   test("top-level model wins over the service config model", async () => {
     const { agentConfig } = await createCliAgentConfig(
       {
-        provider: { type: "anthropic", apiKey: "anthropic-key" },
+        provider: { type: "anthropic" },
         model: "anthropic/claude-sonnet-5",
         task: "Run",
       },
       {},
-      { anthropic: { apiKey: "ignored", model: "anthropic/claude-haiku-4-5" } },
+      { anthropic: { apiKey: "key", model: "anthropic/claude-haiku-4-5" } },
       tracer,
     );
 
@@ -179,7 +225,7 @@ describe("createCliAgentConfig", () => {
   test("passes system and request options through to the agent config", async () => {
     const { agentConfig } = await createCliAgentConfig(
       {
-        provider: { type: "anthropic", apiKey: "anthropic-key" },
+        provider: { type: "anthropic" },
         system: "You are terse.",
         request: {
           reasoning: { effort: "low" },
@@ -190,7 +236,7 @@ describe("createCliAgentConfig", () => {
         task: "Run",
       },
       {},
-      {},
+      { anthropic: { apiKey: "key" } },
       tracer,
     );
 
@@ -213,10 +259,7 @@ describe("createDefaultAgentDefinition", () => {
       {},
     );
 
-    expect(definition.provider).toEqual({
-      type: "chatcompletions",
-      config: { baseUrl: "https://gw.example.test/v1" },
-    });
+    expect(definition.provider).toEqual({ type: "gw" });
     expect(definition.model).toBe("vendor/model-a");
   });
 
@@ -229,31 +272,43 @@ describe("createDefaultAgentDefinition", () => {
 
 describe("default tools", () => {
   const cliConfig = { defaults: { provider: "anthropic" } };
+  const serviceConfig: ServiceConfig = { anthropic: { apiKey: "key", model: "anthropic/m" } };
   const allTools = ["axle-help", "exec", "patch-file", "read-file", "write-file"];
-  const toolNames = (definition: { tools?: { name: string }[] }) =>
+  const definitionTools = (definition: { tools?: { name: string }[] }) =>
     definition.tools?.map((tool) => tool.name);
+  const resolvedTools = async (definition: AgentDefinition, config = cliConfig) => {
+    const { agentConfig } = await resolveAgentDefinition(definition, config, serviceConfig, tracer);
+    return agentConfig.tools?.map((tool) => tool.name);
+  };
 
-  test("chat gets every built-in tool", () => {
-    expect(toolNames(createDefaultAgentDefinition(cliConfig, {}))).toEqual(allTools);
+  test("chat saves no tool list and gets every built-in tool at run time", async () => {
+    const definition = createDefaultAgentDefinition(cliConfig, serviceConfig);
+    expect(definitionTools(definition)).toBeUndefined();
+    expect(await resolvedTools(definition)).toEqual(allTools);
   });
 
-  test("a recipe without tools inherits the defaults", () => {
-    expect(toolNames(createAgentDefinition({ task: "t" }, cliConfig, {}))).toEqual(allTools);
+  test("a recipe without tools saves none and inherits the defaults at run time", async () => {
+    const definition = createAgentDefinition({ task: "t" }, cliConfig, serviceConfig);
+    expect(definitionTools(definition)).toBeUndefined();
+    expect(await resolvedTools(definition)).toEqual(allTools);
   });
 
-  test("a recipe's tools replace the defaults", () => {
+  test("a recipe's tools are saved and replace the defaults", async () => {
     const definition = createAgentDefinition({ task: "t", tools: ["exec"] }, cliConfig, {});
-    expect(toolNames(definition)).toEqual(["exec"]);
+    expect(definitionTools(definition)).toEqual(["exec"]);
+    expect(await resolvedTools(definition)).toEqual(["exec"]);
   });
 
-  test("an empty tools list opts out", () => {
-    expect(toolNames(createAgentDefinition({ task: "t", tools: [] }, cliConfig, {}))).toEqual([]);
+  test("an empty tools list opts out", async () => {
+    const definition = createAgentDefinition({ task: "t", tools: [] }, cliConfig, {});
+    expect(definitionTools(definition)).toEqual([]);
+    expect(await resolvedTools(definition)).toBeUndefined();
   });
 
-  test("defaults.tools overrides the built-in set for chat and recipes", () => {
+  test("defaults.tools applies at run time, so a saved session follows a later change", async () => {
+    const definition = createAgentDefinition({ task: "t" }, cliConfig, serviceConfig);
     const configured = { defaults: { provider: "anthropic", tools: ["read-file"] } };
-    expect(toolNames(createDefaultAgentDefinition(configured, {}))).toEqual(["read-file"]);
-    expect(toolNames(createAgentDefinition({ task: "t" }, configured, {}))).toEqual(["read-file"]);
+    expect(await resolvedTools(definition, configured)).toEqual(["read-file"]);
   });
 
   test("an unknown recipe tool fails with the available names", () => {
@@ -262,14 +317,60 @@ describe("default tools", () => {
     );
   });
 
-  test("an unknown defaults.tools entry fails for chat", () => {
+  test("an unknown defaults.tools entry fails at run time", async () => {
     const configured = { defaults: { provider: "anthropic", tools: ["read-files"] } };
-    expect(() => createDefaultAgentDefinition(configured, {})).toThrow("Unknown tool: read-files.");
+    const definition = createDefaultAgentDefinition(configured, serviceConfig);
+    await expect(resolvedTools(definition, configured)).rejects.toThrow(
+      "Unknown tool: read-files.",
+    );
+  });
+});
+
+describe("resolveAgentDefinition", () => {
+  const definition: AgentDefinition = { version: 1, provider: { type: "gw" }, model: "m" };
+
+  test("a named provider follows the current cli.yaml profile", async () => {
+    const asChatCompletions = await resolveAgentDefinition(
+      definition,
+      { providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } } },
+      {},
+      tracer,
+    );
+    const asAnthropic = await resolveAgentDefinition(
+      definition,
+      { providers: { gw: { type: "anthropic", apiKey: "key" } } },
+      {},
+      tracer,
+    );
+
+    expect(asChatCompletions.agentConfig.provider.name).toBe("ChatCompletions");
+    expect(asAnthropic.agentConfig.provider.name).toBe("anthropic");
+  });
+
+  test("a named provider whose profile is gone fails by name", async () => {
+    await expect(resolveAgentDefinition(definition, {}, {}, tracer)).rejects.toThrow(
+      /"gw" is not a provider profile/,
+    );
+  });
+
+  test("a definition carrying endpoint config resolves without cli.yaml", async () => {
+    const { agentConfig } = await resolveAgentDefinition(
+      {
+        version: 1,
+        provider: { type: "chatcompletions", config: { baseUrl: "https://old.example.test/v1" } },
+        model: "m",
+      },
+      {},
+      {},
+      tracer,
+    );
+
+    expect(agentConfig.provider.name).toBe("ChatCompletions");
   });
 });
 
 describe("resolveTarget provider name", () => {
-  test("a named profile resolves its own name for the defaults.models lookup", () => {
+  test("a named profile keeps its name in the definition and for the defaults.models lookup", () => {
     const target = resolveTarget(
       { provider: { name: "work" } },
       { providers: { work: { type: "anthropic" } } },
@@ -277,7 +378,7 @@ describe("resolveTarget provider name", () => {
     );
 
     expect(target.providerName).toBe("work");
-    expect(target.provider.type).toBe("anthropic");
+    expect(target.provider).toEqual({ type: "work" });
   });
 
   test("an inline endpoint's type doubles as its name", () => {

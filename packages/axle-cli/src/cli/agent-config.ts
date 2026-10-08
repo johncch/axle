@@ -7,6 +7,7 @@ import type {
   Span,
 } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
+import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { availableTools, createTools, defaultToolNames } from "./tools.js";
@@ -26,8 +27,10 @@ const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletio
  *   model         := job.model → defaults.models[name] → env/credentials
  *                    `*_MODEL` → undefined (caller decides: picker or error)
  *
- * An inline provider object in the job is its own endpoint; its type doubles
- * as the name for the defaults.models lookup.
+ * The definition keeps a named provider as its name only; `resolveEndpoint`
+ * looks the profile up again on every run. An inline provider object in the
+ * job is its own endpoint, carried in `config`; its type doubles as the name
+ * for the defaults.models lookup.
  */
 export function resolveTarget(
   jobConfig: Pick<JobConfig, "provider" | "model"> | undefined,
@@ -36,12 +39,13 @@ export function resolveTarget(
 ): { provider: ProviderDefinition; model?: string; providerName: string } {
   const jobProvider = jobConfig?.provider;
 
-  let endpoint: { type: string } & Record<string, unknown>;
+  let provider: ProviderDefinition;
   let providerName: string;
 
   if (jobProvider && !("name" in jobProvider)) {
-    endpoint = jobProvider;
-    providerName = jobProvider.type;
+    const { type, ...config } = jobProvider;
+    provider = Object.keys(config).length > 0 ? { type, config } : { type };
+    providerName = type;
   } else {
     const name =
       jobProvider && "name" in jobProvider ? jobProvider.name : cliConfig.defaults?.provider;
@@ -50,42 +54,53 @@ export function resolveTarget(
         "No provider specified and no default provider configured. Add provider: to the job, or set defaults.provider in ~/.axle/cli.yaml.",
       );
     }
+    provider = { type: name };
     providerName = name;
-    const profile = cliConfig.providers?.[name];
-    if (profile) {
-      endpoint = profile;
-    } else if (BUILT_IN_PROVIDER_TYPES.includes(name)) {
-      endpoint = { type: name };
-    } else {
-      throw new Error(
-        `Provider "${name}" is not a provider profile in cli.yaml or a built-in provider type.`,
-      );
-    }
   }
 
+  const endpoint = resolveEndpoint(provider, cliConfig);
   const model =
     jobConfig?.model ??
     cliConfig.defaults?.models?.[providerName] ??
     serviceConfig[endpoint.type as keyof ServiceConfig]?.model;
 
-  const { type, ...config } = endpoint;
-  return {
-    provider: Object.keys(config).length > 0 ? { type, config } : { type },
-    model,
-    providerName,
-  };
+  return { provider, model, providerName };
+}
+
+/**
+ * Resolves a definition's provider reference against the current cli.yaml:
+ * an inline endpoint is returned as is; a name finds its profile, else a
+ * built-in type, else fails.
+ */
+export function resolveEndpoint(
+  provider: ProviderDefinition,
+  cliConfig: CliConfig,
+): { type: string; config: Record<string, unknown> } {
+  if (provider.config) return { type: provider.type, config: provider.config };
+  const profile = cliConfig.providers?.[provider.type];
+  if (profile) {
+    const { type, ...config } = profile;
+    return { type, config };
+  }
+  if (BUILT_IN_PROVIDER_TYPES.includes(provider.type)) {
+    return { type: provider.type, config: {} };
+  }
+  throw new Error(
+    `Provider "${provider.type}" is not a provider profile in cli.yaml or a built-in provider type.`,
+  );
 }
 
 function resolveCliProvider(
   definition: ProviderDefinition,
+  cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
   definitionModel: string | undefined,
 ): { provider: AIProvider; model: string } {
-  const providerConfig = (definition.config ?? {}) as Record<string, any>;
-  const type = definition.type;
+  const endpoint = resolveEndpoint(definition, cliConfig);
+  const type = endpoint.type;
   const config = {
     ...serviceConfig[type as keyof ServiceConfig],
-    ...providerConfig,
+    ...endpoint.config,
   } as Record<string, any>;
 
   const model = definitionModel ?? config.model;
@@ -97,10 +112,7 @@ function resolveCliProvider(
 
   switch (type) {
     case "openai": {
-      const apiKey = resolveApiKey(config);
-      if (!apiKey) {
-        throw new Error("The provider openai is not configured. Please check your configuration.");
-      }
+      const apiKey = requireApiKey(type, config);
       return {
         provider: openai(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -108,12 +120,7 @@ function resolveCliProvider(
     }
 
     case "anthropic": {
-      const apiKey = resolveApiKey(config);
-      if (!apiKey) {
-        throw new Error(
-          "The provider anthropic is not configured. Please check your configuration.",
-        );
-      }
+      const apiKey = requireApiKey(type, config);
       return {
         provider: anthropic(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -121,10 +128,7 @@ function resolveCliProvider(
     }
 
     case "gemini": {
-      const apiKey = resolveApiKey(config);
-      if (!apiKey) {
-        throw new Error("The provider gemini is not configured. Please check your configuration.");
-      }
+      const apiKey = requireApiKey(type, config);
       return {
         provider: gemini(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -135,7 +139,7 @@ function resolveCliProvider(
       const baseUrl = config.baseUrl;
       if (!baseUrl) {
         throw new Error(
-          "The provider chatcompletions is not configured. Please check your configuration.",
+          "No base URL for chatcompletions. Set baseUrl on the provider, or CHATCOMPLETIONS_BASE_URL in the environment or ~/.axle/credentials.",
         );
       }
       return {
@@ -163,6 +167,18 @@ function resolveApiKey(config: Record<string, any>): string | undefined {
   return config.apiKey;
 }
 
+function requireApiKey(type: keyof typeof API_KEY_VARIABLES, config: Record<string, any>): string {
+  const apiKey = resolveApiKey(config);
+  if (apiKey) return apiKey;
+  const envName = config.apiKeyEnv;
+  if (typeof envName === "string" && envName.length > 0) {
+    throw new Error(`No API key for ${type}: apiKeyEnv names ${envName}, which is not set.`);
+  }
+  throw new Error(
+    `No API key for ${type}. Set ${API_KEY_VARIABLES[type]} in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.`,
+  );
+}
+
 /**
  * Build a definition for runs without a job file (bare chat, one-shot
  * message) from cli.yaml defaults.
@@ -176,12 +192,10 @@ export function createDefaultAgentDefinition(
     version: 1,
     provider: target.provider,
     model: target.model,
-    tools: resolveToolNames(undefined, cliConfig).map((name) => ({ name })),
   };
 }
 
-function resolveToolNames(jobTools: string[] | undefined, cliConfig: CliConfig): string[] {
-  const names = jobTools ?? cliConfig.defaults?.tools ?? [...defaultToolNames];
+function validateToolNames(names: string[]): string[] {
   const unknown = names.filter((name) => !(availableTools as readonly string[]).includes(name));
   if (unknown.length > 0) {
     throw new Error(`Unknown tool: ${unknown.join(", ")}. Available: ${availableTools.join(", ")}`);
@@ -203,7 +217,9 @@ export function createAgentDefinition(
     model: target.model,
     system: jobConfig.system,
     request: jobConfig.request,
-    tools: resolveToolNames(jobConfig.tools, cliConfig).map((name) => ({ name })),
+    tools: jobConfig.tools
+      ? validateToolNames(jobConfig.tools).map((name) => ({ name }))
+      : undefined,
     providerTools: jobConfig.providerTools?.map((name) => ({ name })),
     mcps: jobConfig.mcps,
   };
@@ -216,11 +232,17 @@ export async function createCliAgentConfig(
   span: Span,
 ): Promise<CliAgentConfig> {
   const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-  return resolveAgentDefinition(definition, serviceConfig, span);
+  return resolveAgentDefinition(definition, cliConfig, serviceConfig, span);
 }
 
+/**
+ * Turns a definition into runtime objects against the current configuration.
+ * A definition names what its recipe said; a named provider and an absent
+ * tools list are filled from cli.yaml here, on every run including resume.
+ */
 export async function resolveAgentDefinition(
   definition: AgentDefinition,
+  cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
   span: Span,
 ): Promise<CliAgentConfig> {
@@ -229,16 +251,18 @@ export async function resolveAgentDefinition(
   const baseConfig = await createAgentConfig(definition, (definition) => {
     const resolvedProvider = resolveCliProvider(
       definition.provider,
+      cliConfig,
       serviceConfig,
       definition.model,
     );
+    const toolNames =
+      definition.tools?.map((ref) => ref.name) ??
+      validateToolNames(cliConfig.defaults?.tools ?? [...defaultToolNames]);
 
     return {
       provider: resolvedProvider.provider,
       model: resolvedProvider.model,
-      tools: definition.tools?.length
-        ? createTools(definition.tools.map((ref) => ref.name))
-        : undefined,
+      tools: toolNames.length > 0 ? createTools(toolNames) : undefined,
       mcps: mcps.length > 0 ? mcps : undefined,
     };
   });

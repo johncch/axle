@@ -118,6 +118,16 @@ describe("config loaders", () => {
     expect(config.provider).toEqual({ name: "openrouter" });
   });
 
+  it("rejects an api key literal in a recipe provider", async () => {
+    const path = join(TEST_DIR, "inline-key.yml");
+    await writeFile(
+      path,
+      ["provider:", "  type: openai", "  apiKey: sk-secret", "task: Run"].join("\n"),
+    );
+
+    await expect(getJobConfig(path, {})).rejects.toThrow(/provider: Unrecognized key: "apiKey"/);
+  });
+
   it("rejects non-YAML job files", async () => {
     const path = join(TEST_DIR, "summarize.json");
     await writeFile(path, JSON.stringify({ provider: { type: "openai" }, task: "test" }));
