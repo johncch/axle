@@ -447,65 +447,21 @@ describe("skills", () => {
   const cliConfig = { defaults: { provider: "anthropic" } };
   const serviceConfig: ServiceConfig = { anthropic: { apiKey: "key", model: "anthropic/m" } };
   const pdf: Skill = { name: "pdf", description: "PDFs.", instructions: "Use pdf." };
-  const sheets: Skill = { name: "sheets", description: "Sheets.", instructions: "Use sheets." };
-  const skillNames = (agentConfig: { skills?: { name: string }[] }) =>
-    agentConfig.skills?.map((skill) => skill.name);
-  const resolve = (definition: AgentDefinition, available: Skill[]) =>
-    resolveAgentDefinition(
-      definition,
-      cliConfig,
-      serviceConfig,
-      tracer,
-      { trusted: true },
-      available,
-    );
 
-  test("a definition that names no skills takes every discovered skill", async () => {
-    const { agentConfig } = await resolve(createDefaultAgentDefinition(cliConfig, serviceConfig), [
-      pdf,
-      sheets,
-    ]);
+  test("every discovered skill loads, and none means no skills", async () => {
+    const definition = createDefaultAgentDefinition(cliConfig, serviceConfig);
+    const resolve = (skills: Skill[]) =>
+      resolveAgentDefinition(
+        definition,
+        cliConfig,
+        serviceConfig,
+        tracer,
+        { trusted: true },
+        skills,
+      );
 
-    expect(skillNames(agentConfig)).toEqual(["pdf", "sheets"]);
-  });
-
-  test("a recipe's skills list selects by name and is saved as names", async () => {
-    const definition = createAgentDefinition(
-      { task: "Run", skills: ["sheets"] },
-      cliConfig,
-      serviceConfig,
-    );
-    const { agentConfig } = await resolve(definition, [pdf, sheets]);
-
-    expect(definition.skills).toEqual([{ name: "sheets" }]);
-    expect(skillNames(agentConfig)).toEqual(["sheets"]);
-  });
-
-  test("skills: [] loads none", async () => {
-    const definition = createAgentDefinition({ task: "Run", skills: [] }, cliConfig, serviceConfig);
-    const { agentConfig } = await resolve(definition, [pdf]);
-
-    expect(agentConfig.skills).toBeUndefined();
-  });
-
-  test("a named skill discovery did not find fails by name", async () => {
-    const definition = createAgentDefinition(
-      { task: "Run", skills: ["pdf", "docx"] },
-      cliConfig,
-      serviceConfig,
-    );
-
-    await expect(resolve(definition, [pdf])).rejects.toThrow("Unknown skill: docx. Available: pdf");
-    await expect(resolve(definition, [])).rejects.toThrow("Available: none");
-  });
-
-  test("no discovered skills leaves the config without skills", async () => {
-    const { agentConfig } = await resolve(
-      createDefaultAgentDefinition(cliConfig, serviceConfig),
-      [],
-    );
-
-    expect(agentConfig.skills).toBeUndefined();
+    expect((await resolve([pdf])).agentConfig.skills).toEqual([pdf]);
+    expect((await resolve([])).agentConfig.skills).toBeUndefined();
   });
 });
 

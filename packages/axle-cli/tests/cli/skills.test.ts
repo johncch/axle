@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listProjectInputs } from "../../src/cli/configs/paths.js";
-import { discoverSkills, missingSkillNames } from "../../src/cli/skills.js";
+import { discoverSkills } from "../../src/cli/skills.js";
 
 const TEST_DIR = join(import.meta.dirname, "__skills_tmp__");
 const HOME = join(TEST_DIR, "home");
@@ -112,14 +112,5 @@ describe("discoverSkills", () => {
     await mkdir(join(CWD, ".axle", "skills", "empty"), { recursive: true });
 
     expect(await listProjectInputs(CWD)).toEqual([".agents/skills"]);
-  });
-});
-
-describe("missingSkillNames", () => {
-  it("names the requested skills discovery did not find", () => {
-    const pdf = { name: "pdf", description: "d", instructions: "i" };
-
-    expect(missingSkillNames(["pdf", "sheets"], [pdf])).toEqual(["sheets"]);
-    expect(missingSkillNames([], [pdf])).toEqual([]);
   });
 });

@@ -57,9 +57,3 @@ export async function discoverSkills(options: {
     warnings,
   };
 }
-
-/** `skills:` names a recipe asked for that discovery did not find. */
-export function missingSkillNames(requested: string[], discovered: Skill[]): string[] {
-  const available = new Set(discovered.map((skill) => skill.name));
-  return requested.filter((name) => !available.has(name));
-}

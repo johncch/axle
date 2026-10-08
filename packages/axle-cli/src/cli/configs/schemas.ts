@@ -341,12 +341,6 @@ export const JobConfigSchema = z.strictObject({
     .array(z.string())
     .optional()
     .describe("Tools the provider runs on its side, e.g. web_search, code_execution."),
-  skills: z
-    .array(z.string())
-    .optional()
-    .describe(
-      "Skills the model may load, by folder name under ~/.axle/skills, .axle/skills, or .agents/skills. Replaces the discovered set; [] means none.",
-    ),
   files: z.array(z.string()).optional().describe("Paths of files attached to the task."),
   mcps: z.array(MCPConfigSchema).optional().describe("MCP servers whose tools the model may call."),
   batch: BatchConfigSchema.optional().describe(

@@ -543,21 +543,9 @@ describe.concurrent("cli.ts end-to-end", () => {
       const trusted = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
 
       expect(trusted.code).toBe(0);
-      expect(JSON.stringify(requests[1].messages[0])).toContain("- deploy: About deploy.");
-
-      const selected = await writeRecipe("one.yml", "tools: []\nskills: [deploy]");
-      await runCli(["-j", selected, "--renderer", "plain", "--no-log"]);
-
-      const selectedSystem = JSON.stringify(requests[2].messages[0]);
-      expect(selectedSystem).toContain("- deploy:");
-      expect(selectedSystem).not.toContain("- pdf:");
-      expect(requests[2].tools?.map((tool) => tool.function.name)).toEqual(["view-skill"]);
-
-      const unknown = await writeRecipe("bad.yml", "skills: [docx]");
-      const failed = await runCli(["-j", unknown, "--renderer", "plain", "--no-log"]);
-
-      expect(failed.code).toBe(1);
-      expect(failed.output).toContain("Unknown skill: docx. Available: deploy, pdf");
+      const trustedSystem = JSON.stringify(requests[1].messages[0]);
+      expect(trustedSystem).toContain("- deploy: About deploy.");
+      expect(trustedSystem).toContain("- pdf: About pdf.");
     },
     SPAWN_TIMEOUT,
   );

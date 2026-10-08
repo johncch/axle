@@ -242,13 +242,6 @@ properties:
     type: array
     items:
       type: string
-  skills:
-    description: Skills the model may load, by folder name under ~/.axle/skills,
-      .axle/skills, or .agents/skills. Replaces the discovered set; [] means
-      none.
-    type: array
-    items:
-      type: string
   files:
     description: Paths of files attached to the task.
     type: array
