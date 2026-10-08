@@ -42,6 +42,9 @@
 
 ### New
 
+- **Typing `exit` or `quit` quits the chat.** A message that is just
+  `exit` or `quit`, in any case, ends the session the same way `/quit` does
+  instead of being sent to the model.
 - **`axle info` prints the resolved configuration.** It lists the version,
   runtime, which `cli.yaml` and `credentials` files exist, the default
   provider and tools, every configured provider with its model, and

@@ -59,10 +59,11 @@ from \`~/.axle/cli.yaml\` (\`defaults.provider\`, \`defaults.models\`).
 \`axle -m "text"\` sends one message, prints the reply, and exits.
 \`axle -j job.yaml -i\` runs the recipe's task first and then stays open.
 
-In the chat, \`/quit\` is the only slash command; Ctrl-C or Ctrl-D at the
-prompt also exits. Ctrl-C during a turn asks the agent to stop at the next
-tool boundary; a second Ctrl-C cancels immediately. The session is saved on
-every exit path and its id is printed at start and exit.
+In the chat, \`/quit\` is the only slash command; a message that is just
+\`exit\` or \`quit\` (any case), or Ctrl-C or Ctrl-D at the prompt, also
+exits. Ctrl-C during a turn asks the agent to stop at the next tool boundary;
+a second Ctrl-C cancels immediately. The session is saved on every exit path
+and its id is printed at start and exit.
 
 \`--renderer\` picks the screen renderer: \`ink\` (default, live streaming
 region and input line) or \`plain\` (line-oriented). Piped input or output

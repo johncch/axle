@@ -354,6 +354,10 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   Interactive is the default entry (cowork-like for tasks with no formal
   definition); `-j` stays first-class for anything worth rerunning. `/quit`
   is the only slash command, deliberately.
+- **2026-10-07 — a bare `exit` or `quit` quits the chat.** A message that
+  is exactly `exit` or `quit`, in any case, ends the session like `/quit`
+  and is never sent to the model. They are magic words, not more slash
+  commands.
 - **Deferred — subagent fan-out.** Isolation-with-orchestration inside a
   recipe (core's `createAgentTool` + `parallelize`) is a different layer:
   task-level, orchestrator in the loop. It does not compete with batch's

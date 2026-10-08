@@ -260,7 +260,7 @@ export async function runAgentSession(
         if (input === null) break;
         const text = input.trim();
         if (text === "") continue;
-        if (text === "/quit") break;
+        if (text === "/quit" || ["exit", "quit"].includes(text.toLowerCase())) break;
 
         try {
           await sendMessage(text);

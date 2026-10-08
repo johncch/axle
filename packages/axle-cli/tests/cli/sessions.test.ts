@@ -353,6 +353,37 @@ describe("runSingle session persistence", () => {
     expect(file.session.messages).toHaveLength(2);
   });
 
+  it.each(["exit", "Exit", " EXIT ", "quit", "Quit"])(
+    "quits the chat loop on a bare %j",
+    async (magicWord) => {
+      const inputs = [magicWord, "never sent"];
+      const scriptedRenderer: Renderer = {
+        ...nullRenderer,
+        promptInput: () => Promise.resolve(inputs.shift() ?? null),
+      };
+      const requestMessages: unknown[][] = [];
+      const agentConfig: AgentConfig = {
+        provider: createMockProvider("hi", requestMessages),
+        model: "test-model",
+        sessionId: "chat-exit",
+      };
+      const store = new SessionStore(definition, { home: HOME });
+      const tracer = new Tracer();
+
+      const succeeded = await runAgentSession(
+        { agentConfig, spanName: "chat", interactive: true },
+        createStats(),
+        tracer.startSpan("chat"),
+        scriptedRenderer,
+        store,
+      );
+
+      expect(succeeded).toBe(true);
+      expect(requestMessages).toHaveLength(0);
+      expect(inputs).toEqual(["never sent"]);
+    },
+  );
+
   it("resuming and quitting without a send does not rewrite the session file", async () => {
     const store = new SessionStore(definition, { home: HOME });
     await runAgentSession(

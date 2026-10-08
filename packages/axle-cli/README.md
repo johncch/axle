@@ -55,9 +55,10 @@ axle cleanup                         # delete old sessions by age window
 Verbs select the machine; flags parameterize it. A session id prefix works
 anywhere a full id does (`axle resume 3a2f` finds the unique match).
 
-In the chat, `/quit` (or Ctrl-C / Ctrl-D at the prompt) exits. Ctrl-C during
-a turn asks the agent to stop at the next tool boundary; a second Ctrl-C
-cancels immediately. The session is saved on every exit path.
+In the chat, `/quit`, a message that is just `exit` or `quit` (any case), or
+Ctrl-C / Ctrl-D at the prompt exits. Ctrl-C during a turn asks the agent to
+stop at the next tool boundary; a second Ctrl-C cancels immediately. The
+session is saved on every exit path.
 
 `--renderer` picks the screen renderer for the run: `ink` (default — terminal
 UI with a live streaming region and input line) or `plain` (line-oriented).
