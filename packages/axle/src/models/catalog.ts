@@ -48,13 +48,15 @@ const CacheFileSchema = z.object({
 type CacheFile = z.infer<typeof CacheFileSchema>;
 type HostEntry = z.infer<typeof HostEntrySchema>;
 
+// models.dev writes 0 for an unknown limit; `.catch(null)` drops a malformed
+// entry instead of failing the whole file.
 const ModelsDevEntrySchema = z.looseObject({
   name: z.string(),
   limit: z
     .looseObject({
-      context: z.number().int().positive().optional(),
-      output: z.number().int().positive().optional(),
-      input: z.number().int().positive().optional(),
+      context: z.number().int().nonnegative().optional(),
+      output: z.number().int().nonnegative().optional(),
+      input: z.number().int().nonnegative().optional(),
     })
     .optional(),
   reasoning: z.boolean(),
@@ -77,10 +79,11 @@ const ModelsDevEntrySchema = z.looseObject({
 
 type ModelsDevEntry = z.infer<typeof ModelsDevEntrySchema>;
 
-const ModelsDevModelsSchema = z.record(z.string(), ModelsDevEntrySchema);
+const LenientEntrySchema = ModelsDevEntrySchema.nullable().catch(null);
+const ModelsDevModelsSchema = z.record(z.string(), LenientEntrySchema);
 const ModelsDevApiSchema = z.record(
   z.string(),
-  z.looseObject({ models: z.record(z.string(), ModelsDevEntrySchema) }),
+  z.looseObject({ models: z.record(z.string(), LenientEntrySchema) }),
 );
 
 /** What the catalog records about a model, independent of who serves it. */
@@ -195,7 +198,7 @@ export class ModelCatalog {
       if (!parsed.success) return;
       models = {};
       for (const [id, entry] of Object.entries(parsed.data)) {
-        const model = toCatalogModel(entry);
+        const model = entry ? toCatalogModel(entry) : undefined;
         if (model) models[id] = model;
       }
       etagModels = modelsResult.etag;
@@ -214,7 +217,7 @@ export class ModelCatalog {
         if (this.hosts && !this.hosts.includes(host)) continue;
         hosts[host] = {};
         for (const [id, entry] of Object.entries(provider.models)) {
-          hosts[host][id] = toHostEntry(host, id, entry, models);
+          if (entry) hosts[host][id] = toHostEntry(host, id, entry, models);
         }
       }
       etagApi = apiResult.etag;
@@ -335,11 +338,20 @@ export class ModelCatalog {
   }
 }
 
+function knownLimit(value: number | undefined): number | undefined {
+  return value === undefined || value === 0 ? undefined : value;
+}
+
 function toCatalogModel(entry: ModelsDevEntry): CatalogModel | undefined {
-  if (entry.limit?.context === undefined) return undefined;
+  const context = knownLimit(entry.limit?.context);
+  if (context === undefined) return undefined;
   return {
     name: entry.name,
-    limit: { context: entry.limit.context, output: entry.limit.output, input: entry.limit.input },
+    limit: {
+      context,
+      output: knownLimit(entry.limit?.output),
+      input: knownLimit(entry.limit?.input),
+    },
     reasoning: entry.reasoning,
     toolCall: entry.tool_call,
     structuredOutput: entry.structured_output,
@@ -366,7 +378,11 @@ function toHostEntry(
       }
     : undefined;
   const limit = entry.limit
-    ? { context: entry.limit.context, output: entry.limit.output, input: entry.limit.input }
+    ? {
+        context: knownLimit(entry.limit.context),
+        output: knownLimit(entry.limit.output),
+        input: knownLimit(entry.limit.input),
+      }
     : undefined;
   if (canonical in models) return { canonical, limit, cost };
   return { model: toCatalogModel(entry), limit, cost };

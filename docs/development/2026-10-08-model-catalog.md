@@ -71,6 +71,16 @@ same weights.
   a breaking library change for a cosmetic alignment.
 - `splitModelId` is shared between `resolveFirstPartyModel` and the catalog
   so the publisher split has one definition.
+- Entries are parsed one at a time (`.nullable().catch(null)`), and a
+  limit of 0 means unknown. Found the hard way: the test fixtures were
+  hand-picked subsets that parsed, while the real files carry
+  `limit.context: 0` on image and video models and on a few hosts, and a
+  strict `.positive()` on one of them silently failed the whole refresh —
+  `axle info` showed every window as assumed. A catalog of 8,000 entries
+  will always have a few odd ones; one of them must never sink the rest.
+- A partial refresh (one layer fetched, the other failed) saves what came
+  back but keeps the old `fetchedAt`, so the catalog stays `stale` and the
+  failed layer is retried next run.
 
 ## CLI wiring
 

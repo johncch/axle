@@ -144,6 +144,40 @@
           "input": 0.04,
           "output": 0.05
         }
+      },
+      "acme/zero-output": {
+        "id": "sao10k/l3-lunaris-8b",
+        "name": "Llama 3 8B Lunaris",
+        "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
+        "family": "llama",
+        "attachment": false,
+        "reasoning": false,
+        "tool_call": false,
+        "structured_output": true,
+        "temperature": true,
+        "knowledge": "2023-12-31",
+        "release_date": "2024-08-13",
+        "last_updated": "2024-08-13",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 4096,
+          "output": 0
+        },
+        "cost": {
+          "input": 0.04,
+          "output": 0.05
+        }
+      },
+      "acme/broken": {
+        "name": "Broken"
       }
     }
   },

@@ -691,5 +691,42 @@
         "source": "https://labs.scale.com/leaderboard/swe_bench_pro_public"
       }
     ]
+  },
+  "bytedance-seed/seedance-2.0": {
+    "id": "bytedance-seed/seedance-2.0",
+    "name": "Seedance 2.0",
+    "description": "ByteDance unified multimodal audio-video model supporting text, image, video and audio references, editing, extension and synchronized stereo sound.",
+    "family": "seed",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-02-12",
+    "last_updated": "2026-10-04",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "video",
+        "audio"
+      ]
+    },
+    "open_weights": false,
+    "limit": {
+      "context": 0,
+      "output": 0
+    },
+    "links": [
+      {
+        "url": "https://seed.bytedance.com/en/blog/seedance-2-0-official-launch",
+        "type": "announcement"
+      }
+    ]
+  },
+  "acme/broken": {
+    "name": "Broken"
   }
 }

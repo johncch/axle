@@ -174,6 +174,16 @@ describe("ModelCatalog.lookup", () => {
     expect(catalog.lookup("gemma4")).toBeUndefined();
   });
 
+  it("treats a zero limit as unknown and drops a malformed entry without failing the file", () => {
+    expect(catalog.size).toBe(14);
+    expect(catalog.lookup("bytedance-seed/seedance-2.0")).toBeUndefined();
+    expect(catalog.lookup("acme/broken")).toBeUndefined();
+    expect(catalog.lookup("acme/zero-output", { host: "openrouter" })?.model.limit).toEqual({
+      context: 4096,
+    });
+    expect(catalog.lookup("acme/broken", { host: "openrouter" })).toBeUndefined();
+  });
+
   it("gives up on a name the catalog lacks", () => {
     expect(catalog.lookup("totally-unknown")).toBeUndefined();
     expect(catalog.lookup("acme/unknown")).toBeUndefined();
