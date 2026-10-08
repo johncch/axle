@@ -4,12 +4,14 @@ import type {
   AIProvider,
   MCP,
   ProviderDefinition,
+  Skill,
   Span,
 } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
+import { missingSkillNames } from "./skills.js";
 import { availableTools, createTools, defaultToolNames, partitionByTrust } from "./tools.js";
 
 export interface CliAgentConfig {
@@ -235,6 +237,7 @@ export function createAgentDefinition(
       ? validateToolNames(jobConfig.tools).map((name) => ({ name }))
       : undefined,
     providerTools: jobConfig.providerTools?.map((name) => ({ name })),
+    skills: jobConfig.skills?.map((name) => ({ name })),
     mcps: jobConfig.mcps,
   };
 }
@@ -245,9 +248,10 @@ export async function createCliAgentConfig(
   serviceConfig: ServiceConfig,
   span: Span,
   trust: FolderTrust,
+  availableSkills: Skill[],
 ): Promise<CliAgentConfig> {
   const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-  return resolveAgentDefinition(definition, cliConfig, serviceConfig, span, trust);
+  return resolveAgentDefinition(definition, cliConfig, serviceConfig, span, trust, availableSkills);
 }
 
 /**
@@ -255,7 +259,10 @@ export async function createCliAgentConfig(
  * A definition names what its recipe said; a named provider and an absent
  * tools list are filled from cli.yaml here, on every run including resume.
  * Tools that act on the folder are withheld unless the folder is trusted,
- * whichever layer named them.
+ * whichever layer named them. Skills come from `availableSkills`, the set
+ * discovery produced for this run: all of them when the definition names
+ * none, the named ones otherwise, and a name discovery did not find is an
+ * error.
  */
 export async function resolveAgentDefinition(
   definition: AgentDefinition,
@@ -263,6 +270,7 @@ export async function resolveAgentDefinition(
   serviceConfig: ServiceConfig,
   span: Span,
   trust: FolderTrust,
+  availableSkills: Skill[],
 ): Promise<CliAgentConfig> {
   const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
   let droppedTools: string[] = [];
@@ -283,11 +291,22 @@ export async function resolveAgentDefinition(
       : partitionByTrust(requested);
     droppedTools = dropped;
 
+    const requestedSkills = definition.skills?.map((ref) => ref.name);
+    const missing = requestedSkills ? missingSkillNames(requestedSkills, availableSkills) : [];
+    if (missing.length > 0) {
+      const available = availableSkills.map((skill) => skill.name).join(", ") || "none";
+      throw new Error(`Unknown skill: ${missing.join(", ")}. Available: ${available}`);
+    }
+    const skills = requestedSkills
+      ? availableSkills.filter((skill) => requestedSkills.includes(skill.name))
+      : availableSkills;
+
     return {
       provider: resolvedProvider.provider,
       model: resolvedProvider.model,
       tools: kept.length > 0 ? createTools(kept) : undefined,
       mcps: mcps.length > 0 ? mcps : undefined,
+      skills: skills.length > 0 ? skills : undefined,
     };
   });
   return { agentConfig: baseConfig, definition, mcps, droppedTools };

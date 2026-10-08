@@ -510,6 +510,59 @@ describe.concurrent("cli.ts end-to-end", () => {
   );
 
   it(
+    "skills are disclosed in the system prompt and project skills wait for axle trust",
+    async ({ cli }) => {
+      const { requests, runCli, CWD, HOME, writeRecipe } = cli;
+      const skill = (dir: string, name: string) =>
+        mkdir(dir, { recursive: true }).then(() =>
+          writeFile(
+            join(dir, "SKILL.md"),
+            `---\nname: ${name}\ndescription: About ${name}.\n---\nUse it.\n`,
+          ),
+        );
+      await skill(join(HOME, ".axle", "skills", "pdf"), "pdf");
+      await skill(join(CWD, ".agents", "skills", "deploy"), "deploy");
+      const recipe = await writeRecipe("job.yml", "tools: [read-file]");
+      await runCli(["trust", "--revoke"]);
+
+      const untrusted = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
+
+      expect(untrusted.code).toBe(0);
+      expect(untrusted.output).toContain(
+        "Ignored .agents/skills: this folder is not trusted (run axle trust)",
+      );
+      const untrustedSystem = JSON.stringify(requests[0].messages[0]);
+      expect(untrustedSystem).toContain("- pdf: About pdf.");
+      expect(untrustedSystem).not.toContain("deploy");
+      expect(requests[0].tools?.map((tool) => tool.function.name)).toEqual([
+        "read-file",
+        "view-skill",
+      ]);
+
+      await runCli(["trust"]);
+      const trusted = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
+
+      expect(trusted.code).toBe(0);
+      expect(JSON.stringify(requests[1].messages[0])).toContain("- deploy: About deploy.");
+
+      const selected = await writeRecipe("one.yml", "tools: []\nskills: [deploy]");
+      await runCli(["-j", selected, "--renderer", "plain", "--no-log"]);
+
+      const selectedSystem = JSON.stringify(requests[2].messages[0]);
+      expect(selectedSystem).toContain("- deploy:");
+      expect(selectedSystem).not.toContain("- pdf:");
+      expect(requests[2].tools?.map((tool) => tool.function.name)).toEqual(["view-skill"]);
+
+      const unknown = await writeRecipe("bad.yml", "skills: [docx]");
+      const failed = await runCli(["-j", unknown, "--renderer", "plain", "--no-log"]);
+
+      expect(failed.code).toBe(1);
+      expect(failed.output).toContain("Unknown skill: docx. Available: deploy, pdf");
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
     "an untrusted folder drops the tools that act and ignores its .axle/ until axle trust",
     async ({ cli }) => {
       const { requests, runCli, CWD, writeRecipe } = cli;

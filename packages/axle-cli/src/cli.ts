@@ -42,6 +42,7 @@ import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
 import { loadSession } from "./cli/sessions.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
+import { discoverSkills } from "./cli/skills.js";
 import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
 import * as ask from "./ui/ask.js";
 import type { Renderer } from "./ui/index.js";
@@ -482,6 +483,8 @@ if (!trusted && interactiveTerminal) {
   }
 }
 
+const discoveredSkills = await discoverSkills({ trusted }).catch(fail);
+
 async function prepareSchedule(): Promise<string | undefined> {
   if (inv.kind !== "kernel") return undefined;
   if (inv.scheduling.kind === "occurrence") return inv.scheduling.id;
@@ -560,12 +563,17 @@ const { mcps, agentConfig, droppedTools } = await resolveAgentDefinition(
   serviceConfig,
   rootSpan,
   { trusted },
+  discoveredSkills.skills,
 ).catch(fail);
-for (const notice of [
-  ...ignoredProjectInputs.map((file) => `Ignored ${file}`),
-  ...(droppedTools.length > 0 ? [`Dropped ${droppedTools.join(", ")}`] : []),
+for (const line of [
+  ...ignoredProjectInputs.map(
+    (file) => `Ignored ${file}: this folder is not trusted (run axle trust)`,
+  ),
+  ...(droppedTools.length > 0
+    ? [`Dropped ${droppedTools.join(", ")}: this folder is not trusted (run axle trust)`]
+    : []),
+  ...discoveredSkills.warnings,
 ]) {
-  const line = `${notice}: this folder is not trusted (run axle trust)`;
   renderer.warn(line);
   rootSpan.warn(line);
 }
