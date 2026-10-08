@@ -49,6 +49,13 @@ properties:
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
+              contextWindow:
+                description: Context window in tokens for every model on this endpoint;
+                  overrides the models.dev lookup. Set it for a local server
+                  that loads models below their maximum.
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
             required:
               - type
             additionalProperties: false
@@ -70,6 +77,13 @@ properties:
               timeoutMs:
                 description: Timeout for one request attempt, in milliseconds. Defaults to the
                   provider SDK's own; 10 minutes for chatcompletions.
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
+              contextWindow:
+                description: Context window in tokens for every model on this endpoint;
+                  overrides the models.dev lookup. Set it for a local server
+                  that loads models below their maximum.
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
@@ -97,6 +111,13 @@ properties:
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991
+              contextWindow:
+                description: Context window in tokens for every model on this endpoint;
+                  overrides the models.dev lookup. Set it for a local server
+                  that loads models below their maximum.
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
             required:
               - type
             additionalProperties: false
@@ -118,6 +139,13 @@ properties:
               timeoutMs:
                 description: Timeout for one request attempt, in milliseconds. Defaults to the
                   provider SDK's own; 10 minutes for chatcompletions.
+                type: integer
+                exclusiveMinimum: 0
+                maximum: 9007199254740991
+              contextWindow:
+                description: Context window in tokens for every model on this endpoint;
+                  overrides the models.dev lookup. Set it for a local server
+                  that loads models below their maximum.
                 type: integer
                 exclusiveMinimum: 0
                 maximum: 9007199254740991

@@ -82,6 +82,18 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
     const CWD = join(testDir, "cwd");
     await mkdir(HOME, { recursive: true });
     await mkdir(CWD, { recursive: true });
+    // A fresh, empty model catalog so no run reaches for models.dev.
+    await mkdir(join(HOME, ".axle", "cache"), { recursive: true });
+    await writeFile(
+      join(HOME, ".axle", "cache", "models.json"),
+      JSON.stringify({
+        version: 2,
+        fetchedAt: new Date().toISOString(),
+        etags: {},
+        models: {},
+        hosts: {},
+      }),
+    );
 
     const replies: StubReply[] = [];
     const requests: ChatRequest[] = [];
@@ -153,7 +165,7 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
           "  Say hello.",
           extra,
         ]),
-      // With AXLE_CONTEXT_WINDOW=1000 the compaction threshold is 800 tokens
+      // With contextWindow: 1000 the compaction threshold is 800 tokens
       // (~2400 chars); this task alone crosses it, so a resumed session is over
       // the threshold before its next send.
       writeOverThresholdRecipe: (name, extra = "") =>
@@ -161,6 +173,7 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
           "provider:",
           "  type: chatcompletions",
           `  baseUrl: ${baseUrl}`,
+          "  contextWindow: 1000",
           "model: stub-model",
           extra,
           "task: |",
@@ -519,15 +532,18 @@ describe.concurrent("cli.ts end-to-end", () => {
       const { requests, runCli, writeOverThresholdRecipe } = cli;
       const recipe = await writeOverThresholdRecipe("compacting.yml");
 
-      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"], {
-        AXLE_CONTEXT_WINDOW: "1000",
-      });
+      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
       const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
 
-      const { code } = await runCli(
-        ["resume", sessionId!, "-m", "follow up", "--renderer", "plain", "--no-log"],
-        { AXLE_CONTEXT_WINDOW: "1000" },
-      );
+      const { code } = await runCli([
+        "resume",
+        sessionId!,
+        "-m",
+        "follow up",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
 
       expect(code).toBe(0);
       expect(requests).toHaveLength(3);
@@ -543,19 +559,22 @@ describe.concurrent("cli.ts end-to-end", () => {
       const { requests, runCli, writeOverThresholdRecipe, HOME } = cli;
       const recipe = await writeOverThresholdRecipe("optout.yml", "compaction: false");
 
-      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"], {
-        AXLE_CONTEXT_WINDOW: "1000",
-      });
+      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
       const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
       const saved = JSON.parse(
         await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
       );
       expect(saved.compaction).toBe(false);
 
-      const { code } = await runCli(
-        ["resume", sessionId!, "-m", "follow up", "--renderer", "plain", "--no-log"],
-        { AXLE_CONTEXT_WINDOW: "1000" },
-      );
+      const { code } = await runCli([
+        "resume",
+        sessionId!,
+        "-m",
+        "follow up",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
 
       expect(code).toBe(0);
       expect(requests).toHaveLength(2);

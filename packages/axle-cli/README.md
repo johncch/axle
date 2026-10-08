@@ -159,7 +159,7 @@ request:
 ```
 
 Long sessions compact automatically: when the conversation approaches the
-context window (~80% of an assumed 200,000 tokens), the next send first replaces the history with
+context window (~80% of the model's window), the next send first replaces the history with
 a ~1000-word summary plus a slice of recent user messages kept verbatim (up
 to a tenth of the threshold), summarized by the session's own provider, model, and
 `reasoning` setting; the transcript records a `✔ Compacted context` line.
@@ -170,11 +170,28 @@ with:
 compaction: false
 ```
 
-`AXLE_CONTEXT_WINDOW=<tokens>` sets the window for a model whose context
-is larger or smaller than 200,000 — the usage bar, compaction threshold, and
-summary target all scale with it. A small value (e.g. `3000`) forces a
-compaction within a few exchanges, which is also the way to see one without
-filling a real context window.
+The window is looked up in the [models.dev](https://models.dev) catalog by
+the model id — through the provider's own ids for first-party providers,
+OpenRouter and Together, with a best-effort match for local runtimes' names
+(`gemma4:26b-mlx`) — and falls back to 200,000 for a model the catalog
+lacks. The catalog is cached at `~/.axle/cache/models.json` and refreshed in
+the background once a day; a run never waits on the network. `axle info`
+shows each provider's window and where it came from, including the matched
+catalog id. A provider's `contextWindow` overrides the lookup for every
+model on that endpoint — set it for a local server that loads models below
+their maximum:
+
+```yaml
+providers:
+  ollama:
+    type: chatcompletions
+    baseUrl: http://localhost:11434/v1
+    contextWindow: 32768
+```
+
+The same key on a recipe's inline `provider:` block works too. A small value
+(e.g. `3000`) forces a compaction within a few exchanges, which is also the
+way to see one without filling a real context window.
 
 Chat and job files get these local tools by default:
 

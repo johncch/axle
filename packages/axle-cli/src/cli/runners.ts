@@ -55,14 +55,10 @@ export interface AgentSessionSpec {
   interactive: boolean;
   /** Automatic context compaction; on unless the recipe says `compaction: false`. */
   compaction?: boolean;
-}
-
-const ASSUMED_CONTEXT_WINDOW = 200_000;
-
-function contextWindowFor(providerLimit?: number): number {
-  const override = Number(process.env.AXLE_CONTEXT_WINDOW);
-  if (Number.isInteger(override) && override > 0) return override;
-  return providerLimit || ASSUMED_CONTEXT_WINDOW;
+  /** The model's context window in tokens; drives the compaction threshold and the usage bar. */
+  contextWindow: number;
+  /** The provider as the recipe named it (profile name or type), for the model line. */
+  providerName?: string;
 }
 
 const COMPACTION_THRESHOLD_FRACTION = 0.8;
@@ -75,13 +71,12 @@ const COMPACTION_PROMPT = [
 ].join(" ");
 
 /** Session compaction policy; normative in docs/architecture/cli.md. */
-export function createSessionCompaction(agent: Agent): CompactionConfig {
-  const window = contextWindowFor();
+export function createSessionCompaction(agent: Agent, contextWindow: number): CompactionConfig {
   const compactor = new PromptCompactor({
     provider: agent.provider,
     model: agent.model,
     prompt: COMPACTION_PROMPT,
-    thresholdTokens: Math.floor(window * COMPACTION_THRESHOLD_FRACTION),
+    thresholdTokens: Math.floor(contextWindow * COMPACTION_THRESHOLD_FRACTION),
     summaryWords: COMPACTION_SUMMARY_WORDS,
     reasoning: agent.requestOptions.reasoning,
   });
@@ -104,6 +99,7 @@ class SessionRuntime {
     agentConfig: AgentConfig;
     span: Span;
     compaction?: boolean;
+    contextWindow: number;
     session?: AgentSession;
     priorTurns?: readonly Turn[];
     sessionStore?: SessionStore;
@@ -114,7 +110,7 @@ class SessionRuntime {
       options.session,
     );
     if (options.compaction !== false) {
-      this.agent.setCompaction(createSessionCompaction(this.agent));
+      this.agent.setCompaction(createSessionCompaction(this.agent, options.contextWindow));
     }
     this.transcript = new Transcript(options.priorTurns ?? []);
     this.sessionStore = options.sessionStore;
@@ -158,6 +154,7 @@ export async function runAgentSession(
     agentConfig: spec.agentConfig,
     span: runSpan,
     compaction: spec.compaction,
+    contextWindow: spec.contextWindow,
     session: spec.session,
     priorTurns: spec.priorTurns,
     sessionStore,
@@ -202,18 +199,21 @@ export async function runAgentSession(
     renderer.info(line);
     parentSpan.info(line);
   }
+  const modelLine = spec.providerName
+    ? `Model ${agent.model} · ${spec.providerName}`
+    : `Model ${agent.model}`;
+  renderer.info(modelLine);
+  parentSpan.info(modelLine);
   if (spec.priorTurns?.length) {
     renderer.renderPriorTurns(spec.priorTurns);
   }
 
   const reportUsage = () => {
-    const context = agent.context();
-    const contextLimit = contextWindowFor(context.limit);
     renderer.updateUsage({
       in: stats.in,
       out: stats.out,
-      contextTokens: context.total,
-      contextLimit,
+      contextTokens: agent.context().total,
+      contextLimit: spec.contextWindow,
     });
   };
   reportUsage();
@@ -320,6 +320,8 @@ export interface BatchRunSpec {
   verbose: boolean;
   /** Automatic context compaction; on unless the recipe says `compaction: false`. */
   compaction?: boolean;
+  /** The model's context window in tokens; drives the compaction threshold. */
+  contextWindow: number;
   /** Session home override for tests. */
   home?: string;
 }
@@ -415,6 +417,7 @@ export async function runBatch(
         agentConfig: spec.agentConfig,
         span: itemSpan,
         compaction: spec.compaction,
+        contextWindow: spec.contextWindow,
         sessionStore,
         onEvent: (event, transcript) => {
           if (spec.verbose) {

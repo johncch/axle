@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-10-07 (session/config separation)
+**Status**: current · **Last design revision**: 2026-10-08 (AXL-73)
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -53,11 +53,20 @@ against it; divergence is a defect. State ownership is defined in
    that produced a session can be re-entered with `axle resume <id>`.
    Sessions accumulate; `axle cleanup` deletes by age window. There is no
    automatic retention. Sessions compact automatically near the context
-   window (policy: `createSessionCompaction` — ~80% threshold of
-   `AXLE_CONTEXT_WINDOW`, else an assumed 200,000 tokens; ~1000-word
-   summary, thinking inherited from the recipe; `compaction: false` opts a
-   recipe out); the mechanism is core's, per
-   [compaction.md](./compaction.md).
+   window (policy: `createSessionCompaction` — ~80% threshold of the
+   window; ~1000-word summary, thinking inherited from the recipe;
+   `compaction: false` opts a recipe out); the mechanism is core's, per
+   [compaction.md](./compaction.md). The window is resolved at every run
+   start, resume included, and never stored (invariant 6): the provider's
+   `contextWindow` if set (profile or inline — an endpoint fact, since a
+   local server loads models below their maximum), else core's
+   `ModelCatalog` (models.dev, host derived from the provider type or
+   `vendor`), else an assumed 200,000. The catalog is cached at
+   `~/.axle/cache/models.json`; a run reads the cache and refreshes it in
+   the background when it is a day old, `axle info` awaits the refresh, and
+   no run ever waits on or fails for the network. `axle info` prints each
+   provider's window with its source and the matched catalog id, so a
+   best-effort match is visible.
 
 4. **Batch is map(recipe, inputs), composed on the kernel.** One isolated
    session per input, run mechanically — no orchestrator model in the loop,
@@ -374,6 +383,18 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   is exactly `exit` or `quit`, in any case, ends the session like `/quit`
   and is never sent to the model. They are magic words, not more slash
   commands.
+- **2026-10-08 — the context window is looked up, not assumed (AXL-73).**
+  Every model was assumed to have 200,000 tokens unless
+  `AXLE_CONTEXT_WINDOW` said otherwise, so 1M-context models compacted at
+  160,000 and a per-run environment variable was the only override. The
+  window now comes from the provider's `contextWindow`, else core's
+  `ModelCatalog`, else 200,000. Rejected: a recipe-level `contextWindow`
+  (the window is a property of the endpoint and model, not the task); a
+  per-model map in `cli.yaml` (nothing needs it until a hosted model is
+  missing from the catalog — then its profile can carry the value); a
+  configurable fallback (it would apply only when the lookup misses, which
+  the user cannot predict); keeping the environment variable alongside
+  (two overrides for one value).
 - **2026-10-07 — sessions name configuration instead of copying it.**
   Until now `resolveTarget` spread a provider profile's fields into the
   saved definition and filled an absent `tools:` from `defaults.tools`

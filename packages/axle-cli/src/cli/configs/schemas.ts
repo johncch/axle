@@ -36,6 +36,14 @@ const ProviderClientFieldsSchema = {
     .describe(
       "Timeout for one request attempt, in milliseconds. Defaults to the provider SDK's own; 10 minutes for chatcompletions.",
     ),
+  contextWindow: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Context window in tokens for every model on this endpoint; overrides the models.dev lookup. Set it for a local server that loads models below their maximum.",
+    ),
 };
 
 // AI Provider Use - Discriminated by 'type'

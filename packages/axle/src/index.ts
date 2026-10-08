@@ -47,6 +47,7 @@ export {
 // AI Providers
 export { anthropic } from "./providers/anthropic/index.js";
 export { chatCompletions } from "./providers/chatcompletions/index.js";
+export { inferChatCompletionsVendor } from "./providers/chatcompletions/provider.js";
 export type {
   ChatCompletionsOptions,
   ChatCompletionsVendor,
@@ -205,6 +206,16 @@ export type {
   TracerOptions,
 } from "./observability/index.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
+
+// Models
+export { ModelCatalog } from "./models/catalog.js";
+export type {
+  CatalogMatch,
+  CatalogModel,
+  ContextWindowMatch,
+  ModelCatalogOptions,
+  ModelCost,
+} from "./models/catalog.js";
 
 // Utils
 export { loadFileContent } from "./utils/file.js";

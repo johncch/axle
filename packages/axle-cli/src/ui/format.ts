@@ -20,6 +20,18 @@ export function formatTokens(count: number): string {
   return String(count);
 }
 
+const COMPACTION_FRACTION = 0.8;
+
+/** `◔ 21%`: context use as a quarter-pie glyph plus percent; filled once compaction is due. */
+export function contextPie(fraction: number): string {
+  const percent = Math.round(Math.max(0, fraction) * 100);
+  const glyph =
+    fraction >= COMPACTION_FRACTION
+      ? "●"
+      : ["○", "◔", "◑", "◕"][Math.min(3, Math.round(fraction * 4))];
+  return `${glyph} ${percent}%`;
+}
+
 export function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }

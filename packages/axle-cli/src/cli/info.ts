@@ -1,3 +1,4 @@
+import type { ModelCatalog } from "@fifthrevision/axle";
 import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { resolveTarget } from "./agent-config.js";
@@ -6,11 +7,11 @@ import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { ConfigDirs } from "./configs/paths.js";
 import { CONFIG_FILE, CREDENTIALS_FILE } from "./configs/paths.js";
 import type { AIProviderUse, CliConfig, ServiceConfig } from "./configs/schemas.js";
+import type { ContextWindowSource } from "./context-window.js";
+import { formatTokens, resolveContextWindow } from "./context-window.js";
 import { defaultToolNames } from "./tools.js";
 
 const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"] as const;
-
-const ENVIRONMENT_VARIABLES = ["AXLE_CONTEXT_WINDOW"];
 
 const UNSET = "unset";
 const ALIGNED_VALUE_WIDTH = 32;
@@ -23,6 +24,7 @@ export interface InfoInput {
   serviceConfig: ServiceConfig;
   credentialSources: Record<string, string>;
   env: NodeJS.ProcessEnv;
+  catalog: ModelCatalog;
 }
 
 interface Row {
@@ -86,7 +88,7 @@ export function formatInfo(input: InfoInput): string[] {
     })),
   ];
 
-  return [
+  const lines = [
     `axle ${version} · ${describeRuntime()} · ${process.platform} ${process.arch}`,
     `cwd ${cwd}`,
     "",
@@ -113,14 +115,11 @@ export function formatInfo(input: InfoInput): string[] {
       "",
     ]),
     ...(unconfiguredBuiltIns.length > 0
-      ? [`  not configured: ${unconfiguredBuiltIns.join(", ")}`, ""]
+      ? [`  not configured: ${unconfiguredBuiltIns.join(", ")}`]
       : []),
-    "Environment",
-    ...formatRows(
-      "  ",
-      ENVIRONMENT_VARIABLES.map((name) => ({ label: name, value: env[name] ?? UNSET })),
-    ),
   ];
+  while (lines.at(-1) === "") lines.pop();
+  return lines;
 }
 
 function describeRuntime(): string {
@@ -177,6 +176,21 @@ function describeProvider(
     });
   }
 
+  const model = defaultModel ?? service?.model;
+  if (model !== undefined) {
+    const { type: _profileType, ...profileConfig } = profile ?? { type };
+    const resolved = resolveContextWindow(
+      { type, config: { ...service, ...profileConfig } },
+      model,
+      input.catalog,
+    );
+    rows.push({
+      label: "window",
+      value: formatTokens(resolved.window),
+      source: describeWindowSource(resolved.source, name, input),
+    });
+  }
+
   const apiKeyEnv = profile?.apiKeyEnv;
   if (apiKeyEnv) {
     rows.push(
@@ -193,6 +207,21 @@ function describeProvider(
   }
 
   return rows;
+}
+
+function describeWindowSource(
+  source: ContextWindowSource,
+  providerName: string,
+  input: InfoInput,
+): string | undefined {
+  switch (source.kind) {
+    case "provider":
+      return input.cliConfigSources.providers[providerName];
+    case "catalog":
+      return `models.dev (${source.id})`;
+    case "assumed":
+      return input.catalog.size === 0 ? "assumed (models.dev not cached)" : "assumed";
+  }
 }
 
 function formatProviderBlock(title: string, source: string | undefined, rows: Row[]): string[] {

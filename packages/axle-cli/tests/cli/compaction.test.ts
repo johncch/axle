@@ -44,16 +44,16 @@ function createAgent(config: Partial<AgentConfig> & Pick<AgentConfig, "provider"
 describe("createSessionCompaction", () => {
   it("arms only the beforeTurn trigger", () => {
     const agent = createAgent({ provider: createCapturingProvider("mock", []) });
-    const config = createSessionCompaction(agent);
+    const config = createSessionCompaction(agent, 200_000);
     expect(config.triggers).toEqual({ beforeTurn: true });
   });
 
-  it("assumes a 200k window for every model", () => {
+  it("compacts at 80% of the given window", () => {
     const agent = createAgent({
       provider: createCapturingProvider("anthropic", []),
       model: "claude-sonnet-5-5",
     });
-    const config = createSessionCompaction(agent);
+    const config = createSessionCompaction(agent, 200_000);
 
     const messages = [{ role: "user" as const, content: "hi" }];
     expect(
@@ -70,30 +70,22 @@ describe("createSessionCompaction", () => {
     ).toBe(false);
   });
 
-  it("AXLE_CONTEXT_WINDOW overrides the resolved window", () => {
-    process.env.AXLE_CONTEXT_WINDOW = "1000";
-    try {
-      const agent = createAgent({
-        provider: createCapturingProvider("anthropic", []),
-        model: "claude-sonnet-4-5",
-      });
-      const config = createSessionCompaction(agent);
+  it("scales the threshold with a small window", () => {
+    const agent = createAgent({ provider: createCapturingProvider("anthropic", []) });
+    const config = createSessionCompaction(agent, 1000);
 
-      const messages = [{ role: "user" as const, content: "hi" }];
-      expect(
-        config.shouldCompactOnTrigger?.({ messages }, { usage: usage(800), trigger: "beforeTurn" }),
-      ).toBe(true);
-      expect(
-        config.shouldCompactOnTrigger?.({ messages }, { usage: usage(700), trigger: "beforeTurn" }),
-      ).toBe(false);
-    } finally {
-      delete process.env.AXLE_CONTEXT_WINDOW;
-    }
+    const messages = [{ role: "user" as const, content: "hi" }];
+    expect(
+      config.shouldCompactOnTrigger?.({ messages }, { usage: usage(800), trigger: "beforeTurn" }),
+    ).toBe(true);
+    expect(
+      config.shouldCompactOnTrigger?.({ messages }, { usage: usage(700), trigger: "beforeTurn" }),
+    ).toBe(false);
   });
 
   it("never compacts an empty conversation", () => {
     const agent = createAgent({ provider: createCapturingProvider("mock", []) });
-    const config = createSessionCompaction(agent);
+    const config = createSessionCompaction(agent, 200_000);
     expect(
       config.shouldCompactOnTrigger?.(
         { messages: [] },
@@ -108,7 +100,7 @@ describe("createSessionCompaction", () => {
       provider: createCapturingProvider("mock", requests),
       reasoning: "on",
     });
-    const config = createSessionCompaction(agent);
+    const config = createSessionCompaction(agent, 200_000);
 
     await config.compact(
       { messages: [{ role: "user", content: "remember blue" }] },
@@ -121,7 +113,7 @@ describe("createSessionCompaction", () => {
   it("leaves reasoning unset when the recipe doesn't set it", async () => {
     const requests: CapturedRequest[] = [];
     const agent = createAgent({ provider: createCapturingProvider("mock", requests) });
-    const config = createSessionCompaction(agent);
+    const config = createSessionCompaction(agent, 200_000);
 
     const result = await config.compact(
       { messages: [{ role: "user", content: "remember blue" }] },
@@ -190,7 +182,7 @@ describe("compacted session snapshot/resume", () => {
 
   it("compacts over-threshold history before the send, persists it, and resumes it", async () => {
     // 100 user messages × 6KB ≈ 200k estimated tokens (3 chars/token) —
-    // over the 160k threshold assumed for an unknown model.
+    // over the 160k threshold of a 200k window.
     const history = Array.from({ length: 100 }, (_, i) => ({
       role: "user" as const,
       content: `FILLER-${String(i).padStart(3, "0")} ${"x".repeat(6_000)}`,
@@ -212,6 +204,7 @@ describe("compacted session snapshot/resume", () => {
           sessionId: "compact-1",
         },
         spanName: "job",
+        contextWindow: 200_000,
         session: { sessionId: "compact-1", messages: history },
         initial: "please continue",
         interactive: false,
@@ -260,6 +253,7 @@ describe("compacted session snapshot/resume", () => {
           sessionId: file.session.sessionId,
         },
         spanName: "resume",
+        contextWindow: 200_000,
         session: file.session,
         priorTurns: file.turns,
         initial: "and again",
@@ -292,6 +286,7 @@ describe("compacted session snapshot/resume", () => {
           sessionId: "compact-off",
         },
         spanName: "job",
+        contextWindow: 200_000,
         session: { sessionId: "compact-off", messages: history },
         initial: "please continue",
         interactive: false,

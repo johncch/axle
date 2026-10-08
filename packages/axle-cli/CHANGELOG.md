@@ -27,11 +27,17 @@
   set everywhere.
 - **The `calculator` tool is removed.** A recipe that lists it fails with
   `Unknown tool: calculator`; delete the entry.
-- **Every model is assumed to have a 200,000-token context window.** The
-  usage bar and the compaction threshold (~80%) no longer look the model up
-  in a built-in registry. Set `AXLE_CONTEXT_WINDOW=<tokens>` for a model
-  with a different window; a 1M-context model otherwise compacts at about
-  160,000 tokens, and a model under 200,000 can overflow before it compacts.
+- **The context window is looked up in models.dev; `AXLE_CONTEXT_WINDOW`
+  is removed.** The usage bar and the compaction threshold (~80%) use the
+  model's real window — through the provider's own ids for first-party
+  providers, OpenRouter and Together, with a best-effort match for local
+  runtimes' names — and assume 200,000 only for a model the catalog lacks.
+  The catalog is cached at `~/.axle/cache/models.json` and refreshed in the
+  background once a day; a run never waits on the network. Replace
+  `AXLE_CONTEXT_WINDOW=<tokens>` with `contextWindow: <tokens>` on the
+  provider, in a `cli.yaml` profile or a recipe's inline `provider:` block.
+  `axle info` shows each provider's window and its source in place of the
+  Environment section.
 - **`request.temperature`, `request.topP`, and `request.stop` are removed.**
   A recipe that sets one now fails to load. Move it under
   `request.providerOptions` using the provider's own field name
