@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../schemas/v3/job.yaml
-provider: openrouter
-model: z-ai/glm-5.3-flash
+provider: openai
+model: openai/gpt-6-luna
 
 task: |
   Generate a changelog entry for version {{version}}.

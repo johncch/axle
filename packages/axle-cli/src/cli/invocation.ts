@@ -18,8 +18,7 @@ export interface CommonOpts {
   debug: boolean;
 }
 
-export type KernelScheduling =
-  { kind: "none" } | { kind: "register" } | { kind: "occurrence"; id: string };
+export type KernelScheduling = { kind: "none" } | { kind: "occurrence"; id: string };
 
 export type Invocation =
   | {
