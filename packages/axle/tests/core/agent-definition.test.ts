@@ -7,6 +7,7 @@ import {
   type AIProvider,
   type ExecutableTool,
 } from "../../src/index.js";
+import type { Skill } from "../../src/skills/types.js";
 
 function createProvider(): AIProvider {
   return {
@@ -77,6 +78,53 @@ describe("createAgentConfig", () => {
         () => ({ provider: createProvider() }),
       ),
     ).rejects.toThrow("AgentDefinition includes tools but resolver did not return tools");
+  });
+
+  test("passes resolved skills through to the config", async () => {
+    const pdf: Skill = {
+      name: "pdf",
+      description: "Work with PDFs.",
+      instructions: "Run scripts/merge.py.",
+      root: "/skills/pdf",
+    };
+    const definition: AgentDefinition = {
+      version: 1,
+      provider: { type: "mock" },
+      model: "mock-model",
+      skills: [{ name: "pdf" }],
+    };
+
+    const config = await createAgentConfig(definition, async (def) => ({
+      provider: createProvider(),
+      skills: def.skills
+        ?.map((ref) => (ref.name === "pdf" ? pdf : undefined))
+        .filter((skill) => skill !== undefined),
+    }));
+
+    expect(config.skills).toEqual([pdf]);
+  });
+
+  test("requires resolved skills when skill references are present", async () => {
+    await expect(
+      createAgentConfig(
+        {
+          version: 1,
+          provider: { type: "mock" },
+          model: "mock-model",
+          skills: [{ name: "pdf" }],
+        },
+        async () => ({ provider: createProvider() }),
+      ),
+    ).rejects.toThrow("AgentDefinition includes skills but resolver did not return skills");
+  });
+
+  test("leaves skills undefined when the definition names none", async () => {
+    const config = await createAgentConfig(
+      { version: 1, provider: { type: "mock" }, model: "mock-model" },
+      async () => ({ provider: createProvider() }),
+    );
+
+    expect(config.skills).toBeUndefined();
   });
 
   test("allows empty executable tool references without resolved tools", async () => {

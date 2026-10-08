@@ -42,6 +42,9 @@ export async function createAgentConfig(
   if (definition.tools?.length && !resolved.tools) {
     throw new AxleError("AgentDefinition includes tools but resolver did not return tools");
   }
+  if (definition.skills?.length && !resolved.skills) {
+    throw new AxleError("AgentDefinition includes skills but resolver did not return skills");
+  }
 
   return {
     provider: resolved.provider,
@@ -51,6 +54,7 @@ export async function createAgentConfig(
     tools: resolved.tools,
     providerTools: resolved.providerTools ?? defaultProviderTools(definition.providerTools),
     mcps: resolved.mcps ?? definition.mcps?.map((config) => new MCP(config)),
+    skills: resolved.skills,
     reasoning: definition.request?.reasoning,
     maxOutputTokens: definition.request?.maxOutputTokens,
     toolChoice: definition.request?.toolChoice,
