@@ -69,7 +69,9 @@ recipe's task template.
 
 Every run persists a resumable session to `~/.axle/sessions/cli/<id>.json`
 (the id is printed at run start and exit). Resuming restores the saved
-provider, model, tools, and conversation — no job file needed.
+conversation, model, and recipe — no job file needed — and resolves a
+provider name or the default tools against the current `cli.yaml`, so a
+profile edit reaches existing sessions.
 
 A job file specifies the provider, task prompt, and optional tools/files:
 

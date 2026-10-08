@@ -167,10 +167,13 @@ run start and exit.
     axle resume <id> -m "follow up"   # one-shot continuation
     axle resume 3a2f                  # any unique id prefix works
 
-Resuming restores the saved provider, model, tools, MCP servers, and
-conversation; no recipe needed. The session is authoritative, so provider
-and model overrides are not accepted on resume. The original working
-directory is recorded and warned about on mismatch, never changed to.
+Resuming restores the saved conversation, model, system prompt, tools, and
+MCP servers; no recipe needed. A provider named in the recipe, and the
+default tool set when the recipe listed none, are resolved against the
+current cli.yaml on every resume, so a profile edit reaches existing
+sessions. Provider and model overrides are not accepted on the command
+line. The original working directory is recorded and warned about on
+mismatch, never changed to.
 
 Sessions accumulate with no automatic retention. \`axle cleanup\` deletes
 them by age window: older than 24 hours, 7 days, 30 days, or everything.`,
