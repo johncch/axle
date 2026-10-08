@@ -371,6 +371,41 @@ Each entry supports:
 
 `axle explain recipe.mcps` prints the same keys with their types.
 
+## Skills
+
+A skill is a folder in the [Agent Skills](https://agentskills.io) format: a
+`SKILL.md` whose frontmatter has `name` and `description` and whose body is
+the instructions, plus any `scripts/`, `references/`, or `assets/` beside it.
+Skills written for Claude Code or other compliant clients work unchanged.
+
+```
+~/.axle/skills/pdf/
+├── SKILL.md
+├── scripts/merge.py
+└── references/forms.md
+```
+
+Skills are found in two scopes. Within a scope the first directory wins:
+
+| Scope   | Directories                            | Loaded                     |
+| ------- | -------------------------------------- | -------------------------- |
+| User    | `~/.axle/skills/`, `~/.agents/skills/` | always                     |
+| Project | `./.axle/skills/`, `./.agents/skills/` | once the folder is trusted |
+
+Every run, chat and recipe alike, gets every skill found. Nothing in a
+recipe selects among them. The model sees one line per skill in its system
+prompt and calls `view-skill` to load the full instructions when a task
+matches; the instructions name files relative to the skill folder, which the
+model reads with `read-file` and runs with `exec`. A project skill shadows a
+user skill of the same name, with a warning naming both. A `SKILL.md` that
+fails to parse is skipped with a warning naming the file.
+
+In an untrusted folder the project directories are ignored with the same
+notice as the project `cli.yaml` (see [Folder trust](#folder-trust)), and
+user skills still load but their scripts cannot run, because `exec` is
+dropped. `axle info` lists every skill directory and whether it was loaded,
+shadowed, ignored, or invalid. `axle-help` has a `skills` topic.
+
 ## Folder trust
 
 A folder can make the CLI do two things on its behalf: its `.axle/` can
@@ -389,15 +424,15 @@ In an untrusted folder:
 - `exec`, `patch-file`, and `write-file` are dropped from the tool set,
   whether the built-in default, `defaults.tools`, or the recipe's `tools:`
   named them. `read-file` and `axle-help` stay.
-- `.axle/cli.yaml` and `.axle/credentials` in the folder are not read.
-  `~/.axle/` is never gated.
+- `.axle/cli.yaml`, `.axle/credentials`, and the project skill directories
+  are not read. `~/.axle/` is never gated.
 - Each consequence prints one warning and the run continues:
   `Dropped exec: this folder is not trusted (run axle trust)`.
 
 On a terminal the CLI asks once, `It looks like this folder is untrusted,
 trust it? (y/N)`, but only when the answer would change the run: the
-folder has a `.axle/cli.yaml` or `.axle/credentials`, or the run's tool
-set includes a trust-needing tool. A read-only recipe in a bare folder
+folder has a `.axle/cli.yaml`, `.axle/credentials`, or a project skill, or
+the run's tool set includes a trust-needing tool. A read-only recipe in a bare folder
 never asks. Answering `y` records the folder and the run proceeds with the
 project layer and the full tool set; `N` is not remembered, so the
 question returns next time. A headless run (a pipe, cron, a scheduled

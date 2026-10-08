@@ -297,10 +297,43 @@ against it; divergence is a defect. State ownership is defined in
     running a script. MCP servers are outside folder trust;
     their tools act on services, not the folder. The entrypoint looks the
     folder up once and threads the boolean; every input sourced from cwd
-    consults it before use (today: the two config loaders and the tool
-    resolver; skills will join), and an input that does not is a defect.
+    consults it before use (today: the two config loaders, the tool
+    resolver, and skill discovery), and an input that does not is a defect.
+
+13. **Skills are ambient: every run gets every skill found, and nothing
+    names one.** A skill is an Agent Skills directory (core's
+    [skills.md](./skills.md) owns the format and disclosure). Discovery
+    scans two scopes in order, user then project, each with two roots in
+    order, `.axle/skills/` then the cross-client `.agents/skills/`: a
+    directory counts when it holds `SKILL.md`. The last scope wins a name
+    collision and the first root wins within a scope, each with a warning
+    naming both paths; a `SKILL.md` that fails to parse is a warning naming
+    the file, never a failed run. The project roots are a project input
+    (invariant 12): untrusted, they are listed as ignored, trigger the trust
+    prompt, and print the `Ignored` notice. User-scope skills load
+    regardless; their scripts cannot run in an untrusted folder because
+    `exec` is dropped. No recipe key and no `defaults.skills` select among
+    skills, no session names one, and `AgentDefinition.skills` is never
+    written by the CLI: a resumed session takes what is discovered now, and
+    a skill that has gone away is simply absent. `axle info` lists every
+    skill directory with its outcome (found, shadowed by, found ignored,
+    invalid); there is no start-of-run line.
 
 ## Decisions
+
+- **2026-10-08 — skills are ambient; no `skills:` recipe key (AXL-48).**
+  A first cut shipped `skills:` as an allowlist over the discovered set, in
+  the shape of `tools:`. Revised out the same day: naming could only
+  remove, it tied a recipe to what one machine had installed, and a name
+  missing on resume had no honest outcome (error, silent, or warn). Other
+  clients (Claude Code, the Agent SDK) treat skills as ambient and put any
+  narrowing with the skill or the user's settings, never in the unit of
+  work. Rejected: a path list letting a recipe bring its own skill — kept
+  as the candidate if a recipe ever needs to be self-contained. Rejected:
+  a start-of-run line listing loaded skills — `axle info` is the place.
+  Decided: scan `.agents/skills/` beside `.axle/skills/`, since the
+  integration guide names it as the widely adopted cross-client location;
+  warn on shadowing rather than resolve it silently.
 
 - **2026-10-01 — the CLI is open: default tools include shell and writes,
   with no approval step (AXL-32).** The CLI is a power tool; the user owns
