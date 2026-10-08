@@ -57,6 +57,14 @@ to a single assistant message or to a provider request.
 (`agent.send(...)`), executed as a FIFO queue item. The host-facing unit of
 "the agent took its turn."
 
+**Skill** — a unit of on-demand instruction in the Agent Skills format: a
+`SKILL.md` (frontmatter `name` and `description`, Markdown body) with
+optional bundled files. In core a `Skill` is plain data — name, description,
+`instructions`, an opaque `root`, a `files` listing — disclosed in the system
+prompt as a _catalog_ line and _activated_ when the model calls `view-skill`.
+A skill is not a tool: it adds instructions, and reaches files only through
+the tools the host registered.
+
 **Transcript** — the host-owned, reader-facing fold of `TurnEvent`s into turns
 and annotations. The exported `Transcript` class is the shipped in-memory
 implementation; hosts persist its `turns` and pass them to the constructor on

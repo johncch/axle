@@ -123,6 +123,14 @@ the threshold), keeping artificially small windows coherent.
 
 ## Rejected alternatives
 
+- **Exempting activated skill content from compaction** (2026-10-08): the
+  Agent Skills integration guide recommends protecting `view-skill` results
+  from pruning. Rejected: the skills catalog lives in the system prompt,
+  which compaction never rewrites, so the model can re-activate a skill with
+  one call after a compaction; a tool-name special case in the compactor
+  would pin instructions in context after the task that needed them ended.
+  If models prove to forget, the summary prompt can name the skills that
+  were active. See [skills.md](./skills.md).
 - **A library-computed spend ceiling (`summaryWords × 2` plus thinking
   headroom)** (2026-09-07): the headroom was sized for the one thinking
   budget that existed when it was written. Once `reasoning` could select a

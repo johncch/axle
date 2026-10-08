@@ -504,6 +504,52 @@ Anthropic, OpenAI Responses, and Gemini accept tool-result files within their
 normal image/PDF/text constraints. Chat Completions currently accepts text
 tool-result files only.
 
+### Skills
+
+A skill is a folder in the [Agent Skills](https://agentskills.io) format: a
+`SKILL.md` with `name` and `description` in its frontmatter and instructions
+in its body, plus any `scripts/`, `references/`, or `assets/` beside it.
+Skills written for Claude Code or other compliant clients load unchanged.
+
+```typescript
+import { Agent, loadSkill } from "@fifthrevision/axle";
+
+const pdf = await loadSkill("./skills/pdf");
+
+const agent = new Agent({
+  provider,
+  model,
+  tools: [readFile, exec], // your tools reach the skill's files
+  skills: [pdf],
+});
+```
+
+Disclosure is progressive. The Agent appends a catalog to the system prompt
+(one line per skill: name and description) and registers a `view-skill` tool
+whose `name` argument is an enum of the loaded skills. When the model decides
+a skill applies it calls the tool and receives the instructions wrapped in
+`<skill_content>` tags, with the skill directory and a listing of its files
+so relative paths in the body resolve. Reading those files and running
+scripts is done with whatever tools you gave the agent. No skills means no
+catalog and no tool.
+
+A `Skill` is plain data, so storage is yours to choose. `loadSkill(dir)` is
+the filesystem convenience; `parseSkillMarkdown(text)` parses a `SKILL.md`
+from anywhere, and you set `root` to whatever base your tools accept and
+`files` to the names under it:
+
+```typescript
+const pdf: Skill = {
+  ...parseSkillMarkdown(await getObjectText("s3://acme-skills/pdf/SKILL.md")),
+  root: "s3://acme-skills/pdf",
+  files: ["scripts/merge.py", "references/forms.md"],
+};
+```
+
+A skill with neither `root` nor `files` is instructions only. In an
+`AgentDefinition`, skills are name references (`skills: [{ name: "pdf" }]`)
+that your resolver turns back into `Skill` objects, the same way tools work.
+
 ### Subagent Tools
 
 > **Experimental** — the API is usable today, but event and part shapes
