@@ -1201,7 +1201,9 @@ catalog.lookup("something-unlisted"); // → undefined
 
 `model` is a `CatalogModel`: `name`, `limit.context` / `limit.output`,
 `reasoning`, `toolCall`, `structuredOutput`, `attachment`, `modalities`, and
-`knowledge` cutoff. `cost` is per million tokens as that host charges it.
+`knowledge` cutoff. `cost` is per million tokens as that host charges it,
+with `tiers` for models priced by request size (`{ size: 200000, input:
+2.5, … }` applies to a request whose context exceeds 200,000 tokens).
 
 The catalog has two layers. The canonical layer keys models by
 `publisher/model`, independent of who serves them. The host layer keys each

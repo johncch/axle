@@ -22,12 +22,17 @@ const CatalogModelSchema = z.object({
   knowledge: z.string().optional(),
 });
 
-const ModelCostSchema = z.object({
+const PriceSchema = z.object({
   input: z.number(),
   output: z.number(),
   cacheRead: z.number().optional(),
   cacheWrite: z.number().optional(),
   reasoning: z.number().optional(),
+});
+
+const ModelCostSchema = PriceSchema.extend({
+  /** Prices for a request whose context exceeds `size` tokens, ascending by size. */
+  tiers: z.array(PriceSchema.extend({ size: z.number().int().nonnegative() })).optional(),
 });
 
 const HostEntrySchema = z.object({
@@ -48,6 +53,14 @@ const CacheFileSchema = z.object({
 type CacheFile = z.infer<typeof CacheFileSchema>;
 type HostEntry = z.infer<typeof HostEntrySchema>;
 
+const ModelsDevPriceSchema = z.looseObject({
+  input: z.number(),
+  output: z.number(),
+  cache_read: z.number().optional(),
+  cache_write: z.number().optional(),
+  reasoning: z.number().optional(),
+});
+
 // models.dev writes 0 for an unknown limit; `.catch(null)` drops a malformed
 // entry instead of failing the whole file.
 const ModelsDevEntrySchema = z.looseObject({
@@ -65,15 +78,15 @@ const ModelsDevEntrySchema = z.looseObject({
   attachment: z.boolean(),
   modalities: z.looseObject({ input: z.array(z.string()), output: z.array(z.string()) }),
   knowledge: z.string().optional(),
-  cost: z
-    .looseObject({
-      input: z.number(),
-      output: z.number(),
-      cache_read: z.number().optional(),
-      cache_write: z.number().optional(),
-      reasoning: z.number().optional(),
-    })
-    .optional(),
+  cost: ModelsDevPriceSchema.extend({
+    tiers: z
+      .array(
+        ModelsDevPriceSchema.extend({
+          tier: z.looseObject({ size: z.number().int().nonnegative() }),
+        }),
+      )
+      .optional(),
+  }).optional(),
   canonical_model_id: z.string().optional(),
 });
 
@@ -338,6 +351,16 @@ export class ModelCatalog {
   }
 }
 
+function toPrice(price: z.infer<typeof ModelsDevPriceSchema>): z.infer<typeof PriceSchema> {
+  return {
+    input: price.input,
+    output: price.output,
+    cacheRead: price.cache_read,
+    cacheWrite: price.cache_write,
+    reasoning: price.reasoning,
+  };
+}
+
 function knownLimit(value: number | undefined): number | undefined {
   return value === undefined || value === 0 ? undefined : value;
 }
@@ -370,11 +393,10 @@ function toHostEntry(
   const canonical = entry.canonical_model_id ?? `${host}/${id}`;
   const cost = entry.cost
     ? {
-        input: entry.cost.input,
-        output: entry.cost.output,
-        cacheRead: entry.cost.cache_read,
-        cacheWrite: entry.cost.cache_write,
-        reasoning: entry.cost.reasoning,
+        ...toPrice(entry.cost),
+        tiers: entry.cost.tiers
+          ?.map((tier) => ({ ...toPrice(tier), size: tier.tier.size }))
+          .sort((a, b) => a.size - b.size),
       }
     : undefined;
   const limit = entry.limit

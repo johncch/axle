@@ -108,6 +108,15 @@ describe("ModelCatalog.lookup", () => {
     expect(otherPublisher?.cost).toBeUndefined();
   });
 
+  it("carries context-size price tiers", () => {
+    const found = catalog.lookup("gemini-2.5-pro", { host: "google" });
+    expect(found?.cost).toMatchObject({ input: 1.25, output: 10, cacheRead: 0.125 });
+    expect(found?.cost?.tiers).toEqual([
+      { size: 200_000, input: 2.5, output: 15, cacheRead: 0.25 },
+    ]);
+    expect(catalog.lookup("claude-sonnet-5", { host: "anthropic" })?.cost?.tiers).toBeUndefined();
+  });
+
   it("keeps a host-only model's record when the catalog has no canonical entry", () => {
     expect(catalog.lookup("zai-org/GLM-5.1", { host: "togetherai" })).toMatchObject({
       id: "togetherai/zai-org/GLM-5.1",
