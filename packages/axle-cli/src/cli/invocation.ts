@@ -3,6 +3,7 @@ import { Instruct, loadFileContent } from "@fifthrevision/axle";
 import {
   createAgentDefinition,
   createDefaultAgentDefinition,
+  resolveEndpoint,
   resolveTarget,
 } from "./agent-config.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
@@ -177,7 +178,8 @@ export async function buildPendingPlan(options: {
 
   if (!pending.definition.model && interactiveTerminal) {
     const offerSave = pending.kind !== "session" || pending.spec.spanName !== "resume";
-    pending.definition.model = await promptForMissingModel(pending.definition.provider.type, {
+    const endpoint = resolveEndpoint(pending.definition.provider, cliConfig);
+    pending.definition.model = await promptForMissingModel(endpoint.type, {
       offerSave,
       saveAs: offerSave
         ? resolveTarget(jobConfig, cliConfig, serviceConfig).providerName

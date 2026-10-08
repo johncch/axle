@@ -501,6 +501,7 @@ if (pending.definition.mcps?.length) {
 }
 const { mcps, agentConfig } = await resolveAgentDefinition(
   pending.definition,
+  cliConfig,
   serviceConfig,
   rootSpan,
 ).catch(fail);
