@@ -83,6 +83,21 @@
 
 ### New
 
+- **Skills.** A skill is a folder in the Agent Skills format
+  (agentskills.io): a `SKILL.md` with `name` and `description` in its
+  frontmatter and instructions in its body, plus any scripts, references,
+  or assets beside it. Skills written for Claude Code or other compliant
+  clients work unchanged. The CLI finds them under `~/.axle/skills/` and
+  `~/.agents/skills/` (always), and under `.axle/skills/` and
+  `.agents/skills/` in the working directory (once the folder is trusted;
+  otherwise `Ignored .axle/skills: this folder is not trusted`). Every run,
+  chat and recipe alike, gets every skill found: one catalog line each in
+  the system prompt, and a `view-skill` tool the model calls to load the
+  instructions when a task matches. A project skill shadows a user skill
+  of the same name with a warning; a `SKILL.md` that fails to parse is
+  skipped with a warning naming the file. `axle info` lists every skill
+  directory and whether it was loaded, shadowed, ignored, or invalid.
+  `axle-help` has a `skills` topic.
 - **Typing `exit` or `quit` quits the chat.** A message that is just
   `exit` or `quit`, in any case, ends the session the same way `/quit` does
   instead of being sent to the model.

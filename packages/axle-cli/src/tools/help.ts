@@ -12,6 +12,7 @@ export const HELP_TOPICS = [
   "mcp",
   "config",
   "tools",
+  "skills",
 ] as const;
 
 const helpSchema = z.object({
@@ -51,7 +52,7 @@ has a home in the YAML, and the command line overrides selectively.
 Global flags: --renderer ink|plain, --no-log, -d/--debug, --args key=value.
 
 Topics for more detail: chat, recipes, batch, resume, schedule, mcp, config,
-tools.`,
+tools, skills.`,
 
   chat: `# Chat
 
@@ -297,7 +298,34 @@ cli.yaml replaces the default set for chat and recipes alike.
 \`providerTools:\` lists tools the provider hosts, such as \`web_search\` and
 \`code_execution\`; availability depends on the provider and model.
 
-\`mcps:\` connects MCP servers whose tools join the list (topic: mcp).`,
+\`mcps:\` connects MCP servers whose tools join the list (topic: mcp).
+
+Skills add instructions the model loads on demand (topic: skills).`,
+
+  skills: `# Skills
+
+A skill is a folder in the Agent Skills format (agentskills.io): a SKILL.md
+whose frontmatter has \`name\` and \`description\` and whose body is the
+instructions, plus any scripts, references, or assets beside it. Skills
+written for Claude Code or other compliant clients work unchanged.
+
+Skills are found in two scopes; within a scope the first directory wins:
+
+    ~/.axle/skills/<name>/    ~/.agents/skills/<name>/    user, always loaded
+    .axle/skills/<name>/      .agents/skills/<name>/      project, once the folder is trusted
+
+Every run, chat and recipe alike, gets every skill found; nothing in a
+recipe selects among them. A project skill shadows a user skill of the same
+name, with a warning. A SKILL.md that fails to parse is skipped with a
+warning naming the file. In an untrusted folder the project directories
+are ignored with the same notice as the project cli.yaml (topic: config).
+
+The model sees one line per skill in its system prompt and calls
+\`view-skill\` to load the full instructions when a task matches. The
+instructions name files relative to the skill folder; the model reads them
+with \`read-file\` and runs scripts with \`exec\`, so a skill's scripts
+cannot run in an untrusted folder. \`axle info\` lists every skill
+directory and whether it was loaded, shadowed, ignored, or invalid.`,
 };
 
 function referenceFor(topic: (typeof HELP_TOPICS)[number]): string[] {

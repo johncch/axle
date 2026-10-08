@@ -9,6 +9,7 @@ import { CONFIG_FILE, CREDENTIALS_FILE } from "./configs/paths.js";
 import type { AIProviderUse, CliConfig, ServiceConfig } from "./configs/schemas.js";
 import type { ContextWindowSource } from "./context-window.js";
 import { formatTokens, resolveContextWindow } from "./context-window.js";
+import type { SkillEntry } from "./skills.js";
 import { defaultToolNames } from "./tools.js";
 
 const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"] as const;
@@ -24,6 +25,7 @@ export interface InfoInput {
   cliConfigSources: CliConfigSources;
   serviceConfig: ServiceConfig;
   credentialSources: Record<string, string>;
+  skills: SkillEntry[];
   env: NodeJS.ProcessEnv;
   catalog: ModelCatalog;
 }
@@ -40,7 +42,7 @@ interface Row {
  * supplied each value. API keys are reported as set or unset, never printed.
  */
 export function formatInfo(input: InfoInput): string[] {
-  const { version, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, env } = input;
+  const { version, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills, env } = input;
   const cwd = dirname(dirs.project);
   const home = dirname(dirs.user);
 
@@ -105,6 +107,17 @@ export function formatInfo(input: InfoInput): string[] {
       })),
     ),
     "",
+    "Skills",
+    ...(skills.length > 0
+      ? formatRows(
+          "  ",
+          skills.map((entry) => ({
+            label: displayPath(entry.dir) ?? entry.dir,
+            value: describeSkillOutcome(entry, displayPath),
+          })),
+        )
+      : ["  none"]),
+    "",
     "Defaults",
     ...formatRows("  ", defaults),
     ...defaultProviderProblem(cliConfig, serviceConfig).map((problem) => `  ✖ ${problem}`),
@@ -124,6 +137,22 @@ export function formatInfo(input: InfoInput): string[] {
   ];
   while (lines.at(-1) === "") lines.pop();
   return lines;
+}
+
+function describeSkillOutcome(
+  entry: SkillEntry,
+  displayPath: (source: string | undefined) => string | undefined,
+): string {
+  switch (entry.outcome.kind) {
+    case "loaded":
+      return "found";
+    case "ignored":
+      return "found, ignored";
+    case "shadowed":
+      return `shadowed by ${displayPath(entry.outcome.by) ?? entry.outcome.by}`;
+    case "failed":
+      return `invalid: ${entry.outcome.reason}`;
+  }
 }
 
 function describeRuntime(): string {

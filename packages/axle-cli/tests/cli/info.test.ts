@@ -61,6 +61,7 @@ function info(overrides: Partial<InfoInput>): string[] {
     cliConfigSources: { providers: {}, defaultModels: {} },
     serviceConfig: {},
     credentialSources: {},
+    skills: [],
     env: {},
     catalog: emptyCatalog,
     ...overrides,
@@ -79,7 +80,7 @@ describe("formatInfo", () => {
     const lines = info({});
 
     expect(lines[0]).toMatch(/^axle 1\.2\.3 · node /);
-    expect(section(lines, "Config files", "Defaults")).toEqual([
+    expect(section(lines, "Config files", "Skills")).toEqual([
       "  ~/.axle/cli.yaml     found",
       "  ~/.axle/credentials  missing",
       "  ./.axle/cli.yaml     missing",
@@ -247,7 +248,7 @@ describe("formatInfo folder trust", () => {
     const lines = info({ trusted: false });
 
     expect(lines[1]).toMatch(/ · not trusted \(run axle trust\)$/);
-    expect(section(lines, "Config files", "Defaults")).toEqual([
+    expect(section(lines, "Config files", "Skills")).toEqual([
       "  ~/.axle/cli.yaml     missing",
       "  ~/.axle/credentials  missing",
       "  ./.axle/cli.yaml     found, ignored",
@@ -257,5 +258,45 @@ describe("formatInfo folder trust", () => {
 
   it("marks a trusted folder", () => {
     expect(info({})[1]).toMatch(/ · trusted$/);
+  });
+});
+
+describe("formatInfo skills", () => {
+  const skill = { name: "pdf", description: "d", instructions: "i" };
+
+  it("lists none when no skill directory exists", () => {
+    expect(section(info({}), "Skills", "Defaults")).toEqual(["  none"]);
+  });
+
+  it("lists every skill directory with what became of it", () => {
+    const userDir = join(TEST_DIR, "home", ".axle", "skills", "pdf");
+    const lines = info({
+      trusted: false,
+      skills: [
+        { dir: userDir, scope: "user", outcome: { kind: "loaded", skill } },
+        {
+          dir: join(TEST_DIR, "home", ".agents", "skills", "pdf"),
+          scope: "user",
+          outcome: { kind: "shadowed", by: userDir },
+        },
+        {
+          dir: join(TEST_DIR, "home", ".axle", "skills", "bad"),
+          scope: "user",
+          outcome: { kind: "failed", reason: "SKILL.md frontmatter name: missing" },
+        },
+        {
+          dir: join(TEST_DIR, "cwd", ".agents", "skills", "deploy"),
+          scope: "project",
+          outcome: { kind: "ignored" },
+        },
+      ],
+    });
+
+    expect(section(lines, "Skills", "Defaults")).toEqual([
+      "  ~/.axle/skills/pdf       found",
+      "  ~/.agents/skills/pdf     shadowed by ~/.axle/skills/pdf",
+      "  ~/.axle/skills/bad       invalid: SKILL.md frontmatter name: missing",
+      "  ./.agents/skills/deploy  found, ignored",
+    ]);
   });
 });
