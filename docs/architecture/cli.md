@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-10-01 (AXL-32)
+**Status**: current · **Last design revision**: 2026-10-07 (session/config separation)
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -90,9 +90,23 @@ against it; divergence is a defect. State ownership is defined in
    removable without a scar on the session kernel if it ever stops earning
    its place.
 
-6. **Resume replays; it does not compose.** The stored definition is
-   authoritative — no provider/model overrides on resume. The session's
-   original cwd is recorded and warned about on mismatch, never chdir'd to.
+6. **A session freezes the conversation and the recipe; it names its
+   configuration.** The stored definition records what the recipe said, as
+   written: `system`, `request`, `tools` when listed, `providerTools`,
+   `mcps`, `compaction`, an inline `provider` object, and the resolved
+   `model` (whichever layer chose it — the history was produced by that
+   model). What the recipe _named_ or _left out_ is stored as a reference or
+   a gap and resolved against the current configuration on every run,
+   resume included: a provider name (`provider: ollama`) is saved as the
+   name and finds its profile again; an absent `tools:` is saved as absent
+   and takes the current `defaults.tools`; `apiKeyEnv` is read from the
+   environment. No provider profile, default, or key is ever copied into a
+   session file, and a recipe's inline provider accepts `apiKeyEnv` but not
+   `apiKey` — anything check-in-able never holds a secret. Resume therefore
+   needs no recipe file and accepts no provider/model overrides from the
+   command line, but it does follow an edited profile or default. The
+   session's original cwd is recorded and warned about on mismatch, never
+   chdir'd to.
 
 7. **Two output channels; renderers are folds, not deciders.** Everything
    on screen is either _transcript_ (the model's conversation: `TurnEvent`s
@@ -145,7 +159,9 @@ against it; divergence is a defect. State ownership is defined in
    `defaults.provider` → error; endpoint := `providers[name]` profile →
    built-in type → error; model := recipe → `defaults.models[name]` →
    `*_MODEL` credential → interactive prompt (TTY) or error. The provider
-   is never inferred from the model string.
+   is never inferred from the model string. The endpoint step runs on every
+   invocation, resume included (invariant 6); the model step runs once, at
+   the run that creates the session.
 
 9. **The CLI never changes directory; artifacts anchor to their scope.**
    Project-scoped state (`.axle/` config layer, the batch ledger) anchors
@@ -358,6 +374,22 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   is exactly `exit` or `quit`, in any case, ends the session like `/quit`
   and is never sent to the model. They are magic words, not more slash
   commands.
+- **2026-10-07 — sessions name configuration instead of copying it.**
+  Until now `resolveTarget` spread a provider profile's fields into the
+  saved definition and filled an absent `tools:` from `defaults.tools`
+  before saving, so editing `cli.yaml` never reached an existing session
+  (and an inline `apiKey` landed in the session file in the clear). The
+  session now stores the recipe as written — names and gaps included — and
+  resolves them on every run. Rejected: referencing the recipe by path
+  (a moved or deleted recipe would make the session unresumable, and edits
+  could invalidate a live history, e.g. a tool removed mid-conversation);
+  stripping keys from the saved config but keeping the rest (a run that
+  worked would resume to a "not configured" error with no visible cause);
+  re-resolving the model from `defaults.models` on resume (the history is
+  the model's, sometimes provider-shaped; switching silently is worse than
+  keeping). Inline provider objects stay allowed in recipes — they are the
+  portable form, a profile name the shared-machine form — but lose
+  `apiKey`, since a recipe is check-in-able.
 - **Deferred — subagent fan-out.** Isolation-with-orchestration inside a
   recipe (core's `createAgentTool` + `parallelize`) is a different layer:
   task-level, orchestrator in the loop. It does not compete with batch's
