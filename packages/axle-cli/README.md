@@ -395,14 +395,18 @@ CHATCOMPLETIONS_MODEL=llama3
 CHATCOMPLETIONS_API_KEY=...
 ```
 
-Provider-level keys in the job file override environment variables. To
-reference a non-standard environment variable from a job file, use `apiKeyEnv`:
+A job file never holds a key — it is meant to be checked in — so its inline
+provider rejects `apiKey`. To reference a non-standard environment variable
+from a job file, use `apiKeyEnv`:
 
 ```yaml
 provider:
   type: openai
   apiKeyEnv: CUSTOM_OPENAI_KEY
 ```
+
+A run with no key for its provider stops with the variable to set, e.g.
+`ANTHROPIC_API_KEY=... axle -j job.yml`.
 
 `cli.yaml` (user-level `~/.axle/cli.yaml`, overridden per-project by
 `.axle/cli.yaml`) holds named provider profiles and defaults:

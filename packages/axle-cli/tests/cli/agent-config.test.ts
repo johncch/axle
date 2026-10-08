@@ -169,23 +169,53 @@ describe("createCliAgentConfig", () => {
   test("no hardcoded model defaults: an unresolvable model is an error", async () => {
     await expect(
       createCliAgentConfig(
-        { provider: { type: "anthropic", apiKey: "key" }, task: "Run" },
+        { provider: { type: "anthropic" }, task: "Run" },
         {},
-        {},
+        { anthropic: { apiKey: "key" } },
         tracer,
       ),
     ).rejects.toThrow(/No model resolved for provider anthropic/);
   });
 
+  test("a missing api key names the variable to set", async () => {
+    await expect(
+      createCliAgentConfig(
+        { provider: { type: "anthropic" }, model: "anthropic/claude-sonnet-5", task: "Run" },
+        {},
+        {},
+        tracer,
+      ),
+    ).rejects.toThrow(
+      "No API key for anthropic. Set ANTHROPIC_API_KEY in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.",
+    );
+  });
+
+  test("an unset apiKeyEnv variable is named", async () => {
+    await expect(
+      createCliAgentConfig(
+        {
+          provider: { type: "openai", apiKeyEnv: "AXLE_TEST_MISSING_KEY" },
+          model: "openai/gpt-test",
+          task: "Run",
+        },
+        {},
+        {},
+        tracer,
+      ),
+    ).rejects.toThrow(
+      "No API key for openai: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
+    );
+  });
+
   test("top-level model wins over the service config model", async () => {
     const { agentConfig } = await createCliAgentConfig(
       {
-        provider: { type: "anthropic", apiKey: "anthropic-key" },
+        provider: { type: "anthropic" },
         model: "anthropic/claude-sonnet-5",
         task: "Run",
       },
       {},
-      { anthropic: { apiKey: "ignored", model: "anthropic/claude-haiku-4-5" } },
+      { anthropic: { apiKey: "key", model: "anthropic/claude-haiku-4-5" } },
       tracer,
     );
 
@@ -195,7 +225,7 @@ describe("createCliAgentConfig", () => {
   test("passes system and request options through to the agent config", async () => {
     const { agentConfig } = await createCliAgentConfig(
       {
-        provider: { type: "anthropic", apiKey: "anthropic-key" },
+        provider: { type: "anthropic" },
         system: "You are terse.",
         request: {
           reasoning: { effort: "low" },
@@ -206,7 +236,7 @@ describe("createCliAgentConfig", () => {
         task: "Run",
       },
       {},
-      {},
+      { anthropic: { apiKey: "key" } },
       tracer,
     );
 

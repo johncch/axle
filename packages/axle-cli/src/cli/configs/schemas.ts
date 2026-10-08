@@ -80,6 +80,15 @@ export const AIProviderUseSchema = z.discriminatedUnion("type", [
 
 export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
 
+// A recipe is check-in-able, so its inline provider never holds a key —
+// only apiKeyEnv, a reference to one.
+const RecipeProviderSchema = z.discriminatedUnion("type", [
+  ChatCompletionsProviderUseSchema.omit({ apiKey: true }),
+  AnthropicProviderUseSchema.omit({ apiKey: true }),
+  OpenAIProviderUseSchema.omit({ apiKey: true }),
+  GeminiProviderUseSchema.omit({ apiKey: true }),
+]);
+
 // A string names a provider: a cli.yaml profile or a built-in type (one
 // namespace; validated at resolution, not here). An object is inline
 // endpoint configuration.
@@ -91,7 +100,7 @@ export const ProviderUseSchema = z.union([
       "A cli.yaml provider profile or a built-in type: anthropic, openai, gemini, chatcompletions.",
     )
     .transform((name) => ({ name })),
-  AIProviderUseSchema,
+  RecipeProviderSchema,
 ]);
 
 export type ProviderUse = z.infer<typeof ProviderUseSchema>;

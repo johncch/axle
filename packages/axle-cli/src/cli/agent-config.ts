@@ -7,6 +7,7 @@ import type {
   Span,
 } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
+import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { availableTools, createTools, defaultToolNames } from "./tools.js";
@@ -111,10 +112,7 @@ function resolveCliProvider(
 
   switch (type) {
     case "openai": {
-      const apiKey = resolveApiKey(config);
-      if (!apiKey) {
-        throw new Error("The provider openai is not configured. Please check your configuration.");
-      }
+      const apiKey = requireApiKey(type, config);
       return {
         provider: openai(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -122,12 +120,7 @@ function resolveCliProvider(
     }
 
     case "anthropic": {
-      const apiKey = resolveApiKey(config);
-      if (!apiKey) {
-        throw new Error(
-          "The provider anthropic is not configured. Please check your configuration.",
-        );
-      }
+      const apiKey = requireApiKey(type, config);
       return {
         provider: anthropic(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -135,10 +128,7 @@ function resolveCliProvider(
     }
 
     case "gemini": {
-      const apiKey = resolveApiKey(config);
-      if (!apiKey) {
-        throw new Error("The provider gemini is not configured. Please check your configuration.");
-      }
+      const apiKey = requireApiKey(type, config);
       return {
         provider: gemini(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -149,7 +139,7 @@ function resolveCliProvider(
       const baseUrl = config.baseUrl;
       if (!baseUrl) {
         throw new Error(
-          "The provider chatcompletions is not configured. Please check your configuration.",
+          "No base URL for chatcompletions. Set baseUrl on the provider, or CHATCOMPLETIONS_BASE_URL in the environment or ~/.axle/credentials.",
         );
       }
       return {
@@ -175,6 +165,18 @@ function resolveApiKey(config: Record<string, any>): string | undefined {
   }
 
   return config.apiKey;
+}
+
+function requireApiKey(type: keyof typeof API_KEY_VARIABLES, config: Record<string, any>): string {
+  const apiKey = resolveApiKey(config);
+  if (apiKey) return apiKey;
+  const envName = config.apiKeyEnv;
+  if (typeof envName === "string" && envName.length > 0) {
+    throw new Error(`No API key for ${type}: apiKeyEnv names ${envName}, which is not set.`);
+  }
+  throw new Error(
+    `No API key for ${type}. Set ${API_KEY_VARIABLES[type]} in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.`,
+  );
 }
 
 /**
