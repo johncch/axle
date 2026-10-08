@@ -186,6 +186,7 @@ export class ModelCatalog {
       wantHosts ? this.fetchLayer("/api.json", this.cache?.etags.api) : Promise.resolve(undefined),
     ]);
     if (modelsResult === undefined && apiResult === undefined) return;
+    const complete = modelsResult !== undefined && (!wantHosts || apiResult !== undefined);
 
     let models = this.cache?.models ?? {};
     let etagModels = this.cache?.etags.models;
@@ -222,7 +223,9 @@ export class ModelCatalog {
     try {
       await this.writeCache({
         version: 2,
-        fetchedAt: new Date().toISOString(),
+        fetchedAt: complete
+          ? new Date().toISOString()
+          : (this.cache?.fetchedAt ?? new Date(0).toISOString()),
         etags: { models: etagModels, api: etagApi },
         models,
         hosts,

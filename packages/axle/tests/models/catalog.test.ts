@@ -283,6 +283,28 @@ describe("ModelCatalog cache", () => {
     });
   });
 
+  it("stays stale after a partial refresh so the failed layer is retried", async () => {
+    await writeCache(2 * DAY, { "acme/old": acmeModel }, { models: '"m0"' });
+    stubFetch({
+      models: () => new Response(null, { status: 304 }),
+      api: () => new Error("offline"),
+    });
+    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const before = catalog.fetchedAt!;
+
+    await catalog.refresh();
+
+    expect(catalog.stale).toBe(true);
+    expect(catalog.fetchedAt).toEqual(before);
+    expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
+
+    const fresh = await ModelCatalog.open();
+    stubFetch({ models: await fixture("models-dev.json"), api: () => new Error("offline") });
+    await fresh.refresh();
+    expect(fresh.size).toBe(14);
+    expect(fresh.stale).toBe(true);
+  });
+
   it("keeps the cache when the network fails or the server errors", async () => {
     await writeCache(2 * DAY, { "acme/old": acmeModel });
     for (const outcome of [

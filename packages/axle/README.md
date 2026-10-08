@@ -1178,8 +1178,12 @@ a slimmed copy at a path you choose, or in memory:
 
 ```ts
 import { ModelCatalog } from "@fifthrevision/axle";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
-const catalog = await ModelCatalog.open({ cachePath: "~/.myapp/models.json" });
+const catalog = await ModelCatalog.open({
+  cachePath: join(homedir(), ".myapp", "models.json"),
+});
 if (catalog.stale) void catalog.refresh(); // or await it — never throws
 
 catalog.lookup("z-ai/glm-5.3-flash", { host: "openrouter" });
@@ -1219,7 +1223,8 @@ no cache or it is older than `maxAge` (default one day); when to act on that
 is yours. `refresh()` always fetches both layers (about 0.4 MB and 0.5 MB
 compressed), sends each layer's ETag so an unchanged file downloads
 nothing, and keeps the cached copy on any failure, so an offline run is
-never blocked. `hosts: ["anthropic", "openrouter"]` keeps only those hosts
+never blocked; if only one layer fetched, the catalog stays `stale` so the
+other is retried next time. `hosts: ["anthropic", "openrouter"]` keeps only those hosts
 (the full host layer is about 1.9 MB on disk); `hosts: []` skips it.
 
 ### Hosting / Sessions
