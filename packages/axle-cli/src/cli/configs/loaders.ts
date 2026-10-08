@@ -1,5 +1,5 @@
 import type { Span } from "@fifthrevision/axle";
-import { config as loadDotenv, parse as parseDotenv } from "dotenv";
+import { parse as parseDotenv } from "dotenv";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import YAML from "yaml";
@@ -43,11 +43,19 @@ export async function getJobConfig(
   return parsed.data;
 }
 
-export async function getServiceConfig(context: {
-  span?: Span;
+/**
+ * Where a loader looks. `trusted: false` confines it to the user home; the
+ * project's `.axle/` is never read (see cli.md, folder trust).
+ */
+export interface ConfigContext {
+  trusted: boolean;
   cwd?: string;
   home?: string;
-}): Promise<ServiceConfig> {
+}
+
+export async function getServiceConfig(
+  context: ConfigContext & { span?: Span },
+): Promise<ServiceConfig> {
   const { span } = context;
   const layers = await loadCredentialLayers(context);
 
@@ -74,12 +82,11 @@ export const API_KEY_VARIABLES = {
 
 /**
  * Maps each credential variable to where its effective value comes from:
- * "environment", the `.env` file path, or a `credentials` file path.
+ * "environment" or a `credentials` file path.
  */
-export async function getCredentialSources(context: {
-  cwd?: string;
-  home?: string;
-}): Promise<Record<string, string>> {
+export async function getCredentialSources(
+  context: ConfigContext,
+): Promise<Record<string, string>> {
   const layers = await loadCredentialLayers(context);
   const sources: Record<string, string> = {};
   for (const layer of layers.toReversed()) {
@@ -95,26 +102,11 @@ interface CredentialLayer {
   values: Record<string, string | undefined>;
 }
 
-async function loadCredentialLayers(context: {
-  cwd?: string;
-  home?: string;
-}): Promise<CredentialLayer[]> {
-  const dotenvPath = join(process.cwd(), ".env");
-  const dotenvFile = loadDotenv({ quiet: true, path: dotenvPath }).parsed ?? {};
-  const fromDotenv = Object.fromEntries(
-    Object.entries(dotenvFile).filter(([key, value]) => process.env[key] === value),
-  );
-  const fromShell = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !(key in fromDotenv)),
-  );
-
-  const layers: CredentialLayer[] = [
-    { source: ENVIRONMENT_SOURCE, values: fromShell },
-    { source: dotenvPath, values: fromDotenv },
-  ];
+async function loadCredentialLayers(context: ConfigContext): Promise<CredentialLayer[]> {
+  const layers: CredentialLayer[] = [{ source: ENVIRONMENT_SOURCE, values: process.env }];
 
   const dirs = resolveConfigDirs(context);
-  for (const dir of [dirs.project, dirs.user]) {
+  for (const dir of context.trusted ? [dirs.project, dirs.user] : [dirs.user]) {
     const path = join(dir, CREDENTIALS_FILE);
     const parsed = await readCredentialsFile(path);
     if (parsed) layers.push({ source: path, values: parsed });
@@ -122,11 +114,7 @@ async function loadCredentialLayers(context: {
   return layers;
 }
 
-export async function getCliConfig(context: {
-  span?: Span;
-  cwd?: string;
-  home?: string;
-}): Promise<CliConfig> {
+export async function getCliConfig(context: ConfigContext & { span?: Span }): Promise<CliConfig> {
   const { span } = context;
 
   let merged: CliConfig = {};
@@ -149,10 +137,7 @@ export interface CliConfigSources {
  * Names the `cli.yaml` path that supplies each merged value, following the
  * same precedence as `getCliConfig`.
  */
-export async function getCliConfigSources(context: {
-  cwd?: string;
-  home?: string;
-}): Promise<CliConfigSources> {
+export async function getCliConfigSources(context: ConfigContext): Promise<CliConfigSources> {
   const sources: CliConfigSources = { providers: {}, defaultModels: {} };
   for (const { path, config } of await loadCliConfigLayers(context)) {
     for (const name of Object.keys(config.providers ?? {})) sources.providers[name] = path;
@@ -170,14 +155,11 @@ interface CliConfigLayer {
   config: CliConfig;
 }
 
-async function loadCliConfigLayers(context: {
-  cwd?: string;
-  home?: string;
-}): Promise<CliConfigLayer[]> {
+async function loadCliConfigLayers(context: ConfigContext): Promise<CliConfigLayer[]> {
   const dirs = resolveConfigDirs(context);
 
   const layers: CliConfigLayer[] = [];
-  for (const dir of [dirs.user, dirs.project]) {
+  for (const dir of context.trusted ? [dirs.user, dirs.project] : [dirs.user]) {
     const path = join(dir, CONFIG_FILE);
     const content = await readOptionalFile(path);
     if (content === null) continue;

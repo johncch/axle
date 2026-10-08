@@ -8,7 +8,8 @@ import {
 } from "./agent-config.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import type { AgentSessionSpec, BatchRunSpec } from "./runners.js";
-import { loadSession, SessionStore } from "./sessions.js";
+import type { CliSessionFile } from "./sessions.js";
+import { SessionStore } from "./sessions.js";
 import { promptForInputs, promptForMissingModel } from "./setup.js";
 
 export interface CommonOpts {
@@ -74,6 +75,8 @@ export async function buildPendingPlan(options: {
   jobScope: string;
   variables: Record<string, string>;
   interactiveTerminal: boolean;
+  /** The session file a resume re-enters; loaded by the caller. */
+  saved?: CliSessionFile;
 }): Promise<PendingPlan> {
   const {
     invocation: inv,
@@ -83,11 +86,12 @@ export async function buildPendingPlan(options: {
     jobScope,
     variables,
     interactiveTerminal,
+    saved,
   } = options;
 
   let pending: PendingPlan;
   if (inv.kind === "resume") {
-    const saved = await loadSession(inv.id);
+    if (!saved) throw new Error(`Session ${inv.id} was not loaded.`);
     pending = {
       kind: "session",
       definition: saved.definition,

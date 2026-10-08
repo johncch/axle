@@ -49,6 +49,7 @@ axle schedule remove -j recipe.yaml     # unregister; recipe, sessions, and logs
 axle setup                           # (re)configure providers and defaults
 axle info                            # print version, config files, and resolved config
 axle explain recipe.batch            # describe the keys a recipe or cli.yaml accepts
+axle trust                           # trust the current folder's .axle/ and tools that act; --revoke undoes it
 axle cleanup                         # delete old sessions by age window
 ```
 
@@ -203,7 +204,9 @@ Chat and job files get these local tools by default:
 - `write-file`
 
 They run without asking for approval — including `exec` and `write-file`,
-and including in scheduled and batch runs. A job's `tools:` list replaces
+and including in scheduled and batch runs — once the folder is trusted
+(see [Folder trust](#folder-trust)); in an untrusted folder `exec`,
+`patch-file`, and `write-file` are dropped. A job's `tools:` list replaces
 the defaults; `tools: []` runs with no local tools. `defaults.tools` in
 `cli.yaml` replaces the built-in default set for both chat and jobs.
 
@@ -317,8 +320,9 @@ the recipe and the registration have drifted apart (the interval changed,
 or the block was deleted while the schedule is still registered).
 
 Each firing runs with the working directory the recipe was applied from,
-resolves credentials and config exactly like a foreground run (project and
-user `.axle/`, the directory's `.env`), and saves a fresh resumable session
+resolves credentials and config exactly like a foreground run (user
+`.axle/`, plus the project's when the folder is trusted), and saves a
+fresh resumable session
 — one per input for a batch recipe. `axle schedule sessions -j` lists
 those runs newest first with their `axle resume` command; stdout and
 stderr also land in `~/.axle/logs/schedules/<id>.out.log` and `.err.log`.
@@ -367,6 +371,46 @@ Each entry supports:
 
 `axle explain recipe.mcps` prints the same keys with their types.
 
+## Folder trust
+
+A folder can make the CLI do two things on its behalf: its `.axle/` can
+reconfigure a run (point a profile at another host, change the default
+tools), and content the model reads there can steer a model that has
+shell and file access. Both are gated by one per-folder switch. Every
+folder starts untrusted; `axle trust` flips it:
+
+```bash
+axle trust            # trust the current folder
+axle trust --revoke   # stop trusting it
+```
+
+In an untrusted folder:
+
+- `exec`, `patch-file`, and `write-file` are dropped from the tool set,
+  whether the built-in default, `defaults.tools`, or the recipe's `tools:`
+  named them. `read-file` and `axle-help` stay.
+- `.axle/cli.yaml` and `.axle/credentials` in the folder are not read.
+  `~/.axle/` is never gated.
+- Each consequence prints one warning and the run continues:
+  `Dropped exec: this folder is not trusted (run axle trust)`.
+
+On a terminal the CLI asks once, `It looks like this folder is untrusted,
+trust it? (y/N)`, but only when the answer would change the run: the
+folder has a `.axle/cli.yaml` or `.axle/credentials`, or the run's tool
+set includes a trust-needing tool. A read-only recipe in a bare folder
+never asks. Answering `y` records the folder and the run proceeds with the
+project layer and the full tool set; `N` is not remembered, so the
+question returns next time. A headless run (a pipe, cron, a scheduled
+firing) never asks and takes the untrusted path. The question comes before
+`axle schedule` registers anything.
+
+The record is `~/.axle/trust.json`, keyed by the folder's real path. Trust
+is exact: trusting a folder does not trust the folders under it, and a
+symlink to a trusted folder counts as trusted. MCP servers are outside
+folder trust; their tools act on services, not the folder. `axle info`
+shows the folder's trust state and marks project files that were found
+but ignored.
+
 ## Configuration
 
 `axle explain` prints every key a recipe and `cli.yaml` accept, and
@@ -386,11 +430,12 @@ server, put the matching line at the top of the file:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/johncch/axle/main/schemas/v3/config.yaml
 ```
 
-For CLI use, put provider secrets in your environment, a local `.env` file, or
-a credentials file. Credentials files use the same key names as the
-environment variables, one `KEY=value` per line, and are read in order —
-environment first, then the project's `.axle/credentials`, then the
-user-level `~/.axle/credentials`:
+For CLI use, put provider secrets in your environment or a credentials
+file. Credentials files use the same key names as the environment
+variables, one `KEY=value` per line, and are read in order — environment
+first, then the project's `.axle/credentials`, then the user-level
+`~/.axle/credentials`. A `.env` in the working directory is not read, so a
+host project's own `.env` never leaks into the CLI:
 
 ```bash
 OPENAI_API_KEY=...
@@ -428,7 +473,8 @@ A run with no key for its provider stops with the variable to set, e.g.
 `ANTHROPIC_API_KEY=... axle -j job.yml`.
 
 `cli.yaml` (user-level `~/.axle/cli.yaml`, overridden per-project by
-`.axle/cli.yaml`) holds named provider profiles and defaults:
+`.axle/cli.yaml` once the folder is trusted) holds named provider profiles
+and defaults:
 
 ```yaml
 providers:

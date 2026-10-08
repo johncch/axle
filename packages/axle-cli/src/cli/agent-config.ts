@@ -10,12 +10,18 @@ import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
-import { availableTools, createTools, defaultToolNames } from "./tools.js";
+import { availableTools, createTools, defaultToolNames, partitionByTrust } from "./tools.js";
 
 export interface CliAgentConfig {
   agentConfig: AgentConfig;
   definition: AgentDefinition;
   mcps: MCP[];
+  /** Tools withheld because the folder is not trusted. */
+  droppedTools: string[];
+}
+
+export interface FolderTrust {
+  trusted: boolean;
 }
 
 const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"];
@@ -195,6 +201,14 @@ export function createDefaultAgentDefinition(
   };
 }
 
+/**
+ * The tool names a run asks for before trust is applied: the definition's
+ * own list, else `defaults.tools`, else the built-in set.
+ */
+export function requestedToolNames(tools: string[] | undefined, cliConfig: CliConfig): string[] {
+  return tools ?? validateToolNames(cliConfig.defaults?.tools ?? [...defaultToolNames]);
+}
+
 function validateToolNames(names: string[]): string[] {
   const unknown = names.filter((name) => !(availableTools as readonly string[]).includes(name));
   if (unknown.length > 0) {
@@ -230,23 +244,28 @@ export async function createCliAgentConfig(
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
   span: Span,
+  trust: FolderTrust,
 ): Promise<CliAgentConfig> {
   const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-  return resolveAgentDefinition(definition, cliConfig, serviceConfig, span);
+  return resolveAgentDefinition(definition, cliConfig, serviceConfig, span, trust);
 }
 
 /**
  * Turns a definition into runtime objects against the current configuration.
  * A definition names what its recipe said; a named provider and an absent
  * tools list are filled from cli.yaml here, on every run including resume.
+ * Tools that act on the folder are withheld unless the folder is trusted,
+ * whichever layer named them.
  */
 export async function resolveAgentDefinition(
   definition: AgentDefinition,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
   span: Span,
+  trust: FolderTrust,
 ): Promise<CliAgentConfig> {
   const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
+  let droppedTools: string[] = [];
 
   const baseConfig = await createAgentConfig(definition, (definition) => {
     const resolvedProvider = resolveCliProvider(
@@ -255,16 +274,21 @@ export async function resolveAgentDefinition(
       serviceConfig,
       definition.model,
     );
-    const toolNames =
-      definition.tools?.map((ref) => ref.name) ??
-      validateToolNames(cliConfig.defaults?.tools ?? [...defaultToolNames]);
+    const requested = requestedToolNames(
+      definition.tools?.map((ref) => ref.name),
+      cliConfig,
+    );
+    const { kept, dropped } = trust.trusted
+      ? { kept: requested, dropped: [] }
+      : partitionByTrust(requested);
+    droppedTools = dropped;
 
     return {
       provider: resolvedProvider.provider,
       model: resolvedProvider.model,
-      tools: toolNames.length > 0 ? createTools(toolNames) : undefined,
+      tools: kept.length > 0 ? createTools(kept) : undefined,
       mcps: mcps.length > 0 ? mcps : undefined,
     };
   });
-  return { agentConfig: baseConfig, definition, mcps };
+  return { agentConfig: baseConfig, definition, mcps, droppedTools };
 }

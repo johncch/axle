@@ -8,6 +8,7 @@ import {
   getJobConfig,
   getServiceConfig,
 } from "../../src/cli/configs/loaders.js";
+import { listProjectInputs } from "../../src/cli/configs/paths.js";
 
 const TEST_DIR = join(import.meta.dirname, "__config_loader_tmp__");
 const ORIGINAL_CWD = process.cwd();
@@ -142,7 +143,7 @@ describe("config loaders", () => {
     vi.stubEnv("OPENAI_API_KEY", "openai-key");
     vi.stubEnv("OPENAI_MODEL", "gpt-test");
 
-    const config = await getServiceConfig({});
+    const config = await getServiceConfig({ trusted: true });
 
     expect(config.openai).toEqual({ apiKey: "openai-key", model: "gpt-test" });
   });
@@ -160,7 +161,7 @@ describe("config loaders", () => {
       "ANTHROPIC_API_KEY=user-key\nANTHROPIC_MODEL=user-model\n",
     );
 
-    const config = await getServiceConfig({ cwd, home });
+    const config = await getServiceConfig({ trusted: true, cwd, home });
 
     expect(config.anthropic).toEqual({ apiKey: "user-key", model: "user-model" });
   });
@@ -186,7 +187,7 @@ describe("config loaders", () => {
       "ANTHROPIC_API_KEY=project-key\nOPENAI_API_KEY=project-openai\n",
     );
 
-    const config = await getServiceConfig({ cwd, home });
+    const config = await getServiceConfig({ trusted: true, cwd, home });
 
     expect(config.anthropic).toEqual({ apiKey: "project-key", model: "user-model" });
     expect(config.openai).toEqual({ apiKey: "env-openai", model: undefined });
@@ -194,11 +195,9 @@ describe("config loaders", () => {
   });
 
   it("names the layer each credential comes from", async () => {
-    process.chdir(TEST_DIR);
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("GEMINI_API_KEY", "");
     vi.stubEnv("OPENAI_API_KEY", "shell-openai");
-    vi.stubEnv("CHATCOMPLETIONS_API_KEY", undefined);
     const home = join(TEST_DIR, "home");
     const cwd = join(TEST_DIR, "proj");
     await mkdir(join(home, ".axle"), { recursive: true });
@@ -211,12 +210,10 @@ describe("config loaders", () => {
       join(cwd, ".axle", "credentials"),
       "ANTHROPIC_API_KEY=project-key\nOPENAI_API_KEY=project-openai\n",
     );
-    await writeFile(join(TEST_DIR, ".env"), "CHATCOMPLETIONS_API_KEY=dotenv-key\n");
 
-    const sources = await getCredentialSources({ cwd, home });
+    const sources = await getCredentialSources({ trusted: true, cwd, home });
 
     expect(sources.OPENAI_API_KEY).toBe("environment");
-    expect(sources.CHATCOMPLETIONS_API_KEY).toBe(join(process.cwd(), ".env"));
     expect(sources.ANTHROPIC_API_KEY).toBe(join(cwd, ".axle", "credentials"));
     expect(sources.GEMINI_API_KEY).toBe(join(home, ".axle", "credentials"));
   });
@@ -257,7 +254,7 @@ describe("config loaders", () => {
       ].join("\n"),
     );
 
-    expect(await getCliConfigSources({ cwd, home })).toEqual({
+    expect(await getCliConfigSources({ trusted: true, cwd, home })).toEqual({
       providers: { work: projectFile, local: userFile },
       defaultProvider: projectFile,
       defaultTools: userFile,
@@ -291,7 +288,7 @@ describe("config loaders", () => {
       ),
     );
 
-    const config = await getCliConfig({ cwd, home });
+    const config = await getCliConfig({ trusted: true, cwd, home });
 
     expect(config.providers).toEqual({
       openrouter: {
@@ -311,7 +308,7 @@ describe("config loaders", () => {
     await mkdir(join(home, ".axle"), { recursive: true });
     await writeFile(join(home, ".axle", "cli.yaml"), "# just a comment\n");
 
-    const config = await getCliConfig({ cwd: join(TEST_DIR, "proj"), home });
+    const config = await getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home });
 
     expect(config).toEqual({});
   });
@@ -336,7 +333,7 @@ describe("config loaders", () => {
       ["providers:", "  gw:", "    type: anthropic"].join("\n"),
     );
 
-    const config = await getCliConfig({ cwd, home });
+    const config = await getCliConfig({ trusted: true, cwd, home });
 
     expect(config.providers?.gw).toEqual({ type: "anthropic" });
   });
@@ -348,6 +345,7 @@ describe("config loaders", () => {
     vi.stubEnv("CHATCOMPLETIONS_API_KEY", "");
 
     const config = await getServiceConfig({
+      trusted: true,
       cwd: join(TEST_DIR, "proj"),
       home: join(TEST_DIR, "home"),
     });
@@ -376,13 +374,14 @@ describe("config loaders", () => {
       ),
     );
 
-    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(
-      /providers\.mine/,
-    );
+    await expect(
+      getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home }),
+    ).rejects.toThrow(/providers\.mine/);
   });
 
   it("returns an empty config when no cli.yaml exists", async () => {
     const config = await getCliConfig({
+      trusted: true,
       cwd: join(TEST_DIR, "nowhere"),
       home: join(TEST_DIR, "nowhere-else"),
     });
@@ -395,9 +394,9 @@ describe("config loaders", () => {
     await mkdir(join(home, ".axle"), { recursive: true });
     await writeFile(join(home, ".axle", "cli.yaml"), "defaults:\n  provider: [not, a, string]\n");
 
-    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(
-      /Invalid config file at .*\/cli\.yaml/,
-    );
+    await expect(
+      getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home }),
+    ).rejects.toThrow(/Invalid config file at .*\/cli\.yaml/);
   });
 
   it("rejects a misspelled key in an mcps entry instead of dropping it", async () => {
@@ -420,10 +419,14 @@ describe("config loaders", () => {
     await mkdir(join(home, ".axle"), { recursive: true });
 
     await writeFile(join(home, ".axle", "cli.yaml"), "default:\n  provider: anthropic\n");
-    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(/default/);
+    await expect(
+      getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home }),
+    ).rejects.toThrow(/default/);
 
     await writeFile(join(home, ".axle", "cli.yaml"), "defaults:\n  model: anthropic/x\n");
-    await expect(getCliConfig({ cwd: join(TEST_DIR, "proj"), home })).rejects.toThrow(/model/);
+    await expect(
+      getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home }),
+    ).rejects.toThrow(/model/);
   });
 
   it("reports validation errors with paths", async () => {
@@ -476,5 +479,55 @@ describe("schedule block", () => {
     ["schedule: hourly"],
   ])("rejects malformed block %j", async (...block) => {
     await expect(loadWith(block)).rejects.toThrow(/The job file is not valid/);
+  });
+});
+
+describe("folder trust", () => {
+  const home = join(TEST_DIR, "home");
+  const cwd = join(TEST_DIR, "proj");
+
+  beforeEach(async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(join(home, ".axle", "cli.yaml"), "defaults:\n  provider: anthropic\n");
+    await writeFile(
+      join(cwd, ".axle", "cli.yaml"),
+      "defaults:\n  provider: openai\n  tools: [exec]\n",
+    );
+    await writeFile(join(home, ".axle", "credentials"), "ANTHROPIC_API_KEY=user-key\n");
+    await writeFile(join(cwd, ".axle", "credentials"), "ANTHROPIC_API_KEY=project-key\n");
+  });
+
+  it("an untrusted folder's cli.yaml is never read", async () => {
+    expect(await getCliConfig({ trusted: false, cwd, home })).toEqual({
+      defaults: { provider: "anthropic" },
+    });
+    expect((await getCliConfigSources({ trusted: false, cwd, home })).defaultProvider).toBe(
+      join(home, ".axle", "cli.yaml"),
+    );
+  });
+
+  it("an untrusted folder's credentials are never read", async () => {
+    const config = await getServiceConfig({ trusted: false, cwd, home });
+
+    expect(config.anthropic?.apiKey).toBe("user-key");
+    expect((await getCredentialSources({ trusted: false, cwd, home })).ANTHROPIC_API_KEY).toBe(
+      join(home, ".axle", "credentials"),
+    );
+  });
+
+  it("a trusted folder's layer wins as before", async () => {
+    const config = await getCliConfig({ trusted: true, cwd, home });
+
+    expect(config.defaults).toEqual({ provider: "openai", tools: ["exec"] });
+    expect((await getServiceConfig({ trusted: true, cwd, home })).anthropic?.apiKey).toBe(
+      "project-key",
+    );
+  });
+
+  it("lists the project inputs a run would read", async () => {
+    expect(await listProjectInputs(cwd)).toEqual([".axle/cli.yaml", ".axle/credentials"]);
+    expect(await listProjectInputs(join(TEST_DIR, "empty"))).toEqual([]);
   });
 });

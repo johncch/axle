@@ -39,6 +39,7 @@ against it; divergence is a defect. State ownership is defined in
    | `axle setup`    | ()                                                                                   |
    | `axle info`     | ()                                                                                   |
    | `axle explain`  | (key path?)                                                                          |
+   | `axle trust`    | (`--revoke`?)                                                                        |
    | `axle cleanup`  | ()                                                                                   |
    | `axle schedule` | (recipe) · `register` (recipe) · `remove` (recipe) · `sessions` (recipe) · `list` () |
 
@@ -158,13 +159,16 @@ against it; divergence is a defect. State ownership is defined in
 8. **Configuration layers by home; credentials are shared property.** Two
    homes — project `.axle/` and user `~/.axle/` — each may hold
    `credentials` (dotenv format) and `cli.yaml`. Credentials resolve per
-   key: process env (including `.env`) → project → user; an empty string
-   counts as unset and falls through. The credentials files are shared
-   with sibling tools (axle-code): writers upsert individual keys and
-   preserve foreign lines verbatim — never rewrite the file. `cli.yaml`
-   merges user-then-project with project winning; `defaults` merge per
-   key, provider profiles replace wholesale. On top of the layered
-   sources, one uniform chain resolves the seat: provider name := recipe →
+   key: process env → project → user; an empty string counts as unset and
+   falls through. The working directory's `.env` is not read (dropped
+   2026-10-08): it was the one project input outside `.axle/`, and a host
+   project's own `.env` silently overrode the user's credentials. The
+   credentials files are shared with sibling tools (axle-code): writers
+   upsert individual keys and preserve foreign lines verbatim — never
+   rewrite the file. `cli.yaml` merges user-then-project with project
+   winning; `defaults` merge per key, provider profiles replace wholesale.
+   On top of the layered sources, one uniform chain resolves the seat:
+   provider name := recipe →
    `defaults.provider` → error; endpoint := `providers[name]` profile →
    built-in type → error; model := recipe → `defaults.models[name]` →
    `*_MODEL` credential → interactive prompt (TTY) or error. The provider
@@ -261,11 +265,40 @@ against it; divergence is a defect. State ownership is defined in
     recipe without a `tools:` key get the default set — `exec`,
     `patch-file`, `read-file`, `write-file`, `axle-help` — or `defaults.tools` from
     `cli.yaml` when set. A recipe's `tools:` replaces the set wholesale;
-    `tools: []` is the opt-out. Nothing gates a tool call: shell and writes
-    execute as soon as the model asks, in chat, `-j`, batch, and scheduled
-    occurrences alike, so content the model reads (attached files, MCP
-    results, web search) can drive them. Resume replays the tools stored
-    in the session's definition, not the current defaults.
+    `tools: []` is the opt-out. Nothing gates a tool call once the folder
+    is trusted (invariant 12): shell and writes execute as soon as the
+    model asks, in chat, `-j`, batch, and scheduled occurrences alike, so
+    content the model reads (attached files, MCP results, web search) can
+    drive them. Resume replays the tools stored in the session's
+    definition, not the current defaults.
+
+12. **Folder trust gates what the working directory can make the CLI do.**
+    Two threats come from cwd: config injection (a repo's `.axle/` points
+    a profile at a foreign `baseUrl` or turns tools on) and prompt
+    injection (content the model reads steers a model that can act). One
+    trust bit, recorded per canonical folder path in `~/.axle/trust.json`
+    by `axle trust` (`--revoke` removes it; exact match, no inheritance),
+    closes both. Trust is a property of the folder; needing trust is a
+    property of the tool: `exec`, `patch-file`, and `write-file` need it,
+    `read-file` and `axle-help` do not. In an untrusted folder the
+    project `.axle/` layer (`cli.yaml`, `credentials`) is not read, and
+    trust-needing tools are dropped from the resolved set whichever layer
+    named them — built-in default, `defaults.tools`, or the recipe. Each
+    consequence prints one notice naming what was skipped and the verb to
+    run. On a TTY the CLI asks once, "It looks like this folder is
+    untrusted, trust it? (y/N)", but only when the answer would change the
+    run — an input file exists in `.axle/`, or the requested tool set has
+    a trust-needing tool — so a read-only recipe in a bare folder never
+    asks; y records the folder and reloads the configuration, N is not
+    recorded, and headless runs take the N path silently. The question
+    comes before any schedule is registered on the folder's behalf. User
+    scope is trusted by definition: nothing under `~/.axle/` is gated, and
+    a `-j` recipe stays trusted on invocation because naming a file is
+    running a script. MCP servers are outside folder trust;
+    their tools act on services, not the folder. The entrypoint looks the
+    folder up once and threads the boolean; every input sourced from cwd
+    consults it before use (today: the two config loaders and the tool
+    resolver; skills will join), and an input that does not is a defect.
 
 ## Decisions
 

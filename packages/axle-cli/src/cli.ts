@@ -6,7 +6,7 @@ import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import pkg from "../package.json";
-import { resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
+import { requestedToolNames, resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
   getCliConfig,
@@ -15,7 +15,7 @@ import {
   getJobConfig,
   getServiceConfig,
 } from "./cli/configs/loaders.js";
-import { resolveConfigDirs } from "./cli/configs/paths.js";
+import { listProjectInputs, resolveConfigDirs } from "./cli/configs/paths.js";
 import {
   describeContextWindowSource,
   formatTokens,
@@ -40,7 +40,10 @@ import {
 } from "./cli/schedule/commands.js";
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
+import { loadSession } from "./cli/sessions.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
+import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
+import * as ask from "./ui/ask.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
@@ -267,7 +270,7 @@ program
   .command("setup")
   .description("Configure providers, credentials, and defaults")
   .action(async () => {
-    const serviceConfig = await getServiceConfig({});
+    const serviceConfig = await getServiceConfig({ trusted: await isFolderTrusted(process.cwd()) });
     await runSetupWizard(serviceConfig);
     process.exit(0);
   });
@@ -279,13 +282,15 @@ program
     await manage(async () => {
       const catalog = await openModelCatalog();
       if (catalog.stale) await catalog.refresh();
+      const trusted = await isFolderTrusted(process.cwd());
       const lines = formatInfo({
         version: pkg.version,
         dirs: resolveConfigDirs(),
-        cliConfig: await getCliConfig({}),
-        cliConfigSources: await getCliConfigSources({}),
-        serviceConfig: await getServiceConfig({}),
-        credentialSources: await getCredentialSources({}),
+        trusted,
+        cliConfig: await getCliConfig({ trusted }),
+        cliConfigSources: await getCliConfigSources({ trusted }),
+        serviceConfig: await getServiceConfig({ trusted }),
+        credentialSources: await getCredentialSources({ trusted }),
         env: process.env,
         catalog,
       });
@@ -301,6 +306,21 @@ program
     await manage(async () => {
       const width = Math.min(process.stdout.columns ?? EXPLAIN_DEFAULT_WIDTH, EXPLAIN_MAX_WIDTH);
       for (const line of formatExplain(path, width)) console.log(line);
+    });
+  });
+
+program
+  .command("trust")
+  .description("Trust the current folder: load its .axle/ and allow tools that act here")
+  .option("--revoke", "Stop trusting the current folder")
+  .action(async (opts: { revoke?: boolean }) => {
+    await manage(async () => {
+      const outcome = opts.revoke
+        ? await untrustFolder(process.cwd())
+        : await trustFolder(process.cwd());
+      const verb = opts.revoke ? "No longer trusted" : "Trusted";
+      const unchanged = opts.revoke ? "Was not trusted" : "Already trusted";
+      console.log(`✔ ${outcome.changed ? verb : unchanged}: ${outcome.path}`);
     });
   });
 
@@ -424,8 +444,10 @@ async function fail(e: unknown): Promise<never> {
 /**
  * Read and load config, job
  */
-let cliConfig = await getCliConfig({ span: rootSpan }).catch(fail);
-let serviceConfig = await getServiceConfig({ span: rootSpan }).catch(fail);
+let trusted = await isFolderTrusted(process.cwd()).catch(fail);
+let ignoredProjectInputs = trusted ? [] : await listProjectInputs();
+let cliConfig = await getCliConfig({ span: rootSpan, trusted }).catch(fail);
+let serviceConfig = await getServiceConfig({ span: rootSpan, trusted }).catch(fail);
 const jobConfig =
   inv.kind !== "resume" && inv.job
     ? await getJobConfig(inv.job, { span: rootSpan }).catch(fail)
@@ -434,8 +456,31 @@ const jobScope =
   inv.kind !== "resume" && inv.job && jobConfig
     ? (jobConfig.name ?? relative(process.cwd(), resolve(inv.job)))
     : "job";
+const savedSession = inv.kind === "resume" ? await loadSession(inv.id).catch(fail) : undefined;
 
 const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+// Asked only when the answer changes the run, and before anything reads
+// the project layer or registers a schedule on this folder's behalf.
+if (!trusted && interactiveTerminal) {
+  const requestedTools = requestedToolNames(
+    savedSession ? savedSession.definition.tools?.map((ref) => ref.name) : jobConfig?.tools,
+    cliConfig,
+  );
+  if (trustWouldChange(ignoredProjectInputs, requestedTools)) {
+    const answer = await ask.confirm({
+      message: "It looks like this folder is untrusted, trust it?",
+      initialValue: false,
+    });
+    if (answer === true) {
+      await trustFolder(process.cwd()).catch(fail);
+      trusted = true;
+      ignoredProjectInputs = [];
+      cliConfig = await getCliConfig({ span: rootSpan, trusted }).catch(fail);
+      serviceConfig = await getServiceConfig({ span: rootSpan, trusted }).catch(fail);
+    }
+  }
+}
 
 async function prepareSchedule(): Promise<string | undefined> {
   if (inv.kind !== "kernel") return undefined;
@@ -471,8 +516,8 @@ if (
   needsSetupWizard(serviceConfig, cliConfig, jobConfig)
 ) {
   await runSetupWizard(serviceConfig);
-  cliConfig = await getCliConfig({ span: rootSpan });
-  serviceConfig = await getServiceConfig({ span: rootSpan });
+  cliConfig = await getCliConfig({ span: rootSpan, trusted });
+  serviceConfig = await getServiceConfig({ span: rootSpan, trusted });
 }
 
 /**
@@ -488,6 +533,7 @@ const pending = await buildPendingPlan({
   jobScope,
   variables,
   interactiveTerminal,
+  saved: savedSession,
 }).catch(fail);
 
 /**
@@ -508,12 +554,21 @@ renderer.setInterruptHandler(exitOnInterrupt);
 if (pending.definition.mcps?.length) {
   renderer.info("Connecting MCP servers…");
 }
-const { mcps, agentConfig } = await resolveAgentDefinition(
+const { mcps, agentConfig, droppedTools } = await resolveAgentDefinition(
   pending.definition,
   cliConfig,
   serviceConfig,
   rootSpan,
+  { trusted },
 ).catch(fail);
+for (const notice of [
+  ...ignoredProjectInputs.map((file) => `Ignored ${file}`),
+  ...(droppedTools.length > 0 ? [`Dropped ${droppedTools.join(", ")}`] : []),
+]) {
+  const line = `${notice}: this folder is not trusted (run axle trust)`;
+  renderer.warn(line);
+  rootSpan.warn(line);
+}
 const catalog = await openModelCatalog();
 if (catalog.stale) void catalog.refresh();
 const contextWindow = resolveContextWindow(

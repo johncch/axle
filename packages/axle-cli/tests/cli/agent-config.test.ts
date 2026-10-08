@@ -43,6 +43,7 @@ describe("createCliAgentConfig", () => {
       {},
       serviceConfig,
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.provider.name).toBe("ChatCompletions");
@@ -67,6 +68,7 @@ describe("createCliAgentConfig", () => {
       {},
       {},
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.provider.name).toBe("OpenAI");
@@ -75,7 +77,9 @@ describe("createCliAgentConfig", () => {
 
   test("rejects jobs with no provider and no configured default", async () => {
     await expect(
-      createCliAgentConfig({ model: "anthropic/claude-sonnet-5", task: "Run" }, {}, {}, tracer),
+      createCliAgentConfig({ model: "anthropic/claude-sonnet-5", task: "Run" }, {}, {}, tracer, {
+        trusted: true,
+      }),
     ).rejects.toThrow(/No provider specified and no default provider configured/);
   });
 
@@ -85,6 +89,7 @@ describe("createCliAgentConfig", () => {
       { defaults: { provider: "anthropic" } },
       { anthropic: { apiKey: "key" } },
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.provider.name).toBe("anthropic");
@@ -108,6 +113,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.provider.name).toBe("ChatCompletions");
@@ -125,6 +131,7 @@ describe("createCliAgentConfig", () => {
       {},
       {},
       tracer,
+      { trusted: true },
     );
 
     expect(definition.provider).toEqual({
@@ -135,7 +142,9 @@ describe("createCliAgentConfig", () => {
 
   test("rejects a provider name that is neither profile nor built-in", async () => {
     await expect(
-      createCliAgentConfig({ provider: { name: "bedrock" }, task: "Run" }, {}, {}, tracer),
+      createCliAgentConfig({ provider: { name: "bedrock" }, task: "Run" }, {}, {}, tracer, {
+        trusted: true,
+      }),
     ).rejects.toThrow(/"bedrock" is not a provider profile/);
   });
 
@@ -150,6 +159,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.model).toBe("vendor/model-a");
@@ -161,6 +171,7 @@ describe("createCliAgentConfig", () => {
       { defaults: { models: { anthropic: "anthropic/from-defaults" } } },
       { anthropic: { apiKey: "key", model: "anthropic/from-env" } },
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.model).toBe("anthropic/from-defaults");
@@ -173,6 +184,7 @@ describe("createCliAgentConfig", () => {
         {},
         { anthropic: { apiKey: "key" } },
         tracer,
+        { trusted: true },
       ),
     ).rejects.toThrow(/No model resolved for provider anthropic/);
   });
@@ -184,6 +196,7 @@ describe("createCliAgentConfig", () => {
         {},
         {},
         tracer,
+        { trusted: true },
       ),
     ).rejects.toThrow(
       "No API key for anthropic. Set ANTHROPIC_API_KEY in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.",
@@ -201,6 +214,7 @@ describe("createCliAgentConfig", () => {
         {},
         {},
         tracer,
+        { trusted: true },
       ),
     ).rejects.toThrow(
       "No API key for openai: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
@@ -217,6 +231,7 @@ describe("createCliAgentConfig", () => {
       {},
       { anthropic: { apiKey: "key", model: "anthropic/claude-haiku-4-5" } },
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.model).toBe("anthropic/claude-sonnet-5");
@@ -238,6 +253,7 @@ describe("createCliAgentConfig", () => {
       {},
       { anthropic: { apiKey: "key" } },
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.system).toBe("You are terse.");
@@ -277,7 +293,13 @@ describe("default tools", () => {
   const definitionTools = (definition: { tools?: { name: string }[] }) =>
     definition.tools?.map((tool) => tool.name);
   const resolvedTools = async (definition: AgentDefinition, config = cliConfig) => {
-    const { agentConfig } = await resolveAgentDefinition(definition, config, serviceConfig, tracer);
+    const { agentConfig } = await resolveAgentDefinition(
+      definition,
+      config,
+      serviceConfig,
+      tracer,
+      { trusted: true },
+    );
     return agentConfig.tools?.map((tool) => tool.name);
   };
 
@@ -335,12 +357,14 @@ describe("resolveAgentDefinition", () => {
       { providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } } },
       {},
       tracer,
+      { trusted: true },
     );
     const asAnthropic = await resolveAgentDefinition(
       definition,
       { providers: { gw: { type: "anthropic", apiKey: "key" } } },
       {},
       tracer,
+      { trusted: true },
     );
 
     expect(asChatCompletions.agentConfig.provider.name).toBe("ChatCompletions");
@@ -348,9 +372,9 @@ describe("resolveAgentDefinition", () => {
   });
 
   test("a named provider whose profile is gone fails by name", async () => {
-    await expect(resolveAgentDefinition(definition, {}, {}, tracer)).rejects.toThrow(
-      /"gw" is not a provider profile/,
-    );
+    await expect(
+      resolveAgentDefinition(definition, {}, {}, tracer, { trusted: true }),
+    ).rejects.toThrow(/"gw" is not a provider profile/);
   });
 
   test("a definition carrying endpoint config resolves without cli.yaml", async () => {
@@ -363,6 +387,7 @@ describe("resolveAgentDefinition", () => {
       {},
       {},
       tracer,
+      { trusted: true },
     );
 
     expect(agentConfig.provider.name).toBe("ChatCompletions");
@@ -389,5 +414,61 @@ describe("resolveTarget provider name", () => {
     );
 
     expect(target.providerName).toBe("chatcompletions");
+  });
+});
+
+describe("folder trust", () => {
+  const cliConfig = { defaults: { provider: "anthropic" } };
+  const serviceConfig: ServiceConfig = { anthropic: { apiKey: "key", model: "anthropic/m" } };
+  const untrusted = (definition: AgentDefinition, config = cliConfig) =>
+    resolveAgentDefinition(definition, config, serviceConfig, tracer, { trusted: false });
+  const toolNames = (agentConfig: { tools?: { name: string }[] }) =>
+    agentConfig.tools?.map((tool) => tool.name);
+
+  test("an untrusted folder keeps only the tools that cannot act on it", async () => {
+    const { agentConfig, droppedTools } = await untrusted(
+      createDefaultAgentDefinition(cliConfig, serviceConfig),
+    );
+
+    expect(toolNames(agentConfig)).toEqual(["axle-help", "read-file"]);
+    expect(droppedTools).toEqual(["exec", "patch-file", "write-file"]);
+  });
+
+  test("a recipe's own tools are gated the same way", async () => {
+    const definition = createAgentDefinition(
+      { task: "t", tools: ["exec", "read-file"] },
+      cliConfig,
+      {},
+    );
+
+    const { agentConfig, droppedTools } = await untrusted(definition);
+
+    expect(toolNames(agentConfig)).toEqual(["read-file"]);
+    expect(droppedTools).toEqual(["exec"]);
+  });
+
+  test("defaults.tools from cli.yaml is gated the same way", async () => {
+    const configured = { defaults: { provider: "anthropic", tools: ["write-file"] } };
+
+    const { agentConfig, droppedTools } = await untrusted(
+      createAgentDefinition({ task: "t" }, cliConfig, serviceConfig),
+      configured,
+    );
+
+    expect(agentConfig.tools).toBeUndefined();
+    expect(droppedTools).toEqual(["write-file"]);
+  });
+
+  test("a trusted folder drops nothing", async () => {
+    const { agentConfig, droppedTools } = await resolveAgentDefinition(
+      createDefaultAgentDefinition(cliConfig, serviceConfig),
+      cliConfig,
+      serviceConfig,
+      tracer,
+      { trusted: true },
+    );
+
+    expect(toolNames(agentConfig)).toHaveLength(5);
+    expect(droppedTools).toEqual([]);
   });
 });

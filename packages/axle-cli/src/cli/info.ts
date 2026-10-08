@@ -19,6 +19,7 @@ const ALIGNED_VALUE_WIDTH = 32;
 export interface InfoInput {
   version: string;
   dirs: ConfigDirs;
+  trusted: boolean;
   cliConfig: CliConfig;
   cliConfigSources: CliConfigSources;
   serviceConfig: ServiceConfig;
@@ -39,7 +40,7 @@ interface Row {
  * supplied each value. API keys are reported as set or unset, never printed.
  */
 export function formatInfo(input: InfoInput): string[] {
-  const { version, dirs, cliConfig, cliConfigSources, serviceConfig, env } = input;
+  const { version, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, env } = input;
   const cwd = dirname(dirs.project);
   const home = dirname(dirs.user);
 
@@ -51,7 +52,10 @@ export function formatInfo(input: InfoInput): string[] {
   };
 
   const files = [dirs.user, dirs.project].flatMap((dir) =>
-    [CONFIG_FILE, CREDENTIALS_FILE].map((file) => join(dir, file)),
+    [CONFIG_FILE, CREDENTIALS_FILE].map((file) => ({
+      path: join(dir, file),
+      gated: dir === dirs.project && !trusted,
+    })),
   );
 
   const defaultProvider = cliConfig.defaults?.provider;
@@ -90,14 +94,14 @@ export function formatInfo(input: InfoInput): string[] {
 
   const lines = [
     `axle ${version} · ${describeRuntime()} · ${process.platform} ${process.arch}`,
-    `cwd ${cwd}`,
+    `cwd ${cwd} · ${trusted ? "trusted" : "not trusted (run axle trust)"}`,
     "",
     "Config files",
     ...formatRows(
       "  ",
-      files.map((path) => ({
+      files.map(({ path, gated }) => ({
         label: displayPath(path) ?? path,
-        value: existsSync(path) ? "found" : "missing",
+        value: !existsSync(path) ? "missing" : gated ? "found, ignored" : "found",
       })),
     ),
     "",
