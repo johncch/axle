@@ -1,5 +1,15 @@
 import { spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -92,6 +102,14 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
         etags: {},
         models: {},
         hosts: {},
+      }),
+    );
+    // Every test's cwd starts trusted; the trust test revokes it.
+    await writeFile(
+      join(HOME, ".axle", "trust.json"),
+      JSON.stringify({
+        version: 1,
+        folders: { [await realpath(CWD)]: { trustedAt: new Date().toISOString() } },
       }),
     );
 
@@ -487,6 +505,36 @@ describe.concurrent("cli.ts end-to-end", () => {
         "write-file",
       ]);
       expect(requests[1].tools?.map((tool) => tool.function.name)).toEqual(["read-file"]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "an untrusted folder drops the tools that act and ignores its .axle/ until axle trust",
+    async ({ cli }) => {
+      const { requests, runCli, CWD, writeRecipe } = cli;
+      await mkdir(join(CWD, ".axle"), { recursive: true });
+      await writeFile(join(CWD, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
+      const recipe = await writeRecipe("job.yml", "tools: [exec, read-file]");
+      await runCli(["trust", "--revoke"]);
+
+      const untrusted = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
+
+      expect(untrusted.code).toBe(0);
+      expect(untrusted.output).toContain(
+        "Ignored .axle/cli.yaml: this folder is not trusted (run axle trust)",
+      );
+      expect(untrusted.output).toContain(
+        "Dropped exec: this folder is not trusted (run axle trust)",
+      );
+      expect(requests[0].tools?.map((tool) => tool.function.name)).toEqual(["read-file"]);
+
+      await runCli(["trust"]);
+      const trusted = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
+
+      expect(trusted.code).toBe(0);
+      expect(trusted.output).not.toContain("not trusted");
+      expect(requests[1].tools?.map((tool) => tool.function.name)).toEqual(["exec", "read-file"]);
     },
     SPAWN_TIMEOUT,
   );

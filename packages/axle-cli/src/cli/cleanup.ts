@@ -1,5 +1,5 @@
-import * as ask from "../ui/ask.js";
 import { rm } from "node:fs/promises";
+import * as ask from "../ui/ask.js";
 import type { SessionSummary } from "./sessions.js";
 import { listSessionSummaries } from "./sessions.js";
 

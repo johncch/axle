@@ -15,7 +15,7 @@ import {
   getJobConfig,
   getServiceConfig,
 } from "./cli/configs/loaders.js";
-import { resolveConfigDirs } from "./cli/configs/paths.js";
+import { listProjectInputs, resolveConfigDirs } from "./cli/configs/paths.js";
 import {
   describeContextWindowSource,
   formatTokens,
@@ -41,7 +41,7 @@ import {
 import { createScheduleBackends } from "./cli/schedule/launchd.js";
 import { appendScheduleRun } from "./cli/schedule/records.js";
 import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
-import { trustFolder, untrustFolder } from "./cli/trust.js";
+import { isFolderTrusted, trustFolder, untrustFolder } from "./cli/trust.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
@@ -268,7 +268,7 @@ program
   .command("setup")
   .description("Configure providers, credentials, and defaults")
   .action(async () => {
-    const serviceConfig = await getServiceConfig({});
+    const serviceConfig = await getServiceConfig({ trusted: await isFolderTrusted(process.cwd()) });
     await runSetupWizard(serviceConfig);
     process.exit(0);
   });
@@ -280,13 +280,15 @@ program
     await manage(async () => {
       const catalog = await openModelCatalog();
       if (catalog.stale) await catalog.refresh();
+      const trusted = await isFolderTrusted(process.cwd());
       const lines = formatInfo({
         version: pkg.version,
         dirs: resolveConfigDirs(),
-        cliConfig: await getCliConfig({}),
-        cliConfigSources: await getCliConfigSources({}),
-        serviceConfig: await getServiceConfig({}),
-        credentialSources: await getCredentialSources({}),
+        trusted,
+        cliConfig: await getCliConfig({ trusted }),
+        cliConfigSources: await getCliConfigSources({ trusted }),
+        serviceConfig: await getServiceConfig({ trusted }),
+        credentialSources: await getCredentialSources({ trusted }),
         env: process.env,
         catalog,
       });
@@ -440,8 +442,10 @@ async function fail(e: unknown): Promise<never> {
 /**
  * Read and load config, job
  */
-let cliConfig = await getCliConfig({ span: rootSpan }).catch(fail);
-let serviceConfig = await getServiceConfig({ span: rootSpan }).catch(fail);
+const trusted = await isFolderTrusted(process.cwd()).catch(fail);
+const ignoredProjectInputs = trusted ? [] : await listProjectInputs();
+let cliConfig = await getCliConfig({ span: rootSpan, trusted }).catch(fail);
+let serviceConfig = await getServiceConfig({ span: rootSpan, trusted }).catch(fail);
 const jobConfig =
   inv.kind !== "resume" && inv.job
     ? await getJobConfig(inv.job, { span: rootSpan }).catch(fail)
@@ -487,8 +491,8 @@ if (
   needsSetupWizard(serviceConfig, cliConfig, jobConfig)
 ) {
   await runSetupWizard(serviceConfig);
-  cliConfig = await getCliConfig({ span: rootSpan });
-  serviceConfig = await getServiceConfig({ span: rootSpan });
+  cliConfig = await getCliConfig({ span: rootSpan, trusted });
+  serviceConfig = await getServiceConfig({ span: rootSpan, trusted });
 }
 
 /**
@@ -524,12 +528,21 @@ renderer.setInterruptHandler(exitOnInterrupt);
 if (pending.definition.mcps?.length) {
   renderer.info("Connecting MCP servers…");
 }
-const { mcps, agentConfig } = await resolveAgentDefinition(
+const { mcps, agentConfig, droppedTools } = await resolveAgentDefinition(
   pending.definition,
   cliConfig,
   serviceConfig,
   rootSpan,
+  { trusted },
 ).catch(fail);
+for (const notice of [
+  ...ignoredProjectInputs.map((file) => `Ignored ${file}`),
+  ...(droppedTools.length > 0 ? [`Dropped ${droppedTools.join(", ")}`] : []),
+]) {
+  const line = `${notice}: this folder is not trusted (run axle trust)`;
+  renderer.warn(line);
+  rootSpan.warn(line);
+}
 const catalog = await openModelCatalog();
 if (catalog.stale) void catalog.refresh();
 const contextWindow = resolveContextWindow(

@@ -53,3 +53,20 @@ export const availableTools = [
 export type AvailableToolName = (typeof availableTools)[number];
 
 export const defaultToolNames: readonly AvailableToolName[] = availableTools;
+
+const TOOLS_NEEDING_TRUST: ReadonlySet<string> = new Set<AvailableToolName>([
+  "exec",
+  "patch-file",
+  "write-file",
+]);
+
+/**
+ * Splits a tool list into the tools an untrusted folder may run and the
+ * ones it may not: those that execute, write, or patch act on the folder.
+ */
+export function partitionByTrust(names: string[]): { kept: string[]; dropped: string[] } {
+  return {
+    kept: names.filter((name) => !TOOLS_NEEDING_TRUST.has(name)),
+    dropped: names.filter((name) => TOOLS_NEEDING_TRUST.has(name)),
+  };
+}

@@ -56,6 +56,7 @@ function info(overrides: Partial<InfoInput>): string[] {
   return formatInfo({
     version: "1.2.3",
     dirs,
+    trusted: true,
     cliConfig: {},
     cliConfigSources: { providers: {}, defaultModels: {} },
     serviceConfig: {},
@@ -235,5 +236,26 @@ describe("formatInfo", () => {
     });
 
     expect(lines).toContain("    window  200,000   assumed (models.dev not cached)");
+  });
+});
+
+describe("formatInfo folder trust", () => {
+  it("marks an untrusted folder and the project files it ignores", async () => {
+    await mkdir(dirs.project, { recursive: true });
+    await writeFile(PROJECT_CONFIG, "");
+
+    const lines = info({ trusted: false });
+
+    expect(lines[1]).toMatch(/ · not trusted \(run axle trust\)$/);
+    expect(section(lines, "Config files", "Defaults")).toEqual([
+      "  ~/.axle/cli.yaml     missing",
+      "  ~/.axle/credentials  missing",
+      "  ./.axle/cli.yaml     found, ignored",
+      "  ./.axle/credentials  missing",
+    ]);
+  });
+
+  it("marks a trusted folder", () => {
+    expect(info({})[1]).toMatch(/ · trusted$/);
   });
 });

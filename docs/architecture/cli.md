@@ -265,11 +265,33 @@ against it; divergence is a defect. State ownership is defined in
     recipe without a `tools:` key get the default set — `exec`,
     `patch-file`, `read-file`, `write-file`, `axle-help` — or `defaults.tools` from
     `cli.yaml` when set. A recipe's `tools:` replaces the set wholesale;
-    `tools: []` is the opt-out. Nothing gates a tool call: shell and writes
-    execute as soon as the model asks, in chat, `-j`, batch, and scheduled
-    occurrences alike, so content the model reads (attached files, MCP
-    results, web search) can drive them. Resume replays the tools stored
-    in the session's definition, not the current defaults.
+    `tools: []` is the opt-out. Nothing gates a tool call once the folder
+    is trusted (invariant 12): shell and writes execute as soon as the
+    model asks, in chat, `-j`, batch, and scheduled occurrences alike, so
+    content the model reads (attached files, MCP results, web search) can
+    drive them. Resume replays the tools stored in the session's
+    definition, not the current defaults.
+
+12. **Folder trust gates what the working directory can make the CLI do.**
+    Two threats come from cwd: config injection (a repo's `.axle/` points
+    a profile at a foreign `baseUrl` or turns tools on) and prompt
+    injection (content the model reads steers a model that can act). One
+    trust bit, recorded per canonical folder path in `~/.axle/trust.json`
+    by `axle trust` (`--revoke` removes it; exact match, no inheritance),
+    closes both. Trust is a property of the folder; needing trust is a
+    property of the tool: `exec`, `patch-file`, and `write-file` need it,
+    `read-file` and `axle-help` do not. In an untrusted folder the
+    project `.axle/` layer (`cli.yaml`, `credentials`) is not read, and
+    trust-needing tools are dropped from the resolved set whichever layer
+    named them — built-in default, `defaults.tools`, or the recipe. Each
+    consequence prints one notice naming what was skipped and `axle
+trust`. User scope is trusted by definition: nothing under `~/.axle/`
+    is gated, and a `-j` recipe stays trusted on invocation because naming
+    a file is running a script. MCP servers are outside folder trust;
+    their tools act on services, not the folder. The entrypoint looks the
+    folder up once and threads the boolean; every input sourced from cwd
+    consults it before use (today: the two config loaders and the tool
+    resolver; skills will join), and an input that does not is a defect.
 
 ## Decisions
 
