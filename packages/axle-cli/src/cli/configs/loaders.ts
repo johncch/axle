@@ -71,6 +71,23 @@ export async function getServiceConfig(
   return config;
 }
 
+/**
+ * Every credential variable's effective value: the process environment, then
+ * the project `credentials` file, then the user one.
+ */
+export type Credentials = Record<string, string | undefined>;
+
+export async function getCredentials(context: ConfigContext): Promise<Credentials> {
+  const layers = await loadCredentialLayers(context);
+  const credentials: Credentials = {};
+  for (const layer of layers.toReversed()) {
+    for (const [key, value] of Object.entries(layer.values)) {
+      if (value) credentials[key] = value;
+    }
+  }
+  return credentials;
+}
+
 export const ENVIRONMENT_SOURCE = "environment";
 
 export const API_KEY_VARIABLES = {

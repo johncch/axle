@@ -4,6 +4,7 @@ import type { Handle } from "../../utils/utils.js";
 
 class ScheduledTask<T> {
   readonly final: Promise<T>;
+  settled = false;
 
   private readonly controller = new AbortController();
   private readonly resolveFinal: (value: T) => void;
@@ -14,6 +15,7 @@ class ScheduledTask<T> {
     private readonly work: (context: { signal: AbortSignal }) => Promise<T>,
     private readonly operation: string,
     private readonly externalSignal: AbortSignal | undefined,
+    private readonly onWithdrawn: (() => void) | undefined,
   ) {
     const { promise, resolve, reject } = Promise.withResolvers<T>();
     this.final = promise;
@@ -32,8 +34,11 @@ class ScheduledTask<T> {
 
   async execute(): Promise<void> {
     try {
-      this.resolveFinal(await this.work({ signal: this.controller.signal }));
+      const value = await this.work({ signal: this.controller.signal });
+      this.settled = true;
+      this.resolveFinal(value);
     } catch (error) {
+      this.settled = true;
       this.rejectFinal(error);
     } finally {
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
@@ -44,6 +49,7 @@ class ScheduledTask<T> {
     this.controller.abort(reason);
     if (this.scheduler.withdraw(this)) {
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
+      this.onWithdrawn?.();
       this.rejectFinal(
         new AxleAgentAbortError(`Agent ${this.operation} aborted`, {
           reason: this.controller.signal.reason,
@@ -62,9 +68,15 @@ export class AgentScheduler {
 
   schedule<T>(
     work: (context: { signal: AbortSignal }) => Promise<T>,
-    options?: { signal?: AbortSignal; operation?: string },
+    options?: { signal?: AbortSignal; operation?: string; onWithdrawn?: () => void },
   ): Handle<T> {
-    const task = new ScheduledTask(this, work, options?.operation ?? "send", options?.signal);
+    const task = new ScheduledTask(
+      this,
+      work,
+      options?.operation ?? "send",
+      options?.signal,
+      options?.onWithdrawn,
+    );
 
     if (!this.current) {
       this.activate(task);
@@ -74,6 +86,12 @@ export class AgentScheduler {
     task.watchExternalSignal();
 
     return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
+  }
+
+  cancelCurrent(reason?: unknown): boolean {
+    if (!this.current || this.current.settled) return false;
+    this.current.cancel(reason);
+    return true;
   }
 
   clear(): number {

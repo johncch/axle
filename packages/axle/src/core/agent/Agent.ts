@@ -4,7 +4,7 @@ import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import type { MCP } from "../../mcp/index.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
-import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
+import type { AxleMessage, AxleUserMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -15,9 +15,10 @@ import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../pr
 import { createViewSkillTool, renderSkillsCatalog } from "../../skills/prompt.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
-import { TurnEventBuilder } from "../../turns/eventBuilder.js";
+import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
+import type { Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
@@ -68,6 +69,7 @@ export class Agent {
   private ownedTracer?: Tracer;
 
   private eventCallbacks: TurnEventCallback[] = [];
+  private settledCallbacks: ((session: AgentSession) => void)[] = [];
   private compaction?: CompactionConfig;
   private scheduler = new AgentScheduler();
   private turnActive = false;
@@ -135,6 +137,27 @@ export class Agent {
     };
   }
 
+  /**
+   * Receive the session each time an operation settles.
+   *
+   * Fires once after every send or manual compaction that opened a turn,
+   * after that turn's `turn:end` and before the operation's handle settles.
+   * The agent is at rest and the next queued operation has not started, so a
+   * host that reads its `Transcript.turns` inside the callback gets turns and
+   * messages that match. An operation dropped before opening its turn commits
+   * nothing and does not fire. The value is the one `snapshot()` returns;
+   * unlike `snapshot()`, it does not wait behind queued operations. A
+   * callback that throws cannot affect the operation: the error is recorded
+   * on the trace and the remaining callbacks still run.
+   */
+  onSettled(callback: (session: AgentSession) => void) {
+    this.settledCallbacks.push(callback);
+    return () => {
+      const index = this.settledCallbacks.indexOf(callback);
+      if (index >= 0) this.settledCallbacks.splice(index, 1);
+    };
+  }
+
   /** The active, model-facing conversation. Requests are built from it; compaction replaces it. */
   get messages(): AxleMessage[] {
     return [...this.messagesInternal];
@@ -168,16 +191,32 @@ export class Agent {
         : messageOrInstruct.clone();
     instruct.validate();
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
+    const message = instruct.toMessage({ metadata });
+    const userTurn = userTurnFromMessage(message);
+
+    this.emitEvent({
+      type: "pending:queued",
+      entry: { id: userTurn.id, kind: "send", turn: userTurn },
+    });
 
     return this.scheduler.schedule(
       ({ signal }) =>
         this.executeTurn(instruct, {
           signal,
           fileResolver,
-          metadata,
+          message,
+          userTurn,
           requestOptions,
         }),
-      { signal: modelOptions.signal },
+      {
+        signal: modelOptions.signal,
+        onWithdrawn: () =>
+          this.emitEvent({
+            type: "pending:dropped",
+            id: userTurn.id,
+            reason: { type: "cancelled" },
+          }),
+      },
     );
   }
 
@@ -192,6 +231,17 @@ export class Agent {
     if (!this.turnActive) return false;
     this.stopRequested = true;
     return true;
+  }
+
+  /**
+   * Cancel the active operation immediately. Its handle rejects with an
+   * `AxleAgentAbortError`, exactly as if that handle's own `cancel()` had been
+   * called: a turn that already opened settles `cancelled` with its partial
+   * work committed. Queued operations are unaffected and the next one starts.
+   * Returns `false` when nothing is running.
+   */
+  cancel(reason?: unknown): boolean {
+    return this.scheduler.cancelCurrent(reason);
   }
 
   /**
@@ -213,12 +263,13 @@ export class Agent {
     runtime: {
       signal: AbortSignal;
       fileResolver?: FileResolver;
-      metadata?: MessageMetadata;
+      message: AxleUserMessage;
+      userTurn: Turn;
       requestOptions?: AxleModelRequestOptions;
     },
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const { signal, fileResolver, metadata, requestOptions } = runtime;
-    const message = instruct.toMessage({ metadata });
+    const { signal, fileResolver, message, userTurn, requestOptions } = runtime;
+    let userTurnOpened = false;
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
     let agentTurnId: string | undefined;
@@ -254,9 +305,8 @@ export class Agent {
       // Lifecycle: commit the user message and open the agent turn
       const priorMessages = this.messages;
       this.messagesInternal.push(message);
-      for (const event of turnEventBuilder.createUserTurn(message)) {
-        this.emitEvent(event);
-      }
+      this.emitEvent({ type: "turn:user", turn: userTurn });
+      userTurnOpened = true;
       const startEvent = turnEventBuilder.startAgentTurn();
       agentTurnId = startEvent.turnId;
       this.emitEvent(startEvent);
@@ -266,7 +316,7 @@ export class Agent {
       if (beforeTurnCompaction?.triggers?.beforeTurn) {
         await this.runCompaction(beforeTurnCompaction, signal, "beforeTurn", {
           state: priorMessages,
-          target: { turnId: startEvent.turnId },
+          target: { type: "turn", turnId: startEvent.turnId },
           onApplied: () => {
             this.messagesInternal.push(message);
           },
@@ -337,7 +387,7 @@ export class Agent {
       if (!parseFailure && afterTurnCompaction?.triggers?.afterTurn) {
         await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
           state: this.messages,
-          target: { turnId: startEvent.turnId },
+          target: { type: "turn", turnId: startEvent.turnId },
         });
       }
 
@@ -356,7 +406,7 @@ export class Agent {
       return { ok: true, response, turn: agentTurn, usage };
     } catch (error) {
       // Lifecycle: settle a failed or cancelled turn
-      status = spanStatusFromError(error);
+      status = signal.aborted ? "cancelled" : spanStatusFromError(error);
 
       if (
         (error instanceof AxleAbortError || error instanceof AxleToolFatalError) &&
@@ -366,6 +416,22 @@ export class Agent {
       }
 
       finalize(status === "cancelled" ? "cancelled" : "error");
+      if (!userTurnOpened) {
+        this.emitEvent({
+          type: "pending:dropped",
+          id: userTurn.id,
+          reason:
+            status === "cancelled"
+              ? { type: "cancelled" }
+              : {
+                  type: "error",
+                  error: {
+                    type: "setup",
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                },
+        });
+      }
       const turn = agentTurnId ? this.transcript.getTurn(agentTurnId) : undefined;
       root?.error(error instanceof Error ? error.message : String(error));
 
@@ -400,6 +466,7 @@ export class Agent {
       this.turnActive = false;
       this.stopRequested = false;
       this.transcript = new Transcript();
+      if (userTurnOpened) this.emitSettled(root);
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -441,12 +508,18 @@ export class Agent {
     const config = this.compaction;
     if (!config) return Promise.resolve(false);
 
+    const id = crypto.randomUUID();
+    const dropCancelled = (): void =>
+      this.emitEvent({ type: "pending:dropped", id, reason: { type: "cancelled" } });
+    this.emitEvent({ type: "pending:queued", entry: { id, kind: "compaction" } });
+
     return this.scheduler.schedule(
       async ({ signal }) => {
+        if (signal.aborted) dropCancelled();
         try {
           const outcome = await this.runCompaction(config, signal, "manual", {
             state: this.messages,
-            target: "self-wrapped",
+            target: { type: "self-wrapped", id },
           });
           return outcome === "applied";
         } finally {
@@ -456,6 +529,7 @@ export class Agent {
       {
         signal: options?.signal,
         operation: "compact",
+        onWithdrawn: dropCancelled,
       },
     ).final;
   }
@@ -466,7 +540,7 @@ export class Agent {
     trigger: CompactionTrigger,
     run: {
       state: AxleMessage[];
-      target: { turnId: string } | "self-wrapped";
+      target: { type: "turn"; turnId: string } | { type: "self-wrapped"; id: string };
       onApplied?: () => void;
     },
   ): Promise<"applied" | "declined" | "errored"> {
@@ -502,10 +576,10 @@ export class Agent {
         return "declined";
       }
 
-      const id = crypto.randomUUID();
+      const selfWrapped = run.target.type === "self-wrapped";
+      const id = run.target.type === "self-wrapped" ? run.target.id : crypto.randomUUID();
       const start = new Date().toISOString();
-      const selfWrapped = run.target === "self-wrapped";
-      const turnId = run.target === "self-wrapped" ? id : run.target.turnId;
+      const turnId = run.target.type === "self-wrapped" ? id : run.target.turnId;
       if (selfWrapped) {
         this.emitEvent({ type: "turn:start", turnId, timing: { start } });
       }
@@ -592,6 +666,7 @@ export class Agent {
         return "errored";
       }
     } finally {
+      if (run.target.type === "self-wrapped") this.emitSettled(root);
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -612,10 +687,24 @@ export class Agent {
    * nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    return this.scheduler.schedule(async (): Promise<AgentSession> => ({
-      sessionId: this.sessionId,
-      messages: this.messages,
-    })).final;
+    return this.scheduler.schedule(async (): Promise<AgentSession> => this.currentSession()).final;
+  }
+
+  private currentSession(): AgentSession {
+    return { sessionId: this.sessionId, messages: this.messages };
+  }
+
+  private emitSettled(span: Span | undefined): void {
+    if (this.settledCallbacks.length === 0) return;
+    const session = this.currentSession();
+    for (const cb of this.settledCallbacks) {
+      try {
+        cb(session);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        span?.warn(`onSettled callback threw: ${message}`);
+      }
+    }
   }
 
   private emitEvent(event: TurnEvent): void {

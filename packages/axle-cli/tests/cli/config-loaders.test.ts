@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getCliConfig,
   getCliConfigSources,
+  getCredentials,
   getCredentialSources,
   getJobConfig,
   getServiceConfig,
@@ -164,6 +165,28 @@ describe("config loaders", () => {
     const config = await getServiceConfig({ trusted: true, cwd, home });
 
     expect(config.anthropic).toEqual({ apiKey: "user-key", model: "user-model" });
+  });
+
+  it("resolves any credential variable, env over project over user, and skips an untrusted project", async () => {
+    process.chdir(TEST_DIR);
+    vi.stubEnv("ROUTER_KEY", "");
+    vi.stubEnv("SHARED_KEY", "env-shared");
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "credentials"),
+      "ROUTER_KEY=user-router\nSHARED_KEY=user-shared\n",
+    );
+    await writeFile(join(cwd, ".axle", "credentials"), "ROUTER_KEY=project-router\n");
+
+    const trusted = await getCredentials({ trusted: true, cwd, home });
+    const untrusted = await getCredentials({ trusted: false, cwd, home });
+
+    expect(trusted.ROUTER_KEY).toBe("project-router");
+    expect(trusted.SHARED_KEY).toBe("env-shared");
+    expect(untrusted.ROUTER_KEY).toBe("user-router");
   });
 
   it("layers credentials per key: env over project over user", async () => {

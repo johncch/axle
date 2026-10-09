@@ -12,7 +12,13 @@ import { partitionTurns, UiStore } from "./store.js";
  * renders inside the app while a prompt is pending.
  */
 export class InkRenderer implements Renderer {
-  private store = new UiStore<UiState>({ staticItems: [], awaitingInput: false, queuedInputs: [] });
+  readonly acceptsInputDuringTurn = true;
+  private store = new UiStore<UiState>({
+    staticItems: [],
+    pending: [],
+    awaitingInput: false,
+    queuedInputs: [],
+  });
   private committed = new Set<string>();
   private instance: ReturnType<typeof render>;
   private waiter?: (value: string | null) => void;
@@ -64,6 +70,7 @@ export class InkRenderer implements Renderer {
         ? [...state.staticItems, ...newlyFinished]
         : state.staticItems,
       liveTurn,
+      pending: transcript.pending,
     }));
   }
 

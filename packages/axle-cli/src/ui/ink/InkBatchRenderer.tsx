@@ -79,6 +79,7 @@ function shortName(input: string): string {
  * committed to scrollback via the shared host-line dialect.
  */
 export class InkBatchRenderer implements Renderer, BatchProgress {
+  readonly acceptsInputDuringTurn = false;
   private store = new UiStore<BatchUiState>({ staticItems: [], rows: [] });
   private instance: ReturnType<typeof render>;
 

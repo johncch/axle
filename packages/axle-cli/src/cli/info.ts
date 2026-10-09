@@ -2,7 +2,7 @@ import type { ModelCatalog } from "@fifthrevision/axle";
 import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { resolveTarget } from "./agent-config.js";
-import type { CliConfigSources } from "./configs/loaders.js";
+import type { CliConfigSources, Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { ConfigDirs } from "./configs/paths.js";
 import { CONFIG_FILE, CREDENTIALS_FILE } from "./configs/paths.js";
@@ -27,7 +27,7 @@ export interface InfoInput {
   serviceConfig: ServiceConfig;
   credentialSources: Record<string, string>;
   skills: SkillEntry[];
-  env: NodeJS.ProcessEnv;
+  credentials: Credentials;
   catalog: ModelCatalog;
 }
 
@@ -43,7 +43,7 @@ interface Row {
  * supplied each value. API keys are reported as set or unset, never printed.
  */
 export function formatInfo(input: InfoInput): string[] {
-  const { version, build, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills, env } = input;
+  const { version, build, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills } = input;
   const cwd = dirname(dirs.project);
   const home = dirname(dirs.user);
 
@@ -176,7 +176,7 @@ function describeProvider(
   profile: AIProviderUse | undefined,
   input: InfoInput,
 ): Row[] {
-  const { cliConfig, cliConfigSources, serviceConfig, credentialSources, env } = input;
+  const { cliConfig, cliConfigSources, serviceConfig, credentialSources, credentials } = input;
   const service = serviceConfig[type];
   const rows: Row[] = [];
 
@@ -228,7 +228,7 @@ function describeProvider(
   const apiKeyEnv = profile?.apiKeyEnv;
   if (apiKeyEnv) {
     rows.push(
-      env[apiKeyEnv]
+      credentials[apiKeyEnv]
         ? { label: "key", value: `$${apiKeyEnv}`, source: credentialSources[apiKeyEnv] }
         : { label: "key", value: `$${apiKeyEnv}`, source: UNSET },
     );

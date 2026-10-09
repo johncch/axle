@@ -303,7 +303,10 @@ describe("Agent", () => {
       ).rejects.toMatchObject({ name: "AbortError", reason: "stop", turn: undefined });
 
       expect(agent.messages).toEqual([]);
-      expect(events).toEqual([]);
+      expect(events.map((event) => (event as TurnEvent).type)).toEqual([
+        "pending:queued",
+        "pending:dropped",
+      ]);
       expect(requests).toEqual([]);
     });
 
@@ -368,6 +371,83 @@ describe("Agent", () => {
           .filter((message) => message.role === "user")
           .map((message) => getTextContent(message.content)),
       ).toEqual(["run the tool", "urgent"]);
+    });
+
+    test("cancel() cancels only the active send and the queued one runs", async () => {
+      let calls = 0;
+      const provider: AIProvider = {
+        name: "first-call-hangs",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          calls += 1;
+          yield { type: "start", id: `c${calls}`, data: { model: "mock", timestamp: 0 } };
+          if (calls === 1) {
+            await new Promise<never>((_resolve, reject) => {
+              signal?.addEventListener(
+                "abort",
+                () => reject(new DOMException("aborted", "AbortError")),
+                { once: true },
+              );
+            });
+          }
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "second reply" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+
+      const first = agent.send("first").final.catch((error) => error);
+      const second = agent.send("second").final;
+      await vi.waitFor(() => expect(calls).toBe(1));
+
+      expect(agent.cancel("changed my mind")).toBe(true);
+
+      const firstError = await first;
+      expect(firstError).toBeInstanceOf(AxleAgentAbortError);
+      expect((firstError as AxleAgentAbortError).reason).toBe("changed my mind");
+      expect((firstError as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect((await second).response).toBe("second reply");
+    });
+
+    test("a cancelled turn settles cancelled even when the provider rethrows a non-error reason", async () => {
+      const provider: AIProvider = {
+        name: "rethrows-reason",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "r1", data: { model: "mock", timestamp: 0 } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const transcript = new Transcript();
+      let opened = false;
+      agent.on((event) => {
+        transcript.apply(event);
+        if (event.type === "turn:start") opened = true;
+      });
+
+      const final = agent.send("hello").final.catch((error) => error);
+      await vi.waitFor(() => expect(opened).toBe(true));
+      agent.cancel("changed my mind");
+
+      const error = await final;
+      expect(error).toBeInstanceOf(AxleAgentAbortError);
+      expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect(transcript.turns.at(-1)?.status).toBe("cancelled");
+    });
+
+    test("cancel() returns false when nothing is running", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+
+      expect(agent.cancel()).toBe(false);
+
+      await agent.send("hello").final;
+      expect(agent.cancel()).toBe(false);
     });
 
     test("clear() returns 0 when nothing is queued", async () => {
@@ -896,6 +976,331 @@ describe("Agent", () => {
       toolChoice: "none",
       parallelToolCalls: false,
       providerOptions: { seed: 1, metadata: { source: "send" } },
+    });
+  });
+
+  describe("pending events", () => {
+    function observe(agent: Agent) {
+      const events: TurnEvent[] = [];
+      const transcript = new Transcript();
+      agent.on((event) => {
+        events.push(event);
+        transcript.apply(event);
+      });
+      return { events, transcript };
+    }
+
+    function pendingText(transcript: Transcript): string[] {
+      return transcript.pending.map((entry) => {
+        if (entry.kind !== "send") return entry.kind;
+        const part = entry.turn.parts[0];
+        return part?.type === "text" ? part.text : "";
+      });
+    }
+
+    test("a send is pending from the call until its user turn commits", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+
+      const first = agent.send("first");
+      const second = agent.send("second");
+
+      expect(pendingText(transcript)).toEqual(["first", "second"]);
+      expect(transcript.turns).toEqual([]);
+
+      await Promise.all([first.final, second.final]);
+
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns.map((turn) => turn.owner)).toEqual([
+        "user",
+        "agent",
+        "user",
+        "agent",
+      ]);
+
+      const queued = events.filter((event) => event.type === "pending:queued");
+      const committed = events.filter((event) => event.type === "turn:user");
+      expect(committed.map((event) => event.turn)).toEqual(
+        queued.map((event) => (event.entry.kind === "send" ? event.entry.turn : undefined)),
+      );
+    });
+
+    test("a queued Instruct previews its rendered variables", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { transcript } = observe(agent);
+      const instruct = new Instruct({ prompt: "Review {{target}}" }).withInput("target", "a.ts");
+
+      const first = agent.send("first");
+      const second = agent.send(instruct);
+      instruct.addInput("target", "b.ts");
+
+      expect(pendingText(transcript)).toEqual(["first", "Review a.ts"]);
+      await first.final;
+      expect((await second.final).response).toBe("Review a.ts");
+    });
+
+    test("cancelling a queued send drops it before cancel() returns", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+
+      const first = agent.send("first");
+      const withdrawn = agent.send("withdrawn");
+      const third = agent.send("third");
+      const withdrawnFinal = withdrawn.final.catch((error) => error);
+      withdrawn.cancel();
+
+      expect(pendingText(transcript)).toEqual(["first", "third"]);
+      expect(events.at(-1)).toMatchObject({
+        type: "pending:dropped",
+        reason: { type: "cancelled" },
+      });
+
+      await Promise.all([first.final, third.final, withdrawnFinal]);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns.filter((turn) => turn.owner === "user")).toHaveLength(2);
+    });
+
+    test("clear() drops every queued send", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+
+      const first = agent.send("first");
+      const dropped = [agent.send("second"), agent.send("third")].map((handle) =>
+        handle.final.catch((error) => error),
+      );
+
+      expect(agent.clear()).toBe(2);
+
+      expect(pendingText(transcript)).toEqual(["first"]);
+      expect(events.filter((event) => event.type === "pending:dropped")).toHaveLength(2);
+      await Promise.all([first.final, ...dropped]);
+      expect(transcript.turns.filter((turn) => turn.owner === "user")).toHaveLength(1);
+    });
+
+    test("an aborted signal shared by every send drops all of them", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { transcript } = observe(agent);
+      const controller = new AbortController();
+
+      const handles = ["first", "second", "third"].map((text) =>
+        agent.send(text, { signal: controller.signal }).final.catch((error) => error),
+      );
+
+      controller.abort();
+
+      expect(pendingText(transcript)).toEqual(["first"]);
+      const errors = await Promise.all(handles);
+      expect(errors.every((error) => error instanceof AxleAgentAbortError)).toBe(true);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+    });
+
+    test("a send cancelled during setup is dropped as cancelled", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+      const setup = Promise.withResolvers<never[]>();
+      agent.addMcp({ name: "slow", listTools: () => setup.promise, connected: true } as any);
+
+      const handle = agent.send("hello");
+      const final = handle.final.catch((error) => error);
+      await vi.waitFor(() => expect(pendingText(transcript)).toEqual(["hello"]));
+      handle.cancel();
+      setup.resolve([]);
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+      expect(events.at(-1)).toMatchObject({
+        type: "pending:dropped",
+        reason: { type: "cancelled" },
+      });
+    });
+
+    test("a send whose setup fails is dropped with the error", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+      const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
+      agent.addMcp({ name: "flaky", listTools, connected: true } as any);
+
+      await expect(agent.send("hello").final).rejects.toThrow("mcp unreachable");
+
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+      expect(events.at(-1)).toEqual({
+        type: "pending:dropped",
+        id: expect.any(String),
+        reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
+      });
+    });
+
+    test("stop() + clear() + send() drops the stale send and commits the interjection", async () => {
+      const toolStream = createToolThenTextProvider(["first_tool"], "interjected");
+      const firstTool = {
+        name: "first_tool",
+        description: "First tool",
+        schema: z.object({ input: z.string() }),
+        execute: vi.fn().mockImplementation(async () => {
+          agent.stop();
+          agent.clear();
+          agent.send("urgent");
+          return "first result";
+        }),
+      };
+      const agent = new Agent({
+        provider: toolStream.provider,
+        model: "mock",
+        tools: [firstTool],
+      });
+      const { transcript } = observe(agent);
+
+      const first = agent.send("run the tool");
+      const stale = agent.send("stale").final.catch((error) => error);
+
+      await first.final;
+      await stale;
+      await vi.waitFor(() => expect(toolStream.callCount).toBe(2));
+      await vi.waitFor(() => expect(transcript.turns.at(-1)?.status).toBe("complete"));
+
+      expect(transcript.pending).toEqual([]);
+      expect(
+        transcript.turns
+          .filter((turn) => turn.owner === "user")
+          .map((turn) => (turn.parts[0]?.type === "text" ? turn.parts[0].text : "")),
+      ).toEqual(["run the tool", "urgent"]);
+    });
+  });
+
+  describe("onSettled", () => {
+    function userTextsOf(messages: { role: string; content: unknown }[]): string[] {
+      return messages
+        .filter((message) => message.role === "user")
+        .map((message) => getTextContent(message.content as never));
+    }
+
+    test("fires once per send, before its handle settles, without waiting for the queue", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
+      const order: string[] = [];
+      const seen: { users: string[]; pending: number; lastTurnStatus?: string }[] = [];
+      agent.onSettled((session) => {
+        order.push("settled");
+        seen.push({
+          users: userTextsOf(session.messages),
+          pending: transcript.pending.length,
+          lastTurnStatus: transcript.turns.at(-1)?.status,
+        });
+      });
+
+      const handles = ["first", "second", "third"].map((text) =>
+        agent.send(text).final.then(() => order.push(`resolved ${text}`)),
+      );
+      await Promise.all(handles);
+
+      expect(seen).toEqual([
+        { users: ["first"], pending: 2, lastTurnStatus: "complete" },
+        { users: ["first", "second"], pending: 1, lastTurnStatus: "complete" },
+        { users: ["first", "second", "third"], pending: 0, lastTurnStatus: "complete" },
+      ]);
+      expect(order).toEqual([
+        "settled",
+        "resolved first",
+        "settled",
+        "resolved second",
+        "settled",
+        "resolved third",
+      ]);
+    });
+
+    test("hands over the same session snapshot() returns", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const sessions: unknown[] = [];
+      agent.onSettled((session) => sessions.push(session));
+
+      await agent.send("hello").final;
+
+      expect(sessions).toEqual([await agent.snapshot()]);
+    });
+
+    test("fires for a send cancelled mid-turn, with its user message committed", async () => {
+      const provider: AIProvider = {
+        name: "hanging",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const settled: string[][] = [];
+      agent.onSettled((session) => settled.push(userTextsOf(session.messages)));
+      let opened = false;
+      agent.on((event) => {
+        if (event.type === "turn:start") opened = true;
+      });
+
+      const handle = agent.send("hello");
+      const final = handle.final.catch((error) => error);
+      await vi.waitFor(() => expect(opened).toBe(true));
+      handle.cancel();
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      expect(settled).toEqual([["hello"]]);
+    });
+
+    test("does not fire for sends dropped before their turn opens", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
+      agent.addMcp({ name: "flaky", listTools, connected: true } as any);
+      const settled: unknown[] = [];
+      agent.onSettled((session) => settled.push(session));
+
+      const failed = agent.send("setup fails").final.catch((error) => error);
+      const cleared = agent.send("cleared").final.catch((error) => error);
+      agent.clear();
+      await Promise.all([failed, cleared]);
+
+      expect(settled).toEqual([]);
+    });
+
+    test("a throwing callback cannot change the send's result or stop later callbacks", async () => {
+      const entries: LogEntry[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider([]),
+        model: "mock",
+        observability: { log: (entry) => entries.push(entry) },
+      });
+      let laterCallbackRan = false;
+      agent.onSettled(() => {
+        throw new Error("disk full");
+      });
+      agent.onSettled(() => {
+        laterCallbackRan = true;
+      });
+
+      const result = await agent.send("hello").final;
+
+      expect(result).toMatchObject({ ok: true, response: "hello" });
+      expect(laterCallbackRan).toBe(true);
+      expect(entries).toContainEqual(
+        expect.objectContaining({ level: "warn", message: "onSettled callback threw: disk full" }),
+      );
+      expect(entries.find((entry) => entry.message === "agent.send")).toMatchObject({
+        fields: { status: "ok" },
+      });
+    });
+
+    test("stops firing after its unsubscribe is called", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let count = 0;
+      const unsubscribe = agent.onSettled(() => count++);
+
+      await agent.send("first").final;
+      unsubscribe();
+      await agent.send("second").final;
+
+      expect(count).toBe(1);
     });
   });
 

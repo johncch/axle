@@ -21,6 +21,7 @@ const definition: AgentDefinition = {
 function createRecordingRenderer() {
   const lines: string[] = [];
   const renderer: Renderer = {
+    acceptsInputDuringTurn: false,
     renderPriorTurns() {},
     onEvent() {},
     info: (m) => void lines.push(m),

@@ -20,6 +20,12 @@
   untrusted path without asking. Nothing under `~/.axle/` is gated, and
   MCP servers are unaffected. `axle info` shows the folder's trust state
   and marks ignored project files.
+- **Ctrl-C in the chat cancels the running turn instead of asking it to
+  stop.** One press cancels the active turn at once, keeps its partial
+  work, and lets the next queued message run. A second press within a
+  second drops everything queued and exits, saving the session. It used to
+  take one press to finish the current tool batch and a second to cancel
+  and exit. Runs without a chat keep the two-stage stop-then-cancel.
 - **The working directory's `.env` is no longer read.** Credentials come
   from the process environment, then `.axle/credentials`, then
   `~/.axle/credentials`. Move keys from `.env` into one of those files, or
@@ -82,6 +88,15 @@
   models.
 
 ### New
+
+- **Messages typed during a turn go to the agent's queue.** Under the ink
+  renderer each submission is sent at once and shown as `(queued)` from
+  the transcript's pending entries until its turn starts. `/quit` typed
+  mid-turn exits after the queue drains. The plain renderer is unchanged:
+  it prompts only between turns.
+- **A cancelled turn is marked `(interrupted)`.** Both renderers show it
+  under the turn, live and when a resumed session replays its history, so
+  a turn that was cut short no longer reads as a finished one.
 
 - **Skills.** A skill is a folder in the Agent Skills format
   (agentskills.io): a `SKILL.md` with `name` and `description` in its
@@ -185,6 +200,16 @@
 
 ### Fixed
 
+- **`apiKeyEnv` reads credentials files.** A provider profile that names
+  its key with `apiKeyEnv` was resolved against the process environment
+  only, so a key kept in `~/.axle/credentials` or `.axle/credentials` was
+  never found. It now resolves like every other credential: environment,
+  then project file, then user file. `axle info` reports the same.
+- **A named key that is missing stops the run.** A `chatcompletions`
+  profile whose `apiKeyEnv` variable was unset sent the request without a
+  key and surfaced the endpoint's own error. It now fails before the
+  request with `apiKeyEnv names <NAME>, which is not set`. A profile with
+  no key configured at all still runs keyless, for local endpoints.
 - **OpenAI runs no longer die when the model cites inside a tool call.**
   With `web_search` on, `gpt-6-luna` can attach a citation to the arguments
   of a function call, and the OpenAI SDK's stream helper rejected the event

@@ -56,9 +56,16 @@ Verbs select the machine; flags parameterize it. A session id prefix works
 anywhere a full id does (`axle resume 3a2f` finds the unique match).
 
 In the chat, `/quit`, a message that is just `exit` or `quit` (any case), or
-Ctrl-C / Ctrl-D at the prompt exits. Ctrl-C during a turn asks the agent to
-stop at the next tool boundary; a second Ctrl-C cancels immediately. The
-session is saved on every exit path.
+Ctrl-C / Ctrl-D at the prompt exits. A message submitted while a turn is
+running is queued on the agent and shown as `(queued)` until its turn starts;
+`/quit` typed mid-turn exits once the queue has drained. Ctrl-C during a turn
+cancels that turn, keeping its partial work, and the next queued message
+runs; a second Ctrl-C within a second drops the queue and exits. The session
+is saved on every exit path.
+
+A run without a chat (`-m`, a recipe with no interactive prompt) keeps the
+two-stage interrupt: the first Ctrl-C asks the agent to stop at the next tool
+boundary, a second cancels immediately.
 
 `--renderer` picks the screen renderer for the run: `ink` (default — terminal
 UI with a live streaming region and input line) or `plain` (line-oriented).

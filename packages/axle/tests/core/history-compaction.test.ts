@@ -192,6 +192,7 @@ describe("Agent.compact", () => {
     expect(result).toBe(true);
     expect(agent.messages).toEqual(summary);
     expect(events.map((e) => e.type)).toEqual([
+      "pending:queued",
       "turn:start",
       "part:start",
       "compaction:complete",
@@ -573,7 +574,7 @@ describe("Agent.compact", () => {
     await expect(compaction).rejects.toBeInstanceOf(AxleAgentAbortError);
     await expect(compaction).rejects.toMatchObject({ name: "AbortError", reason: "stop" });
     expect(called).toBe(false);
-    expect(events).toEqual([]);
+    expect(events.map((event) => event.type)).toEqual(["pending:queued", "pending:dropped"]);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
   });
 
@@ -667,6 +668,104 @@ describe("Agent.compact", () => {
     expect(partStarts.some((e) => e.type === "part:start" && e.part.type === "compaction")).toBe(
       false,
     );
+  });
+
+  test("a queued compaction is pending until its own turn opens", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const provider: AIProvider = {
+      name: "gated",
+      async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
+        yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
+        await gate;
+        yield {
+          type: "complete",
+          data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        };
+      },
+    };
+    const agent = new Agent({ provider, model: "mock" });
+    const transcript = attachTranscript(agent);
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+
+    const send = agent.send("question").final;
+    const compaction = agent.compact();
+
+    expect(transcript.pending.map((entry) => entry.kind)).toEqual(["send", "compaction"]);
+    const compactionId = transcript.pending[1]?.id;
+
+    release();
+    await Promise.all([send, compaction]);
+
+    expect(transcript.pending).toEqual([]);
+    const compactionTurn = transcript.turns.find(isCompactionTurn);
+    expect(compactionTurn?.id).toBe(compactionId);
+  });
+
+  test("clear() drops a queued compaction", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = new Agent({ provider, model: "mock" });
+    const transcript = attachTranscript(agent);
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+
+    const send = agent.send("question").final;
+    const compaction = agent.compact().catch((error) => error);
+
+    expect(agent.clear()).toBe(1);
+    expect(transcript.pending.map((entry) => entry.kind)).toEqual(["send"]);
+
+    await send;
+    expect(await compaction).toBeInstanceOf(AxleAgentAbortError);
+    expect(transcript.turns.some(isCompactionTurn)).toBe(false);
+  });
+
+  test("compact without a registered config is never pending", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = new Agent({ provider, model: "mock" });
+    const events: TurnEvent[] = [];
+    agent.on((event) => events.push(event));
+
+    await agent.compact();
+
+    expect(events).toEqual([]);
+  });
+
+  test("onSettled fires after a manual compaction with the compacted messages", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    const summary = [user("summary")];
+    agent.setCompaction({ compact: () => ({ messages: summary }) });
+    const settled: AxleMessage[][] = [];
+    agent.onSettled((session) => settled.push(session.messages));
+
+    await agent.compact();
+
+    expect(settled).toEqual([summary]);
+  });
+
+  test("a throwing onSettled callback cannot fail a manual compaction", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+    agent.onSettled(() => {
+      throw new Error("disk full");
+    });
+
+    await expect(agent.compact()).resolves.toBe(true);
+  });
+
+  test("onSettled does not fire for a compaction aborted before it starts", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+    const settled: unknown[] = [];
+    agent.onSettled((session) => settled.push(session));
+
+    await expect(agent.compact({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(
+      AxleAgentAbortError,
+    );
+
+    expect(settled).toEqual([]);
   });
 
   test("snapshot requested mid-send waits for quiescence and never captures a running turn", async () => {

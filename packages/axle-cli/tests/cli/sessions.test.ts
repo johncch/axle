@@ -2,7 +2,7 @@ import type { AgentConfig, AgentDefinition, AIProvider } from "@fifthrevision/ax
 import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAgentSession } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
 import {
@@ -14,6 +14,7 @@ import {
 import type { Renderer } from "../../src/ui/index.js";
 
 const nullRenderer: Renderer = {
+  acceptsInputDuringTurn: false,
   renderPriorTurns() {},
   onEvent() {},
   info() {},
@@ -100,6 +101,42 @@ function createMockProvider(text: string, requestMessages?: unknown[][]): AIProv
       };
     },
   };
+}
+
+function createHangingFirstCallProvider(requestMessages: unknown[][]): AIProvider {
+  let callIndex = 0;
+  return {
+    name: "mock",
+    async *createStreamingRequest(_model, params) {
+      requestMessages.push([...params.messages]);
+      callIndex += 1;
+      yield {
+        type: "start" as const,
+        id: `mock-${callIndex}`,
+        data: { model: "mock", timestamp: 0 },
+      };
+      if (callIndex === 1) {
+        await new Promise<never>((_resolve, reject) => {
+          params.signal?.addEventListener("abort", () => reject(params.signal?.reason), {
+            once: true,
+          });
+        });
+      }
+      yield { type: "text-start" as const, data: { index: 0 } };
+      yield { type: "text-delta" as const, data: { index: 0, text: "hi" } };
+      yield { type: "text-complete" as const, data: { index: 0 } };
+      yield {
+        type: "complete" as const,
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+      };
+    },
+  };
+}
+
+function userTexts(file: CliSessionFile): string[] {
+  return file.turns
+    .filter((turn) => turn.owner === "user")
+    .map((turn) => (turn.parts[0]?.type === "text" ? turn.parts[0].text : ""));
 }
 
 async function readSessionFile(sessionId: string): Promise<CliSessionFile> {
@@ -364,6 +401,151 @@ describe("runSingle session persistence", () => {
 
     const file = await readSessionFile("chat-1");
     expect(file.session.messages).toHaveLength(2);
+  });
+
+  describe("with a renderer that accepts input during a turn", () => {
+    function createTypeAheadRenderer(
+      inputs: string[],
+      onFirstTurnStart: (interrupt: () => void) => void = () => {},
+    ) {
+      const warnings: string[] = [];
+      let interrupt = () => {};
+      let started = false;
+      let mostPending = 0;
+      const renderer: Renderer = {
+        ...nullRenderer,
+        acceptsInputDuringTurn: true,
+        warn: (m) => void warnings.push(m),
+        setInterruptHandler: (handler) => {
+          if (handler) interrupt = handler;
+        },
+        onEvent: (event, transcript) => {
+          mostPending = Math.max(mostPending, transcript.pending.length);
+          if (event.type === "turn:start" && !started) {
+            started = true;
+            setTimeout(() => onFirstTurnStart(interrupt));
+          }
+        },
+        promptInput: () => {
+          const next = inputs.shift();
+          return next === undefined ? new Promise(() => {}) : Promise.resolve(next);
+        },
+      };
+      return { renderer, warnings, mostPending: () => mostPending };
+    }
+
+    function runChat(sessionId: string, provider: AIProvider, renderer: Renderer) {
+      return runAgentSession(
+        {
+          agentConfig: { provider, model: "test-model", sessionId },
+          spanName: "chat",
+          contextWindow: 200_000,
+          interactive: true,
+        },
+        createStats(),
+        new Tracer().startSpan("chat"),
+        renderer,
+        new SessionStore(definition, { home: HOME }),
+      );
+    }
+
+    it("queues every submission on the agent and drains the queue before /quit exits", async () => {
+      const requestMessages: unknown[][] = [];
+      const typeAhead = createTypeAheadRenderer(["one", "two", "three", "/quit"]);
+
+      const succeeded = await runChat(
+        "ahead-1",
+        createMockProvider("hi", requestMessages),
+        typeAhead.renderer,
+      );
+
+      expect(succeeded).toBe(true);
+      expect(typeAhead.mostPending()).toBeGreaterThan(1);
+      expect(requestMessages).toHaveLength(3);
+      expect(userTexts(await readSessionFile("ahead-1"))).toEqual(["one", "two", "three"]);
+    });
+
+    it("saves each turn as it settles, while later messages are still queued", async () => {
+      let releaseSecondCall = () => {};
+      const secondCallGate = new Promise<void>((resolve) => (releaseSecondCall = resolve));
+      let callIndex = 0;
+      const provider: AIProvider = {
+        name: "mock",
+        async *createStreamingRequest() {
+          callIndex += 1;
+          yield {
+            type: "start" as const,
+            id: `mock-${callIndex}`,
+            data: { model: "mock", timestamp: 0 },
+          };
+          if (callIndex === 2) await secondCallGate;
+          yield { type: "text-start" as const, data: { index: 0 } };
+          yield { type: "text-delta" as const, data: { index: 0, text: "hi" } };
+          yield { type: "text-complete" as const, data: { index: 0 } };
+          yield {
+            type: "complete" as const,
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+      const typeAhead = createTypeAheadRenderer(["one", "two", "/quit"]);
+
+      const run = runChat("ahead-save", provider, typeAhead.renderer);
+
+      await vi.waitFor(async () => {
+        const midQueue = await readSessionFile("ahead-save");
+        expect(userTexts(midQueue)).toEqual(["one"]);
+        expect(midQueue.session.messages).toHaveLength(2);
+      });
+      expect(callIndex).toBe(2);
+
+      releaseSecondCall();
+      await run;
+      expect(userTexts(await readSessionFile("ahead-save"))).toEqual(["one", "two"]);
+    });
+
+    it("one Ctrl-C cancels the active send and the next queued one runs", async () => {
+      const requestMessages: unknown[][] = [];
+      const typeAhead = createTypeAheadRenderer(["one", "two", "/quit"], (interrupt) =>
+        interrupt(),
+      );
+
+      const succeeded = await runChat(
+        "ahead-2",
+        createHangingFirstCallProvider(requestMessages),
+        typeAhead.renderer,
+      );
+
+      expect(succeeded).toBe(true);
+      expect(typeAhead.warnings).toEqual(["Interrupted — Ctrl-C again to exit"]);
+      expect(requestMessages).toHaveLength(2);
+      const file = await readSessionFile("ahead-2");
+      expect(userTexts(file)).toEqual(["one", "two"]);
+      expect(
+        file.turns.filter((turn) => turn.owner === "agent").map((turn) => turn.status),
+      ).toEqual(["cancelled", "complete"]);
+    });
+
+    it("a second Ctrl-C within the window drops the queue, saves, and exits", async () => {
+      const requestMessages: unknown[][] = [];
+      const typeAhead = createTypeAheadRenderer(["one", "two", "three"], (interrupt) => {
+        interrupt();
+        interrupt();
+      });
+
+      const succeeded = await runChat(
+        "ahead-3",
+        createHangingFirstCallProvider(requestMessages),
+        typeAhead.renderer,
+      );
+
+      expect(succeeded).toBe(true);
+      expect(typeAhead.warnings).toEqual(["Interrupted — Ctrl-C again to exit", "Interrupted"]);
+      expect(requestMessages).toHaveLength(1);
+      const file = await readSessionFile("ahead-3");
+      expect(userTexts(file)).toEqual(["one"]);
+      expect(file.turns.at(-1)?.status).toBe("cancelled");
+    });
   });
 
   it.each(["exit", "Exit", " EXIT ", "quit", "Quit"])(

@@ -94,6 +94,8 @@ class SessionRuntime {
   private readonly sessionStore?: SessionStore;
   private readonly span: Span;
   private persisted: boolean;
+  private unsaved: boolean;
+  private settledWrites: Promise<unknown> = Promise.resolve();
 
   constructor(options: {
     agentConfig: AgentConfig;
@@ -116,6 +118,9 @@ class SessionRuntime {
     this.sessionStore = options.sessionStore;
     this.span = options.span;
     this.persisted = Boolean(options.session);
+    // A resumed session starts saved; a new one is unsaved so even a send-less
+    // chat leaves a file behind (the resume hint printed on exit must be true).
+    this.unsaved = !options.session;
     this.agent.on((event) => {
       this.transcript.apply(event);
       options.onEvent(event, this.transcript);
@@ -123,12 +128,35 @@ class SessionRuntime {
   }
 
   async save(): Promise<boolean> {
+    return this.write(await this.agent.snapshot(), this.transcript.turns);
+  }
+
+  saveOnSettle(): void {
+    this.agent.onSettled((session) => {
+      this.unsaved = true;
+      const turns = [...this.transcript.turns];
+      this.settledWrites = this.settledWrites.then(() => this.write(session, turns));
+    });
+  }
+
+  async flush(): Promise<void> {
+    await this.settledWrites;
+  }
+
+  async finishSaving(): Promise<void> {
+    await this.settledWrites;
+    if (this.unsaved) await this.save();
+  }
+
+  private async write(session: AgentSession, turns: readonly Turn[]): Promise<boolean> {
     if (!this.sessionStore) return false;
     try {
-      await this.sessionStore.save(await this.agent.snapshot(), this.transcript.turns);
+      await this.sessionStore.save(session, turns);
       this.persisted = true;
+      this.unsaved = false;
       return true;
     } catch (e) {
+      this.unsaved = true;
       const message = e instanceof Error ? e.message : String(e);
       this.span.warn(`Failed to save session: ${message}`);
       return false;
@@ -141,6 +169,10 @@ class SessionRuntime {
     return `axle resume ${id}`;
   }
 }
+
+const CHAT_EXIT_WINDOW_MS = 1000;
+
+type SendOutcome = "ok" | "failed" | "interrupted";
 
 export async function runAgentSession(
   spec: AgentSessionSpec,
@@ -164,7 +196,8 @@ export async function runAgentSession(
 
   const controller = new AbortController();
   let sigintCount = 0;
-  const onInterrupt = () => {
+  let lastChatInterruptAt: number | undefined;
+  const interruptRun = () => {
     sigintCount += 1;
     if (sigintCount === 1 && agent.stop()) {
       renderer.warn("Finishing the current step — Ctrl-C again to cancel now");
@@ -172,18 +205,22 @@ export async function runAgentSession(
       controller.abort();
     }
   };
+  const interruptChat = () => {
+    const now = Date.now();
+    const repeated =
+      lastChatInterruptAt !== undefined && now - lastChatInterruptAt < CHAT_EXIT_WINDOW_MS;
+    if (repeated || !agent.cancel()) {
+      controller.abort();
+      return;
+    }
+    lastChatInterruptAt = now;
+    renderer.warn("Interrupted — Ctrl-C again to exit");
+  };
+  const onInterrupt = spec.interactive ? interruptChat : interruptRun;
   process.on("SIGINT", onInterrupt);
   renderer.setInterruptHandler(onInterrupt);
 
-  // A resumed session starts clean; a new one is dirty so even a send-less
-  // chat leaves a file behind (the resume hint printed on exit must be true).
-  let dirty = !spec.session;
-  const saveSession = async () => {
-    if (!sessionStore || !dirty) return;
-    if (await runtime.save()) {
-      dirty = false;
-    }
-  };
+  runtime.saveOnSettle();
 
   if (spec.session) {
     const line = `Resuming session ${agent.sessionId}`;
@@ -221,8 +258,7 @@ export async function runAgentSession(
     if (event.type === "compaction:complete") reportUsage();
   });
 
-  const sendMessage = async (message: Instruct | string): Promise<boolean> => {
-    dirty = true;
+  const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
     try {
       const result = await agent.send(message, { signal: controller.signal }).final;
 
@@ -234,11 +270,16 @@ export async function runAgentSession(
         renderer.error(msg);
         parentSpan.error(msg);
         runSpan.error(msg);
-        return false;
+        return "failed";
       }
 
       parentSpan.info(result.response, { markdown: true });
-      return true;
+      return "ok";
+    } catch (e) {
+      const chatInterrupt =
+        spec.interactive && e instanceof AxleAgentAbortError && !controller.signal.aborted;
+      if (chatInterrupt) return "interrupted";
+      throw e;
     } finally {
       sigintCount = 0;
     }
@@ -246,35 +287,51 @@ export async function runAgentSession(
 
   try {
     if (spec.initial !== undefined) {
-      const ok = await sendMessage(spec.initial);
-      await saveSession();
-      if (!ok) {
+      const outcome = await sendMessage(spec.initial);
+      await runtime.flush();
+      if (outcome === "failed") {
         runSpan.end("error");
         return false;
       }
     }
 
     if (spec.interactive) {
-      while (true) {
-        const input = await renderer.promptInput();
+      const sessionAborted = new Promise<null>((resolve) => {
+        controller.signal.addEventListener("abort", () => resolve(null), { once: true });
+      });
+      const chatSend = async (text: string): Promise<void> => {
+        try {
+          await sendMessage(text);
+        } catch (e) {
+          if (e instanceof AxleAgentAbortError) return;
+          const msg = e instanceof Error ? e.message : String(e);
+          renderer.error(msg);
+          parentSpan.error(msg);
+        }
+        await runtime.flush();
+      };
+      const inFlight = new Set<Promise<void>>();
+
+      while (!controller.signal.aborted) {
+        const input = await Promise.race([renderer.promptInput(), sessionAborted]);
         if (input === null) break;
         const text = input.trim();
         if (text === "") continue;
         if (text === "/quit" || ["exit", "quit"].includes(text.toLowerCase())) break;
 
-        try {
-          await sendMessage(text);
-        } catch (e) {
-          if (e instanceof AxleAgentAbortError) {
-            renderer.warn("Interrupted");
-            parentSpan.warn("Interrupted");
-            break;
-          }
-          const msg = e instanceof Error ? e.message : String(e);
-          renderer.error(msg);
-          parentSpan.error(msg);
+        const sent = chatSend(text);
+        if (renderer.acceptsInputDuringTurn) {
+          inFlight.add(sent);
+          void sent.finally(() => inFlight.delete(sent));
+        } else {
+          await sent;
         }
-        await saveSession();
+      }
+
+      await Promise.all(inFlight);
+      if (controller.signal.aborted) {
+        renderer.warn("Interrupted");
+        parentSpan.warn("Interrupted");
       }
     }
 
@@ -294,7 +351,7 @@ export async function runAgentSession(
   } finally {
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
-    await saveSession();
+    await runtime.finishSaving();
     const resumeCommand = runtime.resumeCommand();
     if (sessionStore && resumeCommand) {
       const line = `Resume this session:\n${resumeCommand}`;

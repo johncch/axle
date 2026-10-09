@@ -57,6 +57,13 @@ to a single assistant message or to a provider request.
 (`agent.send(...)`), executed as a FIFO queue item. The host-facing unit of
 "the agent took its turn."
 
+**Operation** — a queued unit of agent work that opens a turn: a Send or a
+manual compaction. Operations run one at a time in FIFO order. An operation
+is _pending_ from the call until its turn opens, and _settles_ when that
+turn ends; `agent.onSettled(...)` then hands the host the session. Work that
+opens no turn (`agent.snapshot()`) is queued the same way but is not an
+operation.
+
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
 optional bundled files. In core a `Skill` is plain data — name, description,
@@ -69,9 +76,18 @@ the tools the host registered.
 and annotations. The exported `Transcript` class is the shipped in-memory
 implementation; hosts persist its `turns` and pass them to the constructor on
 restore. The constructor shallow-copies that array, and the public `turns`
-view is readonly; structural changes go through `apply`. The Agent holds no
+view is readonly; structural changes go through `apply`. Its `pending` view
+holds operations the Agent has accepted but not started; that is live state
+and is never saved. The Agent holds no
 transcript — it emits events and keeps only the active `messages` (folded
 working memory, bounded by compaction). Lose the turns, lose the transcript.
+
+**Pending entry** — a placeholder for a turn the Agent has accepted but not
+yet opened: a queued `send()` or a queued manual compaction. It is keyed by
+the id its turn will carry and lives in `Transcript.pending`, never in
+`turns`. It ends when that turn opens or when the operation is dropped
+(cancelled, or failed during setup). Pending entries are live state: they are
+not saved, and a transcript restored from saved turns has none.
 
 **Session** — the continuable identity of a conversation (`sessionId`).
 `AgentSession` is its serialized form — the pure continuation

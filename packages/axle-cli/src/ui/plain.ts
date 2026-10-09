@@ -13,6 +13,7 @@ export class PlainRenderer implements Renderer {
   private write: (text: string) => void;
   private atLineStart = true;
   private readline = new ReadlinePrompt();
+  readonly acceptsInputDuringTurn = false;
 
   constructor(options?: { write?: (text: string) => void }) {
     this.write = options?.write ?? ((text) => process.stdout.write(text));
@@ -29,6 +30,7 @@ export class PlainRenderer implements Renderer {
       for (const part of turn.parts) {
         this.renderStaticPart(turn.owner, part);
       }
+      if (turn.status === "cancelled") this.line("(interrupted)");
     }
   }
 
@@ -62,6 +64,9 @@ export class PlainRenderer implements Renderer {
         }
         break;
       }
+      case "turn:end":
+        if (event.status === "cancelled") this.line("(interrupted)");
+        break;
       case "error":
         this.line(`✖ ${event.error.message}`);
         break;

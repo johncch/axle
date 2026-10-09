@@ -11,6 +11,7 @@ import { runCleanup } from "./cli/cleanup.js";
 import {
   getCliConfig,
   getCliConfigSources,
+  getCredentials,
   getCredentialSources,
   getJobConfig,
   getServiceConfig,
@@ -286,7 +287,7 @@ program
         serviceConfig: await getServiceConfig({ trusted }),
         credentialSources: await getCredentialSources({ trusted }),
         skills: (await discoverSkills({ trusted })).entries,
-        env: process.env,
+        credentials: await getCredentials({ trusted }),
         catalog,
       });
       for (const line of lines) console.log(line);
@@ -543,6 +544,7 @@ const { mcps, agentConfig, droppedTools } = await resolveAgentDefinition(
   pending.definition,
   cliConfig,
   serviceConfig,
+  await getCredentials({ trusted }),
   rootSpan,
   { trusted },
   discoveredSkills.skills,

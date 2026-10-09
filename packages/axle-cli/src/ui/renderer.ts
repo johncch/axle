@@ -18,6 +18,12 @@ export interface SessionUsage {
  * mode is fixed at launch and never switched mid-run.
  */
 export interface Renderer {
+  /**
+   * Whether `promptInput` can be awaited while a turn is running. When true
+   * the chat loop sends each submission straight to the agent's queue and
+   * prompts again; when false it waits for the send to settle first.
+   */
+  readonly acceptsInputDuringTurn: boolean;
   /** Replay previously saved turns when resuming a session. */
   renderPriorTurns(turns: readonly Turn[]): void;
   /** Live turn event, already applied to the transcript. */

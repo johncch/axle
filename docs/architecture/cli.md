@@ -144,7 +144,13 @@ against it; divergence is a defect. State ownership is defined in
    ink transcript. Under ink the terminal stays in raw mode for the whole
    session, so Ctrl-C arrives as a key event routed through the renderer's
    interrupt handler — a cooked-mode SIGINT would hit the ancestor process
-   group (pnpm/tsx) and kill the tree before graceful stop could run.
+   group (pnpm/tsx) and kill the tree before the runner could act on it.
+   In a chat that handler cancels the active turn and lets the agent's
+   queue continue, and a second press within a second aborts the session;
+   a run without a chat keeps stop-at-the-tool-boundary, then cancel. Ink
+   accepts input during a turn and sends it straight to the agent's queue,
+   drawing the transcript's pending entries as queued rows; the plain
+   renderer prompts only between turns.
    `close()` is async and paints one final frame before unmounting.
    Questions the host asks (`setup`, `cleanup`, the missing-model fallback)
    speak the GitHub CLI dialect: a green `?` before the question, the
