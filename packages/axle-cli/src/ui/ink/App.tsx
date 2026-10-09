@@ -54,6 +54,7 @@ export function App({
       {!state.closed && (
         <InputLine
           onSubmit={onSubmit}
+          awaitingInput={state.awaitingInput}
           atIdlePrompt={state.awaitingInput && !busy}
           onInterrupt={state.onInterrupt}
         />
@@ -82,10 +83,12 @@ function UsageBar({ usage }: { usage: SessionUsage }) {
 
 function InputLine({
   onSubmit,
+  awaitingInput,
   atIdlePrompt,
   onInterrupt,
 }: {
   onSubmit: (value: string | null) => void;
+  awaitingInput: boolean;
   atIdlePrompt: boolean;
   onInterrupt?: () => void;
 }) {
@@ -137,7 +140,7 @@ function InputLine({
   // Invisible until the prompt is live or the user starts typing ahead \u2014
   // non-interactive runs keep the input mounted (raw mode, Ctrl-C handling)
   // without showing a prompt they can't use.
-  if (!atIdlePrompt && value === "") return null;
+  if (!awaitingInput && value === "") return null;
 
   return (
     <Box marginTop={1}>
@@ -211,6 +214,7 @@ function TurnView({
         />
       ))}
       {turn.error && <Text color="red">✖ {turn.error.message}</Text>}
+      {turn.status === "cancelled" && <Text dimColor>(interrupted)</Text>}
     </Box>
   );
 }

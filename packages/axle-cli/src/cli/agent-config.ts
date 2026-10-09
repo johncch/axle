@@ -8,6 +8,7 @@ import type {
   Span,
 } from "@fifthrevision/axle";
 import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
+import type { Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
@@ -101,6 +102,7 @@ function resolveCliProvider(
   definition: ProviderDefinition,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
+  credentials: Credentials,
   definitionModel: string | undefined,
 ): { provider: AIProvider; model: string } {
   const endpoint = resolveEndpoint(definition, cliConfig);
@@ -119,7 +121,7 @@ function resolveCliProvider(
 
   switch (type) {
     case "openai": {
-      const apiKey = requireApiKey(type, config);
+      const apiKey = requireApiKey(type, config, credentials);
       return {
         provider: openai(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -127,7 +129,7 @@ function resolveCliProvider(
     }
 
     case "anthropic": {
-      const apiKey = requireApiKey(type, config);
+      const apiKey = requireApiKey(type, config, credentials);
       return {
         provider: anthropic(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -135,7 +137,7 @@ function resolveCliProvider(
     }
 
     case "gemini": {
-      const apiKey = requireApiKey(type, config);
+      const apiKey = requireApiKey(type, config, credentials);
       return {
         provider: gemini(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
         model,
@@ -151,7 +153,7 @@ function resolveCliProvider(
       }
       return {
         provider: chatCompletions(baseUrl, {
-          apiKey: resolveApiKey(config),
+          apiKey: resolveApiKey(type, config, credentials),
           maxRetries: config.maxRetries,
           timeoutMs: config.timeoutMs,
           vendor: config.vendor,
@@ -165,22 +167,30 @@ function resolveCliProvider(
   }
 }
 
-function resolveApiKey(config: Record<string, any>): string | undefined {
+function resolveApiKey(
+  type: keyof typeof API_KEY_VARIABLES,
+  config: Record<string, any>,
+  credentials: Credentials,
+): string | undefined {
   const envName = config.apiKeyEnv;
   if (typeof envName === "string" && envName.length > 0) {
-    return process.env[envName];
+    const apiKey = credentials[envName];
+    if (!apiKey) {
+      throw new Error(`No API key for ${type}: apiKeyEnv names ${envName}, which is not set.`);
+    }
+    return apiKey;
   }
 
   return config.apiKey;
 }
 
-function requireApiKey(type: keyof typeof API_KEY_VARIABLES, config: Record<string, any>): string {
-  const apiKey = resolveApiKey(config);
+function requireApiKey(
+  type: keyof typeof API_KEY_VARIABLES,
+  config: Record<string, any>,
+  credentials: Credentials,
+): string {
+  const apiKey = resolveApiKey(type, config, credentials);
   if (apiKey) return apiKey;
-  const envName = config.apiKeyEnv;
-  if (typeof envName === "string" && envName.length > 0) {
-    throw new Error(`No API key for ${type}: apiKeyEnv names ${envName}, which is not set.`);
-  }
   throw new Error(
     `No API key for ${type}. Set ${API_KEY_VARIABLES[type]} in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.`,
   );
@@ -244,12 +254,21 @@ export async function createCliAgentConfig(
   jobConfig: JobConfig,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
+  credentials: Credentials,
   span: Span,
   trust: FolderTrust,
   skills: Skill[],
 ): Promise<CliAgentConfig> {
   const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-  return resolveAgentDefinition(definition, cliConfig, serviceConfig, span, trust, skills);
+  return resolveAgentDefinition(
+    definition,
+    cliConfig,
+    serviceConfig,
+    credentials,
+    span,
+    trust,
+    skills,
+  );
 }
 
 /**
@@ -264,6 +283,7 @@ export async function resolveAgentDefinition(
   definition: AgentDefinition,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
+  credentials: Credentials,
   span: Span,
   trust: FolderTrust,
   skills: Skill[],
@@ -276,6 +296,7 @@ export async function resolveAgentDefinition(
       definition.provider,
       cliConfig,
       serviceConfig,
+      credentials,
       definition.model,
     );
     const requested = requestedToolNames(

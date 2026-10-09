@@ -42,6 +42,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       serviceConfig,
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -68,6 +69,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -83,6 +85,7 @@ describe("createCliAgentConfig", () => {
         { model: "anthropic/claude-sonnet-5", task: "Run" },
         {},
         {},
+        process.env,
         tracer,
         { trusted: true },
         [],
@@ -95,6 +98,7 @@ describe("createCliAgentConfig", () => {
       { model: "anthropic/claude-sonnet-5", task: "Run" },
       { defaults: { provider: "anthropic" } },
       { anthropic: { apiKey: "key" } },
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -120,6 +124,7 @@ describe("createCliAgentConfig", () => {
         },
       },
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -139,6 +144,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -156,6 +162,7 @@ describe("createCliAgentConfig", () => {
         { provider: { name: "bedrock" }, task: "Run" },
         {},
         {},
+        process.env,
         tracer,
         { trusted: true },
         [],
@@ -173,6 +180,7 @@ describe("createCliAgentConfig", () => {
         defaults: { models: { gw: "vendor/model-a" } },
       },
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -186,6 +194,7 @@ describe("createCliAgentConfig", () => {
       { provider: { name: "anthropic" }, task: "Run" },
       { defaults: { models: { anthropic: "anthropic/from-defaults" } } },
       { anthropic: { apiKey: "key", model: "anthropic/from-env" } },
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -200,6 +209,7 @@ describe("createCliAgentConfig", () => {
         { provider: { type: "anthropic" }, task: "Run" },
         {},
         { anthropic: { apiKey: "key" } },
+        process.env,
         tracer,
         { trusted: true },
         [],
@@ -213,6 +223,7 @@ describe("createCliAgentConfig", () => {
         { provider: { type: "anthropic" }, model: "anthropic/claude-sonnet-5", task: "Run" },
         {},
         {},
+        process.env,
         tracer,
         { trusted: true },
         [],
@@ -220,6 +231,66 @@ describe("createCliAgentConfig", () => {
     ).rejects.toThrow(
       "No API key for anthropic. Set ANTHROPIC_API_KEY in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.",
     );
+  });
+
+  test("apiKeyEnv is resolved from the credentials it is given, not the process environment", async () => {
+    const { agentConfig } = await createCliAgentConfig(
+      {
+        provider: { type: "openai", apiKeyEnv: "AXLE_TEST_FILE_ONLY_KEY" },
+        model: "openai/gpt-test",
+        task: "Run",
+      },
+      {},
+      {},
+      { AXLE_TEST_FILE_ONLY_KEY: "from-credentials-file" },
+      tracer,
+      { trusted: true },
+      [],
+    );
+
+    expect(agentConfig.provider.name).toBe("OpenAI");
+  });
+
+  test("a chatcompletions profile whose apiKeyEnv is unset fails by name", async () => {
+    await expect(
+      createCliAgentConfig(
+        { provider: { name: "router" }, model: "some/model", task: "Run" },
+        {
+          providers: {
+            router: {
+              type: "chatcompletions",
+              baseUrl: "https://router.example.test/v1",
+              apiKeyEnv: "AXLE_TEST_MISSING_KEY",
+            },
+          },
+        },
+        {},
+        {},
+        tracer,
+        { trusted: true },
+        [],
+      ),
+    ).rejects.toThrow(
+      "No API key for chatcompletions: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
+    );
+  });
+
+  test("a chatcompletions endpoint with no key configured runs keyless", async () => {
+    const { agentConfig } = await createCliAgentConfig(
+      {
+        provider: { type: "chatcompletions", baseUrl: "http://localhost:11434/v1" },
+        model: "local/model",
+        task: "Run",
+      },
+      {},
+      {},
+      {},
+      tracer,
+      { trusted: true },
+      [],
+    );
+
+    expect(agentConfig.provider.name).toBe("ChatCompletions");
   });
 
   test("an unset apiKeyEnv variable is named", async () => {
@@ -232,6 +303,7 @@ describe("createCliAgentConfig", () => {
         },
         {},
         {},
+        process.env,
         tracer,
         { trusted: true },
         [],
@@ -250,6 +322,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       { anthropic: { apiKey: "key", model: "anthropic/claude-haiku-4-5" } },
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -273,6 +346,7 @@ describe("createCliAgentConfig", () => {
       },
       {},
       { anthropic: { apiKey: "key" } },
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -319,6 +393,7 @@ describe("default tools", () => {
       definition,
       config,
       serviceConfig,
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -379,6 +454,7 @@ describe("resolveAgentDefinition", () => {
       definition,
       { providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } } },
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -387,6 +463,7 @@ describe("resolveAgentDefinition", () => {
       definition,
       { providers: { gw: { type: "anthropic", apiKey: "key" } } },
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -398,7 +475,7 @@ describe("resolveAgentDefinition", () => {
 
   test("a named provider whose profile is gone fails by name", async () => {
     await expect(
-      resolveAgentDefinition(definition, {}, {}, tracer, { trusted: true }, []),
+      resolveAgentDefinition(definition, {}, {}, process.env, tracer, { trusted: true }, []),
     ).rejects.toThrow(/"gw" is not a provider profile/);
   });
 
@@ -411,6 +488,7 @@ describe("resolveAgentDefinition", () => {
       },
       {},
       {},
+      process.env,
       tracer,
       { trusted: true },
       [],
@@ -455,6 +533,7 @@ describe("skills", () => {
         definition,
         cliConfig,
         serviceConfig,
+        process.env,
         tracer,
         { trusted: true },
         skills,
@@ -469,7 +548,15 @@ describe("folder trust", () => {
   const cliConfig = { defaults: { provider: "anthropic" } };
   const serviceConfig: ServiceConfig = { anthropic: { apiKey: "key", model: "anthropic/m" } };
   const untrusted = (definition: AgentDefinition, config = cliConfig) =>
-    resolveAgentDefinition(definition, config, serviceConfig, tracer, { trusted: false }, []);
+    resolveAgentDefinition(
+      definition,
+      config,
+      serviceConfig,
+      process.env,
+      tracer,
+      { trusted: false },
+      [],
+    );
   const toolNames = (agentConfig: { tools?: { name: string }[] }) =>
     agentConfig.tools?.map((tool) => tool.name);
 
@@ -512,6 +599,7 @@ describe("folder trust", () => {
       createDefaultAgentDefinition(cliConfig, serviceConfig),
       cliConfig,
       serviceConfig,
+      process.env,
       tracer,
       { trusted: true },
       [],

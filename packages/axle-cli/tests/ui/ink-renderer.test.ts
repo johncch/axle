@@ -102,6 +102,40 @@ describe("App", () => {
     expect(render(streaming)).not.toContain("**");
   });
 
+  it("marks a cancelled turn as interrupted", () => {
+    const store = new UiStore<UiState>({
+      staticItems: [
+        { kind: "turn", turn: userTurn("u1", "what next?") },
+        { kind: "turn", turn: { id: "a1", owner: "agent", status: "cancelled", parts: [] } },
+      ],
+      awaitingInput: false,
+      pending: [],
+      queuedInputs: [],
+    });
+
+    const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(output).toContain("what next?\n(interrupted)");
+  });
+
+  it("keeps the input line visible while the agent is busy and the chat is taking input", () => {
+    const busy = (awaitingInput: boolean) =>
+      new UiStore<UiState>({
+        staticItems: [],
+        liveTurn: { id: "a1", owner: "agent", status: "streaming", parts: [] },
+        awaitingInput,
+        pending: [{ id: "u2", kind: "send", turn: userTurn("u2", "queued one") }],
+        queuedInputs: [],
+      });
+    const render = (store: UiStore<UiState>) =>
+      renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+    const inputLines = (output: string) =>
+      output.split("\n").filter((line) => line.trimEnd() === "❯" || line.startsWith("❯  "));
+
+    expect(inputLines(render(busy(true)))).toHaveLength(1);
+    expect(inputLines(render(busy(false)))).toHaveLength(0);
+  });
+
   it("lists the transcript's pending entries as queued rows", () => {
     const store = new UiStore<UiState>({
       staticItems: [],

@@ -62,7 +62,7 @@ function info(overrides: Partial<InfoInput>): string[] {
     serviceConfig: {},
     credentialSources: {},
     skills: [],
-    env: {},
+    credentials: {},
     catalog: emptyCatalog,
     ...overrides,
   });
@@ -147,7 +147,7 @@ describe("formatInfo", () => {
         GEMINI_API_KEY: join(dirs.user, "credentials"),
         GEMINI_MODEL: join(dirs.project, "credentials"),
       },
-      env: { WORK_KEY: "sk-work" },
+      credentials: { WORK_KEY: "sk-work" },
     });
 
     expect(lines.join("\n")).not.toMatch(/sk-/);

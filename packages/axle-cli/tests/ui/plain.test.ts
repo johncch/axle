@@ -35,6 +35,26 @@ describe("PlainRenderer", () => {
     expect(text()).toBe("Hello world\n");
   });
 
+  it("marks a cancelled turn as interrupted, live and on replay", () => {
+    const live = createHarness();
+    live.feed({ type: "turn:start", turnId: "t1" });
+    live.feed({ type: "turn:end", turnId: "t1", status: "cancelled", usage: { in: 0, out: 0 } });
+    expect(live.text()).toBe("(interrupted)\n");
+
+    const writes: string[] = [];
+    const replay = new PlainRenderer({ write: (chunk) => void writes.push(chunk) });
+    replay.renderPriorTurns([
+      {
+        id: "u1",
+        owner: "user",
+        status: "complete",
+        parts: [{ id: "p", type: "text", text: "hi" }],
+      },
+      { id: "a1", owner: "agent", status: "cancelled", parts: [] },
+    ]);
+    expect(writes.join("")).toBe("❯ hi\n(interrupted)\n");
+  });
+
   it("renders a settled action with args and duration", () => {
     const { feed, text } = createHarness();
 

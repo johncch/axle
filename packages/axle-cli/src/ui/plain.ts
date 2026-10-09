@@ -30,6 +30,7 @@ export class PlainRenderer implements Renderer {
       for (const part of turn.parts) {
         this.renderStaticPart(turn.owner, part);
       }
+      if (turn.status === "cancelled") this.line("(interrupted)");
     }
   }
 
@@ -63,6 +64,9 @@ export class PlainRenderer implements Renderer {
         }
         break;
       }
+      case "turn:end":
+        if (event.status === "cancelled") this.line("(interrupted)");
+        break;
       case "error":
         this.line(`✖ ${event.error.message}`);
         break;

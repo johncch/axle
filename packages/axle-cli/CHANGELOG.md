@@ -94,6 +94,9 @@
   the transcript's pending entries until its turn starts. `/quit` typed
   mid-turn exits after the queue drains. The plain renderer is unchanged:
   it prompts only between turns.
+- **A cancelled turn is marked `(interrupted)`.** Both renderers show it
+  under the turn, live and when a resumed session replays its history, so
+  a turn that was cut short no longer reads as a finished one.
 
 - **Skills.** A skill is a folder in the Agent Skills format
   (agentskills.io): a `SKILL.md` with `name` and `description` in its
@@ -197,6 +200,16 @@
 
 ### Fixed
 
+- **`apiKeyEnv` reads credentials files.** A provider profile that names
+  its key with `apiKeyEnv` was resolved against the process environment
+  only, so a key kept in `~/.axle/credentials` or `.axle/credentials` was
+  never found. It now resolves like every other credential: environment,
+  then project file, then user file. `axle info` reports the same.
+- **A named key that is missing stops the run.** A `chatcompletions`
+  profile whose `apiKeyEnv` variable was unset sent the request without a
+  key and surfaced the endpoint's own error. It now fails before the
+  request with `apiKeyEnv names <NAME>, which is not set`. A profile with
+  no key configured at all still runs keyless, for local endpoints.
 - **OpenAI runs no longer die when the model cites inside a tool call.**
   With `web_search` on, `gpt-6-luna` can attach a citation to the arguments
   of a function call, and the OpenAI SDK's stream helper rejected the event
