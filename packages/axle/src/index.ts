@@ -53,6 +53,30 @@ export type {
   ChatCompletionsVendor,
 } from "./providers/chatcompletions/provider.js";
 export { estimateContextUsage } from "./providers/context.js";
+
+// Decisions (@experimental)
+export { choice, decide, noul, score } from "./providers/decide.js";
+export type {
+  AnswerFor,
+  ChoiceAnswer,
+  ChoiceQuestion,
+  DecideParams,
+  DecideResult,
+  DecisionAnswer,
+  DecisionAnswers,
+  DecisionInput,
+  DecisionJson,
+  DecisionProvider,
+  DecisionQuestion,
+  DecisionQuestions,
+  DecisionRefusal,
+  DecisionRequestParams,
+  DecisionResponse,
+  NoulAnswer,
+  NoulQuestion,
+  ScoreAnswer,
+  ScoreQuestion,
+} from "./providers/decide.js";
 export { gemini } from "./providers/gemini/index.js";
 export type {
   GenerateInstructParams,
@@ -88,6 +112,8 @@ export type {
   Refusal,
   ToolChoice,
 } from "./providers/types.js";
+export { typesafe } from "./providers/typesafe/index.js";
+export type { TypesafeOptions } from "./providers/typesafe/index.js";
 
 // Tools
 export { braveWebSearch, createAgentTool, parallelize } from "./tools/index.js";
