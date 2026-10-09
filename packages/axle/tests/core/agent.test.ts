@@ -373,6 +373,83 @@ describe("Agent", () => {
       ).toEqual(["run the tool", "urgent"]);
     });
 
+    test("cancel() cancels only the active send and the queued one runs", async () => {
+      let calls = 0;
+      const provider: AIProvider = {
+        name: "first-call-hangs",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          calls += 1;
+          yield { type: "start", id: `c${calls}`, data: { model: "mock", timestamp: 0 } };
+          if (calls === 1) {
+            await new Promise<never>((_resolve, reject) => {
+              signal?.addEventListener(
+                "abort",
+                () => reject(new DOMException("aborted", "AbortError")),
+                { once: true },
+              );
+            });
+          }
+          yield { type: "text-start", data: { index: 0 } };
+          yield { type: "text-delta", data: { index: 0, text: "second reply" } };
+          yield { type: "text-complete", data: { index: 0 } };
+          yield {
+            type: "complete",
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+
+      const first = agent.send("first").final.catch((error) => error);
+      const second = agent.send("second").final;
+      await vi.waitFor(() => expect(calls).toBe(1));
+
+      expect(agent.cancel("changed my mind")).toBe(true);
+
+      const firstError = await first;
+      expect(firstError).toBeInstanceOf(AxleAgentAbortError);
+      expect((firstError as AxleAgentAbortError).reason).toBe("changed my mind");
+      expect((firstError as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect((await second).response).toBe("second reply");
+    });
+
+    test("a cancelled turn settles cancelled even when the provider rethrows a non-error reason", async () => {
+      const provider: AIProvider = {
+        name: "rethrows-reason",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "r1", data: { model: "mock", timestamp: 0 } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const transcript = new Transcript();
+      let opened = false;
+      agent.on((event) => {
+        transcript.apply(event);
+        if (event.type === "turn:start") opened = true;
+      });
+
+      const final = agent.send("hello").final.catch((error) => error);
+      await vi.waitFor(() => expect(opened).toBe(true));
+      agent.cancel("changed my mind");
+
+      const error = await final;
+      expect(error).toBeInstanceOf(AxleAgentAbortError);
+      expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
+      expect(transcript.turns.at(-1)?.status).toBe("cancelled");
+    });
+
+    test("cancel() returns false when nothing is running", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+
+      expect(agent.cancel()).toBe(false);
+
+      await agent.send("hello").final;
+      expect(agent.cancel()).toBe(false);
+    });
+
     test("clear() returns 0 when nothing is queued", async () => {
       const agent = new Agent({
         provider: createEchoStreamProvider([]),

@@ -4,6 +4,7 @@ import type { Handle } from "../../utils/utils.js";
 
 class ScheduledTask<T> {
   readonly final: Promise<T>;
+  settled = false;
 
   private readonly controller = new AbortController();
   private readonly resolveFinal: (value: T) => void;
@@ -33,8 +34,11 @@ class ScheduledTask<T> {
 
   async execute(): Promise<void> {
     try {
-      this.resolveFinal(await this.work({ signal: this.controller.signal }));
+      const value = await this.work({ signal: this.controller.signal });
+      this.settled = true;
+      this.resolveFinal(value);
     } catch (error) {
+      this.settled = true;
       this.rejectFinal(error);
     } finally {
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
@@ -82,6 +86,12 @@ export class AgentScheduler {
     task.watchExternalSignal();
 
     return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
+  }
+
+  cancelCurrent(reason?: unknown): boolean {
+    if (!this.current || this.current.settled) return false;
+    this.current.cancel(reason);
+    return true;
   }
 
   clear(): number {

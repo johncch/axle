@@ -195,7 +195,6 @@ export async function runAgentSession(
   const { agent } = runtime;
 
   const controller = new AbortController();
-  const outstandingSends: { cancel: () => void }[] = [];
   let sigintCount = 0;
   let lastChatInterruptAt: number | undefined;
   const interruptRun = () => {
@@ -207,16 +206,14 @@ export async function runAgentSession(
     }
   };
   const interruptChat = () => {
-    const activeSend = outstandingSends[0];
     const now = Date.now();
     const repeated =
       lastChatInterruptAt !== undefined && now - lastChatInterruptAt < CHAT_EXIT_WINDOW_MS;
-    if (!activeSend || repeated) {
+    if (repeated || !agent.cancel()) {
       controller.abort();
       return;
     }
     lastChatInterruptAt = now;
-    activeSend.cancel();
     renderer.warn("Interrupted — Ctrl-C again to exit");
   };
   const onInterrupt = spec.interactive ? interruptChat : interruptRun;
@@ -262,10 +259,8 @@ export async function runAgentSession(
   });
 
   const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
-    const handle = agent.send(message, { signal: controller.signal });
-    outstandingSends.push(handle);
     try {
-      const result = await handle.final;
+      const result = await agent.send(message, { signal: controller.signal }).final;
 
       addStats(stats, result.usage);
       reportUsage();
@@ -286,7 +281,6 @@ export async function runAgentSession(
       if (chatInterrupt) return "interrupted";
       throw e;
     } finally {
-      outstandingSends.splice(outstandingSends.indexOf(handle), 1);
       sigintCount = 0;
     }
   };

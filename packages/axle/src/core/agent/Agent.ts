@@ -232,6 +232,17 @@ export class Agent {
   }
 
   /**
+   * Cancel the active operation immediately. Its handle rejects with an
+   * `AxleAgentAbortError`, exactly as if that handle's own `cancel()` had been
+   * called: a turn that already opened settles `cancelled` with its partial
+   * work committed. Queued operations are unaffected and the next one starts.
+   * Returns `false` when nothing is running.
+   */
+  cancel(reason?: unknown): boolean {
+    return this.scheduler.cancelCurrent(reason);
+  }
+
+  /**
    * Cancel every queued operation without touching the active turn. Each
    * cleared handle rejects with an `AxleAgentAbortError`, exactly as if it
    * had been cancelled individually; nothing is committed to history.
@@ -393,7 +404,7 @@ export class Agent {
       return { ok: true, response, turn: agentTurn, usage };
     } catch (error) {
       // Lifecycle: settle a failed or cancelled turn
-      status = spanStatusFromError(error);
+      status = signal.aborted ? "cancelled" : spanStatusFromError(error);
 
       if (
         (error instanceof AxleAbortError || error instanceof AxleToolFatalError) &&
