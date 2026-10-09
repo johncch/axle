@@ -4,7 +4,7 @@ import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import type { MCP } from "../../mcp/index.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
-import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
+import type { AxleMessage, AxleUserMessage } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
@@ -15,9 +15,10 @@ import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../pr
 import { createViewSkillTool, renderSkillsCatalog } from "../../skills/prompt.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
-import { TurnEventBuilder } from "../../turns/eventBuilder.js";
+import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
+import type { Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
@@ -168,16 +169,32 @@ export class Agent {
         : messageOrInstruct.clone();
     instruct.validate();
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
+    const message = instruct.toMessage({ metadata });
+    const userTurn = userTurnFromMessage(message);
+
+    this.emitEvent({
+      type: "pending:queued",
+      entry: { id: userTurn.id, kind: "send", turn: userTurn },
+    });
 
     return this.scheduler.schedule(
       ({ signal }) =>
         this.executeTurn(instruct, {
           signal,
           fileResolver,
-          metadata,
+          message,
+          userTurn,
           requestOptions,
         }),
-      { signal: modelOptions.signal },
+      {
+        signal: modelOptions.signal,
+        onWithdrawn: () =>
+          this.emitEvent({
+            type: "pending:dropped",
+            id: userTurn.id,
+            reason: { type: "cancelled" },
+          }),
+      },
     );
   }
 
@@ -213,12 +230,13 @@ export class Agent {
     runtime: {
       signal: AbortSignal;
       fileResolver?: FileResolver;
-      metadata?: MessageMetadata;
+      message: AxleUserMessage;
+      userTurn: Turn;
       requestOptions?: AxleModelRequestOptions;
     },
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const { signal, fileResolver, metadata, requestOptions } = runtime;
-    const message = instruct.toMessage({ metadata });
+    const { signal, fileResolver, message, userTurn, requestOptions } = runtime;
+    let userTurnOpened = false;
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
     let agentTurnId: string | undefined;
@@ -254,9 +272,8 @@ export class Agent {
       // Lifecycle: commit the user message and open the agent turn
       const priorMessages = this.messages;
       this.messagesInternal.push(message);
-      for (const event of turnEventBuilder.createUserTurn(message)) {
-        this.emitEvent(event);
-      }
+      this.emitEvent({ type: "turn:user", turn: userTurn });
+      userTurnOpened = true;
       const startEvent = turnEventBuilder.startAgentTurn();
       agentTurnId = startEvent.turnId;
       this.emitEvent(startEvent);
@@ -366,6 +383,22 @@ export class Agent {
       }
 
       finalize(status === "cancelled" ? "cancelled" : "error");
+      if (!userTurnOpened) {
+        this.emitEvent({
+          type: "pending:dropped",
+          id: userTurn.id,
+          reason:
+            status === "cancelled"
+              ? { type: "cancelled" }
+              : {
+                  type: "error",
+                  error: {
+                    type: "setup",
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                },
+        });
+      }
       const turn = agentTurnId ? this.transcript.getTurn(agentTurnId) : undefined;
       root?.error(error instanceof Error ? error.message : String(error));
 

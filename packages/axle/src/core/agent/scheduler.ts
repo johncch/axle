@@ -14,6 +14,7 @@ class ScheduledTask<T> {
     private readonly work: (context: { signal: AbortSignal }) => Promise<T>,
     private readonly operation: string,
     private readonly externalSignal: AbortSignal | undefined,
+    private readonly onWithdrawn: (() => void) | undefined,
   ) {
     const { promise, resolve, reject } = Promise.withResolvers<T>();
     this.final = promise;
@@ -44,6 +45,7 @@ class ScheduledTask<T> {
     this.controller.abort(reason);
     if (this.scheduler.withdraw(this)) {
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
+      this.onWithdrawn?.();
       this.rejectFinal(
         new AxleAgentAbortError(`Agent ${this.operation} aborted`, {
           reason: this.controller.signal.reason,
@@ -62,9 +64,15 @@ export class AgentScheduler {
 
   schedule<T>(
     work: (context: { signal: AbortSignal }) => Promise<T>,
-    options?: { signal?: AbortSignal; operation?: string },
+    options?: { signal?: AbortSignal; operation?: string; onWithdrawn?: () => void },
   ): Handle<T> {
-    const task = new ScheduledTask(this, work, options?.operation ?? "send", options?.signal);
+    const task = new ScheduledTask(
+      this,
+      work,
+      options?.operation ?? "send",
+      options?.signal,
+      options?.onWithdrawn,
+    );
 
     if (!this.current) {
       this.activate(task);

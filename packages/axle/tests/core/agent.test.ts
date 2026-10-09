@@ -303,7 +303,10 @@ describe("Agent", () => {
       ).rejects.toMatchObject({ name: "AbortError", reason: "stop", turn: undefined });
 
       expect(agent.messages).toEqual([]);
-      expect(events).toEqual([]);
+      expect(events.map((event) => (event as TurnEvent).type)).toEqual([
+        "pending:queued",
+        "pending:dropped",
+      ]);
       expect(requests).toEqual([]);
     });
 
@@ -896,6 +899,197 @@ describe("Agent", () => {
       toolChoice: "none",
       parallelToolCalls: false,
       providerOptions: { seed: 1, metadata: { source: "send" } },
+    });
+  });
+
+  describe("pending events", () => {
+    function observe(agent: Agent) {
+      const events: TurnEvent[] = [];
+      const transcript = new Transcript();
+      agent.on((event) => {
+        events.push(event);
+        transcript.apply(event);
+      });
+      return { events, transcript };
+    }
+
+    function pendingText(transcript: Transcript): string[] {
+      return transcript.pending.map((entry) => {
+        if (entry.kind !== "send") return entry.kind;
+        const part = entry.turn.parts[0];
+        return part?.type === "text" ? part.text : "";
+      });
+    }
+
+    test("a send is pending from the call until its user turn commits", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+
+      const first = agent.send("first");
+      const second = agent.send("second");
+
+      expect(pendingText(transcript)).toEqual(["first", "second"]);
+      expect(transcript.turns).toEqual([]);
+
+      await Promise.all([first.final, second.final]);
+
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns.map((turn) => turn.owner)).toEqual([
+        "user",
+        "agent",
+        "user",
+        "agent",
+      ]);
+
+      const queued = events.filter((event) => event.type === "pending:queued");
+      const committed = events.filter((event) => event.type === "turn:user");
+      expect(committed.map((event) => event.turn)).toEqual(
+        queued.map((event) => (event.entry.kind === "send" ? event.entry.turn : undefined)),
+      );
+    });
+
+    test("a queued Instruct previews its rendered variables", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { transcript } = observe(agent);
+      const instruct = new Instruct({ prompt: "Review {{target}}" }).withInput("target", "a.ts");
+
+      const first = agent.send("first");
+      const second = agent.send(instruct);
+      instruct.addInput("target", "b.ts");
+
+      expect(pendingText(transcript)).toEqual(["first", "Review a.ts"]);
+      await first.final;
+      expect((await second.final).response).toBe("Review a.ts");
+    });
+
+    test("cancelling a queued send drops it before cancel() returns", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+
+      const first = agent.send("first");
+      const withdrawn = agent.send("withdrawn");
+      const third = agent.send("third");
+      const withdrawnFinal = withdrawn.final.catch((error) => error);
+      withdrawn.cancel();
+
+      expect(pendingText(transcript)).toEqual(["first", "third"]);
+      expect(events.at(-1)).toMatchObject({
+        type: "pending:dropped",
+        reason: { type: "cancelled" },
+      });
+
+      await Promise.all([first.final, third.final, withdrawnFinal]);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns.filter((turn) => turn.owner === "user")).toHaveLength(2);
+    });
+
+    test("clear() drops every queued send", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+
+      const first = agent.send("first");
+      const dropped = [agent.send("second"), agent.send("third")].map((handle) =>
+        handle.final.catch((error) => error),
+      );
+
+      expect(agent.clear()).toBe(2);
+
+      expect(pendingText(transcript)).toEqual(["first"]);
+      expect(events.filter((event) => event.type === "pending:dropped")).toHaveLength(2);
+      await Promise.all([first.final, ...dropped]);
+      expect(transcript.turns.filter((turn) => turn.owner === "user")).toHaveLength(1);
+    });
+
+    test("an aborted signal shared by every send drops all of them", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { transcript } = observe(agent);
+      const controller = new AbortController();
+
+      const handles = ["first", "second", "third"].map((text) =>
+        agent.send(text, { signal: controller.signal }).final.catch((error) => error),
+      );
+
+      controller.abort();
+
+      expect(pendingText(transcript)).toEqual(["first"]);
+      const errors = await Promise.all(handles);
+      expect(errors.every((error) => error instanceof AxleAgentAbortError)).toBe(true);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+    });
+
+    test("a send cancelled during setup is dropped as cancelled", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+      const setup = Promise.withResolvers<never[]>();
+      agent.addMcp({ name: "slow", listTools: () => setup.promise, connected: true } as any);
+
+      const handle = agent.send("hello");
+      const final = handle.final.catch((error) => error);
+      await vi.waitFor(() => expect(pendingText(transcript)).toEqual(["hello"]));
+      handle.cancel();
+      setup.resolve([]);
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+      expect(events.at(-1)).toMatchObject({
+        type: "pending:dropped",
+        reason: { type: "cancelled" },
+      });
+    });
+
+    test("a send whose setup fails is dropped with the error", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { events, transcript } = observe(agent);
+      const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
+      agent.addMcp({ name: "flaky", listTools, connected: true } as any);
+
+      await expect(agent.send("hello").final).rejects.toThrow("mcp unreachable");
+
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+      expect(events.at(-1)).toEqual({
+        type: "pending:dropped",
+        id: expect.any(String),
+        reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
+      });
+    });
+
+    test("stop() + clear() + send() drops the stale send and commits the interjection", async () => {
+      const toolStream = createToolThenTextProvider(["first_tool"], "interjected");
+      const firstTool = {
+        name: "first_tool",
+        description: "First tool",
+        schema: z.object({ input: z.string() }),
+        execute: vi.fn().mockImplementation(async () => {
+          agent.stop();
+          agent.clear();
+          agent.send("urgent");
+          return "first result";
+        }),
+      };
+      const agent = new Agent({
+        provider: toolStream.provider,
+        model: "mock",
+        tools: [firstTool],
+      });
+      const { transcript } = observe(agent);
+
+      const first = agent.send("run the tool");
+      const stale = agent.send("stale").final.catch((error) => error);
+
+      await first.final;
+      await stale;
+      await vi.waitFor(() => expect(toolStream.callCount).toBe(2));
+      await vi.waitFor(() => expect(transcript.turns.at(-1)?.status).toBe("complete"));
+
+      expect(transcript.pending).toEqual([]);
+      expect(
+        transcript.turns
+          .filter((turn) => turn.owner === "user")
+          .map((turn) => (turn.parts[0]?.type === "text" ? turn.parts[0].text : "")),
+      ).toEqual(["run the tool", "urgent"]);
     });
   });
 

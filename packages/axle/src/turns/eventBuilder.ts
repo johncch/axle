@@ -29,6 +29,52 @@ function completeTiming(timing: TimingInfo | undefined, now = new Date()): Timin
   };
 }
 
+export function userTurnFromMessage(message: AxleUserMessage): Turn {
+  const turnId = message.id ?? crypto.randomUUID();
+  const parts: TurnPart[] = [];
+  const now = new Date();
+  const timing = completeTiming(startTiming(now), now);
+  const instantTiming = () => ({ ...timing });
+
+  if (typeof message.content === "string") {
+    parts.push({
+      id: crypto.randomUUID(),
+      type: "text",
+      text: message.content,
+      timing: instantTiming(),
+    });
+  } else {
+    for (const part of message.content) {
+      if (part.type === "text") {
+        parts.push({
+          id: crypto.randomUUID(),
+          type: "text",
+          text: part.text,
+          ...(part.citations ? { citations: part.citations } : {}),
+          ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
+          timing: instantTiming(),
+        });
+      } else if (part.type === "file") {
+        parts.push({
+          id: crypto.randomUUID(),
+          type: "file",
+          file: part.file,
+          timing: instantTiming(),
+        });
+      }
+    }
+  }
+
+  return {
+    id: turnId,
+    owner: "user",
+    parts,
+    status: "complete",
+    timing,
+    ...(message.metadata ? { metadata: message.metadata } : {}),
+  };
+}
+
 export class TurnEventBuilder {
   private currentTurnId: string | null = null;
   private currentTurnTiming: TimingInfo | undefined;
@@ -47,50 +93,7 @@ export class TurnEventBuilder {
   private accumulatedUsage: Stats = createStats();
 
   createUserTurn(message: AxleUserMessage): TurnEvent[] {
-    const turnId = message.id ?? crypto.randomUUID();
-    const parts: TurnPart[] = [];
-    const now = new Date();
-    const timing = completeTiming(startTiming(now), now);
-    const instantTiming = () => ({ ...timing });
-
-    if (typeof message.content === "string") {
-      parts.push({
-        id: crypto.randomUUID(),
-        type: "text",
-        text: message.content,
-        timing: instantTiming(),
-      });
-    } else {
-      for (const part of message.content) {
-        if (part.type === "text") {
-          parts.push({
-            id: crypto.randomUUID(),
-            type: "text",
-            text: part.text,
-            ...(part.citations ? { citations: part.citations } : {}),
-            ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-            timing: instantTiming(),
-          });
-        } else if (part.type === "file") {
-          parts.push({
-            id: crypto.randomUUID(),
-            type: "file",
-            file: part.file,
-            timing: instantTiming(),
-          });
-        }
-      }
-    }
-
-    const turn: Turn = {
-      id: turnId,
-      owner: "user",
-      parts,
-      status: "complete",
-      timing,
-      ...(message.metadata ? { metadata: message.metadata } : {}),
-    };
-    return [{ type: "turn:user", turn }];
+    return [{ type: "turn:user", turn: userTurnFromMessage(message) }];
   }
 
   startAgentTurn(): Extract<TurnEvent, { type: "turn:start" }> {
