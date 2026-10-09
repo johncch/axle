@@ -283,7 +283,7 @@ export class Agent {
       if (beforeTurnCompaction?.triggers?.beforeTurn) {
         await this.runCompaction(beforeTurnCompaction, signal, "beforeTurn", {
           state: priorMessages,
-          target: { turnId: startEvent.turnId },
+          target: { type: "turn", turnId: startEvent.turnId },
           onApplied: () => {
             this.messagesInternal.push(message);
           },
@@ -354,7 +354,7 @@ export class Agent {
       if (!parseFailure && afterTurnCompaction?.triggers?.afterTurn) {
         await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
           state: this.messages,
-          target: { turnId: startEvent.turnId },
+          target: { type: "turn", turnId: startEvent.turnId },
         });
       }
 
@@ -474,12 +474,18 @@ export class Agent {
     const config = this.compaction;
     if (!config) return Promise.resolve(false);
 
+    const id = crypto.randomUUID();
+    const dropCancelled = (): void =>
+      this.emitEvent({ type: "pending:dropped", id, reason: { type: "cancelled" } });
+    this.emitEvent({ type: "pending:queued", entry: { id, kind: "compaction" } });
+
     return this.scheduler.schedule(
       async ({ signal }) => {
         try {
+          if (signal.aborted) dropCancelled();
           const outcome = await this.runCompaction(config, signal, "manual", {
             state: this.messages,
-            target: "self-wrapped",
+            target: { type: "self-wrapped", id },
           });
           return outcome === "applied";
         } finally {
@@ -489,6 +495,7 @@ export class Agent {
       {
         signal: options?.signal,
         operation: "compact",
+        onWithdrawn: dropCancelled,
       },
     ).final;
   }
@@ -499,7 +506,7 @@ export class Agent {
     trigger: CompactionTrigger,
     run: {
       state: AxleMessage[];
-      target: { turnId: string } | "self-wrapped";
+      target: { type: "turn"; turnId: string } | { type: "self-wrapped"; id: string };
       onApplied?: () => void;
     },
   ): Promise<"applied" | "declined" | "errored"> {
@@ -535,10 +542,10 @@ export class Agent {
         return "declined";
       }
 
-      const id = crypto.randomUUID();
+      const selfWrapped = run.target.type === "self-wrapped";
+      const id = run.target.type === "self-wrapped" ? run.target.id : crypto.randomUUID();
       const start = new Date().toISOString();
-      const selfWrapped = run.target === "self-wrapped";
-      const turnId = run.target === "self-wrapped" ? id : run.target.turnId;
+      const turnId = run.target.type === "self-wrapped" ? id : run.target.turnId;
       if (selfWrapped) {
         this.emitEvent({ type: "turn:start", turnId, timing: { start } });
       }
