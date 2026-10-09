@@ -1,4 +1,4 @@
-import type { AIProvider, AxleModelRequestOptions } from "@fifthrevision/axle";
+import type { AIProvider, AxleModelRequestOptions, DecisionProvider } from "@fifthrevision/axle";
 import type { ProviderId } from "../providers.js";
 
 export interface CheckCaseContext {
@@ -6,6 +6,12 @@ export interface CheckCaseContext {
   model: string;
   providerId: ProviderId;
   requestOptions: AxleModelRequestOptions;
+}
+
+export interface DecisionCheckCaseContext {
+  provider: DecisionProvider;
+  model: string;
+  providerId: ProviderId;
 }
 
 export interface CheckCaseResult {
@@ -22,11 +28,22 @@ export interface CheckCaseExclusion {
 
 export type CheckCaseGroup = "default" | "extended";
 
-export interface CheckCase {
+interface CheckCaseBase {
   id: string;
   description: string;
   group: CheckCaseGroup;
   providers?: ProviderId[];
   exclusions?: CheckCaseExclusion[];
+}
+
+export interface CheckCase extends CheckCaseBase {
+  kind?: "chat";
   run(context: CheckCaseContext): Promise<CheckCaseResult>;
 }
+
+export interface DecisionCheckCase extends CheckCaseBase {
+  kind: "decision";
+  run(context: DecisionCheckCaseContext): Promise<CheckCaseResult>;
+}
+
+export type AnyCheckCase = CheckCase | DecisionCheckCase;

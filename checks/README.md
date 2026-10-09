@@ -30,8 +30,14 @@ pnpm exec tsx checks/run.ts --extended
 pnpm run checks:extended
 ```
 
-The default set is OpenAI, Anthropic, Gemini, and Together. OpenRouter is
-available as an explicit alternative Chat Completions provider.
+The default set is OpenAI, Anthropic, Gemini, Together, and TypeSafe.
+OpenRouter is available as an explicit alternative Chat Completions provider.
+
+Providers and cases each have a kind. Chat providers run the chat cases
+(`generate()`, `stream()`, `Agent`); decision providers run the `decide()`
+cases. A provider only runs cases of its own kind, so the TypeSafe rows are
+short. `typesafe` calls TypeSafe directly; `typesafe-openrouter` sends the same
+request through OpenRouter's System One path and is opt-in.
 
 Providers run concurrently; cases within a provider run sequentially. Output
 is pytest-style: one dot row per provider (`.` pass, `F` fail, `E` error,
@@ -57,8 +63,8 @@ pnpm exec tsx checks/run.ts \
 ```
 
 Provider flags may also be comma-separated. The provider ids are `openai`,
-`anthropic`, `google`, `openrouter`, `together`, and `ollama`; `gemini` is
-accepted as an alias for `google`.
+`anthropic`, `google`, `openrouter`, `together`, `ollama`, `typesafe`, and
+`typesafe-openrouter`; `gemini` is accepted as an alias for `google`.
 
 Run every provider, including OpenRouter:
 
@@ -95,6 +101,7 @@ ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
 TOGETHER_API_KEY=...
+TYPESAFE_API_KEY=...
 BRAVE_API_KEY=...
 ```
 
