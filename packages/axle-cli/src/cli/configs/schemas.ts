@@ -51,7 +51,7 @@ const ChatCompletionsProviderUseSchema = z.strictObject({
   type: z.literal("chatcompletions").describe("Provider API the endpoint speaks."),
   baseUrl: z
     .string()
-    .optional()
+    .min(1)
     .describe("Base URL of the OpenAI-compatible endpoint, e.g. http://localhost:11434/v1."),
   vendor: z
     .enum(["openrouter", "together"])
@@ -104,9 +104,7 @@ export const ProviderUseSchema = z.union([
   z
     .string()
     .min(1)
-    .describe(
-      "A cli.yaml provider profile or a built-in type: anthropic, openai, gemini, chatcompletions.",
-    )
+    .describe("A cli.yaml provider profile or a built-in type: anthropic, openai, gemini.")
     .transform((name) => ({ name })),
   RecipeProviderSchema,
 ]);
@@ -122,13 +120,7 @@ export interface ProviderServiceConfig {
   timeoutMs?: number;
 }
 
-export interface ChatCompletionsServiceConfig extends ProviderServiceConfig {
-  baseUrl?: string;
-  vendor?: "openrouter" | "together";
-}
-
 export interface ServiceConfig {
-  chatcompletions?: ChatCompletionsServiceConfig;
   anthropic?: ProviderServiceConfig;
   openai?: ProviderServiceConfig;
   gemini?: ProviderServiceConfig;

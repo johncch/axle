@@ -35,6 +35,19 @@ describe("ask", () => {
     expect(output()).toContain("? Model id gpt-5");
   });
 
+  it("text takes its default on an empty Enter and shows it as the placeholder", async () => {
+    pressKeys("\r");
+    const value = await text({
+      message: "Base URL",
+      defaultValue: "http://localhost:11434/v1",
+      validate: (typed) => ((typed ?? "").length > 0 ? "typed something" : undefined),
+      input,
+      output: process.stdout,
+    });
+    expect(value).toBe("http://localhost:11434/v1");
+    expect(output()).toContain("? Base URL http://localhost:11434/v1");
+  });
+
   it("confirm submits on y without Enter", async () => {
     pressKeys("y");
     const value = await confirm({

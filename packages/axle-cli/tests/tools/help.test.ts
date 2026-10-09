@@ -26,7 +26,9 @@ describe("axle-help tool", () => {
     const result = await helpTool.execute({ topic: "config" }, ctx);
 
     expect(result).toContain("config.defaults.tools  list of string");
-    expect(result).toContain("config.providers.baseUrl  string  (only with type: chatcompletions)");
+    expect(result).toContain(
+      "config.providers.baseUrl  string  (required; only with type: chatcompletions)",
+    );
     expect(result).not.toContain("recipe.task");
     expect(result).not.toContain("\u001b");
   });

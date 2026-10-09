@@ -264,8 +264,7 @@ program
   .command("setup")
   .description("Configure providers, credentials, and defaults")
   .action(async () => {
-    const serviceConfig = await getServiceConfig({ trusted: await isFolderTrusted(process.cwd()) });
-    await runSetupWizard(serviceConfig);
+    await runSetupWizard();
     process.exit(0);
   });
 
@@ -501,7 +500,9 @@ if (
   interactiveTerminal &&
   needsSetupWizard(serviceConfig, cliConfig, jobConfig)
 ) {
-  await runSetupWizard(serviceConfig);
+  await runSetupWizard();
+  trusted = await isFolderTrusted(process.cwd());
+  ignoredProjectInputs = trusted ? [] : await listProjectInputs();
   cliConfig = await getCliConfig({ span: rootSpan, trusted });
   serviceConfig = await getServiceConfig({ span: rootSpan, trusted });
 }

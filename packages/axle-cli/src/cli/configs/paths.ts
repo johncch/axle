@@ -67,6 +67,19 @@ export interface ConfigDirs {
   user: string;
 }
 
+export type ConfigScope = keyof ConfigDirs;
+
+/** One home to write to: the user's `~/.axle` unless `scope` says the project's. */
+export interface ConfigTarget {
+  scope?: ConfigScope;
+  cwd?: string;
+  home?: string;
+}
+
+export function resolveConfigDir(target?: ConfigTarget): string {
+  return resolveConfigDirs(target)[target?.scope ?? "user"];
+}
+
 export function resolveConfigDirs(options?: { cwd?: string; home?: string }): ConfigDirs {
   return {
     project: join(options?.cwd ?? process.cwd(), ".axle"),

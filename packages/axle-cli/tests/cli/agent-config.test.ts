@@ -27,21 +27,15 @@ afterEach(() => {
 
 describe("createCliAgentConfig", () => {
   test("creates an agent config from a CLI job config", async () => {
-    const serviceConfig: ServiceConfig = {
-      chatcompletions: {
-        baseUrl: "https://example.test/v1",
-        model: "test-model",
-      },
-    };
-
     const { agentConfig, mcps } = await createCliAgentConfig(
       {
-        provider: { type: "chatcompletions" },
+        provider: { type: "chatcompletions", baseUrl: "https://example.test/v1" },
+        model: "test-model",
         task: "Read something",
         tools: ["read-file"],
       },
       {},
-      serviceConfig,
+      {},
       process.env,
       tracer,
       { trusted: true },
@@ -154,6 +148,38 @@ describe("createCliAgentConfig", () => {
       type: "chatcompletions",
       config: { baseUrl: "https://inline.example.test/v1" },
     });
+  });
+
+  test("chatcompletions is a type, not a provider name", async () => {
+    await expect(
+      createCliAgentConfig(
+        { provider: { name: "chatcompletions" }, model: "some/model", task: "Run" },
+        {},
+        {},
+        {},
+        tracer,
+        { trusted: true },
+        [],
+      ),
+    ).rejects.toThrow(
+      'Provider "chatcompletions" is not a provider profile in cli.yaml or a built-in provider type.',
+    );
+  });
+
+  test("a chatcompletions profile with no model names no model variable", async () => {
+    await expect(
+      createCliAgentConfig(
+        { provider: { name: "gw" }, task: "Run" },
+        { providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } } },
+        {},
+        {},
+        tracer,
+        { trusted: true },
+        [],
+      ),
+    ).rejects.toThrow(
+      "No model resolved for provider chatcompletions. Add model: to the job, or set defaults.models in ~/.axle/cli.yaml.",
+    );
   });
 
   test("rejects a provider name that is neither profile nor built-in", async () => {

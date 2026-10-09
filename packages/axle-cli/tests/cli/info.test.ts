@@ -124,6 +124,7 @@ describe("formatInfo", () => {
       "  tools     axle-help, exec, patch-file, read-file, write-file  built-in default",
       expect.stringMatching(/^  ✖ No provider specified/),
     ]);
+    expect(section(lines, "Providers")).toEqual(["  none"]);
   });
 
   it("names where each provider value comes from without printing a key", () => {
@@ -170,11 +171,9 @@ describe("formatInfo", () => {
       "    key    $NOPE                   unset",
       "",
       "  gemini",
-      "    model   gemini-x  ./.axle/credentials",
-      "    window  200,000   assumed (models.dev not cached)",
-      "    key     set       ~/.axle/credentials",
-      "",
-      "  not configured: anthropic, openai, chatcompletions",
+      "    model   gemini-x         ./.axle/credentials",
+      "    window  200,000          assumed (models.dev not cached)",
+      "    key     $GEMINI_API_KEY  ~/.axle/credentials",
     ]);
   });
 
@@ -223,21 +222,19 @@ describe("formatInfo", () => {
       "    url     https://r.test/v1",
       "    model   z-ai/glm-x         ~/.axle/cli.yaml",
       "    window  131,072            models.dev (zhipuai/glm-x)",
-      "    key     unset              expects $CHATCOMPLETIONS_API_KEY",
+      "    key     none",
       "",
       "  ollama                               ./.axle/cli.yaml",
       "    type    chatcompletions",
       "    url     http://localhost:11434/v1",
       "    model   gemma4:26b-mlx             ~/.axle/cli.yaml",
       "    window  32,768                     ./.axle/cli.yaml",
-      "    key     unset                      expects $CHATCOMPLETIONS_API_KEY",
+      "    key     none",
       "",
       "  anthropic (default)",
-      "    model   claude-x   ~/.axle/cli.yaml",
-      "    window  1,000,000  models.dev (anthropic/claude-x)",
-      "    key     set",
-      "",
-      "  not configured: openai, gemini, chatcompletions",
+      "    model   claude-x            ~/.axle/cli.yaml",
+      "    window  1,000,000           models.dev (anthropic/claude-x)",
+      "    key     $ANTHROPIC_API_KEY",
     ]);
   });
 
@@ -247,7 +244,7 @@ describe("formatInfo", () => {
       serviceConfig: { anthropic: { apiKey: "sk-a" } },
     });
 
-    expect(lines).toContain("    window  200,000   assumed (models.dev not cached)");
+    expect(lines).toContain("    window  200,000             assumed (models.dev not cached)");
   });
 });
 

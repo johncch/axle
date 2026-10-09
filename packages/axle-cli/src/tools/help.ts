@@ -104,8 +104,9 @@ A recipe is a YAML file run with \`axle -j path/to/job.yaml\`.
         temperature: 0.2
     compaction: false                   # optional, default on
 
-\`provider\` is a string (type: anthropic, openai, gemini, chatcompletions, or
-a profile name from cli.yaml) or an inline object:
+\`provider\` is a string (a built-in type: anthropic, openai, gemini; or a
+profile name from cli.yaml) or an inline object. chatcompletions is only a
+\`type\`, on a profile or inline, and always needs \`baseUrl\`:
 
     provider:
       type: chatcompletions
@@ -115,8 +116,8 @@ a profile name from cli.yaml) or an inline object:
 
 Both \`provider\` and \`model\` are optional. Missing values resolve through:
 provider: recipe -> cli.yaml defaults.provider. model: recipe ->
-cli.yaml defaults.models.<provider> -> <TYPE>_MODEL env or credentials ->
-interactive prompt.
+cli.yaml defaults.models.<provider> -> <TYPE>_MODEL env or credentials
+(built-in types only) -> interactive prompt.
 
 \`{{variables}}\` in the task are filled with \`--args key=value\`. A \`batch:\`
 block makes the recipe a batch run (topic: batch). A \`schedule:\` block
@@ -244,9 +245,10 @@ read. Files use the same KEY=value names as the environment:
 
     ANTHROPIC_API_KEY=...   OPENAI_API_KEY=...   GEMINI_API_KEY=...
     ANTHROPIC_MODEL=anthropic/claude-sonnet-5          # optional per-provider model
-    CHATCOMPLETIONS_BASE_URL=http://localhost:11434/v1 # OpenAI-compatible endpoints
-    CHATCOMPLETIONS_MODEL=llama3
-    CHATCOMPLETIONS_API_KEY=...
+
+An OpenAI-compatible endpoint is a chatcompletions profile, not a set of
+variables. Its key lives under the name its \`apiKeyEnv\` gives; with no
+\`apiKeyEnv\` it is called keyless.
 
 \`cli.yaml\` (\`~/.axle/cli.yaml\`, overridden per project by \`.axle/cli.yaml\`
 once the folder is trusted) holds provider profiles and defaults:

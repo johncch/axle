@@ -12,7 +12,7 @@ import { formatTokens, resolveContextWindow } from "./context-window.js";
 import type { SkillEntry } from "./skills.js";
 import { defaultToolNames } from "./tools.js";
 
-const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"] as const;
+const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini"] as const;
 
 const UNSET = "unset";
 const ALIGNED_VALUE_WIDTH = 32;
@@ -43,7 +43,8 @@ interface Row {
  * supplied each value. API keys are reported as set or unset, never printed.
  */
 export function formatInfo(input: InfoInput): string[] {
-  const { version, build, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills } = input;
+  const { version, build, dirs, trusted, cliConfig, cliConfigSources, serviceConfig, skills } =
+    input;
   const cwd = dirname(dirs.project);
   const home = dirname(dirs.user);
 
@@ -80,7 +81,6 @@ export function formatInfo(input: InfoInput): string[] {
   const configuredBuiltIns = builtIns.filter(
     (type) => serviceConfig[type] !== undefined || type === defaultProvider,
   );
-  const unconfiguredBuiltIns = builtIns.filter((type) => !configuredBuiltIns.includes(type));
 
   const providerBlocks = [
     ...Object.entries(profiles).map(([name, profile]) => ({
@@ -132,9 +132,7 @@ export function formatInfo(input: InfoInput): string[] {
       ),
       "",
     ]),
-    ...(unconfiguredBuiltIns.length > 0
-      ? [`  not configured: ${unconfiguredBuiltIns.join(", ")}`]
-      : []),
+    ...(providerBlocks.length === 0 ? ["  none"] : []),
   ];
   while (lines.at(-1) === "") lines.pop();
   return lines;
@@ -177,22 +175,14 @@ function describeProvider(
   input: InfoInput,
 ): Row[] {
   const { cliConfig, cliConfigSources, serviceConfig, credentialSources, credentials } = input;
-  const service = serviceConfig[type];
+  const builtIn = type === "chatcompletions" ? undefined : type;
+  const service = builtIn ? serviceConfig[builtIn] : undefined;
   const rows: Row[] = [];
 
   if (profile) rows.push({ label: "type", value: type });
 
-  if (type === "chatcompletions") {
-    const profileUrl = profile?.type === "chatcompletions" ? profile.baseUrl : undefined;
-    const serviceUrl = serviceConfig.chatcompletions?.baseUrl;
-    rows.push({
-      label: "url",
-      value: profileUrl ?? serviceUrl ?? UNSET,
-      source:
-        profileUrl === undefined && serviceUrl !== undefined
-          ? credentialSources.CHATCOMPLETIONS_BASE_URL
-          : undefined,
-    });
+  if (profile?.type === "chatcompletions") {
+    rows.push({ label: "url", value: profile.baseUrl });
   }
 
   const defaultModel = cliConfig.defaults?.models?.[name];
@@ -234,10 +224,15 @@ function describeProvider(
     );
   } else if (profile?.apiKey) {
     rows.push({ label: "key", value: "set", source: cliConfigSources.providers[name] });
-  } else if (service?.apiKey) {
-    rows.push({ label: "key", value: "set", source: credentialSources[API_KEY_VARIABLES[type]] });
+  } else if (builtIn === undefined) {
+    rows.push({ label: "key", value: "none" });
   } else {
-    rows.push({ label: "key", value: UNSET, source: `expects $${API_KEY_VARIABLES[type]}` });
+    const variable = API_KEY_VARIABLES[builtIn];
+    rows.push({
+      label: "key",
+      value: `$${variable}`,
+      source: service?.apiKey ? credentialSources[variable] : UNSET,
+    });
   }
 
   return rows;
