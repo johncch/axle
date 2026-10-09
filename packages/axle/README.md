@@ -1215,6 +1215,113 @@ and [docs/architecture/agent-state.md](../../docs/architecture/agent-state.md).
 See [Migrating to Axle 0.30.0](../../docs/0.30.0-migration.md) for the turn
 ownership and compaction protocol changes.
 
+### Decisions (experimental)
+
+A decision model answers typed questions about an input instead of
+generating text. `decide()` sends one request and returns one typed answer
+per question. There is no conversation, no tools, and no streaming.
+
+```typescript
+import { choice, decide, noul, score, typesafe } from "@fifthrevision/axle";
+
+const result = await decide({
+  provider: typesafe(process.env.TYPESAFE_API_KEY),
+  model: "jev-latest",
+  input: {
+    customer_tier: "enterprise",
+    ticket: "My checkout page shows a blank screen after I click Pay.",
+  },
+  questions: {
+    is_bug: noul("Is the customer reporting a software defect?"),
+    team: choice("Which team should own this ticket?", {
+      payments: "Checkout, billing, or payment processing issues.",
+      frontend: "Rendering, layout, or browser compatibility issues.",
+      account: null,
+    }),
+    urgency: score("How urgent is this ticket?", [
+      "Can wait for the next release",
+      "Should be fixed this week",
+      "Blocking revenue right now",
+    ]),
+  },
+});
+
+const { is_bug, team, urgency } = result.answers;
+
+if (is_bug.type === "noul" && is_bug.noul >= 0.6) {
+  // is_bug.noul is the probability of yes, 0 to 1
+}
+if (team.type === "choice") {
+  // team.choice is "payments" | "frontend" | "account"
+  // team.probabilities has one number per option; team.confidence is 0 to 1
+}
+if (urgency.type === "score") {
+  // urgency.score is a position on the scale: 0 to 2 here, e.g. 1.99
+  // urgency.legend maps "0" | "1" | "2" back to the level text
+}
+```
+
+There are three question types, named as TypeSafe names them:
+
+| Builder                          | Asks                          | Answer                                                        |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------- |
+| `noul(instructions, criteria?)`  | a yes/no question             | `{ type: "noul", noul }`                                      |
+| `choice(instructions, criteria)` | which one of a set of options | `{ type: "choice", choice, probabilities, confidence }`       |
+| `score(instructions, criteria)`  | where on an ordered scale     | `{ type: "score", score, probabilities, legend, confidence }` |
+
+`criteria` describes the possible answers: `{ true, false }` text for a
+noul (optional), a map of option to description or `null` for a choice, and
+an array of levels, lowest first, for a score. `input` is a string, an
+object, or an array.
+
+Questions are a keyed map and answers come back under the same keys. When
+the questions are written out as above, each answer is typed from its
+question. When they are built at runtime (say, one noul per item in a list),
+the keys are plain strings and each answer is any of the answer types.
+
+Every answer is its own type or `{ type: "refusal" }`, so check `type`
+before reading a value. TypeSafe never refuses; the variant exists for
+providers that can decline a single question.
+
+`decide()` throws on failure instead of returning a result with `ok`:
+
+- `DECISION_REQUEST_FAILED` — the provider rejected the request;
+  `error.details.status` and `error.details.body` carry the response.
+- `DECISION_RESPONSE_INVALID` — the response body was not a decision result.
+- `DECISION_ANSWER_MISMATCH` — a question came back unanswered or with a
+  different answer type.
+
+It also accepts `signal` to abort and `span` to trace under an existing span.
+`result.usage` is the same `Stats` shape as elsewhere (`in`, `out`).
+
+#### Decision providers
+
+A decision provider is a separate kind of provider from the chat providers.
+`typesafe()` cannot be passed to `stream()`, `generate()`, or an `Agent`,
+and the chat providers cannot be passed to `decide()`.
+
+```typescript
+const direct = typesafe(process.env.TYPESAFE_API_KEY);
+
+const viaOpenRouter = typesafe(process.env.OPENROUTER_API_KEY, {
+  baseUrl: "https://openrouter.ai/api",
+});
+```
+
+`typesafe()` reaches TypeSafe's Jev models. `baseUrl` sends the same request
+to any host that serves TypeSafe's System One path; with OpenRouter, use an
+OpenRouter key and either `jev-latest` or `~typesafe/jev-latest` as the
+model. It takes the same client options as the other factories, with one
+different default: `timeoutMs` is ten seconds per attempt, since a decision
+normally answers in under a second.
+
+Answers are not portable across models. A threshold tuned on one model
+(`noul >= 0.6`) needs re-tuning on another, and `confidence` is each
+provider's own measure.
+
+The normative design lives in
+[docs/architecture/decisions.md](../../docs/architecture/decisions.md).
+
 ### Model Catalog
 
 Axle ships no table of models. A host that needs a model's context window,
