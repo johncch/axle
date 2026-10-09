@@ -4,7 +4,13 @@ import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
-import { checkCases, type CheckCase, type CheckCaseResult } from "./cases/index.js";
+import {
+  checkCases,
+  type AnyCheckCase,
+  type CheckCase,
+  type CheckCaseResult,
+  type DecisionCheckCase,
+} from "./cases/index.js";
 import {
   LEDGER_PATH,
   readAxleRevision,
@@ -12,7 +18,12 @@ import {
   recordLedgerRuns,
   type LedgerEntry,
 } from "./ledger.js";
-import { resolveProviderTargets, type ProviderId, type ProviderTarget } from "./providers.js";
+import {
+  providerTargets,
+  resolveProviderTargets,
+  type ProviderId,
+  type ProviderTarget,
+} from "./providers.js";
 
 const REASONING_FLAGS = ["default", "off", "on", "low", "medium", "high"] as const;
 
@@ -48,15 +59,20 @@ if (process.argv[2] === "ledger") {
 }
 
 const options = parseArgs(process.argv.slice(2));
-const targets = resolveProviderTargets({
-  providers: options.providers,
-  model: options.model,
-  all: options.all,
-});
 const cases = selectCases(checkCases, options);
 
 if (cases.length === 0) {
   throw new Error(`No cases matched: ${options.cases.join(", ")}`);
+}
+
+const targets = resolveProviderTargets({
+  providers: options.providers,
+  model: options.model,
+  all: options.all,
+}).filter((target) => casesOfKind(target.kind).length > 0);
+
+if (targets.length === 0) {
+  throw new Error("None of the selected cases apply to the selected providers");
 }
 
 configureAxle({
@@ -76,13 +92,10 @@ class DotReporter {
   private finished: boolean[];
   private readonly tty = process.stdout.isTTY === true;
 
-  constructor(
-    count: number,
-    private readonly casesPerProvider: number,
-  ) {
-    this.labels = Array.from({ length: count }, () => "");
-    this.glyphs = Array.from({ length: count }, () => []);
-    this.finished = Array.from({ length: count }, () => false);
+  constructor(private readonly casesPerProvider: number[]) {
+    this.labels = casesPerProvider.map(() => "");
+    this.glyphs = casesPerProvider.map(() => []);
+    this.finished = casesPerProvider.map(() => false);
   }
 
   start(index: number, label: string): void {
@@ -113,7 +126,7 @@ class DotReporter {
     const label = this.labels[index];
     const dots = this.glyphs[index].join("");
     const done = this.glyphs[index].length;
-    const percent = `[${String(Math.round((done / this.casesPerProvider) * 100)).padStart(3)}%]`;
+    const percent = `[${String(Math.round((done / this.casesPerProvider[index]) * 100)).padStart(3)}%]`;
     const width = process.stdout.columns ?? 100;
     const visibleLength = label.length + 1 + done;
     const pad = Math.max(1, width - 1 - visibleLength - percent.length);
@@ -137,7 +150,9 @@ function bar(text: string): string {
 
 type LedgerCell = CheckRecord["status"] | "not-applicable" | "unrecorded";
 
-function ledgerCell(entry: LedgerEntry, testCase: CheckCase): LedgerCell {
+function ledgerCell(entry: LedgerEntry, testCase: AnyCheckCase): LedgerCell {
+  const target = providerTargets.find((candidate) => candidate.id === entry.provider);
+  if ((target?.kind ?? "chat") !== caseKind(testCase)) return "not-applicable";
   if (testCase.providers && !testCase.providers.includes(entry.provider as ProviderId)) {
     return "not-applicable";
   }
@@ -263,7 +278,7 @@ const usageTotals: UsageTotals[] = targets.map(() => ({
   reportingCases: 0,
   runCases: 0,
 }));
-const reporter = new DotReporter(targets.length, cases.length);
+const reporter = new DotReporter(targets.map((target) => casesOfKind(target.kind).length));
 const runStartedAt = Date.now();
 
 console.log(bar("checks session starts"));
@@ -275,9 +290,7 @@ await Promise.all(targets.map((target, index) => runTarget(target, index)));
 
 async function runTarget(target: ProviderTarget, index: number): Promise<void> {
   reporter.start(index, `${target.id}:${target.model}`);
-  const provider = target.createProvider();
-
-  for (const testCase of cases) {
+  for (const { testCase, run } of bindCases(target)) {
     const skipReason = getSkipReason(testCase, target.id, target.model);
     if (skipReason) {
       skipped += 1;
@@ -299,12 +312,7 @@ async function runTarget(target: ProviderTarget, index: number): Promise<void> {
     const startedAt = Date.now();
 
     try {
-      const result = await testCase.run({
-        provider,
-        model: target.model,
-        providerId: target.id,
-        requestOptions: options.reasoning ? { reasoning: options.reasoning } : {},
-      });
+      const result = await run();
       accumulateUsage(usageTotals[index], result.details?.usage);
       const usageViolation = findUsageInvariantViolation(result.details?.usage);
       const failureReasons = deriveFailureReasons(result, usageViolation);
@@ -486,7 +494,43 @@ function color(colorName: "green" | "red" | "yellow" | "gray", value: string): s
 
 // An explicit --case selection wins over the group filter so an extended
 // case can be run alone without also enabling the whole extended set.
-function selectCases(all: CheckCase[], selection: RunOptions): CheckCase[] {
+function caseKind(testCase: AnyCheckCase): ProviderTarget["kind"] {
+  return testCase.kind ?? "chat";
+}
+
+function casesOfKind(kind: ProviderTarget["kind"]): AnyCheckCase[] {
+  return cases.filter((testCase) => caseKind(testCase) === kind);
+}
+
+interface BoundCase {
+  testCase: AnyCheckCase;
+  run(): Promise<CheckCaseResult>;
+}
+
+function bindCases(target: ProviderTarget): BoundCase[] {
+  const { id: providerId, model } = target;
+
+  if (target.kind === "decision") {
+    const provider = target.createProvider();
+    return cases
+      .filter((testCase): testCase is DecisionCheckCase => testCase.kind === "decision")
+      .map((testCase) => ({
+        testCase,
+        run: () => testCase.run({ provider, model, providerId }),
+      }));
+  }
+
+  const provider = target.createProvider();
+  const requestOptions = options.reasoning ? { reasoning: options.reasoning } : {};
+  return cases
+    .filter((testCase): testCase is CheckCase => testCase.kind !== "decision")
+    .map((testCase) => ({
+      testCase,
+      run: () => testCase.run({ provider, model, providerId, requestOptions }),
+    }));
+}
+
+function selectCases(all: AnyCheckCase[], selection: RunOptions): AnyCheckCase[] {
   if (selection.cases.length > 0) {
     return all.filter((testCase) =>
       selection.cases.some((pattern) => matchesCasePattern(testCase.id, pattern)),
@@ -501,7 +545,7 @@ function matchesCasePattern(id: string, pattern: string): boolean {
 }
 
 function getSkipReason(
-  testCase: CheckCase,
+  testCase: AnyCheckCase,
   providerId: ProviderId,
   model: string,
 ): string | undefined {

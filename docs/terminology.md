@@ -122,6 +122,49 @@ an opaque payload for the content and wants it echoed on the next turn.
 Never a turn-part or event field, and never set because thinking was
 merely hidden.
 
+**Decision** — one `decide()` call: an input and a set of typed questions
+sent to a decision model in a single request, answered with one typed value
+per question. A decision is not a step, a send, or a message: it has no
+conversation and produces no turn. Normative in
+`docs/architecture/decisions.md`.
+
+**Decision model / decision provider** — a model that answers typed
+questions and cannot generate text, and the `DecisionProvider` that reaches
+it. Distinct from `AIProvider`; a provider may be either or both.
+
+**Input (decision)** — the content every question in a decision is asked
+about: a string or a JSON value. TypeSafe's wire name for it is `state`;
+"state" in Axle means agent or session state, so the option is `input`.
+
+**Question / answer (decision)** — a question is `noul`, `choice`, or
+`score`, named by the caller's key; its answer comes back under the same
+key. The three words are TypeSafe's and are used unchanged.
+
+**Noul** — a yes/no question. Its answer `noul` is the probability of yes,
+from 0 to 1. A value near 0.5 means the model is unsure, not that the answer
+is "partly".
+
+**Choice** — a question that picks one option from a set the caller
+defines. Its answer carries the chosen option, a probability per option, and
+a confidence.
+
+**Score** — a question that places the input on an ordered scale the caller
+defines, lowest level first. Its answer `score` is a probability-weighted
+position on that scale, zero-based, and can fall between levels.
+
+**Criteria** — the caller's description of a question's possible answers:
+what yes and no mean for a noul, the options for a choice, the ordered
+levels for a score.
+
+**Confidence (decision)** — the provider's summary of how concentrated a
+choice or score answer's probabilities are. It is not the probability of the
+chosen answer, and it is not comparable across models.
+
+**Refusal (decision)** — a provider declining one question in a decision.
+The answer for that question is `{ type: "refusal" }`; the rest of the
+decision stands. Unrelated to the chat-side `Refusal`, which describes a
+declined request or blocked output.
+
 ## CLI vocabulary
 
 The CLI layers its own units on top of the core terms; normative design in
