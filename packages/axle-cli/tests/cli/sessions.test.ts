@@ -2,7 +2,7 @@ import type { AgentConfig, AgentDefinition, AIProvider } from "@fifthrevision/ax
 import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAgentSession } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
 import {
@@ -463,6 +463,45 @@ describe("runSingle session persistence", () => {
       expect(typeAhead.mostPending()).toBeGreaterThan(1);
       expect(requestMessages).toHaveLength(3);
       expect(userTexts(await readSessionFile("ahead-1"))).toEqual(["one", "two", "three"]);
+    });
+
+    it("saves each turn as it settles, while later messages are still queued", async () => {
+      let releaseSecondCall = () => {};
+      const secondCallGate = new Promise<void>((resolve) => (releaseSecondCall = resolve));
+      let callIndex = 0;
+      const provider: AIProvider = {
+        name: "mock",
+        async *createStreamingRequest() {
+          callIndex += 1;
+          yield {
+            type: "start" as const,
+            id: `mock-${callIndex}`,
+            data: { model: "mock", timestamp: 0 },
+          };
+          if (callIndex === 2) await secondCallGate;
+          yield { type: "text-start" as const, data: { index: 0 } };
+          yield { type: "text-delta" as const, data: { index: 0, text: "hi" } };
+          yield { type: "text-complete" as const, data: { index: 0 } };
+          yield {
+            type: "complete" as const,
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+          };
+        },
+      };
+      const typeAhead = createTypeAheadRenderer(["one", "two", "/quit"]);
+
+      const run = runChat("ahead-save", provider, typeAhead.renderer);
+
+      await vi.waitFor(async () => {
+        const midQueue = await readSessionFile("ahead-save");
+        expect(userTexts(midQueue)).toEqual(["one"]);
+        expect(midQueue.session.messages).toHaveLength(2);
+      });
+      expect(callIndex).toBe(2);
+
+      releaseSecondCall();
+      await run;
+      expect(userTexts(await readSessionFile("ahead-save"))).toEqual(["one", "two"]);
     });
 
     it("one Ctrl-C cancels the active send and the next queued one runs", async () => {

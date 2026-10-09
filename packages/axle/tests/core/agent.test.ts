@@ -1093,6 +1093,113 @@ describe("Agent", () => {
     });
   });
 
+  describe("onSettled", () => {
+    function userTextsOf(messages: { role: string; content: unknown }[]): string[] {
+      return messages
+        .filter((message) => message.role === "user")
+        .map((message) => getTextContent(message.content as never));
+    }
+
+    test("fires once per send, before its handle settles, without waiting for the queue", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
+      const order: string[] = [];
+      const seen: { users: string[]; pending: number; lastTurnStatus?: string }[] = [];
+      agent.onSettled((session) => {
+        order.push("settled");
+        seen.push({
+          users: userTextsOf(session.messages),
+          pending: transcript.pending.length,
+          lastTurnStatus: transcript.turns.at(-1)?.status,
+        });
+      });
+
+      const handles = ["first", "second", "third"].map((text) =>
+        agent.send(text).final.then(() => order.push(`resolved ${text}`)),
+      );
+      await Promise.all(handles);
+
+      expect(seen).toEqual([
+        { users: ["first"], pending: 2, lastTurnStatus: "complete" },
+        { users: ["first", "second"], pending: 1, lastTurnStatus: "complete" },
+        { users: ["first", "second", "third"], pending: 0, lastTurnStatus: "complete" },
+      ]);
+      expect(order).toEqual([
+        "settled",
+        "resolved first",
+        "settled",
+        "resolved second",
+        "settled",
+        "resolved third",
+      ]);
+    });
+
+    test("hands over the same session snapshot() returns", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const sessions: unknown[] = [];
+      agent.onSettled((session) => sessions.push(session));
+
+      await agent.send("hello").final;
+
+      expect(sessions).toEqual([await agent.snapshot()]);
+    });
+
+    test("fires for a send cancelled mid-turn, with its user message committed", async () => {
+      const provider: AIProvider = {
+        name: "hanging",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const settled: string[][] = [];
+      agent.onSettled((session) => settled.push(userTextsOf(session.messages)));
+      let opened = false;
+      agent.on((event) => {
+        if (event.type === "turn:start") opened = true;
+      });
+
+      const handle = agent.send("hello");
+      const final = handle.final.catch((error) => error);
+      await vi.waitFor(() => expect(opened).toBe(true));
+      handle.cancel();
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      expect(settled).toEqual([["hello"]]);
+    });
+
+    test("does not fire for sends dropped before their turn opens", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
+      agent.addMcp({ name: "flaky", listTools, connected: true } as any);
+      const settled: unknown[] = [];
+      agent.onSettled((session) => settled.push(session));
+
+      const failed = agent.send("setup fails").final.catch((error) => error);
+      const cleared = agent.send("cleared").final.catch((error) => error);
+      agent.clear();
+      await Promise.all([failed, cleared]);
+
+      expect(settled).toEqual([]);
+    });
+
+    test("stops firing after its unsubscribe is called", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let count = 0;
+      const unsubscribe = agent.onSettled(() => count++);
+
+      await agent.send("first").final;
+      unsubscribe();
+      await agent.send("second").final;
+
+      expect(count).toBe(1);
+    });
+  });
+
   describe("abort signals", () => {
     test("send(string, { signal }) passes an abort signal to the provider", async () => {
       let providerSignal: AbortSignal | undefined;

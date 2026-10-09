@@ -94,6 +94,8 @@ class SessionRuntime {
   private readonly sessionStore?: SessionStore;
   private readonly span: Span;
   private persisted: boolean;
+  private unsaved: boolean;
+  private settledWrites: Promise<unknown> = Promise.resolve();
 
   constructor(options: {
     agentConfig: AgentConfig;
@@ -116,6 +118,9 @@ class SessionRuntime {
     this.sessionStore = options.sessionStore;
     this.span = options.span;
     this.persisted = Boolean(options.session);
+    // A resumed session starts saved; a new one is unsaved so even a send-less
+    // chat leaves a file behind (the resume hint printed on exit must be true).
+    this.unsaved = !options.session;
     this.agent.on((event) => {
       this.transcript.apply(event);
       options.onEvent(event, this.transcript);
@@ -123,12 +128,35 @@ class SessionRuntime {
   }
 
   async save(): Promise<boolean> {
+    return this.write(await this.agent.snapshot(), this.transcript.turns);
+  }
+
+  saveOnSettle(): void {
+    this.agent.onSettled((session) => {
+      this.unsaved = true;
+      const turns = [...this.transcript.turns];
+      this.settledWrites = this.settledWrites.then(() => this.write(session, turns));
+    });
+  }
+
+  async flush(): Promise<void> {
+    await this.settledWrites;
+  }
+
+  async finishSaving(): Promise<void> {
+    await this.settledWrites;
+    if (this.unsaved) await this.save();
+  }
+
+  private async write(session: AgentSession, turns: readonly Turn[]): Promise<boolean> {
     if (!this.sessionStore) return false;
     try {
-      await this.sessionStore.save(await this.agent.snapshot(), this.transcript.turns);
+      await this.sessionStore.save(session, turns);
       this.persisted = true;
+      this.unsaved = false;
       return true;
     } catch (e) {
+      this.unsaved = true;
       const message = e instanceof Error ? e.message : String(e);
       this.span.warn(`Failed to save session: ${message}`);
       return false;
@@ -195,15 +223,7 @@ export async function runAgentSession(
   process.on("SIGINT", onInterrupt);
   renderer.setInterruptHandler(onInterrupt);
 
-  // A resumed session starts clean; a new one is dirty so even a send-less
-  // chat leaves a file behind (the resume hint printed on exit must be true).
-  let dirty = !spec.session;
-  const saveSession = async () => {
-    if (!sessionStore || !dirty) return;
-    if (await runtime.save()) {
-      dirty = false;
-    }
-  };
+  runtime.saveOnSettle();
 
   if (spec.session) {
     const line = `Resuming session ${agent.sessionId}`;
@@ -242,7 +262,6 @@ export async function runAgentSession(
   });
 
   const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
-    dirty = true;
     const handle = agent.send(message, { signal: controller.signal });
     outstandingSends.push(handle);
     try {
@@ -275,7 +294,7 @@ export async function runAgentSession(
   try {
     if (spec.initial !== undefined) {
       const outcome = await sendMessage(spec.initial);
-      await saveSession();
+      await runtime.flush();
       if (outcome === "failed") {
         runSpan.end("error");
         return false;
@@ -295,7 +314,7 @@ export async function runAgentSession(
           renderer.error(msg);
           parentSpan.error(msg);
         }
-        await saveSession();
+        await runtime.flush();
       };
       const inFlight = new Set<Promise<void>>();
 
@@ -338,7 +357,7 @@ export async function runAgentSession(
   } finally {
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
-    await saveSession();
+    await runtime.finishSaving();
     const resumeCommand = runtime.resumeCommand();
     if (sessionStore && resumeCommand) {
       const line = `Resume this session:\n${resumeCommand}`;

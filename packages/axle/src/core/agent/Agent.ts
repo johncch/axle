@@ -69,6 +69,7 @@ export class Agent {
   private ownedTracer?: Tracer;
 
   private eventCallbacks: TurnEventCallback[] = [];
+  private settledCallbacks: ((session: AgentSession) => void)[] = [];
   private compaction?: CompactionConfig;
   private scheduler = new AgentScheduler();
   private turnActive = false;
@@ -133,6 +134,25 @@ export class Agent {
     return () => {
       const index = this.eventCallbacks.indexOf(callback);
       if (index >= 0) this.eventCallbacks.splice(index, 1);
+    };
+  }
+
+  /**
+   * Receive the session each time an operation settles.
+   *
+   * Fires once after every send or manual compaction that opened a turn,
+   * after that turn's `turn:end` and before the operation's handle settles.
+   * The agent is at rest and the next queued operation has not started, so a
+   * host that reads its `Transcript.turns` inside the callback gets turns and
+   * messages that match. An operation dropped before opening its turn commits
+   * nothing and does not fire. The value is the one `snapshot()` returns;
+   * unlike `snapshot()`, it does not wait behind queued operations.
+   */
+  onSettled(callback: (session: AgentSession) => void) {
+    this.settledCallbacks.push(callback);
+    return () => {
+      const index = this.settledCallbacks.indexOf(callback);
+      if (index >= 0) this.settledCallbacks.splice(index, 1);
     };
   }
 
@@ -433,6 +453,7 @@ export class Agent {
       this.turnActive = false;
       this.stopRequested = false;
       this.transcript = new Transcript();
+      if (userTurnOpened) this.emitSettled();
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -481,8 +502,9 @@ export class Agent {
 
     return this.scheduler.schedule(
       async ({ signal }) => {
+        const droppedBeforeStart = signal.aborted;
+        if (droppedBeforeStart) dropCancelled();
         try {
-          if (signal.aborted) dropCancelled();
           const outcome = await this.runCompaction(config, signal, "manual", {
             state: this.messages,
             target: { type: "self-wrapped", id },
@@ -490,6 +512,7 @@ export class Agent {
           return outcome === "applied";
         } finally {
           this.transcript = new Transcript();
+          if (!droppedBeforeStart) this.emitSettled();
         }
       },
       {
@@ -652,10 +675,17 @@ export class Agent {
    * nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    return this.scheduler.schedule(async (): Promise<AgentSession> => ({
-      sessionId: this.sessionId,
-      messages: this.messages,
-    })).final;
+    return this.scheduler.schedule(async (): Promise<AgentSession> => this.currentSession()).final;
+  }
+
+  private currentSession(): AgentSession {
+    return { sessionId: this.sessionId, messages: this.messages };
+  }
+
+  private emitSettled(): void {
+    if (this.settledCallbacks.length === 0) return;
+    const session = this.currentSession();
+    for (const cb of this.settledCallbacks) cb(session);
   }
 
   private emitEvent(event: TurnEvent): void {

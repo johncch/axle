@@ -730,6 +730,33 @@ describe("Agent.compact", () => {
     expect(events).toEqual([]);
   });
 
+  test("onSettled fires after a manual compaction with the compacted messages", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    const summary = [user("summary")];
+    agent.setCompaction({ compact: () => ({ messages: summary }) });
+    const settled: AxleMessage[][] = [];
+    agent.onSettled((session) => settled.push(session.messages));
+
+    await agent.compact();
+
+    expect(settled).toEqual([summary]);
+  });
+
+  test("onSettled does not fire for a compaction aborted before it starts", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+    const settled: unknown[] = [];
+    agent.onSettled((session) => settled.push(session));
+
+    await expect(agent.compact({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(
+      AxleAgentAbortError,
+    );
+
+    expect(settled).toEqual([]);
+  });
+
   test("snapshot requested mid-send waits for quiescence and never captures a running turn", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
