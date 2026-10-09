@@ -7,7 +7,12 @@ import type { ProviderClientOptions } from "../types.js";
 export const NAME = "TypeSafe" as const;
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai";
+const DEFAULT_TIMEOUT_MS = 10_000;
 
+/**
+ * `timeoutMs` defaults to ten seconds per attempt, matching TypeSafe's own
+ * SDKs.
+ */
 export interface TypesafeOptions extends ProviderClientOptions {
   /**
    * API root that serves `/v1/systemone`. Point it at a compatible host to
@@ -71,7 +76,7 @@ export function typesafe(apiKey: string, options: TypesafeOptions = {}): Decisio
           }),
         {
           maxRetries: options.maxRetries,
-          timeoutMs: options.timeoutMs,
+          timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           signal: params.signal,
           onRetry: (info) =>
             params.span?.warn("TypeSafe decision request retry", {

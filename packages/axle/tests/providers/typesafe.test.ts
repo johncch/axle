@@ -39,7 +39,10 @@ function stubFetch(...responses: Response[]) {
   return fetchMock;
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe("typesafe", () => {
   test("posts state and questions to System One and maps the response", async () => {
@@ -131,6 +134,30 @@ describe("typesafe", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.model).toBe("jev-1.13.0");
+  });
+
+  test("gives up on an unanswered request after ten seconds by default", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() => new Promise<Response>(() => {})),
+    );
+
+    const outcome = decide({
+      provider: typesafe("ts-key", { maxRetries: 0 }),
+      model: "jev-latest",
+      input: "text",
+      questions,
+    }).catch((error: Error) => error);
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(await outcome).toMatchObject({
+      name: "TimeoutError",
+      message: "Request timed out after 10000ms",
+    });
   });
 
   test("reports the status and body of a rejected request", async () => {
