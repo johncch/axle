@@ -25,8 +25,17 @@ YAML job file with `-j` is the non-interactive path.
 On first run with no configuration anywhere — no credentials, no `cli.yaml`
 providers or defaults, no inline provider in the recipe — `axle` launches a
 setup wizard:
-pick a provider, paste a key (written to `~/.axle/credentials`, chmod 600),
-and enter a default model id. Re-run it anytime with `axle setup`. A run that
+choose what to set up (your user config in `~/.axle`, or this folder's
+`.axle/`), pick a provider, paste a key (written to that home's
+`credentials`, chmod 600), and enter a default model id. An
+OpenAI-compatible endpoint is saved as a named provider profile in that
+home's `cli.yaml`: the wizard asks for its base URL, a name, and an
+optional key. Re-run it anytime with `axle setup`.
+
+Setting up a folder gives it its own key and defaults, which win over your
+user config there. A folder's `.axle/` is only read once the folder is
+trusted, so the wizard asks to trust an untrusted folder first and cancels
+if you decline. Keep `.axle/credentials` out of version control. A run that
 can't resolve a model drops into the same model prompt.
 
 Sessions accumulate under `~/.axle/sessions/cli/` with no automatic
@@ -106,14 +115,16 @@ key a recipe accepts, with its type and what it does, and
 `axle explain recipe.request`).
 
 `provider` says where requests go. A string names a provider — a built-in
-type (`anthropic`, `openai`, `gemini`, `chatcompletions`) or a provider
-profile from `cli.yaml` — and an object is inline endpoint configuration.
+type (`anthropic`, `openai`, `gemini`) or a provider profile from
+`cli.yaml` — and an object is inline endpoint configuration.
+`chatcompletions` is a protocol, not a provider: it is the `type` of a
+profile or an inline object, always with a `baseUrl`, never a name.
 Both `provider` and `model` are optional; anything the job leaves out
 resolves through the config chain:
 
 - provider: job → `defaults.provider` in `cli.yaml`
 - model: job → `defaults.models.<provider name>` → `<TYPE>_MODEL` env or
-  credentials → interactive model prompt
+  credentials (built-in types only) → interactive model prompt
 
 So a model-only job runs on the configured default provider, and a job with
 neither runs entirely on defaults. `model` is a publisher-qualified id (e.g.
@@ -494,13 +505,10 @@ ANTHROPIC_MODEL=anthropic/claude-sonnet-5
 GEMINI_MODEL=google/gemini-3.5-flash
 ```
 
-For OpenAI-compatible endpoints:
-
-```bash
-CHATCOMPLETIONS_BASE_URL=http://localhost:11434/v1
-CHATCOMPLETIONS_MODEL=llama3
-CHATCOMPLETIONS_API_KEY=...
-```
+An OpenAI-compatible endpoint has no variables of its own. It is a
+`chatcompletions` profile in `cli.yaml` (below) or an inline provider in a
+job, and its key, if it needs one, lives under whatever name its
+`apiKeyEnv` gives. Without `apiKeyEnv` the endpoint is called with no key.
 
 A job file never holds a key — it is meant to be checked in — so its inline
 provider rejects `apiKey`. To reference a non-standard environment variable

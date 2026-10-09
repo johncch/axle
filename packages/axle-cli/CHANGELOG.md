@@ -26,6 +26,32 @@
   second drops everything queued and exits, saving the session. It used to
   take one press to finish the current tool batch and a second to cancel
   and exit. Runs without a chat keep the two-stage stop-then-cancel.
+- **The generic `chatcompletions` provider is gone.**
+  `CHATCOMPLETIONS_BASE_URL`, `CHATCOMPLETIONS_MODEL` and
+  `CHATCOMPLETIONS_API_KEY` are no longer read, and the bare name
+  `chatcompletions` (a recipe's `provider:` or `defaults.provider`) no
+  longer resolves. `chatcompletions` is now only the `type` of a named profile or
+  an inline recipe provider, and `baseUrl` is required on both; one without
+  it fails to load. Move the endpoint to a profile and its key to a
+  variable the profile names:
+
+  ```yaml
+  # ~/.axle/cli.yaml
+  providers:
+    ollama:
+      type: chatcompletions
+      baseUrl: http://localhost:11434/v1
+      # apiKeyEnv: OLLAMA_API_KEY   # only if the endpoint needs a key
+  defaults:
+    provider: ollama
+    models:
+      ollama: llama3
+  ```
+
+  `axle setup` writes this for you. A profile no longer inherits a model or
+  a key from the generic variables: with no `apiKeyEnv` it is called
+  keyless, and `axle info` shows its key as `none`.
+
 - **The working directory's `.env` is no longer read.** Credentials come
   from the process environment, then `.axle/credentials`, then
   `~/.axle/credentials`. Move keys from `.env` into one of those files, or
@@ -89,6 +115,13 @@
 
 ### New
 
+- **`axle setup` asks which home to set up.** The first question is your
+  user config (`~/.axle`) or this folder (`./.axle`); the key, the provider
+  profile and the defaults are all written to the one chosen, so a folder
+  can have its own key. Choosing an untrusted folder asks to trust it
+  first and cancels on a no. `axle info` shows a built-in provider's key by
+  its variable name (`$ANTHROPIC_API_KEY`) and no longer lists providers
+  that are not configured.
 - **Messages typed during a turn go to the agent's queue.** Under the ink
   renderer each submission is sent at once and shown as `(queued)` from
   the transcript's pending entries until its turn starts. `/quit` typed

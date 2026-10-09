@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import YAML from "yaml";
 import * as z from "zod";
-import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDirs } from "./paths.js";
+import type { ConfigTarget } from "./paths.js";
+import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDir, resolveConfigDirs } from "./paths.js";
 import {
   CliConfig,
   CliConfigSchema,
@@ -94,7 +95,6 @@ export const API_KEY_VARIABLES = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   gemini: "GEMINI_API_KEY",
-  chatcompletions: "CHATCOMPLETIONS_API_KEY",
 } as const;
 
 /**
@@ -178,24 +178,46 @@ async function loadCliConfigLayers(context: ConfigContext): Promise<CliConfigLay
   const layers: CliConfigLayer[] = [];
   for (const dir of context.trusted ? [dirs.user, dirs.project] : [dirs.user]) {
     const path = join(dir, CONFIG_FILE);
-    const content = await readOptionalFile(path);
-    if (content === null) continue;
-
-    let raw: unknown;
-    try {
-      raw = YAML.parse(content) ?? {};
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new Error(`Invalid config file at ${path}:\n  ${message}`);
-    }
-
-    const parsed = CliConfigSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw new Error(`Invalid config file at ${path}:\n${formatZodError(parsed.error)}`);
-    }
-    layers.push({ path, config: parsed.data });
+    const config = await readCliConfigFile(path);
+    if (config) layers.push({ path, config });
   }
   return layers;
+}
+
+async function readCliConfigFile(path: string): Promise<CliConfig | null> {
+  const content = await readOptionalFile(path);
+  if (content === null) return null;
+
+  let raw: unknown;
+  try {
+    raw = YAML.parse(content) ?? {};
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`Invalid config file at ${path}:\n  ${message}`);
+  }
+
+  const parsed = CliConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Invalid config file at ${path}:\n${formatZodError(parsed.error)}`);
+  }
+  return parsed.data;
+}
+
+export interface ConfigHome {
+  credentials: Record<string, string>;
+  cliConfig: CliConfig;
+}
+
+/**
+ * What one home holds on its own, with no layering: the files a writer
+ * aimed at the same target would change.
+ */
+export async function readConfigHome(target?: ConfigTarget): Promise<ConfigHome> {
+  const dir = resolveConfigDir(target);
+  return {
+    credentials: (await readCredentialsFile(join(dir, CREDENTIALS_FILE))) ?? {},
+    cliConfig: (await readCliConfigFile(join(dir, CONFIG_FILE))) ?? {},
+  };
 }
 
 // Provider profiles replace wholesale across layers; field-merging two
@@ -247,13 +269,6 @@ function buildServiceConfig(lookup: (key: string) => string | undefined): Servic
       ? {
           apiKey: lookup(API_KEY_VARIABLES.gemini),
           model: lookup("GEMINI_MODEL"),
-        }
-      : undefined,
-    chatcompletions: lookup("CHATCOMPLETIONS_BASE_URL")
-      ? {
-          baseUrl: lookup("CHATCOMPLETIONS_BASE_URL"),
-          model: lookup("CHATCOMPLETIONS_MODEL"),
-          apiKey: lookup(API_KEY_VARIABLES.chatcompletions),
         }
       : undefined,
   });

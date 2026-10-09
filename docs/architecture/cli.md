@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-10-08 (AXL-73)
+**Status**: current · **Last design revision**: 2026-10-09 (AXL-79)
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -173,11 +173,24 @@ against it; divergence is a defect. State ownership is defined in
    upsert individual keys and preserve foreign lines verbatim — never
    rewrite the file. `cli.yaml` merges user-then-project with project
    winning; `defaults` merge per key, provider profiles replace wholesale.
+   `axle setup` writes one home, chosen by its first question: credentials,
+   profile and defaults all go to the user home or all to the project home.
+   Its "already configured" checks read that home alone, since a different
+   key per folder is the reason to pick the project. Choosing an untrusted
+   project asks to trust it before anything is typed, and a no cancels the
+   wizard: it never writes a home the next run would not read.
    On top of the layered sources, one uniform chain resolves the seat:
    provider name := recipe →
    `defaults.provider` → error; endpoint := `providers[name]` profile →
    built-in type → error; model := recipe → `defaults.models[name]` →
-   `*_MODEL` credential → interactive prompt (TTY) or error. The provider
+   `*_MODEL` credential → interactive prompt (TTY) or error. The built-in
+   types are `anthropic`, `openai` and `gemini`: each is a provider with
+   one endpoint, a key variable and a model variable. `chatcompletions` is
+   a protocol, so it is only ever the `type` of a profile or of a recipe's
+   inline provider, always with its own `baseUrl`; it is not a name, has no
+   credential variables, and takes nothing from another endpoint of the
+   same type. Its key is whatever its `apiKeyEnv` names, and with no
+   `apiKeyEnv` it is called keyless. The provider
    is never inferred from the model string. The endpoint step runs on every
    invocation, resume included (invariant 6); the model step runs once, at
    the run that creates the session.
@@ -461,6 +474,23 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   consola/tsdown family: work lines spin and settle with durations, host
   lines carry the gutter, model prose is plain stdout. The model's words
   are the product; the frame should look like tooling.
+- **2026-10-09 — `axle setup` asks which home to write.** Rejected: always
+  the user home (shipped until this date) — a new project could not get
+  its own key without hand-editing. Rejected: project profile with the key
+  kept in the user home — keys could not differ per folder. Rejected: on a
+  declined trust, falling back to the user home or returning to the first
+  question — cancelling is one line and leaves nothing half-written.
+  Rejected: editing `.gitignore` — the wizard prints a reminder instead.
+- **2026-10-09 — `chatcompletions` is a type, not a provider (AXL-79).**
+  Rejected: the generic endpoint built from `CHATCOMPLETIONS_BASE_URL`,
+  `CHATCOMPLETIONS_MODEL` and `CHATCOMPLETIONS_API_KEY`, which shipped until
+  this date. Those values were merged into every endpoint of the type as
+  fallbacks, so a named profile with no model ran on the generic model and
+  a keyless local profile was sent the generic key. `axle setup` writes a
+  named profile instead, with the key under `<NAME>_API_KEY`. Rejected: a
+  deprecation error naming the old variables — there were no users to
+  migrate. Kept: the recipe's inline `{ type: chatcompletions, baseUrl }`,
+  which is a configured endpoint.
 - **2026-09-02 — provider profiles replace wholesale across config
   layers.** Rejected: field-merging profiles — merging two valid endpoint
   configurations can produce a shape neither file's validation would

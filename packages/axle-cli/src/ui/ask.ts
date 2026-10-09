@@ -62,18 +62,20 @@ interface CommonOptions {
 export interface TextOptions extends CommonOptions {
   placeholder?: string;
   initialValue?: string;
+  /** What an empty submission becomes; shown as the placeholder. */
+  defaultValue?: string;
   validate?: Validate<string>;
 }
 
 export function text(opts: TextOptions): Promise<string | typeof CANCEL_SYMBOL> {
-  const placeholder = opts.placeholder
-    ? styleText("dim", opts.placeholder)
-    : styleText(["inverse", "hidden"], "_");
+  const hint = opts.defaultValue ?? opts.placeholder;
+  const placeholder = hint ? styleText("dim", hint) : styleText(["inverse", "hidden"], "_");
   return run(
     new TextPrompt({
       validate: opts.validate,
-      placeholder: opts.placeholder,
+      placeholder: hint,
       initialValue: opts.initialValue,
+      defaultValue: opts.defaultValue,
       signal: opts.signal,
       input: opts.input,
       output: opts.output,

@@ -58,6 +58,21 @@ interface ScheduleFixture {
   runOccurrence(programArguments: string[]): Promise<CliRun>;
 }
 
+function stubProfileConfig(baseUrl: string, extraDefaults = ""): string {
+  return [
+    "providers:",
+    "  stub:",
+    "    type: chatcompletions",
+    `    baseUrl: ${baseUrl}`,
+    "defaults:",
+    "  provider: stub",
+    "  models:",
+    "    stub: stub-model",
+    extraDefaults,
+    "",
+  ].join("\n");
+}
+
 function sse(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
@@ -320,17 +335,20 @@ describe.concurrent("cli.ts end-to-end", () => {
   );
 
   it(
-    "one-shot -m resolves provider and model through cli.yaml defaults and env",
+    "one-shot -m resolves provider and model through cli.yaml defaults",
     async ({ cli }) => {
       const { replies, requests, runCli, HOME, baseUrl } = cli;
       replies.push({ text: "one-shot answer" });
       await mkdir(join(HOME, ".axle"), { recursive: true });
-      await writeFile(join(HOME, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
+      await writeFile(join(HOME, ".axle", "cli.yaml"), stubProfileConfig(baseUrl));
 
-      const { code, output } = await runCli(
-        ["-m", "quick question", "--renderer", "plain", "--no-log"],
-        { CHATCOMPLETIONS_BASE_URL: baseUrl, CHATCOMPLETIONS_MODEL: "stub-model" },
-      );
+      const { code, output } = await runCli([
+        "-m",
+        "quick question",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
 
       expect(code).toBe(0);
       expect(output).toContain("one-shot answer");
@@ -379,11 +397,11 @@ describe.concurrent("cli.ts end-to-end", () => {
       const { replies, requests, runCli, HOME, baseUrl } = cli;
       replies.push({ text: "chat answer" });
       await mkdir(join(HOME, ".axle"), { recursive: true });
-      await writeFile(join(HOME, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
+      await writeFile(join(HOME, ".axle", "cli.yaml"), stubProfileConfig(baseUrl));
 
       const { code, output } = await runCli(
         ["--renderer", "plain", "--no-log"],
-        { CHATCOMPLETIONS_BASE_URL: baseUrl, CHATCOMPLETIONS_MODEL: "stub-model" },
+        {},
         "hello from the pipe\n",
       );
 
@@ -479,22 +497,26 @@ describe.concurrent("cli.ts end-to-end", () => {
     async ({ cli }) => {
       const { requests, runCli, HOME, baseUrl } = cli;
       const configPath = join(HOME, ".axle", "cli.yaml");
-      const env = { CHATCOMPLETIONS_BASE_URL: baseUrl, CHATCOMPLETIONS_MODEL: "stub-model" };
       await mkdir(join(HOME, ".axle"), { recursive: true });
-      await writeFile(configPath, "defaults:\n  provider: chatcompletions\n");
+      await writeFile(configPath, stubProfileConfig(baseUrl));
 
-      const first = await runCli(["-m", "hello", "--renderer", "plain", "--no-log"], env);
+      const first = await runCli(["-m", "hello", "--renderer", "plain", "--no-log"]);
       const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
       const saved = JSON.parse(
         await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
       );
       expect(saved.definition.tools).toBeUndefined();
 
-      await writeFile(configPath, "defaults:\n  provider: chatcompletions\n  tools: [read-file]\n");
-      const { code } = await runCli(
-        ["resume", sessionId!, "-m", "follow up", "--renderer", "plain", "--no-log"],
-        env,
-      );
+      await writeFile(configPath, stubProfileConfig(baseUrl, "  tools: [read-file]"));
+      const { code } = await runCli([
+        "resume",
+        sessionId!,
+        "-m",
+        "follow up",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
 
       expect(code).toBe(0);
       expect(requests[0].tools?.map((tool) => tool.function.name)).toEqual([
@@ -555,7 +577,7 @@ describe.concurrent("cli.ts end-to-end", () => {
     async ({ cli }) => {
       const { requests, runCli, CWD, writeRecipe } = cli;
       await mkdir(join(CWD, ".axle"), { recursive: true });
-      await writeFile(join(CWD, ".axle", "cli.yaml"), "defaults:\n  provider: chatcompletions\n");
+      await writeFile(join(CWD, ".axle", "cli.yaml"), "defaults:\n  provider: anthropic\n");
       const recipe = await writeRecipe("job.yml", "tools: [exec, read-file]");
       await runCli(["trust", "--revoke"]);
 

@@ -8,6 +8,7 @@ import {
   getCredentialSources,
   getJobConfig,
   getServiceConfig,
+  readConfigHome,
 } from "../../src/cli/configs/loaders.js";
 import { listProjectInputs } from "../../src/cli/configs/paths.js";
 
@@ -256,6 +257,7 @@ describe("config loaders", () => {
         "    type: anthropic",
         "  local:",
         "    type: chatcompletions",
+        "    baseUrl: http://localhost:11434/v1",
         "defaults:",
         "  provider: work",
         "  tools: [exec]",
@@ -361,11 +363,43 @@ describe("config loaders", () => {
     expect(config.providers?.gw).toEqual({ type: "anthropic" });
   });
 
-  it("provides a chatcompletions service config from baseUrl alone", async () => {
+  it("rejects a chatcompletions profile with no baseUrl", async () => {
+    const home = join(TEST_DIR, "home");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await writeFile(
+      join(home, ".axle", "cli.yaml"),
+      ["providers:", "  local:", "    type: chatcompletions"].join("\n"),
+    );
+
+    await expect(
+      getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home }),
+    ).rejects.toThrow(/baseUrl/);
+  });
+
+  it("reads one home on its own, without layering", async () => {
+    const home = join(TEST_DIR, "home");
+    const cwd = join(TEST_DIR, "proj");
+    await mkdir(join(home, ".axle"), { recursive: true });
+    await mkdir(join(cwd, ".axle"), { recursive: true });
+    await writeFile(join(home, ".axle", "credentials"), "ANTHROPIC_API_KEY=user-key\n");
+    await writeFile(join(home, ".axle", "cli.yaml"), "defaults:\n  provider: anthropic\n");
+    await writeFile(join(cwd, ".axle", "credentials"), "OPENAI_API_KEY=folder-key\n");
+
+    expect(await readConfigHome({ scope: "project", cwd, home })).toEqual({
+      credentials: { OPENAI_API_KEY: "folder-key" },
+      cliConfig: {},
+    });
+    expect(await readConfigHome({ cwd, home })).toEqual({
+      credentials: { ANTHROPIC_API_KEY: "user-key" },
+      cliConfig: { defaults: { provider: "anthropic" } },
+    });
+  });
+
+  it("does not read the CHATCOMPLETIONS_* variables", async () => {
     process.chdir(TEST_DIR);
     vi.stubEnv("CHATCOMPLETIONS_BASE_URL", "http://localhost:11434/v1");
-    vi.stubEnv("CHATCOMPLETIONS_MODEL", "");
-    vi.stubEnv("CHATCOMPLETIONS_API_KEY", "");
+    vi.stubEnv("CHATCOMPLETIONS_MODEL", "llama3");
+    vi.stubEnv("CHATCOMPLETIONS_API_KEY", "generic-key");
 
     const config = await getServiceConfig({
       trusted: true,
@@ -373,11 +407,7 @@ describe("config loaders", () => {
       home: join(TEST_DIR, "home"),
     });
 
-    expect(config.chatcompletions).toEqual({
-      baseUrl: "http://localhost:11434/v1",
-      model: undefined,
-      apiKey: undefined,
-    });
+    expect(config).not.toHaveProperty("chatcompletions");
   });
 
   it("rejects unknown top-level job keys", async () => {

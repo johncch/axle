@@ -26,14 +26,15 @@ export interface FolderTrust {
   trusted: boolean;
 }
 
-const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini", "chatcompletions"];
+const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini"];
 
 /**
  * The uniform resolution chain (AXL-22):
  *   provider name := job.provider → defaults.provider → error
  *   endpoint      := cli.yaml providers[name] → built-in type → error
  *   model         := job.model → defaults.models[name] → env/credentials
- *                    `*_MODEL` → undefined (caller decides: picker or error)
+ *                    `*_MODEL` (built-in types) → undefined (caller decides:
+ *                    picker or error)
  *
  * The definition keeps a named provider as its name only; `resolveEndpoint`
  * looks the profile up again on every run. An inline provider object in the
@@ -114,8 +115,9 @@ function resolveCliProvider(
 
   const model = definitionModel ?? config.model;
   if (!model) {
+    const modelVariable = type in API_KEY_VARIABLES ? `, or set ${type.toUpperCase()}_MODEL` : "";
     throw new Error(
-      `No model resolved for provider ${type}. Add model: to the job, set defaults.models in ~/.axle/cli.yaml, or set ${type.toUpperCase()}_MODEL.`,
+      `No model resolved for provider ${type}. Add model: to the job, or set defaults.models in ~/.axle/cli.yaml${modelVariable}.`,
     );
   }
 
@@ -147,9 +149,7 @@ function resolveCliProvider(
     case "chatcompletions": {
       const baseUrl = config.baseUrl;
       if (!baseUrl) {
-        throw new Error(
-          "No base URL for chatcompletions. Set baseUrl on the provider, or CHATCOMPLETIONS_BASE_URL in the environment or ~/.axle/credentials.",
-        );
+        throw new Error("No base URL for chatcompletions. Set baseUrl on the provider.");
       }
       return {
         provider: chatCompletions(baseUrl, {
@@ -168,7 +168,7 @@ function resolveCliProvider(
 }
 
 function resolveApiKey(
-  type: keyof typeof API_KEY_VARIABLES,
+  type: string,
   config: Record<string, any>,
   credentials: Credentials,
 ): string | undefined {

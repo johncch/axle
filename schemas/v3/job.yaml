@@ -15,7 +15,7 @@ properties:
       - type: string
         minLength: 1
         description: "A cli.yaml provider profile or a built-in type: anthropic, openai,
-          gemini, chatcompletions."
+          gemini."
       - oneOf:
           - type: object
             properties:
@@ -24,9 +24,10 @@ properties:
                 const: chatcompletions
                 description: Provider API the endpoint speaks.
               baseUrl:
+                type: string
+                minLength: 1
                 description: Base URL of the OpenAI-compatible endpoint, e.g.
                   http://localhost:11434/v1.
-                type: string
               vendor:
                 description: Vendor behind the endpoint; turns on that vendor's own request
                   fields.
@@ -58,6 +59,7 @@ properties:
                 maximum: 9007199254740991
             required:
               - type
+              - baseUrl
             additionalProperties: false
           - type: object
             properties:
