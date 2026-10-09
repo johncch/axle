@@ -743,6 +743,17 @@ describe("Agent.compact", () => {
     expect(settled).toEqual([summary]);
   });
 
+  test("a throwing onSettled callback cannot fail a manual compaction", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+    agent.onSettled(() => {
+      throw new Error("disk full");
+    });
+
+    await expect(agent.compact()).resolves.toBe(true);
+  });
+
   test("onSettled does not fire for a compaction aborted before it starts", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);

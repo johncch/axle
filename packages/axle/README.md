@@ -80,6 +80,12 @@ nothing) and returns the number cleared, leaving the active turn untouched.
 transcript stays linear: the committed batch is visible to the follow-up
 turn.
 
+`agent.cancel(reason)` is the hard form of `stop()`: it cancels the active
+operation immediately, exactly as that handle's own `cancel()` would, and
+returns `false` when nothing is running. Queued operations are untouched and
+the next one starts. Together: `stop()` ends the active turn at a tool
+boundary, `cancel()` ends it now, and `clear()` drops what is queued.
+
 Each `final` resolves only that handle's result: `h1` settles at the stop
 boundary and does not absorb `h2`'s response. A stopped turn ends on its
 tool-call exchange, so a plain send resolves with whatever text that turn
@@ -87,7 +93,10 @@ produced (often empty) and an Instruct send may resolve `ok: false` with a
 parse error — no final answer exists yet by design.
 
 Cancellation is handle-local, and the user message commits when its
-`turn:user` event is emitted, after setup succeeds. Cancelling a queued handle
+`turn:user` event is emitted, after setup succeeds. Until then the send is
+_pending_: `send()` emits `pending:queued` as soon as it is called, and a
+send that ends before its turn opens emits `pending:dropped` (see
+[Pending operations](#pending-operations)). Cancelling a queued handle
 or a running handle during setup removes it without committing its user
 message. Once `turn:user` is emitted, the committed message remains and the
 agent turn is marked cancelled. This includes cancellation during
@@ -927,7 +936,8 @@ try {
 }
 ```
 
-`TurnEvent` types: `turn:user`, `turn:start`, `turn:end`, `part:start`,
+`TurnEvent` types: `pending:queued`, `pending:dropped`, `turn:user`,
+`turn:start`, `turn:end`, `part:start`,
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
 `action:running`, `action:input`, `action:progress`, `action:complete`,
@@ -965,6 +975,35 @@ folds and stores them. Attach a `Transcript`, persist its `turns` alongside
 `agent.snapshot()`, and pass the saved turns to the constructor on restore.
 Compaction (see below) appears in the fold as an ordinary `compaction` part;
 renderers that don't handle that part type simply render nothing for it.
+
+##### Pending operations
+
+A send or a manual `agent.compact()` is an _operation_. The Agent runs one at
+a time, so an operation requested during a turn waits. `Transcript` shows
+that wait in `transcript.pending`, separate from `turns`:
+
+```typescript
+agent.send("Build the feature.");
+agent.send("Also check the tests."); // queued behind the first
+
+for (const entry of transcript.pending) {
+  if (entry.kind === "send") renderQueued(entry.turn); // a preview user turn
+  if (entry.kind === "compaction") renderQueuedCompaction();
+}
+```
+
+Each entry carries the `id` of the turn it will open. `pending:queued` adds
+it when the operation is accepted, including one that starts at once. It
+leaves when that turn opens — the user turn for a send, the engine-opened
+turn for a compaction — and the turn that arrives has the same id, so a
+renderer can key a row by it and change its style in place. If the operation
+ends first, `pending:dropped` removes it with a `reason`. The reason is
+`{ type: "cancelled" }` for a cancelled handle, `agent.clear()`, or an
+aborted signal, and `{ type: "error", error }` when setup failed.
+
+Pending entries are live state. They are never part of `turns`, so saving
+`turns` never saves them, and a `Transcript` restored from saved turns has
+none. An operation still queued when the process exits is lost.
 
 Hosts that transport Axle events over SSE, WebSockets, or another mixed event
 stream can use `Transcript` instead of reimplementing this reducer:
@@ -1298,6 +1337,29 @@ const resumed = new Agent(config, session);
 const resumedTranscript = new Transcript(turns);
 resumed.on((event) => resumedTranscript.apply(event));
 ```
+
+`snapshot()` waits behind everything already queued, so with several sends
+queued it resolves after the last of them. To save as each one finishes,
+register `onSettled` instead:
+
+```typescript
+agent.on((event) => transcript.apply(event));
+agent.onSettled((session) => {
+  save(session, [...transcript.turns]); // read both here: they match
+});
+```
+
+It fires once after every send or manual compaction that opened a turn,
+after that turn's `turn:end` and before the operation's handle settles, with
+the same value `snapshot()` returns. The next queued operation has not
+started, so the transcript read inside the callback agrees with
+`session.messages`. An operation dropped before its turn opened committed
+nothing and does not fire. The callback is synchronous and the Agent does
+not wait for your write; chain writes if an older one must not land after a
+newer one. A callback cannot affect the operation it reports on: if it
+throws, the error is recorded on the trace as a warning, the remaining
+callbacks still run, and the handle settles with its real result. Handle
+your own save failures inside the callback. Like `on`, it returns a function that unregisters it.
 
 ## Known Limitations
 

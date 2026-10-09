@@ -1264,6 +1264,33 @@ describe("Agent", () => {
       expect(settled).toEqual([]);
     });
 
+    test("a throwing callback cannot change the send's result or stop later callbacks", async () => {
+      const entries: LogEntry[] = [];
+      const agent = new Agent({
+        provider: createEchoStreamProvider([]),
+        model: "mock",
+        observability: { log: (entry) => entries.push(entry) },
+      });
+      let laterCallbackRan = false;
+      agent.onSettled(() => {
+        throw new Error("disk full");
+      });
+      agent.onSettled(() => {
+        laterCallbackRan = true;
+      });
+
+      const result = await agent.send("hello").final;
+
+      expect(result).toMatchObject({ ok: true, response: "hello" });
+      expect(laterCallbackRan).toBe(true);
+      expect(entries).toContainEqual(
+        expect.objectContaining({ level: "warn", message: "onSettled callback threw: disk full" }),
+      );
+      expect(entries.find((entry) => entry.message === "agent.send")).toMatchObject({
+        fields: { status: "ok" },
+      });
+    });
+
     test("stops firing after its unsubscribe is called", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       let count = 0;

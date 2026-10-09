@@ -76,7 +76,9 @@ the tools the host registered.
 and annotations. The exported `Transcript` class is the shipped in-memory
 implementation; hosts persist its `turns` and pass them to the constructor on
 restore. The constructor shallow-copies that array, and the public `turns`
-view is readonly; structural changes go through `apply`. The Agent holds no
+view is readonly; structural changes go through `apply`. Its `pending` view
+holds operations the Agent has accepted but not started; that is live state
+and is never saved. The Agent holds no
 transcript — it emits events and keeps only the active `messages` (folded
 working memory, bounded by compaction). Lose the turns, lose the transcript.
 

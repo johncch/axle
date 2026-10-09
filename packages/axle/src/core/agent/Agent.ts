@@ -146,7 +146,9 @@ export class Agent {
    * host that reads its `Transcript.turns` inside the callback gets turns and
    * messages that match. An operation dropped before opening its turn commits
    * nothing and does not fire. The value is the one `snapshot()` returns;
-   * unlike `snapshot()`, it does not wait behind queued operations.
+   * unlike `snapshot()`, it does not wait behind queued operations. A
+   * callback that throws cannot affect the operation: the error is recorded
+   * on the trace and the remaining callbacks still run.
    */
   onSettled(callback: (session: AgentSession) => void) {
     this.settledCallbacks.push(callback);
@@ -464,7 +466,7 @@ export class Agent {
       this.turnActive = false;
       this.stopRequested = false;
       this.transcript = new Transcript();
-      if (userTurnOpened) this.emitSettled();
+      if (userTurnOpened) this.emitSettled(root);
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -513,8 +515,7 @@ export class Agent {
 
     return this.scheduler.schedule(
       async ({ signal }) => {
-        const droppedBeforeStart = signal.aborted;
-        if (droppedBeforeStart) dropCancelled();
+        if (signal.aborted) dropCancelled();
         try {
           const outcome = await this.runCompaction(config, signal, "manual", {
             state: this.messages,
@@ -523,7 +524,6 @@ export class Agent {
           return outcome === "applied";
         } finally {
           this.transcript = new Transcript();
-          if (!droppedBeforeStart) this.emitSettled();
         }
       },
       {
@@ -666,6 +666,7 @@ export class Agent {
         return "errored";
       }
     } finally {
+      if (run.target.type === "self-wrapped") this.emitSettled(root);
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -693,10 +694,17 @@ export class Agent {
     return { sessionId: this.sessionId, messages: this.messages };
   }
 
-  private emitSettled(): void {
+  private emitSettled(span: Span | undefined): void {
     if (this.settledCallbacks.length === 0) return;
     const session = this.currentSession();
-    for (const cb of this.settledCallbacks) cb(session);
+    for (const cb of this.settledCallbacks) {
+      try {
+        cb(session);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        span?.warn(`onSettled callback threw: ${message}`);
+      }
+    }
   }
 
   private emitEvent(event: TurnEvent): void {
