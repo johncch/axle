@@ -1,4 +1,4 @@
-import type { Turn } from "@fifthrevision/axle/ui";
+import type { PendingEntry, Turn } from "@fifthrevision/axle/ui";
 import type { SessionUsage } from "../renderer.js";
 
 export type StaticItem =
@@ -8,9 +8,11 @@ export type StaticItem =
 export interface UiState {
   staticItems: StaticItem[];
   liveTurn?: Turn;
+  /** Operations the agent has accepted but not started, from the transcript. */
+  pending: readonly PendingEntry[];
   /** True while the runner is waiting at the prompt (submit sends directly). */
   awaitingInput: boolean;
-  /** Lines submitted during a running turn, consumed by the next prompt. */
+  /** Lines submitted while the runner is not prompting, consumed by the next prompt. */
   queuedInputs: string[];
   /** Cumulative usage shown in the persistent bottom bar. */
   usage?: SessionUsage;

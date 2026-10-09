@@ -20,6 +20,12 @@
   untrusted path without asking. Nothing under `~/.axle/` is gated, and
   MCP servers are unaffected. `axle info` shows the folder's trust state
   and marks ignored project files.
+- **Ctrl-C in the chat cancels the running turn instead of asking it to
+  stop.** One press cancels the active turn at once, keeps its partial
+  work, and lets the next queued message run. A second press within a
+  second drops everything queued and exits, saving the session. It used to
+  take one press to finish the current tool batch and a second to cancel
+  and exit. Runs without a chat keep the two-stage stop-then-cancel.
 - **The working directory's `.env` is no longer read.** Credentials come
   from the process environment, then `.axle/credentials`, then
   `~/.axle/credentials`. Move keys from `.env` into one of those files, or
@@ -82,6 +88,12 @@
   models.
 
 ### New
+
+- **Messages typed during a turn go to the agent's queue.** Under the ink
+  renderer each submission is sent at once and shown as `(queued)` from
+  the transcript's pending entries until its turn starts. `/quit` typed
+  mid-turn exits after the queue drains. The plain renderer is unchanged:
+  it prompts only between turns.
 
 - **Skills.** A skill is a folder in the Agent Skills format
   (agentskills.io): a `SKILL.md` with `name` and `description` in its

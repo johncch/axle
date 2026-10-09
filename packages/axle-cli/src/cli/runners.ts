@@ -142,6 +142,10 @@ class SessionRuntime {
   }
 }
 
+const CHAT_EXIT_WINDOW_MS = 1000;
+
+type SendOutcome = "ok" | "failed" | "interrupted";
+
 export async function runAgentSession(
   spec: AgentSessionSpec,
   stats: Stats,
@@ -163,8 +167,10 @@ export async function runAgentSession(
   const { agent } = runtime;
 
   const controller = new AbortController();
+  const outstandingSends: { cancel: () => void }[] = [];
   let sigintCount = 0;
-  const onInterrupt = () => {
+  let lastChatInterruptAt: number | undefined;
+  const interruptRun = () => {
     sigintCount += 1;
     if (sigintCount === 1 && agent.stop()) {
       renderer.warn("Finishing the current step — Ctrl-C again to cancel now");
@@ -172,6 +178,20 @@ export async function runAgentSession(
       controller.abort();
     }
   };
+  const interruptChat = () => {
+    const activeSend = outstandingSends[0];
+    const now = Date.now();
+    const repeated =
+      lastChatInterruptAt !== undefined && now - lastChatInterruptAt < CHAT_EXIT_WINDOW_MS;
+    if (!activeSend || repeated) {
+      controller.abort();
+      return;
+    }
+    lastChatInterruptAt = now;
+    activeSend.cancel();
+    renderer.warn("Interrupted — Ctrl-C again to exit");
+  };
+  const onInterrupt = spec.interactive ? interruptChat : interruptRun;
   process.on("SIGINT", onInterrupt);
   renderer.setInterruptHandler(onInterrupt);
 
@@ -221,10 +241,12 @@ export async function runAgentSession(
     if (event.type === "compaction:complete") reportUsage();
   });
 
-  const sendMessage = async (message: Instruct | string): Promise<boolean> => {
+  const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
     dirty = true;
+    const handle = agent.send(message, { signal: controller.signal });
+    outstandingSends.push(handle);
     try {
-      const result = await agent.send(message, { signal: controller.signal }).final;
+      const result = await handle.final;
 
       addStats(stats, result.usage);
       reportUsage();
@@ -234,47 +256,69 @@ export async function runAgentSession(
         renderer.error(msg);
         parentSpan.error(msg);
         runSpan.error(msg);
-        return false;
+        return "failed";
       }
 
       parentSpan.info(result.response, { markdown: true });
-      return true;
+      return "ok";
+    } catch (e) {
+      const chatInterrupt =
+        spec.interactive && e instanceof AxleAgentAbortError && !controller.signal.aborted;
+      if (chatInterrupt) return "interrupted";
+      throw e;
     } finally {
+      outstandingSends.splice(outstandingSends.indexOf(handle), 1);
       sigintCount = 0;
     }
   };
 
   try {
     if (spec.initial !== undefined) {
-      const ok = await sendMessage(spec.initial);
+      const outcome = await sendMessage(spec.initial);
       await saveSession();
-      if (!ok) {
+      if (outcome === "failed") {
         runSpan.end("error");
         return false;
       }
     }
 
     if (spec.interactive) {
-      while (true) {
-        const input = await renderer.promptInput();
-        if (input === null) break;
-        const text = input.trim();
-        if (text === "") continue;
-        if (text === "/quit" || ["exit", "quit"].includes(text.toLowerCase())) break;
-
+      const sessionAborted = new Promise<null>((resolve) => {
+        controller.signal.addEventListener("abort", () => resolve(null), { once: true });
+      });
+      const chatSend = async (text: string): Promise<void> => {
         try {
           await sendMessage(text);
         } catch (e) {
-          if (e instanceof AxleAgentAbortError) {
-            renderer.warn("Interrupted");
-            parentSpan.warn("Interrupted");
-            break;
-          }
+          if (e instanceof AxleAgentAbortError) return;
           const msg = e instanceof Error ? e.message : String(e);
           renderer.error(msg);
           parentSpan.error(msg);
         }
         await saveSession();
+      };
+      const inFlight = new Set<Promise<void>>();
+
+      while (!controller.signal.aborted) {
+        const input = await Promise.race([renderer.promptInput(), sessionAborted]);
+        if (input === null) break;
+        const text = input.trim();
+        if (text === "") continue;
+        if (text === "/quit" || ["exit", "quit"].includes(text.toLowerCase())) break;
+
+        const sent = chatSend(text);
+        if (renderer.acceptsInputDuringTurn) {
+          inFlight.add(sent);
+          void sent.finally(() => inFlight.delete(sent));
+        } else {
+          await sent;
+        }
+      }
+
+      await Promise.all(inFlight);
+      if (controller.signal.aborted) {
+        renderer.warn("Interrupted");
+        parentSpan.warn("Interrupted");
       }
     }
 

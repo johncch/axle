@@ -30,6 +30,7 @@ describe("UiStore", () => {
     const store = new UiStore<UiState>({
       staticItems: [],
       awaitingInput: false,
+      pending: [],
       queuedInputs: [],
     });
     const before = store.getSnapshot();
@@ -56,6 +57,7 @@ describe("App", () => {
     const store = new UiStore<UiState>({
       staticItems: [],
       awaitingInput: false,
+      pending: [],
       queuedInputs: [],
       usage: { in: 1_000, out: 200, contextTokens: 4_000, contextLimit: 10_000 },
     });
@@ -80,12 +82,14 @@ describe("App", () => {
     const settled = new UiStore<UiState>({
       staticItems: [{ kind: "turn", turn: agentTurn("a1") }],
       awaitingInput: false,
+      pending: [],
       queuedInputs: [],
     });
     const streaming = new UiStore<UiState>({
       staticItems: [],
       liveTurn: { ...agentTurn("a2"), status: "streaming" },
       awaitingInput: false,
+      pending: [],
       queuedInputs: [],
     });
     const render = (store: UiStore<UiState>) =>
@@ -96,6 +100,23 @@ describe("App", () => {
     expect(render(settled)).toContain("✔ Thinking — Plan\n\n  Read the file first.");
     expect(render(streaming)).toContain("Some bold text.");
     expect(render(streaming)).not.toContain("**");
+  });
+
+  it("lists the transcript's pending entries as queued rows", () => {
+    const store = new UiStore<UiState>({
+      staticItems: [],
+      awaitingInput: true,
+      pending: [
+        { id: "u1", kind: "send", turn: userTurn("u1", "also check the tests") },
+        { id: "c1", kind: "compaction" },
+      ],
+      queuedInputs: [],
+    });
+
+    const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(output).toContain("❯ also check the tests (queued)");
+    expect(output).toContain("Compaction (queued)");
   });
 });
 

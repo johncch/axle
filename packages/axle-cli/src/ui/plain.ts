@@ -13,6 +13,7 @@ export class PlainRenderer implements Renderer {
   private write: (text: string) => void;
   private atLineStart = true;
   private readline = new ReadlinePrompt();
+  readonly acceptsInputDuringTurn = false;
 
   constructor(options?: { write?: (text: string) => void }) {
     this.write = options?.write ?? ((text) => process.stdout.write(text));

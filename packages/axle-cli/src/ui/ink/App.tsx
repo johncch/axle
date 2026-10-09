@@ -1,6 +1,7 @@
 import {
   renderTerminalMarkdown,
   type ActionPart,
+  type PendingEntry,
   type Turn,
   type TurnPart,
 } from "@fifthrevision/axle/ui";
@@ -31,6 +32,7 @@ export function App({
   statusBar: boolean;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const busy = state.liveTurn !== undefined || state.pending.length > 0;
 
   return (
     <>
@@ -38,6 +40,11 @@ export function App({
         {(item, index) => <StaticItemView key={index} item={item} />}
       </Static>
       {state.liveTurn && <LiveRegion turn={state.liveTurn} />}
+      {state.pending.map((entry) => (
+        <Text key={entry.id} dimColor>
+          {pendingLabel(entry)} (queued)
+        </Text>
+      ))}
       {state.queuedInputs.map((queued, index) => (
         <Text key={index} dimColor>
           {"\u276f "}
@@ -47,13 +54,19 @@ export function App({
       {!state.closed && (
         <InputLine
           onSubmit={onSubmit}
-          awaitingInput={state.awaitingInput}
+          atIdlePrompt={state.awaitingInput && !busy}
           onInterrupt={state.onInterrupt}
         />
       )}
       {statusBar && !state.closed && state.usage && <UsageBar usage={state.usage} />}
     </>
   );
+}
+
+function pendingLabel(entry: PendingEntry): string {
+  if (entry.kind === "compaction") return "Compaction";
+  const text = entry.turn.parts.find((part) => part.type === "text")?.text ?? "";
+  return `\u276f ${text}`;
 }
 
 function UsageBar({ usage }: { usage: SessionUsage }) {
@@ -69,11 +82,11 @@ function UsageBar({ usage }: { usage: SessionUsage }) {
 
 function InputLine({
   onSubmit,
-  awaitingInput,
+  atIdlePrompt,
   onInterrupt,
 }: {
   onSubmit: (value: string | null) => void;
-  awaitingInput: boolean;
+  atIdlePrompt: boolean;
   onInterrupt?: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -85,7 +98,7 @@ function InputLine({
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
-      if (awaitingInput) {
+      if (atIdlePrompt) {
         onSubmit(null);
       } else {
         onInterrupt?.();
@@ -93,7 +106,7 @@ function InputLine({
       return;
     }
     if (key.ctrl && input === "d") {
-      if (awaitingInput && value === "") onSubmit(null);
+      if (atIdlePrompt && value === "") onSubmit(null);
       return;
     }
     if (key.return) {
@@ -124,7 +137,7 @@ function InputLine({
   // Invisible until the prompt is live or the user starts typing ahead \u2014
   // non-interactive runs keep the input mounted (raw mode, Ctrl-C handling)
   // without showing a prompt they can't use.
-  if (!awaitingInput && value === "") return null;
+  if (!atIdlePrompt && value === "") return null;
 
   return (
     <Box marginTop={1}>

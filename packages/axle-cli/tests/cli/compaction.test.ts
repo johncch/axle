@@ -129,6 +129,7 @@ const TEST_DIR = join(import.meta.dirname, "__compaction_tmp__");
 const HOME = join(TEST_DIR, "home");
 
 const nullRenderer: Renderer = {
+  acceptsInputDuringTurn: false,
   renderPriorTurns() {},
   onEvent() {},
   info() {},
