@@ -991,7 +991,7 @@ describe("createStreamingRequest", () => {
       {
         type: "error",
         data: expect.objectContaining({
-          message: 'ChatCompletions provider does not support provider tool "web_search"',
+          message: "ChatCompletions does not support provider tool: web_search",
         }),
       },
     ]);

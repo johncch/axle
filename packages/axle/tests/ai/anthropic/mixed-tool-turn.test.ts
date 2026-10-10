@@ -4,9 +4,7 @@ import z from "zod";
 import type { AxleMessage } from "../../../src/messages/message.js";
 import { createAnthropicStreamingAdapter } from "../../../src/providers/anthropic/createStreamingAdapter.js";
 import { createStreamingRequest } from "../../../src/providers/anthropic/createStreamingRequest.js";
-import {
-  findOpenProviderToolCalls,
-} from "../../../src/providers/anthropic/utils.js";
+import { findOpenProviderToolCalls } from "../../../src/providers/anthropic/utils.js";
 import { generate } from "../../../src/providers/generate.js";
 import { stream, type StreamEvent } from "../../../src/providers/stream.js";
 import type { AIProvider } from "../../../src/providers/types.js";

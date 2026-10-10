@@ -808,17 +808,19 @@ it automatically: the step keeps streaming, yields one assistant message, and
 reports the summed usage of every request it took. A paused turn counts as one
 step toward `maxSteps`.
 
-### Web Search Fallback
+### Web Search on Chat Completions
 
-`web_search` is native-first. OpenAI, Anthropic, Gemini, and OpenRouter use their
-provider-managed search implementation. Providers without native search use the
-process-wide fallback configured at application startup:
+Each provider owns the provider tools it can serve. Anthropic, OpenAI, Gemini
+and OpenRouter host their own `web_search`. A Chat Completions endpoint that
+hosts none (Together, a local server) gets one attached when you create the
+provider:
 
 ```typescript
-import { braveWebSearch, configureAxle } from "@fifthrevision/axle";
+import { braveWebSearch, chatCompletions } from "@fifthrevision/axle";
 
-configureAxle({
-  webSearchFallback: braveWebSearch({
+const provider = chatCompletions("https://api.together.ai/v1", {
+  apiKey: process.env.TOGETHER_API_KEY!,
+  webSearch: braveWebSearch({
     apiKey: process.env.BRAVE_API_KEY!,
     maxResults: 5,
     maxTokens: 4_096,
@@ -826,38 +828,8 @@ configureAxle({
 });
 ```
 
-The bundled backend uses Brave Search's LLM Context endpoint. Each result
-contains a title, URL, and query-relevant extracted passages:
-
-```typescript
-interface WebSearchResult {
-  title: string;
-  url: string;
-  snippets: string[];
-}
-```
-
-Axle recognizes the official OpenRouter and Together endpoint hostnames and
-applies their request differences automatically:
-
-```typescript
-const together = chatCompletions("https://api.together.ai/v1", {
-  apiKey: process.env.TOGETHER_API_KEY!,
-});
-```
-
-Set `vendor: "openrouter"` or `vendor: "together"` explicitly when using a
-proxy or gateway with a different hostname.
-
-On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,
-so every request in a conversation routes to the same upstream provider and
-keeps its prompt cache warm, and the requests are grouped under that id in the
-OpenRouter dashboard. A host-chosen `sessionId` is sent as-is; OpenRouter
-accepts up to 256 characters. Pass `sessionId` to `stream()` or `generate()`
-to get the same without an agent, and set `providerOptions.session_id` to
-send a different key.
-
-Application code continues to request the provider-neutral capability:
+Application code requests the same provider tool on every provider, so
+switching providers needs no other change:
 
 ```typescript
 const agent = new Agent({
@@ -867,16 +839,40 @@ const agent = new Agent({
 });
 ```
 
-Axle snapshots global configuration when `generate()`, `stream()`, or
-`Agent.send()` starts. If the selected provider has no native search and no
-fallback is configured, the operation fails before sending a model request.
-Provider-specific `web_search.config` is ignored when the fallback is
-selected; configure fallback behavior on `braveWebSearch()` instead.
+`webSearch` takes any executable tool, so a custom search is a tool you
+write. `braveWebSearch()` returns one that uses Brave Search's LLM Context
+endpoint; its result is JSON holding the query and a list of:
 
-The fallback is exposed to the model as an ordinary executable tool, so it
-produces `tool:*` events rather than `provider-tool:*` events. Applications that
-want completely custom search behavior can register their own executable
-`web_search` tool instead of requesting the provider tool.
+```typescript
+interface WebSearchResult {
+  title: string;
+  url: string;
+  snippets: string[];
+}
+```
+
+The attached tool runs on your side as an ordinary tool call. It produces
+`tool:*` events and a tool message, not `provider-tool:*` events, and
+`web_search.config` does not reach it; configure the tool where you create
+it. An attached tool is used wherever it is attached, including on
+OpenRouter in place of OpenRouter's own search.
+
+Requesting a provider tool from a Chat Completions provider that has nothing
+to serve it fails before the request is sent: the result has `ok: false`
+and `error.message` names the tool.
+
+Axle recognizes the official OpenRouter and Together endpoint hostnames and
+applies their request differences automatically. Set `vendor: "openrouter"`
+or `vendor: "together"` explicitly when using a proxy or gateway with a
+different hostname.
+
+On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,
+so every request in a conversation routes to the same upstream provider and
+keeps its prompt cache warm, and the requests are grouped under that id in the
+OpenRouter dashboard. A host-chosen `sessionId` is sent as-is; OpenRouter
+accepts up to 256 characters. Pass `sessionId` to `stream()` or `generate()`
+to get the same without an agent, and set `providerOptions.session_id` to
+send a different key.
 
 ### MCP (Model Context Protocol)
 

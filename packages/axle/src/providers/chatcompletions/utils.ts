@@ -1,5 +1,4 @@
 import z from "zod";
-import { AxleError } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
@@ -111,13 +110,7 @@ export function prepareProviderTools(
 
   if (vendor === "openrouter") return prepareOpenRouterProviderTools(providerTools, warn);
 
-  throw new AxleError(
-    `ChatCompletions provider does not support provider tool "${providerTools[0].name}"`,
-    {
-      code: "PROVIDER_TOOL_NOT_SUPPORTED",
-      details: { vendor, names: providerTools.map((tool) => tool.name) },
-    },
-  );
+  throw new Error(`ChatCompletions does not support provider tool: ${providerTools[0].name}`);
 }
 
 export function toChatCompletionsToolChoice(
