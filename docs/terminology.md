@@ -59,10 +59,12 @@ to a single assistant message or to a provider request.
 
 **Operation** — a queued unit of agent work that opens a turn: a Send or a
 manual compaction. Operations run one at a time in FIFO order. An operation
-is _pending_ from the call until its turn opens, and _settles_ when that
-turn ends; `agent.onSettled(...)` then hands the host the session. Work that
-opens no turn (`agent.snapshot()`) is queued the same way but is not an
-operation.
+is _pending_ from the call until its turn opens, and _settles_ when it
+ends, however it ends; `agent.onSettled(...)` then hands the host the
+session and the outcome, and waits for the host before the next operation
+starts. An operation cancelled while still queued never ran and does not
+settle. Work that opens no turn (`agent.snapshot()`) is queued the same way
+but is not an operation.
 
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
