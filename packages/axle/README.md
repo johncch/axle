@@ -1451,22 +1451,40 @@ register `onSettled` instead:
 
 ```typescript
 agent.on((event) => transcript.apply(event));
-agent.onSettled((session) => {
-  save(session, [...transcript.turns]); // read both here: they match
+agent.onSettled(async (session, operation) => {
+  await save(session, [...transcript.turns]); // read both here: they match
+  if (operation.result.status === "rejected") report(operation.result.reason);
 });
 ```
 
-It fires once after every send or manual compaction that opened a turn,
-after that turn's `turn:end` and before the operation's handle settles, with
-the same value `snapshot()` returns. The next queued operation has not
-started, so the transcript read inside the callback agrees with
-`session.messages`. An operation dropped before its turn opened committed
-nothing and does not fire. The callback is synchronous and the Agent does
-not wait for your write; chain writes if an older one must not land after a
-newer one. A callback cannot affect the operation it reports on: if it
-throws, the error is recorded on the trace as a warning, the remaining
-callbacks still run, and the handle settles with its real result. Handle
-your own save failures inside the callback. Like `on`, it returns a function that unregisters it.
+It fires once after every send or manual compaction that ran, however it
+ended: after its `turn:end` when it opened a turn, and before the
+operation's handle settles. `session` is the same value `snapshot()`
+returns. `operation` is a `SettledOperation`: its `kind` (`"send"` or
+`"compaction"`) and a `result` that is exactly what the handle is about to
+settle with — `{ status: "fulfilled", value }` with the `AgentResult` (or
+`true`/`false` for a compaction), or `{ status: "rejected", reason }` with
+the error. A send cancelled while still waiting in the queue never ran and
+does not fire; a send that started and failed before committing its message
+does, with a rejected result and an unchanged session.
+
+The Agent waits for the callback. Return a promise when the work has to
+finish before the next queued operation starts: the handle does not settle
+and the next operation does not begin until every callback has settled, so
+the transcript read inside the callback agrees with `session.messages` and
+nothing from the next turn is visible before your callback resolves.
+Callbacks run together, not in order. A callback that starts async work
+without returning its promise does not hold the queue. Do not await
+`send()`, `compact()` or `snapshot()` on the same agent inside the
+callback: it holds the queue they wait for, so the nested call deadlocks.
+
+The operation is already over while callbacks run: `agent.cancel()` and
+`agent.stop()` return `false` in that window, and the callback is given no
+signal — cancel your own work your own way. A callback cannot affect the
+operation it reports on: if it throws or rejects, the error is recorded on
+the trace as a warning, the remaining callbacks still run, and the handle
+settles with its real result. Handle your own save failures inside the
+callback. Like `on`, it returns a function that unregisters it.
 
 ## Known Limitations
 

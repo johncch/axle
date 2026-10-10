@@ -1,6 +1,6 @@
 # Agent state: the continuation and the transcript
 
-**Status**: current · **Last design revision**: 2026-10-08 (0.34.0)
+**Status**: current · **Last design revision**: 2026-10-09 (0.34.0)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -50,18 +50,34 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    constructor cannot accept them, so a restored transcript has none — and
    `AgentSession` carries no queue. Work that opens no turn (`snapshot()`)
    is queued but never pending.
-8. **The Agent hands over the session when an operation settles.**
-   `agent.onSettled(...)` fires once for every operation that opened a turn,
-   after that turn's `turn:end` and before the operation's handle settles,
-   with the value `snapshot()` returns. The Agent is at rest and the next
-   queued operation has not started, so a host that reads its
-   `Transcript.turns` inside the callback holds turns and messages that
-   match exactly. A dropped operation does not fire. The callback is its own
-   channel: the session never rides the turn event stream, which hosts
-   forward to clients. A callback reports an outcome and cannot change it:
-   one that throws is caught, recorded on the trace, and does not stop the
-   other callbacks or alter the handle's result. `snapshot()` remains the
-   pull form and waits behind everything queued ahead of it.
+8. **The Agent hands over the session and the outcome when an operation
+   settles, and waits for the host.** `agent.onSettled(...)` fires once for
+   every operation that ran, however it ended: after its `turn:end` when it
+   opened a turn, and before its handle settles, with the value `snapshot()`
+   returns and a `SettledOperation` carrying exactly what the handle is
+   about to settle with (`fulfilled` with the result, `rejected` with the
+   reason). An operation cancelled while still queued never ran and does not
+   fire. Callbacks run together and are awaited: the handle does not settle
+   and the next queued operation does not start until every callback has
+   settled, so a host that reads its `Transcript.turns` inside the callback
+   holds turns and messages that match exactly, and nothing from the next
+   operation is observable before the callback resolves. The operation is
+   already done while callbacks run: `cancel()` and `stop()` return `false`
+   in that window, and the callback receives no signal — the work inside it
+   is the host's to cancel. The callback is its own channel: the session
+   never rides the turn event stream, which hosts forward to clients. A
+   callback reports an outcome and cannot change it: one that throws or
+   rejects is caught, recorded on the trace, and does not stop the other
+   callbacks or alter the handle's result. `snapshot()` remains the pull
+   form and waits behind everything queued ahead of it.
+9. **Events observe; hooks hold.** Turn events (`agent.on`) are synchronous
+   fan-out: hosts forward them to clients, and nothing listening can hold
+   the engine. `onSettled` is the host's control channel at the one rest
+   point: awaited, able to hold the queue, carrying what must not ride the
+   event stream. Work that has to finish before the next operation starts
+   goes in the hook; anything a client should see goes on the events. The
+   scheduler owns the rest point as a task state (`queued`, `running`,
+   `settling`, `settled`); the Agent adds no flag of its own.
 
 ## Design rationale (2026-08-12)
 
@@ -141,8 +157,78 @@ Accepted consequences:
 - **An automatic compaction inside a send does not fire on its own.** It is
   part of that send, whose single firing includes it.
 
+## Awaited settle and the outcome (2026-10-09)
+
+The first host outside the CLI to adopt `onSettled` snapshots a sandbox
+between turns. With a synchronous callback the scheduler started the next
+queued operation the moment the callback returned, so the next turn's tool
+calls overlapped the snapshot; the CLI had lived with the same gap by
+chaining its saves on a promise of its own. The same host emits a
+"turn finished" signal that needs the operation's result, which only the
+handle carried, and the handle resolves on a microtask the next turn's
+`turn:user` could in principle beat.
+
+The resolution puts the rest point in the scheduler. A task's lifecycle is
+one state, `queued → running → settling → settled`; the scheduler awaits
+the operation's settle step between the work finishing and the handle
+resolving, and hands that step the work's own outcome as a
+`PromiseSettledResult`. "Before the handle settles" is then enforced by
+construction, cancellation during the window is a no-op because the state
+says so, and the outcome reaches the hook without a second shape.
+
+Firing for every operation that ran, rather than only those that opened a
+turn, fell out of the same move. The old rule existed because a drop had
+nothing to save; once the hook carries the outcome it is the host's
+lifecycle channel, and a lifecycle channel that goes silent exactly when
+setup fails is a worse one. The scheduler knows whether a task ran; the
+Agent would have needed a flag to know whether it committed.
+
+Accepted consequences:
+
+- **A slow callback slows the queue.** That is the point. A host that does
+  not want to hold the queue returns nothing from its callback; a host that
+  starts async work and does not return the promise has fire-and-forget,
+  as the CLI's chained saves do today.
+- **Awaiting `snapshot()`, `compact()` or another send's `final` inside
+  the callback deadlocks**, as it does inside a tool's `execute`: the
+  callback holds the queue they wait for. The session the hook passes is
+  the one `snapshot()` would return.
+- **A send that failed before its turn opened fires** with a rejected
+  result and an unchanged session. A save-on-settle host writes one
+  redundant save, the trade already accepted for a failed manual
+  compaction. A send with an already-aborted signal therefore fires when
+  the Agent was idle (it activated, ran, and threw) and not when it was
+  busy (it was withdrawn from the queue); `pending:dropped` is emitted
+  either way.
+- **A synchronous callback now resolves the handle one microtask later**
+  than before, since callbacks go through `Promise.all`. Nothing can
+  observe it: the scheduler releases the slot only after that hop.
+
 ## Rejected alternatives
 
+- **An `onStarting` hook** (2026-10-09): an operation has two rest points,
+  before start and after settle, and they are the same instant — the end of
+  N's settle is the moment before N+1 starts. The host can see what is next
+  in `transcript.pending[0]`, and when the Agent is idle it preps before
+  calling `send()`. A sibling hook with identical semantics would exist for
+  no consumer.
+- **Running the settle step inside the operation's work closure**
+  (2026-10-09): the first implementation. It needed an Agent-level
+  `settling` flag beside the scheduler's own `settled` flag so that
+  `cancel()` could answer, two booleans in two objects implying one
+  lifecycle. Owning the phase in the scheduler removed both.
+- **Firing only for operations that opened a turn** (2026-10-09): required
+  a record the operation marks at `turn:user` and the scheduler's settle
+  step reads, because a dropped send throws an error that does not say
+  whether the turn opened. See above for why the rule itself was wrong once
+  the hook carries the outcome.
+- **A second outcome shape** (2026-10-09): status plus the agent turn, say.
+  Hosts need the error object and the abort reason to tell a timeout from a
+  user stop; the handle already settles with those, and `PromiseSettledResult`
+  is the standard name for "what a promise settled with".
+- **Awaiting callbacks in registration order** (2026-10-09): each callback
+  is independent and none sees another's result; running them together is
+  the simpler rule and the faster one.
 - **Host-side pending lists** (2026-10-08): the status quo. A host mirrors
   state the Agent owns, with no event linking a `turn:user` to its send and
   no signal from `clear()`.

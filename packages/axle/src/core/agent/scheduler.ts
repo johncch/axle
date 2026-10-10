@@ -2,9 +2,11 @@ import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { createStats } from "../../utils/stats.js";
 import type { Handle } from "../../utils/utils.js";
 
+type TaskState = "queued" | "running" | "settling" | "settled";
+
 class ScheduledTask<T> {
   readonly final: Promise<T>;
-  settled = false;
+  state: TaskState = "queued";
 
   private readonly controller = new AbortController();
   private readonly resolveFinal: (value: T) => void;
@@ -16,6 +18,8 @@ class ScheduledTask<T> {
     private readonly operation: string,
     private readonly externalSignal: AbortSignal | undefined,
     private readonly onWithdrawn: (() => void) | undefined,
+    private readonly settle:
+      ((result: PromiseSettledResult<T>) => void | Promise<void>) | undefined,
   ) {
     const { promise, resolve, reject } = Promise.withResolvers<T>();
     this.final = promise;
@@ -33,21 +37,30 @@ class ScheduledTask<T> {
   }
 
   async execute(): Promise<void> {
+    this.state = "running";
+    let result: PromiseSettledResult<T>;
     try {
-      const value = await this.work({ signal: this.controller.signal });
-      this.settled = true;
-      this.resolveFinal(value);
-    } catch (error) {
-      this.settled = true;
-      this.rejectFinal(error);
+      result = { status: "fulfilled", value: await this.work({ signal: this.controller.signal }) };
+    } catch (reason) {
+      result = { status: "rejected", reason };
     } finally {
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
+    }
+    this.state = "settling";
+    try {
+      await this.settle?.(result);
+    } finally {
+      this.state = "settled";
+      if (result.status === "fulfilled") this.resolveFinal(result.value);
+      else this.rejectFinal(result.reason);
     }
   }
 
   cancel(reason?: unknown): void {
+    if (this.state === "settling" || this.state === "settled") return;
     this.controller.abort(reason);
     if (this.scheduler.withdraw(this)) {
+      this.state = "settled";
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
       this.onWithdrawn?.();
       this.rejectFinal(
@@ -68,7 +81,12 @@ export class AgentScheduler {
 
   schedule<T>(
     work: (context: { signal: AbortSignal }) => Promise<T>,
-    options?: { signal?: AbortSignal; operation?: string; onWithdrawn?: () => void },
+    options?: {
+      signal?: AbortSignal;
+      operation?: string;
+      onWithdrawn?: () => void;
+      settle?: (result: PromiseSettledResult<T>) => void | Promise<void>;
+    },
   ): Handle<T> {
     const task = new ScheduledTask(
       this,
@@ -76,6 +94,7 @@ export class AgentScheduler {
       options?.operation ?? "send",
       options?.signal,
       options?.onWithdrawn,
+      options?.settle,
     );
 
     if (!this.current) {
@@ -89,7 +108,7 @@ export class AgentScheduler {
   }
 
   cancelCurrent(reason?: unknown): boolean {
-    if (!this.current || this.current.settled) return false;
+    if (!this.current || this.current.state !== "running") return false;
     this.current.cancel(reason);
     return true;
   }
