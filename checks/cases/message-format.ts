@@ -339,7 +339,7 @@ export const messageFormatCases: CheckCase[] = [
     id: "format-thinking-stream",
     description:
       "Streamed reasoning ends in a normalized thinking part; providers that stream thinking text emit raw or summary delta events.",
-    providers: ["openai", "anthropic", "google", "openrouter", "together"],
+    providers: ["openai", "anthropic", "google", "openrouter", "togetherai"],
     async run({ provider, model, providerId }) {
       const handle = stream({
         provider,
@@ -365,7 +365,7 @@ export const messageFormatCases: CheckCase[] = [
       // OpenAI and Gemini stream summaries only when the model chooses to
       // write one, so deltas are required only where thinking text is streamed.
       const streamsThinkingText =
-        providerId === "anthropic" || providerId === "openrouter" || providerId === "together";
+        providerId === "anthropic" || providerId === "openrouter" || providerId === "togetherai";
       const failureReasons = [
         ...(thinking.some((part) => part.text || part.summary || part.redacted || part.continuity)
           ? []

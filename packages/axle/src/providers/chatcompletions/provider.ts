@@ -15,8 +15,8 @@ export type { ChatCompletionsVendor } from "./utils.js";
 
 const CHAT_COMPLETIONS_VENDOR_HOSTS: Partial<Record<string, ChatCompletionsVendor>> = {
   "api.openrouter.ai": "openrouter",
-  "api.together.ai": "together",
-  "api.together.xyz": "together",
+  "api.together.ai": "togetherai",
+  "api.together.xyz": "togetherai",
   "openrouter.ai": "openrouter",
 };
 

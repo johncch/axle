@@ -876,7 +876,7 @@ and `error.message` names the tool.
 
 Axle recognizes the official OpenRouter and Together endpoint hostnames and
 applies their request differences automatically. Set `vendor: "openrouter"`
-or `vendor: "together"` explicitly when using a proxy or gateway with a
+or `vendor: "togetherai"` explicitly when using a proxy or gateway with a
 different hostname.
 
 On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,

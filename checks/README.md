@@ -59,11 +59,11 @@ Run a selected provider set:
 ```bash
 pnpm exec tsx checks/run.ts \
   --provider openrouter \
-  --provider together
+  --provider togetherai
 ```
 
 Provider flags may also be comma-separated. The provider ids are `openai`,
-`anthropic`, `google`, `openrouter`, `together`, `ollama`, `typesafe`, and
+`anthropic`, `google`, `openrouter`, `togetherai`, `ollama`, `typesafe`, and
 `typesafe-openrouter`; `gemini` is accepted as an alias for `google`.
 
 Run every provider, including OpenRouter:
@@ -105,7 +105,7 @@ TYPESAFE_API_KEY=...
 BRAVE_API_KEY=...
 ```
 
-`BRAVE_API_KEY` is required for the `together` and `ollama` targets, which
+`BRAVE_API_KEY` is required for the `togetherai` and `ollama` targets, which
 have no web search of their own and get Brave attached as their `web_search`.
 The PDF attachment case is excluded because Together's Chat Completions API
 does not accept PDF file parts. Override Together's default smoke model with
@@ -123,7 +123,7 @@ Run the Together + Brave fallback path:
 
 ```bash
 pnpm exec tsx checks/run.ts \
-  --provider together \
+  --provider togetherai \
   --case stream-web-search
 ```
 

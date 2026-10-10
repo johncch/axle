@@ -14,7 +14,7 @@ export type ProviderId =
   | "anthropic"
   | "google"
   | "openrouter"
-  | "together"
+  | "togetherai"
   | "ollama"
   | "typesafe"
   | "typesafe-openrouter";
@@ -73,7 +73,7 @@ export const providerTargets: ProviderTarget[] = [
   },
   {
     kind: "chat",
-    id: "together",
+    id: "togetherai",
     model: process.env.TOGETHER_MODEL ?? "zai-org/GLM-5.3-Flash",
     default: true,
     createProvider: () =>

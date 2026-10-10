@@ -34,15 +34,12 @@ const FIRST_PARTY_PUBLISHERS: Record<string, string> = {
   gemini: "google",
 };
 
-const VENDOR_HOSTS = { openrouter: "openrouter", together: "togetherai" } as const;
-
 /** The models.dev provider id for an endpoint, when the endpoint says which service it is. */
 export function catalogHost(endpoint: Endpoint): string | undefined {
   if (endpoint.type !== "chatcompletions") return FIRST_PARTY_PUBLISHERS[endpoint.type];
   const { vendor, baseUrl } = endpoint.config;
-  if (vendor === "openrouter" || vendor === "together") return VENDOR_HOSTS[vendor];
-  const inferred = typeof baseUrl === "string" ? inferChatCompletionsVendor(baseUrl) : undefined;
-  return inferred ? VENDOR_HOSTS[inferred] : undefined;
+  if (vendor === "openrouter" || vendor === "togetherai") return vendor;
+  return typeof baseUrl === "string" ? inferChatCompletionsVendor(baseUrl) : undefined;
 }
 
 /**

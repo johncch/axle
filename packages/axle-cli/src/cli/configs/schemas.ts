@@ -54,7 +54,7 @@ const ChatCompletionsProviderUseSchema = z.strictObject({
     .min(1)
     .describe("Base URL of the OpenAI-compatible endpoint, e.g. http://localhost:11434/v1."),
   vendor: z
-    .enum(["openrouter", "together"])
+    .enum(["openrouter", "togetherai"])
     .optional()
     .describe("Vendor behind the endpoint; turns on that vendor's own request fields."),
   ...ApiKeyFieldsSchema,

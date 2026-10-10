@@ -29,7 +29,7 @@ properties:
               type: string
               enum:
                 - openrouter
-                - together
+                - togetherai
             apiKey:
               description: API key, inline. Prefer apiKeyEnv or a credentials file.
               type: string

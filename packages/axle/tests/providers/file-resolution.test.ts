@@ -320,7 +320,7 @@ describe("deferred file resolution", () => {
           },
         ],
         undefined,
-        { model: "test-model", vendor: "together" },
+        { model: "test-model", vendor: "togetherai" },
       ),
     ).rejects.toThrow("Together Chat Completions does not support PDF file parts");
   });

@@ -34,7 +34,7 @@ properties:
                 type: string
                 enum:
                   - openrouter
-                  - together
+                  - togetherai
               apiKeyEnv:
                 description: Name of the environment variable or credentials entry that holds
                   the API key.

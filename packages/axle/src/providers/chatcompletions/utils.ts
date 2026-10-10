@@ -24,7 +24,7 @@ import {
 } from "./vendors/openrouter/index.js";
 import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
-export type ChatCompletionsVendor = "openrouter" | "together";
+export type ChatCompletionsVendor = "openrouter" | "togetherai";
 
 interface ChatCompletionsConversionContext {
   model: string;
@@ -54,7 +54,7 @@ export function toChatCompletionsReasoning(
   reasoning: ReasoningSetting | undefined,
   vendor?: ChatCompletionsVendor,
 ) {
-  if (vendor === "together") return toTogetherReasoning(reasoning);
+  if (vendor === "togetherai") return toTogetherReasoning(reasoning);
   if (vendor === "openrouter") return toOpenRouterReasoning(reasoning);
   return toReasoningEffort(reasoning);
 }
@@ -291,7 +291,7 @@ async function convertFilePart(
   context: ChatCompletionsConversionContext,
   purpose: "user-message" | "tool-result",
 ): Promise<ChatCompletionContentPart> {
-  if (context.vendor === "together") {
+  if (context.vendor === "togetherai") {
     assertTogetherFilePartSupported(file);
   }
 

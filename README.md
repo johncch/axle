@@ -29,7 +29,7 @@ Thus, Axle the library was born. Today, Axle is shared not just between the CLI,
 ## Axle (TypeScript Library)
 
 ```bash
-npm install @fifthrevision/axle        # the library
+npm install @fifthrevision/axle zod    # the library; zod is a peer dependency
 ```
 
 ```typescript

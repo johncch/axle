@@ -89,7 +89,7 @@ describe("formatExplain", () => {
 
   it("walks through maps", () => {
     expect(formatExplain("config.providers.vendor", WIDE)[0]).toBe(
-      "config.providers.vendor  openrouter | together  (only with type: chatcompletions)",
+      "config.providers.vendor  openrouter | togetherai  (only with type: chatcompletions)",
     );
   });
 

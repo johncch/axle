@@ -563,7 +563,7 @@ export const coreCases: CheckCase[] = [
     group: "default",
     id: "generate-unsupported-tool-file",
     description: "Chat Completions continues when a local tool returns an unsupported binary file.",
-    providers: ["openrouter", "together"],
+    providers: ["openrouter", "togetherai"],
     async run({ provider, model, requestOptions }) {
       const schema = z.object({});
       const captureImage: ExecutableTool<typeof schema> = {
@@ -808,16 +808,21 @@ export const coreCases: CheckCase[] = [
       if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       const toolResults = getToolResultDetails(result.messages);
+      const batchResult = toolResults.find((toolResult) => toolResult.name === "lookup_codes");
+      const lowerText = text.toLowerCase();
+      const failureReasons = [
+        ...(!batchResult
+          ? ["The model never called lookup_codes."]
+          : !batchResult.content.includes("orchid") || !batchResult.content.includes("violet")
+            ? ["The lookup_codes result does not hold both orchid and violet."]
+            : []),
+        ...(!lowerText.includes("orchid") || !lowerText.includes("violet")
+          ? ["The final answer does not hold both orchid and violet."]
+          : []),
+      ];
       return {
-        ok:
-          text.toLowerCase().includes("orchid") &&
-          text.toLowerCase().includes("violet") &&
-          toolResults.some(
-            (toolResult) =>
-              toolResult.name === "lookup_codes" &&
-              toolResult.content.includes("orchid") &&
-              toolResult.content.includes("violet"),
-          ),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           text,
           toolResults,
@@ -1188,13 +1193,15 @@ export const coreCases: CheckCase[] = [
     description: "generate() with an Instruct image file attachment.",
     exclusions: [
       {
-        provider: "together",
+        provider: "togetherai",
         model: /^deepseek-ai\/DeepSeek-V4-Pro$/i,
         reason: "Together reports that DeepSeek V4 Pro does not support multimodal input.",
       },
     ],
     async run({ provider, model, requestOptions }) {
-      const image = await loadFileContent("./packages/axle/examples/data/economist-brainy-imports.png");
+      const image = await loadFileContent(
+        "./packages/axle/examples/data/economist-brainy-imports.png",
+      );
       const instruct = new Instruct({
         prompt: "Inspect the attached chart. Return the chart title and the top listed university.",
         schema: z.object({
@@ -1226,7 +1233,9 @@ export const coreCases: CheckCase[] = [
     description: "generate() with an Instruct PDF file attachment.",
     providers: ["openai", "anthropic", "google", "openrouter"],
     async run({ provider, model, requestOptions }) {
-      const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
+      const pdf = await loadFileContent(
+        "./packages/axle/examples/data/designing-a-new-foundation.pdf",
+      );
       const instruct = new Instruct({
         prompt:
           "Inspect the attached document. Return fileType exactly as 'pdf' and provide a short summary.",

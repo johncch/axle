@@ -151,7 +151,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        vendor: "together",
+        vendor: "togetherai",
         reasoning: { effort: "high" },
       }),
     );
@@ -765,7 +765,7 @@ describe("createStreamingRequest", () => {
     });
 
     test("sends sessionId as session_id for the OpenRouter vendor only", async () => {
-      const request = (vendor?: "openrouter" | "together") =>
+      const request = (vendor?: "openrouter" | "togetherai") =>
         collectChunks(
           createStreamingRequest({
             baseUrl: BASE_URL,
@@ -782,7 +782,7 @@ describe("createStreamingRequest", () => {
       expect(JSON.parse((fetch as any).mock.calls[0][1].body).session_id).toBe("conversation-1");
 
       (fetch as any).mockResolvedValue(okStream());
-      await request("together");
+      await request("togetherai");
       expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("session_id");
 
       (fetch as any).mockResolvedValue(okStream());

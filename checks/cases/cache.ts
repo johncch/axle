@@ -26,7 +26,7 @@ export const cacheCases: CheckCase[] = [
     group: "extended",
     id: "cache-prompt-reuse",
     description: "Repeating a long prompt reports cached input tokens on the second call.",
-    providers: ["openai", "anthropic", "openrouter", "together"],
+    providers: ["openai", "anthropic", "openrouter", "togetherai"],
     async run({ provider, model, providerId, requestOptions }) {
       const providerOptions =
         providerId === "openai"

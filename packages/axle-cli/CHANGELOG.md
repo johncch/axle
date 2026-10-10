@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.34.0
 
 ### Breaking changes
 
@@ -112,6 +112,10 @@
 - **The model picker is a text prompt.** `axle setup`, and a run that can't
   resolve a model, ask for a model id as free text instead of listing
   models.
+- **`vendor: together` is now `vendor: togetherai`.** A `chatcompletions`
+  provider that names the vendor must use the new id, which matches
+  models.dev; the old one fails config validation. A provider pointed at
+  Together's own hostname without `vendor` needs no change.
 
 ### New
 
