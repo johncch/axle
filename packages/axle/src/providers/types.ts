@@ -80,10 +80,6 @@ export interface AIProvider {
   ): AsyncGenerator<AnyStreamChunk, void, unknown>;
 }
 
-export interface ResolvedProviderTool extends ProviderTool {
-  nativeName?: string;
-}
-
 /**
  * Parameters passed to provider adapters for one streaming generation call.
  */
@@ -95,7 +91,7 @@ export interface ProviderStreamParams extends AxleModelRequestOptions {
   /** Executable tools exposed as provider function tools. */
   tools?: Array<ToolDefinition>;
   /** Provider-managed tools such as web search or code execution. */
-  providerTools?: Array<ResolvedProviderTool>;
+  providerTools?: Array<ProviderTool>;
   /**
    * Identity of the conversation this request belongs to. Providers that
    * group or route by session (OpenRouter `session_id`) send it; others

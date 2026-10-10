@@ -12,7 +12,6 @@ import type {
 } from "../messages/message.js";
 import type { ConsoleOutput, ProviderToolInput } from "../messages/providerTool.js";
 import type { LLMResult, Span } from "../observability/types.js";
-import { ToolRegistry } from "../tools/registry.js";
 import type {
   ExecutableTool,
   ProviderTool,
@@ -25,7 +24,6 @@ import { addStats, attributeStats, createStats, mergeStats, toTokenUsage } from 
 import {
   checkLoopStop,
   logStepContent,
-  resolveToolRegistry,
   resolveTools,
   validateLoopLimits,
   type AxleFailure,
@@ -122,9 +120,18 @@ export type StreamEvent =
 
 export type StreamEventCallback = (event: StreamEvent) => void;
 
+/**
+ * What the tool-batch boundary decides: `"finish"` ends the loop without
+ * another request; `"continue"` sends the next one as is; an object
+ * continues with that prompt and those tools replacing the current ones,
+ * exactly as the initial call set them.
+ */
+export type ToolBatchDecision =
+  "continue" | "finish" | Pick<StreamParams, "system" | "tools" | "providerTools">;
+
 export type ToolBatchCompleteCallback = (
   message: AxleToolCallMessage,
-) => "continue" | "finish" | Promise<"continue" | "finish">;
+) => ToolBatchDecision | Promise<ToolBatchDecision>;
 
 export interface StreamParams extends AxleModelRequestOptions {
   provider: AIProvider;
@@ -133,7 +140,6 @@ export interface StreamParams extends AxleModelRequestOptions {
   system?: string;
   tools?: ExecutableTool[];
   providerTools?: ProviderTool[];
-  registry?: ToolRegistry;
   onToolCall?: ToolCallCallback;
   /**
    * Identity of the conversation this stream continues. Forwarded to the
@@ -285,7 +291,6 @@ async function run(
     provider,
     model,
     messages,
-    system,
     onToolCall,
     maxSteps,
     maxContextTokens,
@@ -298,13 +303,9 @@ async function run(
     parallelToolCalls,
     providerOptions,
   } = options;
-  const registry = resolveToolRegistry(options);
-  const resolvedTools = resolveTools(registry, {
-    provider,
-    model,
-    span,
-    configuration,
-  });
+  const toolResolution = { provider, model, span, configuration };
+  let system = options.system;
+  let resolvedTools = resolveTools(options, toolResolution);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
@@ -555,6 +556,11 @@ async function run(
     const boundaryDecision = toolResultsMessage
       ? await control.onToolBatchComplete?.(toolResultsMessage)
       : undefined;
+    if (typeof boundaryDecision === "object") {
+      system = boundaryDecision.system;
+      resolvedTools = resolveTools(boundaryDecision, toolResolution);
+      loop.resolvedTools = resolvedTools;
+    }
 
     if (signal.aborted) {
       span?.end("ok");

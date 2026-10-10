@@ -103,6 +103,7 @@ export type {
   StreamInstructResult,
   StreamParams,
   ToolBatchCompleteCallback,
+  ToolBatchDecision,
 } from "./providers/stream.js";
 export { AxleStopReason } from "./providers/types.js";
 export type {
@@ -139,6 +140,7 @@ export { ToolRegistry } from "./tools/registry.js";
 
 // Skills
 export {
+  SkillRegistry,
   createViewSkillTool,
   loadSkill,
   parseSkillMarkdown,

@@ -126,14 +126,14 @@ describe("executeToolCalls", () => {
       ).rejects.toBe(fatal);
     });
 
-    test("passes a ToolContext with signal, tracer span, and registry", async () => {
+    test("passes a ToolContext with the signal", async () => {
       const onToolCall = vi.fn().mockResolvedValue({ type: "success", content: "ok" });
 
       await executeToolCalls([makeToolCall("t")], onToolCall, testSignal, testRegistry);
 
       const ctx = onToolCall.mock.calls[0][2];
       expect(ctx.signal).toBe(testSignal);
-      expect(ctx.registry).toBe(testRegistry);
+      expect(ctx).not.toHaveProperty("registry");
     });
   });
 

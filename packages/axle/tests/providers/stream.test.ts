@@ -1476,66 +1476,100 @@ describe("stream()", () => {
     });
   });
 
-  describe("tool option shortcuts", () => {
-    test("`tools` shortcut wraps into a registry that ctx sees", async () => {
-      const { z } = await import("zod");
-      const tool = {
-        name: "ping",
-        description: "ping",
+  describe("tool batch boundary", () => {
+    function pingTool(name: string, reply: string) {
+      return {
+        name,
+        description: name,
         schema: z.object({}),
         async execute() {
-          return "pong";
+          return reply;
         },
       };
+    }
 
-      const provider = makeProvider({
-        streamChunks: [
-          [
-            startChunk(),
-            toolCallStartChunk(0, "c1", "ping"),
-            toolCallCompleteChunk(0, "c1", "ping", {}),
-            completeChunk(AxleStopReason.FunctionCall),
-          ],
-          [
-            startChunk(),
-            textStartChunk(0),
-            textChunk(0, "done"),
-            textCompleteChunk(0),
-            completeChunk(),
-          ],
-        ],
-      });
+    function recordingProvider(chunks: AnyStreamChunk[][]) {
+      const requests: { system?: string; tools?: { name: string }[] }[] = [];
+      let call = 0;
+      const provider: AIProvider = {
+        name: "recording",
+        async *createStreamingRequest(
+          _model,
+          params,
+        ): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          requests.push({ system: params.system, tools: params.tools });
+          const batch = chunks[call++];
+          if (!batch) throw new Error("No stream chunks configured");
+          yield* batch;
+        },
+      };
+      return { provider, requests };
+    }
 
-      let observedRegistrySize = -1;
+    const toolCallStep = (name: string) => [
+      startChunk(),
+      toolCallStartChunk(0, "c1", name),
+      toolCallCompleteChunk(0, "c1", name, {}),
+      completeChunk(AxleStopReason.FunctionCall),
+    ];
+    const textStep = [
+      startChunk(),
+      textStartChunk(0),
+      textChunk(0, "done"),
+      textCompleteChunk(0),
+      completeChunk(),
+    ];
+
+    test("values returned from the boundary callback shape every later request", async () => {
+      const { provider, requests } = recordingProvider([
+        toolCallStep("ping"),
+        toolCallStep("pong"),
+        textStep,
+      ]);
       const handle = stream({
         provider,
         model: "test-model",
         messages: [],
-        tools: [tool],
-        onToolCall: async (_name, _params, ctx) => {
-          observedRegistrySize = ctx.registry.size;
-          return { type: "success", content: "pong" };
-        },
+        system: "first",
+        tools: [pingTool("ping", "a")],
+      });
+      let boundaries = 0;
+      handle.onToolBatchComplete(() => {
+        boundaries += 1;
+        return boundaries === 1 ? { system: "second", tools: [pingTool("pong", "b")] } : "continue";
       });
 
       const final = await handle.final;
+
       expect(final.ok).toBe(true);
-      expect(observedRegistrySize).toBe(1);
+      expect(requests.map((request) => request.system)).toEqual(["first", "second", "second"]);
+      expect(requests.map((request) => request.tools?.map((tool) => tool.name))).toEqual([
+        ["ping"],
+        ["pong"],
+        ["pong"],
+      ]);
     });
 
-    test("throws when both `registry` and `tools` are provided", async () => {
-      const { ToolRegistry } = await import("../../src/tools/registry.js");
-      const provider = makeProvider({ streamChunks: [[]] });
-
+    test("inputs replace rather than merge: a field left out is absent", async () => {
+      const { provider, requests } = recordingProvider([
+        toolCallStep("ping"),
+        toolCallStep("ping"),
+      ]);
       const handle = stream({
         provider,
         model: "test-model",
         messages: [],
-        registry: new ToolRegistry(),
-        tools: [],
+        system: "first",
+        tools: [pingTool("ping", "a")],
       });
+      let boundaries = 0;
+      handle.onToolBatchComplete(() => (++boundaries === 1 ? { system: "second" } : "finish"));
 
-      await expect(handle.final).rejects.toThrow(/Cannot specify both/);
+      const final = await handle.final;
+
+      expect(final.ok).toBe(true);
+      expect(requests).toHaveLength(2);
+      expect(requests[1]).toEqual({ system: "second", tools: undefined });
     });
 
     test("tool-call-args-delta chunks surface as tool:args-delta events", async () => {

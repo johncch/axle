@@ -4,11 +4,9 @@ import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { ToolResultPart } from "../../src/messages/message.js";
 import { parallelize } from "../../src/tools/parallelize.js";
-import { ToolRegistry } from "../../src/tools/registry.js";
 import type { ExecutableTool, ToolContext } from "../../src/tools/types.js";
 
 const testCtx: ToolContext = {
-  registry: new ToolRegistry(),
   signal: new AbortController().signal,
   emit: () => {},
 };

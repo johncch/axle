@@ -4,7 +4,6 @@ import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { stream } from "../../src/providers/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import { ToolRegistry } from "../../src/tools/registry.js";
 import { braveWebSearch, type WebSearchBackend } from "../../src/tools/webSearch.js";
 
 afterEach(() => {
@@ -26,13 +25,7 @@ describe("web search fallback resolution", () => {
     }).final;
 
     expect(result.ok).toBe(true);
-    expect(provider.requests[0].providerTools).toEqual([
-      {
-        type: "provider",
-        name: "web_search",
-        nativeName: "native:web_search",
-      },
-    ]);
+    expect(provider.requests[0].providerTools).toEqual([{ type: "provider", name: "web_search" }]);
     expect(provider.requests[0].tools).toBeUndefined();
     expect(backend.search).not.toHaveBeenCalled();
   });
@@ -41,29 +34,14 @@ describe("web search fallback resolution", () => {
     const backend = makeBackend();
     configureAxle({ webSearchFallback: backend });
     const provider = makeProvider({ nativeWebSearch: false, callFallbackTool: true });
-    const registry = new ToolRegistry({
-      providerTools: [{ type: "provider", name: "web_search" }],
-    });
-    let executionRegistry: ToolRegistry | undefined;
-
     const result = await stream({
       provider,
       model: "fallback-model",
       messages: [{ role: "user", content: "Search the web." }],
-      registry,
-      onToolCall: async (_name, _parameters, ctx) => {
-        executionRegistry = ctx.registry;
-        return null;
-      },
+      providerTools: [{ type: "provider", name: "web_search" }],
     }).final;
 
     expect(result.ok).toBe(true);
-    expect(executionRegistry).toBe(registry);
-    expect(registry.getProvider("web_search")).toEqual({
-      type: "provider",
-      name: "web_search",
-    });
-    expect(registry.get("web_search")).toBeUndefined();
     expect(provider.requests[0].providerTools).toBeUndefined();
     expect(provider.requests[0].tools).toEqual([expect.objectContaining({ name: "web_search" })]);
     expect(backend.search).toHaveBeenCalledWith(

@@ -1,6 +1,6 @@
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
-import type { ToolDefinition } from "../../tools/types.js";
+import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
 import {
   resolveFileSource,
@@ -10,7 +10,7 @@ import {
 } from "../../utils/file.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
-import { AxleStopReason, ToolChoice, type ResolvedProviderTool } from "../types.js";
+import { AxleStopReason, ToolChoice } from "../types.js";
 import {
   ChatCompletionContentPart,
   ChatCompletionMessage,
@@ -115,7 +115,7 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
 }
 
 export function prepareProviderTools(
-  providerTools?: Array<ResolvedProviderTool>,
+  providerTools?: Array<ProviderTool>,
   vendor?: ChatCompletionsVendor,
   warn?: (message: string, attributes?: Record<string, unknown>) => void,
 ): any[] | undefined {
@@ -135,7 +135,7 @@ export function prepareProviderTools(
 export function toChatCompletionsToolChoice(
   choice: ToolChoice | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ResolvedProviderTool>,
+  providerTools?: Array<ProviderTool>,
 ) {
   if (choice === undefined) return {};
   if (choice === "auto" || choice === "none" || choice === "required")

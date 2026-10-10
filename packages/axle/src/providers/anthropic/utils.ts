@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import z from "zod";
 import { AxleMessage, Citation, type ToolResultPart } from "../../messages/message.js";
-import type { ToolDefinition } from "../../tools/types.js";
+import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import {
   type FileInfo,
   type FileResolver,
@@ -14,7 +14,7 @@ import {
   type ReasoningSetting,
   resolveReasoning,
 } from "../reasoning.js";
-import { AxleStopReason, type ResolvedProviderTool, ToolChoice } from "../types.js";
+import { AxleStopReason, ToolChoice } from "../types.js";
 
 interface AnthropicConversionContext {
   model: string;
@@ -341,11 +341,9 @@ export function resolveAnthropicProviderToolName(name: string): string {
   return PROVIDER_TOOL_MAP[name] ?? name;
 }
 
-export function convertToAnthropicProviderTools(
-  providerTools?: Array<ResolvedProviderTool>,
-): any[] {
+export function convertToAnthropicProviderTools(providerTools?: Array<ProviderTool>): any[] {
   return (providerTools ?? []).map((tool) => ({
-    type: tool.nativeName ?? resolveAnthropicProviderToolName(tool.name),
+    type: resolveAnthropicProviderToolName(tool.name),
     name: tool.name,
     ...PROVIDER_TOOL_DEFAULT_CONFIG[tool.name],
     ...tool.config,
@@ -356,7 +354,7 @@ export function toAnthropicToolChoice(
   choice: ToolChoice | undefined,
   parallelToolCalls: boolean | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ResolvedProviderTool>,
+  providerTools?: Array<ProviderTool>,
 ) {
   if (choice === undefined && parallelToolCalls !== false) return {};
 

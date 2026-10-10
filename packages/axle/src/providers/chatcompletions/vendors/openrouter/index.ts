@@ -3,8 +3,8 @@ import type {
   Citation,
   ThinkingContinuity,
 } from "../../../../messages/message.js";
+import type { ProviderTool } from "../../../../tools/types.js";
 import { resolveReasoning, type ReasoningSetting } from "../../../reasoning.js";
-import type { ResolvedProviderTool } from "../../../types.js";
 import type { ChatCompletionAnnotation, ChatCompletionReasoningDetail } from "../../types.js";
 
 export type OpenRouterThinkingContinuity = Extract<ThinkingContinuity, { provider: "openrouter" }>;
@@ -113,13 +113,13 @@ export function resolveOpenRouterProviderToolName(name: string): string | undefi
 }
 
 export function prepareOpenRouterProviderTools(
-  providerTools: Array<ResolvedProviderTool>,
+  providerTools: Array<ProviderTool>,
   warn?: (message: string, attributes?: Record<string, unknown>) => void,
 ): any[] | undefined {
   const mappedTools: any[] = [];
 
   for (const tool of providerTools) {
-    const mappedType = tool.nativeName ?? resolveOpenRouterProviderToolName(tool.name);
+    const mappedType = resolveOpenRouterProviderToolName(tool.name);
     if (!mappedType) {
       warn?.("providerTool not supported by ChatCompletions provider vendor", {
         vendor: "openrouter",

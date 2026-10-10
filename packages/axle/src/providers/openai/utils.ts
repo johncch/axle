@@ -3,7 +3,7 @@ import { ResponseInput } from "openai/resources/responses/responses.js";
 import z from "zod";
 import { AxleMessage, ContentPart, ContentPartText } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
-import type { ToolDefinition } from "../../tools/types.js";
+import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import {
   resolveFileSource,
   type FileInfo,
@@ -11,7 +11,7 @@ import {
   type ResolvedFileSource,
 } from "../../utils/file.js";
 import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
-import type { ResolvedProviderTool, ToolChoice } from "../types.js";
+import type { ToolChoice } from "../types.js";
 
 /* To Request */
 
@@ -66,18 +66,16 @@ export function resolveOpenAIProviderToolName(name: string): string {
   return PROVIDER_TOOL_MAP[name] ?? name;
 }
 
-export function prepareProviderTools(
-  providerTools?: Array<ResolvedProviderTool>,
-): any[] | undefined {
+export function prepareProviderTools(providerTools?: Array<ProviderTool>): any[] | undefined {
   return providerTools?.map((tool) => ({
-    type: tool.nativeName ?? resolveOpenAIProviderToolName(tool.name),
+    type: resolveOpenAIProviderToolName(tool.name),
     ...tool.config,
   }));
 }
 
-export function toOpenAIInclude(providerTools?: Array<ResolvedProviderTool>): ResponseIncludable[] {
+export function toOpenAIInclude(providerTools?: Array<ProviderTool>): ResponseIncludable[] {
   const runsCode = providerTools?.some(
-    (tool) => (tool.nativeName ?? resolveOpenAIProviderToolName(tool.name)) === "code_interpreter",
+    (tool) => resolveOpenAIProviderToolName(tool.name) === "code_interpreter",
   );
   return runsCode ? ["code_interpreter_call.outputs"] : [];
 }
@@ -85,7 +83,7 @@ export function toOpenAIInclude(providerTools?: Array<ResolvedProviderTool>): Re
 export function toOpenAIToolChoice(
   choice: ToolChoice | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ResolvedProviderTool>,
+  providerTools?: Array<ProviderTool>,
 ): Record<string, any> {
   if (choice === undefined) return {};
   if (choice === "auto" || choice === "none" || choice === "required")
@@ -99,7 +97,7 @@ export function toOpenAIToolChoice(
   if (providerTool) {
     return {
       tool_choice: {
-        type: providerTool.nativeName ?? resolveOpenAIProviderToolName(providerTool.name),
+        type: resolveOpenAIProviderToolName(providerTool.name),
       },
     };
   }

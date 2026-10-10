@@ -12,7 +12,8 @@ import type { Span, SpanStatus } from "../../observability/types.js";
 import { estimateContextUsage } from "../../providers/context.js";
 import { stream } from "../../providers/stream.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
-import { createViewSkillTool, renderSkillsCatalog } from "../../skills/prompt.js";
+import { renderSkillsCatalog } from "../../skills/prompt.js";
+import { SkillRegistry } from "../../skills/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
 import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
@@ -61,9 +62,10 @@ export class Agent {
   readonly fileResolver?: FileResolver;
   readonly requestOptions: Omit<AxleModelRequestOptions, "signal">;
   readonly registry: ToolRegistry;
+  readonly skills: SkillRegistry;
 
   sessionId: string;
-  system: string | undefined;
+  private readonly baseSystem: string | undefined;
 
   private mcps: MCP[] = [];
   private resolvedMcps = new WeakSet<MCP>();
@@ -94,7 +96,7 @@ export class Agent {
     const observability = resolveObservability(config.observability);
     this.spanParent = observability.parent;
     this.ownedTracer = observability.owned;
-    this.system = config.system;
+    this.baseSystem = config.system;
     this.name = config.name;
     this.fileResolver = config.fileResolver;
     this.requestOptions = {
@@ -108,15 +110,18 @@ export class Agent {
       tools: config.tools,
       providerTools: config.providerTools,
     });
-    if (config.skills && config.skills.length > 0) {
-      this.system = [config.system, renderSkillsCatalog(config.skills)]
-        .filter((section) => section !== undefined)
-        .join("\n\n");
-      this.registry.add(createViewSkillTool(config.skills));
-    }
+    this.skills = new SkillRegistry(this.registry, config.skills);
     if (config.mcps) {
       this.mcps = [...config.mcps];
     }
+  }
+
+  /** The prompt the model sees: the configured system prompt, then the skills catalog when skills are present. */
+  get system(): string | undefined {
+    const sections = [this.baseSystem];
+    if (this.skills.size > 0) sections.push(renderSkillsCatalog(this.skills.list()));
+    const present = sections.filter((section) => section !== undefined);
+    return present.length > 0 ? present.join("\n\n") : undefined;
   }
 
   addMcp(mcp: MCP) {
@@ -342,7 +347,8 @@ export class Agent {
         model: this.model,
         messages: [...this.messagesInternal],
         system: this.system,
-        registry: this.registry,
+        tools: this.registry.executable(),
+        providerTools: this.registry.provider(),
         sessionId: this.sessionId,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
@@ -354,7 +360,15 @@ export class Agent {
         const turnEvents = turnEventBuilder.handleStreamEvent(streamEvent);
         for (const evt of turnEvents) this.emitEvent(evt);
       });
-      streamHandle.onToolBatchComplete(() => (this.stopRequested ? "finish" : "continue"));
+      streamHandle.onToolBatchComplete(() =>
+        this.stopRequested
+          ? "finish"
+          : {
+              system: this.system,
+              tools: this.registry.executable(),
+              providerTools: this.registry.provider(),
+            },
+      );
 
       const streamResult = await streamHandle.final;
       streamSpan?.end(streamResult.ok ? "ok" : "error");

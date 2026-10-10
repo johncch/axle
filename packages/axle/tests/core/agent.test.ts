@@ -1849,14 +1849,16 @@ describe("Agent", () => {
     expect(JSON.stringify(toolStream.requests[1])).toContain("temporary failure");
   });
 
-  test("a tool can mutate ctx.registry mid-send", async () => {
+  test("a tool can add a tool to the agent's registry mid-send and the next request offers it", async () => {
     const { z } = await import("zod");
 
     let callIndex = 0;
+    const offered: (string[] | undefined)[] = [];
     const provider: AIProvider = {
       name: "mock",
-      async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
+      async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
         callIndex++;
+        offered.push(params.tools?.map((tool) => tool.name));
         yield {
           type: "start",
           id: `mock-${callIndex}`,
@@ -1900,8 +1902,8 @@ describe("Agent", () => {
       name: "load_more",
       description: "loads more tools",
       schema: z.object({}),
-      execute: vi.fn(async (_input: any, ctx: any) => {
-        ctx.registry.add(lateTool);
+      execute: vi.fn(async () => {
+        agent.registry.add(lateTool);
         return "loaded";
       }),
     };
@@ -1911,6 +1913,7 @@ describe("Agent", () => {
 
     expect(loadTool.execute).toHaveBeenCalled();
     expect(agent.registry.get("late-tool")).toBeDefined();
+    expect(offered).toEqual([["load_more"], ["load_more", "late-tool"]]);
   });
 
   describe("agent events", () => {

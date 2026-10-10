@@ -7,6 +7,7 @@ import {
 import z from "zod";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import type { ToolDefinition } from "../../tools/index.js";
+import type { ProviderTool } from "../../tools/types.js";
 import {
   type FileInfo,
   type FileResolver,
@@ -14,7 +15,7 @@ import {
   resolveFileSource,
 } from "../../utils/file.js";
 import { LEGACY_REASONING_BUDGETS, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
-import { AxleStopReason, type ResolvedProviderTool, ToolChoice } from "../types.js";
+import { AxleStopReason, ToolChoice } from "../types.js";
 
 /* To Request */
 
@@ -62,13 +63,13 @@ export function resolveGeminiProviderToolName(name: string): string {
 
 export function addGeminiProviderTools(
   config: GenerateContentConfig,
-  providerTools?: ResolvedProviderTool[],
+  providerTools?: ProviderTool[],
 ) {
   if (!providerTools || providerTools.length === 0) return;
   if (!config.tools) config.tools = [];
   const hasFunctionTools = config.tools.some((tool) => "functionDeclarations" in tool);
   for (const tool of providerTools) {
-    const key = tool.nativeName ?? resolveGeminiProviderToolName(tool.name);
+    const key = resolveGeminiProviderToolName(tool.name);
     config.tools.push({ [key]: tool.config ?? {} } as any);
   }
   if (hasFunctionTools) {
@@ -80,7 +81,7 @@ export function toGeminiToolConfig(
   choice: ToolChoice | undefined,
   parallelToolCalls: boolean | undefined,
   tools?: Array<ToolDefinition>,
-  providerTools?: Array<ResolvedProviderTool>,
+  providerTools?: Array<ProviderTool>,
 ) {
   if (parallelToolCalls === false) {
     throw new Error("Gemini does not support disabling parallel tool calls");
