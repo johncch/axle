@@ -1068,7 +1068,7 @@ export const coreCases: CheckCase[] = [
   {
     group: "default",
     id: "stream-web-search",
-    description: "stream() uses native or fallback web search and surfaces execution evidence.",
+    description: "stream() runs web_search on every provider and surfaces execution evidence.",
     async run({ provider, model, requestOptions }) {
       return runStreamingWebSearchCitationCase({
         provider,
@@ -1291,25 +1291,18 @@ async function runStreamingWebSearchCitationCase({
   const webSearchToolResults = getToolResultDetails(result.messages).filter(
     (toolResult) => toolResult.name === "web_search" && toolResult.isError !== true,
   );
-  const nativeSearchAvailable =
-    provider.resolveProviderToolName?.("web_search", model) !== undefined;
-  const unexpectedFallback = nativeSearchAvailable && webSearchToolResults.length > 0;
   const searchEvidence = {
     citations: citationPartCount + textCitationCount + citationEventCount > 0,
     providerTool: providerToolPartCount + providerToolEventCount > 0,
     webSearchTool: webSearchToolResults.length > 0,
   };
-  const hasSearchEvidence = Object.values(searchEvidence).some(Boolean) && !unexpectedFallback;
+  const hasSearchEvidence = Object.values(searchEvidence).some(Boolean);
   const providerToolInputMissing =
     eventTypes.includes("provider-tool:start") && !eventTypes.includes("provider-tool:input");
   const failureReasons = [
     ...(hasSearchEvidence
       ? []
-      : [
-          unexpectedFallback
-            ? "Provider reported native web_search support but Axle used the configured fallback."
-            : "No citations, provider-tool activity, or successful web_search result.",
-        ]),
+      : ["No citations, provider-tool activity, or successful web_search result."]),
     ...(providerToolInputMissing
       ? ["A provider tool started but its input never reached the event stream."]
       : []),
@@ -1320,8 +1313,6 @@ async function runStreamingWebSearchCitationCase({
     details: {
       text,
       finishReason: result.final.finishReason,
-      nativeSearchAvailable,
-      unexpectedFallback,
       searchEvidence,
       citationPartCount,
       textCitationCount,
