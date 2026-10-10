@@ -1407,6 +1407,104 @@ describe("Agent", () => {
     });
   });
 
+  describe("onIdle", () => {
+    test("fires once when the queue drains, after the last onSettled resolves", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      agent.onSettled(async () => {
+        await Promise.resolve();
+        order.push("settled");
+      });
+      agent.onIdle(() => order.push("idle"));
+
+      await Promise.all(["first", "second"].map((text) => agent.send(text).final));
+      await vi.waitFor(() => expect(order).toContain("idle"));
+
+      expect(order).toEqual(["settled", "settled", "idle"]);
+    });
+
+    test("fires when clear() empties the queue while the last operation settles", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { promise: release, resolve: releaseSettle } = Promise.withResolvers<void>();
+      let settling = false;
+      let idleCount = 0;
+      agent.onSettled(async () => {
+        settling = true;
+        await release;
+      });
+      agent.onIdle(() => idleCount++);
+
+      const first = agent.send("first").final;
+      const second = agent.send("second").final;
+      await vi.waitFor(() => expect(settling).toBe(true));
+      agent.clear();
+      releaseSettle();
+
+      await first;
+      await expect(second).rejects.toThrow();
+      await vi.waitFor(() => expect(idleCount).toBe(1));
+    });
+
+    test("does not fire while a send made during the last onSettled is still queued", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      let followUp: Promise<unknown> | undefined;
+      agent.onSettled(() => {
+        order.push("settled");
+        followUp ??= agent.send("second").final;
+      });
+      agent.onIdle(() => order.push("idle"));
+
+      await agent.send("first").final;
+      await followUp;
+      await vi.waitFor(() => expect(order).toContain("idle"));
+
+      expect(order).toEqual(["settled", "settled", "idle"]);
+    });
+
+    test("a send from inside the callback starts", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let followUp: Promise<unknown> | undefined;
+      agent.onIdle(() => {
+        followUp ??= agent.send("second").final;
+      });
+
+      await agent.send("first").final;
+      await vi.waitFor(() => expect(followUp).toBeDefined());
+
+      expect(await followUp).toMatchObject({ ok: true, response: "second" });
+    });
+
+    test("a throwing callback does not stop the others", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let reached = false;
+      agent.onIdle(() => {
+        throw new Error("boom");
+      });
+      agent.onIdle(() => {
+        reached = true;
+      });
+
+      await agent.send("hello").final;
+
+      await vi.waitFor(() => expect(reached).toBe(true));
+    });
+
+    test("stops firing after its unsubscribe is called", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let count = 0;
+      const unsubscribe = agent.onIdle(() => count++);
+
+      await agent.send("first").final;
+      await vi.waitFor(() => expect(count).toBe(1));
+      unsubscribe();
+      await agent.send("second").final;
+      await agent.snapshot();
+
+      expect(count).toBe(1);
+    });
+  });
+
   describe("abort signals", () => {
     test("send(string, { signal }) passes an abort signal to the provider", async () => {
       let providerSignal: AbortSignal | undefined;

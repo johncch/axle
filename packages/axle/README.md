@@ -1535,6 +1535,25 @@ the trace as a warning, the remaining callbacks still run, and the handle
 settles with its real result. Handle your own save failures inside the
 callback. Like `on`, it returns a function that unregisters it.
 
+To learn when the agent has finished everything it was given, register
+`onIdle`:
+
+```typescript
+agent.onIdle(() => notifyClients({ type: "run:stop" }));
+```
+
+It fires each time the agent goes from busy to idle: an operation (or a
+`snapshot()`) finished and nothing is queued behind it. That is after the
+last operation's `onSettled` callbacks have settled, so a save made there
+lands first. It also fires when `clear()` empties the queue while those
+callbacks run, a moment no other signal reports. A send made during the
+last `onSettled` keeps the agent busy, so `onIdle` waits for it.
+
+The callback takes no arguments and is not awaited. The agent is already
+free, so a `send()` from inside it starts at once. A callback that throws
+is recorded on the trace as a warning and the others still run. It returns
+a function that unregisters it.
+
 ## Known Limitations
 
 1. Axle does not support multi-modal output right now.

@@ -69,6 +69,10 @@ starts. An operation cancelled while still queued never ran and does not
 settle. Work that opens no turn (`agent.snapshot()`) is queued the same way
 but is not an operation.
 
+**Idle** — the Agent has nothing running and nothing queued. It is _busy_
+from the first call that schedules work until the last queued task has
+settled; `agent.onIdle(...)` fires at each change from busy to idle.
+
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
 optional bundled files. In core a `Skill` is plain data — name, description,

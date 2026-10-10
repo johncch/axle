@@ -217,6 +217,8 @@ export type SettledCallback = (
   operation: SettledOperation,
 ) => void | Promise<void>;
 
+export type IdleCallback = () => void;
+
 export type TurnEventCallback = (event: TurnEvent) => void;
 
 /**

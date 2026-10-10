@@ -79,6 +79,8 @@ export class AgentScheduler {
   private current?: ScheduledTask<any>;
   private queue: ScheduledTask<any>[] = [];
 
+  constructor(private readonly onIdle?: () => void) {}
+
   schedule<T>(
     work: (context: { signal: AbortSignal }) => Promise<T>,
     options?: {
@@ -138,6 +140,7 @@ export class AgentScheduler {
       this.current = undefined;
       const next = this.queue.shift();
       if (next) this.activate(next);
+      else this.onIdle?.();
     }
   }
 }

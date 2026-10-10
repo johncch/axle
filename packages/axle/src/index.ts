@@ -11,6 +11,7 @@ export type {
   AgentHandle,
   AgentResult,
   AgentSession,
+  IdleCallback,
   MaybePromise,
   ObservabilityOptions,
   ProviderDefinition,

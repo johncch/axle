@@ -35,6 +35,7 @@ import type {
   AgentSession,
   CompactionConfig,
   CompactionTrigger,
+  IdleCallback,
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
@@ -75,7 +76,8 @@ export class Agent {
   private eventCallbacks: TurnEventCallback[] = [];
   private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
-  private scheduler = new AgentScheduler();
+  private idleCallbacks: IdleCallback[] = [];
+  private scheduler = new AgentScheduler(() => this.notifyIdle());
   private turnActive = false;
   private stopRequested = false;
   private transcript = new Transcript();
@@ -173,6 +175,28 @@ export class Agent {
     return () => {
       const index = this.settledCallbacks.indexOf(callback);
       if (index >= 0) this.settledCallbacks.splice(index, 1);
+    };
+  }
+
+  /**
+   * Called each time the agent goes from busy to idle: an operation or a
+   * `snapshot()` finished and nothing is queued behind it. Returns an
+   * unsubscribe function.
+   *
+   * It fires after the last operation's `onSettled` callbacks have settled,
+   * and also when the queue was emptied by `clear()` while they ran. Work
+   * scheduled during those callbacks keeps the agent busy, so it does not
+   * fire until that work is done too.
+   *
+   * The callback is not awaited. The agent is already free, so a `send()`
+   * from inside it starts at once. A callback that throws is recorded on the
+   * trace and the other callbacks still run.
+   */
+  onIdle(callback: IdleCallback) {
+    this.idleCallbacks.push(callback);
+    return () => {
+      const index = this.idleCallbacks.indexOf(callback);
+      if (index >= 0) this.idleCallbacks.splice(index, 1);
     };
   }
 
@@ -724,6 +748,22 @@ export class Agent {
 
   private currentSession(): AgentSession {
     return { sessionId: this.sessionId, messages: this.messages };
+  }
+
+  private notifyIdle(): void {
+    for (const callback of [...this.idleCallbacks]) {
+      try {
+        callback();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const span = this.spanParent?.startSpan("agent.idle", {
+          type: "workflow",
+          attributes: { sessionId: this.sessionId },
+        });
+        span?.warn(`onIdle callback threw: ${message}`);
+        span?.end();
+      }
+    }
   }
 
   private async settle(operation: SettledOperation): Promise<void> {

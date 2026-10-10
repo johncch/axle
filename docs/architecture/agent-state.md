@@ -76,18 +76,32 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    rejects is caught, recorded on the trace, and does not stop the other
    callbacks or alter the handle's result. `snapshot()` remains the pull
    form and waits behind everything queued ahead of it.
-9. **Events observe; hooks hold.** Turn events (`agent.on`) are synchronous
-   fan-out: hosts forward them to clients, and nothing listening can hold
-   the engine. `onSettled` is the host's control channel at the one rest
-   point: awaited, able to hold the queue, carrying what must not ride the
-   event stream. Work that has to finish before the next operation starts
-   goes in the hook; anything a client should see goes on the events. The
-   scheduler owns the rest point as a task state (`queued`, `running`,
-   `settling`, `settled`); the Agent adds no flag of its own. The Agent's
-   tool and skill registries are live state the host changes at any time;
-   the Agent hands their current values to `stream()` when a turn opens and
-   at every tool-batch boundary, and `stream()` holds no registry
-   ([skills.md](./skills.md)).
+9. **Events carry the transcript; hooks carry lifecycle.** Turn events
+   (`agent.on`) are synchronous fan-out and each one changes what a
+   `Transcript` holds: hosts forward them to clients, and nothing listening
+   can hold the engine. Lifecycle goes through hooks, and whether a hook is
+   awaited is a property of that hook. `onSettled` is awaited: it is the
+   host's control channel at the one rest point, able to hold the queue,
+   carrying what must not ride the event stream. Work that has to finish
+   before the next operation starts goes there. `onIdle` is not awaited: it
+   reports that the Agent went from busy to idle. The scheduler owns the
+   rest point as a task state (`queued`, `running`, `settling`, `settled`);
+   the Agent adds no flag of its own. The Agent's tool and skill registries
+   are live state the host changes at any time; the Agent hands their
+   current values to `stream()` when a turn opens and at every tool-batch
+   boundary, and `stream()` holds no registry ([skills.md](./skills.md)).
+10. **The Agent says when it goes idle.** `agent.onIdle(...)` fires each
+    time the scheduler finishes a task and nothing is queued behind it: after
+    that task's `onSettled` callbacks have settled and its handle has been
+    settled. Only the scheduler knows this moment, so the host is told
+    rather than left to work it out from settles and drops. A `clear()` that
+    empties the queue while the last operation settles is covered, because
+    the scheduler looks at the queue only afterwards. Work scheduled during
+    the last `onSettled` keeps the Agent busy and defers the firing. The
+    callback takes no arguments and is not awaited: the Agent is already
+    free, so a `send()` from inside it starts at once. A callback that
+    throws is caught and recorded on the trace. A lone `snapshot()` is a
+    task like any other and fires it too.
 
 ## Design rationale (2026-08-12)
 
@@ -282,6 +296,23 @@ Accepted consequences:
   in `transcript.pending[0]`, and when the Agent is idle it preps before
   calling `send()`. A sibling hook with identical semantics would exist for
   no consumer.
+  Amended the same day: `pending[0]` is what is next, not what started. It
+  can still be dropped between the end of the settle and the start, so a
+  host that opens something on it can be left holding it open. The start is
+  the turn opening (`turn:user` for a send, `turn:start` for a
+  compaction), and the first host to hit this wanted the end of the busy
+  period rather than the start of each operation, which is `onIdle`.
+- **An idle turn event** (2026-10-09): every turn event changes what a
+  `Transcript` holds, and going idle changes nothing there. It is lifecycle,
+  so it is a hook.
+- **Awaiting `onIdle`** (2026-10-09): the Agent is already free when it
+  fires, so holding it would mean deciding what a `send()` during the
+  callback does and whether the Agent is still idle afterwards. Work that
+  must finish first already has `onSettled`.
+- **Leaving idle to the host** (2026-10-09): a host can derive it from
+  `onSettled` with an empty queue plus `pending:dropped`, but a drop during
+  the last settle and a drop just after it need opposite handling, and
+  telling them apart means mirroring the scheduler's task state.
 - **Running the settle step inside the operation's work closure**
   (2026-10-09): the first implementation. It needed an Agent-level
   `settling` flag beside the scheduler's own `settled` flag so that
