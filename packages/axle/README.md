@@ -1539,6 +1539,11 @@ the trace as a warning, the remaining callbacks still run, and the handle
 settles with its real result. Handle your own save failures inside the
 callback. Like `on`, it returns a function that unregisters it.
 
+A host that takes the outcome here does not have to read the handle. An
+unread `final` that rejects raises no unhandled rejection, so
+`agent.send(text)` with the handle dropped is safe. `final` still rejects
+for code that awaits or chains from it.
+
 To learn when the agent has finished everything it was given, register
 `onIdle`:
 

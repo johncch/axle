@@ -22,6 +22,9 @@ class ScheduledTask<T> {
       ((result: PromiseSettledResult<T>) => void | Promise<void>) | undefined,
   ) {
     const { promise, resolve, reject } = Promise.withResolvers<T>();
+    // Marks `final` as handled so an unread handle raises no unhandled
+    // rejection; readers still see it reject (agent-state.md, invariant 8).
+    promise.catch(() => {});
     this.final = promise;
     this.resolveFinal = resolve;
     this.rejectFinal = reject;

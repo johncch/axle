@@ -166,4 +166,27 @@ describe("AgentScheduler", () => {
     await expect(handle.final).resolves.toBe("done");
     expect(signalDuringSettle?.aborted).toBe(false);
   });
+
+  test("a rejected handle nobody reads raises no unhandled rejection", async () => {
+    const scheduler = new AgentScheduler();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+
+    try {
+      scheduler.schedule<never>(async () => {
+        await gate;
+        throw new Error("boom");
+      });
+      scheduler.schedule(async () => "unreachable").cancel("withdrawn");
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+  });
 });

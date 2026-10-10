@@ -76,7 +76,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    callback reports an outcome and cannot change it: one that throws or
    rejects is caught, recorded on the trace, and does not stop the other
    callbacks or alter the handle's result. `snapshot()` remains the pull
-   form and waits for the Agent to go idle.
+   form and waits for the Agent to go idle. A handle nobody reads is not an
+   error: the scheduler marks every `final` as handled, so a rejection the
+   host took from the hook or from `pending:dropped` raises no unhandled
+   rejection. `final` still rejects for whoever awaits or chains from it.
 9. **Events carry the transcript; hooks carry lifecycle.** Turn events
    (`agent.on`) are synchronous fan-out and each one changes what a
    `Transcript` holds: hosts forward them to clients, and nothing listening
@@ -282,8 +285,46 @@ Accepted consequences:
   than before, since callbacks go through `Promise.all`. Nothing can
   observe it: the scheduler releases the slot only after that hop.
 
+## Unread handles (2026-10-09)
+
+The handle was designed to be awaited: `try { await agent.send(x).final }
+catch { … }`. A host that returns before the send finishes and takes the
+outcome from `onSettled` leaves `final` with no reader, and a user stop
+then rejected a promise nobody held. Node reports that as an unhandled
+rejection and exits by default, so the host wrote
+`agent.send(x).final.catch(() => {})` at every call site to stay up.
+
+The scheduler now attaches that no-op itself when it creates the promise.
+It changes nothing for a reader: the no-op derives a promise the scheduler
+discards, and `final` rejects as before for an `await` or a `.then`. A
+chain built on `final` with no rejection handler is still unhandled.
+WHATWG streams mark a reader's `closed` promise as handled for the same
+reason.
+
+Accepted consequence:
+
+- **A host that drops the handle and registers no hook learns of a
+  rejection only from the trace and the turn events.** It used to exit.
+  The same host already heard nothing when the model call failed, since
+  that resolves with `ok: false`. Whether to exit is the host's decision.
+
 ## Rejected alternatives
 
+- **Marking `final` as handled only when an `onSettled` callback is
+  registered** (2026-10-09): the same send would or would not take the
+  process down depending on whether a callback was registered at that
+  moment, and a send withdrawn from the queue reaches no callback at all.
+- **Leaving the catch to the host** (2026-10-09): the status quo. Using the
+  hook as documented then required a second line whose absence shows up
+  only when a user cancels.
+- **Creating `final` on first read** (2026-10-09): a host that never reads
+  it has nothing to reject. Same effect as the no-op, with a getter that
+  has a side effect.
+- **Resolving a cancelled send with `ok: false`** (2026-10-09): not
+  rejected, left open. On its own it does not help, because a fatal tool
+  error and a setup failure reject too; the question is which outcomes
+  reject at all, and it is a breaking change for every host that catches
+  the abort error.
 - **A `{ kind, turn }` pending entry** (2026-10-09): every entry would
   carry a turn, so one loop could render both lists, but `kind` restated
   what the turn already says (a user turn is a send; an agent turn with a
