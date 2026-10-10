@@ -54,15 +54,16 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    persisted: hosts save `turns` only and `AgentSession` carries no queue,
    so a transcript restored from storage has none. The constructor takes
    `pending` only to mirror a live transcript, and discards any entry whose
-   id is already in `turns`. Work that opens no turn (`snapshot()`) is
-   queued but never pending.
+   id is already in `turns`. `snapshot()` opens no turn and is neither
+   queued nor pending (invariant 10).
 8. **The Agent hands over the session and the outcome when an operation
    settles, and waits for the host.** `agent.onSettled(...)` fires once for
    every operation that ran, however it ended: after its `turn:end` when it
    opened a turn, and before its handle settles, with the value `snapshot()`
    returns and a `SettledOperation` carrying exactly what the handle is
    about to settle with (`fulfilled` with the result, `rejected` with the
-   reason). An operation cancelled while still queued never ran and does not
+   reason) and the `id` its `pending:queued` turn carried, so a host follows
+   one operation from queued to settled without counting. An operation cancelled while still queued never ran and does not
    fire. Callbacks run together and are awaited: the handle does not settle
    and the next queued operation does not start until every callback has
    settled, so a host that reads its `Transcript.turns` inside the callback
@@ -75,7 +76,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    callback reports an outcome and cannot change it: one that throws or
    rejects is caught, recorded on the trace, and does not stop the other
    callbacks or alter the handle's result. `snapshot()` remains the pull
-   form and waits behind everything queued ahead of it.
+   form and waits for the Agent to go idle.
 9. **Events carry the transcript; hooks carry lifecycle.** Turn events
    (`agent.on`) are synchronous fan-out and each one changes what a
    `Transcript` holds: hosts forward them to clients, and nothing listening
@@ -100,8 +101,14 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     the last `onSettled` keeps the Agent busy and defers the firing. The
     callback takes no arguments and is not awaited: the Agent is already
     free, so a `send()` from inside it starts at once. A callback that
-    throws is caught and recorded on the trace. A lone `snapshot()` is a
-    task like any other and fires it too.
+    throws is caught and recorded on the trace. Only operations make the Agent
+    busy, so every firing follows at least one `pending:queued` and every
+    `pending:queued` is followed by a firing: a host that opens something
+    opens it there, not before the call, since `compact()` with no
+    compaction configured schedules nothing. `snapshot()` is not queued
+    work. It resolves at once when the Agent is idle and otherwise at the
+    next change to idle, so it is always at rest, includes everything that
+    was queued, causes no firing, and is not cancelled by `clear()`.
 
 ## Design rationale (2026-08-12)
 
@@ -160,8 +167,8 @@ id is its message id, known at `send()`; a manual compaction's is chosen at
 preview turns the next day, see below.)
 
 Saving had the mirror-image problem. `snapshot()` is at rest because it
-queues, which means that with five sends queued a save requested after the
-first one runs after the fifth. `onSettled` hands the session over at each
+waits for the Agent to go idle, which means that with five sends queued a
+save requested after the first one resolves after the fifth. `onSettled` hands the session over at each
 rest point instead of making the host wait in line for it, and it fires at
 the one moment the host's transcript and the Agent's messages are known to
 agree.
@@ -169,9 +176,8 @@ agree.
 Accepted consequences:
 
 - **Graceful shutdown is `clear()`, then `stop()` or `cancel()`, then
-  `snapshot()`** (or the last `onSettled`). The order matters: `clear()`
-  also cancels a queued `snapshot()`. Pending is empty at save time because
-  it was cleared, and connected clients received the drops.
+  `snapshot()`** (or the last `onSettled`). Pending is empty at save time
+  because it was cleared, and connected clients received the drops.
 - **A crash, or a save taken while work is queued, loses the queued
   operations.** After restore the pending rows are gone and nothing recorded
   them — the same loss a mid-stream turn already had. A host that needs
@@ -262,7 +268,8 @@ Accepted consequences:
   as the CLI's chained saves do today.
 - **Awaiting `snapshot()`, `compact()` or another send's `final` inside
   the callback deadlocks**, as it does inside a tool's `execute`: the
-  callback holds the queue they wait for. The session the hook passes is
+  callback holds the queue the others wait for, and the Agent cannot go
+  idle for `snapshot()` until it returns. The session the hook passes is
   the one `snapshot()` would return.
 - **A send that failed before its turn opened fires** with a rejected
   result and an unchanged session. A save-on-settle host writes one
@@ -302,6 +309,13 @@ Accepted consequences:
   the turn opening (`turn:user` for a send, `turn:start` for a
   compaction), and the first host to hit this wanted the end of the busy
   period rather than the start of each operation, which is `onIdle`.
+- **Leaving the id off `SettledOperation`** (2026-10-09): a host would
+  match settles to queued rows by position. A send that fails in setup
+  emits `pending:dropped` and also settles, so a host that removes the row
+  on the drop then credits the settle to the next row.
+- **Putting the id on the handle instead** (2026-10-09): `compact()`
+  returns a bare promise, and the hook exists so a host does not need the
+  handle.
 - **An idle turn event** (2026-10-09): every turn event changes what a
   `Transcript` holds, and going idle changes nothing there. It is lifecycle,
   so it is a hook.
@@ -309,6 +323,23 @@ Accepted consequences:
   fires, so holding it would mean deciding what a `send()` during the
   callback does and whether the Agent is still idle afterwards. Work that
   must finish first already has `onSettled`.
+- **`snapshot()` as a queued task** (2026-10-09): how it was built. It
+  made the Agent busy, so a snapshot taken while idle fired `onIdle` with
+  no operation before it, and the first host's "clear conversation" action
+  did exactly that. A snapshot is not something the user asked the Agent
+  to do; it only needs the Agent at rest, which is what idle means. Waiting
+  for idle changes one case: `send(a); snapshot(); send(b)` now includes
+  `b`.
+- **Firing `onIdle` only after a send or a compaction** (2026-10-09): the
+  other way to spare hosts that firing. The scheduler would have to
+  remember what kind of task ran since the last firing, a flag beside its
+  task state. With `snapshot()` out of the queue, "a task finished and
+  nothing is queued" needs no memory.
+- **An immediate `snapshot()`** (2026-10-09): with `onSettled` and `onIdle`
+  a waiting snapshot has little left to do, but mid-turn the messages can
+  hold a user message with no reply, and `agent.messages` already returns
+  the current state. Changing what the same call returns would also break
+  hosts with no error to show for it.
 - **Leaving idle to the host** (2026-10-09): a host can derive it from
   `onSettled` with an empty queue plus `pending:dropped`, but a drop during
   the last settle and a drop just after it need opposite handling, and
@@ -355,7 +386,7 @@ Accepted consequences:
   or hold a user message with no reply.
 - **Letting `snapshot()` jump the queue** (2026-10-08): changes what it
   means for every host — `send(); send(); snapshot()` is expected to include
-  both sends.
+  both sends. Waiting for idle (2026-10-09) keeps that.
 - **Letting an `onSettled` throw propagate, or rethrowing it outside the
   operation** (2026-10-08): propagating replaces the result of a send whose
   messages are already committed, so a caller that retries sends the message

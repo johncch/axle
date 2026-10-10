@@ -109,6 +109,10 @@ export class AgentScheduler {
     return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
   }
 
+  get idle(): boolean {
+    return !this.current;
+  }
+
   cancelCurrent(reason?: unknown): boolean {
     if (!this.current || this.current.state !== "running") return false;
     this.current.cancel(reason);

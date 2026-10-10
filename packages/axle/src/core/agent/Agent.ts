@@ -179,9 +179,8 @@ export class Agent {
   }
 
   /**
-   * Called each time the agent goes from busy to idle: an operation or a
-   * `snapshot()` finished and nothing is queued behind it. Returns an
-   * unsubscribe function.
+   * Called each time the agent goes from busy to idle: an operation finished
+   * and nothing is queued behind it. Returns an unsubscribe function.
    *
    * It fires after the last operation's `onSettled` callbacks have settled,
    * and also when the queue was emptied by `clear()` while they ran. Work
@@ -255,7 +254,7 @@ export class Agent {
             id: userTurn.id,
             reason: { type: "cancelled" },
           }),
-        settle: (result) => this.settle({ kind: "send", result }),
+        settle: (result) => this.settle({ kind: "send", id: userTurn.id, result }),
       },
     );
   }
@@ -586,7 +585,7 @@ export class Agent {
         signal: options?.signal,
         operation: "compact",
         onWithdrawn: dropCancelled,
-        settle: (result) => this.settle({ kind: "compaction", result }),
+        settle: (result) => this.settle({ kind: "compaction", id, result }),
       },
     ).final;
   }
@@ -731,19 +730,28 @@ export class Agent {
   /**
    * Capture the serializable session state for later continuation.
    *
-   * Enqueued behind in-flight sends and compactions, so the capture is
-   * always at rest — a snapshot never contains a streaming or running turn.
+   * Resolves at once when the agent is idle, and otherwise when it next goes
+   * idle, so the capture is always at rest — a snapshot never contains a
+   * streaming or running turn, and it includes everything queued before the
+   * agent went idle. It is not queued work: it does not make the agent busy,
+   * fires no `onIdle`, and is not cancelled by `clear()`.
    * The returned object is the pure continuation: session id and the active
    * model-facing conversation. It contains no renderable turn state —
    * transcripts are host-owned; persist your `Transcript.turns`
    * alongside it.
    *
    * Do not await this from inside a running send (a tool's `execute`,
-   * `onToolCall`, or a compaction callback): the send holds the queue, so the
-   * nested call deadlocks.
+   * `onToolCall`, or a compaction callback) or an `onSettled` callback: the
+   * agent cannot go idle until they return, so the nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    return this.scheduler.schedule(async (): Promise<AgentSession> => this.currentSession()).final;
+    if (this.scheduler.idle) return Promise.resolve(this.currentSession());
+    const { promise, resolve } = Promise.withResolvers<AgentSession>();
+    const unsubscribe = this.onIdle(() => {
+      unsubscribe();
+      resolve(this.currentSession());
+    });
+    return promise;
   }
 
   private currentSession(): AgentSession {

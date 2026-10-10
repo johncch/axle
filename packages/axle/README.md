@@ -1486,7 +1486,7 @@ session. The snapshot is the pure continuation (`{ sessionId, messages }`) —
 persist your transcript's turns next to it if you want the transcript back:
 
 ```typescript
-const session = await agent.snapshot(); // waits for in-flight work to settle
+const session = await agent.snapshot(); // waits for the agent to go idle
 const turns = transcript.turns;
 // ...store both, then later:
 const resumed = new Agent(config, session);
@@ -1494,9 +1494,11 @@ const resumedTranscript = new Transcript(turns);
 resumed.on((event) => resumedTranscript.apply(event));
 ```
 
-`snapshot()` waits behind everything already queued, so with several sends
-queued it resolves after the last of them. To save as each one finishes,
-register `onSettled` instead:
+`snapshot()` resolves at once when the agent is idle. When it is busy,
+`snapshot()` resolves once everything queued has finished, including sends
+queued after the call, so the session it returns never holds a half-finished
+turn. It is not queued work itself: `clear()` does not cancel it. To save as
+each operation finishes, register `onSettled` instead:
 
 ```typescript
 agent.on((event) => transcript.apply(event));
@@ -1510,7 +1512,8 @@ It fires once after every send or manual compaction that ran, however it
 ended: after its `turn:end` when it opened a turn, and before the
 operation's handle settles. `session` is the same value `snapshot()`
 returns. `operation` is a `SettledOperation`: its `kind` (`"send"` or
-`"compaction"`) and a `result` that is exactly what the handle is about to
+`"compaction"`), the `id` its `pending:queued` turn carried, so you can tell
+which queued row settled, and a `result` that is exactly what the handle is about to
 settle with — `{ status: "fulfilled", value }` with the `AgentResult` (or
 `true`/`false` for a compaction), or `{ status: "rejected", reason }` with
 the error. A send cancelled while still waiting in the queue never ran and
@@ -1542,12 +1545,18 @@ To learn when the agent has finished everything it was given, register
 agent.onIdle(() => notifyClients({ type: "run:stop" }));
 ```
 
-It fires each time the agent goes from busy to idle: an operation (or a
-`snapshot()`) finished and nothing is queued behind it. That is after the
+It fires each time the agent goes from busy to idle: an operation
+finished and nothing is queued behind it. That is after the
 last operation's `onSettled` callbacks have settled, so a save made there
 lands first. It also fires when `clear()` empties the queue while those
 callbacks run, a moment no other signal reports. A send made during the
 last `onSettled` keeps the agent busy, so `onIdle` waits for it.
+
+Pair it with `pending:queued`, not with your own call. Every
+`pending:queued` is followed by an `onIdle`, and every `onIdle` follows at
+least one. Your own call is a weaker signal: `compact()` with no compaction
+configured returns `false` without scheduling anything, so no `onIdle`
+follows. `snapshot()` never makes the agent busy and causes no `onIdle`.
 
 The callback takes no arguments and is not awaited. The agent is already
 free, so a `send()` from inside it starts at once. A callback that throws
