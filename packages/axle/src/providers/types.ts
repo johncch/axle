@@ -143,6 +143,12 @@ export interface ProviderClientOptions {
    * Axle's own headers.
    */
   headers?: Record<string, string>;
+  /**
+   * Replaces the global `fetch` for this provider's requests. It is called as
+   * `(url, init)` and must return a real `Response`; retries, the per-attempt
+   * timeout and the abort signal apply to it as they do to the global.
+   */
+  fetch?: typeof fetch;
 }
 
 export enum AxleStopReason {

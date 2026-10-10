@@ -39,6 +39,7 @@ export async function* createStreamingRequest(
     maxRetries,
     timeoutMs,
     headers: clientHeaders,
+    fetch: clientFetch,
     reasoning,
     maxOutputTokens,
     toolChoice,
@@ -103,7 +104,7 @@ export async function* createStreamingRequest(
 
     const response = await withRetry(
       ({ signal }) =>
-        fetch(`${baseUrl}/chat/completions`, {
+        (clientFetch ?? fetch)(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers,
           body: JSON.stringify(requestBody),

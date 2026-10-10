@@ -170,6 +170,7 @@ const provider = chatCompletions("https://gateway.example.com/v1", {
   maxRetries: 2, // retries after the first attempt; 0 disables
   timeoutMs: 60_000, // per attempt; omit for the SDK default (chatCompletions: 10 minutes)
   headers: { "X-App-Name": "my-app", "X-App-Version": "1.4.0" },
+  fetch: loggingFetch, // replaces the global fetch for this provider only
 });
 ```
 
@@ -177,6 +178,14 @@ const provider = chatCompletions("https://gateway.example.com/v1", {
 ChatCompletions they are added after Axle's own `Content-Type` and
 `Authorization`. Axle does not reserve any header name, so a caller-supplied
 `Authorization` replaces the one derived from the API key on every provider.
+
+`fetch` substitutes the HTTP call without touching `globalThis.fetch`. It is
+the Fetch API contract, not any HTTP client: Axle calls it as `(url, init)`
+and reads a real `Response` back, so a wrapper around `fetch`,
+`undici.fetch`, or a test fake returning `Response.json(...)` fits and axios
+does not. Retries, the per-attempt timeout and the abort signal apply to it
+as they do to the global. `anthropic()`, `openai()` and `gemini()` hand it to
+their SDK client; `chatCompletions()` and `typesafe()` call it directly.
 
 ### `stream()` and `generate()`
 

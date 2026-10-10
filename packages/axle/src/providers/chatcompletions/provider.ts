@@ -58,6 +58,7 @@ export function chatCompletions(
         maxRetries,
         timeoutMs,
         headers: clientOptions?.headers,
+        fetch: clientOptions?.fetch,
         vendor,
         webSearch,
         ...params,
