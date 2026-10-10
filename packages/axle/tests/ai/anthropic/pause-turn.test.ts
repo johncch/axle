@@ -4,7 +4,6 @@ import z from "zod";
 import type { AxleMessage } from "../../../src/messages/message.js";
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/anthropic/createStreamingRequest.js";
-import { resolveAnthropicProviderToolName } from "../../../src/providers/anthropic/utils.js";
 import { generate } from "../../../src/providers/generate.js";
 import { stream, type StreamEvent } from "../../../src/providers/stream.js";
 import { AxleStopReason, type AIProvider } from "../../../src/providers/types.js";
@@ -338,7 +337,6 @@ describe("Anthropic pause_turn continuation", () => {
   describe("through stream() and generate()", () => {
     const provider = (): AIProvider => ({
       name: "anthropic",
-      resolveProviderToolName: resolveAnthropicProviderToolName,
       createStreamingRequest: (model, params) =>
         createStreamingRequest({ client: mockClient, model, ...params }),
     });

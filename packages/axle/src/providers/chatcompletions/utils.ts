@@ -1,4 +1,5 @@
 import z from "zod";
+import { AxleError } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
@@ -19,25 +20,12 @@ import {
 } from "./types.js";
 import {
   prepareOpenRouterProviderTools,
-  resolveOpenRouterProviderToolName,
   toOpenRouterReasoning,
   toOpenRouterReasoningDetails,
 } from "./vendors/openrouter/index.js";
 import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
 export type ChatCompletionsVendor = "openrouter" | "together";
-
-export function resolveChatCompletionsProviderToolName(
-  name: string,
-  vendor?: ChatCompletionsVendor,
-): string | undefined {
-  switch (vendor) {
-    case "openrouter":
-      return resolveOpenRouterProviderToolName(name);
-    default:
-      return undefined;
-  }
-}
 
 interface ChatCompletionsConversionContext {
   model: string;
@@ -121,15 +109,15 @@ export function prepareProviderTools(
 ): any[] | undefined {
   if (!providerTools || providerTools.length === 0) return undefined;
 
-  if (!vendor) {
-    warn?.("providerTools not supported by ChatCompletions provider");
-    return undefined;
-  }
+  if (vendor === "openrouter") return prepareOpenRouterProviderTools(providerTools, warn);
 
-  switch (vendor) {
-    case "openrouter":
-      return prepareOpenRouterProviderTools(providerTools, warn);
-  }
+  throw new AxleError(
+    `ChatCompletions provider does not support provider tool "${providerTools[0].name}"`,
+    {
+      code: "PROVIDER_TOOL_NOT_SUPPORTED",
+      details: { vendor, names: providerTools.map((tool) => tool.name) },
+    },
+  );
 }
 
 export function toChatCompletionsToolChoice(

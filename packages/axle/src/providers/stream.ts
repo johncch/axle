@@ -1,4 +1,3 @@
-import { getAxleConfiguration, type AxleConfiguration } from "../config.js";
 import { Instruct, type InstructResponse } from "../core/Instruct.js";
 import type { OutputSchema } from "../core/parse.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
@@ -227,12 +226,10 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
     : controller.signal;
 
   const { promise: finalPromise, resolve, reject } = Promise.withResolvers<any>();
-  const configuration = getAxleConfiguration();
   const control: { onToolBatchComplete?: ToolBatchCompleteCallback } = {};
 
   // Kick off processing on next microtask so callers can register callbacks first
-  const runStream = () =>
-    run(streamOptions, effectiveSignal, callbacks, configuration, control, discloseThinking);
+  const runStream = () => run(streamOptions, effectiveSignal, callbacks, control, discloseThinking);
   Promise.resolve().then(() =>
     runStream().then((result) => {
       if (parse && result.ok) {
@@ -283,7 +280,6 @@ async function run(
   options: StreamParams,
   signal: AbortSignal,
   cbs: StreamEventCallback[],
-  configuration: AxleConfiguration,
   control: { onToolBatchComplete?: ToolBatchCompleteCallback },
   discloseThinking: boolean,
 ): Promise<StreamResult> {
@@ -303,9 +299,8 @@ async function run(
     parallelToolCalls,
     providerOptions,
   } = options;
-  const toolResolution = { provider, model, span, configuration };
   let system = options.system;
-  let resolvedTools = resolveTools(options, toolResolution);
+  let resolvedTools = resolveTools(options, provider);
   const workingMessages = [...messages];
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
@@ -558,7 +553,7 @@ async function run(
       : undefined;
     if (typeof boundaryDecision === "object") {
       system = boundaryDecision.system;
-      resolvedTools = resolveTools(boundaryDecision, toolResolution);
+      resolvedTools = resolveTools(boundaryDecision, provider);
       loop.resolvedTools = resolvedTools;
     }
 

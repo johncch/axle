@@ -1,8 +1,6 @@
 // Core
 export { PromptCompactor } from "./compaction/index.js";
 export type { PromptCompactorOptions } from "./compaction/index.js";
-export { configureAxle } from "./config.js";
-export type { AxleConfiguration } from "./config.js";
 export { Agent, createAgentConfig } from "./core/agent/index.js";
 export type {
   AgentConfig,

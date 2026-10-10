@@ -4,7 +4,6 @@ import { resolveFirstPartyModel } from "../model.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { resolveOpenAIProviderToolName } from "./utils.js";
 export const NAME = "OpenAI" as const;
 
 export function openai(apiKey: string, options: ProviderClientOptions = {}): AIProvider {
@@ -19,9 +18,6 @@ export function openai(apiKey: string, options: ProviderClientOptions = {}): AIP
 
   return {
     name: NAME,
-    resolveProviderToolName(name) {
-      return resolveOpenAIProviderToolName(name);
-    },
 
     /** @internal */
     createStreamingRequest(

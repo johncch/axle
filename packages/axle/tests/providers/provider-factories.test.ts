@@ -23,7 +23,6 @@ describe("provider client factory options", () => {
       maxRetries: 4,
       timeout: 1_000,
     });
-    expect(provider.resolveProviderToolName?.("web_search", "gpt-test")).toBe("web_search");
   });
 
   test("passes client headers to the OpenAI SDK", async () => {
@@ -68,9 +67,6 @@ describe("provider client factory options", () => {
       maxRetries: 4,
       timeout: 1_000,
     });
-    expect(provider.resolveProviderToolName?.("web_search", "claude-test")).toBe(
-      "web_search_20260318",
-    );
   });
 
   test("passes client headers to the Anthropic SDK", async () => {
@@ -118,7 +114,6 @@ describe("provider client factory options", () => {
       apiKey: "gemini-test",
       httpOptions: { retryOptions: { attempts: 5 }, timeout: 1_000 },
     });
-    expect(provider.resolveProviderToolName?.("web_search", "gemini-test")).toBe("googleSearch");
   });
 
   test("passes client headers to Gemini HTTP options", async () => {
@@ -170,23 +165,12 @@ describe("provider client factory options", () => {
   });
 
   test("detects ChatCompletions vendors from official endpoint hostnames", async () => {
-    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+    const { inferChatCompletionsVendor } =
+      await import("../../src/providers/chatcompletions/provider.js");
 
-    const generic = chatCompletions("http://example.test");
-    const similarHostname = chatCompletions("https://openrouter.example.test/v1");
-    const inferredOpenRouter = chatCompletions("https://openrouter.ai/api/v1");
-    const explicitOpenRouter = chatCompletions("http://gateway.example.test", {
-      vendor: "openrouter",
-    });
-
-    expect(generic.resolveProviderToolName?.("web_search", "test-model")).toBeUndefined();
-    expect(similarHostname.resolveProviderToolName?.("web_search", "test-model")).toBeUndefined();
-    expect(inferredOpenRouter.resolveProviderToolName?.("web_search", "test-model")).toBe(
-      "openrouter:web_search",
-    );
-    expect(explicitOpenRouter.resolveProviderToolName?.("web_search", "test-model")).toBe(
-      "openrouter:web_search",
-    );
+    expect(inferChatCompletionsVendor("http://example.test")).toBeUndefined();
+    expect(inferChatCompletionsVendor("https://openrouter.example.test/v1")).toBeUndefined();
+    expect(inferChatCompletionsVendor("https://openrouter.ai/api/v1")).toBe("openrouter");
   });
 
   test("detects Together from its official endpoint hostname", async () => {

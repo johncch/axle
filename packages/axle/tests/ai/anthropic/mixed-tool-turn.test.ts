@@ -6,7 +6,6 @@ import { createAnthropicStreamingAdapter } from "../../../src/providers/anthropi
 import { createStreamingRequest } from "../../../src/providers/anthropic/createStreamingRequest.js";
 import {
   findOpenProviderToolCalls,
-  resolveAnthropicProviderToolName,
 } from "../../../src/providers/anthropic/utils.js";
 import { generate } from "../../../src/providers/generate.js";
 import { stream, type StreamEvent } from "../../../src/providers/stream.js";
@@ -137,7 +136,6 @@ describe("Anthropic server tool called alongside a client tool", () => {
 
   const provider = (): AIProvider => ({
     name: "anthropic",
-    resolveProviderToolName: resolveAnthropicProviderToolName,
     createStreamingRequest: (model, params) =>
       createStreamingRequest({ client: mockClient, model, ...params }),
   });

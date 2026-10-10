@@ -30,7 +30,7 @@ const webSearchInputSchema = z.object({
   query: z.string().trim().min(1).max(400),
 });
 
-export function createWebSearchFallbackTool(
+export function createWebSearchTool(
   backend: WebSearchBackend,
 ): ExecutableTool<typeof webSearchInputSchema> {
   return {
