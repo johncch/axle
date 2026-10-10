@@ -207,15 +207,24 @@ export interface AgentErrorResult {
 
 export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
-/** What an operation's handle settled with, handed to `onSettled` first. */
+/**
+ * What an operation's handle settled with, handed to `onSettled` first.
+ * `id` is the one its `pending:queued` turn carried.
+ */
 export type SettledOperation =
-  | { kind: "send"; result: PromiseSettledResult<AgentResult<unknown> | AgentErrorResult> }
-  | { kind: "compaction"; result: PromiseSettledResult<boolean> };
+  | {
+      kind: "send";
+      id: string;
+      result: PromiseSettledResult<AgentResult<unknown> | AgentErrorResult>;
+    }
+  | { kind: "compaction"; id: string; result: PromiseSettledResult<boolean> };
 
 export type SettledCallback = (
   session: AgentSession,
   operation: SettledOperation,
 ) => void | Promise<void>;
+
+export type IdleCallback = () => void;
 
 export type TurnEventCallback = (event: TurnEvent) => void;
 

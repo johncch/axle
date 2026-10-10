@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import * as z from "zod";
+import type { AgentSession } from "../../src/core/agent/index.js";
 import { Agent, createAgentConfig } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
@@ -1177,6 +1178,14 @@ describe("Agent", () => {
         .map((message) => getTextContent(message.content as never));
     }
 
+    function queuedIdsOf(agent: Agent): string[] {
+      const ids: string[] = [];
+      agent.on((event) => {
+        if (event.type === "pending:queued") ids.push(event.turn.id);
+      });
+      return ids;
+    }
+
     test("fires once per send, before its handle settles, without waiting for the queue", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const transcript = new Transcript();
@@ -1214,6 +1223,7 @@ describe("Agent", () => {
 
     test("hands over the same session snapshot() returns and what the handle resolves with", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const queuedIds = queuedIdsOf(agent);
       const settled: unknown[] = [];
       agent.onSettled((session, operation) => {
         settled.push({ session, operation });
@@ -1224,7 +1234,11 @@ describe("Agent", () => {
       expect(settled).toEqual([
         {
           session: await agent.snapshot(),
-          operation: { kind: "send", result: { status: "fulfilled", value: result } },
+          operation: {
+            kind: "send",
+            id: queuedIds[0],
+            result: { status: "fulfilled", value: result },
+          },
         },
       ]);
     });
@@ -1240,6 +1254,7 @@ describe("Agent", () => {
         },
       };
       const agent = new Agent({ provider, model: "mock" });
+      const queuedIds = queuedIdsOf(agent);
       const settled: { users: string[]; operation: unknown }[] = [];
       agent.onSettled((session, operation) => {
         settled.push({ users: userTextsOf(session.messages), operation });
@@ -1259,7 +1274,11 @@ describe("Agent", () => {
       expect(settled).toEqual([
         {
           users: ["hello"],
-          operation: { kind: "send", result: { status: "rejected", reason: error } },
+          operation: {
+            kind: "send",
+            id: queuedIds[0],
+            result: { status: "rejected", reason: error },
+          },
         },
       ]);
     });
@@ -1268,6 +1287,7 @@ describe("Agent", () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
       agent.addMcp({ name: "flaky", listTools, connected: true } as any);
+      const queuedIds = queuedIdsOf(agent);
       const settled: { users: string[]; operation: unknown }[] = [];
       agent.onSettled((session, operation) => {
         settled.push({ users: userTextsOf(session.messages), operation });
@@ -1279,10 +1299,15 @@ describe("Agent", () => {
       const [setupError] = await Promise.all([failed, cleared]);
 
       expect(setupError).toMatchObject({ message: "mcp unreachable" });
+      expect(queuedIds).toHaveLength(2);
       expect(settled).toEqual([
         {
           users: [],
-          operation: { kind: "send", result: { status: "rejected", reason: setupError } },
+          operation: {
+            kind: "send",
+            id: queuedIds[0],
+            result: { status: "rejected", reason: setupError },
+          },
         },
       ]);
     });
@@ -1404,6 +1429,146 @@ describe("Agent", () => {
       await agent.send("second").final;
 
       expect(count).toBe(1);
+    });
+  });
+
+  describe("onIdle", () => {
+    test("fires once when the queue drains, after the last onSettled resolves", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      agent.onSettled(async () => {
+        await Promise.resolve();
+        order.push("settled");
+      });
+      agent.onIdle(() => order.push("idle"));
+
+      await Promise.all(["first", "second"].map((text) => agent.send(text).final));
+      await vi.waitFor(() => expect(order).toContain("idle"));
+
+      expect(order).toEqual(["settled", "settled", "idle"]);
+    });
+
+    test("fires when clear() empties the queue while the last operation settles", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { promise: release, resolve: releaseSettle } = Promise.withResolvers<void>();
+      let settling = false;
+      let idleCount = 0;
+      agent.onSettled(async () => {
+        settling = true;
+        await release;
+      });
+      agent.onIdle(() => idleCount++);
+
+      const first = agent.send("first").final;
+      const second = agent.send("second").final;
+      await vi.waitFor(() => expect(settling).toBe(true));
+      agent.clear();
+      releaseSettle();
+
+      await first;
+      await expect(second).rejects.toThrow();
+      await vi.waitFor(() => expect(idleCount).toBe(1));
+    });
+
+    test("does not fire while a send made during the last onSettled is still queued", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      let followUp: Promise<unknown> | undefined;
+      agent.onSettled(() => {
+        order.push("settled");
+        followUp ??= agent.send("second").final;
+      });
+      agent.onIdle(() => order.push("idle"));
+
+      await agent.send("first").final;
+      await followUp;
+      await vi.waitFor(() => expect(order).toContain("idle"));
+
+      expect(order).toEqual(["settled", "settled", "idle"]);
+    });
+
+    test("a send from inside the callback starts", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let followUp: Promise<unknown> | undefined;
+      agent.onIdle(() => {
+        followUp ??= agent.send("second").final;
+      });
+
+      await agent.send("first").final;
+      await vi.waitFor(() => expect(followUp).toBeDefined());
+
+      expect(await followUp).toMatchObject({ ok: true, response: "second" });
+    });
+
+    test("a throwing callback does not stop the others", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let reached = false;
+      agent.onIdle(() => {
+        throw new Error("boom");
+      });
+      agent.onIdle(() => {
+        reached = true;
+      });
+
+      await agent.send("hello").final;
+
+      await vi.waitFor(() => expect(reached).toBe(true));
+    });
+
+    test("stops firing after its unsubscribe is called", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let count = 0;
+      const unsubscribe = agent.onIdle(() => count++);
+
+      await agent.send("first").final;
+      await vi.waitFor(() => expect(count).toBe(1));
+      unsubscribe();
+      await agent.send("second").final;
+      await agent.snapshot();
+
+      expect(count).toBe(1);
+    });
+  });
+
+  describe("snapshot", () => {
+    function userTextsOf(session: AgentSession): string[] {
+      return session.messages
+        .filter((message) => message.role === "user")
+        .map((message) => getTextContent(message.content));
+    }
+
+    test("on an idle agent resolves without firing onIdle", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let idleCount = 0;
+      agent.onIdle(() => idleCount++);
+
+      await agent.snapshot();
+      await agent.send("hello").final;
+      await agent.snapshot();
+
+      expect(idleCount).toBe(1);
+    });
+
+    test("requested between two sends includes both", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+
+      agent.send("first");
+      const session = agent.snapshot();
+      agent.send("second");
+
+      expect(userTextsOf(await session)).toEqual(["first", "second"]);
+    });
+
+    test("is not cancelled by clear()", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+
+      agent.send("first");
+      const dropped = agent.send("second").final.catch((error) => error);
+      const session = agent.snapshot();
+      agent.clear();
+
+      expect(userTextsOf(await session)).toEqual(["first"]);
+      expect(await dropped).toBeInstanceOf(AxleAgentAbortError);
     });
   });
 

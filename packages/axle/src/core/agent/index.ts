@@ -13,6 +13,7 @@ export type {
   CompactionCallback,
   CompactionConfig,
   CompactionTrigger,
+  IdleCallback,
   MaybePromise,
   ObservabilityOptions,
   ProviderDefinition,

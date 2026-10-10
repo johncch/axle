@@ -35,6 +35,7 @@ import type {
   AgentSession,
   CompactionConfig,
   CompactionTrigger,
+  IdleCallback,
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
@@ -75,7 +76,8 @@ export class Agent {
   private eventCallbacks: TurnEventCallback[] = [];
   private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
-  private scheduler = new AgentScheduler();
+  private idleCallbacks: IdleCallback[] = [];
+  private scheduler = new AgentScheduler(() => this.notifyIdle());
   private turnActive = false;
   private stopRequested = false;
   private transcript = new Transcript();
@@ -176,6 +178,27 @@ export class Agent {
     };
   }
 
+  /**
+   * Called each time the agent goes from busy to idle: an operation finished
+   * and nothing is queued behind it. Returns an unsubscribe function.
+   *
+   * It fires after the last operation's `onSettled` callbacks have settled,
+   * and also when the queue was emptied by `clear()` while they ran. Work
+   * scheduled during those callbacks keeps the agent busy, so it does not
+   * fire until that work is done too.
+   *
+   * The callback is not awaited. The agent is already free, so a `send()`
+   * from inside it starts at once. A callback that throws is recorded on the
+   * trace and the other callbacks still run.
+   */
+  onIdle(callback: IdleCallback) {
+    this.idleCallbacks.push(callback);
+    return () => {
+      const index = this.idleCallbacks.indexOf(callback);
+      if (index >= 0) this.idleCallbacks.splice(index, 1);
+    };
+  }
+
   /** The active, model-facing conversation. Requests are built from it; compaction replaces it. */
   get messages(): AxleMessage[] {
     return [...this.messagesInternal];
@@ -231,7 +254,7 @@ export class Agent {
             id: userTurn.id,
             reason: { type: "cancelled" },
           }),
-        settle: (result) => this.settle({ kind: "send", result }),
+        settle: (result) => this.settle({ kind: "send", id: userTurn.id, result }),
       },
     );
   }
@@ -562,7 +585,7 @@ export class Agent {
         signal: options?.signal,
         operation: "compact",
         onWithdrawn: dropCancelled,
-        settle: (result) => this.settle({ kind: "compaction", result }),
+        settle: (result) => this.settle({ kind: "compaction", id, result }),
       },
     ).final;
   }
@@ -707,23 +730,48 @@ export class Agent {
   /**
    * Capture the serializable session state for later continuation.
    *
-   * Enqueued behind in-flight sends and compactions, so the capture is
-   * always at rest — a snapshot never contains a streaming or running turn.
+   * Resolves at once when the agent is idle, and otherwise when it next goes
+   * idle, so the capture is always at rest — a snapshot never contains a
+   * streaming or running turn, and it includes everything queued before the
+   * agent went idle. It is not queued work: it does not make the agent busy,
+   * fires no `onIdle`, and is not cancelled by `clear()`.
    * The returned object is the pure continuation: session id and the active
    * model-facing conversation. It contains no renderable turn state —
    * transcripts are host-owned; persist your `Transcript.turns`
    * alongside it.
    *
    * Do not await this from inside a running send (a tool's `execute`,
-   * `onToolCall`, or a compaction callback): the send holds the queue, so the
-   * nested call deadlocks.
+   * `onToolCall`, or a compaction callback) or an `onSettled` callback: the
+   * agent cannot go idle until they return, so the nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    return this.scheduler.schedule(async (): Promise<AgentSession> => this.currentSession()).final;
+    if (this.scheduler.idle) return Promise.resolve(this.currentSession());
+    const { promise, resolve } = Promise.withResolvers<AgentSession>();
+    const unsubscribe = this.onIdle(() => {
+      unsubscribe();
+      resolve(this.currentSession());
+    });
+    return promise;
   }
 
   private currentSession(): AgentSession {
     return { sessionId: this.sessionId, messages: this.messages };
+  }
+
+  private notifyIdle(): void {
+    for (const callback of [...this.idleCallbacks]) {
+      try {
+        callback();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const span = this.spanParent?.startSpan("agent.idle", {
+          type: "workflow",
+          attributes: { sessionId: this.sessionId },
+        });
+        span?.warn(`onIdle callback threw: ${message}`);
+        span?.end();
+      }
+    }
   }
 
   private async settle(operation: SettledOperation): Promise<void> {

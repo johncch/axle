@@ -739,6 +739,10 @@ describe("Agent.compact", () => {
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const summary = [user("summary")];
     agent.setCompaction({ compact: () => ({ messages: summary }) });
+    const queuedIds: string[] = [];
+    agent.on((event) => {
+      if (event.type === "pending:queued") queuedIds.push(event.turn.id);
+    });
     const settled: { messages: AxleMessage[]; operation: unknown }[] = [];
     agent.onSettled((session, operation) => {
       settled.push({ messages: session.messages, operation });
@@ -749,7 +753,11 @@ describe("Agent.compact", () => {
     expect(settled).toEqual([
       {
         messages: summary,
-        operation: { kind: "compaction", result: { status: "fulfilled", value: true } },
+        operation: {
+          kind: "compaction",
+          id: queuedIds[0],
+          result: { status: "fulfilled", value: true },
+        },
       },
     ]);
   });
@@ -769,6 +777,10 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
+    const queuedIds: string[] = [];
+    agent.on((event) => {
+      if (event.type === "pending:queued") queuedIds.push(event.turn.id);
+    });
     const settled: { messages: AxleMessage[]; operation: unknown }[] = [];
     agent.onSettled((session, operation) => {
       settled.push({ messages: session.messages, operation });
@@ -780,7 +792,11 @@ describe("Agent.compact", () => {
     expect(settled).toEqual([
       {
         messages: FOUR_MESSAGES,
-        operation: { kind: "compaction", result: { status: "rejected", reason: error } },
+        operation: {
+          kind: "compaction",
+          id: queuedIds[0],
+          result: { status: "rejected", reason: error },
+        },
       },
     ]);
   });
