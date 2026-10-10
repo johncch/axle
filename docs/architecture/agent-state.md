@@ -83,7 +83,11 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    event stream. Work that has to finish before the next operation starts
    goes in the hook; anything a client should see goes on the events. The
    scheduler owns the rest point as a task state (`queued`, `running`,
-   `settling`, `settled`); the Agent adds no flag of its own.
+   `settling`, `settled`); the Agent adds no flag of its own. The Agent's
+   tool and skill registries are live state the host changes at any time;
+   the Agent hands their current values to `stream()` when a turn opens and
+   at every tool-batch boundary, and `stream()` holds no registry
+   ([skills.md](./skills.md)).
 
 ## Design rationale (2026-08-12)
 

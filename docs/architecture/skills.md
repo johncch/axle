@@ -1,6 +1,6 @@
 # Skills
 
-**Status**: current · **Last design revision**: 2026-10-08 (0.34.0)
+**Status**: current · **Last design revision**: 2026-10-09 (0.34.0)
 
 This document is normative for how core represents Agent Skills and
 discloses them to the model. Code and tests are built against it;
@@ -36,9 +36,10 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    not checked: a warning needs a channel the parser lacks, and the only
    consequence of an odd name is an odd enum value.
 4. **Core guarantees tiers one and two of progressive disclosure.** Tier
-   one: the Agent constructor appends a catalog to `system` — a heading, a
-   short instruction to call `view-skill`, one `- name: description` line
-   per skill. Descriptions are author text landing in the system prompt,
+   one: the Agent's system prompt carries a catalog after the configured
+   prompt — a heading, a short instruction to call `view-skill`, one
+   `- name: description` line per skill — rendered from `agent.skills` as
+   it is now. Descriptions are author text landing in the system prompt,
    so angle brackets are escaped and line breaks collapsed. Tier two: a
    `view-skill` tool in the Agent's registry beside the host's tools, whose
    `name` argument is an enum of the loaded names; it returns
@@ -48,10 +49,12 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    (reading references, running scripts) works exactly as far as the host's
    tools can read what `root` names. The catalog does not print `root`; the
    activation result does.
-5. **No skills, no surface.** An absent or empty `skills` list leaves
-   `system` untouched and registers no tool. A host tool named `view-skill`
-   collides at construction (`TOOL_REGISTRY_DUPLICATE`), which is the right
-   time to find out.
+5. **No skills, no surface.** With no skills `system` is the configured
+   prompt alone and no tool is registered, at construction and after the
+   last skill is removed. A host tool named `view-skill` collides
+   (`TOOL_REGISTRY_DUPLICATE`) at construction or at the `add` that would
+   publish, whichever comes first; the registry never removes a tool it
+   did not publish.
 6. **Definitions name skills; sessions re-resolve.**
    `AgentDefinition.skills` is `{ name }[]`; `ResolvedAgentDefinition.skills`
    is `Skill[]`; `createAgentConfig` errors when a definition names skills
@@ -63,6 +66,17 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    tool results like any other and are compacted like any other
    ([compaction.md](./compaction.md)). The catalog survives compaction
    because the system prompt does.
+8. **Skills are live state, and every provider request reads them.**
+   `agent.skills` is a `SkillRegistry` (`add`, `remove`, `has`, `get`,
+   `list`, `size`) the host or a tool changes at any time. It owns
+   `view-skill`: on every change it rebuilds the tool from the current list
+   and republishes it into `agent.registry`. `agent.system` is derived —
+   the configured prompt plus the catalog — and read-only. The Agent hands
+   `stream()` its prompt and tool list at turn open and again at every
+   tool-batch boundary, so a change lands on the next request whether it
+   was made between turns or by a tool during one. `stream()` holds no
+   registry and reads nothing live: it builds requests from the values it
+   was last given.
 
 ## Design rationale (2026-10-08)
 
@@ -87,8 +101,63 @@ storage), lets core control the output shape, and constrains the name to
 an enum. The catalog therefore omits the location and the tool result
 carries it.
 
+## Runtime skills and the request boundary (2026-10-09)
+
+Skills were materialized once, in the constructor: the catalog spliced into
+`system`, the tool added to the registry. A host whose skills come from
+connectors needs to add and remove them while a session is alive — the
+user connects a source between messages, or the model activates one with a
+tool — and the natural API is the one tools already have: a registry.
+
+The question underneath was how a change reaches the loop. `stream()` had
+been handed the Agent's `ToolRegistry` and read `executable()` before each
+request, so tools changed mid-turn by accident of implementation while the
+prompt, passed as a string, could not. The registry had been put inside
+`stream()` as a substitute for a lifecycle: there was no other way for the
+loop to learn of a change. There is now. `onToolBatchComplete` fires at
+the one moment inside a turn when anything can have changed — a tool just
+ran — and right before the next request is built, so the Agent answers it
+with the current prompt and tools. Between turns the Agent snapshots them
+when the turn opens, and `onSettled` orders host changes against a busy
+queue ([agent-state.md](./agent-state.md)). `stream()` became a function
+of what it is told: `registry` left its parameters, the private lookup it
+built from arrays stayed, and `ToolContext.registry` — handed to every
+tool and read by none — went with it. A tool that changes the Agent uses
+the Agent in closure scope.
+
+The catalog stays in the system prompt. The integration guide allows it
+in the activation tool's description as well, and for a day that looked
+simpler, since tool descriptions already travelled per request. With the
+boundary callback carrying `system`, the prompt placement costs the same
+and keeps the spec's "more broadly compatible" option; it also sidesteps a
+reported provider limit on tool-description length that a few skills'
+descriptions could cross.
+
+Accepted consequences:
+
+- **Changing skills invalidates the provider's prompt-cache prefix** from
+  the next request on, as any system-prompt change does.
+- **`agent.system` cannot be assigned.** It is what the model sees; the
+  configured prompt is set at construction. A host that needs to change the
+  base prompt at runtime asks for a setter and gets one then.
+- **A skill updated in place is `remove` then `add`.** `add` of a name
+  already present throws `SKILL_REGISTRY_DUPLICATE`, as the tool registry
+  does for tools.
+
 ## Rejected alternatives
 
+- **A live registry inside `stream()`** (2026-10-09): the status quo for
+  tools, extended to the prompt by a live object. It made the loop depend
+  on a mutable object it did not own, dragged the registry-or-arrays
+  resolution into the loop, and was only ever read in one place: before
+  each request, which the boundary callback already marks.
+- **The catalog in `view-skill`'s description** (2026-10-09): see above.
+- **`agent.setSkills(list)`** (2026-10-09): the host keeps the full list and
+  re-sends it on every change; a registry lets it add and remove by name,
+  which is what a connector does.
+- **Taking effect at the next turn only** (2026-10-09): simpler to state,
+  but a tool that activated a skill would see nothing change until the user
+  spoke again. The boundary callback makes "next request" cost the same.
 - **An adapter interface (`readFile`, `list`) on the skill object**
   (2026-10-08): nothing in core would call it; tier three is always the
   host's tools reading what `root` names.

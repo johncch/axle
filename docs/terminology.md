@@ -74,6 +74,8 @@ but is not an operation.
 optional bundled files. In core a `Skill` is plain data — name, description,
 `instructions`, an opaque `root`, a `files` listing — disclosed in the system
 prompt as a _catalog_ line and _activated_ when the model calls `view-skill`.
+`agent.skills` is the `SkillRegistry` that holds them; like `agent.registry`
+for tools, it changes at any time and the next provider request reads it.
 A skill is not a tool: it adds instructions, and reaches files only through
 the tools the host registered.
 

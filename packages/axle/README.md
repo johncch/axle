@@ -80,6 +80,21 @@ nothing) and returns the number cleared, leaving the active turn untouched.
 transcript stays linear: the committed batch is visible to the follow-up
 turn.
 
+The Agent's tools and skills are registries you can change while it runs:
+`agent.registry` (`add`, `remove`, `get`, `has`) and `agent.skills`
+(`add`, `remove`, `get`, `has`, `list`, `size`). A change lands on the next
+provider request — the next turn when the agent is idle or queued, or the
+next step of the running turn when a tool makes it:
+
+```typescript
+agent.registry.add(downloadTool);
+agent.skills.add(await loadSkill("./skills/pdf"));
+agent.skills.remove("pdf");
+```
+
+`agent.system` is what the model sees — the system prompt you configured,
+then the skills catalog when skills are present — and is read-only.
+
 `agent.cancel(reason)` is the hard form of `stop()`: it cancels the active
 operation immediately, exactly as that handle's own `cancel()` would, and
 returns `false` when nothing is running. Queued operations are untouched and
@@ -237,6 +252,11 @@ result.response.answer; // string
 Both handle the full tool-call loop automatically. Agent uses `stream()`
 internally and adds history management, system prompt, and callback wiring on
 top.
+
+`system`, `tools` and `providerTools` are values: the loop builds every
+request from the ones it was last given. To change them during a loop,
+return new ones from `onToolBatchComplete` (below); there is no registry
+inside `stream()`, and a tool's `execute` receives no registry either.
 
 Two options bound the tool loop. `maxSteps` caps the number of model requests;
 `maxContextTokens` caps the context budget, checked after each step's tools are
@@ -533,14 +553,28 @@ const agent = new Agent({
 });
 ```
 
-Disclosure is progressive. The Agent appends a catalog to the system prompt
-(one line per skill: name and description) and registers a `view-skill` tool
-whose `name` argument is an enum of the loaded skills. When the model decides
+Disclosure is progressive. The Agent's system prompt carries a catalog after
+your own prompt (one line per skill: name and description) and the Agent
+registers a `view-skill` tool whose `name` argument is an enum of the loaded
+skills. When the model decides
 a skill applies it calls the tool and receives the instructions wrapped in
 `<skill_content>` tags, with the skill directory and a listing of its files
 so relative paths in the body resolve. Reading those files and running
 scripts is done with whatever tools you gave the agent. No skills means no
 catalog and no tool.
+
+Skills can change while the agent runs. `agent.skills` is a registry:
+
+```typescript
+agent.skills.add(await loadSkill("./skills/docx")); // catalog and tool update
+agent.skills.remove("pdf");
+agent.skills.list(); // Skill[]
+```
+
+The next provider request sees the change — the next turn, or the next step
+of a running turn when a tool calls `agent.skills.add(...)`. Removing the
+last skill removes the catalog and the tool. Adding a name that is already
+present throws; update a skill with `remove` then `add`.
 
 A `Skill` is plain data, so storage is yours to choose. `loadSkill(dir)` is
 the filesystem convenience; `parseSkillMarkdown(text)` parses a `SKILL.md`
@@ -1148,10 +1182,14 @@ handle.onToolBatchComplete(async (toolResultsMessage) => {
 ```
 
 Return `"finish"` to resolve successfully without starting another provider
-request, or `"continue"` to resume the tool loop. The callback receives one
-`AxleToolCallMessage` containing the whole batch; it is an awaited control
-boundary, not a synthetic stream event. Agent uses this hook internally for
-`stop()`.
+request, `"continue"` to resume the tool loop as is, or an object with
+`system`, `tools` and `providerTools` to resume with those inputs replacing
+the current ones (a field left out is absent, exactly as on the initial
+call). The callback receives one `AxleToolCallMessage` containing the whole
+batch; it is an awaited control boundary, not a synthetic stream event.
+Agent uses this hook for `stop()` and to hand the loop its current prompt
+and tools after every batch, which is how a tool that changes
+`agent.registry` or `agent.skills` is visible on the next request.
 
 ### Compaction (experimental)
 
