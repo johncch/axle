@@ -1,4 +1,5 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
+import type { ToolDefinition } from "../../tools/types.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { normalizeProviderError } from "../utils.js";
@@ -21,6 +22,7 @@ export async function* createStreamingRequest(
       model: string;
       apiKey?: string;
       vendor?: ChatCompletionsVendor;
+      webSearch?: ToolDefinition;
     },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const {
@@ -28,13 +30,12 @@ export async function* createStreamingRequest(
     model,
     messages,
     system,
-    tools,
-    providerTools,
     sessionId,
     runtime,
     signal,
     apiKey,
     vendor,
+    webSearch,
     maxRetries,
     timeoutMs,
     headers: clientHeaders,
@@ -45,6 +46,12 @@ export async function* createStreamingRequest(
     providerOptions,
   } = params;
   const span = runtime?.span;
+  const usesAttachedSearch =
+    webSearch !== undefined && params.providerTools?.some((tool) => tool.name === "web_search");
+  const tools = usesAttachedSearch ? [...(params.tools ?? []), webSearch] : params.tools;
+  const providerTools = usesAttachedSearch
+    ? params.providerTools?.filter((tool) => tool.name !== "web_search")
+    : params.providerTools;
 
   const adapter = createStreamingAdapter();
 

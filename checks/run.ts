@@ -1,4 +1,4 @@
-import { braveWebSearch, configureAxle, type ReasoningSetting } from "@fifthrevision/axle";
+import type { ReasoningSetting } from "@fifthrevision/axle";
 import "dotenv/config";
 import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -74,10 +74,6 @@ const targets = resolveProviderTargets({
 if (targets.length === 0) {
   throw new Error("None of the selected cases apply to the selected providers");
 }
-
-configureAxle({
-  webSearchFallback: braveWebSearch({ apiKey: getEnv("BRAVE_API_KEY") }),
-});
 
 await mkdir(dirname(options.out), { recursive: true });
 await writeFile(options.out, "");
@@ -689,10 +685,4 @@ Options:
                      default every run updates each model's entry; cases
                      that did not run keep theirs.
 `);
-}
-
-function getEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }

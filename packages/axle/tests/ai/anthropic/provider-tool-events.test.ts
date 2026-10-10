@@ -2,10 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { beforeEach, describe, expect, test, vi, type Mock } from "vitest";
 import type { AxleMessage } from "../../../src/messages/message.js";
 import { createStreamingRequest } from "../../../src/providers/anthropic/createStreamingRequest.js";
-import {
-  convertToProviderMessages,
-  resolveAnthropicProviderToolName,
-} from "../../../src/providers/anthropic/utils.js";
+import { convertToProviderMessages } from "../../../src/providers/anthropic/utils.js";
 import { stream, type StreamEvent } from "../../../src/providers/stream.js";
 import type { AIProvider } from "../../../src/providers/types.js";
 
@@ -98,7 +95,6 @@ describe("Anthropic provider tool events", () => {
     const mockClient = { messages: { create: mockCreate } } as unknown as Anthropic;
     provider = {
       name: "anthropic",
-      resolveProviderToolName: resolveAnthropicProviderToolName,
       createStreamingRequest: (model, params) =>
         createStreamingRequest({ client: mockClient, model, ...params }),
     };

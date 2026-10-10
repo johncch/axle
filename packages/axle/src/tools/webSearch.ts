@@ -1,10 +1,5 @@
 import * as z from "zod";
-import type { Span } from "../observability/types.js";
 import type { ExecutableTool } from "./types.js";
-
-export interface WebSearchRequest {
-  query: string;
-}
 
 export interface WebSearchResult {
   title: string;
@@ -12,49 +7,9 @@ export interface WebSearchResult {
   snippets: string[];
 }
 
-export interface WebSearchResponse {
-  results: WebSearchResult[];
-}
-
-export interface WebSearchBackendContext {
-  signal: AbortSignal;
-  span?: Span;
-}
-
-export interface WebSearchBackend {
-  readonly name: string;
-  search(request: WebSearchRequest, context: WebSearchBackendContext): Promise<WebSearchResponse>;
-}
-
 const webSearchInputSchema = z.object({
   query: z.string().trim().min(1).max(400),
 });
-
-export function createWebSearchFallbackTool(
-  backend: WebSearchBackend,
-): ExecutableTool<typeof webSearchInputSchema> {
-  return {
-    name: "web_search",
-    description:
-      "Search the public web for current information. Returns source titles, URLs, and relevant extracted passages.",
-    schema: webSearchInputSchema,
-    async execute(input, context) {
-      context.span?.setAttribute("webSearchBackend", backend.name);
-      const response = await backend.search(
-        { query: input.query },
-        { signal: context.signal, span: context.span },
-      );
-      context.span?.setAttribute("webSearchResultCount", response.results.length);
-      return JSON.stringify({
-        query: input.query,
-        results: response.results,
-      });
-    },
-    summarize(input) {
-      return `Search the web for "${input.query}"`;
-    },
-  };
-}
 
 export interface BraveWebSearchOptions {
   apiKey: string;
@@ -86,7 +41,9 @@ interface BraveLlmContextResponse {
   };
 }
 
-export function braveWebSearch(options: BraveWebSearchOptions): WebSearchBackend {
+export function braveWebSearch(
+  options: BraveWebSearchOptions,
+): ExecutableTool<typeof webSearchInputSchema> {
   const apiKey = options.apiKey.trim();
   if (!apiKey) throw new Error("Brave Search apiKey is required");
 
@@ -115,10 +72,16 @@ export function braveWebSearch(options: BraveWebSearchOptions): WebSearchBackend
       : requireIntegerInRange(options.timeoutMs, "timeoutMs", 1);
 
   return {
-    name: "brave",
-    async search(request, context) {
+    name: "web_search",
+    description:
+      "Search the public web for current information. Returns source titles, URLs, and relevant extracted passages.",
+    schema: webSearchInputSchema,
+    summarize(input) {
+      return `Search the web for "${input.query}"`;
+    },
+    async execute(input, context) {
       const url = new URL(endpoint);
-      url.searchParams.set("q", request.query);
+      url.searchParams.set("q", input.query);
       url.searchParams.set("maximum_number_of_urls", String(maxResults));
       if (candidateCount !== undefined) url.searchParams.set("count", String(candidateCount));
       url.searchParams.set("maximum_number_of_tokens", String(maxTokens));
@@ -171,7 +134,8 @@ export function braveWebSearch(options: BraveWebSearchOptions): WebSearchBackend
         if (!item.title || !item.url || !item.snippets?.length) continue;
         results.push({ title: item.title, url: item.url, snippets: item.snippets });
       }
-      return { results };
+      context.span?.setAttribute("webSearchResultCount", results.length);
+      return JSON.stringify({ query: input.query, results });
     },
   };
 }

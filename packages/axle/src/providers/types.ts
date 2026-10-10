@@ -1,7 +1,7 @@
 import { AxleMessage } from "../messages/message.js";
 import { AnyStreamChunk } from "../messages/stream.js";
 import type { Span } from "../observability/types.js";
-import type { ProviderTool, ToolDefinition } from "../tools/types.js";
+import type { ExecutableTool, ProviderTool, ToolDefinition } from "../tools/types.js";
 import type { FileResolver } from "../utils/file.js";
 import type { ReasoningSetting } from "./reasoning.js";
 
@@ -65,13 +65,10 @@ export interface AIProvider {
   get name(): string;
 
   /**
-   * Resolves a portable provider-tool name to the provider-native name.
-   * Returning undefined marks the tool unsupported. When omitted, Axle
-   * preserves the provider's existing passthrough behavior.
-   *
-   * @internal
+   * Executable tools the provider brings. The loop runs a tool call against
+   * these when the caller's tools have no tool of that name.
    */
-  resolveProviderToolName?(name: string, model: string): string | undefined;
+  tools?: ExecutableTool[];
 
   /** @internal */
   createStreamingRequest(

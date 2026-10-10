@@ -4,10 +4,7 @@ import z from "zod";
 import type { AxleMessage } from "../../../src/messages/message.js";
 import { createAnthropicStreamingAdapter } from "../../../src/providers/anthropic/createStreamingAdapter.js";
 import { createStreamingRequest } from "../../../src/providers/anthropic/createStreamingRequest.js";
-import {
-  findOpenProviderToolCalls,
-  resolveAnthropicProviderToolName,
-} from "../../../src/providers/anthropic/utils.js";
+import { findOpenProviderToolCalls } from "../../../src/providers/anthropic/utils.js";
 import { generate } from "../../../src/providers/generate.js";
 import { stream, type StreamEvent } from "../../../src/providers/stream.js";
 import type { AIProvider } from "../../../src/providers/types.js";
@@ -137,7 +134,6 @@ describe("Anthropic server tool called alongside a client tool", () => {
 
   const provider = (): AIProvider => ({
     name: "anthropic",
-    resolveProviderToolName: resolveAnthropicProviderToolName,
     createStreamingRequest: (model, params) =>
       createStreamingRequest({ client: mockClient, model, ...params }),
   });

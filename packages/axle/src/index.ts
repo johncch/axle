@@ -1,8 +1,6 @@
 // Core
 export { PromptCompactor } from "./compaction/index.js";
 export type { PromptCompactorOptions } from "./compaction/index.js";
-export { configureAxle } from "./config.js";
-export type { AxleConfiguration } from "./config.js";
 export { Agent, createAgentConfig } from "./core/agent/index.js";
 export type {
   AgentConfig,
@@ -130,10 +128,6 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolProgressChunk,
-  WebSearchBackend,
-  WebSearchBackendContext,
-  WebSearchRequest,
-  WebSearchResponse,
   WebSearchResult,
 } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";

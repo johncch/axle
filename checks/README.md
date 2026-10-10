@@ -105,9 +105,8 @@ TYPESAFE_API_KEY=...
 BRAVE_API_KEY=...
 ```
 
-`BRAVE_API_KEY` is required for every run. The fallback is configured once
-at runner startup so native web-search providers are exercised while a fallback
-is present, and fallback providers such as Together use Brave automatically.
+`BRAVE_API_KEY` is required for the `together` and `ollama` targets, which
+have no web search of their own and get Brave attached as their `web_search`.
 The PDF attachment case is excluded because Together's Chat Completions API
 does not accept PDF file parts. Override Together's default smoke model with
 `TOGETHER_MODEL`.

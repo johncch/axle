@@ -1,109 +1,36 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { configureAxle } from "../../src/config.js";
+import { z } from "zod";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { stream } from "../../src/providers/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import { braveWebSearch, type WebSearchBackend } from "../../src/tools/webSearch.js";
+import type { ExecutableTool } from "../../src/tools/types.js";
+import { braveWebSearch } from "../../src/tools/webSearch.js";
 
 afterEach(() => {
-  configureAxle({ webSearchFallback: undefined });
   vi.restoreAllMocks();
 });
 
-describe("web search fallback resolution", () => {
-  test("uses native provider search when available", async () => {
-    const backend = makeBackend();
-    configureAxle({ webSearchFallback: backend });
-    const provider = makeProvider({ nativeWebSearch: true });
+describe("provider-brought web search", () => {
+  test("the loop runs a web_search call against the tool the provider brings", async () => {
+    const webSearch = makeWebSearchTool();
+    const provider = makeProvider({ tools: [webSearch] });
 
     const result = await stream({
       provider,
-      model: "native-model",
+      model: "test-model",
       messages: [{ role: "user", content: "Search the web." }],
       providerTools: [{ type: "provider", name: "web_search" }],
     }).final;
 
     expect(result.ok).toBe(true);
     expect(provider.requests[0].providerTools).toEqual([{ type: "provider", name: "web_search" }]);
-    expect(provider.requests[0].tools).toBeUndefined();
-    expect(backend.search).not.toHaveBeenCalled();
-  });
-
-  test("replaces unsupported native search with the configured fallback", async () => {
-    const backend = makeBackend();
-    configureAxle({ webSearchFallback: backend });
-    const provider = makeProvider({ nativeWebSearch: false, callFallbackTool: true });
-    const result = await stream({
-      provider,
-      model: "fallback-model",
-      messages: [{ role: "user", content: "Search the web." }],
-      providerTools: [{ type: "provider", name: "web_search" }],
-    }).final;
-
-    expect(result.ok).toBe(true);
-    expect(provider.requests[0].providerTools).toBeUndefined();
-    expect(provider.requests[0].tools).toEqual([expect.objectContaining({ name: "web_search" })]);
-    expect(backend.search).toHaveBeenCalledWith(
+    expect(webSearch.execute).toHaveBeenCalledWith(
       { query: "current axle release" },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     const toolMessage = result.messages.find((message) => message.role === "tool");
     expect(JSON.stringify(toolMessage)).toContain("https://example.com/axle");
-  });
-
-  test("fails before the provider request when no fallback is configured", async () => {
-    const provider = makeProvider({ nativeWebSearch: false });
-
-    const handle = stream({
-      provider,
-      model: "fallback-model",
-      messages: [{ role: "user", content: "Search the web." }],
-      providerTools: [{ type: "provider", name: "web_search" }],
-    });
-
-    await expect(handle.final).rejects.toMatchObject({
-      code: "WEB_SEARCH_FALLBACK_NOT_CONFIGURED",
-    });
-    expect(provider.requests).toHaveLength(0);
-  });
-
-  test("preserves passthrough behavior for custom providers without support metadata", async () => {
-    const backend = makeBackend();
-    configureAxle({ webSearchFallback: backend });
-    const provider = makeProvider({});
-
-    const result = await stream({
-      provider,
-      model: "custom-model",
-      messages: [{ role: "user", content: "Search the web." }],
-      providerTools: [{ type: "provider", name: "web_search" }],
-    }).final;
-
-    expect(result.ok).toBe(true);
-    expect(provider.requests[0].providerTools).toEqual([{ type: "provider", name: "web_search" }]);
-    expect(backend.search).not.toHaveBeenCalled();
-  });
-
-  test("snapshots the fallback backend when the run starts", async () => {
-    const first = makeBackend("first");
-    const second = makeBackend("second");
-    configureAxle({ webSearchFallback: first });
-    const provider = makeProvider({ nativeWebSearch: false, callFallbackTool: true });
-
-    const handle = stream({
-      provider,
-      model: "fallback-model",
-      messages: [{ role: "user", content: "Search the web." }],
-      providerTools: [{ type: "provider", name: "web_search" }],
-    });
-    configureAxle({ webSearchFallback: second });
-
-    const result = await handle.final;
-
-    expect(result.ok).toBe(true);
-    expect(first.search).toHaveBeenCalledOnce();
-    expect(second.search).not.toHaveBeenCalled();
   });
 });
 
@@ -132,7 +59,7 @@ describe("braveWebSearch", () => {
         }),
       }),
     );
-    const backend = braveWebSearch({
+    const webSearch = braveWebSearch({
       apiKey: "brave-secret",
       maxResults: 7,
       candidateCount: 20,
@@ -147,9 +74,10 @@ describe("braveWebSearch", () => {
     });
     const signal = new AbortController().signal;
 
-    const result = await backend.search({ query: "axle ai" }, { signal });
+    const result = await webSearch.execute({ query: "axle ai" }, { signal, emit: () => {} });
 
-    expect(result).toEqual({
+    expect(JSON.parse(String(result))).toEqual({
+      query: "axle ai",
       results: [
         {
           title: "Axle",
@@ -191,13 +119,19 @@ describe("braveWebSearch", () => {
         text: async () => "rate limited for brave-secret",
       }),
     );
-    const backend = braveWebSearch({ apiKey: "brave-secret" });
+    const webSearch = braveWebSearch({ apiKey: "brave-secret" });
 
     await expect(
-      backend.search({ query: "axle ai" }, { signal: new AbortController().signal }),
+      webSearch.execute(
+        { query: "axle ai" },
+        { signal: new AbortController().signal, emit: () => {} },
+      ),
     ).rejects.toThrow("Brave Search request failed with status 429: rate limited for [REDACTED]");
     await expect(
-      backend.search({ query: "axle ai" }, { signal: new AbortController().signal }),
+      webSearch.execute(
+        { query: "axle ai" },
+        { signal: new AbortController().signal, emit: () => {} },
+      ),
     ).rejects.not.toThrow("brave-secret");
     const [url] = (fetch as any).mock.calls[0];
     expect(url.searchParams.get("maximum_number_of_urls")).toBe("5");
@@ -230,25 +164,20 @@ describe("braveWebSearch", () => {
   });
 });
 
-function makeBackend(name = "test"): WebSearchBackend & { search: ReturnType<typeof vi.fn> } {
+function makeWebSearchTool(): ExecutableTool & { execute: ReturnType<typeof vi.fn> } {
   return {
-    name,
-    search: vi.fn().mockResolvedValue({
-      results: [
-        {
-          title: "Axle",
-          url: "https://example.com/axle",
-          snippets: ["Axle documentation"],
-        },
-      ],
-    }),
+    name: "web_search",
+    description: "Search the web.",
+    schema: z.object({ query: z.string() }),
+    execute: vi
+      .fn()
+      .mockResolvedValue(
+        JSON.stringify({ results: [{ title: "Axle", url: "https://example.com/axle" }] }),
+      ),
   };
 }
 
-function makeProvider(options: {
-  nativeWebSearch?: boolean;
-  callFallbackTool?: boolean;
-}): AIProvider & {
+function makeProvider(options: { tools: ExecutableTool[] }): AIProvider & {
   requests: Array<{ tools?: unknown[]; providerTools?: unknown[] }>;
 } {
   let callCount = 0;
@@ -256,15 +185,7 @@ function makeProvider(options: {
   return {
     name: "test-provider",
     requests,
-    ...(options.nativeWebSearch === undefined
-      ? {}
-      : {
-          resolveProviderToolName(name: string) {
-            return name === "web_search" && options.nativeWebSearch === true
-              ? "native:web_search"
-              : undefined;
-          },
-        }),
+    tools: options.tools,
     async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
       callCount += 1;
       requests.push({
@@ -273,7 +194,7 @@ function makeProvider(options: {
       });
       yield { type: "start", id: `turn-${callCount}`, data: { model, timestamp: Date.now() } };
 
-      if (callCount === 1 && options.callFallbackTool) {
+      if (callCount === 1) {
         yield {
           type: "tool-call-start",
           data: { index: 0, id: "search-1", name: "web_search" },

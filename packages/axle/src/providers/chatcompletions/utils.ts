@@ -19,25 +19,12 @@ import {
 } from "./types.js";
 import {
   prepareOpenRouterProviderTools,
-  resolveOpenRouterProviderToolName,
   toOpenRouterReasoning,
   toOpenRouterReasoningDetails,
 } from "./vendors/openrouter/index.js";
 import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
 export type ChatCompletionsVendor = "openrouter" | "together";
-
-export function resolveChatCompletionsProviderToolName(
-  name: string,
-  vendor?: ChatCompletionsVendor,
-): string | undefined {
-  switch (vendor) {
-    case "openrouter":
-      return resolveOpenRouterProviderToolName(name);
-    default:
-      return undefined;
-  }
-}
 
 interface ChatCompletionsConversionContext {
   model: string;
@@ -121,15 +108,9 @@ export function prepareProviderTools(
 ): any[] | undefined {
   if (!providerTools || providerTools.length === 0) return undefined;
 
-  if (!vendor) {
-    warn?.("providerTools not supported by ChatCompletions provider");
-    return undefined;
-  }
+  if (vendor === "openrouter") return prepareOpenRouterProviderTools(providerTools, warn);
 
-  switch (vendor) {
-    case "openrouter":
-      return prepareOpenRouterProviderTools(providerTools, warn);
-  }
+  throw new Error(`ChatCompletions does not support provider tool: ${providerTools[0].name}`);
 }
 
 export function toChatCompletionsToolChoice(

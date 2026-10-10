@@ -1,4 +1,3 @@
-import type { AxleConfiguration } from "../config.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
@@ -21,7 +20,6 @@ import type {
   ToolContext,
   ToolProgressChunk,
 } from "../tools/types.js";
-import { createWebSearchFallbackTool } from "../tools/webSearch.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats, mergeStats } from "../utils/stats.js";
 import type { AIProvider } from "./types.js";
@@ -227,12 +225,7 @@ export interface ResolvedTools {
 
 export function resolveTools(
   toolSet: { tools?: ExecutableTool[]; providerTools?: ProviderTool[] },
-  options: {
-    provider: AIProvider;
-    model: string;
-    span?: Span;
-    configuration: AxleConfiguration;
-  },
+  provider: AIProvider,
 ): ResolvedTools {
   const tools = toolSet.tools ?? [];
   const providerTools = toolSet.providerTools ?? [];
@@ -247,48 +240,10 @@ export function resolveTools(
     byName.set(tool.name, tool);
   }
 
-  const requestedWebSearch = providerTools.find((tool) => tool.name === "web_search");
-  const nativeWebSearch =
-    !requestedWebSearch ||
-    !options.provider.resolveProviderToolName ||
-    options.provider.resolveProviderToolName("web_search", options.model) !== undefined;
-  if (nativeWebSearch) {
-    return {
-      executable: () => tools,
-      provider: () => providerTools,
-      get: (name) => byName.get(name),
-    };
-  }
-
-  const fallback = options.configuration.webSearchFallback;
-  if (!fallback) {
-    throw new AxleError(
-      `Provider ${options.provider.name} does not support native web_search and no Axle webSearchFallback is configured`,
-      {
-        code: "WEB_SEARCH_FALLBACK_NOT_CONFIGURED",
-        details: { provider: options.provider.name, model: options.model },
-      },
-    );
-  }
-
-  if (requestedWebSearch.config) {
-    options.span?.warn("web_search provider config ignored by fallback backend", {
-      provider: options.provider.name,
-      model: options.model,
-      backend: fallback.name,
-    });
-  }
-  options.span?.info("Using web search fallback backend", {
-    provider: options.provider.name,
-    model: options.model,
-    backend: fallback.name,
-  });
-
-  const fallbackTool = createWebSearchFallbackTool(fallback);
   return {
-    executable: () => [...tools.filter((tool) => tool.name !== "web_search"), fallbackTool],
-    provider: () => providerTools.filter((tool) => tool.name !== "web_search"),
-    get: (name) => (name === "web_search" ? fallbackTool : byName.get(name)),
+    executable: () => tools,
+    provider: () => providerTools,
+    get: (name) => byName.get(name) ?? provider.tools?.find((tool) => tool.name === name),
   };
 }
 

@@ -8,6 +8,11 @@ import { AxleStopReason } from "../../../src/providers/types.js";
 
 const BASE_URL = "http://localhost:11434/v1";
 const MODEL = "gemma3";
+const webSearch = {
+  name: "web_search",
+  description: "Search the web.",
+  schema: z.object({ query: z.string() }),
+};
 
 describe("createStreamingRequest", () => {
   beforeEach(() => {
@@ -971,8 +976,29 @@ describe("createStreamingRequest", () => {
     expect(body.stream_options).toEqual({ include_usage: true });
   });
 
-  test("drops provider tools and warns without a provider tool vendor", async () => {
-    const span = makeSpan();
+  test("fails without a request when a provider tool has nothing to serve it", async () => {
+    const chunks = await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        providerTools: [{ type: "provider", name: "web_search" }],
+      }),
+    );
+
+    expect(chunks).toEqual([
+      {
+        type: "error",
+        data: expect.objectContaining({
+          message: "ChatCompletions does not support provider tool: web_search",
+        }),
+      },
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("sends an attached web search as a function tool", async () => {
     const sseLines = [
       `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
       "",
@@ -986,16 +1012,43 @@ describe("createStreamingRequest", () => {
         baseUrl: BASE_URL,
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
-        runtime: { span },
+        runtime: {},
         providerTools: [{ type: "provider", name: "web_search" }],
+        webSearch,
       }),
     );
 
     const body = JSON.parse((fetch as any).mock.calls[0][1].body);
-    expect(body.tools).toBeUndefined();
-    expect(span.warn).toHaveBeenCalledWith(
-      "providerTools not supported by ChatCompletions provider",
+    expect(body.tools).toEqual([
+      { type: "function", function: expect.objectContaining({ name: "web_search" }) },
+    ]);
+  });
+
+  test("prefers an attached web search over the OpenRouter server tool", async () => {
+    const sseLines = [
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}`,
+      "",
+    ];
+    (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
+
+    await collectChunks(
+      createStreamingRequest({
+        baseUrl: BASE_URL,
+        model: MODEL,
+        vendor: "openrouter",
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+        providerTools: [{ type: "provider", name: "web_search" }],
+        webSearch,
+      }),
     );
+
+    const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+    expect(body.tools).toEqual([
+      { type: "function", function: expect.objectContaining({ name: "web_search" }) },
+    ]);
   });
 
   test("maps OpenRouter provider tools and keeps function tools", async () => {
