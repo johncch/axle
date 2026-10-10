@@ -691,7 +691,11 @@ describe("Agent.compact", () => {
     const send = agent.send("question").final;
     const compaction = agent.compact();
 
-    expect(transcript.pending.map((entry) => entry.kind)).toEqual(["send", "compaction"]);
+    expect(transcript.pending.map((turn) => turn.owner)).toEqual(["user", "agent"]);
+    expect(transcript.pending[1]).toMatchObject({
+      status: "pending",
+      parts: [{ type: "compaction", status: "pending" }],
+    });
     const compactionId = transcript.pending[1]?.id;
 
     release();
@@ -712,7 +716,7 @@ describe("Agent.compact", () => {
     const compaction = agent.compact().catch((error) => error);
 
     expect(agent.clear()).toBe(1);
-    expect(transcript.pending.map((entry) => entry.kind)).toEqual(["send"]);
+    expect(transcript.pending.map((turn) => turn.owner)).toEqual(["user"]);
 
     await send;
     expect(await compaction).toBeInstanceOf(AxleAgentAbortError);

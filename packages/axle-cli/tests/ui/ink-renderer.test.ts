@@ -124,7 +124,7 @@ describe("App", () => {
         staticItems: [],
         liveTurn: { id: "a1", owner: "agent", status: "streaming", parts: [] },
         awaitingInput,
-        pending: [{ id: "u2", kind: "send", turn: userTurn("u2", "queued one") }],
+        pending: [{ ...userTurn("u2", "queued one"), status: "pending" }],
         queuedInputs: [],
       });
     const render = (store: UiStore<UiState>) =>
@@ -141,8 +141,13 @@ describe("App", () => {
       staticItems: [],
       awaitingInput: true,
       pending: [
-        { id: "u1", kind: "send", turn: userTurn("u1", "also check the tests") },
-        { id: "c1", kind: "compaction" },
+        { ...userTurn("u1", "also check the tests"), status: "pending" },
+        {
+          id: "c1",
+          owner: "agent",
+          status: "pending",
+          parts: [{ id: "c1", type: "compaction", status: "pending" }],
+        },
       ],
       queuedInputs: [],
     });

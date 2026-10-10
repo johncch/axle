@@ -50,8 +50,11 @@ the step still yields one assistant message and counts once toward
 user turn or an agent turn. One send produces one user turn and one agent
 turn; the agent turn accumulates parts from every step of that send. Turns
 can also be started or ended by compaction: a manual compaction opens and
-closes its own agent turn around the compaction part. "Turn" never refers
-to a single assistant message or to a provider request.
+closes its own agent turn around the compaction part. A turn's `status`
+runs `pending` → `streaming` → `complete` | `cancelled` | `error`; a user
+turn skips `streaming`, and a `pending` turn lives only in
+`Transcript.pending`. "Turn" never refers to a single assistant message or
+to a provider request.
 
 **Send** — the Agent API verb: one scheduled conversation exchange
 (`agent.send(...)`), executed as a FIFO queue item. The host-facing unit of
@@ -84,12 +87,15 @@ and is never saved. The Agent holds no
 transcript — it emits events and keeps only the active `messages` (folded
 working memory, bounded by compaction). Lose the turns, lose the transcript.
 
-**Pending entry** — a placeholder for a turn the Agent has accepted but not
-yet opened: a queued `send()` or a queued manual compaction. It is keyed by
-the id its turn will carry and lives in `Transcript.pending`, never in
-`turns`. It ends when that turn opens or when the operation is dropped
-(cancelled, or failed during setup). Pending entries are live state: they are
-not saved, and a transcript restored from saved turns has none.
+**Pending turn** — a preview of a turn the Agent has accepted but not yet
+opened: the user turn a queued `send()` will commit, or an agent turn with
+one `pending` compaction part for a queued manual compaction. It is a `Turn`
+with `status: "pending"` and the id the real turn will carry, and it lives
+in `Transcript.pending`, never in `turns`. It ends when that turn opens or
+when the operation is dropped (cancelled, or failed during setup). Pending
+turns are live state: they are not saved, a transcript restored from saved
+turns has none, and a host seeds them through the constructor only to
+mirror a live transcript.
 
 **Session** — the continuable identity of a conversation (`sessionId`).
 `AgentSession` is its serialized form — the pure continuation

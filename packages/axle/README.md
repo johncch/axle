@@ -980,30 +980,45 @@ renderers that don't handle that part type simply render nothing for it.
 
 A send or a manual `agent.compact()` is an _operation_. The Agent runs one at
 a time, so an operation requested during a turn waits. `Transcript` shows
-that wait in `transcript.pending`, separate from `turns`:
+that wait in `transcript.pending`, separate from `turns`. Each entry is a
+`Turn` with `status: "pending"`: for a send, the user turn it will commit;
+for a compaction, an agent turn with one compaction part whose status is
+`"pending"`. So both lists render with the same component:
 
 ```typescript
 agent.send("Build the feature.");
 agent.send("Also check the tests."); // queued behind the first
 
-for (const entry of transcript.pending) {
-  if (entry.kind === "send") renderQueued(entry.turn); // a preview user turn
-  if (entry.kind === "compaction") renderQueuedCompaction();
+for (const turn of [...transcript.turns, ...transcript.pending]) {
+  render(turn); // dim it when turn.status === "pending"
 }
 ```
 
-Each entry carries the `id` of the turn it will open. `pending:queued` adds
-it when the operation is accepted, including one that starts at once. It
-leaves when that turn opens — the user turn for a send, the engine-opened
-turn for a compaction — and the turn that arrives has the same id, so a
-renderer can key a row by it and change its style in place. If the operation
-ends first, `pending:dropped` removes it with a `reason`. The reason is
+A pending turn carries the `id` the real turn will have. `pending:queued`
+adds it when the operation is accepted, including one that starts at once.
+It leaves when that turn opens — `turn:user` for a send, `turn:start` for a
+compaction — and the turn that arrives has the same id, so a renderer keyed
+by id replaces the preview in place. If the operation ends first,
+`pending:dropped` removes it with a `reason`. The reason is
 `{ type: "cancelled" }` for a cancelled handle, `agent.clear()`, or an
-aborted signal, and `{ type: "error", error }` when setup failed.
+aborted signal, and `{ type: "error", error }` when setup failed. A turn
+with `status: "pending"` never appears in `turns`.
 
-Pending entries are live state. They are never part of `turns`, so saving
+Pending turns are live state. They are never part of `turns`, so saving
 `turns` never saves them, and a `Transcript` restored from saved turns has
-none. An operation still queued when the process exits is lost.
+none. An operation still queued when the process exits is lost. The one
+time to construct a transcript with pending turns is to mirror a live one —
+a browser mirroring the server's transcript, say — where the server hands
+over both lists and the stream position in one read:
+
+```typescript
+const { turns, pending } = await fetchTranscript(); // read together, with the cursor
+const mirror = new Transcript(turns, pending);
+```
+
+The constructor drops a pending turn whose id is already in `turns`, since
+that turn opened before the mirror's cursor and its `turn:user` will not be
+replayed.
 
 Hosts that transport Axle events over SSE, WebSockets, or another mixed event
 stream can use `Transcript` instead of reimplementing this reducer:
