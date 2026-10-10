@@ -55,7 +55,8 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    activation result does.
    **Escaping** (2026-10-09): `description` and `compatibility` are author
    text the model reads for meaning, so wherever they are printed angle
-   brackets become `&lt;` and `&gt;` and line breaks collapse to a space.
+   brackets become `&lt;` and `&gt;` and line breaks (`\n`, `\r\n` or a
+   bare `\r`) collapse to a space.
    The name needs none (invariant 3). The body, `root` and `files` are
    printed raw: the body is Markdown whose code samples escaping would
    mangle, and the model hands paths back to the host's tools exactly, with
@@ -81,8 +82,11 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    ([compaction.md](./compaction.md)). The catalog survives compaction
    because the system prompt does.
 8. **Skills are live state, and every provider request reads them.**
-   `agent.skills` is a `SkillRegistry` (`add`, `remove`, `has`, `get`,
-   `list`, `size`) the host or a tool changes at any time. It owns
+   `agent.skills` is a `SkillRegistry` (`add`, `remove`, `set`, `has`,
+   `get`, `list`, `size`) the host or a tool changes at any time. `set`
+   replaces the whole list: it checks every name and rejects one listed
+   twice before touching anything, so a throw leaves the old list, and it
+   republishes once. A name already registered is not an error there. It owns
    `view-skill`: on every change it rebuilds the tool from the current list
    and republishes it into `agent.registry`. `agent.system` is derived —
    the configured prompt plus the catalog — and read-only. The Agent hands
@@ -156,7 +160,8 @@ Accepted consequences:
   base prompt at runtime asks for a setter and gets one then.
 - **A skill updated in place is `remove` then `add`.** `add` of a name
   already present throws `SKILL_REGISTRY_DUPLICATE`, as the tool registry
-  does for tools.
+  does for tools. (2026-10-09, later: `set` also replaces it, along with
+  the rest of the list.)
 
 ## Rejected alternatives
 
@@ -168,7 +173,10 @@ Accepted consequences:
 - **The catalog in `view-skill`'s description** (2026-10-09): see above.
 - **`agent.setSkills(list)`** (2026-10-09): the host keeps the full list and
   re-sends it on every change; a registry lets it add and remove by name,
-  which is what a connector does.
+  which is what a connector does. Later the same day `skills.set(list)`
+  was added beside `add` and `remove`, at sunnyday's request: a host that
+  already stores the full list hands it over in one call. It is a
+  convenience on the registry, not a replacement for it.
 - **Taking effect at the next turn only** (2026-10-09): simpler to state,
   but a tool that activated a skill would see nothing change until the user
   spoke again. The boundary callback makes "next request" cost the same.

@@ -26,12 +26,7 @@ export class SkillRegistry {
   add(skillOrSkills: Skill | Skill[]): void {
     const skills = Array.isArray(skillOrSkills) ? skillOrSkills : [skillOrSkills];
     for (const skill of skills) {
-      if (SKILL_NAME_FORBIDDEN_CHARACTERS.test(skill.name)) {
-        throw new AxleError(
-          `Skill name ${SKILL_NAME_FORBIDDEN_MESSAGE}: ${JSON.stringify(skill.name)}`,
-          { code: "SKILL_INVALID", details: { name: skill.name } },
-        );
-      }
+      this.assertSafeName(skill.name);
       if (this.skills.has(skill.name)) {
         throw new AxleError(`Skill already registered: ${skill.name}`, {
           code: "SKILL_REGISTRY_DUPLICATE",
@@ -40,6 +35,23 @@ export class SkillRegistry {
       }
     }
     for (const skill of skills) this.skills.set(skill.name, skill);
+    this.publish();
+  }
+
+  set(skills: Skill[]): void {
+    const replacement = new Map<string, Skill>();
+    for (const skill of skills) {
+      this.assertSafeName(skill.name);
+      if (replacement.has(skill.name)) {
+        throw new AxleError(`Skill listed twice: ${skill.name}`, {
+          code: "SKILL_REGISTRY_DUPLICATE",
+          details: { name: skill.name },
+        });
+      }
+      replacement.set(skill.name, skill);
+    }
+    this.skills.clear();
+    for (const [name, skill] of replacement) this.skills.set(name, skill);
     this.publish();
   }
 
@@ -63,6 +75,15 @@ export class SkillRegistry {
 
   get size(): number {
     return this.skills.size;
+  }
+
+  private assertSafeName(name: string): void {
+    if (SKILL_NAME_FORBIDDEN_CHARACTERS.test(name)) {
+      throw new AxleError(`Skill name ${SKILL_NAME_FORBIDDEN_MESSAGE}: ${JSON.stringify(name)}`, {
+        code: "SKILL_INVALID",
+        details: { name },
+      });
+    }
   }
 
   private publish(): void {

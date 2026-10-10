@@ -69,7 +69,7 @@ function viewSkillSchema(names: string[]) {
 
 function escapeForPrompt(text: string): string {
   return text
-    .replace(/\s*\n\s*/g, " ")
+    .replace(/\s*[\r\n]\s*/g, " ")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }

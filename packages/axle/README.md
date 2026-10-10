@@ -568,14 +568,17 @@ Skills can change while the agent runs. `agent.skills` is a registry:
 ```typescript
 agent.skills.add(await loadSkill("./skills/docx")); // catalog and tool update
 agent.skills.remove("pdf");
+agent.skills.set(currentSkills); // replace the whole list
 agent.skills.list(); // Skill[]
 ```
 
 The next provider request sees the change — the next turn, or the next step
 of a running turn when a tool calls `agent.skills.add(...)`. Removing the
 last skill removes the catalog and the tool. Adding a name that is already
-present throws; update a skill with `remove` then `add`. A name containing
-`<`, `>`, `"` or a line break is rejected, by the parser and by `add`.
+present throws; update a skill with `remove` then `add`, or hand `set` the
+full list. `set` throws before changing anything when a name appears twice
+in the list. A name containing `<`, `>`, `"` or a line break is rejected,
+by the parser, by `add` and by `set`.
 
 A `Skill` is plain data, so storage is yours to choose. `loadSkill(dir)` is
 the filesystem convenience; `parseSkillMarkdown(text)` parses a `SKILL.md`

@@ -77,6 +77,53 @@ describe("SkillRegistry", () => {
     },
   );
 
+  describe("set", () => {
+    const xlsx: Skill = { name: "xlsx", description: "Spreadsheets.", instructions: "Tabulate." };
+
+    test("replaces the whole list, including a name already present", () => {
+      const tools = new ToolRegistry();
+      const skills = new SkillRegistry(tools, [pdf, docx]);
+      const newerPdf = { ...pdf, instructions: "Split." };
+
+      skills.set([xlsx, newerPdf]);
+
+      expect(skills.list()).toEqual([xlsx, newerPdf]);
+      expect(viewSkillNames(tools)).toEqual(["xlsx", "pdf"]);
+    });
+
+    test("an empty list withdraws view-skill", () => {
+      const tools = new ToolRegistry();
+      const skills = new SkillRegistry(tools, [pdf]);
+
+      skills.set([]);
+
+      expect(skills.size).toBe(0);
+      expect(tools.get("view-skill")).toBeUndefined();
+    });
+
+    test("rejects a name repeated in the new list and keeps the old list", () => {
+      const tools = new ToolRegistry();
+      const skills = new SkillRegistry(tools, [pdf]);
+
+      expect(() => skills.set([docx, xlsx, { ...docx, instructions: "other" }])).toThrow(
+        expect.objectContaining({ code: "SKILL_REGISTRY_DUPLICATE" }),
+      );
+      expect(skills.list()).toEqual([pdf]);
+      expect(viewSkillNames(tools)).toEqual(["pdf"]);
+    });
+
+    test("rejects an unsafe name and keeps the old list", () => {
+      const tools = new ToolRegistry();
+      const skills = new SkillRegistry(tools, [pdf]);
+
+      expect(() => skills.set([docx, { ...xlsx, name: "a<b" }])).toThrow(
+        /must not contain <, >, " or line breaks/,
+      );
+      expect(skills.list()).toEqual([pdf]);
+      expect(viewSkillNames(tools)).toEqual(["pdf"]);
+    });
+  });
+
   test("never removes a host tool that happens to be named view-skill", () => {
     const hostViewSkill = {
       name: "view-skill",
