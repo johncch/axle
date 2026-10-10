@@ -14,6 +14,7 @@ export function openai(apiKey: string, options: ProviderClientOptions = {}): AIP
       ? { timeout: requireInteger(options.timeoutMs, "timeoutMs", { min: 1 }) }
       : {}),
     ...(options.headers !== undefined ? { defaultHeaders: options.headers } : {}),
+    ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
   });
 
   return {

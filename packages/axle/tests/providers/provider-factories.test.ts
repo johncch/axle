@@ -39,6 +39,17 @@ describe("provider client factory options", () => {
     });
   });
 
+  test("passes a custom fetch to the OpenAI SDK", async () => {
+    const OpenAI = vi.fn();
+    vi.doMock("openai", () => ({ default: OpenAI }));
+    const customFetch = vi.fn<typeof fetch>();
+
+    const { openai } = await import("../../src/providers/openai/provider.js");
+    openai("sk-test", { fetch: customFetch });
+
+    expect(OpenAI).toHaveBeenCalledWith({ apiKey: "sk-test", maxRetries: 2, fetch: customFetch });
+  });
+
   test("rejects invalid OpenAI client options", async () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
@@ -80,6 +91,21 @@ describe("provider client factory options", () => {
       apiKey: "sk-ant-test",
       maxRetries: 2,
       defaultHeaders: HEADERS,
+    });
+  });
+
+  test("passes a custom fetch to the Anthropic SDK", async () => {
+    const Anthropic = vi.fn();
+    vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
+    const customFetch = vi.fn<typeof fetch>();
+
+    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    anthropic("sk-ant-test", { fetch: customFetch });
+
+    expect(Anthropic).toHaveBeenCalledWith({
+      apiKey: "sk-ant-test",
+      maxRetries: 2,
+      fetch: customFetch,
     });
   });
 
@@ -126,6 +152,20 @@ describe("provider client factory options", () => {
     expect(GoogleGenAI).toHaveBeenCalledWith({
       apiKey: "gemini-test",
       httpOptions: { retryOptions: { attempts: 3 }, headers: HEADERS },
+    });
+  });
+
+  test("passes a custom fetch to Gemini HTTP options", async () => {
+    const GoogleGenAI = vi.fn();
+    vi.doMock("@google/genai", () => ({ GoogleGenAI }));
+    const customFetch = vi.fn<typeof fetch>();
+
+    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    gemini("gemini-test", { fetch: customFetch });
+
+    expect(GoogleGenAI).toHaveBeenCalledWith({
+      apiKey: "gemini-test",
+      httpOptions: { retryOptions: { attempts: 3 }, fetch: customFetch },
     });
   });
 

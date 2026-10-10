@@ -64,7 +64,7 @@ export function typesafe(apiKey: string, options: TypesafeOptions = {}): Decisio
     ): Promise<DecisionResponse> {
       const response = await withRetry(
         ({ signal }) =>
-          fetch(`${baseUrl}/v1/systemone`, {
+          (options.fetch ?? fetch)(`${baseUrl}/v1/systemone`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

@@ -15,6 +15,7 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
         ? { timeout: requireInteger(options.timeoutMs, "timeoutMs", { min: 1 }) }
         : {}),
       ...(options.headers !== undefined ? { headers: options.headers } : {}),
+      ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
     },
   });
 

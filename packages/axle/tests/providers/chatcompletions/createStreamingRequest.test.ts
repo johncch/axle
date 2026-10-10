@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/chatcompletions/createStreamingRequest.js";
+import { chatCompletions } from "../../../src/providers/chatcompletions/provider.js";
 import { stream } from "../../../src/providers/stream.js";
 import type { AIProvider } from "../../../src/providers/types.js";
 import { AxleStopReason } from "../../../src/providers/types.js";
@@ -590,6 +591,82 @@ describe("createStreamingRequest", () => {
     expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
     expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
     vi.useRealTimers();
+  });
+
+  describe("with a supplied fetch", () => {
+    const sseBody = [
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] })}`,
+      "",
+      `data: ${JSON.stringify({ id: "c-1", model: MODEL, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}`,
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    const okResponse = () =>
+      new Response(sseBody, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+    test("sends the request through it and leaves the global alone", async () => {
+      const customFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(okResponse());
+      const provider = chatCompletions(BASE_URL, { apiKey: "sk-test", fetch: customFetch });
+
+      const chunks = await collectChunks(
+        provider.createStreamingRequest(MODEL, {
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+        }),
+      );
+
+      const [url, init] = customFetch.mock.calls[0];
+      expect(url).toBe(`${BASE_URL}/chat/completions`);
+      expect(init?.method).toBe("POST");
+      expect(fetch).not.toHaveBeenCalled();
+      expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
+      expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    });
+
+    test("retries a rate-limited request", async () => {
+      const customFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response("slow down", { status: 429, headers: { "retry-after-ms": "0" } }),
+        )
+        .mockResolvedValueOnce(okResponse());
+      const provider = chatCompletions(BASE_URL, { fetch: customFetch, maxRetries: 1 });
+
+      const chunks = await collectChunks(
+        provider.createStreamingRequest(MODEL, {
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+        }),
+      );
+
+      expect(customFetch).toHaveBeenCalledTimes(2);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    });
+
+    test("times out an unanswered request and aborts its signal", async () => {
+      vi.useFakeTimers();
+      const customFetch = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+      const provider = chatCompletions(BASE_URL, {
+        fetch: customFetch,
+        maxRetries: 0,
+        timeoutMs: 50,
+      });
+
+      const pending = collectChunks(
+        provider.createStreamingRequest(MODEL, {
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      const chunks = await pending;
+      vi.useRealTimers();
+
+      expect(chunks[0].type).toBe("error");
+      expect(customFetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    });
   });
 
   describe("request construction", () => {

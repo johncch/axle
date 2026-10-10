@@ -179,4 +179,65 @@ describe("typesafe", () => {
       decide({ provider: typesafe("ts-key"), model: "jev-latest", input: "text", questions }),
     ).rejects.toMatchObject({ code: "DECISION_RESPONSE_INVALID" });
   });
+
+  describe("with a supplied fetch", () => {
+    test("sends the request through it and leaves the global alone", async () => {
+      const globalFetch = stubFetch();
+      const customFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(responseBody));
+
+      const result = await decide({
+        provider: typesafe("ts-key", { fetch: customFetch }),
+        model: "jev-latest",
+        input: "text",
+        questions,
+      });
+
+      const [url, init] = customFetch.mock.calls[0];
+      expect(url).toBe("https://api.typesafe.ai/v1/systemone");
+      expect(init?.method).toBe("POST");
+      expect(globalFetch).not.toHaveBeenCalled();
+      expect(result.model).toBe("jev-1.13.0");
+    });
+
+    test("retries a rate-limited request", async () => {
+      const globalFetch = stubFetch();
+      const customFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response("slow down", { status: 429, headers: { "retry-after-ms": "0" } }),
+        )
+        .mockResolvedValueOnce(Response.json(responseBody));
+
+      const result = await decide({
+        provider: typesafe("ts-key", { fetch: customFetch }),
+        model: "jev-latest",
+        input: "text",
+        questions,
+      });
+
+      expect(customFetch).toHaveBeenCalledTimes(2);
+      expect(globalFetch).not.toHaveBeenCalled();
+      expect(result.model).toBe("jev-1.13.0");
+    });
+
+    test("times out an unanswered request and aborts its signal", async () => {
+      vi.useFakeTimers();
+      const customFetch = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+      const outcome = decide({
+        provider: typesafe("ts-key", { fetch: customFetch, maxRetries: 0, timeoutMs: 50 }),
+        model: "jev-latest",
+        input: "text",
+        questions,
+      }).catch((error: Error) => error);
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(await outcome).toMatchObject({
+        name: "TimeoutError",
+        message: "Request timed out after 50ms",
+      });
+      expect(customFetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    });
+  });
 });
