@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.34.0] - 2026-10-10
+
+- **Breaking (CLI):** untrusted folders no longer load project `.axle/` configuration or credentials, and tools that can modify or execute (`exec`, `patch-file`, and `write-file`) are disabled until you run `axle trust` for that folder.
+- **Breaking (CLI):** schedule commands now register jobs with `axle schedule add`; use `axle -j` for a proof run. `remove` and `sessions` select schedules by name.
+- Added CLI skill discovery from user and trusted project skill directories; `axle info` reports loaded, shadowed, ignored, and invalid skills.
+- Added experimental typed decisions with `decide()` and the `typesafe()` provider.
+- Added live skill updates that take effect at the next provider request, plus safer skill-name validation and escaped skill output.
+- Added per-provider custom fetch support and moved web-search configuration into provider tools.
+- Added Agent `onIdle` callbacks, awaitable settlement hooks, queued-operation tracking, and cancellation support; snapshots now wait for the Agent to become idle.
+- CLI chat now tracks queued sends and compactions as pending work, supports queuing input during a turn, and improves interrupt and session-settlement behavior.
+- Added model-catalog context-window lookup and display in `axle info`; the CLI status bar now shows context use as a percentage. Removed `AXLE_CONTEXT_WINDOW`.
+- Improved CLI credential loading and development-build version reporting, and removed the generic chat-completions provider from the CLI.
+- Fixed OpenAI web-search citations that could crash core, and improved handling of dropped or malformed skill data.
+
 ## [0.33.0] - 2026-10-06
 
 - **Breaking:** removed the model registry. The `@fifthrevision/axle/models` entry point no longer exists; pass model IDs as plain strings (`"openai/gpt-5.5"`), and OpenRouter IDs are sent unchanged.
