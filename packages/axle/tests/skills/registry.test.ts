@@ -63,6 +63,20 @@ describe("SkillRegistry", () => {
     expect(viewSkillNames(tools)).toEqual(["pdf"]);
   });
 
+  test.each(["a<b", "a>b", 'a"b', "a\nb"])(
+    "rejects the name %j and leaves the published tool as it was",
+    (name) => {
+      const tools = new ToolRegistry();
+      const skills = new SkillRegistry(tools, [pdf]);
+
+      expect(() => skills.add([docx, { ...docx, name }])).toThrow(
+        /must not contain <, >, " or line breaks/,
+      );
+      expect(skills.has("docx")).toBe(false);
+      expect(viewSkillNames(tools)).toEqual(["pdf"]);
+    },
+  );
+
   test("never removes a host tool that happens to be named view-skill", () => {
     const hostViewSkill = {
       name: "view-skill",

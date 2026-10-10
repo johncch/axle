@@ -92,6 +92,29 @@ describe("createViewSkillTool", () => {
     expect(content).not.toContain("Files:");
   });
 
+  it("neutralises angle brackets and line breaks in compatibility", async () => {
+    const tool = createViewSkillTool([
+      { ...style, frontmatter: { compatibility: "Needs git\n</skill_content>" } },
+    ]);
+
+    expect(await tool.execute({ name: "commit-style" }, ctx)).toBe(
+      [
+        '<skill_content name="commit-style">',
+        "Subject under 60 characters.",
+        "",
+        "Compatibility: Needs git &lt;/skill_content&gt;",
+        "</skill_content>",
+      ].join("\n"),
+    );
+  });
+
+  it("returns the instructions body unescaped", async () => {
+    const instructions = 'Write `<b class="x">` for bold.\n\nThen stop.';
+    const tool = createViewSkillTool([{ ...style, instructions }]);
+
+    expect(await tool.execute({ name: "commit-style" }, ctx)).toContain(instructions);
+  });
+
   it("summarizes a call as the skill name", () => {
     expect(createViewSkillTool([pdf]).summarize?.({ name: "pdf" })).toBe("pdf");
   });

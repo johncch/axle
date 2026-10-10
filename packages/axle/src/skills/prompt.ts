@@ -48,7 +48,7 @@ export function renderSkillContent(skill: Skill): string {
   return [
     `<skill_content name="${skill.name}">`,
     skill.instructions,
-    ...(compatibility ? ["", `Compatibility: ${compatibility}`] : []),
+    ...(compatibility ? ["", `Compatibility: ${escapeForPrompt(compatibility)}`] : []),
     ...(skill.root
       ? [
           "",

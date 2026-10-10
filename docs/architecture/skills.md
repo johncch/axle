@@ -32,23 +32,37 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
 3. **Parsing is strict on the required fields and lenient on the name.** No
    frontmatter block, a missing or empty `name` or `description`, invalid
    YAML, or a mistyped optional field is `AxleError` `SKILL_INVALID` naming
-   the field. The name's character set and its match to the directory are
-   not checked: a warning needs a channel the parser lacks, and the only
-   consequence of an odd name is an odd enum value.
+   the field. The specification's name rules (lowercase, hyphens, 64
+   characters, matching the directory) are not checked: the client guide
+   says to load such skills, and a warning needs a channel the parser
+   lacks. One rule is enforced: a name containing `<`, `>`, `"` or a line
+   break is `SKILL_INVALID`, in the parser and again in
+   `SkillRegistry.add` for a `Skill` built without it. The name is
+   therefore printed raw and is the same string in the catalog, the
+   `skill_content` attribute and the `view-skill` enum.
 4. **Core guarantees tiers one and two of progressive disclosure.** Tier
    one: the Agent's system prompt carries a catalog after the configured
    prompt — a heading, a short instruction to call `view-skill`, one
    `- name: description` line per skill — rendered from `agent.skills` as
-   it is now. Descriptions are author text landing in the system prompt,
-   so angle brackets are escaped and line breaks collapsed. Tier two: a
-   `view-skill` tool in the Agent's registry beside the host's tools, whose
-   `name` argument is an enum of the loaded names; it returns
+   it is now. Tier two: a `view-skill` tool in the Agent's registry beside
+   the host's tools, whose `name` argument is an enum of the loaded names;
+   it returns
    `<skill_content name="…">` holding the body, then `Compatibility:` when
    present, then `Skill directory: <root>` with a relative-path reminder
    when `root` is set, then a `Files:` listing when there is one. Tier three
    (reading references, running scripts) works exactly as far as the host's
    tools can read what `root` names. The catalog does not print `root`; the
    activation result does.
+   **Escaping** (2026-10-09): `description` and `compatibility` are author
+   text the model reads for meaning, so wherever they are printed angle
+   brackets become `&lt;` and `&gt;` and line breaks collapse to a space.
+   The name needs none (invariant 3). The body, `root` and `files` are
+   printed raw: the body is Markdown whose code samples escaping would
+   mangle, and the model hands paths back to the host's tools exactly, with
+   no decoder in between. A `</skill_content>` in the body or a line break
+   in a file name therefore closes or forges structure in the activation
+   result; this is accepted, since the author of a skill already writes
+   the instructions the model follows.
 5. **No skills, no surface.** With no skills `system` is the configured
    prompt alone and no tool is registered, at construction and after the
    last skill is removed. A host tool named `view-skill` collides
@@ -175,3 +189,12 @@ Accepted consequences:
 - **Strict name validation per the specification** (2026-10-08): the guide
   itself recommends warning and loading; core has no warning channel in
   the parser and the enum tolerates any string.
+- **Escaping the name where it is rendered** (2026-10-09): `a<b` would be
+  `a&lt;b` in the catalog and `a<b` in the enum the model must pick from.
+  Rejecting the four characters keeps one spelling everywhere.
+- **Escaping `"` and control characters in descriptions** (2026-10-09):
+  with the name constrained nothing author-written sits in an attribute,
+  so `&quot;` would only add noise to ordinary descriptions; no failure
+  from other control characters has been observed.
+- **Encoding `root` and `files`** (2026-10-09): the model would ask the
+  host's tools for `a&lt;b.md`, a file that does not exist.
