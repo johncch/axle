@@ -14,8 +14,8 @@ import type { SpanData } from "../../src/observability/index.js";
 import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
-import { Transcript } from "../../src/turns/transcript.js";
 import type { TurnEvent } from "../../src/turns/events.js";
+import { Transcript } from "../../src/turns/transcript.js";
 import type { CompactionPart, Turn } from "../../src/turns/types.js";
 
 function isCompactionTurn(turn: Turn): boolean {
@@ -735,12 +735,19 @@ describe("Agent.compact", () => {
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const summary = [user("summary")];
     agent.setCompaction({ compact: () => ({ messages: summary }) });
-    const settled: AxleMessage[][] = [];
-    agent.onSettled((session) => settled.push(session.messages));
+    const settled: { messages: AxleMessage[]; operation: unknown }[] = [];
+    agent.onSettled((session, operation) => {
+      settled.push({ messages: session.messages, operation });
+    });
 
     await agent.compact();
 
-    expect(settled).toEqual([summary]);
+    expect(settled).toEqual([
+      {
+        messages: summary,
+        operation: { kind: "compaction", result: { status: "fulfilled", value: true } },
+      },
+    ]);
   });
 
   test("a throwing onSettled callback cannot fail a manual compaction", async () => {
@@ -754,18 +761,24 @@ describe("Agent.compact", () => {
     await expect(agent.compact()).resolves.toBe(true);
   });
 
-  test("onSettled does not fire for a compaction aborted before it starts", async () => {
+  test("onSettled fires with the rejection for a compaction that ran with an aborted signal", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     agent.setCompaction({ compact: () => ({ messages: [user("summary")] }) });
-    const settled: unknown[] = [];
-    agent.onSettled((session) => settled.push(session));
+    const settled: { messages: AxleMessage[]; operation: unknown }[] = [];
+    agent.onSettled((session, operation) => {
+      settled.push({ messages: session.messages, operation });
+    });
 
-    await expect(agent.compact({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(
-      AxleAgentAbortError,
-    );
+    const error = await agent.compact({ signal: AbortSignal.abort() }).catch((e) => e);
 
-    expect(settled).toEqual([]);
+    expect(error).toBeInstanceOf(AxleAgentAbortError);
+    expect(settled).toEqual([
+      {
+        messages: FOUR_MESSAGES,
+        operation: { kind: "compaction", result: { status: "rejected", reason: error } },
+      },
+    ]);
   });
 
   test("snapshot requested mid-send waits for quiescence and never captures a running turn", async () => {

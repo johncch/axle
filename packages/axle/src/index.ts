@@ -20,6 +20,8 @@ export type {
   ResolvedAgentDefinition,
   SavedAgent,
   SendMessageOptions,
+  SettledCallback,
+  SettledOperation,
   ToolDefinitionRef,
   TurnEventCallback,
 } from "./core/agent/index.js";

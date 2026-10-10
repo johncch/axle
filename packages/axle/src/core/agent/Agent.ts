@@ -35,6 +35,8 @@ import type {
   CompactionConfig,
   CompactionTrigger,
   SendMessageOptions,
+  SettledCallback,
+  SettledOperation,
   TurnEventCallback,
 } from "./types.js";
 
@@ -69,7 +71,7 @@ export class Agent {
   private ownedTracer?: Tracer;
 
   private eventCallbacks: TurnEventCallback[] = [];
-  private settledCallbacks: ((session: AgentSession) => void)[] = [];
+  private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
   private scheduler = new AgentScheduler();
   private turnActive = false;
@@ -140,17 +142,28 @@ export class Agent {
   /**
    * Receive the session each time an operation settles.
    *
-   * Fires once after every send or manual compaction that opened a turn,
-   * after that turn's `turn:end` and before the operation's handle settles.
-   * The agent is at rest and the next queued operation has not started, so a
-   * host that reads its `Transcript.turns` inside the callback gets turns and
-   * messages that match. An operation dropped before opening its turn commits
-   * nothing and does not fire. The value is the one `snapshot()` returns;
-   * unlike `snapshot()`, it does not wait behind queued operations. A
-   * callback that throws cannot affect the operation: the error is recorded
-   * on the trace and the remaining callbacks still run.
+   * Fires once after every send or manual compaction that ran, however it
+   * ended: after its `turn:end` when it opened a turn, and before its handle
+   * settles. The agent is at rest and the next queued operation has not
+   * started, so a host that reads its `Transcript.turns` inside the callback
+   * gets turns and messages that match. An operation cancelled while still
+   * queued never ran and does not fire. The session is the one `snapshot()`
+   * returns; unlike `snapshot()`, it does not wait behind queued operations.
+   * The operation carries exactly what the handle is about to settle with:
+   * the result on success, the rejection reason otherwise.
+   *
+   * A callback may return a promise. The handle does not settle and the next
+   * queued operation does not start until every callback has settled; all
+   * callbacks run together. A callback that throws or rejects cannot affect
+   * the operation: the error is recorded on the trace and the other callbacks
+   * still run. The operation is already done while callbacks run, so
+   * `cancel()` and `stop()` return `false` in that window.
+   *
+   * Do not await `send()`, `compact()` or `snapshot()` on this agent from
+   * inside a callback: the callback holds the queue they wait for, so the
+   * nested call deadlocks.
    */
-  onSettled(callback: (session: AgentSession) => void) {
+  onSettled(callback: SettledCallback) {
     this.settledCallbacks.push(callback);
     return () => {
       const index = this.settledCallbacks.indexOf(callback);
@@ -216,6 +229,7 @@ export class Agent {
             id: userTurn.id,
             reason: { type: "cancelled" },
           }),
+        settle: (result) => this.settle({ kind: "send", result }),
       },
     );
   }
@@ -466,7 +480,6 @@ export class Agent {
       this.turnActive = false;
       this.stopRequested = false;
       this.transcript = new Transcript();
-      if (userTurnOpened) this.emitSettled(root);
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -530,6 +543,7 @@ export class Agent {
         signal: options?.signal,
         operation: "compact",
         onWithdrawn: dropCancelled,
+        settle: (result) => this.settle({ kind: "compaction", result }),
       },
     ).final;
   }
@@ -666,7 +680,6 @@ export class Agent {
         return "errored";
       }
     } finally {
-      if (run.target.type === "self-wrapped") this.emitSettled(root);
       root?.end(status);
       await this.ownedTracer?.flush();
     }
@@ -694,16 +707,27 @@ export class Agent {
     return { sessionId: this.sessionId, messages: this.messages };
   }
 
-  private emitSettled(span: Span | undefined): void {
+  private async settle(operation: SettledOperation): Promise<void> {
     if (this.settledCallbacks.length === 0) return;
     const session = this.currentSession();
-    for (const cb of this.settledCallbacks) {
-      try {
-        cb(session);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        span?.warn(`onSettled callback threw: ${message}`);
-      }
+    const span = this.spanParent?.startSpan("agent.settle", {
+      type: "workflow",
+      attributes: { sessionId: this.sessionId, kind: operation.kind },
+    });
+    try {
+      await Promise.all(
+        this.settledCallbacks.map(async (cb) => {
+          try {
+            await cb(session, operation);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            span?.warn(`onSettled callback threw: ${message}`);
+          }
+        }),
+      );
+    } finally {
+      span?.end();
+      await this.ownedTracer?.flush();
     }
   }
 

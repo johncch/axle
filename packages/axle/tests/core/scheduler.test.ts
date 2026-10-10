@@ -97,4 +97,73 @@ describe("AgentScheduler", () => {
     release();
     await expect(first.final).resolves.toBe("first");
   });
+
+  test("settle runs with the work's result after it finishes and before the handle or the next task", async () => {
+    const scheduler = new AgentScheduler();
+    const order: string[] = [];
+    const results: PromiseSettledResult<string>[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+
+    const first = scheduler.schedule(async () => "one", {
+      settle: async (result) => {
+        results.push(result);
+        order.push("settle start");
+        await gate;
+        order.push("settle end");
+      },
+    });
+    const second = scheduler.schedule(async () => {
+      order.push("second runs");
+      return "two";
+    });
+    const firstDone = first.final.then((value) => order.push(`first ${value}`));
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(order).toEqual(["settle start"]);
+    expect(scheduler.cancelCurrent("late")).toBe(false);
+
+    release();
+    await firstDone;
+    await expect(second.final).resolves.toBe("two");
+    expect(order).toEqual(["settle start", "settle end", "first one", "second runs"]);
+    expect(results).toEqual([{ status: "fulfilled", value: "one" }]);
+  });
+
+  test("settle sees a rejection and the handle still rejects with it", async () => {
+    const scheduler = new AgentScheduler();
+    const results: PromiseSettledResult<never>[] = [];
+    const failure = new Error("boom");
+
+    const handle = scheduler.schedule<never>(
+      async () => {
+        throw failure;
+      },
+      { settle: (result) => void results.push(result) },
+    );
+
+    await expect(handle.final).rejects.toBe(failure);
+    expect(results).toEqual([{ status: "rejected", reason: failure }]);
+  });
+
+  test("cancelling a handle while it settles changes nothing", async () => {
+    const scheduler = new AgentScheduler();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let signalDuringSettle: AbortSignal | undefined;
+
+    const handle = scheduler.schedule(
+      async ({ signal }) => {
+        signalDuringSettle = signal;
+        return "done";
+      },
+      { settle: () => gate },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    handle.cancel("too late");
+    release();
+
+    await expect(handle.final).resolves.toBe("done");
+    expect(signalDuringSettle?.aborted).toBe(false);
+  });
 });
