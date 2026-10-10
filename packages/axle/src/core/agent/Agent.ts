@@ -207,10 +207,7 @@ export class Agent {
     const message = instruct.toMessage({ metadata });
     const userTurn = userTurnFromMessage(message);
 
-    this.emitEvent({
-      type: "pending:queued",
-      entry: { id: userTurn.id, kind: "send", turn: userTurn },
-    });
+    this.emitEvent({ type: "pending:queued", turn: { ...userTurn, status: "pending" } });
 
     return this.scheduler.schedule(
       ({ signal }) =>
@@ -524,7 +521,15 @@ export class Agent {
     const id = crypto.randomUUID();
     const dropCancelled = (): void =>
       this.emitEvent({ type: "pending:dropped", id, reason: { type: "cancelled" } });
-    this.emitEvent({ type: "pending:queued", entry: { id, kind: "compaction" } });
+    this.emitEvent({
+      type: "pending:queued",
+      turn: {
+        id,
+        owner: "agent",
+        status: "pending",
+        parts: [{ id, type: "compaction", status: "pending" }],
+      },
+    });
 
     return this.scheduler.schedule(
       async ({ signal }) => {

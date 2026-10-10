@@ -497,15 +497,18 @@ describe("Transcript", () => {
   });
 
   describe("pending entries", () => {
-    const queuedSend = (id: string) =>
+    const pendingUser = (id: string) =>
+      ({ id, owner: "user", parts: [], status: "pending" }) as const satisfies Turn;
+    const pendingCompaction = (id: string) =>
       ({
-        type: "pending:queued",
-        entry: {
-          id,
-          kind: "send",
-          turn: { id, owner: "user", parts: [], status: "complete" },
-        },
-      }) as const;
+        id,
+        owner: "agent",
+        parts: [{ id, type: "compaction", status: "pending" }],
+        status: "pending",
+      }) as const satisfies Turn;
+    const queuedSend = (id: string) => ({ type: "pending:queued", turn: pendingUser(id) }) as const;
+    const queuedCompaction = (id: string) =>
+      ({ type: "pending:queued", turn: pendingCompaction(id) }) as const;
 
     test("a queued send is pending and absent from turns", () => {
       const transcript = new Transcript();
@@ -513,7 +516,7 @@ describe("Transcript", () => {
       const result = transcript.apply(queuedSend("u1"));
 
       expect(result.handled).toBe(true);
-      expect(transcript.pending.map((entry) => entry.id)).toEqual(["u1"]);
+      expect(transcript.pending).toEqual([pendingUser("u1")]);
       expect(transcript.turns).toEqual([]);
     });
 
@@ -527,13 +530,13 @@ describe("Transcript", () => {
         turn: { id: "u1", owner: "user", parts: [], status: "complete" },
       });
 
-      expect(transcript.pending.map((entry) => entry.id)).toEqual(["u2"]);
+      expect(transcript.pending.map((turn) => turn.id)).toEqual(["u2"]);
       expect(transcript.turns.map((turn) => turn.id)).toEqual(["u1"]);
     });
 
     test("a compaction leaves pending when its agent turn starts", () => {
       const transcript = new Transcript();
-      transcript.apply({ type: "pending:queued", entry: { id: "c1", kind: "compaction" } });
+      transcript.apply(queuedCompaction("c1"));
 
       transcript.apply({ type: "turn:start", turnId: "c1" });
 
@@ -544,7 +547,7 @@ describe("Transcript", () => {
     test("a dropped entry leaves pending without reaching turns", () => {
       const transcript = new Transcript();
       transcript.apply(queuedSend("u1"));
-      transcript.apply({ type: "pending:queued", entry: { id: "c1", kind: "compaction" } });
+      transcript.apply(queuedCompaction("c1"));
       transcript.apply(queuedSend("u2"));
 
       transcript.apply({ type: "pending:dropped", id: "c1", reason: { type: "cancelled" } });
@@ -554,8 +557,33 @@ describe("Transcript", () => {
         reason: { type: "error", error: { type: "mcp", message: "unreachable" } },
       });
 
-      expect(transcript.pending.map((entry) => entry.id)).toEqual(["u2"]);
+      expect(transcript.pending.map((turn) => turn.id)).toEqual(["u2"]);
       expect(transcript.turns).toEqual([]);
+    });
+
+    test("seeded pending turns mirror a live transcript and resolve like queued ones", () => {
+      const transcript = new Transcript([], [pendingUser("u1"), pendingCompaction("c1")]);
+      expect(transcript.pending.map((turn) => turn.id)).toEqual(["u1", "c1"]);
+      expect(transcript.turns).toEqual([]);
+
+      transcript.apply({
+        type: "turn:user",
+        turn: { id: "u1", owner: "user", parts: [], status: "complete" },
+      });
+      transcript.apply({ type: "pending:dropped", id: "c1", reason: { type: "cancelled" } });
+
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns.map((turn) => turn.id)).toEqual(["u1"]);
+    });
+
+    test("a seeded pending turn whose turn is already in turns is discarded", () => {
+      const transcript = new Transcript(
+        [{ id: "u1", owner: "user", parts: [], status: "complete" }],
+        [pendingUser("u1"), pendingUser("u2")],
+      );
+
+      expect(transcript.pending.map((turn) => turn.id)).toEqual(["u2"]);
+      expect(transcript.turns.map((turn) => turn.id)).toEqual(["u1"]);
     });
 
     test("an unrelated turn leaves pending entries in place", () => {

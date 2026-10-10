@@ -1,7 +1,6 @@
 import {
   renderTerminalMarkdown,
   type ActionPart,
-  type PendingEntry,
   type Turn,
   type TurnPart,
 } from "@fifthrevision/axle/ui";
@@ -40,9 +39,9 @@ export function App({
         {(item, index) => <StaticItemView key={index} item={item} />}
       </Static>
       {state.liveTurn && <LiveRegion turn={state.liveTurn} />}
-      {state.pending.map((entry) => (
-        <Text key={entry.id} dimColor>
-          {pendingLabel(entry)} (queued)
+      {state.pending.map((turn) => (
+        <Text key={turn.id} dimColor>
+          {pendingLabel(turn)} (queued)
         </Text>
       ))}
       {state.queuedInputs.map((queued, index) => (
@@ -64,9 +63,9 @@ export function App({
   );
 }
 
-function pendingLabel(entry: PendingEntry): string {
-  if (entry.kind === "compaction") return "Compaction";
-  const text = entry.turn.parts.find((part) => part.type === "text")?.text ?? "";
+function pendingLabel(turn: Turn): string {
+  if (turn.parts.some((part) => part.type === "compaction")) return "Compaction";
+  const text = turn.parts.find((part) => part.type === "text")?.text ?? "";
   return `\u276f ${text}`;
 }
 

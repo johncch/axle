@@ -6,7 +6,6 @@ import type {
   Annotation,
   CompactionUpdate,
   PendingDropReason,
-  PendingEntry,
   TimingInfo,
   Turn,
   TurnPart,
@@ -23,7 +22,7 @@ export type AnnotationEvent<TAnnotation extends Annotation = Annotation> =
 
 export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   // Pending lifecycle
-  | { type: "pending:queued"; entry: PendingEntry<TAnnotation> }
+  | { type: "pending:queued"; turn: Turn<TAnnotation> }
   | { type: "pending:dropped"; id: string; reason: PendingDropReason }
   // Turn lifecycle
   | { type: "turn:user"; turn: Turn<TAnnotation> }

@@ -1,5 +1,5 @@
 import type { AnnotationEvent, TurnEvent } from "./events.js";
-import type { Annotation, PendingEntry, Turn, TurnPart } from "./types.js";
+import type { Annotation, Turn, TurnPart } from "./types.js";
 
 export type UnknownEvent = { type: string };
 
@@ -68,17 +68,21 @@ export class Transcript<
   THostEvent extends UnknownEvent = UnknownEvent,
 > {
   private _turns: Turn<TAnnotation>[];
-  private _pending: PendingEntry<TAnnotation>[] = [];
+  private _pending: Turn<TAnnotation>[];
 
-  constructor(turns: readonly Turn<TAnnotation>[] = []) {
+  constructor(
+    turns: readonly Turn<TAnnotation>[] = [],
+    pending: readonly Turn<TAnnotation>[] = [],
+  ) {
     this._turns = [...turns];
+    this._pending = pending.filter((entry) => !turns.some((turn) => turn.id === entry.id));
   }
 
   get turns(): readonly Turn<TAnnotation>[] {
     return this._turns;
   }
 
-  get pending(): readonly PendingEntry<TAnnotation>[] {
+  get pending(): readonly Turn<TAnnotation>[] {
     return this._pending;
   }
 
@@ -100,7 +104,7 @@ export class Transcript<
   ): TranscriptApplyResult<TAnnotation, THostEvent> {
     switch (event.type) {
       case "pending:queued":
-        this._pending = [...this._pending, event.entry];
+        this._pending = [...this._pending, event.turn];
         return this.handled(event);
 
       case "pending:dropped":
@@ -329,8 +333,8 @@ export class Transcript<
   }
 
   private removePending(id: string): void {
-    if (!this._pending.some((entry) => entry.id === id)) return;
-    this._pending = this._pending.filter((entry) => entry.id !== id);
+    if (!this._pending.some((turn) => turn.id === id)) return;
+    this._pending = this._pending.filter((turn) => turn.id !== id);
   }
 
   private replaceTurns(

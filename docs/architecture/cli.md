@@ -149,7 +149,7 @@ against it; divergence is a defect. State ownership is defined in
    queue continue, and a second press within a second aborts the session;
    a run without a chat keeps stop-at-the-tool-boundary, then cancel. Ink
    accepts input during a turn and sends it straight to the agent's queue,
-   drawing the transcript's pending entries as queued rows; the plain
+   drawing the transcript's pending turns as queued rows; the plain
    renderer prompts only between turns.
    `close()` is async and paints one final frame before unmounting.
    Questions the host asks (`setup`, `cleanup`, the missing-model fallback)

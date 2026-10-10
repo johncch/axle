@@ -38,18 +38,24 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 6. **Usage accounting is host-domain.** Every `turn:end` carries
    `turn.usage`; hosts accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none.
-7. **Pending is live state, kept apart from turns.** An operation — a send
-   or a manual compaction — is announced with `pending:queued` when the
-   Agent accepts it, carrying the id of the turn it will open. `Transcript`
-   holds it in `pending`, never in `turns`, and removes it when a turn with
-   that id opens (`turn:user` for a send, `turn:start` for a compaction) or
-   when `pending:dropped` arrives. A drop means the operation ended before
-   opening its turn and committed nothing: `cancelled` for a handle cancel,
-   `clear()`, or an aborted signal; `error` for a failed setup. `turns` stays
-   append-only. Pending entries are never persisted — the `Transcript`
-   constructor cannot accept them, so a restored transcript has none — and
-   `AgentSession` carries no queue. Work that opens no turn (`snapshot()`)
-   is queued but never pending.
+7. **Pending is live state, kept apart from turns, and shaped like them.**
+   An operation — a send or a manual compaction — is announced with
+   `pending:queued` when the Agent accepts it, carrying a preview `Turn`
+   with `status: "pending"` and the id the real turn will carry: for a send
+   the user turn itself; for a compaction an agent turn holding one
+   `pending` compaction part. `Transcript` holds it in `pending`, never in
+   `turns`, and removes it when a turn with that id opens (`turn:user` for a
+   send, `turn:start` for a compaction) or when `pending:dropped` arrives.
+   A turn with `status: "pending"` therefore never appears in `turns`: the
+   committed turn arrives under the same id with its real status. A drop
+   means the operation ended before opening its turn and committed nothing:
+   `cancelled` for a handle cancel, `clear()`, or an aborted signal; `error`
+   for a failed setup. `turns` stays append-only. Pending turns are never
+   persisted: hosts save `turns` only and `AgentSession` carries no queue,
+   so a transcript restored from storage has none. The constructor takes
+   `pending` only to mirror a live transcript, and discards any entry whose
+   id is already in `turns`. Work that opens no turn (`snapshot()`) is
+   queued but never pending.
 8. **The Agent hands over the session and the outcome when an operation
    settles, and waits for the host.** `agent.onSettled(...)` fires once for
    every operation that ran, however it ended: after its `turn:end` when it
@@ -132,7 +138,8 @@ discards pending by construction.
 One rule covers every kind of operation: an entry is keyed by the id of the
 turn it will open, and that turn opening is what resolves it. A send's turn
 id is its message id, known at `send()`; a manual compaction's is chosen at
-`compact()`. Adding a kind adds a variant and nothing else.
+`compact()`. (Entries were first a tagged union with a `kind`; they became
+preview turns the next day, see below.)
 
 Saving had the mirror-image problem. `snapshot()` is at rest because it
 queues, which means that with five sends queued a save requested after the
@@ -156,6 +163,52 @@ Accepted consequences:
   unchanged messages. One redundant save buys a one-sentence rule.
 - **An automatic compaction inside a send does not fire on its own.** It is
   part of that send, whose single firing includes it.
+
+## Pending entries are turns (2026-10-09)
+
+A pending entry was first a tagged union: a send carried a preview user
+turn, a compaction carried only an id. The CLI rendered them through a
+`kind` switch rather than its turn component, and a browser mirroring a
+live server transcript could not seed them, since the constructor took only
+`turns` and the doc read that as "pending is never constructed".
+
+The `Turn` type was designed so a host renders a transcript with one
+component in one loop. A pending entry that is not turn-shaped breaks that
+for the one list the host most wants to draw next to the turns. So a
+pending entry is now a `Turn` whose `status` is `"pending"`, built by the
+Agent at the moment it accepts the operation: a send's preview is the user
+turn it will commit (`send()` already built it); a compaction's preview is
+an agent turn with one compaction part in `pending`, the part vocabulary
+action parts already use. `transcript.pending` is a `readonly Turn[]`, and
+`[...turns, ...pending]` renders with one component keyed by id, the
+committed turn replacing its preview in place.
+
+The constructor takes `pending` as a second positional list for the mirror
+case, two lists of the same thing beside the two getters. An options object
+was considered and dropped: nothing else wants a constructor option, and
+`{ pending }` says nothing the position does not. A combined
+`transcript.state = { turns, pending }` was also dropped, because it makes
+`save(session, transcript.state)` the obvious call and that call would
+persist pending, which a restore would then show as queued rows no queue
+backs; `AgentSession` excludes the queue for the same reason. The
+persistence rule does not move: hosts save `turns` only, and nothing
+restores pending from storage. Seeding discards an entry whose id is already in `turns`,
+because the fold resolves an entry only when its turn opens or it is
+dropped, and a turn that opened before the client's stream cursor is never
+replayed.
+
+Accepted consequences:
+
+- **`"pending"` joins `TurnStatus` and the compaction part's status.** An
+  exhaustive switch over either gains a case. A `pending` turn lives only
+  in `transcript.pending`; renderers that only read `turns` never see one.
+- **The preview and the committed user turn are no longer the same
+  object**: `send()` emits `{ ...userTurn, status: "pending" }` and commits
+  `userTurn` as `complete`. Same id, same parts, same timing.
+- **A host seeding a mirror captures `turns`, `pending` and its stream
+  cursor in one synchronous read** of the server's transcript. The
+  constructor's discard covers ids already in `turns`, not an entry whose
+  turn opens between the read and the cursor.
 
 ## Awaited settle and the outcome (2026-10-09)
 
@@ -206,6 +259,19 @@ Accepted consequences:
 
 ## Rejected alternatives
 
+- **A `{ kind, turn }` pending entry** (2026-10-09): every entry would
+  carry a turn, so one loop could render both lists, but `kind` restated
+  what the turn already says (a user turn is a send; an agent turn with a
+  compaction part is a compaction) and kept a second shape for hosts to
+  learn. The compaction preview needed one part to be self-describing, and
+  `pending` on a compaction part is the status action parts already have.
+- **Marking pending on the entry rather than on the turn** (2026-10-09):
+  "queued" is where the turn sits, not what happened to it, so a wrapper
+  was tempting. But a renderer receives a `Turn` and must know how to draw
+  it; a status it can read beats a flag the loop has to pass down. This is
+  not the `queued` status in `turns` rejected on 2026-10-08: that put
+  queued rows in the append-only record and in saved data, and both stay
+  false, since a `pending` turn lives only in `transcript.pending`.
 - **An `onStarting` hook** (2026-10-09): an operation has two rest points,
   before start and after settle, and they are the same instant — the end of
   N's settle is the moment before N+1 starts. The host can see what is next

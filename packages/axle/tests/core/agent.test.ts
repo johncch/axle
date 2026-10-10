@@ -991,9 +991,8 @@ describe("Agent", () => {
     }
 
     function pendingText(transcript: Transcript): string[] {
-      return transcript.pending.map((entry) => {
-        if (entry.kind !== "send") return entry.kind;
-        const part = entry.turn.parts[0];
+      return transcript.pending.map((turn) => {
+        const part = turn.parts[0];
         return part?.type === "text" ? part.text : "";
       });
     }
@@ -1006,6 +1005,7 @@ describe("Agent", () => {
       const second = agent.send("second");
 
       expect(pendingText(transcript)).toEqual(["first", "second"]);
+      expect(transcript.pending.map((turn) => turn.status)).toEqual(["pending", "pending"]);
       expect(transcript.turns).toEqual([]);
 
       await Promise.all([first.final, second.final]);
@@ -1021,7 +1021,7 @@ describe("Agent", () => {
       const queued = events.filter((event) => event.type === "pending:queued");
       const committed = events.filter((event) => event.type === "turn:user");
       expect(committed.map((event) => event.turn)).toEqual(
-        queued.map((event) => (event.entry.kind === "send" ? event.entry.turn : undefined)),
+        queued.map((event) => ({ ...event.turn, status: "complete" })),
       );
     });
 

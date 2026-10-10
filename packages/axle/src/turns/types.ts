@@ -9,7 +9,7 @@ import type { FileInfo } from "../utils/file.js";
  * Turns are presentation state. They describe what a consumer can render, not
  * the canonical model conversation state.
  */
-export type TurnStatus = "streaming" | "complete" | "cancelled" | "error";
+export type TurnStatus = "pending" | "streaming" | "complete" | "cancelled" | "error";
 
 /**
  * Host-owned stable render metadata attached to a turn.
@@ -206,7 +206,7 @@ export interface CompactionPart<TAnnotation extends Annotation = Annotation> {
   /** Part discriminator. */
   type: "compaction";
   /** Lifecycle state. */
-  status: "running" | "complete" | "error";
+  status: "pending" | "running" | "complete" | "error";
   /**
    * Reader-facing text for the transcript. Replaced by `compaction:update`
    * while running; on `complete` the compactor's returned summary is
@@ -323,25 +323,6 @@ export type ActionResult =
   | { type: "in-progress"; content: string }
   | { type: "success"; content?: string | ConsoleOutput | ToolResultPart[] }
   | { type: "error"; error: { type: string; message: string } };
-
-/**
- * Placeholder for a turn the Agent has accepted but not yet opened, keyed by
- * the id that turn will carry. Live state only: it leaves `Transcript.pending`
- * when its turn opens or when it is dropped, and is never part of `turns`.
- */
-export type PendingEntry<TAnnotation extends Annotation = Annotation> =
-  | {
-      /** Id of the user turn this send will open. */
-      id: string;
-      kind: "send";
-      /** Preview of the user turn. */
-      turn: Turn<TAnnotation>;
-    }
-  | {
-      /** Id of the agent turn this compaction will open. */
-      id: string;
-      kind: "compaction";
-    };
 
 /**
  * Why a pending entry ended without opening its turn.

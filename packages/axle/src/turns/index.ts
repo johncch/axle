@@ -20,7 +20,6 @@ export type {
   CompactionUpdate,
   FilePart,
   PendingDropReason,
-  PendingEntry,
   ProviderToolAction,
   SubagentAction,
   TextPart,
