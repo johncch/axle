@@ -5,16 +5,26 @@ import type { Skill } from "./types.js";
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/;
 
-const FrontmatterSchema = z.looseObject({
-  name: z.string().trim().min(1, "must be a non-empty string"),
-  description: z.string().trim().min(1, "must be a non-empty string"),
+export const SKILL_NAME_FORBIDDEN_CHARACTERS = /[<>"\r\n]/;
+export const SKILL_NAME_FORBIDDEN_MESSAGE = 'must not contain <, >, " or line breaks';
+
+const OptionalFrontmatterSchema = z.looseObject({
   license: z.string().optional(),
   compatibility: z.string().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
   "allowed-tools": z.string().optional(),
 });
 
-export type SkillFrontmatter = Omit<z.infer<typeof FrontmatterSchema>, "name" | "description">;
+const FrontmatterSchema = OptionalFrontmatterSchema.extend({
+  name: z
+    .string()
+    .trim()
+    .min(1, "must be a non-empty string")
+    .refine((name) => !SKILL_NAME_FORBIDDEN_CHARACTERS.test(name), SKILL_NAME_FORBIDDEN_MESSAGE),
+  description: z.string().trim().min(1, "must be a non-empty string"),
+});
+
+export type SkillFrontmatter = z.infer<typeof OptionalFrontmatterSchema>;
 
 /**
  * Parse the text of a `SKILL.md`. Requires the frontmatter block with a

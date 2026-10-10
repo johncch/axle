@@ -64,10 +64,22 @@ describe("parseSkillMarkdown", () => {
     expect(skill).toEqual({ name: "a", description: "b", instructions: "Body." });
   });
 
-  it("does not police the name beyond being non-empty", () => {
+  it("loads a name the specification would reject as written", () => {
     expect(parseSkillMarkdown("---\nname: PDF Tools\ndescription: b\n---\n").name).toBe(
       "PDF Tools",
     );
+  });
+
+  it.each([
+    ["an opening angle bracket", "name: a<b"],
+    ["a closing angle bracket", "name: a>b"],
+    ["a double quote", "name: 'a\"b'"],
+    ["a line break", "name: |\n  a\n  b"],
+  ])("rejects a name containing %s", (_label, nameLine) => {
+    const parse = () => parseSkillMarkdown(`---\n${nameLine}\ndescription: b\n---\n`);
+
+    expect(parse).toThrow(AxleError);
+    expect(parse).toThrow(/name: must not contain <, >, " or line breaks/);
   });
 
   it("rejects text without a frontmatter block", () => {

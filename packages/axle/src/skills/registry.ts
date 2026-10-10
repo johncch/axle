@@ -1,5 +1,6 @@
 import { AxleError } from "../errors/AxleError.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import { SKILL_NAME_FORBIDDEN_CHARACTERS, SKILL_NAME_FORBIDDEN_MESSAGE } from "./parse.js";
 import { createViewSkillTool, VIEW_SKILL_TOOL_NAME } from "./prompt.js";
 import type { Skill } from "./types.js";
 
@@ -25,6 +26,12 @@ export class SkillRegistry {
   add(skillOrSkills: Skill | Skill[]): void {
     const skills = Array.isArray(skillOrSkills) ? skillOrSkills : [skillOrSkills];
     for (const skill of skills) {
+      if (SKILL_NAME_FORBIDDEN_CHARACTERS.test(skill.name)) {
+        throw new AxleError(
+          `Skill name ${SKILL_NAME_FORBIDDEN_MESSAGE}: ${JSON.stringify(skill.name)}`,
+          { code: "SKILL_INVALID", details: { name: skill.name } },
+        );
+      }
       if (this.skills.has(skill.name)) {
         throw new AxleError(`Skill already registered: ${skill.name}`, {
           code: "SKILL_REGISTRY_DUPLICATE",
