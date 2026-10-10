@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { stream } from "../../src/providers/stream.js";
 import type { AIProvider } from "../../src/providers/types.js";
 import { AxleStopReason } from "../../src/providers/types.js";
 import type { ExecutableTool } from "../../src/tools/types.js";
-import {
-  braveWebSearch,
-  createWebSearchTool,
-  type WebSearchBackend,
-} from "../../src/tools/webSearch.js";
+import { braveWebSearch } from "../../src/tools/webSearch.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -16,8 +13,8 @@ afterEach(() => {
 
 describe("provider-brought web search", () => {
   test("the loop runs a web_search call against the tool the provider brings", async () => {
-    const backend = makeBackend();
-    const provider = makeProvider({ tools: [createWebSearchTool(backend)] });
+    const webSearch = makeWebSearchTool();
+    const provider = makeProvider({ tools: [webSearch] });
 
     const result = await stream({
       provider,
@@ -28,7 +25,7 @@ describe("provider-brought web search", () => {
 
     expect(result.ok).toBe(true);
     expect(provider.requests[0].providerTools).toEqual([{ type: "provider", name: "web_search" }]);
-    expect(backend.search).toHaveBeenCalledWith(
+    expect(webSearch.execute).toHaveBeenCalledWith(
       { query: "current axle release" },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
@@ -62,7 +59,7 @@ describe("braveWebSearch", () => {
         }),
       }),
     );
-    const backend = braveWebSearch({
+    const webSearch = braveWebSearch({
       apiKey: "brave-secret",
       maxResults: 7,
       candidateCount: 20,
@@ -77,9 +74,10 @@ describe("braveWebSearch", () => {
     });
     const signal = new AbortController().signal;
 
-    const result = await backend.search({ query: "axle ai" }, { signal });
+    const result = await webSearch.execute({ query: "axle ai" }, { signal, emit: () => {} });
 
-    expect(result).toEqual({
+    expect(JSON.parse(String(result))).toEqual({
+      query: "axle ai",
       results: [
         {
           title: "Axle",
@@ -121,13 +119,19 @@ describe("braveWebSearch", () => {
         text: async () => "rate limited for brave-secret",
       }),
     );
-    const backend = braveWebSearch({ apiKey: "brave-secret" });
+    const webSearch = braveWebSearch({ apiKey: "brave-secret" });
 
     await expect(
-      backend.search({ query: "axle ai" }, { signal: new AbortController().signal }),
+      webSearch.execute(
+        { query: "axle ai" },
+        { signal: new AbortController().signal, emit: () => {} },
+      ),
     ).rejects.toThrow("Brave Search request failed with status 429: rate limited for [REDACTED]");
     await expect(
-      backend.search({ query: "axle ai" }, { signal: new AbortController().signal }),
+      webSearch.execute(
+        { query: "axle ai" },
+        { signal: new AbortController().signal, emit: () => {} },
+      ),
     ).rejects.not.toThrow("brave-secret");
     const [url] = (fetch as any).mock.calls[0];
     expect(url.searchParams.get("maximum_number_of_urls")).toBe("5");
@@ -160,18 +164,16 @@ describe("braveWebSearch", () => {
   });
 });
 
-function makeBackend(name = "test"): WebSearchBackend & { search: ReturnType<typeof vi.fn> } {
+function makeWebSearchTool(): ExecutableTool & { execute: ReturnType<typeof vi.fn> } {
   return {
-    name,
-    search: vi.fn().mockResolvedValue({
-      results: [
-        {
-          title: "Axle",
-          url: "https://example.com/axle",
-          snippets: ["Axle documentation"],
-        },
-      ],
-    }),
+    name: "web_search",
+    description: "Search the web.",
+    schema: z.object({ query: z.string() }),
+    execute: vi
+      .fn()
+      .mockResolvedValue(
+        JSON.stringify({ results: [{ title: "Axle", url: "https://example.com/axle" }] }),
+      ),
   };
 }
 

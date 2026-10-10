@@ -13,9 +13,5 @@ export type {
 export { braveWebSearch } from "./webSearch.js";
 export type {
   BraveWebSearchOptions,
-  WebSearchBackend,
-  WebSearchBackendContext,
-  WebSearchRequest,
-  WebSearchResponse,
   WebSearchResult,
 } from "./webSearch.js";

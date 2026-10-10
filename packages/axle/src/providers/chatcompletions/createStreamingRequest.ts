@@ -22,7 +22,7 @@ export async function* createStreamingRequest(
       model: string;
       apiKey?: string;
       vendor?: ChatCompletionsVendor;
-      webSearchTool?: ToolDefinition;
+      webSearch?: ToolDefinition;
     },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
   const {
@@ -35,7 +35,7 @@ export async function* createStreamingRequest(
     signal,
     apiKey,
     vendor,
-    webSearchTool,
+    webSearch,
     maxRetries,
     timeoutMs,
     headers: clientHeaders,
@@ -47,8 +47,8 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
   const usesAttachedSearch =
-    webSearchTool !== undefined && params.providerTools?.some((tool) => tool.name === "web_search");
-  const tools = usesAttachedSearch ? [...(params.tools ?? []), webSearchTool] : params.tools;
+    webSearch !== undefined && params.providerTools?.some((tool) => tool.name === "web_search");
+  const tools = usesAttachedSearch ? [...(params.tools ?? []), webSearch] : params.tools;
   const providerTools = usesAttachedSearch
     ? params.providerTools?.filter((tool) => tool.name !== "web_search")
     : params.providerTools;

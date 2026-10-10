@@ -8,7 +8,7 @@ import { AxleStopReason } from "../../../src/providers/types.js";
 
 const BASE_URL = "http://localhost:11434/v1";
 const MODEL = "gemma3";
-const webSearchTool = {
+const webSearch = {
   name: "web_search",
   description: "Search the web.",
   schema: z.object({ query: z.string() }),
@@ -1014,7 +1014,7 @@ describe("createStreamingRequest", () => {
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
         providerTools: [{ type: "provider", name: "web_search" }],
-        webSearchTool,
+        webSearch,
       }),
     );
 
@@ -1041,7 +1041,7 @@ describe("createStreamingRequest", () => {
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
         providerTools: [{ type: "provider", name: "web_search" }],
-        webSearchTool,
+        webSearch,
       }),
     );
 

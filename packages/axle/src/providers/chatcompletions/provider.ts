@@ -1,5 +1,5 @@
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { createWebSearchTool, type WebSearchBackend } from "../../tools/webSearch.js";
+import type { ExecutableTool } from "../../tools/types.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
@@ -8,7 +8,7 @@ import type { ChatCompletionsVendor } from "./utils.js";
 export interface ChatCompletionsOptions extends ProviderClientOptions {
   apiKey?: string;
   vendor?: ChatCompletionsVendor;
-  webSearch?: WebSearchBackend;
+  webSearch?: ExecutableTool;
 }
 
 export type { ChatCompletionsVendor } from "./utils.js";
@@ -40,13 +40,11 @@ export function chatCompletions(
       ? undefined
       : requireInteger(clientOptions.timeoutMs, "timeoutMs", { min: 1 });
   const vendor = clientOptions?.vendor ?? inferChatCompletionsVendor(baseUrl);
-  const webSearchTool = clientOptions?.webSearch
-    ? createWebSearchTool(clientOptions.webSearch)
-    : undefined;
+  const webSearch = clientOptions?.webSearch;
 
   return {
     name: "ChatCompletions",
-    tools: webSearchTool ? [webSearchTool] : undefined,
+    tools: webSearch ? [webSearch] : undefined,
 
     /** @internal */
     createStreamingRequest(
@@ -61,7 +59,7 @@ export function chatCompletions(
         timeoutMs,
         headers: clientOptions?.headers,
         vendor,
-        webSearchTool,
+        webSearch,
         ...params,
       });
     },

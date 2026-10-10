@@ -128,10 +128,6 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolProgressChunk,
-  WebSearchBackend,
-  WebSearchBackendContext,
-  WebSearchRequest,
-  WebSearchResponse,
   WebSearchResult,
 } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
