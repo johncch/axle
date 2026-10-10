@@ -152,15 +152,13 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
         model: MODEL,
         messages,
         runtime: {},
-        providerTools: [
-          { type: "provider", name: "web_search", nativeName: "resolved_web_search" },
-        ],
+        providerTools: [{ type: "provider", name: "web_search" }],
         toolChoice: { type: "tool", name: "web_search" },
       }),
     );
     expect(request()).toMatchObject({
-      tools: [expect.objectContaining({ type: "resolved_web_search" })],
-      tool_choice: { type: "resolved_web_search" },
+      tools: [expect.objectContaining({ type: "web_search" })],
+      tool_choice: { type: "web_search" },
     });
   });
 });

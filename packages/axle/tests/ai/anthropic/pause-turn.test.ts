@@ -159,7 +159,7 @@ describe("Anthropic pause_turn continuation", () => {
           client: mockClient,
           model: "claude-opus-4-8",
           messages: userMessages,
-          providerTools: [{ ...webSearch, nativeName: "web_search_20260318" }],
+          providerTools: [webSearch],
           runtime: {},
           signal,
         }),

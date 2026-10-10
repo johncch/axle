@@ -15,7 +15,6 @@ import type {
 import { getCitations, getTextContent, getThinkingContent } from "../messages/utils.js";
 import { logContent } from "../observability/log.js";
 import type { Span } from "../observability/types.js";
-import { ToolRegistry } from "../tools/registry.js";
 import type {
   ExecutableTool,
   ProviderTool,
@@ -25,7 +24,7 @@ import type {
 import { createWebSearchFallbackTool } from "../tools/webSearch.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats, mergeStats } from "../utils/stats.js";
-import type { AIProvider, ResolvedProviderTool } from "./types.js";
+import type { AIProvider } from "./types.js";
 
 export type ToolCallResult =
   | { type: "success"; content: string | ToolResultPart[] }
@@ -220,33 +219,14 @@ export function serializeToolError(error: { type: string; message: string }): st
   return JSON.stringify({ error });
 }
 
-export function resolveToolRegistry(options: {
-  registry?: ToolRegistry;
-  tools?: ExecutableTool[];
-  providerTools?: ProviderTool[];
-}): ToolRegistry {
-  const hasShortcut = options.tools !== undefined || options.providerTools !== undefined;
-  if (options.registry && hasShortcut) {
-    throw new AxleError(
-      "Cannot specify both `registry` and `tools` / `providerTools`. Use one or the other.",
-      { code: "TOOL_OPTIONS_CONFLICT" },
-    );
-  }
-  return (
-    options.registry ??
-    new ToolRegistry({ tools: options.tools, providerTools: options.providerTools })
-  );
-}
-
 export interface ResolvedTools {
-  registry: ToolRegistry;
   executable(): ExecutableTool[];
-  provider(): ResolvedProviderTool[];
+  provider(): ProviderTool[];
   get(name: string): ExecutableTool | undefined;
 }
 
 export function resolveTools(
-  registry: ToolRegistry,
+  toolSet: { tools?: ExecutableTool[]; providerTools?: ProviderTool[] },
   options: {
     provider: AIProvider;
     model: string;
@@ -254,29 +234,29 @@ export function resolveTools(
     configuration: AxleConfiguration;
   },
 ): ResolvedTools {
-  const requestedWebSearch = registry.getProvider("web_search");
-  const resolveProviderToolName = options.provider.resolveProviderToolName?.bind(options.provider);
-  if (!resolveProviderToolName) {
-    return {
-      registry,
-      executable: () => registry.executable(),
-      provider: () => registry.provider(),
-      get: (name) => registry.get(name),
-    };
+  const tools = toolSet.tools ?? [];
+  const providerTools = toolSet.providerTools ?? [];
+  const byName = new Map<string, ExecutableTool>();
+  for (const tool of tools) {
+    if (byName.has(tool.name)) {
+      throw new AxleError(`Tool already registered: ${tool.name}`, {
+        code: "TOOL_REGISTRY_DUPLICATE",
+        details: { name: tool.name },
+      });
+    }
+    byName.set(tool.name, tool);
   }
 
-  const resolveProviderTools = (): ResolvedProviderTool[] =>
-    registry.provider().map((tool) => {
-      const resolvedName = resolveProviderToolName(tool.name, options.model);
-      return resolvedName === undefined ? tool : { ...tool, nativeName: resolvedName };
-    });
-
-  if (!requestedWebSearch || resolveProviderToolName("web_search", options.model) !== undefined) {
+  const requestedWebSearch = providerTools.find((tool) => tool.name === "web_search");
+  const nativeWebSearch =
+    !requestedWebSearch ||
+    !options.provider.resolveProviderToolName ||
+    options.provider.resolveProviderToolName("web_search", options.model) !== undefined;
+  if (nativeWebSearch) {
     return {
-      registry,
-      executable: () => registry.executable(),
-      provider: resolveProviderTools,
-      get: (name) => registry.get(name),
+      executable: () => tools,
+      provider: () => providerTools,
+      get: (name) => byName.get(name),
     };
   }
 
@@ -306,17 +286,13 @@ export function resolveTools(
 
   const fallbackTool = createWebSearchFallbackTool(fallback);
   return {
-    registry,
-    executable: () => [
-      ...registry.executable().filter((tool) => tool.name !== "web_search"),
-      fallbackTool,
-    ],
-    provider: () => resolveProviderTools().filter((tool) => tool.name !== "web_search"),
-    get: (name) => (name === "web_search" ? fallbackTool : registry.get(name)),
+    executable: () => [...tools.filter((tool) => tool.name !== "web_search"), fallbackTool],
+    provider: () => providerTools.filter((tool) => tool.name !== "web_search"),
+    get: (name) => (name === "web_search" ? fallbackTool : byName.get(name)),
   };
 }
 
-type ToolExecutionSource = ToolRegistry | ResolvedTools;
+type ToolExecutionSource = Pick<ResolvedTools, "get">;
 
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
@@ -385,14 +361,12 @@ async function executeOneToolCall(
 ): Promise<ExecutedToolCall> {
   if (signal.aborted) throw new AxleAbortError("Operation aborted", { reason: signal.reason });
 
-  const registry = source instanceof ToolRegistry ? source : source.registry;
   const tool = source.get(call.name);
   const toolSpan = span?.startSpan(call.name, { type: "tool" });
   let usage: Stats | undefined;
   const ctx: ToolContext = {
     signal,
     span: toolSpan,
-    registry,
     emit: (chunk) => observer?.onDelta?.(call, chunk),
     reportUsage: (reported) => {
       usage ??= createStats();

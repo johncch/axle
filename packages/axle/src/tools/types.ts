@@ -3,7 +3,6 @@ import type { ToolResultPart } from "../messages/message.js";
 import type { Span } from "../observability/types.js";
 import type { TurnEvent } from "../turns/events.js";
 import type { Stats } from "../types.js";
-import type { ToolRegistry } from "./registry.js";
 
 export type ToolProgressChunk =
   | string
@@ -13,7 +12,6 @@ export type ToolProgressChunk =
     };
 
 export interface ToolContext {
-  registry: ToolRegistry;
   signal: AbortSignal;
   emit: (chunk: ToolProgressChunk) => void;
   /**

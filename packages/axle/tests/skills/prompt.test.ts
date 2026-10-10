@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createViewSkillTool, renderSkillsCatalog } from "../../src/skills/prompt.js";
 import type { Skill } from "../../src/skills/types.js";
-import { ToolRegistry } from "../../src/tools/registry.js";
 import type { ToolContext } from "../../src/tools/types.js";
 
 const pdf: Skill = {
@@ -20,7 +19,6 @@ const style: Skill = {
 };
 
 const ctx: ToolContext = {
-  registry: new ToolRegistry(),
   signal: new AbortController().signal,
   emit: () => {},
 };
