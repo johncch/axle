@@ -17,8 +17,9 @@ The wrapper:
 
 1. Computes the next version once from `package.json`.
 2. Runs the changelog job with that version.
-3. Pauses so you can review `CHANGELOG.md` (press `y` to continue, anything else aborts).
-4. Runs tests, build, and `npm version` to create the version commit and tag.
+3. Renames `## Unreleased` in `packages/axle-cli/CHANGELOG.md` to the version.
+4. Pauses so you can review both changelogs (press `y` to continue, anything else aborts).
+5. Runs tests, build, and `npm version` to create the version commit and tag.
 
 After it finishes, push with `git push --follow-tags`.
 
@@ -27,8 +28,8 @@ After it finishes, push with `git push --follow-tags`.
 If you want to control the steps yourself or pass an unusual version string:
 
 1. `pnpm run changelog -- version=0.10.0` — generate changelog entry.
-2. Review `CHANGELOG.md`.
-3. `git add CHANGELOG.md && git commit -m "Update changelog for 0.10.0"` — `npm version` requires a clean tree, so commit the changelog first.
+2. Review `CHANGELOG.md`, and rename `## Unreleased` in `packages/axle-cli/CHANGELOG.md` to the version.
+3. `git add CHANGELOG.md packages/axle-cli/CHANGELOG.md && git commit -m "Update changelog for 0.10.0"` — `npm version` requires a clean tree, so commit the changelog first.
 4. `pnpm run release -- 0.10.0` — tests, build, and version commit/tag.
 5. `git push --follow-tags`.
 

@@ -71,15 +71,12 @@
   `defaults.tools` on resume. Sessions saved before this release still
   carry their copied endpoint and resume as before. An inline provider
   object in a recipe is still frozen with the session.
-- **Local tools are on by default.** Chat, and any recipe without a
-  `tools:` key, now get `exec`, `patch-file`, `read-file`, and
-  `write-file`. They run without approval, including in batch and
-  scheduled runs, so a recipe that previously could only return text can
-  now run shell commands and write files. Add `tools: []` to keep a recipe
-  tool-free, or set `defaults.tools` in `cli.yaml` to change the default
-  set everywhere.
-- **The `calculator` tool is removed.** A recipe that lists it fails with
-  `Unknown tool: calculator`; delete the entry.
+- **`axle schedule -j` is now `axle schedule add -j`, and registering runs
+  nothing.** It prints the next firing instead of running the recipe once;
+  run a plain `axle -j` first to prove the recipe. `schedule register` is
+  folded into `add`. `schedule sessions` and `schedule remove` also take
+  `-n <name>`, the name `schedule list` shows, and refuse a name two
+  schedules share.
 - **The context window is looked up in models.dev; `AXLE_CONTEXT_WINDOW`
   is removed.** The usage bar and the compaction threshold (~80%) use the
   model's real window — through the provider's own ids for first-party
@@ -91,11 +88,6 @@
   provider, in a `cli.yaml` profile or a recipe's inline `provider:` block.
   `axle info` shows each provider's window and its source in place of the
   Environment section.
-- **`request.temperature`, `request.topP`, and `request.stop` are removed.**
-  A recipe that sets one now fails to load. Move it under
-  `request.providerOptions` using the provider's own field name
-  (`temperature`; `top_p`, or `topP` on Gemini; `stop_sequences`,
-  `stopSequences`, or `stop`).
 - **`cli.yaml` rejects keys it does not know.** A misspelled or stale key
   at the top level or under `defaults` (for example `default:` instead of
   `defaults:`) used to be ignored; it now stops the CLI with the key named.
@@ -109,9 +101,6 @@
   `timeoutMs` on the provider to change it. A timeout that runs out of
   retries now reports `Request timed out after 600000ms` instead of
   `Request aborted`.
-- **The model picker is a text prompt.** `axle setup`, and a run that can't
-  resolve a model, ask for a model id as free text instead of listing
-  models.
 - **`vendor: together` is now `vendor: togetherai`.** A `chatcompletions`
   provider that names the vendor must use the new id, which matches
   models.dev; the old one fails config validation. A provider pointed at
@@ -153,13 +142,6 @@
 - **Typing `exit` or `quit` quits the chat.** A message that is just
   `exit` or `quit`, in any case, ends the session the same way `/quit` does
   instead of being sent to the model.
-- **`axle info` prints the resolved configuration.** It lists the version,
-  runtime, which `cli.yaml` and `credentials` files exist, the default
-  provider and tools, every configured provider with its model, and
-  `AXLE_CONTEXT_WINDOW`. Each value is followed by where it came
-  from: `~/.axle/cli.yaml`, `./.axle/cli.yaml`, a `credentials` file,
-  `.env`, or the environment. An API key shows as set or unset, never its
-  value.
 - **`axle explain` describes the configuration keys.** `axle explain` lists
   the top-level keys of a recipe and of `cli.yaml`, each with its type, what
   it does, and the keys beneath it. A dotted path such as
@@ -175,61 +157,6 @@
 - **The model sees the full key reference.** The `axle-help` tool's
   `recipes` and `config` topics now end with every key, its type, and its
   description, generated from the same schemas as `axle explain`.
-- **Replies render as markdown.** Under the ink renderer, a reply shows
-  headings in bold, inline `code` in yellow, fenced code behind a `│`
-  gutter, lists with plain markers, and tables as aligned columns instead
-  of raw `#`, `**`, pipes, and backticks. The reasoning summary on a
-  `✔ Thinking` line renders the same way, and so does text while it is
-  still streaming. `--renderer plain` and piped output are unchanged.
-- **The model can explain axle.** A new default tool, `axle-help`, returns
-  this CLI's usage documentation by topic (overview, chat, recipes, batch,
-  resume, schedule, mcp, config, tools), so asking the chat how to write a
-  batch recipe or register a schedule gets an answer grounded in the
-  installed version. Remove it with a `tools:` list that omits it.
-- **Prompts look like the GitHub CLI.** `axle setup`, `axle cleanup`, and
-  the missing-model fallback ask with a green `?`, echo the answer in cyan
-  on the same line, and use a `>` cursor for lists. A confirm answers to
-  `y` or `n` without Enter. The vertical guide bar and diamond markers are
-  gone.
-- **A provider's code execution shows what it printed.** When a recipe
-  lists `code_execution` under `providerTools`, the action line now carries
-  the first line of the sandbox's stdout, or its stderr and exit code in
-  red when the script exited non-zero, the way an `exec` call does. Works
-  on OpenAI, Anthropic and Gemini; Anthropic's code execution is newly
-  available and reports its steps as `bash_code_execution` and
-  `text_editor_code_execution` actions.
-- **Recipes can run on a schedule (macOS).** Add a `schedule: { every: 1h }`
-  block and run `axle schedule add -j <recipe>`: it registers a user
-  LaunchAgent and prints the next firing; nothing runs until then. Each
-  firing re-reads the recipe and runs it like `-j`, saving a session, so
-  a plain `axle -j` is how to prove the recipe first. `schedule list`
-  shows registrations and their last run, `schedule sessions` lists each
-  run's `axle resume` command, and `schedule remove` unregisters; both
-  take `-j <recipe>` or `-n <name>`, the name `list` shows, and refuse a
-  name two schedules share. There is no schedule id. Plain `axle -j`
-  never touches the schedule; it prints whether the recipe is registered
-  or has drifted. Intervals are
-  `<integer><s|m|h|d>`, 60s minimum. Fixed times of day use
-  `schedule: { at: "09:00" }`, or a list of times, with optional
-  `on: [mon, fri]`; times are machine-local. Linux and Windows are not
-  supported yet.
-- **Thinking text now streams from Claude and OpenAI models.** `request.reasoning`
-  with `on` or `{ effort }` asks every provider that has a disclosure field
-  for its thinking; previously Anthropic and OpenAI requests inherited a
-  hidden default and rendered no thinking at all. Add `display: hidden`
-  under `{ effort }` to keep thinking off the wire.
-- **Claude through OpenRouter shows its thinking summary and keeps its
-  reasoning across tool calls.** OpenRouter's `reasoning_details` are now
-  read and echoed back, so summaries render as summaries and multi-turn tool
-  loops on a Claude model keep their signatures. `display: hidden` keeps
-  thinking out of the transcript on every provider, OpenRouter included.
-- **A refused request says so.** When a provider declines a request or
-  blocks its output, the run fails with `Refused`, the provider's reason,
-  and its explanation in full, in the form `Refused (cyber): <explanation>`.
-  Before, a refusal from Claude or an OpenAI model printed an empty answer
-  and counted as a success, and a Gemini safety block read as a generic
-  model error.
-
 - **Dev builds identify themselves.** A binary packaged from anything but
   the clean release tag reports its version as `<version>-dev`, and
   `axle info` adds when and from which commit it was built. A run from
@@ -254,6 +181,97 @@
   the run mid tool call. Axle now reads the raw event stream and drops a
   citation that has no text part to attach to; the tool call completes as
   normal.
+
+## 0.33.0
+
+### Breaking changes
+
+- **Local tools are on by default.** Chat, and any recipe without a
+  `tools:` key, now get `exec`, `patch-file`, `read-file`, and
+  `write-file`. They run without approval, including in batch and
+  scheduled runs, so a recipe that previously could only return text can
+  now run shell commands and write files. Add `tools: []` to keep a recipe
+  tool-free, or set `defaults.tools` in `cli.yaml` to change the default
+  set everywhere. Resumed sessions keep the tools they were saved with.
+- **The `calculator` tool is removed.** A recipe that lists it fails with
+  `Unknown tool: calculator`; delete the entry.
+- **Every model is assumed to have a 200,000-token context window.** The
+  usage bar and the compaction threshold (~80%) no longer look the model up
+  in a built-in registry. Set `AXLE_CONTEXT_WINDOW=<tokens>` for a model
+  with a different window; a 1M-context model otherwise compacts at about
+  160,000 tokens, and a model under 200,000 can overflow before it compacts.
+- **`request.temperature`, `request.topP`, and `request.stop` are removed.**
+  A recipe that sets one now fails to load. Move it under
+  `request.providerOptions` using the provider's own field name
+  (`temperature`; `top_p`, or `topP` on Gemini; `stop_sequences`,
+  `stopSequences`, or `stop`).
+- **The model picker is a text prompt.** `axle setup`, and a run that can't
+  resolve a model, ask for a model id as free text instead of listing
+  models.
+
+### New
+
+- **`axle info` prints the resolved configuration.** It lists the version,
+  runtime, which `cli.yaml` and `credentials` files exist, the default
+  provider and tools, every configured provider with its model, and the
+  `AXLE_*` environment variables. Each value is followed by where it came
+  from: `~/.axle/cli.yaml`, `./.axle/cli.yaml`, a `credentials` file,
+  `.env`, or the environment. An API key shows as set or unset, never its
+  value.
+- **Replies render as markdown.** Under the ink renderer, a reply shows
+  headings in bold, inline `code` in yellow, fenced code behind a `│`
+  gutter, lists with plain markers, and tables as aligned columns instead
+  of raw `#`, `**`, pipes, and backticks. The reasoning summary on a
+  `✔ Thinking` line renders the same way, and so does text while it is
+  still streaming. `--renderer plain` and piped output are unchanged.
+- **The model can explain axle.** A new default tool, `axle-help`, returns
+  this CLI's usage documentation by topic (overview, chat, recipes, batch,
+  resume, schedule, mcp, config, tools), so asking the chat how to write a
+  batch recipe or register a schedule gets an answer grounded in the
+  installed version. Remove it with a `tools:` list that omits it.
+- **Prompts look like the GitHub CLI.** `axle setup`, `axle cleanup`, and
+  the missing-model fallback ask with a green `?`, echo the answer in cyan
+  on the same line, and use a `>` cursor for lists. A confirm answers to
+  `y` or `n` without Enter. The vertical guide bar and diamond markers are
+  gone.
+- **A provider's code execution shows what it printed.** When a recipe
+  lists `code_execution` under `providerTools`, the action line now carries
+  the first line of the sandbox's stdout, or its stderr and exit code in
+  red when the script exited non-zero, the way an `exec` call does. Works
+  on OpenAI, Anthropic and Gemini; Anthropic's code execution is newly
+  available and reports its steps as `bash_code_execution` and
+  `text_editor_code_execution` actions.
+- **Recipes can run on a schedule (macOS).** Add a `schedule: { every: 1h }`
+  block and run `axle schedule -j <recipe>`: it registers a user
+  LaunchAgent and runs the recipe once now; each later firing re-reads the
+  recipe and runs it like `-j`, saving a session. `schedule register -j` registers without running, `schedule list` shows registrations and their last run,
+  `schedule sessions -j` lists each run's `axle resume` command, and
+  `schedule remove -j` unregisters; schedules are addressed by recipe, never
+  by an id. Plain `axle -j` never touches the schedule; it prints whether
+  the recipe is registered or has drifted. Intervals are
+  `<integer><s|m|h|d>`, 60s minimum. Fixed times of day use
+  `schedule: { at: "09:00" }`, or a list of times, with optional
+  `on: [mon, fri]`; times are machine-local. Linux and Windows are not
+  supported yet.
+- **A refused request says so.** When a provider declines a request or
+  blocks its output, the run fails with `Refused`, the provider's reason,
+  and its explanation in full, in the form `Refused (cyber): <explanation>`.
+  Before, a refusal from Claude or an OpenAI model printed an empty answer
+  and counted as a success, and a Gemini safety block read as a generic
+  model error.
+
+## 0.32.0
+
+- **Thinking text now streams from Claude and OpenAI models.** `request.reasoning`
+  with `on` or `{ effort }` asks every provider that has a disclosure field
+  for its thinking; previously Anthropic and OpenAI requests inherited a
+  hidden default and rendered no thinking at all. Add `display: hidden`
+  under `{ effort }` to keep thinking off the wire.
+- **Claude through OpenRouter shows its thinking summary and keeps its
+  reasoning across tool calls.** OpenRouter's `reasoning_details` are now
+  read and echoed back, so summaries render as summaries and multi-turn tool
+  loops on a Claude model keep their signatures. `display: hidden` keeps
+  thinking out of the transcript on every provider, OpenRouter included.
 
 ## 0.31.0
 

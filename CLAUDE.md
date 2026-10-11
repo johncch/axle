@@ -125,6 +125,11 @@ Documentation is layered by authority; each genre has one job:
   migration entry; ask the user which version to target.
 - **`packages/axle-cli/CHANGELOG.md`**: the CLI's release notes — it is a
   separate product with recipe/flag-level changes, not API call sites.
-  Breaking changes lead each entry.
+  Breaking changes lead each entry. New entries go under `## Unreleased`
+  at the top (create it if missing), never under a released version.
+  `pnpm run cut-release` renames `## Unreleased` to `## <version>` and
+  commits it with the root changelog; the manual release path does not, so
+  rename it by hand there. A released section is frozen; a later change to
+  something it describes gets its own entry under `## Unreleased`.
 - **`docs/development/*`** (frozen): dated working notes for a single
   change. Historical record — never updated after the fact.

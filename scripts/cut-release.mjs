@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 
 const arg = process.argv[2];
@@ -38,20 +38,30 @@ console.log(`Bumping ${pkg.version} -> ${next}`);
 console.log("\n[1/3] Generating changelog...");
 execSync(`pnpm start -j ./jobs/changelog.job.yml --args version=${next}`, { stdio: "inherit" });
 
+const cliChangelogUrl = new URL("../packages/axle-cli/CHANGELOG.md", import.meta.url);
+const cliChangelog = readFileSync(cliChangelogUrl, "utf8");
+if (/^## Unreleased$/m.test(cliChangelog)) {
+  writeFileSync(cliChangelogUrl, cliChangelog.replace(/^## Unreleased$/m, `## ${next}`));
+  console.log(`Stamped packages/axle-cli/CHANGELOG.md: Unreleased -> ${next}`);
+} else {
+  console.log("packages/axle-cli/CHANGELOG.md has no Unreleased section; left as is.");
+}
+
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const answer = await rl.question(
-  "\n[2/3] Review CHANGELOG.md. Press y to continue, anything else aborts: ",
+  "\n[2/3] Review CHANGELOG.md and packages/axle-cli/CHANGELOG.md. Press y to continue, anything else aborts: ",
 );
 rl.close();
 if (!/^y/i.test(answer.trim())) {
-  console.log("Aborted. Changes to CHANGELOG.md are still on disk; revert if needed.");
+  console.log("Aborted. Changes to both changelogs are still on disk; revert if needed.");
   process.exit(0);
 }
 
 console.log("\n[3/3] Committing changelog and running release...");
-execSync(`git add CHANGELOG.md && git commit -m "Update changelog for ${next}"`, {
-  stdio: "inherit",
-});
+execSync(
+  `git add CHANGELOG.md packages/axle-cli/CHANGELOG.md && git commit -m "Update changelog for ${next}"`,
+  { stdio: "inherit" },
+);
 execSync(`pnpm run release -- ${next}`, { stdio: "inherit" });
 
 console.log(`\nReleased ${next}. Push with: git push --follow-tags`);
