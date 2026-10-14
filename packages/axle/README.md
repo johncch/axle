@@ -95,11 +95,56 @@ agent.skills.remove("pdf");
 `agent.system` is what the model sees — the system prompt you configured,
 then the skills catalog when skills are present — and is read-only.
 
-`agent.cancel(reason)` is the hard form of `stop()`: it cancels the active
-operation immediately, exactly as that handle's own `cancel()` would, and
-returns `false` when nothing is running. Queued operations are untouched and
-the next one starts. Together: `stop()` ends the active turn at a tool
-boundary, `cancel()` ends it now, and `clear()` drops what is queued.
+`agent.cancel(reason)` is the hard form of `stop()`: it cancels whatever
+remains of the active operation, exactly as that handle's own `cancel()`
+would, and returns `false` when nothing remains. Queued operations are
+untouched and the next one starts. Together: `stop()` ends the active turn
+at a tool boundary, `cancel()` ends it now, and `clear()` drops what is
+queued.
+
+To act on a reply before the next queued message runs, give the send a
+continuation. `after` runs once the turn has settled with a result, holds
+the queue until it returns, and can run further turns inline through
+`ctx.send()`:
+
+```typescript
+const handle = agent.send("Summarize the report.", {
+  after: async (result, ctx) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const verdict = await judge(result);
+      if (verdict.ok) break;
+      result = await ctx.send(verdict.feedback); // runs now, ahead of anything queued
+    }
+  },
+});
+agent.send("Next question."); // waits until the continuation returns
+```
+
+An inline turn is an ordinary turn: it emits `turn:user` and the agent turn
+events, commits to messages, settles through `onSettled` under its own id,
+and resolves with its result once that settle has resolved. It starts at
+once, so it has no pending phase and emits no `pending:queued`. Inline sends
+take the same arguments as `send()` without `after`, run one at a time in
+call order, and return a promise rather than a handle. The handle keeps its
+type: it resolves when the continuation returns, with the inline turns
+listed in order under `result.after` (each with its own `ok`, `response`,
+`turn` and `usage`, plus the `userTurn` it sent), while `result.response`
+stays the reply to the message you sent. The continuation runs for a turn
+that resolved, `ok: true` or `ok: false`; a turn whose handle rejects skips
+it. `ctx` also carries `signal`, `id` (the send's user turn id, the one
+`pending:queued` announced), and read-only `messages` and `pending`, so a
+loop can stop early when the user already typed a correction.
+
+`cancel()` during a continuation aborts `ctx.signal` and any inline turn in
+flight, and rejects the handle; one that has not started never does.
+`stop()` keeps its tool-batch meaning for an inline turn and returns
+`false` while no turn is in flight. `clear()` never touches a continuation.
+A continuation that throws rejects the handle and the queue continues;
+committed inline turns stay committed. Bound your own attempts: the agent
+does not time a continuation out. `agent.send()` from inside queues at the
+back as usual, and awaiting it there deadlocks, as it does from `onSettled`.
+A manual `compact()` carries no continuation, and an inline turn carries
+none.
 
 Each `final` resolves only that handle's result: `h1` settles at the stop
 boundary and does not absorb `h2`'s response. A stopped turn ends on its
@@ -336,7 +381,9 @@ For `generate()` and `stream()`, plain calls return the final assistant message.
 For `Agent.send("...")`, plain calls return the assistant text. `Instruct`
 calls return the parsed schema value. Model, refusal, and parse failures
 return `ok: false`; abort, fatal tool, configuration, and unexpected execution
-errors still throw.
+errors still throw. An agent result also carries `after`: the inline turns
+its continuation ran, in order, and an empty list when the send carried
+none (see [Agent](#agent)).
 
 A `model` failure means the provider failed the request. `type` is
 `"authentication"` when the provider rejected the API key or token, on every
@@ -1495,7 +1542,7 @@ requests are built from it, and compaction replaces it. Read it for inspection
 or to drive your own persistence; mutating the returned array has no effect.
 
 To persist and resume an agent, snapshot it and construct a new agent with the
-session. The snapshot is the pure continuation (`{ sessionId, messages }`) —
+session. The snapshot is the resumable state (`{ sessionId, messages }`) —
 persist your transcript's turns next to it if you want the transcript back:
 
 ```typescript
@@ -1511,7 +1558,7 @@ resumed.on((event) => resumedTranscript.apply(event));
 `snapshot()` resolves once everything queued has finished, including sends
 queued after the call, so the session it returns never holds a half-finished
 turn. It is not queued work itself: `clear()` does not cancel it. To save as
-each operation finishes, register `onSettled` instead:
+each turn finishes, register `onSettled` instead:
 
 ```typescript
 agent.on((event) => transcript.apply(event));
@@ -1521,35 +1568,43 @@ agent.onSettled(async (session, operation) => {
 });
 ```
 
-It fires once after every send or manual compaction that ran, however it
-ended: after its `turn:end` when it opened a turn, and before the
-operation's handle settles. `session` is the same value `snapshot()`
+It fires after every turn that commits, however it ended, and once for a
+send or manual compaction that ran without opening a turn: after the
+`turn:end`, and before the handle settles or the next turn opens. A send
+without a continuation fires exactly once; a send with one also fires for
+each inline turn it runs, under that turn's own id, which no
+`pending:queued` announced. `session` is the same value `snapshot()`
 returns. `operation` is a `SettledOperation`: its `kind` (`"send"` or
-`"compaction"`), the `id` its `pending:queued` turn carried, so you can tell
-which queued row settled, and a `result` that is exactly what the handle is about to
-settle with — `{ status: "fulfilled", value }` with the `AgentResult` (or
-`true`/`false` for a compaction), or `{ status: "rejected", reason }` with
-the error. A send cancelled while still waiting in the queue never ran and
-does not fire; a send that started and failed before committing its message
-does, with a rejected result and an unchanged session.
+`"compaction"`), the `id` of the turn that settled (for a queued operation,
+the one its `pending:queued` turn carried, so you can tell which queued row
+settled), and a `result` with the turn's outcome — `{ status: "fulfilled",
+value }` with the `AgentResult` (or `true`/`false` for a compaction), or
+`{ status: "rejected", reason }` with the error. A send cancelled while
+still waiting in the queue never ran and does not fire; a send that started
+and failed before committing its message does, with a rejected result and
+an unchanged session.
 
 The Agent waits for the callback. Return a promise when the work has to
-finish before the next queued operation starts: the handle does not settle
-and the next operation does not begin until every callback has settled, so
-the transcript read inside the callback agrees with `session.messages` and
-nothing from the next turn is visible before your callback resolves.
-Callbacks run together, not in order. A callback that starts async work
-without returning its promise does not hold the queue. Do not await
-`send()`, `compact()` or `snapshot()` on the same agent inside the
-callback: it holds the queue they wait for, so the nested call deadlocks.
+finish before the next turn starts: the handle does not settle, a
+continuation does not resume, and the next operation does not begin until
+every callback has settled, so the transcript read inside the callback
+agrees with `session.messages` and nothing from the next turn is visible
+before your callback resolves. Callbacks run together, not in order. A
+callback that starts async work without returning its promise does not
+hold the queue. Do not await `send()`, `compact()` or `snapshot()` on the
+same agent inside the callback: it holds the queue they wait for, so the
+nested call deadlocks. Work that belongs to a whole cycle rather than to
+one turn, such as a slow snapshot after a judge loop, goes at the end of
+the send's continuation instead, or it runs after every inline turn.
 
-The operation is already over while callbacks run: `agent.cancel()` and
-`agent.stop()` return `false` in that window, and the callback is given no
-signal — cancel your own work your own way. A callback cannot affect the
-operation it reports on: if it throws or rejects, the error is recorded on
-the trace as a warning, the remaining callbacks still run, and the handle
-settles with its real result. Handle your own save failures inside the
-callback. Like `on`, it returns a function that unregisters it.
+The turn is already over while callbacks run: `agent.stop()` returns
+`false` in that window, and so does `agent.cancel()` unless the send still
+has a continuation to run, and the callback is given no signal — cancel
+your own work your own way. A callback cannot affect the turn it reports
+on: if it throws or rejects, the error is recorded on the trace as a
+warning, the remaining callbacks still run, and the handle settles with its
+real result. Handle your own save failures inside the callback. Like `on`,
+it returns a function that unregisters it.
 
 A host that takes the outcome here does not have to read the handle. An
 unread `final` that rejects raises no unhandled rejection, so
