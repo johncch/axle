@@ -1,6 +1,7 @@
 import { getEventListeners } from "node:events";
 import { describe, expect, test } from "vitest";
 import { AgentScheduler } from "../../src/core/agent/scheduler.js";
+import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 
 describe("AgentScheduler", () => {
   test("completed work leaves no abort listener on its signal", async () => {
@@ -188,5 +189,167 @@ describe("AgentScheduler", () => {
     }
 
     expect(unhandled).toEqual([]);
+  });
+  describe("continuations", () => {
+    test("after runs once the work settled, its inline runs settle one at a time, and the handle takes its value", async () => {
+      const scheduler = new AgentScheduler();
+      const order: string[] = [];
+
+      const handle = scheduler.schedule(async () => "first", {
+        settle: (result) =>
+          void order.push(`settle:${(result as PromiseFulfilledResult<string>).value}`),
+        after: async (value, inline) => {
+          order.push(`after:${value}`);
+          const a = inline.run(
+            async () => {
+              order.push("work:a");
+              await new Promise((resolve) => setTimeout(resolve, 2));
+              return "a";
+            },
+            () => void order.push("settle:a"),
+          );
+          const b = inline.run(
+            async () => {
+              order.push("work:b");
+              return "b";
+            },
+            () => void order.push("settle:b"),
+          );
+          return `${value}+${await a}+${await b}`;
+        },
+      });
+      const next = scheduler.schedule(async () => void order.push("next"));
+
+      await expect(handle.final).resolves.toBe("first+a+b");
+      await next.final;
+      expect(order).toEqual([
+        "settle:first",
+        "after:first",
+        "work:a",
+        "settle:a",
+        "work:b",
+        "settle:b",
+        "next",
+      ]);
+    });
+
+    test("after is skipped when the work rejected", async () => {
+      const scheduler = new AgentScheduler();
+      let ran = false;
+
+      const handle = scheduler.schedule<never>(
+        async () => {
+          throw new Error("boom");
+        },
+        {
+          after: async () => {
+            ran = true;
+          },
+        },
+      );
+
+      await expect(handle.final).rejects.toThrow("boom");
+      expect(ran).toBe(false);
+    });
+
+    test("a continuation that throws rejects the handle and the queue continues", async () => {
+      const scheduler = new AgentScheduler();
+
+      const handle = scheduler.schedule(async () => "done", {
+        after: async () => {
+          throw new Error("judge failed");
+        },
+      });
+      const next = scheduler.schedule(async () => "next");
+
+      await expect(handle.final).rejects.toThrow("judge failed");
+      await expect(next.final).resolves.toBe("next");
+    });
+
+    test("cancelCurrent() during a continuation aborts its signal, rejects the handle, and starts the next task", async () => {
+      const scheduler = new AgentScheduler();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let inlineSignal: AbortSignal | undefined;
+      let continuationSignal: AbortSignal | undefined;
+      let returnedNormally = false;
+
+      const handle = scheduler.schedule(async () => "done", {
+        after: async (_value, inline) => {
+          continuationSignal = inline.signal;
+          await gate;
+          await inline
+            .run(async ({ signal }) => {
+              inlineSignal = signal;
+              return "unused";
+            })
+            .catch(() => {});
+          returnedNormally = true;
+        },
+      });
+      const next = scheduler.schedule(async () => "next");
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(scheduler.cancelCurrent("stop")).toBe(true);
+      release();
+
+      await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      expect(continuationSignal?.aborted).toBe(true);
+      expect(inlineSignal?.aborted).toBe(true);
+      expect(returnedNormally).toBe(true);
+      await expect(next.final).resolves.toBe("next");
+    });
+
+    test("cancelCurrent() while settling is true only when a continuation remains, and then it never starts", async () => {
+      const scheduler = new AgentScheduler();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let ran = false;
+
+      const plain = scheduler.schedule(async () => "plain", { settle: () => gate });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(scheduler.cancelCurrent()).toBe(false);
+      release();
+      await expect(plain.final).resolves.toBe("plain");
+
+      let releaseSecond!: () => void;
+      const secondGate = new Promise<void>((resolve) => (releaseSecond = resolve));
+      const continued = scheduler.schedule(async () => "continued", {
+        settle: () => secondGate,
+        after: async () => {
+          ran = true;
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(scheduler.cancelCurrent("stop")).toBe(true);
+      expect(scheduler.cancelCurrent("again")).toBe(false);
+      releaseSecond();
+
+      await expect(continued.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      expect(ran).toBe(false);
+    });
+
+    test("an inline run still in flight when the continuation returns is awaited; one started afterwards rejects", async () => {
+      const scheduler = new AgentScheduler();
+      const order: string[] = [];
+      let runLate!: () => Promise<unknown>;
+
+      const handle = scheduler.schedule(async () => "done", {
+        after: async (_value, inline) => {
+          runLate = () => inline.run(async () => "late");
+          void inline.run(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            order.push("inline finished");
+            return "slow";
+          });
+          order.push("continuation returned");
+        },
+      });
+
+      await handle.final;
+      order.push("handle resolved");
+      expect(order).toEqual(["continuation returned", "inline finished", "handle resolved"]);
+      await expect(runLate()).rejects.toThrow("continuation has already returned");
+    });
   });
 });
