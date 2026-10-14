@@ -62,12 +62,28 @@ to a provider request.
 
 **Operation** — a queued unit of agent work that opens a turn: a Send or a
 manual compaction. Operations run one at a time in FIFO order. An operation
-is _pending_ from the call until its turn opens, and _settles_ when it
-ends, however it ends; `agent.onSettled(...)` then hands the host the
-session and the outcome, and waits for the host before the next operation
-starts. An operation cancelled while still queued never ran and does not
+is _pending_ from the call until its turn opens, and ends when its turn
+ends or, for a send with a continuation, when the continuation returns.
+Every turn it commits _settles_: `agent.onSettled(...)` hands the host the
+session and that turn's outcome, and waits for the host before anything
+else runs. An operation cancelled while still queued never ran and does not
 settle. `agent.snapshot()` opens no turn, is not queued, and is not an
 operation.
+
+**Continuation** — a program a send carries (`after` in its options) that
+runs after the send's turn settles and before the queue moves on. It holds
+the queue until it returns and can run _inline turns_ through its context.
+It is attached to one send, is not queued, has no pending entry of its own,
+and is never nested: an inline turn carries no continuation. It runs on
+every outcome of its turn except cancellation. The word means only this;
+the Agent's resumable state is the _session_.
+
+**Inline turn** — a turn a continuation runs through `ctx.send()`. It is an
+ordinary send turn in every way but one: it starts at once in the held
+slot, so it has no pending phase and announces no `pending:queued`. It
+commits to messages, settles through `onSettled` under its own id, and is
+recorded on its operation's result under `after`. Inline turns run one at a
+time, FIFO, like operations.
 
 **Idle** — the Agent has no operation running and none queued. It is
 _busy_ from the first call that schedules an operation until the last
