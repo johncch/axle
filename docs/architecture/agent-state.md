@@ -143,8 +143,8 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     read-only `pending` (the queued preview turns). An inline turn carries
     no continuation, and a manual `compact()` carries none. The handle keeps
     its type: `AgentResult` and `AgentErrorResult` carry `after`, the inline
-    turns in order as `{ userTurn, ...result }`, empty when no continuation
-    ran; the top-level fields remain the message that was sent and what it
+    turns in order as `{ userTurn, ...result }`, present only when the send
+    carried a continuation; the top-level fields remain the message that was sent and what it
     got back. `cancel()` cancels whatever of the operation remains and
     returns `false` only when nothing does: before the continuation starts
     it never starts; during it `ctx.signal` aborts, the inline turn in
@@ -392,7 +392,10 @@ knows what was sent and what came back, in order; it does not know which
 attempt won, and the host's judge does. So `AgentResult` and
 `AgentErrorResult` gain `after`, the inline turns as a list, each with its
 own `ok`, and the top-level fields stay the message that was sent and its
-reply. Inline responses are typed `unknown`: the handle's reader never saw
+reply. The field is present only when the send carried a continuation:
+almost no send does, its only readers are the continuation authors who
+opted in, and a required field would have put `after: []` on every result
+to serve the rare case. Inline responses are typed `unknown`: the handle's reader never saw
 the inline send's schema, and the continuation had the typed value in hand
 when it called `ctx.send()`.
 

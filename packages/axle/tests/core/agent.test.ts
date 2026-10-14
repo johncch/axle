@@ -1515,18 +1515,18 @@ describe("Agent", () => {
       ]);
       expect(result.ok).toBe(true);
       expect(result.response).toBe("do something");
-      expect(result.after.map((turn) => [turn.userTurn.id, turn.ok, turn.response])).toEqual([
+      expect(result.after?.map((turn) => [turn.userTurn.id, turn.ok, turn.response])).toEqual([
         [idF1, true, "fix 1"],
         [idF2, true, "fix 2"],
       ]);
-      expect(result.after[0]).not.toHaveProperty("after");
+      expect(result.after?.[0]).not.toHaveProperty("after");
       expect(transcript.pending).toEqual([]);
     });
 
-    test("a send without a continuation resolves with an empty after", async () => {
+    test("a send without a continuation resolves with no after", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const result = await agent.send("plain").final;
-      expect(result.after).toEqual([]);
+      expect(result).not.toHaveProperty("after");
     });
 
     test("runs for a turn that resolved with ok: false", async () => {
@@ -1545,7 +1545,7 @@ describe("Agent", () => {
 
       expect(seen).toEqual([false]);
       expect(result.ok).toBe(false);
-      expect(result.after.map((turn) => turn.response)).toEqual(["recover"]);
+      expect(result.after?.map((turn) => turn.response)).toEqual(["recover"]);
     });
 
     test("is skipped when the turn was cancelled, and the handle rejects", async () => {

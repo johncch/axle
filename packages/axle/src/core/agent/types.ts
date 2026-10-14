@@ -197,8 +197,8 @@ export interface AgentResult<T = string> {
   error?: undefined;
   turn: Turn;
   usage: Stats;
-  /** The inline turns the send's continuation ran, in order; empty when none ran. */
-  after: InlineTurn[];
+  /** The inline turns the send's continuation ran, in order; present only when the send carried one. */
+  after?: InlineTurn[];
 }
 
 export interface AgentErrorResult {
@@ -207,8 +207,8 @@ export interface AgentErrorResult {
   error: AxleFailure;
   turn: Turn | undefined;
   usage: Stats;
-  /** The inline turns the send's continuation ran, in order; empty when none ran. */
-  after: InlineTurn[];
+  /** The inline turns the send's continuation ran, in order; present only when the send carried one. */
+  after?: InlineTurn[];
 }
 
 /**

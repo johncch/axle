@@ -45,17 +45,18 @@ export const continuationCases: CheckCase[] = [
       const userTexts = transcript.turns
         .filter((turn) => turn.owner === "user")
         .map((turn) => turnText(turn));
-      const lastInline = result.after.at(-1);
+      const inlineTurns = result.after ?? [];
+      const lastInline = inlineTurns.at(-1);
       const failureReasons = [
-        ...(result.after.length === 0 ? ["The continuation ran no inline turn."] : []),
+        ...(inlineTurns.length === 0 ? ["The continuation ran no inline turn."] : []),
         ...(lastInline && !approved(String(lastInline.response ?? ""))
           ? ["The last correction was not approved by the judge."]
           : []),
         ...(userTexts.at(-1) !== "Reply exactly: done."
           ? [`The queued message did not run last; user turns were ${JSON.stringify(userTexts)}.`]
           : []),
-        ...(settledIds.length !== 2 + result.after.length
-          ? [`Expected ${2 + result.after.length} settles, received ${settledIds.length}.`]
+        ...(settledIds.length !== 2 + inlineTurns.length
+          ? [`Expected ${2 + inlineTurns.length} settles, received ${settledIds.length}.`]
           : []),
         ...(!String(second.response ?? "")
           .toLowerCase()
@@ -69,7 +70,7 @@ export const continuationCases: CheckCase[] = [
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
-          corrections: result.after.map((turn) => turn.response),
+          corrections: inlineTurns.map((turn) => turn.response),
           judgeRan,
           userTexts,
           settles: settledIds.length,

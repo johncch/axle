@@ -344,8 +344,7 @@ export class Agent {
       ({ signal }) => this.executeTurn(prepared, { signal, announced: false, spanParent }),
       (outcome) => this.settle({ kind: "send", id: prepared.userTurn.id, result: outcome }),
     );
-    const { after: _nested, ...recorded } = result;
-    inlineTurns.push({ userTurn: prepared.userTurn, ...recorded });
+    inlineTurns.push({ userTurn: prepared.userTurn, ...result });
     return result;
   }
 
@@ -503,7 +502,6 @@ export class Agent {
           error: streamResult.error,
           turn: this.transcript.getTurn(startEvent.turnId),
           usage,
-          after: [],
         };
       }
 
@@ -533,14 +531,14 @@ export class Agent {
 
       if (parseFailure) {
         status = "error";
-        return { ok: false, error: parseFailure, turn: agentTurn, usage, after: [] };
+        return { ok: false, error: parseFailure, turn: agentTurn, usage };
       }
 
       if (!agentTurn) {
         throw new AxleError("Agent turn missing after send");
       }
 
-      return { ok: true, response, turn: agentTurn, usage, after: [] };
+      return { ok: true, response, turn: agentTurn, usage };
     } catch (error) {
       // Lifecycle: settle a failed or cancelled turn
       status = signal.aborted ? "cancelled" : spanStatusFromError(error);
