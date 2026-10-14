@@ -381,9 +381,8 @@ For `generate()` and `stream()`, plain calls return the final assistant message.
 For `Agent.send("...")`, plain calls return the assistant text. `Instruct`
 calls return the parsed schema value. Model, refusal, and parse failures
 return `ok: false`; abort, fatal tool, configuration, and unexpected execution
-errors still throw. An agent result also carries `after`: the inline turns
-its continuation ran, in order, and an empty list when the send carried
-none (see [Agent](#agent)).
+errors still throw. An agent result from a send with a continuation also
+carries `after`: the inline turns it ran, in order (see [Agent](#agent)).
 
 A `model` failure means the provider failed the request. `type` is
 `"authentication"` when the provider rejected the API key or token, on every

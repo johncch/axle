@@ -54,7 +54,12 @@ right about the facts and wrong about the owner: three turns happened, but
 only the continuation knows which one won. So the Agent records the facts,
 `after: InlineTurn[]` on the result with each inline turn's own `ok`, and
 the meaning stays in the host's judge. The top-level fields remain the
-message that was sent and its reply.
+message that was sent and its reply. The field was first required, always
+present and empty for a plain send; the review asked why, and the answer
+was only that readers would never need a guard. Since almost no send
+carries a continuation and only continuation authors read the field, that
+guarded nobody and put `after: []` on every result, so it became optional
+and present only when the send carried `after`.
 
 The remaining calls were quicker. The continuation runs when the turn
 resolved, `ok` or not; a rejected turn has no result to hand over and
@@ -113,7 +118,7 @@ rejects; in the settle window it is `true` only with a continuation
 remaining, which then never starts; an inline run in flight at return is
 awaited and a later one rejects. Agent tests: the A, F1, F2 sequence with B
 queued, including three settles, one handle, the `after` list and no
-pending entries; `after: []` without a continuation; a run for `ok: false`;
+pending entries; no `after` without a continuation; a run for `ok: false`;
 skipped on a cancelled turn; `cancel()` mid-judge with `stop()` returning
 `false`; `ctx.pending` and `ctx.messages`; an unawaited `agent.send()`
 queuing at the back; `ctx.send()` after return rejecting; one `onIdle`.
