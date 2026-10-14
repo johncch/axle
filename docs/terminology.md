@@ -74,8 +74,9 @@ operation.
 runs after the send's turn settles and before the queue moves on. It holds
 the queue until it returns and can run _inline turns_ through its context.
 It is attached to one send, is not queued, has no pending entry of its own,
-and is never nested: an inline turn carries no continuation. It runs on
-every outcome of its turn except cancellation. The word means only this;
+and is never nested: an inline turn carries no continuation. It runs when
+its turn resolved with a result, `ok` or not; a rejected turn (cancelled,
+a fatal tool error, a setup failure) skips it. The word means only this;
 the Agent's resumable state is the _session_.
 
 **Inline turn** — a turn a continuation runs through `ctx.send()`. It is an

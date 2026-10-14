@@ -124,18 +124,21 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     was queued, causes no firing, and is not cancelled by `clear()`.
 11. **A send can carry a continuation; it runs in the held slot and the
     queue waits for it.** `agent.send(message, { after })` attaches a
-    program to that send. After the send's turn settles, and unless that
-    turn was cancelled, the scheduler runs `after(result, ctx)` before it
-    releases the slot: the handle does not settle and the next queued
-    operation does not start until the continuation returns. The
-    continuation runs on every other outcome, including a turn that resolved
-    with `ok: false` and one whose handle will reject. `ctx.send()` runs an
+    program to that send. After the send's turn settles with a result, the
+    scheduler runs `after(result, ctx)` before it releases the slot: the
+    handle does not settle and the next queued operation does not start
+    until the continuation returns. The continuation runs for a turn that
+    resolved, `ok: true` or `ok: false`; a turn whose handle rejects
+    (cancelled, a fatal tool error, a setup failure) has no result to hand
+    over, skips it, and rejects the handle. `ctx.send()` runs an
     inline turn: the same arguments as `agent.send()` without `after`, the
     same turn as any send (`turn:user`, the agent turn, commit to messages,
     automatic compaction as part of it, `onSettled` when it ends), started
     at once with no `pending:queued`, and resolved with the turn's result
     after that turn's `onSettled` callbacks resolve. Inline turns run one at
-    a time in call order. `ctx` also carries `signal`, `id` (the send's user
+    a time in call order; one still in flight when the continuation returns
+    is awaited before the handle settles, and a `ctx.send()` made after the
+    continuation returned rejects. `ctx` also carries `signal`, `id` (the send's user
     turn id, the one `pending:queued` announced), read-only `messages`, and
     read-only `pending` (the queued preview turns). An inline turn carries
     no continuation, and a manual `compact()` carries none. The handle keeps
@@ -393,11 +396,13 @@ reply. Inline responses are typed `unknown`: the handle's reader never saw
 the inline send's schema, and the continuation had the typed value in hand
 when it called `ctx.send()`.
 
-A cancel is the user saying stop, so a cancelled turn never starts its
-continuation and a cancel during one aborts everything that remains. Every
-other outcome runs it: a model error or parse failure resolves with
-`ok: false`, which is exactly the case where a host wants to fetch more
-data and `ctx.send()` it.
+The continuation receives a result, so it runs when the turn resolved,
+`ok: true` or `ok: false`: a model error or parse failure is exactly the
+case where a host wants to fetch more data and `ctx.send()` it. A rejected
+turn has no result to hand over. A cancel is the user saying stop; a fatal
+tool error or a setup failure is an exception, and exceptions propagate to
+the handle. All three skip the continuation, and a cancel during one
+aborts everything that remains.
 
 Accepted consequences:
 
@@ -453,10 +458,13 @@ Accepted consequences:
 - **`response: T[]`, or a second top-level field beside `response`**
   (2026-10-14): loses which attempt won, or hard-codes one reading. The
   ordered `after` list records the same facts without deciding.
-- **Running the continuation after a cancel** (2026-10-14): cancel is the
-  user saying stop, and programmatic follow-ups after it are wrong.
-  Bookkeeping still has the cancelled turn's `onSettled` and the rejected
-  handle.
+- **Running the continuation on a rejected turn** (2026-10-14): after a
+  cancel, programmatic follow-ups are wrong, since cancel is the user saying
+  stop. A fatal tool error or setup failure has no result to hand over, and
+  the draft rule "every outcome except cancellation" would have made the
+  continuation's argument a settled-result wrapper with a status check in
+  front of every judge loop. Bookkeeping still has the turn's `onSettled`
+  and the rejected handle.
 - **A parent operation id on an inline turn's `SettledOperation`, as a
   field or as a third callback argument** (2026-10-14): hosts key rows by
   id, so an unannounced id is a no-op, and the jobs that would distinguish
