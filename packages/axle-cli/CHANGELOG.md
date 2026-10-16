@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.34.1
 
 - **Anthropic and OpenRouter requests now ask for prompt caching.** Every
   request carries a top-level `cache_control: { type: "ephemeral" }`, so a
