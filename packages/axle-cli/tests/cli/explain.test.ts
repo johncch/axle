@@ -105,7 +105,7 @@ describe("formatExplain", () => {
 
     expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(60);
     expect(lines).toContain("    keys: reasoning, maxOutputTokens, toolChoice,");
-    expect(lines).toContain("    parallelToolCalls, providerOptions");
+    expect(lines).toContain("    parallelToolCalls, cache, providerOptions");
   });
 
   it("names the valid keys when a path segment is unknown", () => {

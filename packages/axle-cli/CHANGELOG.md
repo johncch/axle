@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Anthropic and OpenRouter requests now ask for prompt caching.** Every
+  request carries a top-level `cache_control: { type: "ephemeral" }`, so a
+  tool loop re-reads its earlier steps from cache at a tenth of the input
+  price instead of paying full price for the whole conversation on every
+  step. Before this, no Axle request to Anthropic was ever cached. A recipe
+  that never repeats a prompt and would rather not pay the 25% cache write
+  premium sets `request.cache: false`. OpenAI, Gemini and Together cache on
+  their own and are unchanged.
+
 ## 0.34.0
 
 ### Breaking changes

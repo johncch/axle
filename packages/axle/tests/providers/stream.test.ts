@@ -1668,4 +1668,58 @@ describe("stream()", () => {
       expect(deltas[0].type === "tool:exec-delta" && deltas[0].name).toBe("stream-tool");
     });
   });
+
+  describe("session id", () => {
+    function sessionCapturingProvider(ids: Array<string | undefined>): AIProvider {
+      let call = 0;
+      return {
+        get name() {
+          return "test";
+        },
+        async *createStreamingRequest(_model, params) {
+          ids.push(params.sessionId);
+          if (call++ === 0) {
+            yield startChunk("msg_1");
+            yield toolCallStartChunk(0, "call_1", "lookup");
+            yield toolCallCompleteChunk(0, "call_1", "lookup", { q: "x" });
+            yield completeChunk(AxleStopReason.FunctionCall);
+            return;
+          }
+          yield startChunk("msg_2");
+          yield textStartChunk(0);
+          yield textChunk(0, "done");
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      };
+    }
+
+    test("generates one id per call and sends it on every step", async () => {
+      const ids: Array<string | undefined> = [];
+      const result = await stream({
+        provider: sessionCapturingProvider(ids),
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "result" }),
+      }).final;
+
+      expect(result.ok).toBe(true);
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
+      expect(ids[1]).toBe(ids[0]);
+    });
+
+    test("passes a caller's sessionId as-is on every step", async () => {
+      const ids: Array<string | undefined> = [];
+      await stream({
+        provider: sessionCapturingProvider(ids),
+        model: "test-model",
+        messages: [],
+        sessionId: "conversation-1",
+        onToolCall: async () => ({ type: "success", content: "result" }),
+      }).final;
+
+      expect(ids).toEqual(["conversation-1", "conversation-1"]);
+    });
+  });
 });

@@ -164,3 +164,13 @@ export function isOpenRouterTextAnchoredCitation(citation: Citation): boolean {
   if (span.start === undefined && span.end === undefined) return false;
   return span.start !== 0 || span.end !== 0;
 }
+
+export function toOpenRouterRequestFields(fields: {
+  sessionId: string | undefined;
+  cache: boolean | undefined;
+}) {
+  return {
+    ...(fields.sessionId !== undefined ? { session_id: fields.sessionId } : {}),
+    ...(fields.cache !== false ? { cache_control: { type: "ephemeral" as const } } : {}),
+  };
+}

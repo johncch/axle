@@ -296,6 +296,12 @@ export const RequestOptionsSchema = z.strictObject({
     .boolean()
     .optional()
     .describe("Whether the model may request several tool calls in one response."),
+  cache: z
+    .boolean()
+    .optional()
+    .describe(
+      "Whether to ask the provider to cache the prompt prefix where asking is required (Anthropic, OpenRouter). Default true.",
+    ),
   providerOptions: z
     .record(z.string(), z.any())
     .optional()

@@ -48,6 +48,7 @@ export interface ChatCompletionResponse {
 export interface ChatCompletionUsage {
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens?: number;
   prompt_tokens_details?: ChatCompletionInputTokenDetails;
   input_tokens_details?: ChatCompletionInputTokenDetails;
   completion_tokens_details?: ChatCompletionOutputTokenDetails;

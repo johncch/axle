@@ -288,9 +288,12 @@ targets don't cover. Normative in `docs/architecture/reasoning.md`.
 
 Cache telemetry (`cache-*`): provider cache counters surface on `usage`.
 
-- `cache-prompt-reuse` (OpenAI `prompt_cache_key`, Anthropic `cache_control`
-  with `cacheWriteIn` on the first call; OpenRouter and Together report only
-  `cachedIn` on the second)
+- `cache-prompt-reuse` (OpenAI `prompt_cache_key`; Anthropic through Axle's
+  default top-level `cache_control`, with `cacheWriteIn` on the first call;
+  OpenRouter and Together report only `cachedIn` on the second. The case
+  sends a `sessionId`, which OpenRouter needs to route both calls to the
+  same upstream host; without it a Claude model there writes twice and
+  reads nothing)
 - `cache-gemini-cached-content` (explicit cached-content resource passed via
   `providerOptions.cachedContent`; created and deleted by the case)
 

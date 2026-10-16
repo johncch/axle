@@ -29,11 +29,7 @@ export const cacheCases: CheckCase[] = [
     providers: ["openai", "anthropic", "openrouter", "togetherai"],
     async run({ provider, model, providerId, requestOptions }) {
       const providerOptions =
-        providerId === "openai"
-          ? { prompt_cache_key: `axle-checks-cache-${runNonce}` }
-          : providerId === "anthropic"
-            ? { cache_control: { type: "ephemeral" } }
-            : undefined;
+        providerId === "openai" ? { prompt_cache_key: `axle-checks-cache-${runNonce}` } : undefined;
 
       const call = async (): Promise<Stats | { error: unknown }> => {
         const result = await generate({
@@ -47,6 +43,7 @@ export const cacheCases: CheckCase[] = [
             },
           ],
           maxOutputTokens: 24,
+          sessionId: `axle-checks-cache-${runNonce}`,
           providerOptions,
         });
         return result.ok ? (result.usage ?? { in: 0, out: 0 }) : { error: result.error };

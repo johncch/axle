@@ -106,6 +106,7 @@ export class Agent {
       maxOutputTokens: config.maxOutputTokens,
       toolChoice: config.toolChoice,
       parallelToolCalls: config.parallelToolCalls,
+      cache: config.cache,
       providerOptions: config.providerOptions,
     };
     this.registry = new ToolRegistry({
