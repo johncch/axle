@@ -12,6 +12,8 @@ import type { CompactionUpdate, Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
 import type { Handle } from "../../utils/utils.js";
+import type { Instruct } from "../Instruct.js";
+import type { OutputSchema, ParsedSchema } from "../parse.js";
 
 /**
  * Runtime configuration for an `Agent`.
@@ -161,7 +163,7 @@ export type AgentDefinitionResolver = (
 ) => MaybePromise<ResolvedAgentDefinition>;
 
 /**
- * Serializable continuation state for an `Agent`: the pure model-facing
+ * Serializable resumable state for an `Agent`: the pure model-facing
  * conversation, nothing else.
  *
  * It intentionally does not include executable runtime objects (providers,
@@ -175,17 +177,17 @@ export type AgentDefinitionResolver = (
 export interface AgentSession {
   /** Stable conversation/session id. */
   sessionId: string;
-  /** Active model-facing conversation used for continuation. */
+  /** Active model-facing conversation the next turn resumes from. */
   messages: AxleMessage[];
 }
 
 /**
- * Serializable saved agent payload: definition plus continuation state.
+ * Serializable saved agent payload: definition plus session state.
  */
 export interface SavedAgent {
   /** Serializable recipe used to reconstruct runtime config. */
   definition: AgentDefinition;
-  /** Serializable continuation state. */
+  /** Serializable session state. */
   session: AgentSession;
 }
 
@@ -195,6 +197,8 @@ export interface AgentResult<T = string> {
   error?: undefined;
   turn: Turn;
   usage: Stats;
+  /** The inline turns the send's continuation ran, in order; present only when the send carried one. */
+  after?: InlineTurn[];
 }
 
 export interface AgentErrorResult {
@@ -203,13 +207,62 @@ export interface AgentErrorResult {
   error: AxleFailure;
   turn: Turn | undefined;
   usage: Stats;
+  /** The inline turns the send's continuation ran, in order; present only when the send carried one. */
+  after?: InlineTurn[];
 }
+
+/**
+ * One turn a continuation ran through `ctx.send()`: the user turn it sent
+ * and what came back. The response is `unknown` because only the
+ * continuation saw the inline send's schema.
+ */
+export type InlineTurn = { userTurn: Turn } & (
+  Omit<AgentResult<unknown>, "after"> | Omit<AgentErrorResult, "after">
+);
 
 export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
+/** Options an inline send accepts: everything a send does, except a continuation. */
+export type InlineSendOptions = Omit<SendMessageOptions, "after">;
+
 /**
- * What an operation's handle settled with, handed to `onSettled` first.
- * `id` is the one its `pending:queued` turn carried.
+ * The inside of a continuation: inline sends in the held slot, the
+ * operation's signal and id, and read-only views of the conversation and
+ * the queue.
+ */
+export interface ContinuationContext {
+  send(
+    message: string | Instruct<undefined>,
+    options?: InlineSendOptions,
+  ): Promise<AgentResult<string> | AgentErrorResult>;
+  send<TSchema extends OutputSchema>(
+    instruct: Instruct<TSchema>,
+    options?: InlineSendOptions,
+  ): Promise<AgentResult<ParsedSchema<TSchema>> | AgentErrorResult>;
+  /** Aborted by `cancel()`; every inline turn runs under it. */
+  readonly signal: AbortSignal;
+  /** The send's user turn id, the one its `pending:queued` turn carried. */
+  readonly id: string;
+  /** The active model-facing conversation as it stands. */
+  readonly messages: readonly AxleMessage[];
+  /** Preview turns of the operations queued behind this one. */
+  readonly pending: readonly Turn[];
+}
+
+/**
+ * A program a send carries under `after`. It runs after the send's turn
+ * settles with a result, holds the queue until it returns, and runs inline
+ * turns through `ctx.send()`.
+ */
+export type Continuation<T = string> = (
+  result: AgentResult<T> | AgentErrorResult,
+  ctx: ContinuationContext,
+) => void | Promise<void>;
+
+/**
+ * What a turn settled with, handed to `onSettled` first. `id` is the turn's
+ * user turn id: for an operation's own turn, the one its `pending:queued`
+ * turn carried; for an inline turn, one no `pending:queued` announced.
  */
 export type SettledOperation =
   | {
@@ -297,13 +350,20 @@ export interface CompactionConfig {
   };
 }
 
-export interface SendMessageOptions extends AxleModelRequestOptions {
+export interface SendMessageOptions<T = any> extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
   /**
    * Stable host-owned metadata attached to the user message and copied to the
    * renderable user turn. Providers ignore this data.
    */
   metadata?: MessageMetadata;
+  /**
+   * A continuation: runs after this send's turn settles with a result and
+   * before the queue moves on, and may run inline turns through
+   * `ctx.send()`. The handle resolves once it returns, with the inline turns
+   * under `after`. See `Continuation`.
+   */
+  after?: Continuation<T>;
 }
 
 export type { ContextUsage };

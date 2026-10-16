@@ -26,7 +26,7 @@ import { createStats } from "../../utils/stats.js";
 import { Instruct } from "../Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../parse.js";
 import { resolveObservability, spanStatusFromError } from "./observability.js";
-import { AgentScheduler } from "./scheduler.js";
+import { AgentScheduler, type InlineRunner } from "./scheduler.js";
 import type {
   AgentConfig,
   AgentErrorResult,
@@ -35,12 +35,24 @@ import type {
   AgentSession,
   CompactionConfig,
   CompactionTrigger,
+  Continuation,
+  ContinuationContext,
   IdleCallback,
+  InlineSendOptions,
+  InlineTurn,
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
   TurnEventCallback,
 } from "./types.js";
+
+interface PreparedSend {
+  instruct: Instruct<any>;
+  fileResolver?: FileResolver;
+  message: AxleUserMessage;
+  userTurn: Turn;
+  requestOptions: AxleModelRequestOptions;
+}
 
 function mergeAxleModelRequestOptions(
   defaults?: Omit<AxleModelRequestOptions, "signal">,
@@ -81,6 +93,7 @@ export class Agent {
   private turnActive = false;
   private stopRequested = false;
   private transcript = new Transcript();
+  private pendingTurns: Turn[] = [];
   private messagesInternal: AxleMessage[];
 
   /**
@@ -148,24 +161,27 @@ export class Agent {
   }
 
   /**
-   * Receive the session each time an operation settles.
+   * Receive the session each time a turn settles.
    *
-   * Fires once after every send or manual compaction that ran, however it
-   * ended: after its `turn:end` when it opened a turn, and before its handle
-   * settles. The agent is at rest and the next queued operation has not
+   * Fires after every turn that commits, however it ended, and once for an
+   * operation that ran without opening one: after the `turn:end`, and before
+   * the handle settles or the next turn opens. A send without a continuation
+   * fires exactly once; a send with one also fires for each inline turn,
+   * under that turn's own id. The agent is at rest and nothing else has
    * started, so a host that reads its `Transcript.turns` inside the callback
    * gets turns and messages that match. An operation cancelled while still
    * queued never ran and does not fire. The session is the one `snapshot()`
    * returns; unlike `snapshot()`, it does not wait behind queued operations.
-   * The operation carries exactly what the handle is about to settle with:
-   * the result on success, the rejection reason otherwise.
+   * The operation carries the turn's outcome: the result on success, the
+   * rejection reason otherwise.
    *
-   * A callback may return a promise. The handle does not settle and the next
-   * queued operation does not start until every callback has settled; all
-   * callbacks run together. A callback that throws or rejects cannot affect
-   * the operation: the error is recorded on the trace and the other callbacks
-   * still run. The operation is already done while callbacks run, so
-   * `cancel()` and `stop()` return `false` in that window.
+   * A callback may return a promise. The handle does not settle, a
+   * continuation does not resume, and the next queued operation does not
+   * start until every callback has settled; all callbacks run together. A
+   * callback that throws or rejects cannot affect the turn: the error is
+   * recorded on the trace and the other callbacks still run. The turn is
+   * already done while callbacks run, so `stop()` returns `false` in that
+   * window, and so does `cancel()` unless a continuation remains to run.
    *
    * Do not await `send()`, `compact()` or `snapshot()` on this agent from
    * inside a callback: the callback holds the queue they wait for, so the
@@ -219,36 +235,33 @@ export class Agent {
     });
   }
 
-  /** Schedule a FIFO conversation turn. */
-  send(message: string | Instruct<undefined>, options?: SendMessageOptions): AgentHandle<string>;
+  /**
+   * Schedule a FIFO conversation turn.
+   *
+   * With `after`, the send carries a continuation: it runs after the turn
+   * settles with a result, holds the queue until it returns, and may run
+   * inline turns through `ctx.send()`. The handle then resolves with the
+   * inline turns listed under `after`. A turn whose handle rejects skips it.
+   */
+  send(
+    message: string | Instruct<undefined>,
+    options?: SendMessageOptions<string>,
+  ): AgentHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
-    options?: SendMessageOptions,
+    options?: SendMessageOptions<ParsedSchema<TSchema>>,
   ): AgentHandle<ParsedSchema<TSchema>>;
   send(messageOrInstruct: string | Instruct<any>, options?: SendMessageOptions): AgentHandle<any> {
-    const { fileResolver, metadata, ...modelOptions } = options ?? {};
-    const instruct =
-      typeof messageOrInstruct === "string"
-        ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
-        : messageOrInstruct.clone();
-    instruct.validate();
-    const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
-    const message = instruct.toMessage({ metadata });
-    const userTurn = userTurnFromMessage(message);
+    const { after, ...sendOptions } = options ?? {};
+    const prepared = this.prepareSend(messageOrInstruct, sendOptions);
+    const { userTurn } = prepared;
 
     this.emitEvent({ type: "pending:queued", turn: { ...userTurn, status: "pending" } });
 
     return this.scheduler.schedule(
-      ({ signal }) =>
-        this.executeTurn(instruct, {
-          signal,
-          fileResolver,
-          message,
-          userTurn,
-          requestOptions,
-        }),
+      ({ signal }) => this.executeTurn(prepared, { signal, announced: true }),
       {
-        signal: modelOptions.signal,
+        signal: prepared.requestOptions.signal,
         onWithdrawn: () =>
           this.emitEvent({
             type: "pending:dropped",
@@ -256,8 +269,83 @@ export class Agent {
             reason: { type: "cancelled" },
           }),
         settle: (result) => this.settle({ kind: "send", id: userTurn.id, result }),
+        after: after && ((value, inline) => this.continueSend(after, value, inline, userTurn.id)),
       },
     );
+  }
+
+  private prepareSend(
+    messageOrInstruct: string | Instruct<any>,
+    options: InlineSendOptions,
+  ): PreparedSend {
+    const { fileResolver, metadata, ...modelOptions } = options;
+    const instruct =
+      typeof messageOrInstruct === "string"
+        ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
+        : messageOrInstruct.clone();
+    instruct.validate();
+    const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
+    const message = instruct.toMessage({ metadata });
+    return {
+      instruct,
+      fileResolver,
+      message,
+      userTurn: userTurnFromMessage(message),
+      requestOptions,
+    };
+  }
+
+  private async continueSend(
+    after: Continuation<any>,
+    value: AgentResult<any> | AgentErrorResult,
+    inline: InlineRunner,
+    id: string,
+  ): Promise<AgentResult<any> | AgentErrorResult> {
+    const inlineTurns: InlineTurn[] = [];
+    const agent = this;
+    const span = this.spanParent?.startSpan("agent.continuation", {
+      type: "workflow",
+      attributes: { sessionId: this.sessionId, id },
+    });
+    const ctx: ContinuationContext = {
+      signal: inline.signal,
+      id,
+      get messages() {
+        return agent.messages;
+      },
+      get pending() {
+        return agent.pendingTurns;
+      },
+      send: (messageOrInstruct: string | Instruct<any>, options?: InlineSendOptions) =>
+        this.sendInline(messageOrInstruct, options ?? {}, inline, inlineTurns, span),
+    };
+    let status: SpanStatus = "ok";
+    try {
+      await after(value, ctx);
+    } catch (error) {
+      status = spanStatusFromError(error);
+      span?.error(error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      span?.end(status);
+    }
+    return { ...value, after: inlineTurns };
+  }
+
+  private async sendInline(
+    messageOrInstruct: string | Instruct<any>,
+    options: InlineSendOptions,
+    inline: InlineRunner,
+    inlineTurns: InlineTurn[],
+    spanParent: Span | undefined,
+  ): Promise<AgentResult<any> | AgentErrorResult> {
+    const prepared = this.prepareSend(messageOrInstruct, options);
+    const result = await inline.run(
+      ({ signal }) => this.executeTurn(prepared, { signal, announced: false, spanParent }),
+      (outcome) => this.settle({ kind: "send", id: prepared.userTurn.id, result: outcome }),
+    );
+    inlineTurns.push({ userTurn: prepared.userTurn, ...result });
+    return result;
   }
 
   /**
@@ -274,11 +362,14 @@ export class Agent {
   }
 
   /**
-   * Cancel the active operation immediately. Its handle rejects with an
-   * `AxleAgentAbortError`, exactly as if that handle's own `cancel()` had been
-   * called: a turn that already opened settles `cancelled` with its partial
-   * work committed. Queued operations are unaffected and the next one starts.
-   * Returns `false` when nothing is running.
+   * Cancel whatever remains of the active operation. Its handle rejects with
+   * an `AxleAgentAbortError`, exactly as if that handle's own `cancel()` had
+   * been called: a turn that already opened settles `cancelled` with its
+   * partial work committed, a continuation that has not started never does,
+   * and one that is running sees `ctx.signal` abort along with any inline
+   * turn in flight. Queued operations are unaffected and the next one starts.
+   * Returns `false` when nothing remains: nothing is running, or the active
+   * turn is in its settle window with no continuation to run.
    */
   cancel(reason?: unknown): boolean {
     return this.scheduler.cancelCurrent(reason);
@@ -299,16 +390,11 @@ export class Agent {
   }
 
   private async executeTurn(
-    instruct: Instruct<any>,
-    runtime: {
-      signal: AbortSignal;
-      fileResolver?: FileResolver;
-      message: AxleUserMessage;
-      userTurn: Turn;
-      requestOptions?: AxleModelRequestOptions;
-    },
+    prepared: PreparedSend,
+    runtime: { signal: AbortSignal; announced: boolean; spanParent?: Span },
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const { signal, fileResolver, message, userTurn, requestOptions } = runtime;
+    const { instruct, fileResolver, message, userTurn, requestOptions } = prepared;
+    const { signal, announced } = runtime;
     let userTurnOpened = false;
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
@@ -317,7 +403,7 @@ export class Agent {
       for (const event of turnEventBuilder.finalizeTurn(outcome)) this.emitEvent(event);
     };
 
-    const root = this.spanParent?.startSpan("agent.send", {
+    const root = (runtime.spanParent ?? this.spanParent)?.startSpan("agent.send", {
       type: "workflow",
       attributes: {
         sessionId: this.sessionId,
@@ -465,7 +551,7 @@ export class Agent {
       }
 
       finalize(status === "cancelled" ? "cancelled" : "error");
-      if (!userTurnOpened) {
+      if (announced && !userTurnOpened) {
         this.emitEvent({
           type: "pending:dropped",
           id: userTurn.id,
@@ -729,14 +815,14 @@ export class Agent {
   }
 
   /**
-   * Capture the serializable session state for later continuation.
+   * Capture the serializable session state to resume from later.
    *
    * Resolves at once when the agent is idle, and otherwise when it next goes
    * idle, so the capture is always at rest — a snapshot never contains a
    * streaming or running turn, and it includes everything queued before the
    * agent went idle. It is not queued work: it does not make the agent busy,
    * fires no `onIdle`, and is not cancelled by `clear()`.
-   * The returned object is the pure continuation: session id and the active
+   * The returned object is the resumable state: session id and the active
    * model-facing conversation. It contains no renderable turn state —
    * transcripts are host-owned; persist your `Transcript.turns`
    * alongside it.
@@ -801,6 +887,23 @@ export class Agent {
 
   private emitEvent(event: TurnEvent): void {
     this.transcript.apply(event);
+    switch (event.type) {
+      case "pending:queued":
+        this.pendingTurns = [...this.pendingTurns, event.turn];
+        break;
+      case "pending:dropped":
+      case "turn:user":
+      case "turn:start": {
+        const id =
+          event.type === "pending:dropped"
+            ? event.id
+            : event.type === "turn:user"
+              ? event.turn.id
+              : event.turnId;
+        this.pendingTurns = this.pendingTurns.filter((turn) => turn.id !== id);
+        break;
+      }
+    }
     for (const cb of this.eventCallbacks) cb(event);
   }
 

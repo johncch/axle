@@ -1,6 +1,6 @@
-# Agent state: the continuation and the transcript
+# Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-10-09 (0.34.0)
+**Status**: current · **Last design revision**: 2026-10-14 (0.35.0)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -8,7 +8,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 
 ## Invariants
 
-1. **The Agent is a continuation, not a record.** `AgentSession =
+1. **The Agent is resumable state, not a record.** `AgentSession =
 { sessionId, messages }` — the session id and the active model-facing
    conversation, nothing else. `agent.snapshot()` returns exactly this;
    `new Agent(config, session)` restores it. Unknown keys in stored
@@ -56,22 +56,29 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `pending` only to mirror a live transcript, and discards any entry whose
    id is already in `turns`. `snapshot()` opens no turn and is neither
    queued nor pending (invariant 10).
-8. **The Agent hands over the session and the outcome when an operation
-   settles, and waits for the host.** `agent.onSettled(...)` fires once for
-   every operation that ran, however it ended: after its `turn:end` when it
-   opened a turn, and before its handle settles, with the value `snapshot()`
-   returns and a `SettledOperation` carrying exactly what the handle is
-   about to settle with (`fulfilled` with the result, `rejected` with the
-   reason) and the `id` its `pending:queued` turn carried, so a host follows
-   one operation from queued to settled without counting. An operation cancelled while still queued never ran and does not
-   fire. Callbacks run together and are awaited: the handle does not settle
+8. **The Agent hands over the session and the outcome after every turn
+   that commits, and waits for the host.** `agent.onSettled(...)` fires
+   after each turn an operation commits, however it ended, and once for an
+   operation that ran without opening a turn: after the `turn:end`, and
+   before the handle settles or the next turn opens, with the value
+   `snapshot()` returns and a `SettledOperation` carrying that turn's
+   outcome (`fulfilled` with the result, `rejected` with the reason) and
+   its `id`. For an operation's own turn the id is the one its
+   `pending:queued` turn carried, so a host follows one operation from
+   queued to settled without counting; an inline turn (invariant 11)
+   settles under its own id, which no `pending:queued` announced, and a host
+   that keys rows by id ignores it by construction. An operation without a
+   continuation therefore fires exactly once. An operation cancelled while
+   still queued never ran and does not fire. Callbacks run together and are
+   awaited: the handle does not settle, the continuation does not resume,
    and the next queued operation does not start until every callback has
    settled, so a host that reads its `Transcript.turns` inside the callback
    holds turns and messages that match exactly, and nothing from the next
-   operation is observable before the callback resolves. The operation is
-   already done while callbacks run: `cancel()` and `stop()` return `false`
-   in that window, and the callback receives no signal — the work inside it
-   is the host's to cancel. The callback is its own channel: the session
+   turn is observable before the callback resolves. The callback receives
+   no signal — the work inside it is the host's to cancel — and the turn is
+   already done while callbacks run: `stop()` returns `false` in that
+   window, and so does `cancel()` unless a continuation remains to run
+   (invariant 11). The callback is its own channel: the session
    never rides the turn event stream, which hosts forward to clients. A
    callback reports an outcome and cannot change it: one that throws or
    rejects is caught, recorded on the trace, and does not stop the other
@@ -85,12 +92,15 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `Transcript` holds: hosts forward them to clients, and nothing listening
    can hold the engine. Lifecycle goes through hooks, and whether a hook is
    awaited is a property of that hook. `onSettled` is awaited: it is the
-   host's control channel at the one rest point, able to hold the queue,
+   host's save channel at each rest point, able to hold the queue,
    carrying what must not ride the event stream. Work that has to finish
-   before the next operation starts goes there. `onIdle` is not awaited: it
-   reports that the Agent went from busy to idle. The scheduler owns the
-   rest point as a task state (`queued`, `running`, `settling`, `settled`);
-   the Agent adds no flag of its own. The Agent's tool and skill registries
+   before the next turn starts goes there. A continuation (invariant 11) is
+   the host's steering channel, attached to one send: it holds the queue
+   too, and it is where turns are run and per-operation work is done.
+   `onIdle` is not awaited: it reports that the Agent went from busy to
+   idle. The scheduler owns the rest point as a task state (`queued`,
+   `running`, `settling`, `continuing`, `settled`); the Agent adds no flag
+   of its own. The Agent's tool and skill registries
    are live state the host changes at any time; the Agent hands their
    current values to `stream()` when a turn opens and at every tool-batch
    boundary, and `stream()` holds no registry ([skills.md](./skills.md)).
@@ -112,6 +122,42 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     work. It resolves at once when the Agent is idle and otherwise at the
     next change to idle, so it is always at rest, includes everything that
     was queued, causes no firing, and is not cancelled by `clear()`.
+11. **A send can carry a continuation; it runs in the held slot and the
+    queue waits for it.** `agent.send(message, { after })` attaches a
+    program to that send. After the send's turn settles with a result, the
+    scheduler runs `after(result, ctx)` before it releases the slot: the
+    handle does not settle and the next queued operation does not start
+    until the continuation returns. The continuation runs for a turn that
+    resolved, `ok: true` or `ok: false`; a turn whose handle rejects
+    (cancelled, a fatal tool error, a setup failure) has no result to hand
+    over, skips it, and rejects the handle. `ctx.send()` runs an
+    inline turn: the same arguments as `agent.send()` without `after`, the
+    same turn as any send (`turn:user`, the agent turn, commit to messages,
+    automatic compaction as part of it, `onSettled` when it ends), started
+    at once with no `pending:queued`, and resolved with the turn's result
+    after that turn's `onSettled` callbacks resolve. Inline turns run one at
+    a time in call order; one still in flight when the continuation returns
+    is awaited before the handle settles, and a `ctx.send()` made after the
+    continuation returned rejects. `ctx` also carries `signal`, `id` (the send's user
+    turn id, the one `pending:queued` announced), read-only `messages`, and
+    read-only `pending` (the queued preview turns). An inline turn carries
+    no continuation, and a manual `compact()` carries none. The handle keeps
+    its type: `AgentResult` and `AgentErrorResult` carry `after`, the inline
+    turns in order as `{ userTurn, ...result }`, present only when the send
+    carried a continuation; the top-level fields remain the message that was sent and what it
+    got back. `cancel()` cancels whatever of the operation remains and
+    returns `false` only when nothing does: before the continuation starts
+    it never starts; during it `ctx.signal` aborts, the inline turn in
+    flight aborts, the next `ctx.send()` rejects at once, and the handle
+    rejects with `AxleAgentAbortError`. `stop()` keeps its tool-batch
+    meaning for an inline turn in flight and returns `false` while no turn
+    is in flight. `clear()` never touches a continuation. A continuation
+    that throws rejects the handle; the queue continues. Committed inline
+    turns stay committed. A continuation has no pending entry, leaves
+    nothing on the event stream of its own, and bounds itself: the Agent
+    does not time it out. `agent.send()`, `compact()` and `snapshot()`
+    awaited from inside a continuation deadlock, as they do from inside
+    `onSettled`; an unawaited `agent.send()` queues at the back.
 
 ## Design rationale (2026-08-12)
 
@@ -308,7 +354,134 @@ Accepted consequence:
   The same host already heard nothing when the model call failed, since
   that resolves with `ok: false`. Whether to exit is the host's decision.
 
+## Continuations (2026-10-14)
+
+A host that judges an answer and feeds a correction back needs
+`A → judge → correction → B`, where B is a user message that may have been
+queued while the judge ran. The host had no way to put the correction
+ahead of B: `agent.send()` queues at the back, and awaiting it from inside
+a tool or `onSettled` deadlocks, since the current operation holds the
+queue the new one waits for. The same host wanted one place for the whole
+cycle around a message, and kept a queue of its own in front of the
+Agent's to get it, two queues to keep consistent.
+
+The queue is the user's: FIFO and random access by id, nothing else. The
+missing primitive was system-side, a way to interject at the rest point
+without touching the queue. The resolution attaches a program to the send:
+it runs after the send's turn settles, while the scheduler still holds the
+slot, and it can run turns of its own. The queue waits for it to return.
+
+The primitive is a held slot with a sequential inside API, not a callback.
+`after` is only how the program gets its place, after that send's turn and
+before the next queued operation. Inside, judging the correction is the
+next line of the loop, so inline turns carry no continuation and nothing
+nests. The loop that was state across several settle firings becomes a
+`for` with a counter.
+
+The continuation split two jobs the hook had carried together. Saving is
+per turn: every committed turn is a point where turns and messages agree
+and nothing else runs, so `onSettled` fires for inline turns too, and
+`await ctx.send()` resolves only after that turn's callbacks resolve. Work
+that belongs to the cycle, a `run:stop`, a sandbox snapshot, moves to the
+end of the continuation, in a `finally`. No per-operation hook was added:
+the end of the operation is the handle settling and the continuation's own
+return.
+
+The handle keeps its type and the result records what happened. The Agent
+knows what was sent and what came back, in order; it does not know which
+attempt won, and the host's judge does. So `AgentResult` and
+`AgentErrorResult` gain `after`, the inline turns as a list, each with its
+own `ok`, and the top-level fields stay the message that was sent and its
+reply. The field is present only when the send carried a continuation:
+almost no send does, its only readers are the continuation authors who
+opted in, and a required field would have put `after: []` on every result
+to serve the rare case. Inline responses are typed `unknown`: the handle's reader never saw
+the inline send's schema, and the continuation had the typed value in hand
+when it called `ctx.send()`.
+
+The continuation receives a result, so it runs when the turn resolved,
+`ok: true` or `ok: false`: a model error or parse failure is exactly the
+case where a host wants to fetch more data and `ctx.send()` it. A rejected
+turn has no result to hand over. A cancel is the user saying stop; a fatal
+tool error or a setup failure is an exception, and exceptions propagate to
+the handle. All three skip the continuation, and a cancel during one
+aborts everything that remains.
+
+Accepted consequences:
+
+- **`onSettled` fires more than once for a send with a continuation.** A
+  send without one fires exactly once, as before. Per-turn work in the hook
+  that is slow (a sandbox snapshot) runs after every inline turn and
+  delays the loop; it belongs at the end of the continuation.
+- **The handle's `response` is the first answer, not the last.** A caller
+  wanting the corrected answer reads the last entry of `after`.
+- **An inline turn's settle carries an id no `pending:queued` announced.**
+  Id-keyed hosts ignore it. The settle carries no parent id: every job that
+  would tell inline turns apart lives in the continuation.
+- **A crash mid-continuation loses the program and keeps the committed
+  turns.** The same loss a mid-stream turn already has. Unawaited work
+  inside the continuation does not hold the slot and is not waited for.
+- **`stop()` has no gentle option while the judge runs.** No turn is in
+  flight, so it returns `false`. `ctx.pending` is how a loop notices that
+  the user already typed a correction.
+- **A continuation must bound itself.** Attempt limits are the host's.
+
 ## Rejected alternatives
+
+- **A queued `agent.run(program)` that reserves the slot** (2026-08-25,
+  rejected 2026-10-09): the right inside, inline sends in a held slot, in
+  the wrong place. As a queued operation it could drift from the turn it
+  judged, so it needed a `target` handle; it opened no turn of its own, so
+  it had no place in `pending`; and it needed an operation noun that
+  collided with `run` in terminology. Attaching the program to its send
+  removes all three.
+- **Front-of-queue send as the steering primitive** (2026-10-09): solves
+  the ordering, leaves the judge loop on the host as state across settle
+  firings, and blurs the user's queue with system interjections. Front
+  insertion stays a user-side queue feature.
+- **Inline sends from inside `onSettled`** (2026-10-09): the hook already
+  holds the slot, so it is tempting. But every settle fires it, including
+  the inline turn's, so the judge judges its own feedback through
+  recursion; and it mixes the save channel with the steering channel.
+- **A continuation on inline turns** (2026-10-14): the continuation is
+  imperative code and judging the correction is the next line of the loop.
+  Nesting would re-raise which judge judges what.
+- **`onSettled` once per operation** (2026-10-14): the inside of the
+  continuation would get no save point, so a crash during the second judge
+  loses a committed, already-streamed turn from storage. A per-operation
+  hook beside the per-turn one was rejected with it: the handle and the
+  continuation's own return already mark the operation's end.
+- **The handle resolves with the continuation's return value**
+  (2026-10-14): subsumes any shape, but makes the handle's type depend on
+  host code, needing extra overloads and a type parameter, and a
+  continuation that returns nothing yields a void handle. The Agent records
+  facts, not meaning.
+- **The handle resolves with the last turn's result** (2026-10-14): keeps
+  the type only while every inline send shares the first send's schema.
+- **`response: T[]`, or a second top-level field beside `response`**
+  (2026-10-14): loses which attempt won, or hard-codes one reading. The
+  ordered `after` list records the same facts without deciding.
+- **Running the continuation on a rejected turn** (2026-10-14): after a
+  cancel, programmatic follow-ups are wrong, since cancel is the user saying
+  stop. A fatal tool error or setup failure has no result to hand over, and
+  the draft rule "every outcome except cancellation" would have made the
+  continuation's argument a settled-result wrapper with a status check in
+  front of every judge loop. Bookkeeping still has the turn's `onSettled`
+  and the rejected handle.
+- **A parent operation id on an inline turn's `SettledOperation`, as a
+  field or as a third callback argument** (2026-10-14): hosts key rows by
+  id, so an unannounced id is a no-op, and the jobs that would distinguish
+  inline turns live in the continuation. A field with no reader. Naming it
+  `after` was rejected on its own: the word already means the inline-turn
+  list on a result, and `after: undefined` on the first turn's settle would
+  read as "no continuation" when there was one.
+- **`then` as the option name** (2026-10-09): a function-valued `then`
+  makes the options object a thenable, and `Promise.resolve` would call it.
+- **Observer-style names (`onFinish`, `onEnd`, "hook")** (2026-10-14): those
+  neither hold control nor run turns, and a hook in this document is an
+  agent-level lifecycle callback. "Continuation" is the term for the rest
+  of the computation handed over as a function, which is what this is;
+  invariant 1 gave up the word so it has one meaning.
 
 - **Marking `final` as handled only when an `onSettled` callback is
   registered** (2026-10-09): the same send would or would not take the
@@ -451,7 +624,7 @@ Accepted consequence:
   ceremony, and it falsely implies the Agent owns the transcript's lifecycle.
   The event stream is the channel designed for this. Revisit only if turn
   commit must await durable writes (WAL semantics), which no consumer wants.
-- **`agent.sessionUsage` meter** (2026-08-12): usage fails the continuation
+- **`agent.sessionUsage` meter** (2026-08-12): usage fails the resumable-state
   test (instance-lifetime, resets on restore) and hosts already receive
   per-turn usage on `turn:end`.
 - **Turn retrieval/paging API on the Agent** (2026-08-11): deep-history

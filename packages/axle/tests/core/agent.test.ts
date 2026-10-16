@@ -1432,6 +1432,249 @@ describe("Agent", () => {
     });
   });
 
+  describe("continuations", () => {
+    function queuedIdsOf(agent: Agent): string[] {
+      const ids: string[] = [];
+      agent.on((event) => {
+        if (event.type === "pending:queued") ids.push(event.turn.id);
+      });
+      return ids;
+    }
+
+    function hangingProvider(): AIProvider {
+      return {
+        name: "hanging",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+    }
+
+    test("runs after the turn settles, holds the queue, and records the inline turns on the result", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const transcript = new Transcript();
+      const order: string[] = [];
+      const settledIds: string[] = [];
+      agent.on((event) => {
+        transcript.apply(event);
+        if (event.type === "pending:queued")
+          order.push(`queued:${getTextContent(event.turn.parts as never)}`);
+        if (event.type === "turn:user")
+          order.push(`user:${getTextContent(event.turn.parts as never)}`);
+      });
+      agent.onSettled((_session, operation) => {
+        settledIds.push(operation.id);
+        order.push(`settled:${operation.id}`);
+      });
+
+      let ctxId = "";
+      const handle = agent.send("do something", {
+        after: async (result, ctx) => {
+          ctxId = ctx.id;
+          order.push(`after:${result.response}`);
+          const first = await ctx.send("fix 1");
+          order.push(`inline:${first.response}`);
+          const second = await ctx.send("fix 2");
+          order.push(`inline:${second.response}`);
+        },
+      });
+      const final = handle.final.then((result) => {
+        order.push("resolved");
+        return result;
+      });
+      const queued = agent.send("another").final;
+
+      const result = await final;
+      await queued;
+
+      const userTurnIds = transcript.turns
+        .filter((turn) => turn.owner === "user")
+        .map((turn) => turn.id);
+      expect(userTurnIds).toHaveLength(4);
+      const [idA, idF1, idF2, idB] = userTurnIds;
+      expect(ctxId).toBe(idA);
+      expect(settledIds).toEqual([idA, idF1, idF2, idB]);
+      expect(order).toEqual([
+        "queued:do something",
+        "queued:another",
+        "user:do something",
+        `settled:${idA}`,
+        "after:do something",
+        "user:fix 1",
+        `settled:${idF1}`,
+        "inline:fix 1",
+        "user:fix 2",
+        `settled:${idF2}`,
+        "inline:fix 2",
+        "resolved",
+        "user:another",
+        `settled:${idB}`,
+      ]);
+      expect(result.ok).toBe(true);
+      expect(result.response).toBe("do something");
+      expect(result.after?.map((turn) => [turn.userTurn.id, turn.ok, turn.response])).toEqual([
+        [idF1, true, "fix 1"],
+        [idF2, true, "fix 2"],
+      ]);
+      expect(result.after?.[0]).not.toHaveProperty("after");
+      expect(transcript.pending).toEqual([]);
+    });
+
+    test("a send without a continuation resolves with no after", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const result = await agent.send("plain").final;
+      expect(result).not.toHaveProperty("after");
+    });
+
+    test("runs for a turn that resolved with ok: false", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const seen: boolean[] = [];
+
+      const result = await agent.send(
+        new Instruct({ prompt: "give me json", schema: z.object({ value: z.number() }) }),
+        {
+          after: async (result, ctx) => {
+            seen.push(result.ok);
+            await ctx.send("recover");
+          },
+        },
+      ).final;
+
+      expect(seen).toEqual([false]);
+      expect(result.ok).toBe(false);
+      expect(result.after?.map((turn) => turn.response)).toEqual(["recover"]);
+    });
+
+    test("is skipped when the turn was cancelled, and the handle rejects", async () => {
+      const agent = new Agent({ provider: hangingProvider(), model: "mock" });
+      let ran = false;
+      let opened = false;
+      agent.on((event) => {
+        if (event.type === "turn:start") opened = true;
+      });
+
+      const handle = agent.send("hello", {
+        after: async () => {
+          ran = true;
+        },
+      });
+      await vi.waitFor(() => expect(opened).toBe(true));
+      expect(agent.cancel()).toBe(true);
+
+      await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      expect(ran).toBe(false);
+    });
+
+    test("cancel() during the continuation aborts ctx.signal, the inline send and the handle, and the queue continues", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+      let judging = false;
+      let inlineError: unknown;
+      let signalAborted = false;
+      let stopDuringJudge: boolean | undefined;
+
+      const handle = agent.send("hello", {
+        after: async (_result, ctx) => {
+          judging = true;
+          await gate;
+          signalAborted = ctx.signal.aborted;
+          inlineError = await ctx.send("fix").catch((error) => error);
+        },
+      });
+      const queued = agent.send("another").final;
+
+      await vi.waitFor(() => expect(judging).toBe(true));
+      stopDuringJudge = agent.stop();
+      expect(agent.cancel()).toBe(true);
+      release();
+
+      await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      expect(stopDuringJudge).toBe(false);
+      expect(signalAborted).toBe(true);
+      expect(inlineError).toBeInstanceOf(AxleAgentAbortError);
+      await expect(queued).resolves.toMatchObject({ ok: true, response: "another" });
+    });
+
+    test("ctx exposes the queue and the conversation as they stand", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const queuedIds = queuedIdsOf(agent);
+      const pendingSeen: string[][] = [];
+      const userTexts: string[][] = [];
+      const texts = (messages: readonly { role: string; content: unknown }[]) =>
+        messages.filter((m) => m.role === "user").map((m) => getTextContent(m.content as never));
+
+      const handle = agent.send("first", {
+        after: async (_result, ctx) => {
+          pendingSeen.push(ctx.pending.map((turn) => turn.id));
+          userTexts.push(texts(ctx.messages));
+          await ctx.send("fix");
+          userTexts.push(texts(ctx.messages));
+        },
+      });
+      const queued = agent.send("second").final;
+      await handle.final;
+      await queued;
+
+      expect(pendingSeen).toEqual([[queuedIds[1]]]);
+      expect(userTexts).toEqual([["first"], ["first", "fix"]]);
+    });
+
+    test("an unawaited agent.send() from inside queues behind what was already queued", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const users: string[] = [];
+      agent.on((event) => {
+        if (event.type === "turn:user") users.push(getTextContent(event.turn.parts as never));
+      });
+      let late: Promise<unknown> | undefined;
+
+      const handle = agent.send("first", {
+        after: async (_result, ctx) => {
+          late = agent.send("late").final;
+          await ctx.send("fix");
+        },
+      });
+      const queued = agent.send("second").final;
+      await handle.final;
+      await queued;
+      await late;
+
+      expect(users).toEqual(["first", "fix", "second", "late"]);
+    });
+
+    test("ctx.send() after the continuation returned rejects", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      let sendLate!: () => Promise<unknown>;
+
+      await agent.send("first", {
+        after: async (_result, ctx) => {
+          sendLate = () => ctx.send("late");
+        },
+      }).final;
+
+      await expect(sendLate()).rejects.toThrow("continuation has already returned");
+    });
+
+    test("onIdle fires once, after the handle resolves", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      agent.onSettled(() => void order.push("settled"));
+      agent.onIdle(() => order.push("idle"));
+
+      await agent.send("first", {
+        after: async (_result, ctx) => {
+          await ctx.send("fix");
+        },
+      }).final;
+      order.push("resolved");
+      await vi.waitFor(() => expect(order).toContain("idle"));
+
+      expect(order).toEqual(["settled", "settled", "resolved", "idle"]);
+    });
+  });
+
   describe("onIdle", () => {
     test("fires once when the queue drains, after the last onSettled resolves", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
