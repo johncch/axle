@@ -30,6 +30,7 @@ export async function* createStreamingRequest(
     maxOutputTokens,
     toolChoice,
     parallelToolCalls,
+    cache,
     providerOptions,
   } = params;
   const span = runtime?.span;
@@ -58,6 +59,7 @@ export async function* createStreamingRequest(
       ...(apiTools.length > 0 && { tools: apiTools }),
       ...toAnthropicThinking(reasoning, model),
       ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
+      ...(cache !== false && { cache_control: { type: "ephemeral" as const } }),
 
       // Raw provider options are applied last so they can override Axle mappings.
       ...providerOptions,

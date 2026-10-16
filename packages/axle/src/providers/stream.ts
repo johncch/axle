@@ -142,8 +142,10 @@ export interface StreamParams extends AxleModelRequestOptions {
   onToolCall?: ToolCallCallback;
   /**
    * Identity of the conversation this stream continues. Forwarded to the
-   * provider; OpenRouter uses it as `session_id` for sticky routing and
-   * dashboard grouping. `Agent` passes its own `sessionId`.
+   * provider on every step; OpenRouter uses it as `session_id` for sticky
+   * routing and dashboard grouping. `Agent` passes its own `sessionId`; a
+   * call without one gets a fresh id so the steps of its own tool loop
+   * stay together.
    */
   sessionId?: string;
   maxSteps?: number;
@@ -292,13 +294,14 @@ async function run(
     maxContextTokens,
     span,
     fileResolver,
-    sessionId,
     reasoning,
     maxOutputTokens,
     toolChoice,
     parallelToolCalls,
+    cache,
     providerOptions,
   } = options;
+  const sessionId = options.sessionId ?? crypto.randomUUID();
   let system = options.system;
   let resolvedTools = resolveTools(options, provider);
   const workingMessages = [...messages];
@@ -371,6 +374,7 @@ async function run(
         maxOutputTokens,
         toolChoice,
         parallelToolCalls,
+        cache,
         providerOptions,
       });
 

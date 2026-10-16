@@ -460,9 +460,50 @@ failure is still the provider failing the request, and a consumer that
 switches on `kind` to decide whether to retry wants it under `model`; the
 `type` is the finer distinction, the same place the provider's own type sits.
 
+## Prompt caching
+
+Caching is a request concern rather than content, but it is per provider
+and it fails silently, so it is recorded here. The portable option is
+`cache?: boolean` on `AxleModelRequestOptions`, default `true`. It means
+"ask the provider to cache the prompt prefix where asking is required". It
+does not mean "cache on or off": two providers cache whether asked or not
+and cannot be told to stop, so a knob with that meaning could not be
+honored.
+
+| Provider   | Provider requires                                                                                                                                                                                                                                                                                                                                                                                                                                    | What Axle sends                                                                                                                                                                                                                                   | Observed                                                                                                                                                                                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anthropic  | Opt-in. Either `cache_control` on a content block, or one top-level `cache_control` that "automatically applies the cache breakpoint to the last cacheable block and moves it forward as conversations grow". At most 4 breakpoints; the top-level one takes a slot. Prompts under the model minimum (512 to 4,096 tokens) are "not cached, even if marked", with no error. Writes 1.25x (5 min) or 2x (1 h), reads 0.1x; a read refreshes the entry | Top-level `cache_control: { type: "ephemeral" }` unless `cache === false`. `providerOptions.cache_control` overrides it, which is how a host gets the 1-hour TTL                                                                                  | 2026-10-16, `claude-haiku-4-5`, `cache-prompt-reuse`: first call wrote 10,032 tokens, second read 10,032                                                                                                                                                          |
+| OpenAI     | Automatic for prompts of 1,024 tokens or more; no field to send and no way to disable. `prompt_cache_key` is an optional routing hint                                                                                                                                                                                                                                                                                                                | Nothing; `cache` is ignored                                                                                                                                                                                                                       | The `cache-prompt-reuse` check reads on the second call                                                                                                                                                                                                           |
+| Gemini     | Implicit caching is automatic on 2.5 and later, no field. Explicit caching is a `cachedContent` resource created ahead of the request, with its own TTL                                                                                                                                                                                                                                                                                              | Nothing; `cache` is ignored. `providerOptions.cachedContent` names an explicit resource                                                                                                                                                           | The `cache-gemini-cached-content` check                                                                                                                                                                                                                           |
+| OpenRouter | Pass-through to the upstream. "Most providers automatically enable prompt caching"; Anthropic and Alibaba need `cache_control`, accepted on a block or top level in the same shapes as Anthropic. A hit needs the same upstream host, which `session_id` pins                                                                                                                                                                                        | Top-level `cache_control: { type: "ephemeral" }` on every `openrouter` vendor request unless `cache === false`, next to `session_id`, which `stream()` now fills with a per-call id when the caller gives none so one tool loop stays on one host | 2026-10-16, `deepseek/deepseek-v4.1-flash`: the field is accepted and ignored, 200. `anthropic/claude-haiku-4-5` without `session_id`: both calls wrote 10,031, read 0. With `session_id`: second call read 10,030. The check sends a `sessionId` since this date |
+| Together   | Automatic on serverless and dedicated inference; "no parameter, header, or setting" enables it and `disable_prompt_cache` is deprecated. Entries last about an hour, best effort. Writes are free, reads bill at a per-model cached rate; `prompt_cache_key` is an optional routing hint. Reports the hit count under `prompt_tokens_details.cached_tokens` on reasoning models and as a top-level `usage.cached_tokens` on some others              | Nothing; `cache` is ignored. The usage mapping reads both locations                                                                                                                                                                               | The `cache-prompt-reuse` check reads on the second call (`GLM-5.3-Flash`, nested shape). The top-level shape is covered by a unit test, not a live run                                                                                                            |
+
+### Decision, 2026-10-16: on by default, as "ask where asking is required"
+
+Until 0.34.1 no Axle request to Anthropic asked for caching, so every step
+of every tool loop re-billed the whole conversation at full price. That was
+an omission, not a decision; no doc or note recorded it. Rejected on the
+way to the fix:
+
+- **A knob meaning "caching on or off".** OpenAI and Gemini cache
+  regardless and cannot be disabled, so `false` could not be honored there.
+  The option is defined as whether Axle asks, and the two automatic
+  providers ignore it.
+- **Off by default, opt in through `providerOptions`.** The prior state.
+  The one-shot case saves a 25% write premium; the loop case, which is what
+  `Agent` is for, loses 90% of its input cost. The default follows the loop.
+- **Per-block breakpoints or a 1-hour default.** Placement is a host-level
+  concern and reads refresh the 5-minute entry on every step of a loop, so
+  the longer TTL would double the write cost for nothing. Both stay on
+  `providerOptions`.
+- **Sending the field on OpenRouter only for `anthropic/` models.**
+  Observed ignored for a non-Claude model, and a model-prefix table is the
+  maintenance failure the reasoning knob already ran into.
+
 ## Sources
 
 Read on 2026-10-01:
+Read on 2026-10-16: [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
 
 - Anthropic: [server tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools),
   [web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool),
@@ -481,6 +522,8 @@ Read on 2026-10-01:
 - OpenRouter: [web search server tool](https://openrouter.ai/docs/guides/features/server-tools/web-search).
   Read on 2026-10-02: [API overview](https://openrouter.ai/docs/api/reference/overview)
   for finish reasons
+  Read on 2026-10-16: [prompt caching](https://openrouter.ai/docs/features/prompt-caching)
 - Together: the `FinishReason` enum in the
   [chat completions reference](https://docs.together.ai/reference/chat-completions-1),
   read on 2026-10-02
+  Read on 2026-10-16: [prompt caching](https://docs.together.ai/docs/inference/chat/prompt-caching)

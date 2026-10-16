@@ -87,6 +87,44 @@ describe("createStreamingRequest (Anthropic)", () => {
     });
   });
 
+  test("asks for prompt caching by default", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: "claude-haiku-4-5",
+        messages,
+        runtime: {},
+      }),
+    );
+    expect(request().cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  test("cache: false omits cache_control", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: "claude-haiku-4-5",
+        messages,
+        runtime: {},
+        cache: false,
+      }),
+    );
+    expect(request()).not.toHaveProperty("cache_control");
+  });
+
+  test("providerOptions.cache_control overrides the default breakpoint", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: "claude-haiku-4-5",
+        messages,
+        runtime: {},
+        providerOptions: { cache_control: { type: "ephemeral", ttl: "1h" } },
+      }),
+    );
+    expect(request().cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+  });
+
   test("adaptive thinking with effort on Opus 4.8", async () => {
     await drain(
       createStreamingRequest({

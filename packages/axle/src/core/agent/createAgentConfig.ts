@@ -59,6 +59,7 @@ export async function createAgentConfig(
     maxOutputTokens: definition.request?.maxOutputTokens,
     toolChoice: definition.request?.toolChoice,
     parallelToolCalls: definition.request?.parallelToolCalls,
+    cache: definition.request?.cache,
     providerOptions: definition.request?.providerOptions,
   };
 }

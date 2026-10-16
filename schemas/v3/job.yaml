@@ -223,6 +223,10 @@ properties:
       parallelToolCalls:
         description: Whether the model may request several tool calls in one response.
         type: boolean
+      cache:
+        description: Whether to ask the provider to cache the prompt prefix where asking
+          is required (Anthropic, OpenRouter). Default true.
+        type: boolean
       providerOptions:
         description: Sent to the provider as-is under its own field names, e.g. temperature.
         type: object

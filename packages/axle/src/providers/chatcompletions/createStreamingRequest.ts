@@ -12,6 +12,7 @@ import {
   prepareProviderTools,
   toChatCompletionsReasoning,
   toChatCompletionsToolChoice,
+  toChatCompletionsVendorFields,
   type ChatCompletionsVendor,
 } from "./utils.js";
 
@@ -44,6 +45,7 @@ export async function* createStreamingRequest(
     maxOutputTokens,
     toolChoice,
     parallelToolCalls,
+    cache,
     providerOptions,
   } = params;
   const span = runtime?.span;
@@ -80,7 +82,7 @@ export async function* createStreamingRequest(
       ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
       ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
       ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
-      ...(vendor === "openrouter" && sessionId !== undefined ? { session_id: sessionId } : {}),
+      ...toChatCompletionsVendorFields(vendor, { sessionId, cache }),
 
       // Raw provider options are applied last so they can override Axle mappings.
       ...providerOptions,

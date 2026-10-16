@@ -55,6 +55,12 @@ export interface AxleModelRequestOptions {
   toolChoice?: ToolChoice;
   /** Requests that the provider avoid parallel tool calls when supported. */
   parallelToolCalls?: boolean;
+  /**
+   * Whether Axle asks the provider to cache the prompt prefix where asking is
+   * required (Anthropic, OpenRouter). Defaults to `true`. Providers that cache
+   * on their own (OpenAI, Gemini, Together) are unaffected by either value.
+   */
+  cache?: boolean;
   /** Raw provider-specific request fields applied after normalized mappings. */
   providerOptions?: ProviderOptions;
   /** Abort signal for the in-flight model request. */

@@ -790,6 +790,38 @@ describe("createStreamingRequest", () => {
       expect(JSON.parse((fetch as any).mock.calls[2][1].body)).not.toHaveProperty("session_id");
     });
 
+    test("asks OpenRouter for prompt caching by default and only there", async () => {
+      const request = (vendor?: "openrouter" | "togetherai", cache?: boolean) =>
+        collectChunks(
+          createStreamingRequest({
+            baseUrl: BASE_URL,
+            model: MODEL,
+            vendor,
+            cache,
+            messages: [{ role: "user", content: "Hi" }],
+            runtime: {},
+          }),
+        );
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request("openrouter");
+      expect(JSON.parse((fetch as any).mock.calls[0][1].body).cache_control).toEqual({
+        type: "ephemeral",
+      });
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request("openrouter", false);
+      expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("cache_control");
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request("togetherai");
+      expect(JSON.parse((fetch as any).mock.calls[2][1].body)).not.toHaveProperty("cache_control");
+
+      (fetch as any).mockResolvedValue(okStream());
+      await request(undefined);
+      expect(JSON.parse((fetch as any).mock.calls[3][1].body)).not.toHaveProperty("cache_control");
+    });
+
     test("omits session_id when no sessionId is given", async () => {
       (fetch as any).mockResolvedValue(okStream());
       await collectChunks(

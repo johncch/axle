@@ -277,7 +277,35 @@ conversation and start a new call. Non-positive limits throw at call time.
 
 `sessionId` names the conversation a call continues. Providers that route or
 group by session use it (OpenRouter's `session_id`); the rest ignore it.
-`Agent` passes its own.
+`Agent` passes its own. A `stream()` or `generate()` call without one gets a
+fresh id, sent on every step of that call's tool loop, so the steps route
+together; only a caller-supplied id ties separate calls to one conversation.
+
+### Prompt caching
+
+Axle asks the provider to cache the prompt prefix wherever asking is
+required. Anthropic requests, and chat-completions requests to OpenRouter,
+carry a top-level `cache_control: { type: "ephemeral" }`. The provider puts
+one cache breakpoint on the last cacheable block and moves it forward as the
+conversation grows, so in a tool loop each step reads everything so far and
+writes only what the previous step added. OpenAI, Gemini and Together cache
+automatically and get no field.
+
+`cache: false` omits the field. It is accepted by `Agent`, `generate()`, and
+`stream()` alike; providers that cache on their own are unaffected by either
+value. A prompt below the model's minimum cacheable length (512 to 4,096
+tokens on Anthropic, by model) is silently not cached. A cache write bills
+input at 1.25x and a read at 0.1x, so a one-shot prompt that is never
+repeated pays a premium and is the case for `cache: false`. The entry lives
+five minutes and every read refreshes it; for Anthropic's one-hour TTL pass
+the whole object through `providerOptions.cache_control`, which overrides
+the default.
+
+Usage reports what happened: `cachedIn` is tokens read from cache and
+`cacheWriteIn` tokens written. On OpenRouter a hit needs both requests to
+reach the same upstream host, which `sessionId` provides. `Agent` sends its
+own and a bare call gets one for its own loop, so hits across separate
+`generate()` or `stream()` calls need a `sessionId` you pass.
 
 ### Reasoning
 

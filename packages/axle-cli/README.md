@@ -158,6 +158,11 @@ request:
     temperature: 0.2
 ```
 
+`cache` defaults to `true` and asks the provider to cache the prompt prefix
+where asking is required (Anthropic, OpenRouter); `cache: false` omits the
+request, for a recipe that never repeats a prompt and would rather not pay
+the cache write premium. OpenAI, Gemini and Together cache on their own either way.
+
 `reasoning` takes `default`, `off`, `on`, or
 `{ effort: low | medium | high, display?: visible | hidden }`. `display`
 defaults to `visible`; `hidden` asks the provider to keep its thinking off

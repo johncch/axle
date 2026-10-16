@@ -21,6 +21,7 @@ import {
   prepareOpenRouterProviderTools,
   toOpenRouterReasoning,
   toOpenRouterReasoningDetails,
+  toOpenRouterRequestFields,
 } from "./vendors/openrouter/index.js";
 import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
 
@@ -59,6 +60,14 @@ export function toChatCompletionsReasoning(
   return toReasoningEffort(reasoning);
 }
 
+export function toChatCompletionsVendorFields(
+  vendor: ChatCompletionsVendor | undefined,
+  fields: { sessionId: string | undefined; cache: boolean | undefined },
+) {
+  if (vendor === "openrouter") return toOpenRouterRequestFields(fields);
+  return {};
+}
+
 export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
@@ -74,7 +83,9 @@ export function chatUsageToStats(usage: ChatCompletionUsage | undefined): Stats 
     },
     {
       cachedIn:
-        usage?.prompt_tokens_details?.cached_tokens ?? usage?.input_tokens_details?.cached_tokens,
+        usage?.prompt_tokens_details?.cached_tokens ??
+        usage?.input_tokens_details?.cached_tokens ??
+        usage?.cached_tokens,
       cacheWriteIn:
         usage?.prompt_tokens_details?.cache_write_tokens ??
         usage?.prompt_tokens_details?.cache_creation_tokens ??
