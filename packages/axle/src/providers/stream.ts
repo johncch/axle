@@ -25,7 +25,7 @@ import {
   logStepContent,
   resolveTools,
   validateLoopLimits,
-  type AxleFailure,
+  type AxleProviderFailure,
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -115,7 +115,7 @@ export type StreamEvent =
       error: { type: string; message: string };
     }
   // Error
-  | { type: "error"; error: AxleFailure };
+  | { type: "error"; error: AxleProviderFailure };
 
 export type StreamEventCallback = (event: StreamEvent) => void;
 
@@ -425,7 +425,7 @@ async function run(
         ok: false,
         messages: newMessages,
         error: {
-          kind: "model",
+          kind: "api",
           type: outcome.errorType,
           message: outcome.message,
           ...(outcome.status === undefined ? {} : { status: outcome.status }),
@@ -457,14 +457,25 @@ async function run(
     }
 
     if (outcome.kind === "incomplete") {
+      if (outcome.usage) {
+        addStats(
+          usage,
+          attributeStats(outcome.usage, {
+            provider: provider.name,
+            model: outcome.model || model,
+          }),
+        );
+      }
       stepSpan?.end("error");
       return endWithResult({
         ok: false,
         messages: newMessages,
         error: {
-          kind: "model",
-          type: "IncompleteStream",
-          message: "Stream ended without a completion signal",
+          kind: "incomplete",
+          type: outcome.type,
+          message: outcome.message,
+          ...(outcome.usage ? { usage: outcome.usage } : {}),
+          ...(outcome.raw === undefined ? {} : { raw: outcome.raw }),
         },
         usage,
       });

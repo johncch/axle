@@ -113,7 +113,7 @@ export function createAnthropicStreamingAdapter(
             chunks.push(
               finishReason === undefined
                 ? {
-                    type: "error",
+                    type: "incomplete",
                     data: {
                       type: "FinishReasonError",
                       message: `Unexpected stop reason: ${event.delta.stop_reason}`,

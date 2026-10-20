@@ -2,7 +2,7 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentSession,
-  AxleFailure,
+  AxleProviderFailure,
   CompactionConfig,
   Span,
   Stats,
@@ -26,10 +26,12 @@ import type { LedgerEntry } from "./ledger.js";
 import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "./ledger.js";
 import { SessionStore } from "./sessions.js";
 
-function describeFailure(failure: AxleFailure): string {
+function describeFailure(failure: AxleProviderFailure): string {
   switch (failure.kind) {
-    case "model":
-      return `Model error: ${failure.message}`;
+    case "api":
+      return `API error: ${failure.message}`;
+    case "incomplete":
+      return `Incomplete response: ${failure.message}`;
     case "refusal": {
       const { text, category } = failure;
       const label = category ? `Refused (${category})` : "Refused";

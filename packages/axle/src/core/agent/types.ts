@@ -3,7 +3,7 @@ import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { EventLevel, Span } from "../../observability/types.js";
-import type { AxleFailure } from "../../providers/helpers.js";
+import type { AxleProviderFailure } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
 import type { Skill, SkillDefinitionRef } from "../../skills/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
@@ -204,7 +204,7 @@ export interface AgentResult<T = string> {
 export interface AgentErrorResult {
   ok: false;
   response?: undefined;
-  error: AxleFailure;
+  error: AxleProviderFailure;
   turn: Turn | undefined;
   usage: Stats;
   /** The inline turns the send's continuation ran, in order; present only when the send carried one. */

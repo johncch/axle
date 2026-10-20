@@ -344,7 +344,7 @@ export function createGeminiStreamingAdapter() {
         });
       } else {
         chunks.push({
-          type: "error",
+          type: "incomplete",
           data: {
             type: "FinishReasonError",
             message: `Unexpected finish reason: ${candidate.finishReason}`,

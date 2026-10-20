@@ -1,4 +1,4 @@
-import { InstructVariableError } from "../errors/InstructVariableError.js";
+import { AxleInstructVariableError } from "../errors/AxleInstructVariableError.js";
 import type {
   AxleAssistantMessage,
   AxleUserMessage,
@@ -128,7 +128,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
         replaceVariables(this.prompt, this.inputs);
       } catch (error) {
         if (error instanceof MissingVariablesError) {
-          throw new InstructVariableError(error.missingVariables);
+          throw new AxleInstructVariableError(error.missingVariables);
         }
         throw error;
       }

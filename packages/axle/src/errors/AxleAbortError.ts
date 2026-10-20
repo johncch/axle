@@ -1,8 +1,9 @@
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import type { Stats } from "../types.js";
-import { AxleError } from "./AxleError.js";
+import { AxleError, AxleErrorCode } from "./AxleError.js";
 
 export class AxleAbortError extends AxleError {
+  public override readonly code = AxleErrorCode.ABORTED;
   public readonly reason: unknown;
   public readonly messages?: AxleMessage[];
   public readonly partial?: AxleAssistantMessage;
@@ -18,7 +19,7 @@ export class AxleAbortError extends AxleError {
     },
   ) {
     super(message, {
-      code: "ABORTED",
+      code: AxleErrorCode.ABORTED,
       details: {
         reason: options?.reason,
         usage: options?.usage,

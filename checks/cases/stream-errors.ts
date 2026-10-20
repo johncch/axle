@@ -31,7 +31,7 @@ export const streamErrorCases: CheckCase[] = [
         const result = await api({ provider, model: "fixture", messages: [] });
         if (
           result.ok ||
-          result.error.kind !== "model" ||
+          result.error.kind !== "api" ||
           result.error.raw !== raw ||
           result.error.type !== "rate_limit_error" ||
           result.error.message !== "slow down" ||

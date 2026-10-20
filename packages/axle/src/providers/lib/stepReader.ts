@@ -44,7 +44,14 @@ export interface CompletedStep {
 export type StepReadOutcome =
   | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
-  | { kind: "incomplete" }
+  | {
+      kind: "incomplete";
+      type: string;
+      message: string;
+      usage?: Stats;
+      raw?: unknown;
+      model: string;
+    }
   | { kind: "refused"; refusal: Refusal; usage: Stats; model: string }
   | {
       kind: "provider-error";
@@ -393,6 +400,18 @@ export async function readStep(
         };
       }
 
+      case "incomplete": {
+        closePart();
+        return {
+          kind: "incomplete",
+          type: chunk.data.type,
+          message: chunk.data.message,
+          usage: chunk.data.usage,
+          raw: chunk.data.raw,
+          model: stepModel,
+        };
+      }
+
       case "error": {
         closePart();
         return {
@@ -427,10 +446,14 @@ export async function readStep(
     return { kind: "aborted", partial };
   }
 
-  // Stream ended without a complete chunk — connection dropped or provider bug
   if (finishReason === null) {
     closePart();
-    return { kind: "incomplete" };
+    return {
+      kind: "incomplete",
+      type: "IncompleteStream",
+      message: "Stream ended without a completion signal",
+      model: stepModel,
+    };
   }
 
   return {

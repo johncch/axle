@@ -50,28 +50,32 @@ export interface ToolExecutionOutcome {
 }
 
 /**
- * Why a `generate()`, `stream()`, or `agent.send()` resolved `ok: false`.
+ * Why a `generate()`, `stream()`, or `agent.send()` resolved `ok: false`:
+ * the provider's answer to a request that went out. Everything else throws
+ * `AxleError`. See docs/architecture/errors.md.
  *
- * - `model`: the provider failed the request. `type` is `"authentication"`
- *   when the provider rejected the credential, else the provider's own error
- *   type. `status` is the HTTP status when the failure was an HTTP response.
+ * - `api`: the API did not complete the request: a non-2xx response, a
+ *   transport failure, or an error event on an open stream. `type` is
+ *   `"authentication"` when the provider rejected the credential, else the
+ *   provider's own error type. `status` is the HTTP status when there was one.
+ * - `incomplete`: the API completed but the answer cannot be used: a stop
+ *   reason Axle has no mapping for, or a stream that ended with no
+ *   completion signal. `type` is the stop reason, or one of Axle's own.
  * - `refusal`: the provider declined the request or blocked its output.
  * - `parse`: the response did not match the `Instruct` schema.
  */
-export type AxleFailure =
+export type AxleProviderFailure =
   | {
-      kind: "model";
+      kind: "api";
       type: string;
       message: string;
       status?: number;
       usage?: Stats;
       raw?: unknown;
     }
+  | { kind: "incomplete"; type: string; message: string; usage?: Stats; raw?: unknown }
   | { kind: "refusal"; message: string; text?: string; category?: string }
   | { kind: "parse"; message: string; cause: unknown };
-
-/** @deprecated Use AxleFailure. */
-export type GenerateError = AxleFailure;
 
 export type StreamResult<TResponse = AxleAssistantMessage> =
   | {
@@ -94,7 +98,7 @@ export type StreamResult<TResponse = AxleAssistantMessage> =
       response?: undefined;
       final?: AxleAssistantMessage;
       messages: AxleMessage[];
-      error: AxleFailure;
+      error: AxleProviderFailure;
       usage?: Stats;
       /**
        * Present on a `parse` error when a loop limit ended an Instruct call

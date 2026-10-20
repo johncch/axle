@@ -327,7 +327,7 @@ describe.concurrent("cli.ts end-to-end", () => {
       const { code, output } = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
 
       expect(code).toBe(1);
-      expect(output).toContain("Model error: stub exploded");
+      expect(output).toContain("API error: stub exploded");
       expect(output).toContain("Failed in");
       expect(output).not.toContain("Done in");
     },

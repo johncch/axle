@@ -223,8 +223,8 @@ describe("createStreamingRequest", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe("model");
-      if (result.error.kind !== "model") throw new Error("Expected model error");
+      expect(result.error.kind).toBe("api");
+      if (result.error.kind !== "api") throw new Error("Expected api error");
       expect(result.error).toMatchObject({
         type: "server_error",
         message: "Provider disconnected unexpectedly",
@@ -268,8 +268,8 @@ describe("createStreamingRequest", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe("model");
-      if (result.error.kind !== "model") throw new Error("Expected model error");
+      expect(result.error.kind).toBe("incomplete");
+      if (result.error.kind !== "incomplete") throw new Error("Expected incomplete error");
       expect(result.error.type).toBe("IncompleteStream");
       expect(result.error.message).toContain("search");
       expect(result.error.message).toContain("truncated or incomplete");

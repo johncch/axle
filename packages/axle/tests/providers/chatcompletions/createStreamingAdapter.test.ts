@@ -734,7 +734,7 @@ describe("createStreamingAdapter", () => {
 
       expect(final).toEqual([
         {
-          type: "error",
+          type: "incomplete",
           data: {
             type: "IncompleteStream",
             message:

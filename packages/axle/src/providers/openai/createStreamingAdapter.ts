@@ -243,7 +243,7 @@ export function createStreamingAdapter() {
           chunks.push({ type: "complete", data: { finishReason: AxleStopReason.Length, usage } });
         } else {
           chunks.push({
-            type: "error",
+            type: "incomplete",
             data: {
               type: "RESPONSES_API_INCOMPLETE",
               message: `Response incomplete: ${reason ?? "no reason given"}`,

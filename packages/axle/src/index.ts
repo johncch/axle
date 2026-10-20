@@ -44,9 +44,10 @@ export {
   AxleAbortError,
   AxleAgentAbortError,
   AxleError,
+  AxleErrorCode,
+  AxleInstructVariableError,
   AxleToolFatalError,
-  InstructVariableError,
-  TaskError,
+  isAxleError,
 } from "./errors/index.js";
 
 // AI Providers
@@ -88,12 +89,7 @@ export type {
   GenerateInstructResult,
   GenerateParams,
 } from "./providers/generate.js";
-export type {
-  AxleFailure,
-  GenerateError,
-  GenerateResult,
-  StreamResult,
-} from "./providers/helpers.js";
+export type { AxleProviderFailure, GenerateResult, StreamResult } from "./providers/helpers.js";
 export { generate, stream } from "./providers/index.js";
 export { openai } from "./providers/openai/index.js";
 export type { ReasoningEffort, ReasoningSetting } from "./providers/reasoning.js";

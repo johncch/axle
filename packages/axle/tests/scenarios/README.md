@@ -47,7 +47,7 @@ span:start → span:update (setResult) → span:end
 | ---- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 2.1  | Error chunk (no prior text)        | Turn and root spans both end with `"error"`, root result has no finishReason                                                  |
 | 2.2  | Error after partial text           | Both turn and root spans marked error                                                                                         |
-| 2.3  | Stream ends without complete chunk | Produces `IncompleteStream` error, both spans error                                                                           |
+| 2.3  | Stream ends without complete chunk | Produces an `incomplete` failure, `IncompleteStream`, both spans error                                                        |
 | 2.4  | maxSteps reached                   | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-steps"`                              |
 | 2.6  | token limit reached                | Turn 1 usage crosses `maxContextTokens`, loop stops at boundary, returns ok with `stopped: "token-limit"`, messages preserved |
 | 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**                                                  |

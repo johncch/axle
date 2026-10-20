@@ -1080,7 +1080,7 @@ describe("stream()", () => {
 
       expect(final.ok).toBe(false);
       if (final.ok) return;
-      expect(final.error.kind).toBe("model");
+      expect(final.error.kind).toBe("api");
       expect(final.error.message).toBe("Too many requests");
     });
   });

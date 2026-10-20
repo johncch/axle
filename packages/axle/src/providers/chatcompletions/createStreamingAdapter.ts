@@ -327,7 +327,7 @@ export function createStreamingAdapter() {
 
       return [
         {
-          type: "error",
+          type: "incomplete",
           data: {
             type: "IncompleteStream",
             message: `Stream ended without a completion signal while tool call arguments were still buffering for ${tools}; arguments were likely truncated or incomplete.`,

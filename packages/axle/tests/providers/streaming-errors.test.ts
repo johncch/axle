@@ -46,9 +46,9 @@ test.each(["openai", "anthropic", "gemini"] as const)(
     });
     expect(result).toMatchObject({
       ok: false,
-      error: { kind: "model", type: "RateLimitError", message: "rate limited" },
+      error: { kind: "api", type: "RateLimitError", message: "rate limited" },
     });
-    if (!result.ok && result.error.kind === "model") expect(result.error.raw).toBe(error);
+    if (!result.ok && result.error.kind === "api") expect(result.error.raw).toBe(error);
   },
 );
 
@@ -122,7 +122,7 @@ test.each([
     messages,
     span: tracer.startSpan("generate", { type: "workflow" }),
   });
-  expect(result).toMatchObject({ ok: false, error: { kind: "model" } });
+  expect(result).toMatchObject({ ok: false, error: { kind: "api" } });
   expect(invoke).not.toHaveBeenCalled();
   expect([...writer.spans.values()].map((s) => s.status)).toEqual(["error", "error"]);
 });

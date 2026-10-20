@@ -394,7 +394,7 @@ describe("stream() error paths", () => {
 
     const result = await handle.final;
     expect(result.ok).toBe(false);
-    if (!result.ok && result.error.kind === "model") {
+    if (!result.ok && result.error.kind === "incomplete") {
       expect(result.error.message).toBe("Stream ended without a completion signal");
       expect(result.error.type).toBe("IncompleteStream");
     }

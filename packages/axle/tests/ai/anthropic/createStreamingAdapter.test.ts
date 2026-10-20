@@ -160,7 +160,7 @@ describe("createAnthropicStreamingAdapter", () => {
 
       expect(chunks).toMatchObject([
         {
-          type: "error",
+          type: "incomplete",
           data: { type: "FinishReasonError", message: "Unexpected stop reason: something_new" },
         },
       ]);

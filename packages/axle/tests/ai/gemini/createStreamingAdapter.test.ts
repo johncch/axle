@@ -130,9 +130,9 @@ describe("createGeminiStreamingAdapter", () => {
         makeChunk({ parts: [], finishReason: FinishReason.MALFORMED_FUNCTION_CALL }),
       );
 
-      const errorChunk = chunks.find((c) => c.type === "error");
+      const errorChunk = chunks.find((c) => c.type === "incomplete");
       expect(errorChunk).toBeDefined();
-      if (errorChunk && errorChunk.type === "error") {
+      if (errorChunk && errorChunk.type === "incomplete") {
         expect(errorChunk.data.type).toBe("FinishReasonError");
         expect(errorChunk.data.message).toContain("Unexpected finish reason");
       }

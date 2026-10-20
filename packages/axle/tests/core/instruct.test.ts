@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
-import { InstructVariableError } from "../../src/errors/InstructVariableError.js";
+import { AxleInstructVariableError } from "../../src/errors/AxleInstructVariableError.js";
 import { FileInfo, loadFileContent } from "../../src/utils/file.js";
 
 const TEST_DIR = join(process.cwd(), "test-temp", "instruct-test");
@@ -13,7 +13,7 @@ describe("Instruct", () => {
     test("validates required inputs", () => {
       const instruct = new Instruct({ prompt: "Review {{target}}" });
 
-      expect(() => instruct.validate()).toThrow(InstructVariableError);
+      expect(() => instruct.validate()).toThrow(AxleInstructVariableError);
       expect(instruct.validate({ vars: "optional" })).toBeUndefined();
       expect(instruct.withInput("target", "this diff").validate()).toBeUndefined();
     });
@@ -25,7 +25,7 @@ describe("Instruct", () => {
       });
 
       expect(instruct.render()).toBe("Review {{target}}");
-      expect(() => instruct.render({ vars: "required" })).toThrow(InstructVariableError);
+      expect(() => instruct.render({ vars: "required" })).toThrow(AxleInstructVariableError);
     });
 
     test("creates a user message from the rendered instruction", () => {
@@ -119,9 +119,9 @@ describe("Instruct", () => {
         template.render();
         throw new Error("Expected render to throw");
       } catch (error) {
-        expect(error).toBeInstanceOf(InstructVariableError);
-        expect((error as InstructVariableError).missingVariables).toEqual(["name", "place"]);
-        expect((error as InstructVariableError).code).toBe("INSTRUCT_VARIABLE_ERROR");
+        expect(error).toBeInstanceOf(AxleInstructVariableError);
+        expect((error as AxleInstructVariableError).missingVariables).toEqual(["name", "place"]);
+        expect((error as AxleInstructVariableError).code).toBe("INSTRUCT_VARIABLE_ERROR");
       }
     });
 
