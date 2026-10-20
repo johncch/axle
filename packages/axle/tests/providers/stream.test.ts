@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as z from "zod";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import { AxleErrorCode } from "../../src/errors/AxleError.js";
 import type { ProviderToolContinuity } from "../../src/messages/providerTool.js";
 import type {
   AnyStreamChunk,
@@ -317,7 +318,7 @@ describe("stream()", () => {
           messages: [],
           reasoning: { effort: "extreme" } as never,
         }),
-      ).toThrow(TypeError);
+      ).toThrow(expect.objectContaining({ code: AxleErrorCode.INVALID_OPTIONS }));
     });
 
     test("hidden display keeps thinking on the message and off the stream events", async () => {

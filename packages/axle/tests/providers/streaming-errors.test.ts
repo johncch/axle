@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { AxleErrorCode } from "../../src/errors/AxleError.js";
 import { createStreamingRequest as anthropic } from "../../src/providers/anthropic/createStreamingRequest.js";
 import { createStreamingRequest as chat } from "../../src/providers/chatcompletions/createStreamingRequest.js";
 import { createStreamingRequest as gemini } from "../../src/providers/gemini/createStreamingRequest.js";
@@ -93,8 +94,12 @@ test.each([401, 429])("Chat Completions retains HTTP %s", async (status) => {
 });
 
 test.each([
-  ["openai", { toolChoice: { type: "tool", name: "missing" } }],
-  ["anthropic", { tools: [{ name: "invalid", schema: z.string(), description: "invalid" }] }],
+  ["openai", { toolChoice: { type: "tool", name: "missing" } }, AxleErrorCode.INVALID_OPTIONS],
+  [
+    "anthropic",
+    { tools: [{ name: "invalid", schema: z.string(), description: "invalid" }] },
+    AxleErrorCode.PROVIDER_UNSUPPORTED,
+  ],
   [
     "gemini",
     {
@@ -106,26 +111,31 @@ test.each([
         },
       ],
     },
+    AxleErrorCode.INVALID_OPTIONS,
   ],
-] as const)("%s preparation failure resolves and closes spans", async (name, options) => {
-  const invoke = vi.fn();
-  const provider = providerFor(name, invoke);
-  const { tracer, writer } = createTracerAndWriter();
-  const wrapped: AIProvider = {
-    name,
-    createStreamingRequest: (model, params) =>
-      provider.createStreamingRequest(model, { ...params, ...options } as ProviderStreamParams),
-  };
-  const result = await generate({
-    provider: wrapped,
-    model: "test",
-    messages,
-    span: tracer.startSpan("generate", { type: "workflow" }),
-  });
-  expect(result).toMatchObject({ ok: false, error: { kind: "api" } });
-  expect(invoke).not.toHaveBeenCalled();
-  expect([...writer.spans.values()].map((s) => s.status)).toEqual(["error", "error"]);
-});
+] as const)(
+  "%s preparation failure rejects before any request and closes spans",
+  async (name, options, code) => {
+    const invoke = vi.fn();
+    const provider = providerFor(name, invoke);
+    const { tracer, writer } = createTracerAndWriter();
+    const wrapped: AIProvider = {
+      name,
+      createStreamingRequest: (model, params) =>
+        provider.createStreamingRequest(model, { ...params, ...options } as ProviderStreamParams),
+    };
+    await expect(
+      generate({
+        provider: wrapped,
+        model: "test",
+        messages,
+        span: tracer.startSpan("generate", { type: "workflow" }),
+      }),
+    ).rejects.toMatchObject({ name: "AxleError", code });
+    expect(invoke).not.toHaveBeenCalled();
+    expect([...writer.spans.values()].map((s) => s.status)).toEqual(["error", "error"]);
+  },
+);
 
 test("OpenAI failed response preserves code, message and usage", async () => {
   const raw = {

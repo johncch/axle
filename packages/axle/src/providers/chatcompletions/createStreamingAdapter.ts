@@ -40,6 +40,7 @@ export function createStreamingAdapter() {
     | { type: "complete"; finishReason: AxleStopReason }
     | { type: "refusal"; refusal: Refusal }
     | { type: "error"; message: string }
+    | { type: "incomplete"; message: string }
     | undefined;
   let pendingUsage: Stats | undefined;
   let refusalText = "";
@@ -307,7 +308,14 @@ export function createStreamingAdapter() {
       } else if (choice.finish_reason === "error") {
         pendingEnd = { type: "error", message: "Unexpected finish reason: error" };
       } else {
-        pendingEnd = { type: "complete", finishReason: convertFinishReason(choice.finish_reason) };
+        const finishReason = convertFinishReason(choice.finish_reason);
+        pendingEnd =
+          finishReason === undefined
+            ? {
+                type: "incomplete",
+                message: `Unexpected finish reason: ${choice.finish_reason}`,
+              }
+            : { type: "complete", finishReason };
       }
     }
 
@@ -346,6 +354,13 @@ export function createStreamingAdapter() {
         return [
           {
             type: "error",
+            data: { type: "FinishReasonError", message: pendingEnd.message, usage },
+          },
+        ];
+      case "incomplete":
+        return [
+          {
+            type: "incomplete",
             data: { type: "FinishReasonError", message: pendingEnd.message, usage },
           },
         ];

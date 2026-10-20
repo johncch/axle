@@ -35,36 +35,36 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
+  const apiTools: any[] = [
+    ...(tools ? convertToAnthropicTools(tools) : []),
+    ...convertToAnthropicProviderTools(providerTools),
+  ];
+
+  const streamingAdapter = createAnthropicStreamingAdapter(findOpenProviderToolCalls(messages));
+
+  const providerMessages = await convertToProviderMessages(messages, {
+    model,
+    fileResolver: runtime?.fileResolver,
+    signal,
+  });
+
+  const initialRequest = {
+    model: model,
+    max_tokens: maxOutputTokens ?? getAnthropicStreamMaxTokens(model),
+    messages: providerMessages,
+    ...(system && { system }),
+
+    // Axle-normalized options.
+    ...(apiTools.length > 0 && { tools: apiTools }),
+    ...toAnthropicThinking(reasoning, model),
+    ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
+    ...(cache !== false && { cache_control: { type: "ephemeral" as const } }),
+
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
+
   try {
-    const apiTools: any[] = [
-      ...(tools ? convertToAnthropicTools(tools) : []),
-      ...convertToAnthropicProviderTools(providerTools),
-    ];
-
-    const streamingAdapter = createAnthropicStreamingAdapter(findOpenProviderToolCalls(messages));
-
-    const providerMessages = await convertToProviderMessages(messages, {
-      model,
-      fileResolver: runtime?.fileResolver,
-      signal,
-    });
-
-    const initialRequest = {
-      model: model,
-      max_tokens: maxOutputTokens ?? getAnthropicStreamMaxTokens(model),
-      messages: providerMessages,
-      ...(system && { system }),
-
-      // Axle-normalized options.
-      ...(apiTools.length > 0 && { tools: apiTools }),
-      ...toAnthropicThinking(reasoning, model),
-      ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
-      ...(cache !== false && { cache_control: { type: "ephemeral" as const } }),
-
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
-
     let request = initialRequest;
     while (true) {
       span?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });

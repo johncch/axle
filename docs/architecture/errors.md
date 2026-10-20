@@ -59,14 +59,16 @@ with the agent's queue and continuations is in
 8. **An adapter's catch covers the wire, not the build.** Message
    conversion, file resolution, and request assembly run before the
    adapter's try. What that try catches is what the provider or transport
-   did, and nothing else is flattened into an `api` failure.
+   did, and nothing else is flattened into an `api` failure. A throw that
+   escapes the adapter ends the step span and the run span with `error`
+   before the handle rejects, the same as a failure result does.
 
 ## The three columns
 
-| Axle                       | Provider config                                                                                                         | Provider work                                              |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| An Axle invariant broke    | Axle has no wire shape for what was asked, on this provider, or a vendor module knows for certain the request is rejected | The request went out and the API or model answered         |
-| throws, `AXLE_ERROR`       | throws, `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `FILE_UNREADABLE`, or a registry code                                 | `ok: false`, `kind` `api`, `incomplete`, `refusal`, or `parse` |
+| Axle                    | Provider config                                                                                                           | Provider work                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| An Axle invariant broke | Axle has no wire shape for what was asked, on this provider, or a vendor module knows for certain the request is rejected | The request went out and the API or model answered             |
+| throws, `AXLE_ERROR`    | throws, `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `FILE_UNREADABLE`, or a registry code                                  | `ok: false`, `kind` `api`, `incomplete`, `refusal`, or `parse` |
 
 The host writes two checks, each with one meaning:
 
@@ -87,16 +89,16 @@ try {
 Every failure Axle produces is one of eight types. The channel is fixed by
 the type.
 
-| Type                      | What it is                                                                                            | Channel                                   | Codes or kinds                                                                                 |
-| ------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Configuration mistake     | Setup is wrong: an option value, a registry, a definition, a feature this provider has no shape for    | rejects                                   | `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `TOOL_REGISTRY_DUPLICATE`, `SKILL_*`, `COMPACTION_INVALID_MESSAGES` |
-| Request content mistake   | This message is malformed: a missing template variable, a content source the adapter cannot map        | rejects                                   | `INSTRUCT_VARIABLE_ERROR`, `PROVIDER_UNSUPPORTED`                                              |
-| Host environment failure  | A file on the host could not be resolved: missing, too large, wrong category, no resolver              | rejects                                   | `FILE_UNREADABLE`                                                                              |
-| Provider or wire failure  | The request went out and the API did not complete it                                                   | `ok: false`                               | `kind: "api"`                                                                                  |
-| Model output              | The API completed the request and the answer is the problem                                            | `ok: false`, or a tool error              | `kind: "incomplete"`, `kind: "refusal"`, `kind: "parse"`; `not-found` and `invalid-arguments` tool errors |
-| Tool execution failure    | A tool ran and failed                                                                                  | tool error, or rejects when the tool escalates | `execution`, `exception`, `failed` tool errors; `TOOL_FATAL_ERROR`                        |
-| User cancellation         | The signal fired                                                                                       | rejects                                   | `ABORTED`                                                                                      |
-| Internal invariant        | Axle's own assumption broke                                                                            | rejects                                   | `AXLE_ERROR`                                                                                   |
+| Type                     | What it is                                                                                          | Channel                                        | Codes or kinds                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Configuration mistake    | Setup is wrong: an option value, a registry, a definition, a feature this provider has no shape for | rejects                                        | `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `TOOL_REGISTRY_DUPLICATE`, `SKILL_*`, `COMPACTION_INVALID_MESSAGES` |
+| Request content mistake  | This message is malformed: a missing template variable, a content source the adapter cannot map     | rejects                                        | `INSTRUCT_VARIABLE_ERROR`, `PROVIDER_UNSUPPORTED`                                                              |
+| Host environment failure | A file on the host could not be resolved: missing, too large, wrong category, no resolver           | rejects                                        | `FILE_UNREADABLE`                                                                                              |
+| Provider or wire failure | The request went out and the API did not complete it                                                | `ok: false`                                    | `kind: "api"`                                                                                                  |
+| Model output             | The API completed the request and the answer is the problem                                         | `ok: false`, or a tool error                   | `kind: "incomplete"`, `kind: "refusal"`, `kind: "parse"`; `not-found` and `invalid-arguments` tool errors      |
+| Tool execution failure   | A tool ran and failed                                                                               | tool error, or rejects when the tool escalates | `execution`, `exception`, `failed` tool errors; `TOOL_FATAL_ERROR`                                             |
+| User cancellation        | The signal fired                                                                                    | rejects                                        | `ABORTED`                                                                                                      |
+| Internal invariant       | Axle's own assumption broke                                                                         | rejects                                        | `AXLE_ERROR`                                                                                                   |
 
 The first two types share a channel and share codes. The difference between
 them is where the caller fixes the mistake, in the setup or in the call,
@@ -105,12 +107,12 @@ and the message says which. The caller's handling is the same.
 The two `ok: false` types share the result, and the four kinds are cut on
 what the API did, because that fixes the host's next move:
 
-| Kind         | What the API did                                                                  | HTTP                                              | `status`                  | `usage`                        | Host's next move                  |
-| ------------ | --------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------- | ------------------------------ | --------------------------------- |
-| `api`        | Did not complete the request: rejected it, failed mid-way, or the connection broke | non-2xx, or 2xx with an error event in the body   | present when there was one | usually absent                 | fix on 4xx, back off on 429 / 5xx |
-| `incomplete` | Completed the request and stopped for a reason that is not a usable end           | 2xx                                               | absent                    | present; the call was charged  | retry the same request            |
-| `refusal`    | Completed the request by declining it or blocking its output                      | 2xx                                               | absent                    | present                        | change the ask; show the user     |
-| `parse`      | Completed the request; the model's answer is outside the Instruct's schema        | 2xx                                               | absent                    | present                        | re-ask for shape, or loosen it    |
+| Kind         | What the API did                                                                   | HTTP                                            | `status`                   | `usage`                       | Host's next move                  |
+| ------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------- | ----------------------------- | --------------------------------- |
+| `api`        | Did not complete the request: rejected it, failed mid-way, or the connection broke | non-2xx, or 2xx with an error event in the body | present when there was one | usually absent                | fix on 4xx, back off on 429 / 5xx |
+| `incomplete` | Completed the request and stopped for a reason that is not a usable end            | 2xx                                             | absent                     | present; the call was charged | retry the same request            |
+| `refusal`    | Completed the request by declining it or blocking its output                       | 2xx                                             | absent                     | present                       | change the ask; show the user     |
+| `parse`      | Completed the request; the model's answer is outside the Instruct's schema         | 2xx                                             | absent                     | present                       | re-ask for shape, or loosen it    |
 
 A stop reason only exists inside a successful response, so the line between
 `api` and `incomplete` is not the HTTP status. Once a response streams, the
@@ -145,14 +147,14 @@ vendor rejects it. A request not listed here is sent, and the vendor's
 answer arrives as `kind: "api"`. The middle column is read from the
 adapters, not re-checked against vendor documentation on this date.
 
-| Provider                               | Pre-empted                                                                                                                                                    | Sent and left to the API                                                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `anthropic()`                          | Non-PDF document files; a tool whose schema is not an object; a content source with no block type                                                             | Any provider tool name; any image or PDF source it has a block for          |
-| `openai()`                             | A content source with no part type                                                                                                                            | Any provider tool name; any file or image source it has a part for          |
-| `gemini()`                             | Non-PDF document files; `parallelToolCalls: false`; provider tool choice; `toolChoice: "required"` with no function tools; a content source with no part type | Any provider tool name; any file source it has a part for                   |
-| `chatCompletions()`, OpenRouter vendor | Provider tool choice; a content source with no part type                                                                                                      | `web_search` (hosted or attached); PDFs and images as OpenAI-shaped parts   |
-| `chatCompletions()`, Together vendor   | PDF file parts (vendor fact); any provider tool with nothing attached; provider tool choice                                                                   | Images as OpenAI-shaped parts                                               |
-| `chatCompletions()`, no vendor         | Any provider tool with nothing attached; provider tool choice; a content source with no part type                                                             | PDFs and images as OpenAI-shaped parts; the vendor decides                  |
+| Provider                               | Pre-empted                                                                                                                                                    | Sent and left to the API                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `anthropic()`                          | Non-PDF document files; a tool whose schema is not an object; a content source with no block type                                                             | Any provider tool name; any image or PDF source it has a block for        |
+| `openai()`                             | A content source with no part type                                                                                                                            | Any provider tool name; any file or image source it has a part for        |
+| `gemini()`                             | Non-PDF document files; `parallelToolCalls: false`; provider tool choice; `toolChoice: "required"` with no function tools; a content source with no part type | Any provider tool name; any file source it has a part for                 |
+| `chatCompletions()`, OpenRouter vendor | Provider tool choice; a content source with no part type                                                                                                      | `web_search` (hosted or attached); PDFs and images as OpenAI-shaped parts |
+| `chatCompletions()`, Together vendor   | PDF file parts (vendor fact); any provider tool with nothing attached; provider tool choice                                                                   | Images as OpenAI-shaped parts                                             |
+| `chatCompletions()`, no vendor         | Any provider tool with nothing attached; provider tool choice; a content source with no part type                                                             | PDFs and images as OpenAI-shaped parts; the vendor decides                |
 
 The Together PDF row is the only pre-emption that is a fact about a vendor
 rather than about the protocol. It stays because the message it produces
@@ -171,48 +173,48 @@ the last row of its table.
 
 Anthropic (`StopReason`, seven values):
 
-| Stop reason                                  | Axle                                                                   |
-| -------------------------------------------- | ---------------------------------------------------------------------- |
-| `end_turn`, `stop_sequence`                  | `ok: true`, `Stop`                                                     |
-| `max_tokens`, `model_context_window_exceeded` | `ok: true`, `Length`                                                   |
-| `tool_use`                                   | `ok: true`, `FunctionCall`                                             |
-| `pause_turn`                                 | continued transparently; paused blocks and usage are kept and the stream goes on |
-| `refusal`                                    | `refusal`                                                              |
-| undeclared                                   | `incomplete`, `type: "FinishReasonError"`                              |
+| Stop reason                                   | Axle                                                                             |
+| --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `end_turn`, `stop_sequence`                   | `ok: true`, `Stop`                                                               |
+| `max_tokens`, `model_context_window_exceeded` | `ok: true`, `Length`                                                             |
+| `tool_use`                                    | `ok: true`, `FunctionCall`                                                       |
+| `pause_turn`                                  | continued transparently; paused blocks and usage are kept and the stream goes on |
+| `refusal`                                     | `refusal`                                                                        |
+| undeclared                                    | `incomplete`, `type: "FinishReasonError"`                                        |
 
 OpenAI Responses (terminal events):
 
-| Event                                              | Axle                                                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `response.completed`                               | `ok: true`, `Stop` or `FunctionCall`                                                     |
-| `response.incomplete`, reason `max_output_tokens`  | `ok: true`, `Length`                                                                     |
-| `response.incomplete`, reason `content_filter`     | `refusal`, category `content_filter`                                                     |
-| `response.incomplete`, undeclared reason           | `incomplete`, `type: "RESPONSES_API_INCOMPLETE"`                                         |
-| `response.failed`                                  | `api`, `type` = the event's error code (`server_error`, `rate_limit_exceeded`, `invalid_prompt`, the image errors), no `status` |
+| Event                                             | Axle                                                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `response.completed`                              | `ok: true`, `Stop` or `FunctionCall`                                                                                            |
+| `response.incomplete`, reason `max_output_tokens` | `ok: true`, `Length`                                                                                                            |
+| `response.incomplete`, reason `content_filter`    | `refusal`, category `content_filter`                                                                                            |
+| `response.incomplete`, undeclared reason          | `incomplete`, `type: "RESPONSES_API_INCOMPLETE"`                                                                                |
+| `response.failed`                                 | `api`, `type` = the event's error code (`server_error`, `rate_limit_exceeded`, `invalid_prompt`, the image errors), no `status` |
 
 Chat Completions (`finish_reason`, five declared values plus vendor extras):
 
-| Finish reason                  | Axle                                        |
-| ------------------------------ | ------------------------------------------- |
-| `stop`; `eos` (Together)       | `ok: true`, `Stop`                          |
-| `length`                       | `ok: true`, `Length`                        |
-| `tool_calls`, `function_call`  | `ok: true`, `FunctionCall`                  |
-| `content_filter`               | `refusal`, category `content_filter`        |
-| `error` (OpenRouter)           | `api`, no `status`                          |
+| Finish reason                                | Axle                                           |
+| -------------------------------------------- | ---------------------------------------------- |
+| `stop`; `eos` (Together)                     | `ok: true`, `Stop`                             |
+| `length`                                     | `ok: true`, `Length`                           |
+| `tool_calls`, `function_call`                | `ok: true`, `FunctionCall`                     |
+| `content_filter`                             | `refusal`, category `content_filter`           |
+| `error` (OpenRouter)                         | `api`, no `status`                             |
 | mid-stream upstream error chunk (OpenRouter) | `api`, `type` = the upstream code, no `status` |
-| undeclared                     | `incomplete`, `type: "FinishReasonError"`   |
+| undeclared                                   | `incomplete`, `type: "FinishReasonError"`      |
 
 Gemini (`FinishReason`, nineteen values):
 
-| Finish reason                                                                                                                  | Axle                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `FINISH_REASON_UNSPECIFIED`                                                                                                    | not an end; the stream goes on                             |
-| `STOP`                                                                                                                         | `ok: true`, `Stop`, or `FunctionCall` when the candidate carried calls |
-| `MAX_TOKENS`                                                                                                                   | `ok: true`, `Length`                                       |
-| `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `LANGUAGE`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, `IMAGE_RECITATION` | `refusal`, category = the reason                           |
-| `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`                                                       | `incomplete`, `type` = the reason                          |
-| `OTHER`, `IMAGE_OTHER`, `NO_IMAGE`, `CONTINUATION`                                                                             | `incomplete`, `type` = the reason                          |
-| undeclared                                                                                                                     | `incomplete`, `type: "FinishReasonError"`                  |
+| Finish reason                                                                                                                                 | Axle                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `FINISH_REASON_UNSPECIFIED`                                                                                                                   | not an end; the stream goes on                                         |
+| `STOP`                                                                                                                                        | `ok: true`, `Stop`, or `FunctionCall` when the candidate carried calls |
+| `MAX_TOKENS`                                                                                                                                  | `ok: true`, `Length`                                                   |
+| `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `LANGUAGE`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, `IMAGE_RECITATION` | `refusal`, category = the reason                                       |
+| `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`                                                                      | `incomplete`, `type` = the reason                                      |
+| `OTHER`, `IMAGE_OTHER`, `NO_IMAGE`, `CONTINUATION`                                                                                            | `incomplete`, `type` = the reason                                      |
+| undeclared                                                                                                                                    | `incomplete`, `type: "FinishReasonError"`                              |
 
 Two rows above change behaviour from 0.34.x and are part of this design.
 Chat Completions used to map an undeclared finish reason to `Stop`, which
@@ -227,28 +229,27 @@ so it is a refusal.
 A subclass declares its code as a literal so a `switch` on `code` narrows
 to the subclass.
 
-| Code                           | Thrown when                                                                                                 | `details`                                | Class                        |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------- |
-| `INVALID_OPTIONS`              | An option is malformed: a loop limit below 1, a non-integer `maxRetries` or `timeoutMs`, a model id with an unknown publisher or no name, an unsupported reasoning setting, a tool choice naming an absent tool, a bad compaction option, a Brave option out of range | none                                     | `AxleError`                  |
-| `PROVIDER_UNSUPPORTED`         | A well-formed request Axle has no wire shape for on this provider, or a vendor module pre-empts             | `{ provider: string, feature: string }`  | `AxleError`                  |
-| `FILE_UNREADABLE`              | A host file could not be resolved: not found, too large, unsupported type, wrong category, no `fileResolver` | `{ path?: string, name?: string }`       | `AxleError`                  |
-| `TOOL_REGISTRY_DUPLICATE`      | Two tools share a name                                                                                      | `{ name: string }`                       | `AxleError`                  |
-| `SKILL_REGISTRY_DUPLICATE`     | A skill is registered or listed twice                                                                       | `{ name: string }`                       | `AxleError`                  |
-| `SKILL_INVALID`                | `SKILL.md` has bad frontmatter, bad YAML, a schema miss, or a forbidden name                                 | `{ issues? }`                            | `AxleError`                  |
-| `SKILL_NOT_FOUND`              | No `SKILL.md` at the root                                                                                   | none                                     | `AxleError`                  |
-| `SKILL_UNKNOWN`                | A prompt names a skill that is not registered                                                               | `{ name: string }`                       | `AxleError`                  |
-| `INSTRUCT_VARIABLE_ERROR`      | Template variables not supplied                                                                             | `{ missingVariables: string[] }`         | `AxleInstructVariableError`  |
-| `COMPACTION_INVALID_MESSAGES`  | A compaction callback returned a malformed history                                                          | per `messages/compaction.ts`             | `AxleError`                  |
-| `COMPACTION_GENERATION_FAILED` | Compaction's own summary request resolved `ok: false`                                                       | none; the failure is `cause`             | `AxleError`                  |
-| `COMPACTION_EMPTY_SUMMARY`     | The summariser returned nothing                                                                             | none                                     | `AxleError`                  |
-| `DECISION_REQUEST_FAILED`      | The decision transport failed                                                                               | `{ status }`                             | `AxleError`                  |
-| `DECISION_RESPONSE_INVALID`    | The decision response could not be read                                                                     | none                                     | `AxleError`                  |
-| `DECISION_ANSWER_MISMATCH`     | The provider returned the wrong answer type for a question                                                  | `{ key, expected }`                      | `AxleError`                  |
-| `AGENT_DEFINITION_INVALID`     | An `AgentDefinition` has an unsupported version, no model, or a resolver that returned no tools or skills   | none                                     | `AxleError`                  |
-| `MCP_NOT_CONNECTED`            | An MCP tool is called before `connect()`                                                                    | none                                     | `AxleError`                  |
-| `TOOL_FATAL_ERROR`             | A tool threw `AxleToolFatalError` to end the run                                                            | `{ toolName, usage }`                    | `AxleToolFatalError`         |
-| `ABORTED`                      | The signal fired                                                                                            | `{ reason, usage }`                      | `AxleAbortError`, `AxleAgentAbortError` |
-| `AXLE_ERROR`                   | The default. An Axle invariant broke; nothing the host can act on                                           | none                                     | `AxleError`                  |
+| Code                           | Thrown when                                                                                                                                                                                                                                                                                                            | `details`                               | Class                                   |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- |
+| `INVALID_OPTIONS`              | An option is malformed: a loop limit below 1, a non-integer `maxRetries` or `timeoutMs`, a model id with an unknown publisher or no name, an unsupported reasoning setting, a tool choice naming an absent tool, a tool schema Zod cannot express as JSON Schema, a bad compaction option, a Brave option out of range | none                                    | `AxleError`                             |
+| `PROVIDER_UNSUPPORTED`         | A well-formed request Axle has no wire shape for on this provider, or a vendor module pre-empts                                                                                                                                                                                                                        | `{ provider: string, feature: string }` | `AxleError`                             |
+| `FILE_UNREADABLE`              | A host file could not be resolved: not found, too large, unsupported type, wrong category, no `fileResolver`                                                                                                                                                                                                           | `{ path?: string, name?: string }`      | `AxleError`                             |
+| `TOOL_REGISTRY_DUPLICATE`      | Two tools share a name                                                                                                                                                                                                                                                                                                 | `{ name: string }`                      | `AxleError`                             |
+| `SKILL_REGISTRY_DUPLICATE`     | A skill is registered or listed twice                                                                                                                                                                                                                                                                                  | `{ name: string }`                      | `AxleError`                             |
+| `SKILL_INVALID`                | `SKILL.md` has bad frontmatter, bad YAML, a schema miss, or a forbidden name                                                                                                                                                                                                                                           | `{ issues? }`                           | `AxleError`                             |
+| `SKILL_NOT_FOUND`              | No `SKILL.md` at the root                                                                                                                                                                                                                                                                                              | none                                    | `AxleError`                             |
+| `INSTRUCT_VARIABLE_ERROR`      | Template variables not supplied                                                                                                                                                                                                                                                                                        | `{ missingVariables: string[] }`        | `AxleInstructVariableError`             |
+| `COMPACTION_INVALID_MESSAGES`  | A compaction callback returned a malformed history                                                                                                                                                                                                                                                                     | per `messages/compaction.ts`            | `AxleError`                             |
+| `COMPACTION_GENERATION_FAILED` | Compaction's own summary request resolved `ok: false`                                                                                                                                                                                                                                                                  | none; the failure is `cause`            | `AxleError`                             |
+| `COMPACTION_EMPTY_SUMMARY`     | The summariser returned nothing                                                                                                                                                                                                                                                                                        | none                                    | `AxleError`                             |
+| `DECISION_REQUEST_FAILED`      | The decision transport failed                                                                                                                                                                                                                                                                                          | `{ status }`                            | `AxleError`                             |
+| `DECISION_RESPONSE_INVALID`    | The decision response could not be read                                                                                                                                                                                                                                                                                | none                                    | `AxleError`                             |
+| `DECISION_ANSWER_MISMATCH`     | The provider returned the wrong answer type for a question                                                                                                                                                                                                                                                             | `{ key, expected }`                     | `AxleError`                             |
+| `AGENT_DEFINITION_INVALID`     | An `AgentDefinition` has an unsupported version, no model, or a resolver that returned no tools or skills                                                                                                                                                                                                              | none                                    | `AxleError`                             |
+| `MCP_NOT_CONNECTED`            | An MCP tool is called before `connect()`                                                                                                                                                                                                                                                                               | none                                    | `AxleError`                             |
+| `TOOL_FATAL_ERROR`             | A tool threw `AxleToolFatalError` to end the run                                                                                                                                                                                                                                                                       | `{ toolName, usage }`                   | `AxleToolFatalError`                    |
+| `ABORTED`                      | The signal fired                                                                                                                                                                                                                                                                                                       | `{ reason, usage }`                     | `AxleAbortError`, `AxleAgentAbortError` |
+| `AXLE_ERROR`                   | The default. An Axle invariant broke; nothing the host can act on                                                                                                                                                                                                                                                      | none                                    | `AxleError`                             |
 
 `AxleToolFatalError` carries `toolName`, `messages`, `partial`, and `usage`
 as fields. `AxleAbortError` carries `reason`, `messages`, `partial`, and
@@ -274,7 +275,8 @@ class AxleError extends Error {
   toJSON(): object;
 }
 
-type AnyAxleError = AxleAbortError | AxleAgentAbortError | AxleToolFatalError | AxleInstructVariableError | AxleError;
+type AnyAxleError =
+  AxleAbortError | AxleAgentAbortError | AxleToolFatalError | AxleInstructVariableError | AxleError;
 function isAxleError(error: unknown): error is AnyAxleError;
 ```
 

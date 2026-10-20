@@ -122,7 +122,7 @@ describe("createGeminiStreamingAdapter", () => {
       }
     });
 
-    test("should handle error finish reasons", () => {
+    test("a declared non-block finish reason is incomplete, typed by the reason", () => {
       const adapter = createGeminiStreamingAdapter();
       adapter.handleChunk(makeChunk({ parts: [] }));
 
@@ -130,12 +130,39 @@ describe("createGeminiStreamingAdapter", () => {
         makeChunk({ parts: [], finishReason: FinishReason.MALFORMED_FUNCTION_CALL }),
       );
 
-      const errorChunk = chunks.find((c) => c.type === "incomplete");
-      expect(errorChunk).toBeDefined();
-      if (errorChunk && errorChunk.type === "incomplete") {
-        expect(errorChunk.data.type).toBe("FinishReasonError");
-        expect(errorChunk.data.message).toContain("Unexpected finish reason");
-      }
+      expect(chunks).toMatchObject([
+        {
+          type: "incomplete",
+          data: {
+            type: "MALFORMED_FUNCTION_CALL",
+            message: "Unexpected finish reason: MALFORMED_FUNCTION_CALL",
+          },
+        },
+      ]);
+    });
+
+    test("an undeclared finish reason is incomplete with FinishReasonError", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [] }));
+
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: "SOMETHING_NEW" as FinishReason }),
+      );
+
+      expect(chunks).toMatchObject([{ type: "incomplete", data: { type: "FinishReasonError" } }]);
+    });
+
+    test("LANGUAGE is a refusal", () => {
+      const adapter = createGeminiStreamingAdapter();
+      adapter.handleChunk(makeChunk({ parts: [] }));
+
+      const chunks = adapter.handleChunk(
+        makeChunk({ parts: [], finishReason: FinishReason.LANGUAGE }),
+      );
+
+      expect(chunks).toMatchObject([
+        { type: "refusal", data: { refusal: { category: "LANGUAGE" } } },
+      ]);
     });
   });
 

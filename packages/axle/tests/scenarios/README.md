@@ -28,8 +28,6 @@ span:start → span:update (setResult) → span:end
 
 **Root span** gets `setResult` with the final LLM result, then `end()`. On error, both the turn span and root span end with `"error"` status.
 
-**Known gap:** If the provider itself throws (the provider's generator throws), the turn and root spans are never ended (leaked). Tests 2.5 and 6.3 document this.
-
 ## What Each Test Verifies
 
 ### stream() — Happy Paths
@@ -50,7 +48,7 @@ span:start → span:update (setResult) → span:end
 | 2.3  | Stream ends without complete chunk | Produces an `incomplete` failure, `IncompleteStream`, both spans error                                                        |
 | 2.4  | maxSteps reached                   | First turn completes tool call, second iteration blocked, returns ok with `stopped: "max-steps"`                              |
 | 2.6  | token limit reached                | Turn 1 usage crosses `maxContextTokens`, loop stops at boundary, returns ok with `stopped: "token-limit"`, messages preserved |
-| 2.5  | Provider generator throws          | Promise rejects (not a structured error), **turn and root spans are leaked**                                                  |
+| 2.5  | Provider generator throws          | Promise rejects with the thrown error; turn and root spans end with `"error"`                                                 |
 
 ### stream() — Cancellation
 

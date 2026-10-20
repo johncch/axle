@@ -340,9 +340,21 @@ export function createAnthropicStreamingAdapter(
                 },
               });
             } catch (e) {
-              throw new Error(
-                `Failed to parse tool call arguments for ${buffer.name}: ${e instanceof Error ? e.message : String(e)}\nRaw buffer: ${truncateMiddle(buffer.argumentsBuffer)}`,
-              );
+              const parseMessage = e instanceof Error ? e.message : String(e);
+              chunks.push({
+                type: "tool-call-complete",
+                data: {
+                  index,
+                  id: buffer.id,
+                  name: buffer.name,
+                  arguments: {},
+                  error: {
+                    type: "invalid-arguments",
+                    message: `Failed to parse tool call arguments for ${buffer.name}: ${parseMessage}`,
+                    raw: truncateMiddle(buffer.argumentsBuffer),
+                  },
+                },
+              });
             }
             toolCallBuffers.delete(index);
           }

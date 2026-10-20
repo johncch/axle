@@ -1,17 +1,34 @@
+import z from "zod";
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
+import type { ToolDefinition } from "../tools/types.js";
+
 export function requireInteger(
   value: number,
   name: string,
   options: { min?: number } = {},
 ): number {
   if (!Number.isInteger(value)) {
-    throw new Error(`${name} must be an integer`);
+    throw new AxleError(`${name} must be an integer`, { code: AxleErrorCode.INVALID_OPTIONS });
   }
 
   if (options.min !== undefined && value < options.min) {
-    throw new Error(`${name} must be an integer greater than or equal to ${options.min}`);
+    throw new AxleError(`${name} must be an integer greater than or equal to ${options.min}`, {
+      code: AxleErrorCode.INVALID_OPTIONS,
+    });
   }
 
   return value;
+}
+
+export function toolJsonSchema(tool: ToolDefinition): z.core.JSONSchema.BaseSchema {
+  try {
+    return z.toJSONSchema(tool.schema);
+  } catch (error) {
+    throw new AxleError(
+      `Tool ${tool.name} has a schema that cannot be expressed as JSON Schema: ${error instanceof Error ? error.message : String(error)}`,
+      { code: AxleErrorCode.INVALID_OPTIONS, details: { name: tool.name }, cause: error },
+    );
+  }
 }
 
 export function normalizeProviderError(error: unknown): {

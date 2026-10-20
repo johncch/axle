@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 
 export type OutputSchema = z.ZodTypeAny;
 
@@ -54,7 +55,9 @@ export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
     return [`${innerType} | undefined`, exampleValue];
   }
 
-  throw new Error(`Unsupported Zod schema: ${schema.constructor.name}`);
+  throw new AxleError(`Unsupported Zod schema: ${schema.constructor.name}`, {
+    code: AxleErrorCode.INVALID_OPTIONS,
+  });
 }
 
 export function zodToFieldDescriptions(schema: z.ZodTypeAny): Array<[string, string]> {

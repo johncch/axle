@@ -58,52 +58,52 @@ export async function* createStreamingRequest(
 
   const adapter = createStreamingAdapter();
 
+  const chatMessages = await convertAxleMessages(messages, system, {
+    model,
+    vendor,
+    fileResolver: runtime?.fileResolver,
+    signal,
+    warn: span?.warn.bind(span),
+  });
+  const chatTools = convertTools(tools);
+  const chatProviderTools = prepareProviderTools(providerTools, vendor, span?.warn.bind(span));
+  const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
+
+  const requestBody: Record<string, any> = {
+    model,
+    messages: chatMessages,
+    stream: true,
+    stream_options: { include_usage: true },
+
+    // Axle-normalized options.
+    ...(requestTools.length > 0 ? { tools: requestTools } : {}),
+    ...toChatCompletionsReasoning(reasoning, vendor),
+    ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
+    ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
+    ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+    ...toChatCompletionsVendorFields(vendor, { sessionId, cache }),
+
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
+
+  span?.debug("ChatCompletions request", {
+    model: requestBody.model,
+    messages: requestBody.messages.length,
+    tools: requestBody.tools?.length ?? 0,
+    stream: true,
+  });
+  span?.trace("ChatCompletions request body", {
+    request: redactResolvedFileValues(requestBody),
+  });
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    ...clientHeaders,
+  };
+
   try {
-    const chatMessages = await convertAxleMessages(messages, system, {
-      model,
-      vendor,
-      fileResolver: runtime?.fileResolver,
-      signal,
-      warn: span?.warn.bind(span),
-    });
-    const chatTools = convertTools(tools);
-    const chatProviderTools = prepareProviderTools(providerTools, vendor, span?.warn.bind(span));
-    const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
-
-    const requestBody: Record<string, any> = {
-      model,
-      messages: chatMessages,
-      stream: true,
-      stream_options: { include_usage: true },
-
-      // Axle-normalized options.
-      ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-      ...toChatCompletionsReasoning(reasoning, vendor),
-      ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
-      ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
-      ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
-      ...toChatCompletionsVendorFields(vendor, { sessionId, cache }),
-
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
-
-    span?.debug("ChatCompletions request", {
-      model: requestBody.model,
-      messages: requestBody.messages.length,
-      tools: requestBody.tools?.length ?? 0,
-      stream: true,
-    });
-    span?.trace("ChatCompletions request body", {
-      request: redactResolvedFileValues(requestBody),
-    });
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      ...clientHeaders,
-    };
-
     const response = await withRetry(
       ({ signal }) =>
         (clientFetch ?? fetch)(`${baseUrl}/chat/completions`, {

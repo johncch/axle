@@ -4,7 +4,7 @@ import {
   FunctionCallingConfigMode,
   GenerateContentConfig,
 } from "@google/genai";
-import z from "zod";
+import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import type { ToolDefinition } from "../../tools/index.js";
 import type { ProviderTool } from "../../tools/types.js";
@@ -16,6 +16,7 @@ import {
 } from "../../utils/file.js";
 import { LEGACY_REASONING_BUDGETS, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
+import { toolJsonSchema } from "../utils.js";
 
 /* To Request */
 
@@ -37,7 +38,7 @@ export function prepareConfig(
           {
             name: tool.name,
             description: tool.description,
-            parametersJsonSchema: z.toJSONSchema(tool.schema),
+            parametersJsonSchema: toolJsonSchema(tool),
           },
         ],
       };
@@ -84,7 +85,10 @@ export function toGeminiToolConfig(
   providerTools?: Array<ProviderTool>,
 ) {
   if (parallelToolCalls === false) {
-    throw new Error("Gemini does not support disabling parallel tool calls");
+    throw new AxleError("Gemini does not support disabling parallel tool calls", {
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      details: { provider: "gemini", feature: "parallelToolCalls:false" },
+    });
   }
   if (choice === undefined) return {};
   if (choice === "auto") {
@@ -95,7 +99,10 @@ export function toGeminiToolConfig(
   }
   if (choice === "required") {
     if (!tools || tools.length === 0) {
-      throw new Error("Gemini requires function tools for required tool choice");
+      throw new AxleError("Gemini requires function tools for required tool choice", {
+        code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+        details: { provider: "gemini", feature: "toolChoice:required" },
+      });
     }
     return { toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY } } };
   }
@@ -112,10 +119,15 @@ export function toGeminiToolConfig(
   }
 
   if (providerTools?.some((tool) => tool.name === choice.name)) {
-    throw new Error(`Gemini does not support provider tool choice: ${choice.name}`);
+    throw new AxleError(`Gemini does not support provider tool choice: ${choice.name}`, {
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      details: { provider: "gemini", feature: `toolChoice:${choice.name}` },
+    });
   }
 
-  throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+  throw new AxleError(`Tool choice references an unavailable tool: ${choice.name}`, {
+    code: AxleErrorCode.INVALID_OPTIONS,
+  });
 }
 
 export function toGeminiThinkingConfig(reasoning: ReasoningSetting | undefined, model = "") {
@@ -312,7 +324,10 @@ async function convertFilePart(
       signal: context.signal,
     });
     if (resolved.type !== "text") {
-      throw new Error(`Unsupported Gemini text source: ${resolved.type}`);
+      throw new AxleError(`Unsupported Gemini text source: ${resolved.type}`, {
+        code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+        details: { provider: "gemini", feature: `text-source:${resolved.type}` },
+      });
     }
     return {
       text: formatTextFileContent(file, resolved.content, resolved.name, resolved.mimeType),
@@ -320,7 +335,13 @@ async function convertFilePart(
   }
 
   if (file.kind === "document" && file.mimeType !== "application/pdf") {
-    throw new Error(`Gemini document file support is limited to PDFs. Received ${file.mimeType}`);
+    throw new AxleError(
+      `Gemini document file support is limited to PDFs. Received ${file.mimeType}`,
+      {
+        code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+        details: { provider: "gemini", feature: `document:${file.mimeType}` },
+      },
+    );
   }
 
   const resolved = await resolveFileSource(file, {
@@ -359,7 +380,10 @@ function resolvedToGeminiPart(resolved: ResolvedFileSource, file: FileInfo): any
       },
     };
   }
-  throw new Error(`Unsupported Gemini file source: ${resolved.type}`);
+  throw new AxleError(`Unsupported Gemini file source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "gemini", feature: `file-source:${resolved.type}` },
+  });
 }
 
 function formatTextFileContent(
@@ -391,6 +415,7 @@ export function isRefusalFinishReason(reason: FinishReason): boolean {
     case FinishReason.BLOCKLIST:
     case FinishReason.PROHIBITED_CONTENT:
     case FinishReason.SPII:
+    case FinishReason.LANGUAGE:
     case FinishReason.IMAGE_SAFETY:
     case FinishReason.IMAGE_PROHIBITED_CONTENT:
     case FinishReason.IMAGE_RECITATION:

@@ -2,6 +2,7 @@ import { glob } from "glob";
 import mime from "mime";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 import type { Span } from "../observability/types.js";
 import type { FilePathInfo } from "./types.js";
 
@@ -159,7 +160,10 @@ export async function resolveFileSource(
   }
 
   if (!options.resolver) {
-    throw new Error(`No fileResolver configured for deferred file: ${file.name}`);
+    throw new AxleError(`No fileResolver configured for deferred file: ${file.name}`, {
+      code: AxleErrorCode.FILE_UNREADABLE,
+      details: { name: file.name },
+    });
   }
 
   const resolved = await options.resolver({
@@ -186,8 +190,9 @@ function assertAccepted(
     };
   }
 
-  throw new Error(
+  throw new AxleError(
     `File source '${resolved.type}' is not supported for ${options.provider} ${file.kind} file '${file.name}'. Accepted: ${options.accepted.join(", ")}`,
+    { code: AxleErrorCode.FILE_UNREADABLE, details: { name: file.name } },
   );
 }
 
@@ -213,7 +218,10 @@ function getFileCategory(filePath: string): {
   const mimeType = mime.getType(filePath);
   if (!mimeType) {
     const ext = extname(filePath).toLowerCase();
-    throw new Error(`Unsupported file type: ${ext || "(no extension)"}`);
+    throw new AxleError(`Unsupported file type: ${ext || "(no extension)"}`, {
+      code: AxleErrorCode.FILE_UNREADABLE,
+      details: { path: filePath },
+    });
   }
 
   if (mimeType.startsWith("image/")) {
@@ -224,7 +232,10 @@ function getFileCategory(filePath: string): {
     return { kind: "text", mimeType };
   } else {
     const ext = extname(filePath).toLowerCase();
-    throw new Error(`Unsupported file type: ${ext} (${mimeType})`);
+    throw new AxleError(`Unsupported file type: ${ext} (${mimeType})`, {
+      code: AxleErrorCode.FILE_UNREADABLE,
+      details: { path: filePath },
+    });
   }
 }
 
@@ -257,13 +268,22 @@ export async function loadFileContent(
   try {
     await access(resolvedPath);
   } catch {
-    throw new Error(`File not found: ${filePath}`);
+    throw new AxleError(`File not found: ${filePath}`, {
+      code: AxleErrorCode.FILE_UNREADABLE,
+      details: { path: filePath },
+    });
   }
 
   const stats = await stat(resolvedPath);
 
   if (stats.size > MAX_FILE_SIZE) {
-    throw new Error(`File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`);
+    throw new AxleError(
+      `File too large: ${stats.size} bytes. Maximum allowed: ${MAX_FILE_SIZE} bytes`,
+      {
+        code: AxleErrorCode.FILE_UNREADABLE,
+        details: { path: filePath },
+      },
+    );
   }
 
   const fileName = resolvedPath.split("/").pop() || "";
@@ -272,7 +292,10 @@ export async function loadFileContent(
 
   if (actualEncoding === "utf-8") {
     if (category.kind !== "text") {
-      throw new Error(`Cannot read ${category.kind} file as text: ${filePath}`);
+      throw new AxleError(`Cannot read ${category.kind} file as text: ${filePath}`, {
+        code: AxleErrorCode.FILE_UNREADABLE,
+        details: { path: filePath },
+      });
     }
 
     const content = await readFile(resolvedPath, "utf-8");
@@ -286,7 +309,10 @@ export async function loadFileContent(
     };
   } else {
     if (category.kind === "text") {
-      throw new Error(`Cannot read text file as binary: ${filePath}`);
+      throw new AxleError(`Cannot read text file as binary: ${filePath}`, {
+        code: AxleErrorCode.FILE_UNREADABLE,
+        details: { path: filePath },
+      });
     }
 
     const fileBuffer = await readFile(resolvedPath);

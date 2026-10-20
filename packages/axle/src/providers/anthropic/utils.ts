@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import z from "zod";
+import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, Citation, type ToolResultPart } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import {
@@ -15,6 +15,7 @@ import {
   resolveReasoning,
 } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
+import { toolJsonSchema } from "../utils.js";
 
 interface AnthropicConversionContext {
   model: string;
@@ -147,7 +148,10 @@ async function convertFilePart(
 
   if (file.kind === "document") {
     if (file.mimeType !== "application/pdf") {
-      throw new Error(`Anthropic only supports PDF document files. Received ${file.mimeType}`);
+      throw new AxleError(`Anthropic only supports PDF document files. Received ${file.mimeType}`, {
+        code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+        details: { provider: "anthropic", feature: `document:${file.mimeType}` },
+      });
     }
     const resolved = await resolveFileSource(file, {
       provider: "anthropic",
@@ -174,7 +178,10 @@ async function convertFilePart(
     signal: context.signal,
   });
   if (resolved.type !== "text") {
-    throw new Error(`Unsupported Anthropic text source: ${resolved.type}`);
+    throw new AxleError(`Unsupported Anthropic text source: ${resolved.type}`, {
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      details: { provider: "anthropic", feature: `text-source:${resolved.type}` },
+    });
   }
 
   if (purpose === "tool-result") {
@@ -204,8 +211,12 @@ function toAnthropicImageMediaType(mimeType: string): AnthropicImageMediaType {
   ) {
     return mimeType;
   }
-  throw new Error(
+  throw new AxleError(
     `Anthropic does not support image MIME type: ${mimeType}. Supported types: image/jpeg, image/png, image/gif, image/webp.`,
+    {
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      details: { provider: "anthropic", feature: `image:${mimeType}` },
+    },
   );
 }
 
@@ -223,7 +234,10 @@ function toAnthropicImageSource(
       data: resolved.data,
     };
   }
-  throw new Error(`Unsupported Anthropic image source: ${resolved.type}`);
+  throw new AxleError(`Unsupported Anthropic image source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "anthropic", feature: `image-source:${resolved.type}` },
+  });
 }
 
 function toAnthropicPdfSource(
@@ -239,7 +253,10 @@ function toAnthropicPdfSource(
       data: resolved.data,
     };
   }
-  throw new Error(`Unsupported Anthropic PDF source: ${resolved.type}`);
+  throw new AxleError(`Unsupported Anthropic PDF source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "anthropic", feature: `document-source:${resolved.type}` },
+  });
 }
 
 type AnthropicThinkingDisplay = "summarized" | "omitted";
@@ -316,9 +333,12 @@ export function convertToAnthropicTools(
   tools: Array<ToolDefinition>,
 ): Array<Anthropic.Messages.Tool> {
   return tools.map((tool) => {
-    const schema = z.toJSONSchema(tool.schema);
+    const schema = toolJsonSchema(tool);
     if (!isObjectSchema(schema)) {
-      throw new Error(`Schema for tool ${tool.name} must be an object type`);
+      throw new AxleError(`Schema for tool ${tool.name} must be an object type`, {
+        code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+        details: { provider: "anthropic", feature: `tool-schema:${tool.name}` },
+      });
     }
     return {
       name: tool.name,
@@ -368,7 +388,11 @@ export function toAnthropicToolChoice(
   const exists =
     tools?.some((tool) => tool.name === choice.name) ||
     providerTools?.some((tool) => tool.name === choice.name);
-  if (!exists) throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+  if (!exists) {
+    throw new AxleError(`Tool choice references an unavailable tool: ${choice.name}`, {
+      code: AxleErrorCode.INVALID_OPTIONS,
+    });
+  }
   return { tool_choice: { type: "tool" as const, name: choice.name, ...disable } };
 }
 

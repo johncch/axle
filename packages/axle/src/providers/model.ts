@@ -1,3 +1,4 @@
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 export interface ModelId {
   /** Lowercased; absent for a bare id. */
   publisher?: string;
@@ -16,8 +17,14 @@ export function resolveFirstPartyModel(model: string, publishers: readonly strin
   if (publisher === undefined) return model;
 
   if (!publishers.includes(publisher)) {
-    throw new Error(`Model ${JSON.stringify(model)} is not available from ${publishers[0]}`);
+    throw new AxleError(`Model ${JSON.stringify(model)} is not available from ${publishers[0]}`, {
+      code: AxleErrorCode.INVALID_OPTIONS,
+    });
   }
-  if (!name) throw new Error(`Model ${JSON.stringify(model)} is missing a model ID`);
+  if (!name) {
+    throw new AxleError(`Model ${JSON.stringify(model)} is missing a model ID`, {
+      code: AxleErrorCode.INVALID_OPTIONS,
+    });
+  }
   return name;
 }

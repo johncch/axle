@@ -34,43 +34,43 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
+  const modelTools: any[] = [
+    ...(prepareTools(tools) ?? []),
+    ...(prepareProviderTools(providerTools) ?? []),
+  ];
+  const include = toOpenAIInclude(providerTools);
+
+  const streamingAdapter = createStreamingAdapter();
+
+  const input = await convertAxleMessageToResponseInput(messages, {
+    model,
+    fileResolver: runtime?.fileResolver,
+    signal,
+  });
+
+  const request: ResponseCreateParamsStreaming = {
+    model,
+    input,
+    ...(system && { instructions: system }),
+    stream: true as const,
+
+    // Axle-normalized options.
+    ...(modelTools.length > 0 ? { tools: modelTools } : {}),
+    ...(include.length > 0 ? { include } : {}),
+    ...toOpenAIReasoning(reasoning),
+    ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
+    ...toOpenAIToolChoice(toolChoice, tools, providerTools),
+    ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
+
+  span?.debug("OpenAI ResponsesAPI streaming request", {
+    request: redactResolvedFileValues(request),
+  });
+
   try {
-    const modelTools: any[] = [
-      ...(prepareTools(tools) ?? []),
-      ...(prepareProviderTools(providerTools) ?? []),
-    ];
-    const include = toOpenAIInclude(providerTools);
-
-    const streamingAdapter = createStreamingAdapter();
-
-    const input = await convertAxleMessageToResponseInput(messages, {
-      model,
-      fileResolver: runtime?.fileResolver,
-      signal,
-    });
-
-    const request: ResponseCreateParamsStreaming = {
-      model,
-      input,
-      ...(system && { instructions: system }),
-      stream: true as const,
-
-      // Axle-normalized options.
-      ...(modelTools.length > 0 ? { tools: modelTools } : {}),
-      ...(include.length > 0 ? { include } : {}),
-      ...toOpenAIReasoning(reasoning),
-      ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
-      ...toOpenAIToolChoice(toolChoice, tools, providerTools),
-      ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
-
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
-
-    span?.debug("OpenAI ResponsesAPI streaming request", {
-      request: redactResolvedFileValues(request),
-    });
-
     const stream = await client.responses.create(request, ...(signal ? [{ signal }] : []));
 
     for await (const event of stream) {

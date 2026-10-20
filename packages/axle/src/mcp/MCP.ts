@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 import type { Span } from "../observability/types.js";
 import type { ExecutableTool, ToolDefinition } from "../tools/types.js";
 import { createMcpToolDefinitions, createMcpTools } from "./tools.js";
@@ -131,7 +132,9 @@ export class MCP {
 
   private assertConnected(): Client {
     if (!this._connected || !this.client) {
-      throw new Error("MCP not connected. Call connect() first.");
+      throw new AxleError("MCP not connected. Call connect() first.", {
+        code: AxleErrorCode.MCP_NOT_CONNECTED,
+      });
     }
     return this.client;
   }

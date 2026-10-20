@@ -1,6 +1,6 @@
 import type { ResponseIncludable } from "openai/resources/responses/responses.js";
 import { ResponseInput } from "openai/resources/responses/responses.js";
-import z from "zod";
+import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart, ContentPartText } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
@@ -12,13 +12,14 @@ import {
 } from "../../utils/file.js";
 import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import type { ToolChoice } from "../types.js";
+import { toolJsonSchema } from "../utils.js";
 
 /* To Request */
 
 export function prepareTools(tools?: Array<ToolDefinition>) {
   if (tools && tools.length > 0) {
     return tools.map((tool) => {
-      const parameters = z.toJSONSchema(tool.schema);
+      const parameters = toolJsonSchema(tool);
       return {
         type: "function" as const,
         strict: allPropertiesRequired(parameters),
@@ -102,7 +103,9 @@ export function toOpenAIToolChoice(
     };
   }
 
-  throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+  throw new AxleError(`Tool choice references an unavailable tool: ${choice.name}`, {
+    code: AxleErrorCode.INVALID_OPTIONS,
+  });
 }
 
 export function toOpenAIReasoning(reasoning: ReasoningSetting | undefined) {
@@ -283,8 +286,12 @@ async function convertFilePart(
 
   if (file.kind === "document") {
     if (file.mimeType !== "application/pdf") {
-      throw new Error(
+      throw new AxleError(
         `OpenAI file inputs currently support PDF documents. Received ${file.mimeType}`,
+        {
+          code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+          details: { provider: "openai", feature: `document:${file.mimeType}` },
+        },
       );
     }
     const resolved = await resolveFileSource(file, {
@@ -318,7 +325,10 @@ function resolvedToImageUrl(resolved: ResolvedFileSource, file: FileInfo): strin
   if (resolved.type === "base64") {
     return `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`;
   }
-  throw new Error(`Unsupported OpenAI image source: ${resolved.type}`);
+  throw new AxleError(`Unsupported OpenAI image source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "openai", feature: `image-source:${resolved.type}` },
+  });
 }
 
 function resolvedToInputFile(resolved: ResolvedFileSource, file: FileInfo) {
@@ -335,5 +345,8 @@ function resolvedToInputFile(resolved: ResolvedFileSource, file: FileInfo) {
       file_data: `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`,
     };
   }
-  throw new Error(`Unsupported OpenAI file source: ${resolved.type}`);
+  throw new AxleError(`Unsupported OpenAI file source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "openai", feature: `document-source:${resolved.type}` },
+  });
 }

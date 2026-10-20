@@ -478,7 +478,7 @@ describe("stream() error paths", () => {
     }
   });
 
-  test("2.5 provider generator throws rejects promise and leaks spans", async () => {
+  test("2.5 provider generator throws rejects promise and ends spans with error", async () => {
     const { writer, tracer } = createTracerAndWriter();
     const rootSpan = tracer.startSpan("stream", { type: "workflow" });
 
@@ -502,16 +502,10 @@ describe("stream() error paths", () => {
     await expect(handle.final).rejects.toThrow("Connection refused");
 
     const { timeline } = writer;
-
-    // step-1 span was started but never ended (leaked)
-    const step1Starts = timeline.filter((e) => e.type === "span:start" && e.name === "step-1");
     const step1Ends = timeline.filter((e) => e.type === "span:end" && e.name === "step-1");
-    expect(step1Starts).toHaveLength(1);
-    expect(step1Ends).toHaveLength(0);
-
-    // Root span also never ended
     const rootEnds = timeline.filter((e) => e.type === "span:end" && e.name === "stream");
-    expect(rootEnds).toHaveLength(0);
+    expect(step1Ends).toMatchObject([{ status: "error" }]);
+    expect(rootEnds).toMatchObject([{ status: "error" }]);
   });
 });
 

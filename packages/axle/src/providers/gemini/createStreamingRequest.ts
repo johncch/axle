@@ -32,36 +32,36 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
+  const googleOptions: Record<string, any> = {
+    // Axle-normalized options.
+    ...toGeminiThinkingConfig(reasoning, model),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
+
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
+
+  const config = prepareConfig(tools, system, googleOptions);
+  if (toolChoice !== "none") {
+    addGeminiProviderTools(config, providerTools);
+  }
+
+  const streamingAdapter = createGeminiStreamingAdapter();
+
+  const contents = await convertAxleMessagesToGemini(messages, {
+    model,
+    fileResolver: runtime?.fileResolver,
+    signal,
+  });
+
+  const request = {
+    contents,
+    config: { ...config, abortSignal: signal },
+  };
+  span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
+
   try {
-    const googleOptions: Record<string, any> = {
-      // Axle-normalized options.
-      ...toGeminiThinkingConfig(reasoning, model),
-      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-      ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
-
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
-
-    const config = prepareConfig(tools, system, googleOptions);
-    if (toolChoice !== "none") {
-      addGeminiProviderTools(config, providerTools);
-    }
-
-    const streamingAdapter = createGeminiStreamingAdapter();
-
-    const contents = await convertAxleMessagesToGemini(messages, {
-      model,
-      fileResolver: runtime?.fileResolver,
-      signal,
-    });
-
-    const request = {
-      contents,
-      config: { ...config, abortSignal: signal },
-    };
-    span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
-
     const stream = await client.models.generateContentStream({
       model,
       ...request,

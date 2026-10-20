@@ -395,6 +395,8 @@ async function run(
           usage: error instanceof AxleAbortError ? mergeStats(usage, error.usage) : usage,
         });
       }
+      stepSpan?.end("error");
+      span?.end("error");
       throw error;
     }
 

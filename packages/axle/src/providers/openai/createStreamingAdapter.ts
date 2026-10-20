@@ -12,6 +12,7 @@ import type {
 import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { withUsageDetails } from "../../utils/stats.js";
+import { truncateMiddle } from "../../utils/truncate.js";
 import { AxleStopReason } from "../types.js";
 
 function isProviderToolItem(item: ResponseOutputItem): item is OpenAIProviderToolItem {
@@ -204,9 +205,21 @@ export function createStreamingAdapter() {
               },
             });
           } catch (e) {
-            throw new Error(
-              `Failed to parse function call arguments for ${name}: ${e instanceof Error ? e.message : String(e)}\nRaw value: ${event.arguments}`,
-            );
+            const parseMessage = e instanceof Error ? e.message : String(e);
+            chunks.push({
+              type: "tool-call-complete",
+              data: {
+                index: buffer.partIdx,
+                id: buffer.callId,
+                name,
+                arguments: {},
+                error: {
+                  type: "invalid-arguments",
+                  message: `Failed to parse function call arguments for ${name}: ${parseMessage}`,
+                  raw: truncateMiddle(event.arguments),
+                },
+              },
+            });
           }
           toolCallBuffers.delete(itemId);
         }

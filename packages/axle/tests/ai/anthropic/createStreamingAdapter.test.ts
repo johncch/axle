@@ -572,7 +572,7 @@ describe("createAnthropicStreamingAdapter", () => {
       }
     });
 
-    test("should throw error when tool call arguments fail to parse", () => {
+    test("reports unparseable tool call arguments as an invalid-arguments error", () => {
       const adapter = createAnthropicStreamingAdapter();
 
       // Start tool use
@@ -598,13 +598,23 @@ describe("createAnthropicStreamingAdapter", () => {
         },
       });
 
-      // Stop - should throw
-      expect(() => {
-        adapter.handleEvent({
-          type: "content_block_stop",
-          index: 1,
-        });
-      }).toThrow(/Failed to parse tool call arguments for search/);
+      const chunks = adapter.handleEvent({ type: "content_block_stop", index: 1 });
+
+      expect(chunks).toMatchObject([
+        {
+          type: "tool-call-complete",
+          data: {
+            id: "toolu_123",
+            name: "search",
+            arguments: {},
+            error: {
+              type: "invalid-arguments",
+              message: expect.stringContaining("Failed to parse tool call arguments for search"),
+              raw: "{invalid json}",
+            },
+          },
+        },
+      ]);
     });
 
     test("should handle multiple tool calls", () => {
