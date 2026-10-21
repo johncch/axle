@@ -7,7 +7,6 @@ export class AxleInstructVariableError extends AxleError {
   constructor(missingVariables: string[]) {
     super(formatMissingVariablesMessage(missingVariables), {
       code: AxleErrorCode.INSTRUCT_VARIABLE_ERROR,
-      details: { missingVariables },
     });
     this.missingVariables = missingVariables;
 

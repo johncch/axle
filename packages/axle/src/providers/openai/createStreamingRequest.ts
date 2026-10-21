@@ -3,7 +3,7 @@ import type { ResponseCreateParamsStreaming } from "openai/resources/responses/r
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   convertAxleMessageToResponseInput,
@@ -70,21 +70,10 @@ export async function* createStreamingRequest(
     request: redactResolvedFileValues(request),
   });
 
-  try {
+  yield* wireCall(span, signal, async function* () {
     const stream = await client.responses.create(request, ...(signal ? [{ signal }] : []));
-
     for await (const event of stream) {
-      const chunks = streamingAdapter.handleEvent(event);
-      for (const streamChunk of chunks) {
-        yield streamChunk;
-      }
+      yield* streamingAdapter.handleEvent(event);
     }
-  } catch (error) {
-    if (signal?.aborted) return;
-    span?.error(error instanceof Error ? error.message : String(error));
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
-  }
+  });
 }

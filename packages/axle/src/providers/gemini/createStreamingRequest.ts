@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   addGeminiProviderTools,
@@ -61,24 +61,10 @@ export async function* createStreamingRequest(
   };
   span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
 
-  try {
-    const stream = await client.models.generateContentStream({
-      model,
-      ...request,
-    });
-
+  yield* wireCall(span, signal, async function* () {
+    const stream = await client.models.generateContentStream({ model, ...request });
     for await (const chunk of stream) {
-      const chunks = streamingAdapter.handleChunk(chunk);
-      for (const streamChunk of chunks) {
-        yield streamChunk;
-      }
+      yield* streamingAdapter.handleChunk(chunk);
     }
-  } catch (error) {
-    if (signal?.aborted) return;
-    span?.error(error instanceof Error ? error.message : String(error));
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
-  }
+  });
 }

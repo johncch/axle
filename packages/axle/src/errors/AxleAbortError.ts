@@ -18,13 +18,7 @@ export class AxleAbortError extends AxleError {
       usage?: Stats;
     },
   ) {
-    super(message, {
-      code: AxleErrorCode.ABORTED,
-      details: {
-        reason: options?.reason,
-        usage: options?.usage,
-      },
-    });
+    super(message, { code: AxleErrorCode.ABORTED });
     this.name = "AbortError";
     this.reason = options?.reason;
     this.messages = options?.messages;

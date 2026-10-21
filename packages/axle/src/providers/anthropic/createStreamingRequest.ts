@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   convertToAnthropicProviderTools,
@@ -64,24 +64,17 @@ export async function* createStreamingRequest(
     ...providerOptions,
   };
 
-  try {
+  yield* wireCall(span, signal, async function* () {
     let request = initialRequest;
     while (true) {
       span?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
 
       const stream = await client.messages.create(
-        {
-          ...request,
-          stream: true as const,
-        },
+        { ...request, stream: true as const },
         { signal },
       );
-
       for await (const messageStreamEvent of stream) {
-        const chunks = streamingAdapter.handleEvent(messageStreamEvent);
-        for (const chunk of chunks) {
-          yield chunk;
-        }
+        yield* streamingAdapter.handleEvent(messageStreamEvent);
       }
 
       const pausedContent = streamingAdapter.pausedContent();
@@ -91,11 +84,5 @@ export async function* createStreamingRequest(
         messages: [...initialRequest.messages, { role: "assistant", content: pausedContent }],
       };
     }
-  } catch (error) {
-    if (signal?.aborted) return;
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
-  }
+  });
 }

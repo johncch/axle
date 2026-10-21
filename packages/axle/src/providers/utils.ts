@@ -1,5 +1,7 @@
 import z from "zod";
 import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
+import type { AnyStreamChunk } from "../messages/stream.js";
+import type { Span } from "../observability/types.js";
 import type { ToolDefinition } from "../tools/types.js";
 
 export function requireInteger(
@@ -28,6 +30,26 @@ export function toolJsonSchema(tool: ToolDefinition): z.core.JSONSchema.BaseSche
       `Tool ${tool.name} has a schema that cannot be expressed as JSON Schema: ${error instanceof Error ? error.message : String(error)}`,
       { code: AxleErrorCode.INVALID_OPTIONS, details: { name: tool.name }, cause: error },
     );
+  }
+}
+
+/**
+ * Runs the wire call of a provider adapter. What `call` throws is what the
+ * provider or transport did, and becomes an `error` chunk; everything before
+ * the call runs outside this wrapper and rejects. See
+ * docs/architecture/errors.md, invariant 8.
+ */
+export async function* wireCall(
+  span: Span | undefined,
+  signal: AbortSignal | undefined,
+  call: () => AsyncGenerator<AnyStreamChunk, void, unknown>,
+): AsyncGenerator<AnyStreamChunk, void, unknown> {
+  try {
+    yield* call();
+  } catch (error) {
+    if (signal?.aborted) return;
+    span?.error(error instanceof Error ? error.message : String(error));
+    yield { type: "error", data: normalizeProviderError(error) };
   }
 }
 

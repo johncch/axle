@@ -412,11 +412,11 @@ async function run(
       });
     }
 
-    if (outcome.kind === "provider-error") {
-      if (outcome.usage) {
+    if (outcome.kind === "failed") {
+      if (outcome.failure.usage) {
         addStats(
           usage,
-          attributeStats(outcome.usage, {
+          attributeStats(outcome.failure.usage, {
             provider: provider.name,
             model: outcome.model || model,
           }),
@@ -426,14 +426,7 @@ async function run(
       return endWithResult({
         ok: false,
         messages: newMessages,
-        error: {
-          kind: "api",
-          type: outcome.errorType,
-          message: outcome.message,
-          ...(outcome.status === undefined ? {} : { status: outcome.status }),
-          ...(outcome.usage ? { usage: outcome.usage } : {}),
-          ...(outcome.raw === undefined ? {} : { raw: outcome.raw }),
-        },
+        error: outcome.failure,
         usage,
       });
     }
@@ -454,31 +447,6 @@ async function run(
         ok: false,
         messages: newMessages,
         error: { kind: "refusal", message, ...outcome.refusal },
-        usage,
-      });
-    }
-
-    if (outcome.kind === "incomplete") {
-      if (outcome.usage) {
-        addStats(
-          usage,
-          attributeStats(outcome.usage, {
-            provider: provider.name,
-            model: outcome.model || model,
-          }),
-        );
-      }
-      stepSpan?.end("error");
-      return endWithResult({
-        ok: false,
-        messages: newMessages,
-        error: {
-          kind: "incomplete",
-          type: outcome.type,
-          message: outcome.message,
-          ...(outcome.usage ? { usage: outcome.usage } : {}),
-          ...(outcome.raw === undefined ? {} : { raw: outcome.raw }),
-        },
         usage,
       });
     }

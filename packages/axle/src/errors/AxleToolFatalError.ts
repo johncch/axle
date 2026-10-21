@@ -19,14 +19,7 @@ export class AxleToolFatalError extends AxleError {
       cause?: unknown;
     },
   ) {
-    super(message, {
-      code: AxleErrorCode.TOOL_FATAL_ERROR,
-      details: {
-        toolName: options?.toolName,
-        usage: options?.usage,
-      },
-      cause: options?.cause,
-    });
+    super(message, { code: AxleErrorCode.TOOL_FATAL_ERROR, cause: options?.cause });
     this.toolName = options?.toolName;
     this.messages = options?.messages;
     this.partial = options?.partial;

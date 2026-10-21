@@ -2,7 +2,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { withRetry } from "./retry.js";
 import { ChatCompletionChunk, ChatCompletionStreamError } from "./types.js";
@@ -103,7 +103,7 @@ export async function* createStreamingRequest(
     ...clientHeaders,
   };
 
-  try {
+  yield* wireCall(span, signal, async function* () {
     const response = await withRetry(
       ({ signal }) =>
         (clientFetch ?? fetch)(`${baseUrl}/chat/completions`, {
@@ -182,27 +182,12 @@ export async function* createStreamingRequest(
           return;
         }
 
-        const streamChunks = adapter.handleChunk(chunk);
-        for (const streamChunk of streamChunks) {
-          yield streamChunk;
-        }
+        yield* adapter.handleChunk(chunk);
       }
     }
 
-    // Emit deferred complete event (waits for usage-only chunk after finish_reason)
-    for (const streamChunk of adapter.finalize()) {
-      yield streamChunk;
-    }
-  } catch (error) {
-    if (signal?.aborted) return;
-    span?.error("Error in ChatCompletions streaming request", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
-  }
+    yield* adapter.finalize();
+  });
 }
 
 function describeHttpError(
