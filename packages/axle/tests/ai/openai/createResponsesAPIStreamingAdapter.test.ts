@@ -572,6 +572,44 @@ describe("createResponsesAPIStreamingAdapter", () => {
       }
     });
 
+    test("reports unparseable function call arguments as an invalid-arguments error", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: "{invalid",
+        item_id: "call_1",
+        output_index: 0,
+        sequence_number: 0,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "search",
+        arguments: "{invalid json}",
+        item_id: "call_1",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      expect(chunks).toMatchObject([
+        {
+          type: "tool-call-complete",
+          data: {
+            id: "call_1",
+            name: "search",
+            arguments: {},
+            error: {
+              type: "invalid-arguments",
+              message: expect.stringContaining(
+                "Failed to parse function call arguments for search",
+              ),
+              raw: "{invalid json}",
+            },
+          },
+        },
+      ]);
+    });
+
     test("should emit Stop finish reason when no tool calls", () => {
       const adapter = createStreamingAdapter();
 
@@ -905,7 +943,8 @@ describe("createResponsesAPIStreamingAdapter", () => {
     test("drops the citation and still completes the tool call", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const adapter = createStreamingAdapter();
-      const argumentsJson = '{"path":"journal.md","content":"MSFT rose \ue200cite\ue202turn1search4\ue201"}';
+      const argumentsJson =
+        '{"path":"journal.md","content":"MSFT rose \ue200cite\ue202turn1search4\ue201"}';
 
       adapter.handleEvent({
         type: "response.output_item.added",

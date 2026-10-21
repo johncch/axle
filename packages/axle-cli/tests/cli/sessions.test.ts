@@ -646,7 +646,7 @@ describe("runSingle session persistence", () => {
     );
 
     expect(succeeded).toBe(false);
-    expect(errors).toContainEqual(expect.stringContaining("Model error: kaput"));
+    expect(errors).toContainEqual(expect.stringContaining("API error: kaput"));
     const file = await readSessionFile("fail-1");
     expect(file.session.sessionId).toBe("fail-1");
   });
@@ -704,7 +704,7 @@ describe("runSingle session persistence", () => {
 
     expect(succeeded).toBe(true);
     expect(requestMessages).toHaveLength(2);
-    expect(errors).toContainEqual(expect.stringContaining("Model error: kaput"));
+    expect(errors).toContainEqual(expect.stringContaining("API error: kaput"));
   });
 
   it("does not write anything without a session store", async () => {

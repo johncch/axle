@@ -1,3 +1,4 @@
+import { AxleError, AxleErrorCode } from "../../../errors/AxleError.js";
 import type { FileInfo } from "../../../utils/file.js";
 import { resolveReasoning, type ReasoningSetting } from "../../reasoning.js";
 
@@ -15,6 +16,9 @@ export function toTogetherReasoning(reasoning: ReasoningSetting | undefined) {
 
 export function assertTogetherFilePartSupported(file: FileInfo): void {
   if (file.kind === "document") {
-    throw new Error("Together Chat Completions does not support PDF file parts");
+    throw new AxleError("Together Chat Completions does not support PDF file parts", {
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      details: { provider: "together", feature: "document:application/pdf" },
+    });
   }
 }

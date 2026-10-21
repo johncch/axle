@@ -343,10 +343,11 @@ export function createGeminiStreamingAdapter() {
           },
         });
       } else {
+        const declared = Object.values(FinishReason).includes(candidate.finishReason);
         chunks.push({
-          type: "error",
+          type: "incomplete",
           data: {
-            type: "FinishReasonError",
+            type: declared ? candidate.finishReason : "FinishReasonError",
             message: `Unexpected finish reason: ${candidate.finishReason}`,
             usage,
             raw: chunk,

@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 import type { ExecutableTool } from "./types.js";
 
 export interface WebSearchResult {
@@ -45,7 +46,9 @@ export function braveWebSearch(
   options: BraveWebSearchOptions,
 ): ExecutableTool<typeof webSearchInputSchema> {
   const apiKey = options.apiKey.trim();
-  if (!apiKey) throw new Error("Brave Search apiKey is required");
+  if (!apiKey) {
+    throw new AxleError("Brave Search apiKey is required", { code: AxleErrorCode.INVALID_OPTIONS });
+  }
 
   const endpoint = options.endpoint ?? "https://api.search.brave.com/res/v1/llm/context";
   const maxResults = requireIntegerInRange(options.maxResults ?? 5, "maxResults", 1, 50);
@@ -141,10 +144,18 @@ export function braveWebSearch(
 }
 
 function requireIntegerInRange(value: number, name: string, min: number, max?: number): number {
-  if (!Number.isInteger(value)) throw new Error(`${name} must be an integer`);
-  if (value < min) throw new Error(`${name} must be greater than or equal to ${min}`);
+  if (!Number.isInteger(value)) {
+    throw new AxleError(`${name} must be an integer`, { code: AxleErrorCode.INVALID_OPTIONS });
+  }
+  if (value < min) {
+    throw new AxleError(`${name} must be greater than or equal to ${min}`, {
+      code: AxleErrorCode.INVALID_OPTIONS,
+    });
+  }
   if (max !== undefined && value > max) {
-    throw new Error(`${name} must be less than or equal to ${max}`);
+    throw new AxleError(`${name} must be less than or equal to ${max}`, {
+      code: AxleErrorCode.INVALID_OPTIONS,
+    });
   }
   return value;
 }

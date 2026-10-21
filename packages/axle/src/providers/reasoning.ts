@@ -1,3 +1,4 @@
+import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 /**
  * Named reasoning depth. Relative within a model, not comparable compute or
  * token spend across models.
@@ -41,8 +42,9 @@ export function resolveReasoning(setting: ReasoningSetting | undefined): Reasoni
   ) {
     return { effort: setting.effort, display: setting.display ?? "visible" };
   }
-  throw new TypeError(
+  throw new AxleError(
     `Unsupported reasoning setting ${JSON.stringify(setting)}; expected "default", "off", "on", or { effort: "low" | "medium" | "high", display?: "visible" | "hidden" }`,
+    { code: AxleErrorCode.INVALID_OPTIONS },
   );
 }
 

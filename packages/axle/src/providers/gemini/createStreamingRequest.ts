@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createGeminiStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   addGeminiProviderTools,
@@ -32,53 +32,39 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
-  try {
-    const googleOptions: Record<string, any> = {
-      // Axle-normalized options.
-      ...toGeminiThinkingConfig(reasoning, model),
-      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-      ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
+  const googleOptions: Record<string, any> = {
+    // Axle-normalized options.
+    ...toGeminiThinkingConfig(reasoning, model),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...toGeminiToolConfig(toolChoice, parallelToolCalls, tools, providerTools),
 
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
 
-    const config = prepareConfig(tools, system, googleOptions);
-    if (toolChoice !== "none") {
-      addGeminiProviderTools(config, providerTools);
-    }
-
-    const streamingAdapter = createGeminiStreamingAdapter();
-
-    const contents = await convertAxleMessagesToGemini(messages, {
-      model,
-      fileResolver: runtime?.fileResolver,
-      signal,
-    });
-
-    const request = {
-      contents,
-      config: { ...config, abortSignal: signal },
-    };
-    span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
-
-    const stream = await client.models.generateContentStream({
-      model,
-      ...request,
-    });
-
-    for await (const chunk of stream) {
-      const chunks = streamingAdapter.handleChunk(chunk);
-      for (const streamChunk of chunks) {
-        yield streamChunk;
-      }
-    }
-  } catch (error) {
-    if (signal?.aborted) return;
-    span?.error(error instanceof Error ? error.message : String(error));
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
+  const config = prepareConfig(tools, system, googleOptions);
+  if (toolChoice !== "none") {
+    addGeminiProviderTools(config, providerTools);
   }
+
+  const streamingAdapter = createGeminiStreamingAdapter();
+
+  const contents = await convertAxleMessagesToGemini(messages, {
+    model,
+    fileResolver: runtime?.fileResolver,
+    signal,
+  });
+
+  const request = {
+    contents,
+    config: { ...config, abortSignal: signal },
+  };
+  span?.debug("Gemini streaming request", { request: redactResolvedFileValues(request) });
+
+  yield* wireCall(span, signal, async function* () {
+    const stream = await client.models.generateContentStream({ model, ...request });
+    for await (const chunk of stream) {
+      yield* streamingAdapter.handleChunk(chunk);
+    }
+  });
 }

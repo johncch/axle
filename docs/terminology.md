@@ -131,6 +131,17 @@ state alongside.
 rewrite, recorded on the transcript as a `compaction` turn part carrying the
 summary. Old messages cease to exist; lookback is served by the transcript.
 
+**Failure** — the `ok: false` arm of a result: an `AxleProviderFailure`
+of kind `api`, `incomplete`, `refusal`, or `parse`. A failure is always the provider's
+answer to a request that went out. It is a value on a result, never
+thrown.
+
+**Rejection** — a handle or promise that throws an `AxleError`: a mistake
+in the setup or the message, a host file that could not be read, a tool
+that ended the run, a cancel, or a broken invariant. Nothing was sent, or
+what was sent is carried on the error. The rule is in
+[architecture/errors.md](./architecture/errors.md).
+
 **Trace** — observability only: the span tree produced by the tracer and
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means
 the conversation transcript.

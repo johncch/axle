@@ -300,7 +300,7 @@ Anthropic, `stop_reason`:
 | `tool_use`                      | The model called a client tool                                                                                                                      | Finish reason `function_call`; the loop runs the tool |
 | `pause_turn`                    | Anthropic's own tool loop hit its iteration limit                                                                                                   | Not surfaced; the adapter continues the turn          |
 | `refusal`                       | The request was declined                                                                                                                            | [Refusal](#refusals)                                  |
-| Any other value                 | —                                                                                                                                                   | Model error `FinishReasonError`                       |
+| Any other value                 | —                                                                                                                                                   | `incomplete` failure `FinishReasonError`              |
 
 OpenAI Responses, the terminal stream event:
 
@@ -309,19 +309,20 @@ OpenAI Responses, the terminal stream event:
 | `response.completed`                                      | The response finished                                      | Finish reason `function_call` when it holds a function call, else `stop`. A [refusal](#refusals) when it holds a `refusal` part |
 | `response.incomplete`, reason `max_output_tokens`         | The output cap was reached                                 | Finish reason `length`                                                                                                          |
 | `response.incomplete`, reason `content_filter`            | Output was blocked                                         | [Refusal](#refusals)                                                                                                            |
-| `response.incomplete`, reason `max_messages` or `steered` | Not observed; the SDK ties `steered` to WebSocket steering | Model error `RESPONSES_API_INCOMPLETE`                                                                                          |
-| `response.failed`                                         | The response failed                                        | Model error with OpenAI's `code`                                                                                                |
-| No terminal event                                         | The stream was cut                                         | Model error `IncompleteStream`                                                                                                  |
+| `response.incomplete`, reason `max_messages` or `steered` | Not observed; the SDK ties `steered` to WebSocket steering | `incomplete` failure `RESPONSES_API_INCOMPLETE`                                                                                 |
+| `response.failed`                                         | The response failed                                        | `api` failure with OpenAI's `code`                                                                                              |
+| No terminal event                                         | The stream was cut                                         | `incomplete` failure `IncompleteStream`                                                                                         |
 
 Gemini, `finishReason` on the candidate:
 
-| Value                                                                                                                             | Meaning                                            | Axle                                                                             |
-| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `STOP`                                                                                                                            | The model finished, or produced a stop sequence    | Finish reason `stop`, or `function_call` when the response holds a function call |
-| `MAX_TOKENS`                                                                                                                      | The output cap was reached                         | Finish reason `length`                                                           |
-| `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, `IMAGE_RECITATION` | Output was blocked                                 | [Refusal](#refusals)                                                             |
-| `LANGUAGE`, `OTHER`, `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `NO_IMAGE`, `IMAGE_OTHER`          | The model stopped for a reason that is not a block | Model error `FinishReasonError`                                                  |
-| `FINISH_REASON_UNSPECIFIED`                                                                                                       | Still streaming                                    | Ignored                                                                          |
+| Value                                                                                                                                         | Meaning                                                | Axle                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `STOP`                                                                                                                                        | The model finished, or produced a stop sequence        | Finish reason `stop`, or `function_call` when the response holds a function call |
+| `MAX_TOKENS`                                                                                                                                  | The output cap was reached                             | Finish reason `length`                                                           |
+| `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `LANGUAGE`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, `IMAGE_RECITATION` | Output was blocked, or the model declined the language | [Refusal](#refusals)                                                             |
+| `OTHER`, `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `NO_IMAGE`, `IMAGE_OTHER`, `CONTINUATION`                  | The model stopped for a reason that is not a block     | `incomplete` failure, `type` = the reason                                        |
+| Any other value                                                                                                                               | —                                                      | `incomplete` failure `FinishReasonError`                                         |
+| `FINISH_REASON_UNSPECIFIED`                                                                                                                   | Still streaming                                        | Ignored                                                                          |
 
 A Gemini response that holds a function call finishes as `function_call`
 whatever its `finishReason` is. A blocked prompt has no candidate; it arrives
@@ -329,16 +330,16 @@ as `promptFeedback.blockReason` and is a refusal.
 
 Chat Completions, `finish_reason`:
 
-| Value                                                | Sent by            | Axle                                           |
-| ---------------------------------------------------- | ------------------ | ---------------------------------------------- |
-| `stop`                                               | All                | Finish reason `stop`                           |
-| `eos`                                                | Together           | Finish reason `stop`                           |
-| `length`                                             | All                | Finish reason `length`                         |
-| `tool_calls`, `function_call`                        | All                | Finish reason `function_call`                  |
-| `content_filter`                                     | OpenAI, OpenRouter | [Refusal](#refusals)                           |
-| `error` with a top-level `error` object on the chunk | OpenRouter         | Model error with the upstream code and message |
-| `error` with no `error` object                       | OpenRouter         | Model error `FinishReasonError`                |
-| Any other value                                      | —                  | Finish reason `stop`                           |
+| Value                                                | Sent by            | Axle                                             |
+| ---------------------------------------------------- | ------------------ | ------------------------------------------------ |
+| `stop`                                               | All                | Finish reason `stop`                             |
+| `eos`                                                | Together           | Finish reason `stop`                             |
+| `length`                                             | All                | Finish reason `length`                           |
+| `tool_calls`, `function_call`                        | All                | Finish reason `function_call`                    |
+| `content_filter`                                     | OpenAI, OpenRouter | [Refusal](#refusals)                             |
+| `error` with a top-level `error` object on the chunk | OpenRouter         | `api` failure with the upstream code and message |
+| `error` with no `error` object                       | OpenRouter         | `api` failure, `type: "FinishReasonError"`       |
+| Any other value                                      | —                  | `incomplete` failure `FinishReasonError`         |
 
 OpenRouter normalizes every model's reason to `tool_calls`, `stop`, `length`,
 `content_filter`, or `error`, and reports the model's own string as
@@ -417,15 +418,16 @@ send-back rule on every provider for content no provider requires.
 ## Request failures
 
 A request the provider rejects outright, or a transport failure, is
-`ok: false` with `error: { kind: "model", type, message, status?, usage?, raw? }`.
+`ok: false` with `error: { kind: "api", type, message, status?, usage?, raw? }`.
 `type` is `"authentication"` when the provider rejected the credential. For
 every other failure it is the provider's own type: the SDK error class name
 for Anthropic, OpenAI, and Gemini; for a Chat Completions response, the
 body's `error.type`, else its `error.code` as a string, else the status as a
-string; an upstream `code` for a mid-stream OpenRouter error; or one of
-Axle's own (`FinishReasonError`, `IncompleteStream`,
-`RESPONSES_API_INCOMPLETE`). `status` is the HTTP status when there was one,
-and `raw` is what the provider threw.
+string; or an upstream `code` for a mid-stream OpenRouter error. `status` is
+the HTTP status when there was one, and `raw` is what the provider threw. A
+stop reason Axle cannot use is `kind: "incomplete"` instead, with `type`
+`FinishReasonError`, `IncompleteStream`, or `RESPONSES_API_INCOMPLETE`
+(see [errors.md](./errors.md)).
 
 A Chat Completions non-2xx body is parsed as JSON. When it holds an `error`
 object in the OpenAI shape (`{ error: { type?, code?, message? } }`), that

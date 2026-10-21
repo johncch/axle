@@ -1,8 +1,9 @@
 import type { AxleAssistantMessage, AxleMessage } from "../messages/message.js";
 import type { Stats } from "../types.js";
-import { AxleError } from "./AxleError.js";
+import { AxleError, AxleErrorCode } from "./AxleError.js";
 
 export class AxleToolFatalError extends AxleError {
+  public override readonly code = AxleErrorCode.TOOL_FATAL_ERROR;
   public readonly toolName?: string;
   public readonly messages?: AxleMessage[];
   public readonly partial?: AxleAssistantMessage;
@@ -18,14 +19,7 @@ export class AxleToolFatalError extends AxleError {
       cause?: unknown;
     },
   ) {
-    super(message, {
-      code: "TOOL_FATAL_ERROR",
-      details: {
-        toolName: options?.toolName,
-        usage: options?.usage,
-      },
-      cause: options?.cause,
-    });
+    super(message, { code: AxleErrorCode.TOOL_FATAL_ERROR, cause: options?.cause });
     this.toolName = options?.toolName;
     this.messages = options?.messages;
     this.partial = options?.partial;

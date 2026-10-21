@@ -42,11 +42,10 @@ in a message is in [provider-content.md](./provider-content.md).
    including on OpenRouter, which hosts a search of its own.
 7. **A provider tool nothing serves fails the request.** A
    `chatCompletions()` provider with no vendor that hosts tools, asked for a
-   provider tool it has nothing attached for, fails before any HTTP request.
-   The adapter throws a plain `Error`, as it does for any request it cannot
-   build, so the result is `ok: false` with `error.kind` `"model"` and a
-   message naming the tool. There is no error code. It is never dropped
-   silently.
+   provider tool it has nothing attached for, fails before any HTTP request:
+   the handle rejects with `AxleError` `PROVIDER_UNSUPPORTED` naming the
+   tool, as for any request the adapter has no wire shape for (see
+   [errors.md](./errors.md)). It is never dropped silently.
 8. **`config` belongs to a hosted tool.** It is merged into the vendor's
    tool definition. A brought tool has no vendor definition to merge it
    into, so `config` on a provider tool served by a brought tool is ignored.

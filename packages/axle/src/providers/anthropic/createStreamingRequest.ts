@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AnyStreamChunk } from "../../messages/stream.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createAnthropicStreamingAdapter } from "./createStreamingAdapter.js";
 import {
   convertToAnthropicProviderTools,
@@ -35,53 +35,46 @@ export async function* createStreamingRequest(
   } = params;
   const span = runtime?.span;
 
-  try {
-    const apiTools: any[] = [
-      ...(tools ? convertToAnthropicTools(tools) : []),
-      ...convertToAnthropicProviderTools(providerTools),
-    ];
+  const apiTools: any[] = [
+    ...(tools ? convertToAnthropicTools(tools) : []),
+    ...convertToAnthropicProviderTools(providerTools),
+  ];
 
-    const streamingAdapter = createAnthropicStreamingAdapter(findOpenProviderToolCalls(messages));
+  const streamingAdapter = createAnthropicStreamingAdapter(findOpenProviderToolCalls(messages));
 
-    const providerMessages = await convertToProviderMessages(messages, {
-      model,
-      fileResolver: runtime?.fileResolver,
-      signal,
-    });
+  const providerMessages = await convertToProviderMessages(messages, {
+    model,
+    fileResolver: runtime?.fileResolver,
+    signal,
+  });
 
-    const initialRequest = {
-      model: model,
-      max_tokens: maxOutputTokens ?? getAnthropicStreamMaxTokens(model),
-      messages: providerMessages,
-      ...(system && { system }),
+  const initialRequest = {
+    model: model,
+    max_tokens: maxOutputTokens ?? getAnthropicStreamMaxTokens(model),
+    messages: providerMessages,
+    ...(system && { system }),
 
-      // Axle-normalized options.
-      ...(apiTools.length > 0 && { tools: apiTools }),
-      ...toAnthropicThinking(reasoning, model),
-      ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
-      ...(cache !== false && { cache_control: { type: "ephemeral" as const } }),
+    // Axle-normalized options.
+    ...(apiTools.length > 0 && { tools: apiTools }),
+    ...toAnthropicThinking(reasoning, model),
+    ...toAnthropicToolChoice(toolChoice, parallelToolCalls, tools, providerTools),
+    ...(cache !== false && { cache_control: { type: "ephemeral" as const } }),
 
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
 
+  yield* wireCall(span, signal, async function* () {
     let request = initialRequest;
     while (true) {
       span?.debug("Anthropic streaming request", { request: redactResolvedFileValues(request) });
 
       const stream = await client.messages.create(
-        {
-          ...request,
-          stream: true as const,
-        },
+        { ...request, stream: true as const },
         { signal },
       );
-
       for await (const messageStreamEvent of stream) {
-        const chunks = streamingAdapter.handleEvent(messageStreamEvent);
-        for (const chunk of chunks) {
-          yield chunk;
-        }
+        yield* streamingAdapter.handleEvent(messageStreamEvent);
       }
 
       const pausedContent = streamingAdapter.pausedContent();
@@ -91,11 +84,5 @@ export async function* createStreamingRequest(
         messages: [...initialRequest.messages, { role: "assistant", content: pausedContent }],
       };
     }
-  } catch (error) {
-    if (signal?.aborted) return;
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
-  }
+  });
 }

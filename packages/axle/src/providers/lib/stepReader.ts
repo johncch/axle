@@ -8,7 +8,7 @@ import type { ProviderToolResult } from "../../messages/providerTool.js";
 import type { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { createStats } from "../../utils/stats.js";
-import type { ResolvedTools } from "../helpers.js";
+import type { AxleProviderFailure, ResolvedTools } from "../helpers.js";
 import type { StreamEvent } from "../stream.js";
 import { AxleStopReason, type Refusal } from "../types.js";
 
@@ -44,15 +44,10 @@ export interface CompletedStep {
 export type StepReadOutcome =
   | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
-  | { kind: "incomplete" }
   | { kind: "refused"; refusal: Refusal; usage: Stats; model: string }
   | {
-      kind: "provider-error";
-      errorType: string;
-      message: string;
-      status?: number;
-      raw?: unknown;
-      usage?: Stats;
+      kind: "failed";
+      failure: Extract<AxleProviderFailure, { kind: "api" | "incomplete" }>;
       model: string;
     };
 
@@ -63,7 +58,7 @@ export type StepReadOutcome =
  * This is a pure per-step state machine: it owns no conversation state,
  * touches no spans, and makes no decisions about what happens next. The
  * caller maps the outcome onto the tool loop — including wrapping `aborted`
- * partials and `provider-error` usage into its own accounting.
+ * partials and a failure's usage into its own accounting.
  */
 export async function readStep(
   source: AsyncIterable<AnyStreamChunk>,
@@ -393,15 +388,33 @@ export async function readStep(
         };
       }
 
+      case "incomplete": {
+        closePart();
+        return {
+          kind: "failed",
+          failure: {
+            kind: "incomplete",
+            type: chunk.data.type,
+            message: chunk.data.message,
+            ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
+            ...(chunk.data.raw === undefined ? {} : { raw: chunk.data.raw }),
+          },
+          model: stepModel,
+        };
+      }
+
       case "error": {
         closePart();
         return {
-          kind: "provider-error",
-          errorType: chunk.data.type,
-          status: chunk.data.status,
-          raw: chunk.data.raw,
-          message: chunk.data.message,
-          usage: chunk.data.usage,
+          kind: "failed",
+          failure: {
+            kind: "api",
+            type: chunk.data.type,
+            message: chunk.data.message,
+            ...(chunk.data.status === undefined ? {} : { status: chunk.data.status }),
+            ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
+            ...(chunk.data.raw === undefined ? {} : { raw: chunk.data.raw }),
+          },
           model: stepModel,
         };
       }
@@ -427,10 +440,17 @@ export async function readStep(
     return { kind: "aborted", partial };
   }
 
-  // Stream ended without a complete chunk — connection dropped or provider bug
   if (finishReason === null) {
     closePart();
-    return { kind: "incomplete" };
+    return {
+      kind: "failed",
+      failure: {
+        kind: "incomplete",
+        type: "IncompleteStream",
+        message: "Stream ended without a completion signal",
+      },
+      model: stepModel,
+    };
   }
 
   return {

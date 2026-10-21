@@ -30,7 +30,8 @@ export interface StreamChunk {
     | "provider-tool-result"
     | "complete"
     | "refusal"
-    | "error";
+    | "error"
+    | "incomplete";
   id?: string;
   data?: any;
 }
@@ -62,6 +63,16 @@ export interface StreamErrorChunk extends StreamChunk {
     type: string;
     message: string;
     status?: number;
+    usage?: Stats;
+    raw?: unknown;
+  };
+}
+
+export interface StreamIncompleteChunk extends StreamChunk {
+  type: "incomplete";
+  data: {
+    type: string;
+    message: string;
     usage?: Stats;
     raw?: unknown;
   };
@@ -263,6 +274,7 @@ export type AnyStreamChunk =
   | StreamCompleteChunk
   | StreamRefusalChunk
   | StreamErrorChunk
+  | StreamIncompleteChunk
   | StreamTextStartChunk
   | StreamTextDeltaChunk
   | StreamTextCitationChunk

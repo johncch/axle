@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { AxleErrorCode } from "../../../src/errors/AxleError.js";
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
 import { createStreamingRequest } from "../../../src/providers/chatcompletions/createStreamingRequest.js";
 import { chatCompletions } from "../../../src/providers/chatcompletions/provider.js";
@@ -223,8 +224,8 @@ describe("createStreamingRequest", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe("model");
-      if (result.error.kind !== "model") throw new Error("Expected model error");
+      expect(result.error.kind).toBe("api");
+      if (result.error.kind !== "api") throw new Error("Expected api error");
       expect(result.error).toMatchObject({
         type: "server_error",
         message: "Provider disconnected unexpectedly",
@@ -268,8 +269,8 @@ describe("createStreamingRequest", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe("model");
-      if (result.error.kind !== "model") throw new Error("Expected model error");
+      expect(result.error.kind).toBe("incomplete");
+      if (result.error.kind !== "incomplete") throw new Error("Expected incomplete error");
       expect(result.error.type).toBe("IncompleteStream");
       expect(result.error.message).toContain("search");
       expect(result.error.message).toContain("truncated or incomplete");
@@ -1085,25 +1086,22 @@ describe("createStreamingRequest", () => {
     expect(body.stream_options).toEqual({ include_usage: true });
   });
 
-  test("fails without a request when a provider tool has nothing to serve it", async () => {
-    const chunks = await collectChunks(
-      createStreamingRequest({
-        baseUrl: BASE_URL,
-        model: MODEL,
-        messages: [{ role: "user", content: "Hi" }],
-        runtime: {},
-        providerTools: [{ type: "provider", name: "web_search" }],
-      }),
-    );
-
-    expect(chunks).toEqual([
-      {
-        type: "error",
-        data: expect.objectContaining({
-          message: "ChatCompletions does not support provider tool: web_search",
+  test("rejects without a request when a provider tool has nothing to serve it", async () => {
+    await expect(
+      collectChunks(
+        createStreamingRequest({
+          baseUrl: BASE_URL,
+          model: MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          runtime: {},
+          providerTools: [{ type: "provider", name: "web_search" }],
         }),
-      },
-    ]);
+      ),
+    ).rejects.toMatchObject({
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      message: "ChatCompletions does not support provider tool: web_search",
+      details: { provider: "chatcompletions", feature: "providerTool:web_search" },
+    });
     expect(fetch).not.toHaveBeenCalled();
   });
 

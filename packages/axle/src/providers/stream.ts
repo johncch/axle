@@ -25,7 +25,7 @@ import {
   logStepContent,
   resolveTools,
   validateLoopLimits,
-  type AxleFailure,
+  type AxleProviderFailure,
   type StreamResult,
   type ToolCallCallback,
   type ToolCallResult,
@@ -115,7 +115,7 @@ export type StreamEvent =
       error: { type: string; message: string };
     }
   // Error
-  | { type: "error"; error: AxleFailure };
+  | { type: "error"; error: AxleProviderFailure };
 
 export type StreamEventCallback = (event: StreamEvent) => void;
 
@@ -395,6 +395,8 @@ async function run(
           usage: error instanceof AxleAbortError ? mergeStats(usage, error.usage) : usage,
         });
       }
+      stepSpan?.end("error");
+      span?.end("error");
       throw error;
     }
 
@@ -410,11 +412,11 @@ async function run(
       });
     }
 
-    if (outcome.kind === "provider-error") {
-      if (outcome.usage) {
+    if (outcome.kind === "failed") {
+      if (outcome.failure.usage) {
         addStats(
           usage,
-          attributeStats(outcome.usage, {
+          attributeStats(outcome.failure.usage, {
             provider: provider.name,
             model: outcome.model || model,
           }),
@@ -424,14 +426,7 @@ async function run(
       return endWithResult({
         ok: false,
         messages: newMessages,
-        error: {
-          kind: "model",
-          type: outcome.errorType,
-          message: outcome.message,
-          ...(outcome.status === undefined ? {} : { status: outcome.status }),
-          ...(outcome.usage ? { usage: outcome.usage } : {}),
-          ...(outcome.raw === undefined ? {} : { raw: outcome.raw }),
-        },
+        error: outcome.failure,
         usage,
       });
     }
@@ -452,20 +447,6 @@ async function run(
         ok: false,
         messages: newMessages,
         error: { kind: "refusal", message, ...outcome.refusal },
-        usage,
-      });
-    }
-
-    if (outcome.kind === "incomplete") {
-      stepSpan?.end("error");
-      return endWithResult({
-        ok: false,
-        messages: newMessages,
-        error: {
-          kind: "model",
-          type: "IncompleteStream",
-          message: "Stream ended without a completion signal",
-        },
         usage,
       });
     }

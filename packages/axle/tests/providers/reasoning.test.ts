@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { AxleErrorCode } from "../../src/errors/AxleError.js";
 import {
   ANTHROPIC_THINKING_BUDGET_MODELS,
   getAnthropicStreamMaxTokens,
@@ -39,11 +40,14 @@ describe("reasoning translation", () => {
       expect(resolveReasoningDisplay({ effort: "low", display: "hidden" })).toBe("hidden");
     });
     test("the 0.30 boolean, unknown efforts, and unknown displays throw", () => {
-      expect(() => resolveReasoning(true as never)).toThrow(TypeError);
-      expect(() => resolveReasoning(false as never)).toThrow(TypeError);
-      expect(() => resolveReasoning({ effort: "xhigh" } as never)).toThrow(TypeError);
+      const invalid = { name: "AxleError", code: AxleErrorCode.INVALID_OPTIONS };
+      expect(() => resolveReasoning(true as never)).toThrow(expect.objectContaining(invalid));
+      expect(() => resolveReasoning(false as never)).toThrow(expect.objectContaining(invalid));
+      expect(() => resolveReasoning({ effort: "xhigh" } as never)).toThrow(
+        expect.objectContaining(invalid),
+      );
       expect(() => resolveReasoning({ effort: "low", display: "summary" } as never)).toThrow(
-        TypeError,
+        expect.objectContaining(invalid),
       );
     });
   });

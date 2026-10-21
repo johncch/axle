@@ -5,8 +5,8 @@ import { Agent, createAgentConfig } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
+import { AxleInstructVariableError } from "../../src/errors/AxleInstructVariableError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
-import { InstructVariableError } from "../../src/errors/InstructVariableError.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { getTextContent } from "../../src/messages/utils.js";
 import type { LogEntry, SpanData } from "../../src/observability/index.js";
@@ -878,7 +878,7 @@ describe("Agent", () => {
     const events: TurnEvent[] = [];
     agent.on((event) => events.push(event));
 
-    expect(() => agent.send(instruct)).toThrow(InstructVariableError);
+    expect(() => agent.send(instruct)).toThrow(AxleInstructVariableError);
     expect(agent.messages).toEqual([]);
     expect(events).toEqual([]);
   });

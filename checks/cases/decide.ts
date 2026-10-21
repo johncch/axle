@@ -106,7 +106,11 @@ export const decideCases: DecisionCheckCase[] = [
       } catch (error) {
         if (!(error instanceof AxleError)) throw error;
         const status = error.details?.status;
-        const rejected = error.code === "DECISION_REQUEST_FAILED" && status >= 400 && status < 500;
+        const rejected =
+          error.code === "DECISION_REQUEST_FAILED" &&
+          typeof status === "number" &&
+          status >= 400 &&
+          status < 500;
         return {
           ok: rejected,
           failureReasons: rejected ? [] : [`Unexpected failure: ${error.code} ${error.message}`],

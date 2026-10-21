@@ -405,7 +405,8 @@ case where a host wants to fetch more data and `ctx.send()` it. A rejected
 turn has no result to hand over. A cancel is the user saying stop; a fatal
 tool error or a setup failure is an exception, and exceptions propagate to
 the handle. All three skip the continuation, and a cancel during one
-aborts everything that remains.
+aborts everything that remains. Which failures are results and which are
+exceptions is fixed by [errors.md](./errors.md).
 
 Accepted consequences:
 

@@ -105,7 +105,7 @@ test.each(rejected)("%s reports a rejected key as authentication", async (_, mak
   const result = await generate({ provider: make(), model: "test", messages });
   expect(result).toMatchObject({
     ok: false,
-    error: { kind: "model", type: "authentication", status },
+    error: { kind: "api", type: "authentication", status },
   });
 });
 
@@ -138,7 +138,7 @@ const notRejected: Array<[string, () => AIProvider, string, number]> = [
 
 test.each(notRejected)("%s is not authentication", async (_, make, type, status) => {
   const result = await generate({ provider: make(), model: "test", messages });
-  expect(result).toMatchObject({ ok: false, error: { kind: "model", type, status } });
+  expect(result).toMatchObject({ ok: false, error: { kind: "api", type, status } });
 });
 
 const httpBodies: Array<[string, number, string, string, string]> = [
@@ -175,7 +175,7 @@ const httpBodies: Array<[string, number, string, string, string]> = [
 
 test.each(httpBodies)("Chat Completions %s", async (_, status, body, type, message) => {
   const result = await generate({ provider: chatProvider(status, body), model: "test", messages });
-  expect(result).toMatchObject({ ok: false, error: { kind: "model", type, status, message } });
+  expect(result).toMatchObject({ ok: false, error: { kind: "api", type, status, message } });
 });
 
 test("Chat Completions 401 is authentication and keeps the body's type under raw", async () => {

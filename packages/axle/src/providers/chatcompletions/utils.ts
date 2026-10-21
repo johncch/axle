@@ -1,4 +1,4 @@
-import z from "zod";
+import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
@@ -11,6 +11,7 @@ import {
 import { withUsageDetails } from "../../utils/stats.js";
 import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
+import { toolJsonSchema } from "../utils.js";
 import {
   ChatCompletionContentPart,
   ChatCompletionMessage,
@@ -105,7 +106,7 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: z.toJSONSchema(tool.schema),
+        parameters: toolJsonSchema(tool),
       },
     }));
   }
@@ -121,7 +122,13 @@ export function prepareProviderTools(
 
   if (vendor === "openrouter") return prepareOpenRouterProviderTools(providerTools, warn);
 
-  throw new Error(`ChatCompletions does not support provider tool: ${providerTools[0].name}`);
+  throw new AxleError(`ChatCompletions does not support provider tool: ${providerTools[0].name}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: {
+      provider: vendor ?? "chatcompletions",
+      feature: `providerTool:${providerTools[0].name}`,
+    },
+  });
 }
 
 export function toChatCompletionsToolChoice(
@@ -138,13 +145,18 @@ export function toChatCompletionsToolChoice(
   }
 
   if (providerTools?.some((tool) => tool.name === choice.name)) {
-    throw new Error(`ChatCompletions does not support provider tool choice: ${choice.name}`);
+    throw new AxleError(`ChatCompletions does not support provider tool choice: ${choice.name}`, {
+      code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+      details: { provider: "chatcompletions", feature: `toolChoice:${choice.name}` },
+    });
   }
 
-  throw new Error(`Tool choice references an unavailable tool: ${choice.name}`);
+  throw new AxleError(`Tool choice references an unavailable tool: ${choice.name}`, {
+    code: AxleErrorCode.INVALID_OPTIONS,
+  });
 }
 
-export function convertFinishReason(reason: string | null): AxleStopReason {
+export function convertFinishReason(reason: string | null): AxleStopReason | undefined {
   switch (reason) {
     case "stop":
     case "eos":
@@ -155,7 +167,7 @@ export function convertFinishReason(reason: string | null): AxleStopReason {
     case "function_call":
       return AxleStopReason.FunctionCall;
     default:
-      return AxleStopReason.Stop;
+      return undefined;
   }
 }
 
@@ -279,7 +291,10 @@ async function convertToolResultContent(
         signal: context.signal,
       });
       if (resolved.type !== "text") {
-        throw new Error(`Unsupported ChatCompletions text source: ${resolved.type}`);
+        throw new AxleError(`Unsupported ChatCompletions text source: ${resolved.type}`, {
+          code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+          details: { provider: "chatcompletions", feature: `text-source:${resolved.type}` },
+        });
       }
       output.push(
         formatTextFileContent(part.file, resolved.content, resolved.name, resolved.mimeType),
@@ -316,7 +331,10 @@ async function convertFilePart(
       signal: context.signal,
     });
     if (resolved.type !== "text") {
-      throw new Error(`Unsupported ChatCompletions text source: ${resolved.type}`);
+      throw new AxleError(`Unsupported ChatCompletions text source: ${resolved.type}`, {
+        code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+        details: { provider: "chatcompletions", feature: `text-source:${resolved.type}` },
+      });
     }
     return {
       type: "text",
@@ -326,8 +344,12 @@ async function convertFilePart(
 
   if (file.kind === "document") {
     if (file.mimeType !== "application/pdf") {
-      throw new Error(
+      throw new AxleError(
         `ChatCompletions document file inputs currently support PDF only. Received ${file.mimeType}`,
+        {
+          code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+          details: { provider: "chatcompletions", feature: `document:${file.mimeType}` },
+        },
       );
     }
     const resolved = await resolveFileSource(file, {
@@ -368,7 +390,10 @@ function resolvedToImageUrl(resolved: ResolvedFileSource, file: FileInfo): strin
   if (resolved.type === "base64") {
     return `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`;
   }
-  throw new Error(`Unsupported ChatCompletions image source: ${resolved.type}`);
+  throw new AxleError(`Unsupported ChatCompletions image source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "chatcompletions", feature: `image-source:${resolved.type}` },
+  });
 }
 
 function resolvedToFileData(resolved: ResolvedFileSource, file: FileInfo): string {
@@ -376,7 +401,10 @@ function resolvedToFileData(resolved: ResolvedFileSource, file: FileInfo): strin
   if (resolved.type === "base64") {
     return `data:${resolved.mimeType ?? file.mimeType};base64,${resolved.data}`;
   }
-  throw new Error(`Unsupported ChatCompletions file source: ${resolved.type}`);
+  throw new AxleError(`Unsupported ChatCompletions file source: ${resolved.type}`, {
+    code: AxleErrorCode.PROVIDER_UNSUPPORTED,
+    details: { provider: "chatcompletions", feature: `document-source:${resolved.type}` },
+  });
 }
 
 function formatTextFileContent(

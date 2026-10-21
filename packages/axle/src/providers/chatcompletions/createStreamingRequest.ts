@@ -2,7 +2,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
-import { normalizeProviderError } from "../utils.js";
+import { wireCall } from "../utils.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
 import { withRetry } from "./retry.js";
 import { ChatCompletionChunk, ChatCompletionStreamError } from "./types.js";
@@ -58,52 +58,52 @@ export async function* createStreamingRequest(
 
   const adapter = createStreamingAdapter();
 
-  try {
-    const chatMessages = await convertAxleMessages(messages, system, {
-      model,
-      vendor,
-      fileResolver: runtime?.fileResolver,
-      signal,
-      warn: span?.warn.bind(span),
-    });
-    const chatTools = convertTools(tools);
-    const chatProviderTools = prepareProviderTools(providerTools, vendor, span?.warn.bind(span));
-    const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
+  const chatMessages = await convertAxleMessages(messages, system, {
+    model,
+    vendor,
+    fileResolver: runtime?.fileResolver,
+    signal,
+    warn: span?.warn.bind(span),
+  });
+  const chatTools = convertTools(tools);
+  const chatProviderTools = prepareProviderTools(providerTools, vendor, span?.warn.bind(span));
+  const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
-    const requestBody: Record<string, any> = {
-      model,
-      messages: chatMessages,
-      stream: true,
-      stream_options: { include_usage: true },
+  const requestBody: Record<string, any> = {
+    model,
+    messages: chatMessages,
+    stream: true,
+    stream_options: { include_usage: true },
 
-      // Axle-normalized options.
-      ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-      ...toChatCompletionsReasoning(reasoning, vendor),
-      ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
-      ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
-      ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
-      ...toChatCompletionsVendorFields(vendor, { sessionId, cache }),
+    // Axle-normalized options.
+    ...(requestTools.length > 0 ? { tools: requestTools } : {}),
+    ...toChatCompletionsReasoning(reasoning, vendor),
+    ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
+    ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
+    ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+    ...toChatCompletionsVendorFields(vendor, { sessionId, cache }),
 
-      // Raw provider options are applied last so they can override Axle mappings.
-      ...providerOptions,
-    };
+    // Raw provider options are applied last so they can override Axle mappings.
+    ...providerOptions,
+  };
 
-    span?.debug("ChatCompletions request", {
-      model: requestBody.model,
-      messages: requestBody.messages.length,
-      tools: requestBody.tools?.length ?? 0,
-      stream: true,
-    });
-    span?.trace("ChatCompletions request body", {
-      request: redactResolvedFileValues(requestBody),
-    });
+  span?.debug("ChatCompletions request", {
+    model: requestBody.model,
+    messages: requestBody.messages.length,
+    tools: requestBody.tools?.length ?? 0,
+    stream: true,
+  });
+  span?.trace("ChatCompletions request body", {
+    request: redactResolvedFileValues(requestBody),
+  });
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      ...clientHeaders,
-    };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    ...clientHeaders,
+  };
 
+  yield* wireCall(span, signal, async function* () {
     const response = await withRetry(
       ({ signal }) =>
         (clientFetch ?? fetch)(`${baseUrl}/chat/completions`, {
@@ -182,27 +182,12 @@ export async function* createStreamingRequest(
           return;
         }
 
-        const streamChunks = adapter.handleChunk(chunk);
-        for (const streamChunk of streamChunks) {
-          yield streamChunk;
-        }
+        yield* adapter.handleChunk(chunk);
       }
     }
 
-    // Emit deferred complete event (waits for usage-only chunk after finish_reason)
-    for (const streamChunk of adapter.finalize()) {
-      yield streamChunk;
-    }
-  } catch (error) {
-    if (signal?.aborted) return;
-    span?.error("Error in ChatCompletions streaming request", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    yield {
-      type: "error",
-      data: normalizeProviderError(error),
-    };
-  }
+    yield* adapter.finalize();
+  });
 }
 
 function describeHttpError(

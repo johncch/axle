@@ -734,7 +734,7 @@ describe("createStreamingAdapter", () => {
 
       expect(final).toEqual([
         {
-          type: "error",
+          type: "incomplete",
           data: {
             type: "IncompleteStream",
             message:
@@ -796,6 +796,19 @@ describe("createStreamingAdapter", () => {
 
       const complete = final.filter((c) => c.type === "complete");
       expect((complete[0] as any).data.finishReason).toBe(AxleStopReason.FunctionCall);
+    });
+
+    test("an undeclared finish reason is incomplete", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleChunk(makeChunk({ content: "Hi" }));
+      adapter.handleChunk(makeChunk({}, "something_new"));
+
+      expect(adapter.finalize()).toMatchObject([
+        {
+          type: "incomplete",
+          data: { type: "FinishReasonError", message: "Unexpected finish reason: something_new" },
+        },
+      ]);
     });
 
     test("an error finish reason without an error object fails the step", () => {
