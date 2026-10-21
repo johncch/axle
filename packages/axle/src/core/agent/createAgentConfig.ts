@@ -1,4 +1,4 @@
-import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
+import { AxleError } from "../../errors/AxleError.js";
 import { MCP } from "../../mcp/index.js";
 import type {
   AgentConfig,
@@ -30,28 +30,20 @@ export async function createAgentConfig(
   resolver: AgentDefinitionResolver,
 ): Promise<AgentConfig> {
   if (definition.version !== 1) {
-    throw new AxleError(`Unsupported agent definition version: ${definition.version}`, {
-      code: AxleErrorCode.AGENT_DEFINITION_INVALID,
-    });
+    throw new AxleError(`Unsupported agent definition version: ${definition.version}`);
   }
 
   const resolved = await resolver(definition);
   const model = definition.model ?? resolved.model;
   if (!model) {
-    throw new AxleError("AgentDefinition requires a model or model resolver", {
-      code: AxleErrorCode.AGENT_DEFINITION_INVALID,
-    });
+    throw new AxleError("AgentDefinition requires a model or model resolver");
   }
 
   if (definition.tools?.length && !resolved.tools) {
-    throw new AxleError("AgentDefinition includes tools but resolver did not return tools", {
-      code: AxleErrorCode.AGENT_DEFINITION_INVALID,
-    });
+    throw new AxleError("AgentDefinition includes tools but resolver did not return tools");
   }
   if (definition.skills?.length && !resolved.skills) {
-    throw new AxleError("AgentDefinition includes skills but resolver did not return skills", {
-      code: AxleErrorCode.AGENT_DEFINITION_INVALID,
-    });
+    throw new AxleError("AgentDefinition includes skills but resolver did not return skills");
   }
 
   return {

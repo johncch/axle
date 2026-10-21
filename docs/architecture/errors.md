@@ -223,6 +223,13 @@ three adapters, and the lenient synonyms (`eos`) are listed by name. Gemini
 `LANGUAGE` used to be an unmapped stop reason; it is the model declining,
 so it is a refusal.
 
+`CONTINUATION` is provisional. The SDK describes it as a per-request decode
+limit with a `continuationToken` to resume from, which is Gemini's
+`pause_turn`: the adapter should continue the turn inline rather than fail
+it. It has not been observed on the wire and Axle has no field for the
+token, so until a capture exists it stays `incomplete`, typed by the
+reason, and the host's move is to retry.
+
 ## Codes
 
 `AxleErrorCode` is a const object; `AxleError.code` is typed as its union.
@@ -245,7 +252,6 @@ to the subclass.
 | `DECISION_REQUEST_FAILED`      | The decision transport failed                                                                                                                                                                                                                                                                                          | `{ status }`                            | `AxleError`                             |
 | `DECISION_RESPONSE_INVALID`    | The decision response could not be read                                                                                                                                                                                                                                                                                | none                                    | `AxleError`                             |
 | `DECISION_ANSWER_MISMATCH`     | The provider returned the wrong answer type for a question                                                                                                                                                                                                                                                             | `{ key, expected }`                     | `AxleError`                             |
-| `AGENT_DEFINITION_INVALID`     | An `AgentDefinition` has an unsupported version, no model, or a resolver that returned no tools or skills                                                                                                                                                                                                              | none                                    | `AxleError`                             |
 | `MCP_NOT_CONNECTED`            | An MCP tool is called before `connect()`                                                                                                                                                                                                                                                                               | none                                    | `AxleError`                             |
 | `TOOL_FATAL_ERROR`             | A tool threw `AxleToolFatalError` to end the run                                                                                                                                                                                                                                                                       | `{ toolName, usage }`                   | `AxleToolFatalError`                    |
 | `ABORTED`                      | The signal fired                                                                                                                                                                                                                                                                                                       | `{ reason, usage }`                     | `AxleAbortError`, `AxleAgentAbortError` |
@@ -338,7 +344,13 @@ one case where the model demonstrably did nothing.
 
 Codes rather than classes for identity because a string survives logs,
 JSON, the trace writer, and two copies of the package in `node_modules`,
-and a class per code explodes. Classes only where there is a payload.
+and a class per code explodes. Classes only where there is a payload. For
+the same reason `isAxleError` does not test `instanceof`: it accepts any
+`Error` whose `code` is an `AxleErrorCode`, so an error built by a second
+copy of the package (a `pnpm link` beside an install, two dependents on
+different versions) still reaches the host's `switch`. A host that needs a
+payload field reads it through the narrowed type; the payload classes
+exist for the fields, not for identity.
 
 ## Rejected alternatives
 

@@ -396,8 +396,8 @@ to a two-state result:
 
 ```typescript
 if (!result.ok) {
-  result.error.kind; // "model" | "refusal" | "parse"
-  result.error.message; // present for every error kind
+  result.error.kind; // "api" | "incomplete" | "refusal" | "parse"
+  result.error.message; // present for every kind
   return;
 }
 
@@ -407,29 +407,80 @@ result.stopped; // "max-steps" | "token-limit" when a loop limit ended the run
 
 For `generate()` and `stream()`, plain calls return the final assistant message.
 For `Agent.send("...")`, plain calls return the assistant text. `Instruct`
-calls return the parsed schema value. Model, refusal, and parse failures
-return `ok: false`; abort, fatal tool, configuration, and unexpected execution
-errors still throw. An agent result from a send with a continuation also
-carries `after`: the inline turns it ran, in order (see [Agent](#agent)).
+calls return the parsed schema value. An agent result from a send with a
+continuation also carries `after`: the inline turns it ran, in order (see
+[Agent](#agent)).
 
-A `model` failure means the provider failed the request. `type` is
-`"authentication"` when the provider rejected the API key or token, on every
-provider; otherwise it is the provider's own error type. `status` is the HTTP
-status when the failure was an HTTP response, and `raw` is the SDK error or
-the response body as the provider produced it.
+`ok: false` carries one thing only: the provider's answer to a request that
+went out. Everything else throws an `AxleError` before the request is sent,
+so a host needs one `if (!result.ok)` and one `catch`:
 
 ```typescript
-if (!result.ok && result.error.kind === "model") {
+import { isAxleError } from "@fifthrevision/axle";
+
+try {
+  const result = await agent.send(instruct).final;
+  if (!result.ok) {
+    switch (result.error.kind) {
+      case "api": // the API did not complete the request: fix on 4xx, back off on 429 / 5xx
+      case "incomplete": // the API stopped for a reason Axle cannot use: retry as-is
+      case "refusal": // the provider declined: change the ask, or show the user
+      case "parse": // the answer is outside the Instruct schema: re-ask for shape
+    }
+    return;
+  }
+  use(result.response);
+} catch (error) {
+  if (!isAxleError(error)) throw error;
+  switch (error.code) {
+    case "ABORTED": // the signal fired; error.messages, error.partial, error.usage
+    case "TOOL_FATAL_ERROR": // a tool ended the run; error.toolName
+    case "INVALID_OPTIONS": // an option value is malformed
+    case "PROVIDER_UNSUPPORTED": // this provider has no wire shape for the request; error.details.feature
+    case "FILE_UNREADABLE": // a host file could not be resolved; error.details.path
+    default: // a registry, skill, compaction, or decision code, or AXLE_ERROR
+  }
+}
+```
+
+The four kinds are cut on what the API did, because that fixes the host's
+next move:
+
+| Kind         | What the API did                                                                   | `status`                   | `usage`                       |
+| ------------ | ---------------------------------------------------------------------------------- | -------------------------- | ----------------------------- |
+| `api`        | Did not complete the request: rejected it, failed mid-way, or the connection broke | present when there was one | usually absent                |
+| `incomplete` | Completed the request and stopped for a reason that is not a usable end            | absent                     | present; the call was charged |
+| `refusal`    | Completed the request by declining it or blocking its output                       | absent                     | present                       |
+| `parse`      | Completed the request; the answer is outside the Instruct's schema                 | absent                     | present                       |
+
+An `api` failure's `type` is `"authentication"` when the provider rejected
+the API key or token, on every provider; otherwise it is the provider's own
+error type. `status` is the HTTP status when the failure was an HTTP
+response. An error the API reports inside an open stream (OpenAI's
+`response.failed`, an OpenRouter upstream error) is `api` with `type` and
+no `status`. `raw` is the SDK error or the response body as the provider
+produced it.
+
+```typescript
+if (!result.ok && result.error.kind === "api") {
   result.error.type; // "authentication", or the provider's own type
   result.error.status; // 401, 429, 500, ... when the failure was an HTTP response
   result.error.raw; // the SDK error, or { status, body } from a Chat Completions endpoint
 }
 ```
 
+An `incomplete` failure's `type` is the provider's stop reason verbatim
+(Gemini's `MALFORMED_FUNCTION_CALL`, for one), or one of Axle's own:
+`FinishReasonError` for a stop reason the adapter has never seen,
+`IncompleteStream` for a stream that ended with no completion signal,
+`RESPONSES_API_INCOMPLETE` for an undeclared OpenAI incomplete reason.
+`Length` is not a failure: hitting the output cap is `ok: true` with
+`finishReason: "length"`.
+
 A `refusal` failure means the provider declined the request or blocked its
 output: Anthropic's `refusal` stop reason, an OpenAI refusal or content
-filter, a Gemini safety block, or a Chat Completions `refusal` or
-`content_filter`.
+filter, a Gemini safety block or `LANGUAGE` stop, or a Chat Completions
+`refusal` or `content_filter`.
 
 ```typescript
 if (!result.ok && result.error.kind === "refusal") {
@@ -444,6 +495,18 @@ refusal the model writes as ordinary text is not marked by any provider and
 is a normal `ok: true` answer. After an Anthropic refusal, sending the same
 conversation again is likely to be refused again; rephrase or remove the
 refused message, or switch models.
+
+Thrown errors are `AxleError` with a `code` from `AxleErrorCode`; `isAxleError`
+narrows an unknown catch value by that code rather than by `instanceof`, so
+it holds when two copies of Axle are installed. Codes identify the error, and only the
+errors that carry a payload have a class: `AxleAbortError` (and
+`AxleAgentAbortError`, which adds `turn`) for `ABORTED`, `AxleToolFatalError`
+for `TOOL_FATAL_ERROR`, and `AxleInstructVariableError` for
+`INSTRUCT_VARIABLE_ERROR`. `PROVIDER_UNSUPPORTED` names the provider and the
+feature in `details`; `FILE_UNREADABLE` names the file. A tool that cannot
+parse its arguments, or a tool call naming a tool that is not registered,
+is neither: it goes back to the model as a tool error and the loop goes on.
+The full table of codes and kinds is in `docs/architecture/errors.md`.
 
 Cancellation follows standard JavaScript abort semantics:
 

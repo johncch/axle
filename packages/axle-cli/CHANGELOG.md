@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **A failed send prints `API error:` or `Incomplete response:` instead of
+  `Model error:`.** `API error` is the provider not completing the request
+  (a 4xx, a 5xx, a dropped connection); `Incomplete response` is the
+  provider stopping for a reason Axle cannot use. `Refused` and
+  `Parse error` are unchanged.
+- **A recipe the provider cannot serve fails before any request.** A
+  non-PDF document on Anthropic, a PDF on Together, a tool choice naming a
+  tool the recipe does not have, or a bad `reasoning` value used to be
+  reported as `Model error: ...` after a request was attempted. It now
+  prints `✖` with the reason and exits 1 without sending anything, the
+  same as any other configuration mistake.
+
 ## 0.34.1
 
 - **Anthropic and OpenRouter requests now ask for prompt caching.** Every
