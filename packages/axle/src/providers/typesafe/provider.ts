@@ -11,15 +11,10 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
  * `timeoutMs` defaults to ten seconds per attempt, matching TypeSafe's own
- * SDKs.
+ * SDKs. `baseUrl` can point at a compatible host, e.g.
+ * `https://openrouter.ai/api` with an OpenRouter key.
  */
-export interface TypesafeOptions extends ProviderClientOptions {
-  /**
-   * API root that serves `/v1/systemone`. Point it at a compatible host to
-   * route through it, e.g. `https://openrouter.ai/api` with an OpenRouter key.
-   */
-  baseUrl?: string;
-}
+export type TypesafeOptions = ProviderClientOptions;
 
 const systemOneResponseSchema = z.object({
   model: z.string(),

@@ -15,6 +15,7 @@ export function openai(apiKey: string, options: ProviderClientOptions = {}): AIP
       : {}),
     ...(options.headers !== undefined ? { defaultHeaders: options.headers } : {}),
     ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+    ...(options.baseUrl !== undefined ? { baseURL: options.baseUrl } : {}),
   });
 
   return {

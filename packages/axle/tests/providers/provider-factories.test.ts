@@ -50,6 +50,20 @@ describe("provider client factory options", () => {
     expect(OpenAI).toHaveBeenCalledWith({ apiKey: "sk-test", maxRetries: 2, fetch: customFetch });
   });
 
+  test("passes a base URL to the OpenAI SDK", async () => {
+    const OpenAI = vi.fn();
+    vi.doMock("openai", () => ({ default: OpenAI }));
+
+    const { openai } = await import("../../src/providers/openai/provider.js");
+    openai("sk-test", { baseUrl: "https://gateway.example.test/openai/v1" });
+
+    expect(OpenAI).toHaveBeenCalledWith({
+      apiKey: "sk-test",
+      maxRetries: 2,
+      baseURL: "https://gateway.example.test/openai/v1",
+    });
+  });
+
   test("rejects invalid OpenAI client options", async () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
@@ -106,6 +120,20 @@ describe("provider client factory options", () => {
       apiKey: "sk-ant-test",
       maxRetries: 2,
       fetch: customFetch,
+    });
+  });
+
+  test("passes a base URL to the Anthropic SDK", async () => {
+    const Anthropic = vi.fn();
+    vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
+
+    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    anthropic("sk-ant-test", { baseUrl: "https://gateway.example.test/anthropic" });
+
+    expect(Anthropic).toHaveBeenCalledWith({
+      apiKey: "sk-ant-test",
+      maxRetries: 2,
+      baseURL: "https://gateway.example.test/anthropic",
     });
   });
 
@@ -169,6 +197,22 @@ describe("provider client factory options", () => {
     });
   });
 
+  test("passes a base URL to Gemini HTTP options", async () => {
+    const GoogleGenAI = vi.fn();
+    vi.doMock("@google/genai", () => ({ GoogleGenAI }));
+
+    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    gemini("gemini-test", { baseUrl: "https://gateway.example.test/gemini" });
+
+    expect(GoogleGenAI).toHaveBeenCalledWith({
+      apiKey: "gemini-test",
+      httpOptions: {
+        retryOptions: { attempts: 3 },
+        baseUrl: "https://gateway.example.test/gemini",
+      },
+    });
+  });
+
   test("rejects invalid Gemini client options", async () => {
     const GoogleGenAI = vi.fn();
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
@@ -202,6 +246,13 @@ describe("provider client factory options", () => {
     expect(() => chatCompletions("http://example.test", { timeoutMs: 1.5 })).toThrow(
       "timeoutMs must be an integer",
     );
+  });
+
+  test("keeps baseUrl out of ChatCompletions options", async () => {
+    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+
+    // @ts-expect-error The base URL is chatCompletions' first argument.
+    chatCompletions("http://example.test", { baseUrl: "http://other.test" });
   });
 
   test("detects ChatCompletions vendors from official endpoint hostnames", async () => {

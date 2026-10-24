@@ -16,6 +16,7 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
         : {}),
       ...(options.headers !== undefined ? { headers: options.headers } : {}),
       ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+      ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
     },
   });
 

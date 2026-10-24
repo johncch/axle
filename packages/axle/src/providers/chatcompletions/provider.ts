@@ -5,7 +5,7 @@ import { requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import type { ChatCompletionsVendor } from "./utils.js";
 
-export interface ChatCompletionsOptions extends ProviderClientOptions {
+export interface ChatCompletionsOptions extends Omit<ProviderClientOptions, "baseUrl"> {
   apiKey?: string;
   vendor?: ChatCompletionsVendor;
   webSearch?: ExecutableTool;
