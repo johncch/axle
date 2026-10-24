@@ -179,6 +179,15 @@ ChatCompletions they are added after Axle's own `Content-Type` and
 `Authorization`. Axle does not reserve any header name, so a caller-supplied
 `Authorization` replaces the one derived from the API key on every provider.
 
+`baseUrl` sends requests somewhere other than the vendor, such as a proxy
+that speaks the vendor's API. Each SDK appends its own path, so what the base
+includes differs: for `anthropic()` and `gemini()` it is the origin
+(`https://proxy.example.com`, requests go to `/v1/messages` or
+`/v1beta/models/...` under it), for `openai()` it includes the version
+(`https://proxy.example.com/v1`, requests go to `/responses` under it), and for
+`typesafe()` it is the root that serves `/v1/systemone`. `chatCompletions()`
+takes its base URL as the first argument and does not accept the option.
+
 `fetch` substitutes the HTTP call without touching `globalThis.fetch`. It is
 the Fetch API contract, not any HTTP client: Axle calls it as `(url, init)`
 and reads a real `Response` back, so a wrapper around `fetch`,
