@@ -5,15 +5,15 @@ import type { ToolResultPart } from "../messages/message.js";
 import type { ExecutableTool } from "./types.js";
 
 export interface ParallelizeOptions {
-  /** Name of the generated batch tool. Defaults to `${tool.name}_batch`. */
+  /** Name of the parallelized tool. Defaults to `${tool.name}_batch`. */
   name?: string;
-  /** Description of the generated batch tool. */
+  /** Description of the parallelized tool. */
   description?: string;
-  /** Maximum items accepted by the generated tool schema. */
+  /** Maximum items accepted by the parallelized tool's schema. */
   maxItems?: number;
-  /** Maximum inner tool calls to run concurrently. */
+  /** Maximum inner tool executions to run concurrently. */
   maxConcurrency?: number;
-  /** Maximum bytes to return from one batch result. Defaults to 20 MiB. */
+  /** Maximum bytes to return from one parallelized tool result. Defaults to 20 MiB. */
   maxResultBytes?: number;
 }
 
@@ -32,12 +32,13 @@ const DEFAULT_MAX_RESULT_BYTES = 20 * 1024 * 1024;
 const encoder = new TextEncoder();
 
 /**
- * Create a batch tool that runs a tool over many input items concurrently.
+ * Create a parallelized tool: one tool that runs the given tool over many
+ * input items concurrently in a single call.
  *
- * The generated tool preserves result order and reports per-item failures
- * instead of failing the whole batch for ordinary execution errors. Fatal
+ * The parallelized tool preserves result order and reports per-item failures
+ * instead of failing the whole call for ordinary execution errors. Fatal
  * and abort errors are not demoted: they propagate and terminate the run,
- * matching the unbatched tool contract.
+ * matching the unwrapped tool contract.
  *
  * @experimental The generated tool's result parts (`ParallelToolResult`) may
  * change in a minor release.

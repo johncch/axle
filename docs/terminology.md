@@ -46,6 +46,16 @@ response (`pause_turn`), the adapter sends the follow-up requests itself, and
 the step still yields one assistant message and counts once toward
 `maxSteps`.
 
+**Tool batch** — the set of separate tool calls one assistant message
+requests. Each call in a tool batch is validated, executed, and answered with
+its own tool result.
+
+**Parallelized tool** — the single tool `parallelize(tool)` returns: one call
+whose arguments carry an `items` array, each item run through the inner
+tool's `execute` concurrently, with one ordered result. It is one tool call,
+not a tool batch: its arguments are validated as a whole, so one invalid item
+rejects the call. Not "batch tool".
+
 **Turn** — the render-layer unit only: one conversation entry in a transcript — a
 user turn or an agent turn. One send produces one user turn and one agent
 turn; the agent turn accumulates parts from every step of that send. Turns
