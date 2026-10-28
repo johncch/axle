@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { executeToolCalls } from "../../src/providers/helpers.js";
+import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import type { ExecutableTool } from "../../src/tools/types.js";
 
@@ -162,6 +163,90 @@ describe("executeToolCalls", () => {
       expect(results).toHaveLength(1);
       expect(results[0].content).toBe("saw test");
       expect(results[0].isError).toBeUndefined();
+    });
+
+    test("returns a validation error to the model without executing invalid arguments", async () => {
+      const execute = vi.fn().mockResolvedValue("saved");
+      const registry = new ToolRegistry({
+        tools: [
+          {
+            name: "add_walk",
+            description: "Add a walk",
+            schema: z.object({
+              description: z.string(),
+              steps: z.array(z.object({ label: z.string() })),
+            }),
+            execute,
+          },
+        ],
+      });
+
+      const { results } = await executeToolCalls(
+        [makeToolCallWithParams("add_walk", "walk", { steps: [{}] })],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(results[0].isError).toBe(true);
+      expect(JSON.parse(String(results[0].content))).toEqual({
+        error: {
+          type: "validation",
+          message:
+            "Invalid arguments for add_walk: " +
+            "description: Invalid input: expected string, received undefined; " +
+            "steps.0.label: Invalid input: expected string, received undefined",
+        },
+      });
+    });
+
+    test("passes parsed arguments to execute so defaults apply", async () => {
+      const execute = vi.fn().mockResolvedValue("ok");
+      const registry = new ToolRegistry({
+        tools: [
+          {
+            name: "with-default",
+            description: "Tool with a default",
+            schema: z.object({ input: z.string(), limit: z.number().default(10) }),
+            execute,
+          },
+        ],
+      });
+
+      await executeToolCalls([makeToolCall("with-default")], undefined, testSignal, registry);
+
+      expect(execute).toHaveBeenCalledWith({ input: "test", limit: 10 }, expect.anything());
+    });
+
+    test("rejects a parallelized tool call when any item is invalid", async () => {
+      const execute = vi.fn().mockResolvedValue("saved");
+      const registry = new ToolRegistry({
+        tools: [
+          parallelize({
+            name: "add_walk",
+            description: "Add a walk",
+            schema: z.object({ description: z.string() }),
+            execute,
+          }),
+        ],
+      });
+
+      const { results } = await executeToolCalls(
+        [
+          makeToolCallWithParams("add_walk_batch", "batch", {
+            items: [{ description: "a" }, {}],
+          }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+      );
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(results[0].isError).toBe(true);
+      expect(String(results[0].content)).toContain('"type":"validation"');
+      expect(String(results[0].content)).toContain("items.1.description");
     });
 
     test("returns not-found errors for all tool calls", async () => {

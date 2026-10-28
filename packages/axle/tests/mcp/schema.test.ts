@@ -21,6 +21,17 @@ describe("jsonSchemaToZod", () => {
     expect(roundTripped).toHaveProperty("type", "object");
   });
 
+  test("strips unknown keys while advertising additionalProperties: false", () => {
+    const zodSchema = jsonSchemaToZod({
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+    });
+
+    expect(z.toJSONSchema(zodSchema)).toHaveProperty("additionalProperties", false);
+    expect(zodSchema.parse({ city: "Paris", units: "metric" })).toEqual({ city: "Paris" });
+  });
+
   test("converts an empty object schema", () => {
     const jsonSchema = {
       type: "object",

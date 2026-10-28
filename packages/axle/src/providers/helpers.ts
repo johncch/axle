@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
@@ -340,9 +341,17 @@ async function executeOneToolCall(
   try {
     resolved = await onToolCall(call.name, call.parameters, ctx);
     if (resolved == null && tool) {
-      errorType = "execution";
-      const content = await tool.execute(call.parameters, ctx);
-      resolved = { type: "success", content };
+      const parsed = tool.schema.safeParse(call.parameters);
+      if (parsed.success) {
+        errorType = "execution";
+        const content = await tool.execute(parsed.data, ctx);
+        resolved = { type: "success", content };
+      } else {
+        resolved = {
+          type: "error",
+          error: { type: "validation", message: formatValidationError(call.name, parsed.error) },
+        };
+      }
     }
 
     if (signal.aborted) {
@@ -406,6 +415,13 @@ async function executeOneToolCall(
     },
     ...(usage ? { usage } : {}),
   };
+}
+
+function formatValidationError(toolName: string, error: z.ZodError): string {
+  const issues = error.issues.map((issue) =>
+    issue.path.length > 0 ? `${issue.path.join(".")}: ${issue.message}` : issue.message,
+  );
+  return `Invalid arguments for ${toolName}: ${issues.join("; ")}`;
 }
 
 function normalizeTerminalToolError(

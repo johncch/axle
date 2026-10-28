@@ -625,6 +625,20 @@ The core package does not ship concrete local tools. Define application tools
 directly, or use the CLI package's job-file tool names when running jobs through
 `axle`.
 
+Axle parses each tool call's arguments with the tool's schema before calling
+`execute`, so `execute` receives the parsed value, with defaults and transforms
+applied. When the arguments don't match, `execute` is not called and the model
+gets an error tool result it can correct in the same turn:
+
+```json
+{
+  "error": {
+    "type": "validation",
+    "message": "Invalid arguments for getWeather: city: Invalid input: expected string, received undefined"
+  }
+}
+```
+
 `execute` receives a `ToolContext` as its second argument. Long-running tools
 can stream progress with `ctx.emit(...)`, and tools that call models can report
 their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
@@ -792,8 +806,8 @@ runs once per tool invocation.
 > **Experimental** — the generated tool's result parts (`ParallelToolResult`)
 > may change in a minor release.
 
-`parallelize` wraps a tool in a batch variant that runs many inputs
-concurrently in a single tool call. Combined with `createAgentTool`, this fans
+`parallelize` wraps a tool in a parallelized tool: one tool whose single call
+runs many inputs through the wrapped tool concurrently. Combined with `createAgentTool`, this fans
 out subagents.
 
 ```typescript
@@ -805,17 +819,20 @@ const batchResearch = parallelize(researcher, { maxConcurrency: 4 });
 const agent = new Agent({ provider, model, tools: [batchResearch] });
 ```
 
-The generated tool preserves input order and reports per-item failures instead
-of failing the whole batch; fatal (`AxleToolFatalError`) and abort errors still
+The call's arguments are validated like any tool call's, so one invalid item
+rejects the whole call before any item runs, with the item's path (for example
+`items.2.question`) in the validation message. Once running, the parallelized
+tool preserves input order and reports per-item execution failures instead of
+failing the whole call; fatal (`AxleToolFatalError`) and abort errors still
 terminate the run like an unbatched tool. It returns ordered tool-result parts:
 each item starts with a text marker containing `index` and `ok`/`error`,
 followed by the child's text or file parts. Options: `name`, `description`,
 `maxItems` (default 50), `maxConcurrency` (default 8), and `maxResultBytes`
 (default 20 MiB). Over-budget child output is omitted per item with a marker
 that includes the item index, input, output size, remaining budget, and total
-limit; later items still render if they fit. The batch tool inherits the wrapped
-tool's `kind`, so batched subagents still stream their child turns under the
-batch action (interleaved across items).
+limit; later items still render if they fit. The parallelized tool inherits the
+wrapped tool's `kind`, so parallelized subagents still stream their child turns
+under its action (interleaved across items).
 
 ### Usage Stats
 

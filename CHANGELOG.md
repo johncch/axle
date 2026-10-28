@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Tool call arguments are now parsed with the tool's schema before `execute`. Invalid arguments no longer reach `execute`: the model gets an error tool result with type `validation` naming each issue (for example `description: Invalid input: expected string, received undefined`) and can correct the call in the same turn. `execute` receives the parsed value, so schema defaults and transforms now apply. A parallelized tool's call is rejected as a whole when any item is invalid. MCP tools are validated too, and unknown top-level keys are dropped before the call reaches the server, matching a default `z.object()`, rather than rejected.
+
 ## [0.34.2] - 2026-10-24
 
 - Added `baseUrl` to the shared provider client options, so `anthropic()`, `openai()` and `gemini()` can route requests through a proxy that speaks the vendor's API. `typesafe()` already had it. `chatCompletions()` keeps its base URL as the first argument and rejects the option.
@@ -55,7 +59,6 @@
 - Improved usage reporting for OpenAI cached responses by tracking cache write tokens in standard and streaming flows.
 - Fixed Gemini thinking/signature handling and related provider issues.
 - Updated runtime support to require Node.js 22.
-
 
 ## [0.31.0] - 2026-09-08
 
