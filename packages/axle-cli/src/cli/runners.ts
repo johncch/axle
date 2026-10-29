@@ -1,6 +1,5 @@
 import type {
   AgentConfig,
-  AgentDefinition,
   AgentSession,
   AxleProviderFailure,
   CompactionConfig,
@@ -22,6 +21,7 @@ import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import { capitalize } from "../ui/format.js";
 import type { BatchProgress, BatchTotals, Renderer } from "../ui/index.js";
+import type { AgentRecipe } from "./configs/schemas.js";
 import type { LedgerEntry } from "./ledger.js";
 import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "./ledger.js";
 import { SessionStore } from "./sessions.js";
@@ -366,7 +366,7 @@ export async function runAgentSession(
 export interface BatchRunSpec {
   task: string;
   files?: string[];
-  definition: AgentDefinition;
+  recipe: AgentRecipe;
   agentConfig: AgentConfig;
   /** Globs or literal paths; unioned, deduped, sorted. */
   inputs: string[];
@@ -467,10 +467,7 @@ export async function runBatch(
       }
 
       // One session per input: every batch item is an ordinary resumable run.
-      const sessionStore = new SessionStore(spec.definition, {
-        home: spec.home,
-        compaction: spec.compaction,
-      });
+      const sessionStore = new SessionStore(spec.recipe, { home: spec.home });
       progress?.itemStarted(batchFilePath);
       const runtime = new SessionRuntime({
         agentConfig: spec.agentConfig,

@@ -1,22 +1,19 @@
-import type {
-  AgentConfig,
-  AgentDefinition,
-  AIProvider,
-  MCP,
-  ProviderDefinition,
-  Skill,
-  Span,
-} from "@fifthrevision/axle";
-import { anthropic, chatCompletions, createAgentConfig, gemini, openai } from "@fifthrevision/axle";
+import type { AgentConfig, AIProvider, MCP, Skill, Span } from "@fifthrevision/axle";
+import { anthropic, chatCompletions, gemini, openai } from "@fifthrevision/axle";
 import type { Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
-import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
+import type {
+  AgentRecipe,
+  CliConfig,
+  JobConfig,
+  ProviderUse,
+  ServiceConfig,
+} from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { availableTools, createTools, defaultToolNames, partitionByTrust } from "./tools.js";
 
 export interface CliAgentConfig {
   agentConfig: AgentConfig;
-  definition: AgentDefinition;
   mcps: MCP[];
   /** Tools withheld because the folder is not trusted. */
   droppedTools: string[];
@@ -26,7 +23,19 @@ export interface FolderTrust {
   trusted: boolean;
 }
 
+/** The provider and model a run resolved to, before the picker fills a missing model. */
+export interface RunTarget {
+  provider: ProviderUse;
+  model?: string;
+  providerName: string;
+}
+
 const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini"];
+
+/** The name a provider use goes by: its profile name, or an inline endpoint's type. */
+export function providerNameOf(provider: ProviderUse): string {
+  return "name" in provider ? provider.name : provider.type;
+}
 
 /**
  * The uniform resolution chain (AXL-22):
@@ -36,36 +45,30 @@ const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini"];
  *                    `*_MODEL` (built-in types) → undefined (caller decides:
  *                    picker or error)
  *
- * The definition keeps a named provider as its name only; `resolveEndpoint`
- * looks the profile up again on every run. An inline provider object in the
- * job is its own endpoint, carried in `config`; its type doubles as the name
- * for the defaults.models lookup.
+ * A named provider stays a name; `resolveEndpoint` looks the profile up
+ * again on every run. An inline provider object is its own endpoint; its
+ * type doubles as the name for the defaults.models lookup.
  */
 export function resolveTarget(
   jobConfig: Pick<JobConfig, "provider" | "model"> | undefined,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
-): { provider: ProviderDefinition; model?: string; providerName: string } {
+): RunTarget {
   const jobProvider = jobConfig?.provider;
 
-  let provider: ProviderDefinition;
-  let providerName: string;
-
-  if (jobProvider && !("name" in jobProvider)) {
-    const { type, ...config } = jobProvider;
-    provider = Object.keys(config).length > 0 ? { type, config } : { type };
-    providerName = type;
+  let provider: ProviderUse;
+  if (jobProvider) {
+    provider = jobProvider;
   } else {
-    const name =
-      jobProvider && "name" in jobProvider ? jobProvider.name : cliConfig.defaults?.provider;
+    const name = cliConfig.defaults?.provider;
     if (!name) {
       throw new Error(
         "No provider specified and no default provider configured. Add provider: to the job, or set defaults.provider in ~/.axle/cli.yaml.",
       );
     }
-    provider = { type: name };
-    providerName = name;
+    provider = { name };
   }
+  const providerName = providerNameOf(provider);
 
   const endpoint = resolveEndpoint(provider, cliConfig);
   const model =
@@ -77,43 +80,45 @@ export function resolveTarget(
 }
 
 /**
- * Resolves a definition's provider reference against the current cli.yaml:
- * an inline endpoint is returned as is; a name finds its profile, else a
- * built-in type, else fails.
+ * Resolves a provider use against the current cli.yaml: an inline endpoint
+ * is returned as is; a name finds its profile, else a built-in type, else
+ * fails.
  */
 export function resolveEndpoint(
-  provider: ProviderDefinition,
+  provider: ProviderUse,
   cliConfig: CliConfig,
 ): { type: string; config: Record<string, unknown> } {
-  if (provider.config) return { type: provider.type, config: provider.config };
-  const profile = cliConfig.providers?.[provider.type];
+  if (!("name" in provider)) {
+    const { type, ...config } = provider;
+    return { type, config };
+  }
+  const profile = cliConfig.providers?.[provider.name];
   if (profile) {
     const { type, ...config } = profile;
     return { type, config };
   }
-  if (BUILT_IN_PROVIDER_TYPES.includes(provider.type)) {
-    return { type: provider.type, config: {} };
+  if (BUILT_IN_PROVIDER_TYPES.includes(provider.name)) {
+    return { type: provider.name, config: {} };
   }
   throw new Error(
-    `Provider "${provider.type}" is not a provider profile in cli.yaml or a built-in provider type.`,
+    `Provider "${provider.name}" is not a provider profile in cli.yaml or a built-in provider type.`,
   );
 }
 
 function resolveCliProvider(
-  definition: ProviderDefinition,
+  target: Pick<RunTarget, "provider" | "model">,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
   credentials: Credentials,
-  definitionModel: string | undefined,
 ): { provider: AIProvider; model: string } {
-  const endpoint = resolveEndpoint(definition, cliConfig);
+  const endpoint = resolveEndpoint(target.provider, cliConfig);
   const type = endpoint.type;
   const config = {
     ...serviceConfig[type as keyof ServiceConfig],
     ...endpoint.config,
   } as Record<string, any>;
 
-  const model = definitionModel ?? config.model;
+  const model = target.model ?? config.model;
   if (!model) {
     const modelVariable = type in API_KEY_VARIABLES ? `, or set ${type.toUpperCase()}_MODEL` : "";
     throw new Error(
@@ -197,24 +202,8 @@ function requireApiKey(
 }
 
 /**
- * Build a definition for runs without a job file (bare chat, one-shot
- * message) from cli.yaml defaults.
- */
-export function createDefaultAgentDefinition(
-  cliConfig: CliConfig,
-  serviceConfig: ServiceConfig,
-): AgentDefinition {
-  const target = resolveTarget(undefined, cliConfig, serviceConfig);
-  return {
-    version: 1,
-    provider: target.provider,
-    model: target.model,
-  };
-}
-
-/**
- * The tool names a run asks for before trust is applied: the definition's
- * own list, else `defaults.tools`, else the built-in set.
+ * The tool names a run asks for before trust is applied: the recipe's own
+ * list, else `defaults.tools`, else the built-in set.
  */
 export function requestedToolNames(tools: string[] | undefined, cliConfig: CliConfig): string[] {
   return tools ?? validateToolNames(cliConfig.defaults?.tools ?? [...defaultToolNames]);
@@ -228,93 +217,52 @@ function validateToolNames(names: string[]): string[] {
   return names;
 }
 
-export function createAgentDefinition(
-  jobConfig: JobConfig,
+/**
+ * Turns a run's target and its recipe into runtime objects against the
+ * current configuration, on every run including resume. A named provider
+ * and an absent tools list are filled from cli.yaml here. Tools that act on
+ * the folder are withheld unless the folder is trusted, whichever layer
+ * named them. Every skill discovery produced for this run loads; nothing in
+ * a recipe selects among them.
+ */
+export async function createCliAgentConfig(
+  target: Pick<RunTarget, "provider" | "model">,
+  recipe: AgentRecipe,
   cliConfig: CliConfig,
   serviceConfig: ServiceConfig,
-): AgentDefinition {
-  const target = resolveTarget(jobConfig, cliConfig, serviceConfig);
+  credentials: Credentials,
+  span: Span,
+  trust: FolderTrust,
+  skills: Skill[],
+): Promise<CliAgentConfig> {
+  const resolvedProvider = resolveCliProvider(target, cliConfig, serviceConfig, credentials);
+  const requested = requestedToolNames(
+    recipe.tools ? validateToolNames(recipe.tools) : undefined,
+    cliConfig,
+  );
+  const { kept, dropped } = trust.trusted
+    ? { kept: requested, dropped: [] }
+    : partitionByTrust(requested);
+  const mcps = recipe.mcps?.length ? await connectMcps(recipe.mcps, span) : [];
 
   return {
-    version: 1,
-    name: jobConfig.name,
-    provider: target.provider,
-    model: target.model,
-    system: jobConfig.system,
-    request: jobConfig.request,
-    tools: jobConfig.tools
-      ? validateToolNames(jobConfig.tools).map((name) => ({ name }))
-      : undefined,
-    providerTools: jobConfig.providerTools?.map((name) => ({ name })),
-    mcps: jobConfig.mcps,
-  };
-}
-
-export async function createCliAgentConfig(
-  jobConfig: JobConfig,
-  cliConfig: CliConfig,
-  serviceConfig: ServiceConfig,
-  credentials: Credentials,
-  span: Span,
-  trust: FolderTrust,
-  skills: Skill[],
-): Promise<CliAgentConfig> {
-  const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
-  return resolveAgentDefinition(
-    definition,
-    cliConfig,
-    serviceConfig,
-    credentials,
-    span,
-    trust,
-    skills,
-  );
-}
-
-/**
- * Turns a definition into runtime objects against the current configuration.
- * A definition names what its recipe said; a named provider and an absent
- * tools list are filled from cli.yaml here, on every run including resume.
- * Tools that act on the folder are withheld unless the folder is trusted,
- * whichever layer named them. Every skill discovery produced for this run
- * loads; nothing in a definition selects among them.
- */
-export async function resolveAgentDefinition(
-  definition: AgentDefinition,
-  cliConfig: CliConfig,
-  serviceConfig: ServiceConfig,
-  credentials: Credentials,
-  span: Span,
-  trust: FolderTrust,
-  skills: Skill[],
-): Promise<CliAgentConfig> {
-  const mcps = definition.mcps?.length ? await connectMcps(definition.mcps, span) : [];
-  let droppedTools: string[] = [];
-
-  const baseConfig = await createAgentConfig(definition, (definition) => {
-    const resolvedProvider = resolveCliProvider(
-      definition.provider,
-      cliConfig,
-      serviceConfig,
-      credentials,
-      definition.model,
-    );
-    const requested = requestedToolNames(
-      definition.tools?.map((ref) => ref.name),
-      cliConfig,
-    );
-    const { kept, dropped } = trust.trusted
-      ? { kept: requested, dropped: [] }
-      : partitionByTrust(requested);
-    droppedTools = dropped;
-
-    return {
+    agentConfig: {
       provider: resolvedProvider.provider,
       model: resolvedProvider.model,
+      system: recipe.system,
+      name: recipe.name,
       tools: kept.length > 0 ? createTools(kept) : undefined,
+      providerTools: recipe.providerTools?.map((name) => ({ type: "provider", name })),
       mcps: mcps.length > 0 ? mcps : undefined,
       skills: skills.length > 0 ? skills : undefined,
-    };
-  });
-  return { agentConfig: baseConfig, definition, mcps, droppedTools };
+      reasoning: recipe.request?.reasoning,
+      maxOutputTokens: recipe.request?.maxOutputTokens,
+      toolChoice: recipe.request?.toolChoice,
+      parallelToolCalls: recipe.request?.parallelToolCalls,
+      cache: recipe.request?.cache,
+      providerOptions: recipe.request?.providerOptions,
+    },
+    mcps,
+    droppedTools: dropped,
+  };
 }

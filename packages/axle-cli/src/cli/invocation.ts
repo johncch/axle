@@ -1,12 +1,8 @@
-import type { AgentDefinition } from "@fifthrevision/axle";
 import { Instruct, loadFileContent } from "@fifthrevision/axle";
-import {
-  createAgentDefinition,
-  createDefaultAgentDefinition,
-  resolveEndpoint,
-  resolveTarget,
-} from "./agent-config.js";
-import type { CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
+import type { RunTarget } from "./agent-config.js";
+import { resolveEndpoint, resolveTarget } from "./agent-config.js";
+import type { AgentRecipe, CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
+import { agentRecipeOf } from "./configs/schemas.js";
 import type { AgentSessionSpec, BatchRunSpec } from "./runners.js";
 import type { CliSessionFile } from "./sessions.js";
 import { SessionStore } from "./sessions.js";
@@ -44,12 +40,14 @@ export type Invocation =
 export type PendingPlan =
   | {
       kind: "batch";
-      definition: AgentDefinition;
-      spec: Omit<BatchRunSpec, "agentConfig" | "definition" | "contextWindow">;
+      recipe: AgentRecipe;
+      target: RunTarget;
+      spec: Omit<BatchRunSpec, "agentConfig" | "recipe" | "contextWindow">;
     }
   | {
       kind: "session";
-      definition: AgentDefinition;
+      recipe: AgentRecipe;
+      target: RunTarget;
       spec: Omit<AgentSessionSpec, "agentConfig" | "contextWindow">;
       sessionStore: SessionStore;
     };
@@ -93,7 +91,8 @@ export async function buildPendingPlan(options: {
     if (!saved) throw new Error(`Session ${inv.id} was not loaded.`);
     pending = {
       kind: "session",
-      definition: saved.definition,
+      recipe: saved.recipe,
+      target: resolveTarget(saved.recipe, cliConfig, serviceConfig),
       spec: {
         spanName: "resume",
         session: saved.session,
@@ -101,16 +100,13 @@ export async function buildPendingPlan(options: {
         resumedFromCwd: saved.cwd,
         initial: inv.message,
         interactive: inv.message === undefined,
-        compaction: saved.compaction,
+        compaction: saved.recipe.compaction,
       },
-      sessionStore: new SessionStore(saved.definition, {
-        cwd: saved.cwd,
-        createdAt: saved.createdAt,
-        compaction: saved.compaction,
-      }),
+      sessionStore: new SessionStore(saved.recipe, { cwd: saved.cwd, createdAt: saved.createdAt }),
     };
   } else if (jobConfig) {
-    const definition = createAgentDefinition(jobConfig, cliConfig, serviceConfig);
+    const recipe = agentRecipeOf(jobConfig);
+    const target = resolveTarget(recipe, cliConfig, serviceConfig);
     if (inv.kind === "batch" || jobConfig.batch) {
       if (inv.kind === "kernel" && inv.interactive) {
         throw new Error("A batch run cannot be combined with --interactive.");
@@ -133,7 +129,8 @@ export async function buildPendingPlan(options: {
         (inv.kind === "batch" && inv.verbose) || (jobConfig.batch?.concurrency ?? 3) === 1;
       pending = {
         kind: "batch",
-        definition,
+        recipe,
+        target,
         spec: {
           task: jobConfig.task,
           files: jobConfig.files,
@@ -155,38 +152,38 @@ export async function buildPendingPlan(options: {
       }
       pending = {
         kind: "session",
-        definition,
+        recipe,
+        target,
         spec: {
           spanName: "job",
           initial: instruct.withInputs(variables),
           interactive: inv.kind === "kernel" && inv.interactive,
           compaction: jobConfig.compaction,
         },
-        sessionStore: new SessionStore(definition, { compaction: jobConfig.compaction }),
+        sessionStore: new SessionStore(recipe),
       };
     }
   } else {
-    const definition = createDefaultAgentDefinition(cliConfig, serviceConfig);
+    const recipe: AgentRecipe = {};
     pending = {
       kind: "session",
-      definition,
+      recipe,
+      target: resolveTarget(recipe, cliConfig, serviceConfig),
       spec: {
         spanName: "chat",
         initial: inv.kind === "kernel" ? inv.message : undefined,
         interactive: inv.kind !== "kernel" || inv.message === undefined,
       },
-      sessionStore: new SessionStore(definition),
+      sessionStore: new SessionStore(recipe),
     };
   }
 
-  if (!pending.definition.model && interactiveTerminal) {
-    const offerSave = pending.kind !== "session" || pending.spec.spanName !== "resume";
-    const endpoint = resolveEndpoint(pending.definition.provider, cliConfig);
-    pending.definition.model = await promptForMissingModel(endpoint.type, {
-      offerSave,
-      saveAs: offerSave
-        ? resolveTarget(jobConfig, cliConfig, serviceConfig).providerName
-        : undefined,
+  // A picked model is this run's, not the recipe's: the session does not
+  // record it, so every run offers to make it the default.
+  if (!pending.target.model && interactiveTerminal) {
+    const endpoint = resolveEndpoint(pending.target.provider, cliConfig);
+    pending.target.model = await promptForMissingModel(endpoint.type, {
+      saveAs: pending.target.providerName,
     });
   }
 

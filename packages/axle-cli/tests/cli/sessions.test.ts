@@ -1,8 +1,9 @@
-import type { AgentConfig, AgentDefinition, AIProvider } from "@fifthrevision/axle";
+import type { AgentConfig, AIProvider } from "@fifthrevision/axle";
 import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentRecipe } from "../../src/cli/configs/schemas.js";
 import { runAgentSession } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
 import {
@@ -30,10 +31,9 @@ const nullRenderer: Renderer = {
 const TEST_DIR = join(import.meta.dirname, "__sessions_tmp__");
 const HOME = join(TEST_DIR, "home");
 
-const definition: AgentDefinition = {
-  version: 1,
+const recipe: AgentRecipe = {
   name: "test-job",
-  provider: { type: "anthropic" },
+  provider: { name: "anthropic" },
   model: "anthropic/test-model",
 };
 
@@ -154,7 +154,7 @@ afterEach(async () => {
 
 describe("SessionStore", () => {
   it("writes the full session file shape", async () => {
-    const store = new SessionStore(definition, { cwd: "/some/project", home: HOME });
+    const store = new SessionStore(recipe, { cwd: "/some/project", home: HOME });
     const session = { sessionId: "abc-123", messages: [] };
 
     const path = await store.save(session, []);
@@ -163,29 +163,21 @@ describe("SessionStore", () => {
     const file = await readSessionFile("abc-123");
     expect(file.version).toBe(1);
     expect(file.cwd).toBe("/some/project");
-    expect(file.definition).toEqual(definition);
+    expect(file.recipe).toEqual(recipe);
     expect(file.session).toEqual(session);
     expect(file.turns).toEqual([]);
     expect(file.createdAt).toBeTruthy();
     expect(file.updatedAt).toBeTruthy();
   });
 
-  it("persists the compaction opt-out and omits the field when unset", async () => {
-    await new SessionStore(definition, { home: HOME, compaction: false }).save(
-      { sessionId: "opted-out", messages: [] },
-      [],
-    );
-    await new SessionStore(definition, { home: HOME }).save(
-      { sessionId: "default", messages: [] },
-      [],
-    );
+  it("stores an empty recipe for a chat session", async () => {
+    await new SessionStore({}, { home: HOME }).save({ sessionId: "chat", messages: [] }, []);
 
-    expect((await readSessionFile("opted-out")).compaction).toBe(false);
-    expect("compaction" in (await readSessionFile("default"))).toBe(false);
+    expect((await readSessionFile("chat")).recipe).toEqual({});
   });
 
   it("keeps createdAt stable across saves", async () => {
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     const session = { sessionId: "abc-123", messages: [] };
 
     await store.save(session, []);
@@ -199,7 +191,7 @@ describe("SessionStore", () => {
   });
 
   it("leaves no temp files behind", async () => {
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
 
     await store.save({ sessionId: "abc-123", messages: [] }, []);
 
@@ -214,13 +206,10 @@ describe("listSessionSummaries", () => {
   });
 
   it("summarizes sessions newest-first, corrupt files aged by mtime", async () => {
-    const store = new SessionStore(definition, { cwd: "/proj", home: HOME });
+    const store = new SessionStore(recipe, { cwd: "/proj", home: HOME });
     await store.save({ sessionId: "older", messages: [] }, []);
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await new SessionStore(definition, { home: HOME }).save(
-      { sessionId: "newer", messages: [] },
-      [],
-    );
+    await new SessionStore(recipe, { home: HOME }).save({ sessionId: "newer", messages: [] }, []);
     await new Promise((resolve) => setTimeout(resolve, 5));
     await writeFile(sessionFilePath("broken", HOME), "not json");
 
@@ -242,7 +231,7 @@ describe("loadSession", () => {
   });
 
   it("resolves a unique session id prefix", async () => {
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     await store.save({ sessionId: "abcdef12-3456", messages: [] }, []);
 
     const file = await loadSession("abcdef12", HOME);
@@ -251,7 +240,7 @@ describe("loadSession", () => {
   });
 
   it("rejects an ambiguous session id prefix", async () => {
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     await store.save({ sessionId: "abc-one", messages: [] }, []);
     await store.save({ sessionId: "abc-two", messages: [] }, []);
 
@@ -265,6 +254,42 @@ describe("loadSession", () => {
     await expect(loadSession("broken", HOME)).rejects.toThrow(/Invalid session file at/);
   });
 
+  it("reads a file in core's old definition shape as a recipe", async () => {
+    await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
+    const legacy = {
+      version: 1,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      cwd: "/old/project",
+      definition: {
+        version: 1,
+        name: "old-job",
+        provider: { type: "chatcompletions", config: { baseUrl: "https://old.example.test/v1" } },
+        model: "old/model",
+        system: "You are old.",
+        tools: [{ name: "exec" }],
+      },
+      compaction: false,
+      session: { sessionId: "legacy-1", messages: [] },
+      turns: [],
+    };
+    await writeFile(sessionFilePath("legacy-1", HOME), JSON.stringify(legacy));
+
+    const file = await loadSession("legacy-1", HOME);
+
+    expect(file.recipe).toEqual({
+      name: "old-job",
+      provider: { type: "chatcompletions", baseUrl: "https://old.example.test/v1" },
+      model: "old/model",
+      system: "You are old.",
+      tools: ["exec"],
+      compaction: false,
+    });
+    expect(file.cwd).toBe("/old/project");
+    expect(file.session.sessionId).toBe("legacy-1");
+    expect("definition" in file).toBe(false);
+  });
+
   it("rejects an unsupported session version", async () => {
     await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
     await writeFile(sessionFilePath("future", HOME), JSON.stringify({ version: 99 }));
@@ -274,13 +299,13 @@ describe("loadSession", () => {
 });
 
 describe("runSingle session persistence", () => {
-  it("persists definition, messages, and turns after a run", async () => {
+  it("persists origin, messages, and turns after a run", async () => {
     const agentConfig: AgentConfig = {
       provider: createMockProvider("hello there"),
       model: "test-model",
       sessionId: "run-1",
     };
-    const store = new SessionStore(definition, { cwd: "/job/dir", home: HOME });
+    const store = new SessionStore(recipe, { cwd: "/job/dir", home: HOME });
     const tracer = new Tracer();
     const span = tracer.startSpan("test");
 
@@ -300,7 +325,7 @@ describe("runSingle session persistence", () => {
 
     expect(succeeded).toBe(true);
     const file = await readSessionFile("run-1");
-    expect(file.definition).toEqual(definition);
+    expect(file.recipe).toEqual(recipe);
     expect(file.cwd).toBe("/job/dir");
     expect(file.session.sessionId).toBe("run-1");
     expect(file.session.messages).toHaveLength(2);
@@ -314,7 +339,7 @@ describe("runSingle session persistence", () => {
       model: "test-model",
       sessionId: "resume-1",
     };
-    const store = new SessionStore(definition, { cwd: "/original/dir", home: HOME });
+    const store = new SessionStore(recipe, { cwd: "/original/dir", home: HOME });
     const tracer = new Tracer();
 
     await runAgentSession(
@@ -337,7 +362,7 @@ describe("runSingle session persistence", () => {
       provider: createMockProvider("second response", requestMessages),
       model: "test-model",
     };
-    const resumeStore = new SessionStore(saved.definition, {
+    const resumeStore = new SessionStore(saved.recipe, {
       cwd: saved.cwd,
       createdAt: saved.createdAt,
       home: HOME,
@@ -384,7 +409,7 @@ describe("runSingle session persistence", () => {
       model: "test-model",
       sessionId: "chat-1",
     };
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     const tracer = new Tracer();
 
     const succeeded = await runAgentSession(
@@ -445,7 +470,7 @@ describe("runSingle session persistence", () => {
         createStats(),
         new Tracer().startSpan("chat"),
         renderer,
-        new SessionStore(definition, { home: HOME }),
+        new SessionStore(recipe, { home: HOME }),
       );
     }
 
@@ -562,7 +587,7 @@ describe("runSingle session persistence", () => {
         model: "test-model",
         sessionId: "chat-exit",
       };
-      const store = new SessionStore(definition, { home: HOME });
+      const store = new SessionStore(recipe, { home: HOME });
       const tracer = new Tracer();
 
       const succeeded = await runAgentSession(
@@ -580,7 +605,7 @@ describe("runSingle session persistence", () => {
   );
 
   it("resuming and quitting without a send does not rewrite the session file", async () => {
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     await runAgentSession(
       {
         agentConfig: {
@@ -614,7 +639,7 @@ describe("runSingle session persistence", () => {
       createStats(),
       new Tracer().startSpan("resume"),
       quitRenderer,
-      new SessionStore(saved.definition, { createdAt: saved.createdAt, home: HOME }),
+      new SessionStore(saved.recipe, { createdAt: saved.createdAt, home: HOME }),
     );
 
     const after = await readSessionFile("idle-resume");
@@ -628,7 +653,7 @@ describe("runSingle session persistence", () => {
       model: "test-model",
       sessionId: "fail-1",
     };
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     const tracer = new Tracer();
 
     const succeeded = await runAgentSession(
@@ -676,7 +701,7 @@ describe("runSingle session persistence", () => {
       createStats(),
       new Tracer().startSpan("job"),
       renderer,
-      new SessionStore(definition, { home: blockedHome }),
+      new SessionStore(recipe, { home: blockedHome }),
     );
 
     expect(succeeded).toBe(true);
@@ -691,7 +716,7 @@ describe("runSingle session persistence", () => {
       model: "test-model",
       sessionId: "chat-fail-1",
     };
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     const tracer = new Tracer();
 
     const succeeded = await runAgentSession(
