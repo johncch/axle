@@ -18,7 +18,3 @@ export interface Skill {
   /** The remaining frontmatter fields as written: `license`, `compatibility`, `metadata`, `allowed-tools`. */
   frontmatter?: SkillFrontmatter;
 }
-
-export interface SkillDefinitionRef {
-  name: string;
-}

@@ -1,11 +1,11 @@
-import type { MCP, MCPConfig } from "../../mcp/index.js";
+import type { MCP } from "../../mcp/index.js";
 import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { EventLevel, Span } from "../../observability/types.js";
 import type { AxleProviderFailure } from "../../providers/helpers.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
-import type { Skill, SkillDefinitionRef } from "../../skills/types.js";
+import type { Skill } from "../../skills/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";
 import type { CompactionUpdate, Turn } from "../../turns/types.js";
@@ -19,8 +19,8 @@ import type { OutputSchema, ParsedSchema } from "../parse.js";
  * Runtime configuration for an `Agent`.
  *
  * This contains executable objects and process-local services. It is not meant
- * to be serialized directly. Use `AgentDefinition` for a serializable recipe
- * and `createAgentConfig()` to produce an `AgentConfig`.
+ * to be serialized; the host rebuilds it from its own configuration and
+ * passes an `AgentSession` alongside to resume a conversation.
  */
 export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   /** Provider adapter used to execute model requests. */
@@ -65,102 +65,7 @@ export interface ObservabilityOptions {
   trace?: Tracer | Span;
 }
 
-/**
- * Serializable provider reference for an agent definition.
- *
- * `type` is host-defined. Common values are provider names such as `"openai"`,
- * `"anthropic"`, `"gemini"`, or `"chatcompletions"`, but core does not
- * interpret the value. `config` is passed through to the host resolver.
- */
-export interface ProviderDefinition {
-  /** Host-defined provider discriminator. */
-  type: string;
-  /** Serializable provider configuration or references, such as `apiKeyEnv`. */
-  config?: Record<string, unknown>;
-}
-
-/**
- * Serializable reference to an executable tool.
- */
-export interface ToolDefinitionRef {
-  /** Host-defined tool name or id. */
-  name: string;
-  /** Optional serializable tool configuration passed to the resolver. */
-  config?: Record<string, unknown>;
-}
-
-/**
- * Serializable reference to a provider-managed tool.
- */
-export interface ProviderToolDefinitionRef {
-  /** Provider tool name. */
-  name: string;
-  /** Optional provider tool configuration. */
-  config?: Record<string, unknown>;
-}
-
-/**
- * Serializable request options for an agent definition.
- */
-export interface AgentDefinitionRequestOptions extends Omit<AxleModelRequestOptions, "signal"> {}
-
-/**
- * Serializable recipe for reconstructing an agent.
- *
- * This is deliberately not executable by itself. Hosts resolve provider and
- * tool references into runtime objects using an `AgentDefinitionResolver`.
- * Harness concerns such as file resolvers, tracing, transport, and stores
- * should be modeled outside this core definition.
- */
-export interface AgentDefinition {
-  /** Agent definition schema version. */
-  version: 1;
-  /** Optional agent name. */
-  name?: string;
-  /** Provider reference resolved by the host. */
-  provider: ProviderDefinition;
-  /** Optional model identifier passed to the resolved provider. */
-  model?: string;
-  /** Optional system/developer instruction. */
-  system?: string;
-  /** Provider-portable request defaults. */
-  request?: AgentDefinitionRequestOptions;
-  /** Serializable executable tool references. */
-  tools?: ToolDefinitionRef[];
-  /** Serializable provider-managed tool references. */
-  providerTools?: ProviderToolDefinitionRef[];
-  /** Serializable MCP client configuration. */
-  mcps?: MCPConfig[];
-  /** Serializable skill references, resolved by the host. */
-  skills?: SkillDefinitionRef[];
-}
-
 export type MaybePromise<T> = T | Promise<T>;
-
-/**
- * Executable dependencies resolved from an `AgentDefinition`.
- */
-export interface ResolvedAgentDefinition {
-  /** Provider adapter used to execute model requests. */
-  provider: AIProvider;
-  /** Model identifier used when `AgentDefinition.model` is omitted. */
-  model?: string;
-  /** Executable tools resolved from `AgentDefinition.tools`. */
-  tools?: ExecutableTool[];
-  /** Provider-managed tools resolved from `AgentDefinition.providerTools`. */
-  providerTools?: ProviderTool[];
-  /** MCP clients resolved from `AgentDefinition.mcps`. */
-  mcps?: MCP[];
-  /** Skills resolved from `AgentDefinition.skills`. */
-  skills?: Skill[];
-}
-
-/**
- * Host function used to turn an `AgentDefinition` into executable dependencies.
- */
-export type AgentDefinitionResolver = (
-  definition: AgentDefinition,
-) => MaybePromise<ResolvedAgentDefinition>;
 
 /**
  * Serializable resumable state for an `Agent`: the pure model-facing
@@ -179,16 +84,6 @@ export interface AgentSession {
   sessionId: string;
   /** Active model-facing conversation the next turn resumes from. */
   messages: AxleMessage[];
-}
-
-/**
- * Serializable saved agent payload: definition plus session state.
- */
-export interface SavedAgent {
-  /** Serializable recipe used to reconstruct runtime config. */
-  definition: AgentDefinition;
-  /** Serializable session state. */
-  session: AgentSession;
 }
 
 export interface AgentResult<T = string> {

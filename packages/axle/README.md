@@ -766,9 +766,9 @@ const pdf: Skill = {
 };
 ```
 
-A skill with neither `root` nor `files` is instructions only. In an
-`AgentDefinition`, skills are name references (`skills: [{ name: "pdf" }]`)
-that your resolver turns back into `Skill` objects, the same way tools work.
+A skill with neither `root` nor `files` is instructions only. Axle does not
+persist skills; a host that saves which skills an agent had stores their
+names and loads them again itself, the same way it does for tools.
 
 ### Subagent Tools
 

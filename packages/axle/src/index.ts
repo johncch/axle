@@ -1,12 +1,9 @@
 // Core
 export { PromptCompactor } from "./compaction/index.js";
 export type { PromptCompactorOptions } from "./compaction/index.js";
-export { Agent, createAgentConfig } from "./core/agent/index.js";
+export { Agent } from "./core/agent/index.js";
 export type {
   AgentConfig,
-  AgentDefinition,
-  AgentDefinitionRequestOptions,
-  AgentDefinitionResolver,
   AgentErrorResult,
   AgentHandle,
   AgentResult,
@@ -18,14 +15,9 @@ export type {
   InlineTurn,
   MaybePromise,
   ObservabilityOptions,
-  ProviderDefinition,
-  ProviderToolDefinitionRef,
-  ResolvedAgentDefinition,
-  SavedAgent,
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
-  ToolDefinitionRef,
   TurnEventCallback,
 } from "./core/agent/index.js";
 export { Instruct } from "./core/index.js";
@@ -141,7 +133,7 @@ export {
   parseSkillMarkdown,
   renderSkillsCatalog,
 } from "./skills/index.js";
-export type { Skill, SkillDefinitionRef, SkillFrontmatter } from "./skills/index.js";
+export type { Skill, SkillFrontmatter } from "./skills/index.js";
 
 // MCP
 export { MCP } from "./mcp/index.js";
