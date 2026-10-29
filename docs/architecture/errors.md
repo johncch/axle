@@ -51,7 +51,9 @@ with the agent's queue and continuations is in
    continues. The caller sees it in the transcript only. A tool reaches
    the caller by throwing `AxleToolFatalError`, which propagates through
    the loop unchanged; it is the caller's own code refusing to continue,
-   not the provider's answer.
+   not the provider's answer. The other calls in its tool batch are
+   aborted through their signal and the loop rejects once every call has
+   settled ([tool-loop.md](./tool-loop.md)).
 7. **A request Axle makes on its own behalf has no result to carry its
    failure.** Compaction's summary request and `decide()`'s decision
    request are not the caller's send. When they fail, the failure is

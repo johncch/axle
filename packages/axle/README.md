@@ -648,6 +648,17 @@ can stream progress with `ctx.emit(...)`, and tools that call models can report
 their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
 operation's totals.
 
+When the model requests several tool calls in one message, Axle runs them
+concurrently and answers them in the order they were requested, whatever order
+they finish in. There is no concurrency cap; a tool that must throttle itself
+does so in `execute`. An ordinary failure in one call (a thrown error, invalid
+arguments, an unknown tool) is a result for that call only. A tool that throws
+`AxleToolFatalError` ends the run: the other calls in the batch are aborted
+through `ctx.signal`, with the fatal error as the signal's reason, and the send
+rejects once every call has settled with the usage all of them reported.
+`ctx.signal` also aborts when the run is cancelled. `onToolCall` and `execute`
+may run concurrently across the calls of one batch.
+
 #### File results and deferred references
 
 Tools can return structured text/file parts. A file may be inline, a URL, or a
@@ -1342,9 +1353,11 @@ and completion.
 `tool:exec-error`, `provider-tool:start`, `provider-tool:input`,
 `provider-tool:complete`, `provider-tool:error`, `error`.
 
-Tool and provider-tool events correlate by `id`. Text and thinking parts
-stream sequentially within a step, so their deltas belong to the most
-recently opened part.
+Tool and provider-tool events correlate by `id`. The calls in one tool batch
+run concurrently, so `tool:exec-start` fires for every call before any
+completes and their delta, complete and error events interleave; key on `id`.
+Text and thinking parts stream sequentially within a step, so their deltas
+belong to the most recently opened part.
 
 The `step:complete` and `tool-results:complete` events carry complete
 `AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server

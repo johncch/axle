@@ -249,10 +249,12 @@ describe("stream() happy paths", () => {
     expect(searchSpan.status).toBe("ok");
     expect(calcSpan.status).toBe("ok");
 
-    // search ends before calculator starts (sequential execution)
+    // both tool spans open before either closes (concurrent execution)
     const searchEnd = eventIndex(timeline, "span:end", "search");
+    const calcEnd = eventIndex(timeline, "span:end", "calculator");
     const calcStart = eventIndex(timeline, "span:start", "calculator");
-    expect(searchEnd).toBeLessThan(calcStart);
+    expect(calcStart).toBeLessThan(searchEnd);
+    expect(calcStart).toBeLessThan(calcEnd);
   });
 
   test("1.5 thinking + text response", async () => {

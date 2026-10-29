@@ -48,7 +48,8 @@ the step still yields one assistant message and counts once toward
 
 **Tool batch** — the set of separate tool calls one assistant message
 requests. Each call in a tool batch is validated, executed, and answered with
-its own tool result.
+its own tool result. The calls run concurrently; the results answer in
+request order (see `architecture/tool-loop.md`).
 
 **Parallelized tool** — the single tool `parallelize(tool)` returns: one call
 whose arguments carry an `items` array, each item run through the inner
@@ -62,7 +63,8 @@ request, tagged with the provider and model that served it and, when the
 in request order and never summed per model, because hosts bill a request at
 the tier its own prompt size selects; a row's `in` is that prompt size. A
 subagent's rows sit between the parent requests that bracket its tool call,
-under the subagent's own name. A paused Anthropic response (`pause_turn`)
+under the subagent's own name; several subagents in one tool batch
+interleave their rows in wall-clock order. A paused Anthropic response (`pause_turn`)
 is one step but several requests, and yields one row per request. Rows
 explain the aggregate `in` / `out`; they are never added to them again.
 
