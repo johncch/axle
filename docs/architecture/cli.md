@@ -48,9 +48,9 @@ against it; divergence is a defect. State ownership is defined in
    exclusion matrix because modes are not flags.
 
 3. **Every run is a session.** Chat, one-shot, recipe run, and every
-   individual batch item persist the same shape — `AgentDefinition` +
-   `agent.snapshot()` + `Transcript.turns` + cwd — to
-   `~/.axle/sessions/cli/<id>.json`, saved on every exit path. Anything
+   individual batch item persist the same shape — the recipe's agent keys
+   as written (`AgentRecipe`) + `agent.snapshot()` + `Transcript.turns` +
+   cwd — to `~/.axle/sessions/cli/<id>.json`, saved on every exit path. Anything
    that produced a session can be re-entered with `axle resume <id>`.
    Sessions accumulate; `axle cleanup` deletes by age window. There is no
    automatic retention. Sessions compact automatically near the context
@@ -100,23 +100,27 @@ against it; divergence is a defect. State ownership is defined in
    removable without a scar on the session kernel if it ever stops earning
    its place.
 
-6. **A session freezes the conversation and the recipe; it names its
-   configuration.** The stored definition records what the recipe said, as
-   written: `system`, `request`, `tools` when listed, `providerTools`,
-   `mcps`, `compaction`, an inline `provider` object, and the resolved
-   `model` (whichever layer chose it — the history was produced by that
-   model). What the recipe _named_ or _left out_ is stored as a reference or
-   a gap and resolved against the current configuration on every run,
-   resume included: a provider name (`provider: ollama`) is saved as the
-   name and finds its profile again; an absent `tools:` is saved as absent
-   and takes the current `defaults.tools`; `apiKeyEnv` is read from the
-   environment. No provider profile, default, or key is ever copied into a
-   session file, and a recipe's inline provider accepts `apiKeyEnv` but not
-   `apiKey` — anything check-in-able never holds a secret. Resume therefore
-   needs no recipe file and accepts no provider/model overrides from the
-   command line, but it does follow an edited profile or default. The
-   session's original cwd is recorded and warned about on mismatch, never
-   chdir'd to.
+6. **Everything in the recipe file is written into the session.
+   Everything that is not in the recipe is resolved at runtime.** The
+   session stores the recipe's agent keys exactly as the YAML wrote them
+   (`provider`, `model`, `system`, `request`, `tools`, `providerTools`,
+   `mcps`, `compaction`, `name`), gaps included, and every run — resume
+   included — resolves the gaps against the current `cli.yaml`,
+   credentials and environment the same way a fresh `-j` does: an absent
+   `provider:` takes `defaults.provider`, an absent `model:` takes
+   `defaults.models` then `*_MODEL` then the picker, an absent `tools:`
+   takes `defaults.tools`. What a stored key _names_ is also resolved
+   live: `provider: ollama` is saved as the name and finds its current
+   profile; `apiKeyEnv` is read from the environment. There are no
+   exceptions: a stated model is frozen, an unstated one follows the
+   default, and chat is a recipe with nothing in it, so everything is
+   resolved at runtime. No provider profile, default, or key is ever
+   copied into a session file, and a recipe's inline provider accepts
+   `apiKeyEnv` but not `apiKey` — anything check-in-able never holds a
+   secret. Resume never reads the recipe file (edit, move or delete it
+   freely) and accepts no provider/model overrides from the command line.
+   The session's original cwd is recorded and warned about on mismatch,
+   never chdir'd to.
 
 7. **Two output channels; renderers are folds, not deciders.** Everything
    on screen is either _transcript_ (the model's conversation: `TurnEvent`s
@@ -289,8 +293,8 @@ against it; divergence is a defect. State ownership is defined in
     is trusted (invariant 12): shell and writes execute as soon as the
     model asks, in chat, `-j`, batch, and scheduled occurrences alike, so
     content the model reads (attached files, MCP results, web search) can
-    drive them. Resume replays the tools stored in the session's
-    definition, not the current defaults.
+    drive them. Resume replays a recipe's `tools:` as stored; a session
+    whose recipe named none takes the current defaults (invariant 6).
 
 12. **Folder trust gates what the working directory can make the CLI do.**
     Two threats come from cwd: config injection (a repo's `.axle/` points
@@ -333,14 +337,40 @@ against it; divergence is a defect. State ownership is defined in
     prompt, and print the `Ignored` notice. User-scope skills load
     regardless; their scripts cannot run in an untrusted folder because
     `exec` is dropped. No recipe key and no `defaults.skills` select among
-    skills, no session names one, and `AgentDefinition.skills` is never
-    written by the CLI: a resumed session takes what is discovered now, and
-    a skill that has gone away is simply absent. `axle info` lists every
+    skills and no session names one: a resumed session takes what is
+    discovered now, and a skill that has gone away is simply absent. `axle info` lists every
     skill directory with its outcome (found, shadowed by, found ignored,
     invalid); there is no start-of-run line.
 
 ## Decisions
 
+- **2026-10-29 — a session is the recipe as written; the rest is runtime
+  (AXL-88; settles 2026-10-07 without its model exception).** The owner's
+  words: _everything in the recipe file is written into the session;
+  everything that is not in the recipe is resolved at runtime; chat is an
+  example where everything is always resolved at runtime._ Two things
+  change against 2026-10-07. The resolved `model` is no longer written
+  when the recipe left it out — it was the one key stored by resolution
+  rather than by authorship, and a rule with one exception invites the
+  next one; a picked model is this run's, so every run offers to save it
+  as the default. And the stored shape is the recipe's own
+  (`AgentRecipe = JobConfigSchema.pick(...)` in the CLI) instead of core's
+  `AgentDefinition`, which is deleted from the library along with
+  `createAgentConfig` and its resolver callback: the CLI was its only
+  consumer, resolved everything from its own configuration anyway, and
+  smuggled `droppedTools` out through a closure. Old session files are
+  converted on load; `version` stays 1. **This rule was reversed twice
+  on the same day** before it settled: first toward storing the recipe's
+  path and re-reading it on resume so edits reach a live session (the
+  way `claude --resume` loads today's tools), then back, because a
+  pointer dangles when the recipe moves, a provider edit under an
+  existing history breaks the next request or needs a frozen exception
+  to avoid it, and a recurring job's memory belongs in the checked-in
+  YAML, not in a second copy. Both rules are consistent; the choice is
+  which failure to prefer. Re-opening it needs a new principle stated
+  first, not a new argument for one of these two. Rejected: a one-line
+  notice on resume when the recipe on disk differs from the stored one —
+  resume does not read the recipe, so there is nothing to compare.
 - **2026-10-08 — `schedule add` registers only; `remove` and `sessions`
   take a name (reverses the run-once default of 2026-09-17).** The
   run-once default made the shortest form the consequential one: `axle
@@ -522,7 +552,8 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   before saving, so editing `cli.yaml` never reached an existing session
   (and an inline `apiKey` landed in the session file in the clear). The
   session now stores the recipe as written — names and gaps included — and
-  resolves them on every run. Rejected: referencing the recipe by path
+  resolves them on every run. (The resolved-model exception below was
+  removed on 2026-10-29.) Rejected: referencing the recipe by path
   (a moved or deleted recipe would make the session unresumable, and edits
   could invalidate a live history, e.g. a tool removed mid-conversation);
   stripping keys from the saved config but keeping the rest (a run that

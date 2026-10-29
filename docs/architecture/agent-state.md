@@ -435,6 +435,19 @@ Accepted consequences:
 
 ## Rejected alternatives
 
+- **A serializable `AgentDefinition` in core** (2026-05-24, removed
+  2026-10-29, AXL-88): the 0.20 core/CLI split gave core a portable
+  recipe type — provider, tool, MCP and skill _references_ that a host
+  resolver callback turned into live objects in `createAgentConfig`. It
+  mirrored `AgentConfig` field for field, so every executable field cost
+  three edits plus a "did you resolve what you named" check; its only
+  consumer, the CLI, resolved everything from its own configuration and
+  returned `droppedTools` through a closure because the callback had no
+  channel for it; and three of its four throws policed a contract the
+  host itself wrote. Invariant 1 already says what the Agent persists:
+  `AgentSession`, nothing else. What rebuilds the config is the host's,
+  in the host's shape — the CLI stores its recipe's keys as written
+  ([cli.md](./cli.md) invariant 6), Sunnyday rebuilds tools from code.
 - **A queued `agent.run(program)` that reserves the slot** (2026-08-25,
   rejected 2026-10-09): the right inside, inline sends in a held slot, in
   the wrong place. As a queued operation it could drift from the turn it
