@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **A resumed session resolves what its recipe left out against today's
+  `cli.yaml`, model included.** A session file now stores the recipe's
+  agent keys exactly as the YAML wrote them (`recipe:` in the file) and
+  nothing it resolved: a recipe with `provider: anthropic` and no
+  `model:` resumes on the current `defaults.models.anthropic`, where it
+  used to resume on the model its first run picked. A stated `model:` is
+  frozen as before; a chat session, which has no recipe, follows
+  `defaults.provider` and `defaults.models` as they are now. The model
+  picker offers to save its choice on every run, resume included, since
+  the session no longer remembers it. Session files written before this
+  release are read and converted; they keep the provider and model they
+  recorded.
+- **A missing recipe fails with its path.** `axle -j nope.yml` prints
+  `Recipe not found: /abs/path/nope.yml` instead of
+  `Job File not found, see --help for details`.
+
 - **A failed send prints `API error:` or `Incomplete response:` instead of
   `Model error:`.** `API error` is the provider not completing the request
   (a 4xx, a 5xx, a dropped connection); `Incomplete response` is the

@@ -70,13 +70,13 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    (`TOOL_REGISTRY_DUPLICATE`) at construction or at the `add` that would
    publish, whichever comes first; the registry never removes a tool it
    did not publish.
-6. **Definitions name skills; sessions re-resolve.**
-   `AgentDefinition.skills` is `{ name }[]`; `ResolvedAgentDefinition.skills`
-   is `Skill[]`; `createAgentConfig` errors when a definition names skills
-   and the resolver returns none, as with tools. A stored session holds
-   names only, so a resumed agent gets the current skill behind each name
-   and a deleted skill fails resolution by name. Core does not persist
-   definitions; the host does ([agent-state.md](./agent-state.md)).
+6. **Core does not persist skills; hosts re-resolve.** A `Skill` is plain
+   data handed to `AgentConfig.skills` at construction. A host that saves
+   which skills an agent had stores their names in its own shape and loads
+   the current skill behind each name on restore, as it does for tools; a
+   deleted skill is absent, not an error. The CLI stores none at all
+   ([cli.md](./cli.md) invariant 13); a saved `AgentSession` carries no
+   skills ([agent-state.md](./agent-state.md)).
 7. **Activated content is ordinary conversation.** `view-skill` results are
    tool results like any other and are compacted like any other
    ([compaction.md](./compaction.md)). The catalog survives compaction
@@ -102,7 +102,7 @@ Skills are the precursor to custom tools for the CLI (AXL-74 settled folder
 trust first): executable code ships as a skill script and runs through
 `exec`, which is already trust-gated, so no bespoke tool format is needed.
 Core provides the reference toolset — type, parser, catalog, activation
-tool, definition reference — so every host (CLI, axle-code, sunnyday) gets
+tool — so every host (CLI, axle-code, sunnyday) gets
 the same disclosure behaviour instead of a prompt builder and a tool each.
 
 Sunnyday settled the storage question. Its skills are zip bundles in object

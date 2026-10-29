@@ -354,3 +354,27 @@ export const JobConfigSchema = z.strictObject({
 });
 
 export type JobConfig = z.infer<typeof JobConfigSchema>;
+
+/**
+ * The recipe keys that configure the agent, as the recipe wrote them. A
+ * session freezes these; what they name or leave out resolves on every run
+ * (see docs/architecture/cli.md).
+ */
+export const AgentRecipeSchema = JobConfigSchema.pick({
+  name: true,
+  provider: true,
+  model: true,
+  system: true,
+  request: true,
+  tools: true,
+  providerTools: true,
+  mcps: true,
+  compaction: true,
+});
+
+export type AgentRecipe = z.infer<typeof AgentRecipeSchema>;
+
+export function agentRecipeOf(job: JobConfig): AgentRecipe {
+  const { name, provider, model, system, request, tools, providerTools, mcps, compaction } = job;
+  return { name, provider, model, system, request, tools, providerTools, mcps, compaction };
+}

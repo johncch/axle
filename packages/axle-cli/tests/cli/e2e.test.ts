@@ -473,7 +473,7 @@ describe.concurrent("cli.ts end-to-end", () => {
       const saved = JSON.parse(
         await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
       );
-      expect(saved.definition.provider).toEqual({ type: "stub" });
+      expect(saved.recipe.provider).toEqual({ name: "stub" });
 
       await writeFile(configPath, profile("http://127.0.0.1:1/v1"));
       const { code } = await runCli([
@@ -493,6 +493,33 @@ describe.concurrent("cli.ts end-to-end", () => {
   );
 
   it(
+    "resume runs the recipe as it was; a tool added since does not reach it",
+    async ({ cli }) => {
+      const { requests, runCli, writeRecipe } = cli;
+      const recipe = await writeRecipe("job.yml", "tools: [read-file]");
+
+      const first = await runCli(["-j", recipe, "--renderer", "plain", "--no-log"]);
+      expect(first.code).toBe(0);
+      const sessionId = first.output.match(/axle resume (\S+)/)?.[1];
+
+      await writeRecipe("job.yml", "tools: [read-file, exec]");
+      const { code } = await runCli([
+        "resume",
+        sessionId!,
+        "-m",
+        "follow up",
+        "--renderer",
+        "plain",
+        "--no-log",
+      ]);
+
+      expect(code).toBe(0);
+      expect(requests[1].tools?.map((tool) => tool.function.name)).toEqual(["read-file"]);
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
     "resume follows the current defaults.tools when the run named no tools",
     async ({ cli }) => {
       const { requests, runCli, HOME, baseUrl } = cli;
@@ -505,7 +532,7 @@ describe.concurrent("cli.ts end-to-end", () => {
       const saved = JSON.parse(
         await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
       );
-      expect(saved.definition.tools).toBeUndefined();
+      expect(saved.recipe).toEqual({});
 
       await writeFile(configPath, stubProfileConfig(baseUrl, "  tools: [read-file]"));
       const { code } = await runCli([
@@ -675,7 +702,7 @@ describe.concurrent("cli.ts end-to-end", () => {
       const saved = JSON.parse(
         await readFile(join(HOME, ".axle", "sessions", "cli", `${sessionId}.json`), "utf-8"),
       );
-      expect(saved.compaction).toBe(false);
+      expect(saved.recipe.compaction).toBe(false);
 
       const { code } = await runCli([
         "resume",

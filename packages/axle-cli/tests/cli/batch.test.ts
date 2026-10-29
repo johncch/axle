@@ -1,8 +1,9 @@
-import type { AgentDefinition, AIProvider } from "@fifthrevision/axle";
+import type { AIProvider } from "@fifthrevision/axle";
 import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { AgentRecipe } from "../../src/cli/configs/schemas.js";
 import { loadLedger } from "../../src/cli/ledger.js";
 import { runBatch } from "../../src/cli/runners.js";
 import type { Renderer } from "../../src/ui/index.js";
@@ -12,11 +13,7 @@ const HOME = join(TEST_DIR, "home");
 const INPUTS = join(TEST_DIR, "inputs");
 const ORIGINAL_CWD = process.cwd();
 
-const definition: AgentDefinition = {
-  version: 1,
-  provider: { type: "anthropic" },
-  model: "anthropic/test-model",
-};
+const recipe: AgentRecipe = { provider: { name: "anthropic" }, model: "anthropic/test-model" };
 
 function createRecordingRenderer() {
   const lines: string[] = [];
@@ -64,7 +61,7 @@ function createMockProvider(options?: { failOnCall?: number }): AIProvider {
 function batchSpec(provider: AIProvider, options?: { incremental?: boolean }) {
   return {
     task: "Process {{file}}",
-    definition,
+    recipe,
     agentConfig: { provider, model: "test-model" },
     inputs: [join(INPUTS, "*.md")],
     concurrency: 1,
@@ -116,7 +113,7 @@ describe("runBatch (--each fan-out)", () => {
     const saved = JSON.parse(
       await readFile(join(HOME, ".axle", "sessions", "cli", sessionFiles[0]), "utf-8"),
     );
-    expect(saved.definition).toEqual(definition);
+    expect(saved.recipe).toEqual(recipe);
     expect(saved.session.messages).toHaveLength(2);
   });
 

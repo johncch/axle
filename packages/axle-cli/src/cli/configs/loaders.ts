@@ -30,7 +30,7 @@ export async function getJobConfig(
   try {
     content = await readFile(path, { encoding: "utf-8" });
   } catch (e) {
-    throw new Error("Job File not found, see --help for details");
+    throw new Error(`Recipe not found: ${path}`);
   }
 
   const result = YAML.parse(content);

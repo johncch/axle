@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import * as z from "zod";
 import type { AgentSession } from "../../src/core/agent/index.js";
-import { Agent, createAgentConfig } from "../../src/core/agent/index.js";
+import { Agent } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
@@ -750,25 +750,21 @@ describe("Agent", () => {
     const original = new Agent({ provider, model: "mock" });
     await original.send("one").final;
 
-    const saved = {
-      definition: {
-        version: 1,
-        name: "restored-agent",
-        provider: { type: "mock" },
+    const session = await original.snapshot();
+
+    const restored = new Agent(
+      {
+        provider,
         model: "mock",
+        name: "restored-agent",
         system: "You are restored.",
+        sessionId: "runtime-session",
       },
-      session: await original.snapshot(),
-    } as const;
+      session,
+    );
 
-    const config = await createAgentConfig(saved.definition, (definition) => {
-      expect(definition.provider.type).toBe("mock");
-      return { provider };
-    });
-    const restored = new Agent({ ...config, sessionId: "runtime-session" }, saved.session);
-
-    expect(restored.sessionId).toBe(saved.session.sessionId);
-    expect(restored.messages).toEqual(saved.session.messages);
+    expect(restored.sessionId).toBe(session.sessionId);
+    expect(restored.messages).toEqual(session.messages);
 
     await restored.send("two").final;
 

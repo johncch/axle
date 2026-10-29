@@ -243,15 +243,18 @@ in flag names (`-j`) and ledger keys as the recipe's runtime instantiation.
 `cleanup`).
 
 **Kernel** — the session runner every invocation composes on: resolve a
-definition, run an agent session, persist it.
+recipe against the current configuration, run an agent session, persist
+it.
 
 **Verb** — a distinct machine composed on the kernel, selected by a
 subcommand. Verbs select the machine; flags parameterize it — a mode is
 never a flag.
 
-**Session (CLI sense)** — the persisted continuation of one run:
-`AgentDefinition` + core `AgentSession` + `Transcript.turns` + cwd, at
-`~/.axle/sessions/cli/<id>.json`. Every run is a session, including each
+**Session (CLI sense)** — the persisted continuation of one run: the
+recipe's agent keys as written (`AgentRecipe`) + core `AgentSession` +
+`Transcript.turns` + cwd, at `~/.axle/sessions/cli/<id>.json`. Everything
+in the recipe file is written into the session; everything that is not is
+resolved at runtime. Every run is a session, including each
 batch item; `axle resume <id>` re-enters any of them.
 
 **Ledger** — the project-local batch index (`.axle/batch.jsonl`): one

@@ -1,10 +1,6 @@
 export { Agent } from "./Agent.js";
-export { createAgentConfig } from "./createAgentConfig.js";
 export type {
   AgentConfig,
-  AgentDefinition,
-  AgentDefinitionRequestOptions,
-  AgentDefinitionResolver,
   AgentErrorResult,
   AgentHandle,
   AgentResult,
@@ -20,14 +16,9 @@ export type {
   InlineTurn,
   MaybePromise,
   ObservabilityOptions,
-  ProviderDefinition,
-  ProviderToolDefinitionRef,
-  ResolvedAgentDefinition,
-  SavedAgent,
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
   ShouldCompactOnTriggerCallback,
-  ToolDefinitionRef,
   TurnEventCallback,
 } from "./types.js";

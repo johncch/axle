@@ -5,7 +5,7 @@ import type { Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { requestedToolNames, resolveAgentDefinition, resolveEndpoint } from "./cli/agent-config.js";
+import { createCliAgentConfig, requestedToolNames, resolveEndpoint } from "./cli/agent-config.js";
 import { resolveBuildInfo } from "./cli/build.js";
 import { runCleanup } from "./cli/cleanup.js";
 import {
@@ -459,7 +459,7 @@ const interactiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY)
 // the project layer or registers a schedule on this folder's behalf.
 if (!trusted && interactiveTerminal) {
   const requestedTools = requestedToolNames(
-    savedSession ? savedSession.definition.tools?.map((ref) => ref.name) : jobConfig?.tools,
+    savedSession ? savedSession.recipe.tools : jobConfig?.tools,
     cliConfig,
   );
   if (trustWouldChange(ignoredProjectInputs, requestedTools)) {
@@ -508,7 +508,7 @@ if (
 }
 
 /**
- * Phase A — decide what to run and build the serializable definition.
+ * Phase A — decide what to run and fix the recipe the session freezes.
  * Interactive prompts (model picker) happen here, before the renderer owns
  * the terminal.
  */
@@ -538,11 +538,12 @@ screen = renderer;
 const exitOnInterrupt = () => process.exit(130);
 renderer.setInterruptHandler(exitOnInterrupt);
 
-if (pending.definition.mcps?.length) {
+if (pending.recipe.mcps?.length) {
   renderer.info("Connecting MCP servers…");
 }
-const { mcps, agentConfig, droppedTools } = await resolveAgentDefinition(
-  pending.definition,
+const { mcps, agentConfig, droppedTools } = await createCliAgentConfig(
+  pending.target,
+  pending.recipe,
   cliConfig,
   serviceConfig,
   await getCredentials({ trusted }),
@@ -565,7 +566,7 @@ for (const line of [
 const catalog = await openModelCatalog();
 if (catalog.stale) void catalog.refresh();
 const contextWindow = resolveContextWindow(
-  resolveEndpoint(pending.definition.provider, cliConfig),
+  resolveEndpoint(pending.target.provider, cliConfig),
   agentConfig.model,
   catalog,
 );
@@ -585,7 +586,7 @@ try {
       succeeded = await runBatch(
         {
           ...pending.spec,
-          definition: pending.definition,
+          recipe: pending.recipe,
           agentConfig,
           contextWindow: contextWindow.window,
         },
@@ -601,7 +602,7 @@ try {
           ...pending.spec,
           agentConfig,
           contextWindow: contextWindow.window,
-          providerName: pending.definition.provider.type,
+          providerName: pending.target.providerName,
         },
         stats,
         rootSpan,

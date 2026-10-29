@@ -1,8 +1,9 @@
-import type { AgentConfig, AgentDefinition, AIProvider, ContextUsage } from "@fifthrevision/axle";
+import type { AgentConfig, AIProvider, ContextUsage } from "@fifthrevision/axle";
 import { Agent, AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { AgentRecipe } from "../../src/cli/configs/schemas.js";
 import { createSessionCompaction, runAgentSession } from "../../src/cli/runners.js";
 import type { CliSessionFile } from "../../src/cli/sessions.js";
 import { sessionFilePath, SessionStore } from "../../src/cli/sessions.js";
@@ -142,12 +143,7 @@ const nullRenderer: Renderer = {
   close() {},
 };
 
-const definition: AgentDefinition = {
-  version: 1,
-  name: "compact-job",
-  provider: { type: "anthropic" },
-  model: "unknown-model",
-};
+const recipe: AgentRecipe = { provider: { name: "anthropic" }, model: "unknown-model" };
 
 interface RunnerCall {
   system?: string;
@@ -190,7 +186,7 @@ describe("compacted session snapshot/resume", () => {
     }));
     const tracer = new Tracer();
     const calls: RunnerCall[] = [];
-    const store = new SessionStore(definition, { home: HOME });
+    const store = new SessionStore(recipe, { home: HOME });
     const usageReports: number[] = [];
     const usageRenderer: Renderer = {
       ...nullRenderer,

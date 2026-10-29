@@ -1,19 +1,64 @@
-import type { AgentDefinition, AgentSession, Turn } from "@fifthrevision/axle";
+import type { AgentSession, Turn } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { writeFileAtomic } from "./atomic-write.js";
 import { resolveConfigDirs } from "./configs/paths.js";
+import type { AgentRecipe } from "./configs/schemas.js";
+import { AgentRecipeSchema } from "./configs/schemas.js";
 
 export interface CliSessionFile {
   version: 1;
   createdAt: string;
   updatedAt: string;
   cwd: string;
-  definition: AgentDefinition;
-  /** Recipe-level compaction opt-out, carried so resume honors it. */
+  /** The recipe's agent keys as written; `{}` for chat and one-shot. */
+  recipe: AgentRecipe;
+  session: AgentSession;
+  turns: Turn[];
+}
+
+// Files written before 2026-10-29 carried the recipe in core's AgentDefinition
+// shape (`tools: [{ name }]`, `provider: { type, config }`), with the resolved
+// provider and model filled in even when the recipe left them out.
+interface LegacySessionFile {
+  version: 1;
+  createdAt: string;
+  updatedAt: string;
+  cwd: string;
+  definition: {
+    version: 1;
+    name?: string;
+    provider: { type: string; config?: Record<string, unknown> };
+    model?: string;
+    system?: string;
+    request?: Record<string, unknown>;
+    tools?: { name: string }[];
+    providerTools?: { name: string }[];
+    mcps?: unknown[];
+  };
   compaction?: boolean;
   session: AgentSession;
   turns: Turn[];
+}
+
+function fromLegacy(file: LegacySessionFile): CliSessionFile {
+  const { version: _, provider, tools, providerTools, ...rest } = file.definition;
+  const recipe = AgentRecipeSchema.parse({
+    ...rest,
+    provider: provider.config ? { type: provider.type, ...provider.config } : provider.type,
+    tools: tools?.map((ref) => ref.name),
+    providerTools: providerTools?.map((ref) => ref.name),
+    compaction: file.compaction,
+  });
+  return {
+    version: 1,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
+    cwd: file.cwd,
+    recipe,
+    session: file.session,
+    turns: file.turns,
+  };
 }
 
 export function sessionsDir(home?: string): string {
@@ -108,8 +153,18 @@ export async function loadSession(sessionId: string, home?: string): Promise<Cli
     throw new Error(`Invalid session file at ${path}`);
   }
 
-  const file = parsed as CliSessionFile;
-  if (file?.version !== 1 || !file.definition || !file.session) {
+  const file = parsed as CliSessionFile | LegacySessionFile;
+  if (file?.version !== 1 || !file.session) {
+    throw new Error(`Unsupported or corrupt session file at ${path}`);
+  }
+  if ("definition" in file) {
+    try {
+      return fromLegacy(file);
+    } catch {
+      throw new Error(`Unsupported or corrupt session file at ${path}`);
+    }
+  }
+  if (!file.recipe) {
     throw new Error(`Unsupported or corrupt session file at ${path}`);
   }
   return file;
@@ -118,25 +173,20 @@ export async function loadSession(sessionId: string, home?: string): Promise<Cli
 /**
  * Persists resumable CLI sessions to `~/.axle/sessions/cli/<id>.json`.
  *
- * One store instance covers one run: it captures the definition and cwd at
+ * One store instance covers one run: it captures the recipe and cwd at
  * construction and rewrites the whole file on every save.
  */
 export class SessionStore {
-  private readonly definition: AgentDefinition;
+  private readonly recipe: AgentRecipe;
   private readonly cwd: string;
   private readonly home?: string;
-  private readonly compaction?: boolean;
   private createdAt?: string;
   savedSessionId?: string;
 
-  constructor(
-    definition: AgentDefinition,
-    options?: { cwd?: string; home?: string; createdAt?: string; compaction?: boolean },
-  ) {
-    this.definition = definition;
+  constructor(recipe: AgentRecipe, options?: { cwd?: string; home?: string; createdAt?: string }) {
+    this.recipe = recipe;
     this.cwd = options?.cwd ?? process.cwd();
     this.home = options?.home;
-    this.compaction = options?.compaction;
     this.createdAt = options?.createdAt;
   }
 
@@ -147,8 +197,7 @@ export class SessionStore {
       createdAt: this.createdAt,
       updatedAt: new Date().toISOString(),
       cwd: this.cwd,
-      definition: this.definition,
-      compaction: this.compaction,
+      recipe: this.recipe,
       session,
       turns: [...turns],
     };
