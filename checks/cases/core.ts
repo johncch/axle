@@ -834,6 +834,90 @@ export const coreCases: CheckCase[] = [
   },
   {
     group: "default",
+    id: "generate-concurrent-tool-batch",
+    description: "The calls in one tool batch run concurrently and answer in request order.",
+    async run({ provider, model, requestOptions }) {
+      const delayMs = 1500;
+      const timings: Array<{ id: string; start: number; end: number }> = [];
+      const slowLookupTool: ExecutableTool<z.ZodObject<{ id: z.ZodString }>> = {
+        name: "slow_lookup",
+        description: "Look up a fixed code word by id. Slow; call once per id, in parallel.",
+        schema: z.object({ id: z.string() }),
+        async execute(input) {
+          const start = Date.now();
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          timings.push({ id: input.id, start, end: Date.now() });
+          if (input.id === "alpha") return "alpha=orchid";
+          if (input.id === "beta") return "beta=violet";
+          return `${input.id}=unknown`;
+        },
+      };
+
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages: [
+          {
+            role: "user",
+            content:
+              "Call slow_lookup for id alpha and for id beta, both in the same turn. Then answer with both code words.",
+          },
+        ],
+        tools: [slowLookupTool],
+      });
+
+      if (!result.ok) return fail({ error: result.error });
+      const text = getAssistantText(result.final);
+      const toolResults = getToolResultDetails(result.messages);
+      const batchMessages = result.messages.filter(
+        (message) => message.role === "tool" && Array.isArray(message.content),
+      );
+      const oneBatch = batchMessages.length === 1 && timings.length === 2;
+      const requestedIds = result.messages
+        .filter((message) => message.role === "assistant" && Array.isArray(message.content))
+        .flatMap((message) =>
+          (message.content as Array<{ type: string; id?: string }>)
+            .filter((part) => part.type === "tool-call")
+            .map((part) => part.id ?? ""),
+        );
+      const resultIds = batchMessages.flatMap((message) =>
+        (message.content as Array<{ id: string }>).map((part) => part.id),
+      );
+      const batchElapsed =
+        timings.length > 0
+          ? Math.max(...timings.map((t) => t.end)) - Math.min(...timings.map((t) => t.start))
+          : 0;
+      const overlapped = oneBatch && batchElapsed < delayMs * 2 - 200;
+      const lowerText = text.toLowerCase();
+      const failureReasons = [
+        ...(!oneBatch ? ["The model did not request both slow_lookup calls in one message."] : []),
+        ...(oneBatch && !overlapped
+          ? [`The two calls did not overlap: batch took ${batchElapsed}ms for ${delayMs}ms tools.`]
+          : []),
+        ...(oneBatch && resultIds.join() !== requestedIds.join()
+          ? [`Tool results answer in order ${resultIds.join()}, requested ${requestedIds.join()}.`]
+          : []),
+        ...(!lowerText.includes("orchid") || !lowerText.includes("violet")
+          ? ["The final answer does not hold both orchid and violet."]
+          : []),
+      ];
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          text,
+          toolResults,
+          batchElapsedMs: batchElapsed,
+          timings,
+          messageCount: result.messages.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
     id: "agent-subagent-tool",
     description: "Agent delegates to a child agent exposed as a tool.",
     async run({ provider, model, requestOptions }) {

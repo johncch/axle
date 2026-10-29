@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A step's tool calls run at the same time.** When the model asks for
+  several tools in one message, they all start together and the step
+  takes as long as its slowest tool instead of all of them added up. Tool
+  lines in the run output now start together and finish in whatever order
+  they complete. A tool that ends the run (`AxleToolFatalError`) stops
+  the others in the same batch.
 - **A resumed session resolves what its recipe left out against today's
   `cli.yaml`, model included.** A session file now stores the recipe's
   agent keys exactly as the YAML wrote them (`recipe:` in the file) and

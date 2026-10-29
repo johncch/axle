@@ -1,11 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
 import type { ContentPartToolCall } from "../../src/messages/message.js";
-import { executeToolCalls } from "../../src/providers/helpers.js";
+import { executeToolCalls, type ToolExecutionObserver } from "../../src/providers/helpers.js";
 import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
-import type { ExecutableTool } from "../../src/tools/types.js";
+import type { ExecutableTool, ToolContext } from "../../src/tools/types.js";
 
 const testSignal = new AbortController().signal;
 const testRegistry = new ToolRegistry();
@@ -127,14 +128,23 @@ describe("executeToolCalls", () => {
       ).rejects.toBe(fatal);
     });
 
-    test("passes a ToolContext with the signal", async () => {
-      const onToolCall = vi.fn().mockResolvedValue({ type: "success", content: "ok" });
+    test("passes a ToolContext whose signal follows the run signal", async () => {
+      const controller = new AbortController();
+      let seen: ToolContext | undefined;
+      const onToolCall = vi.fn(async (_name: string, _params: unknown, ctx: ToolContext) => {
+        seen = ctx;
+        expect(ctx.signal.aborted).toBe(false);
+        controller.abort("done");
+        return { type: "success" as const, content: "ok" };
+      });
 
-      await executeToolCalls([makeToolCall("t")], onToolCall, testSignal, testRegistry);
+      await expect(
+        executeToolCalls([makeToolCall("t")], onToolCall, controller.signal, testRegistry),
+      ).rejects.toBeInstanceOf(AxleAbortError);
 
-      const ctx = onToolCall.mock.calls[0][2];
-      expect(ctx.signal).toBe(testSignal);
-      expect(ctx).not.toHaveProperty("registry");
+      expect(seen).not.toHaveProperty("registry");
+      expect(seen?.signal.aborted).toBe(true);
+      expect(seen?.signal.reason).toBe("done");
     });
   });
 
@@ -264,36 +274,138 @@ describe("executeToolCalls", () => {
       expect(results[1].content).toContain("not-found");
     });
 
-    test("runs tool calls sequentially in call order", async () => {
+    test("runs tool calls concurrently and returns results in call order", async () => {
       let active = 0;
       let maxActive = 0;
-      const schema = z.object({ input: z.string() });
-      const serialTool: ExecutableTool<typeof schema> = {
-        name: "serial",
-        description: "Serial",
+      const schema = z.object({ input: z.string(), ms: z.number() });
+      const timedTool: ExecutableTool<typeof schema> = {
+        name: "timed",
+        description: "Timed",
         schema,
         async execute(input) {
           active += 1;
           maxActive = Math.max(maxActive, active);
-          await delay(5);
+          await delay(input.ms);
           active -= 1;
           return input.input;
         },
       };
-      const registry = new ToolRegistry({ tools: [serialTool] });
+      const registry = new ToolRegistry({ tools: [timedTool] });
 
       const { results } = await executeToolCalls(
         [
-          makeToolCallWithParams("serial", "a", { input: "a" }),
-          makeToolCallWithParams("serial", "b", { input: "b" }),
+          makeToolCallWithParams("timed", "a", { input: "a", ms: 20 }),
+          makeToolCallWithParams("timed", "b", { input: "b", ms: 1 }),
+          makeToolCallWithParams("timed", "c", { input: "c", ms: 10 }),
         ],
         undefined,
         testSignal,
         registry,
       );
 
-      expect(maxActive).toBe(1);
-      expect(results.map((result) => result.content)).toEqual(["a", "b"]);
+      expect(maxActive).toBe(3);
+      expect(results.map((result) => result.id)).toEqual(["a", "b", "c"]);
+      expect(results.map((result) => result.content)).toEqual(["a", "b", "c"]);
+    });
+
+    test("a fatal error aborts the other calls in the batch", async () => {
+      const schema = z.object({ input: z.string() });
+      const seen: string[] = [];
+      const waitingTool: ExecutableTool<typeof schema> = {
+        name: "waiting",
+        description: "Waits on its signal",
+        schema,
+        execute(input, ctx) {
+          return new Promise((_resolve, reject) => {
+            ctx.signal.addEventListener("abort", () => {
+              seen.push(input.input);
+              reject(ctx.signal.reason);
+            });
+          });
+        },
+      };
+      const fatalTool: ExecutableTool<typeof schema> = {
+        name: "fatal",
+        description: "Fails fatally",
+        schema,
+        async execute() {
+          await delay(1);
+          throw new AxleToolFatalError("boom", { toolName: "fatal" });
+        },
+      };
+      const registry = new ToolRegistry({ tools: [waitingTool, fatalTool] });
+      const errors: Array<{ id: string; type: string }> = [];
+      const observer: ToolExecutionObserver = {
+        onError(call, error) {
+          errors.push({
+            id: call.id,
+            type: error instanceof AxleToolFatalError ? "fatal" : "aborted",
+          });
+        },
+      };
+
+      await expect(
+        executeToolCalls(
+          [
+            makeToolCallWithParams("waiting", "a", { input: "a" }),
+            makeToolCall("fatal"),
+            makeToolCallWithParams("waiting", "c", { input: "c" }),
+          ],
+          undefined,
+          testSignal,
+          registry,
+          undefined,
+          observer,
+        ),
+      ).rejects.toBeInstanceOf(AxleToolFatalError);
+
+      expect(seen.sort()).toEqual(["a", "c"]);
+      expect(errors).toEqual([
+        { id: "call-fatal", type: "fatal" },
+        { id: "a", type: "aborted" },
+        { id: "c", type: "aborted" },
+      ]);
+    });
+
+    test("aborting the run signal aborts every call in the batch", async () => {
+      const schema = z.object({ input: z.string() });
+      const waitingTool: ExecutableTool<typeof schema> = {
+        name: "waiting",
+        description: "Waits on its signal",
+        schema,
+        execute(_input, ctx) {
+          return new Promise((_resolve, reject) => {
+            ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
+          });
+        },
+      };
+      const registry = new ToolRegistry({ tools: [waitingTool] });
+      const controller = new AbortController();
+      const errors: string[] = [];
+      const observer: ToolExecutionObserver = {
+        onError(call) {
+          errors.push(call.id);
+        },
+      };
+
+      const pending = executeToolCalls(
+        [
+          makeToolCallWithParams("waiting", "a", { input: "a" }),
+          makeToolCallWithParams("waiting", "b", { input: "b" }),
+        ],
+        undefined,
+        controller.signal,
+        registry,
+        undefined,
+        observer,
+      );
+      await delay(1);
+      controller.abort("user cancelled");
+
+      const thrown = await pending.catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(AxleAbortError);
+      expect((thrown as AxleAbortError).reason).toBe("user cancelled");
+      expect(errors.sort()).toEqual(["a", "b"]);
     });
 
     test("accumulates usage reported through ctx.reportUsage", async () => {
@@ -356,7 +468,7 @@ describe("executeToolCalls", () => {
       expect(results[0].content).toContain("fetch timed out");
     });
 
-    test("attaches usage from completed calls to a later terminal error", async () => {
+    test("attaches usage from every settled call to the thrown terminal error", async () => {
       const schema = z.object({ input: z.string() });
       const reportingTool: ExecutableTool<typeof schema> = {
         name: "reporting",
@@ -367,20 +479,35 @@ describe("executeToolCalls", () => {
           return input.input;
         },
       };
+      const reportingThenWaitingTool: ExecutableTool<typeof schema> = {
+        name: "reporting-waiting",
+        description: "Reports usage then waits on its signal",
+        schema,
+        execute(_input, ctx) {
+          ctx.reportUsage?.({ in: 100, out: 50 });
+          return new Promise((_resolve, reject) => {
+            ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
+          });
+        },
+      };
       const fatalTool: ExecutableTool<typeof schema> = {
         name: "fatal",
         description: "Fails fatally",
         schema,
-        async execute() {
+        async execute(_input, ctx) {
+          ctx.reportUsage?.({ in: 1, out: 1 });
+          await delay(5);
           throw new AxleToolFatalError("boom", { toolName: "fatal" });
         },
       };
-      const registry = new ToolRegistry({ tools: [reportingTool, fatalTool] });
+      const registry = new ToolRegistry({
+        tools: [reportingTool, reportingThenWaitingTool, fatalTool],
+      });
 
       let thrown: unknown;
       try {
         await executeToolCalls(
-          [makeToolCall("reporting"), makeToolCall("fatal")],
+          [makeToolCall("reporting"), makeToolCall("reporting-waiting"), makeToolCall("fatal")],
           undefined,
           testSignal,
           registry,
@@ -390,7 +517,7 @@ describe("executeToolCalls", () => {
       }
 
       expect(thrown).toBeInstanceOf(AxleToolFatalError);
-      expect((thrown as AxleToolFatalError).usage).toMatchObject({ in: 10, out: 5 });
+      expect((thrown as AxleToolFatalError).usage).toMatchObject({ in: 111, out: 56 });
     });
 
     test("returns no usage when no tool reports any", async () => {

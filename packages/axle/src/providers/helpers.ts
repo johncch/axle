@@ -262,27 +262,58 @@ export async function executeToolCalls(
   span?: Span,
   observer?: ToolExecutionObserver,
 ): Promise<{ results: AxleToolCallResult[]; usage?: Stats }> {
+  const batch = new AbortController();
+  const forwardAbort = (): void => batch.abort(signal.reason);
+  if (signal.aborted) forwardAbort();
+  else signal.addEventListener("abort", forwardAbort, { once: true });
+
+  let firstError: unknown;
+  let failed = false;
+  const settled = await Promise.allSettled(
+    toolCalls.map(async (call) => {
+      try {
+        return await executeOneToolCall(call, onToolCall, batch.signal, source, span, observer);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+          batch.abort(error);
+        }
+        throw error;
+      }
+    }),
+  );
+  signal.removeEventListener("abort", forwardAbort);
+
   const results: AxleToolCallResult[] = [];
   const usage = createStats();
   let hasUsage = false;
-
-  for (const call of toolCalls) {
-    let executed: ExecutedToolCall;
-    try {
-      executed = await executeOneToolCall(call, onToolCall, signal, source, span, observer);
-    } catch (error) {
-      // A terminal throw must still account for usage already reported by
-      // completed calls earlier in this batch.
-      throw hasUsage ? attachUsage(error, usage) : error;
+  for (const outcome of settled) {
+    if (outcome.status === "fulfilled") {
+      results.push(outcome.value.result);
+      if (outcome.value.usage) {
+        addStats(usage, outcome.value.usage);
+        hasUsage = true;
+      }
+      continue;
     }
-    results.push(executed.result);
-    if (executed.usage) {
-      addStats(usage, executed.usage);
+    if (outcome.reason === firstError) continue;
+    const siblingUsage = usageOfTerminalError(outcome.reason);
+    if (siblingUsage) {
+      addStats(usage, siblingUsage);
       hasUsage = true;
     }
   }
 
+  if (failed) {
+    throw hasUsage ? attachUsage(firstError, usage) : firstError;
+  }
   return { results, ...(hasUsage ? { usage } : {}) };
+}
+
+function usageOfTerminalError(error: unknown): Stats | undefined {
+  if (error instanceof AxleToolFatalError || error instanceof AxleAbortError) return error.usage;
+  return undefined;
 }
 
 function attachUsage(error: unknown, usage: Stats): unknown {
@@ -428,6 +459,9 @@ function normalizeTerminalToolError(
   error: unknown,
   signal: AbortSignal,
 ): AxleAbortError | AxleToolFatalError | undefined {
+  if (signal.aborted && error === signal.reason) {
+    return new AxleAbortError("Operation aborted", { reason: signal.reason });
+  }
   if (error instanceof AxleToolFatalError) return error;
   if (error instanceof AxleAbortError) return error;
   // A bare AbortError (e.g. a tool's internal fetch timeout) is only terminal

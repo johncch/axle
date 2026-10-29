@@ -2229,7 +2229,8 @@ describe("Agent", () => {
     expect(fatal.partial?.role).toBe("assistant");
     expect(execTool.execute).toHaveBeenCalledTimes(1);
     expect(toolStream.callCount).toBe(1);
-    expect(events.filter((event) => event.type === "action:running")).toHaveLength(1);
+    // both calls in the batch start before the fatal lands
+    expect(events.filter((event) => event.type === "action:running")).toHaveLength(2);
   });
 
   test("regular tool Error remains model-visible and can be retried", async () => {
