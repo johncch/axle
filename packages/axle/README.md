@@ -335,6 +335,10 @@ group by session use it (OpenRouter's `session_id`); the rest ignore it.
 fresh id, sent on every step of that call's tool loop, so the steps route
 together; only a caller-supplied id ties separate calls to one conversation.
 
+`agentName` is stamped as `agent` on every `usage.breakdown` row the call's
+own requests produce (see [Usage Stats](#usage-stats)). `Agent` passes its
+`name`; a direct call leaves it off unless it wants the rows attributed.
+
 ### Prompt caching
 
 Axle asks the provider to cache the prompt prefix wherever asking is
@@ -841,21 +845,27 @@ under its action (interleaved across items).
 > release.
 
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
-when reported). When an operation spans models — for example subagent tools on
-different providers — `usage.breakdown` holds one entry per provider+model pair
-so cost can be reconstructed:
+when reported). `usage.breakdown` holds one entry per provider request, in
+request order, tagged with the provider and model that served it and, when
+the agent has a `name`, with that name as `agent`. Providers bill a request
+at the tier its prompt size selects, so each row's `in` is what prices that
+row; a subagent's requests appear between the parent requests that bracket
+its tool call, under the subagent's own name:
 
 ```typescript
-const result = await agent.send("...").final;
+const result = await orchestrator.send("...").final;
 // result.usage.breakdown:
 // [
-//   { provider: "anthropic", model: "claude-sonnet-4-6", in: 1200, out: 340 },
-//   { provider: "openai", model: "gpt-5", in: 800, out: 120 },
+//   { provider: "anthropic", model: "claude-sonnet-4-6", agent: "orchestrator", in: 1200, out: 40 },
+//   { provider: "openai", model: "gpt-5", agent: "researcher", in: 800, out: 120 },
+//   { provider: "anthropic", model: "claude-sonnet-4-6", agent: "orchestrator", in: 2100, out: 300 },
 // ]
 ```
 
 Breakdown entries explain the aggregate totals; they are attribution metadata,
-not additional usage.
+not additional usage. A reader that wants per-model or per-agent totals groups
+the rows. An Anthropic step that paused (`pause_turn`) took several requests
+and yields one row each.
 
 ### Provider Tools
 
@@ -981,8 +991,8 @@ and the next one starts with a `provider-tool-result` part carrying the same
 
 Anthropic can pause a long provider-tool turn (`pause_turn`). Axle continues
 it automatically: the step keeps streaming, yields one assistant message, and
-reports the summed usage of every request it took. A paused turn counts as one
-step toward `maxSteps`.
+reports the usage of every request it took, summed in the totals and one
+`usage.breakdown` row each. A paused turn counts as one step toward `maxSteps`.
 
 ### Web Search on Chat Completions
 

@@ -184,7 +184,10 @@ describe("stream() happy paths", () => {
       expect(result.usage).toMatchObject({
         in: 20,
         out: 40,
-        breakdown: [{ provider: "test", model: "test-model", in: 20, out: 40 }],
+        breakdown: [
+          { provider: "test", model: "test-model", in: 10, out: 20 },
+          { provider: "test", model: "test-model", in: 10, out: 20 },
+        ],
       });
     }
   });

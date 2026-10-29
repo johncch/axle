@@ -56,6 +56,16 @@ tool's `execute` concurrently, with one ordered result. It is one tool call,
 not a tool batch: its arguments are validated as a whole, so one invalid item
 rejects the call. Not "batch tool".
 
+**UsageEntry** — one row of `Stats.breakdown`: the usage of one provider
+request, tagged with the provider and model that served it and, when the
+`Agent` that made it has a `name`, with that name as `agent`. Rows are kept
+in request order and never summed per model, because hosts bill a request at
+the tier its own prompt size selects; a row's `in` is that prompt size. A
+subagent's rows sit between the parent requests that bracket its tool call,
+under the subagent's own name. A paused Anthropic response (`pause_turn`)
+is one step but several requests, and yields one row per request. Rows
+explain the aggregate `in` / `out`; they are never added to them again.
+
 **Turn** — the render-layer unit only: one conversation entry in a transcript — a
 user turn or an agent turn. One send produces one user turn and one agent
 turn; the agent turn accumulates parts from every step of that send. Turns

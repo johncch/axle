@@ -37,7 +37,13 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `turn:user`, then the same `Instruct` parses the final assistant response.
 6. **Usage accounting is host-domain.** Every `turn:end` carries
    `turn.usage`; hosts accumulate totals in their own storage. The Agent
-   exposes no usage meter, and `AgentSession` carries none.
+   exposes no usage meter, and `AgentSession` carries none. `usage.breakdown`
+   holds one `UsageEntry` per provider request, in request order, never a
+   sum per model: a host prices each row at the tier its own `in` selects
+   and groups rows when it wants per-model totals. An Agent with a `name`
+   stamps it on the rows of its own requests as `agent`, and leaves the
+   rows a subagent tool reports under that subagent's name, so a host can
+   also group by who spent what.
 7. **Pending is live state, kept apart from turns, and shaped like them.**
    An operation — a send or a manual compaction — is announced with
    `pending:queued` when the Agent accepts it, carrying a preview `Turn`

@@ -1196,6 +1196,79 @@ describe("stream()", () => {
       expect(final.usage!.in).toBe(25);
       expect(final.usage!.out).toBe(15);
     });
+
+    test("keeps one breakdown row per request in request order", async () => {
+      const toolStep = (id: string, usage: { in: number; out: number }): AnyStreamChunk[] => [
+        startChunk(id),
+        toolCallStartChunk(0, `call_${id}`, "search"),
+        toolCallCompleteChunk(0, `call_${id}`, "search", {}),
+        completeChunk(AxleStopReason.FunctionCall, usage),
+      ];
+      const finalStep: AnyStreamChunk[] = [
+        startChunk("msg_3"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(AxleStopReason.Stop, { in: 300, out: 30 }),
+      ];
+      const provider = makeProvider({
+        streamChunks: [
+          toolStep("msg_1", { in: 100, out: 10 }),
+          toolStep("msg_2", { in: 200, out: 20 }),
+          finalStep,
+        ],
+      });
+
+      const final = await stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      }).final;
+
+      expect(final.usage).toEqual({
+        in: 600,
+        out: 60,
+        breakdown: [
+          { provider: "test", model: "test-model", in: 100, out: 10 },
+          { provider: "test", model: "test-model", in: 200, out: 20 },
+          { provider: "test", model: "test-model", in: 300, out: 30 },
+        ],
+      });
+    });
+
+    test("stamps agentName on every row of the stream's own requests", async () => {
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk("msg_1"),
+            toolCallStartChunk(0, "call_1", "search"),
+            toolCallCompleteChunk(0, "call_1", "search", {}),
+            completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+          ],
+          [
+            startChunk("msg_2"),
+            textStartChunk(0),
+            textChunk(0, "done"),
+            textCompleteChunk(0),
+            completeChunk(AxleStopReason.Stop, { in: 15, out: 10 }),
+          ],
+        ],
+      });
+
+      const final = await stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        agentName: "researcher",
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      }).final;
+
+      expect(final.usage?.breakdown).toEqual([
+        { provider: "test", model: "test-model", agent: "researcher", in: 10, out: 5 },
+        { provider: "test", model: "test-model", agent: "researcher", in: 15, out: 10 },
+      ]);
+    });
   });
 
   describe("cancellation", () => {

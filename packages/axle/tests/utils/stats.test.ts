@@ -51,7 +51,7 @@ describe("stats utilities", () => {
     });
   });
 
-  test("merges breakdown entries for the same provider and model", () => {
+  test("keeps one breakdown row per request for the same provider and model", () => {
     const total = { in: 0, out: 0 };
 
     addStats(total, attributeStats({ in: 1, out: 2 }, { provider: "p", model: "m" }));
@@ -61,11 +61,43 @@ describe("stats utilities", () => {
       in: 4,
       out: 6,
       cachedIn: 5,
-      breakdown: [{ provider: "p", model: "m", in: 4, out: 6, cachedIn: 5 }],
+      breakdown: [
+        { provider: "p", model: "m", in: 1, out: 2 },
+        { provider: "p", model: "m", in: 3, out: 4, cachedIn: 5 },
+      ],
     });
   });
 
-  test("keeps separate breakdown entries per provider and model", () => {
+  test("stamps the agent name on the row it attributes", () => {
+    expect(
+      attributeStats({ in: 1, out: 2 }, { provider: "p", model: "m", agent: "researcher" })
+        .breakdown,
+    ).toEqual([{ provider: "p", model: "m", agent: "researcher", in: 1, out: 2 }]);
+  });
+
+  test("keeps a provider's own per-request rows and stamps the agent on each", () => {
+    const stepUsage = {
+      in: 50,
+      out: 27,
+      breakdown: [
+        { provider: "anthropic", model: "claude-x", in: 10, out: 20 },
+        { provider: "anthropic", model: "claude-x", in: 40, out: 7 },
+      ],
+    };
+
+    expect(
+      attributeStats(stepUsage, { provider: "anthropic", model: "claude-x", agent: "researcher" }),
+    ).toEqual({
+      in: 50,
+      out: 27,
+      breakdown: [
+        { provider: "anthropic", model: "claude-x", agent: "researcher", in: 10, out: 20 },
+        { provider: "anthropic", model: "claude-x", agent: "researcher", in: 40, out: 7 },
+      ],
+    });
+  });
+
+  test("keeps rows in request order across providers", () => {
     expect(
       mergeStats(
         attributeStats({ in: 1, out: 2 }, { provider: "anthropic", model: "parent" }),

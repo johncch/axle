@@ -148,6 +148,12 @@ export interface StreamParams extends AxleModelRequestOptions {
    * stay together.
    */
   sessionId?: string;
+  /**
+   * Name of the `Agent` on whose behalf this stream runs. Stamped on every
+   * `usage.breakdown` row this stream's own requests produce; rows a tool
+   * reports for a subagent keep that agent's name.
+   */
+  agentName?: string;
   maxSteps?: number;
   /**
    * Context budget for the tool loop, in tokens. Checked after each step's
@@ -300,6 +306,7 @@ async function run(
     parallelToolCalls,
     cache,
     providerOptions,
+    agentName,
   } = options;
   const sessionId = options.sessionId ?? crypto.randomUUID();
   let system = options.system;
@@ -419,6 +426,7 @@ async function run(
           attributeStats(outcome.failure.usage, {
             provider: provider.name,
             model: outcome.model || model,
+            agent: agentName,
           }),
         );
       }
@@ -434,7 +442,11 @@ async function run(
     if (outcome.kind === "refused") {
       addStats(
         usage,
-        attributeStats(outcome.usage, { provider: provider.name, model: outcome.model || model }),
+        attributeStats(outcome.usage, {
+          provider: provider.name,
+          model: outcome.model || model,
+          agent: agentName,
+        }),
       );
       const message =
         outcome.refusal.text ??
@@ -462,6 +474,7 @@ async function run(
     const attributedStepUsage = attributeStats(stepUsage, {
       provider: provider.name,
       model: stepModel || model,
+      agent: agentName,
     });
     addStats(usage, attributedStepUsage);
 

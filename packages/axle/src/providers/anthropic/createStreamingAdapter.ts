@@ -10,9 +10,10 @@ import type {
   ProviderToolResult,
 } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import { withUsageDetails } from "../../utils/stats.js";
+import type { Stats } from "../../types.js";
+import { mergeStats, withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
-import { convertStopReason, normalizeAnthropicCitation } from "./utils.js";
+import { NAME, convertStopReason, normalizeAnthropicCitation } from "./utils.js";
 
 export function createAnthropicStreamingAdapter(
   openProviderToolCalls: Array<{ id: string; name: string }> = [],
@@ -24,7 +25,8 @@ export function createAnthropicStreamingAdapter(
   let outputTokens = 0;
   let cacheReadInputTokens = 0;
   let cacheWriteInputTokens = 0;
-  const pausedUsage = { in: 0, out: 0, cachedIn: 0, cacheWriteIn: 0 };
+  let model = "";
+  const requests: Stats[] = [];
   let turn: "not-started" | "streaming" | "paused" = "not-started";
   const responseBlocks: Array<ContentBlock> = [];
   const pausedBlocks: Array<ContentBlock> = [];
@@ -50,6 +52,8 @@ export function createAnthropicStreamingAdapter(
           (event.message.usage?.cache_read_input_tokens ?? 0);
         cacheWriteInputTokens = event.message.usage?.cache_creation_input_tokens ?? 0;
         cacheReadInputTokens = event.message.usage?.cache_read_input_tokens ?? 0;
+        outputTokens = 0;
+        model = event.message.model;
         if (turn === "not-started") {
           chunks.push({
             type: "start",
@@ -76,26 +80,17 @@ export function createAnthropicStreamingAdapter(
           cacheReadInputTokens = event.usage.cache_read_input_tokens ?? cacheReadInputTokens;
         }
         if (event.delta.stop_reason === "pause_turn") {
-          pausedUsage.in += inputTokens;
-          pausedUsage.out += outputTokens;
-          pausedUsage.cachedIn += cacheReadInputTokens;
-          pausedUsage.cacheWriteIn += cacheWriteInputTokens;
-          inputTokens = 0;
-          outputTokens = 0;
-          cacheReadInputTokens = 0;
-          cacheWriteInputTokens = 0;
+          requests.push(requestUsage());
           pausedBlocks.push(...responseBlocks);
           indexOffset += responseBlocks.length;
           responseBlocks.length = 0;
           turn = "paused";
         } else if (event.delta.stop_reason) {
-          const usage = withUsageDetails(
-            { in: pausedUsage.in + inputTokens, out: pausedUsage.out + outputTokens },
-            {
-              cachedIn: pausedUsage.cachedIn + cacheReadInputTokens,
-              cacheWriteIn: pausedUsage.cacheWriteIn + cacheWriteInputTokens,
-            },
-          );
+          requests.push(requestUsage());
+          const usage = mergeStats(...requests);
+          if (requests.length > 1) {
+            usage.breakdown = requests.map((request) => ({ provider: NAME, model, ...request }));
+          }
           if (event.delta.stop_reason === "refusal") {
             const details = event.delta.stop_details;
             chunks.push({
@@ -366,6 +361,13 @@ export function createAnthropicStreamingAdapter(
     }
 
     return chunks;
+  }
+
+  function requestUsage(): Stats {
+    return withUsageDetails(
+      { in: inputTokens, out: outputTokens },
+      { cachedIn: cacheReadInputTokens, cacheWriteIn: cacheWriteInputTokens },
+    );
   }
 
   function pausedContent(): Array<ContentBlockParam> | undefined {

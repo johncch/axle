@@ -2601,8 +2601,9 @@ describe("Agent", () => {
         in: 3,
         out: 3,
         breakdown: [
-          { provider: "mock", model: "mock", in: 2, out: 2 },
+          { provider: "mock", model: "mock", in: 1, out: 1 },
           { provider: "child-provider", model: "child-runtime-model", in: 1, out: 1 },
+          { provider: "mock", model: "mock", in: 1, out: 1 },
         ],
       });
     });

@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+
+export const NAME = "anthropic" as const;
 import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, Citation, type ToolResultPart } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";

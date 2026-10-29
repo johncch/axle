@@ -460,6 +460,7 @@ export class Agent {
         tools: this.registry.executable(),
         providerTools: this.registry.provider(),
         sessionId: this.sessionId,
+        agentName: this.name,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
         ...streamRequestOptions,
