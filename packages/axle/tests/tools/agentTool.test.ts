@@ -51,7 +51,9 @@ describe("createAgentTool", () => {
     expect(result.usage).toEqual({
       in: 3,
       out: 4,
-      breakdown: [{ provider: "child-provider", model: "mock", in: 3, out: 4 }],
+      breakdown: [
+        { provider: "child-provider", model: "mock", agent: "child-researcher", in: 3, out: 4 },
+      ],
     });
   });
 
@@ -106,6 +108,7 @@ describe("createAgentTool", () => {
         }),
     });
     const parent = new Agent({
+      name: "orchestrator",
       provider: createParentProvider(),
       model: "parent-configured-model",
       tools: [tool],
@@ -113,22 +116,25 @@ describe("createAgentTool", () => {
 
     const result = await parent.send("delegate this").final;
 
-    expect(result.usage).toEqual({
-      in: 5,
-      out: 8,
-      breakdown: [
-        { provider: "parent-provider", model: "parent-runtime-model", in: 2, out: 4 },
-        { provider: "child-provider", model: "mock", in: 3, out: 4 },
-      ],
-    });
-    expect(result.turn?.usage).toMatchObject({
-      in: 5,
-      out: 8,
-      breakdown: [
-        { provider: "parent-provider", model: "parent-runtime-model", in: 2, out: 4 },
-        { provider: "child-provider", model: "mock", in: 3, out: 4 },
-      ],
-    });
+    const rows = [
+      {
+        provider: "parent-provider",
+        model: "parent-runtime-model",
+        agent: "orchestrator",
+        in: 1,
+        out: 2,
+      },
+      { provider: "child-provider", model: "mock", agent: "researcher", in: 3, out: 4 },
+      {
+        provider: "parent-provider",
+        model: "parent-runtime-model",
+        agent: "orchestrator",
+        in: 1,
+        out: 2,
+      },
+    ];
+    expect(result.usage).toEqual({ in: 5, out: 8, breakdown: rows });
+    expect(result.turn?.usage).toMatchObject({ in: 5, out: 8, breakdown: rows });
   });
 
   test("preserves parent and partial child usage when the subagent fails fatally", async () => {
@@ -174,7 +180,13 @@ describe("createAgentTool", () => {
       out: 6,
       breakdown: [
         { provider: "parent-provider", model: "parent-runtime-model", in: 1, out: 2 },
-        { provider: "fatal-child-provider", model: "fatal-child-runtime-model", in: 3, out: 4 },
+        {
+          provider: "fatal-child-provider",
+          model: "fatal-child-runtime-model",
+          agent: "researcher",
+          in: 3,
+          out: 4,
+        },
       ],
     });
     expect((transcript.turns[1] as Turn | undefined)?.usage).toEqual(fatal.usage);
@@ -245,6 +257,7 @@ describe("createAgentTool", () => {
         {
           provider: "blocking-child-provider",
           model: "blocking-child-runtime-model",
+          agent: "researcher",
           in: 3,
           out: 4,
         },

@@ -204,6 +204,26 @@ describe("Anthropic pause_turn continuation", () => {
       });
     });
 
+    test("reports one usage row per request the step took", async () => {
+      respondWith(pausedBeforeSearchRuns, finishesAfterSearch);
+
+      const chunks = await run();
+
+      expect(chunks.at(-1)).toMatchObject({
+        type: "complete",
+        data: {
+          usage: {
+            in: 50,
+            out: 27,
+            breakdown: [
+              { provider: "anthropic", model: "claude-opus-4-8", in: 10, out: 20 },
+              { provider: "anthropic", model: "claude-opus-4-8", in: 40, out: 7 },
+            ],
+          },
+        },
+      });
+    });
+
     test("completes a search whose result arrives in the next response", async () => {
       respondWith(pausedBeforeSearchRuns, finishesAfterSearch);
 
@@ -288,7 +308,17 @@ describe("Anthropic pause_turn continuation", () => {
       expect(chunks.filter((chunk) => chunk.type === "start")).toHaveLength(1);
       expect(chunks.at(-1)).toMatchObject({
         type: "complete",
-        data: { usage: { in: 140, out: 53 } },
+        data: {
+          usage: {
+            in: 140,
+            out: 53,
+            breakdown: [
+              { in: 10, out: 20 },
+              { in: 40, out: 30 },
+              { in: 90, out: 3 },
+            ],
+          },
+        },
       });
     });
 
@@ -387,7 +417,14 @@ describe("Anthropic pause_turn continuation", () => {
           result: searchResult("srvtoolu_1"),
         },
       });
-      expect(result.usage).toMatchObject({ in: 50, out: 27 });
+      expect(result.usage).toMatchObject({
+        in: 50,
+        out: 27,
+        breakdown: [
+          { provider: "anthropic", model: "claude-opus-4-8", in: 10, out: 20 },
+          { provider: "anthropic", model: "claude-opus-4-8", in: 40, out: 7 },
+        ],
+      });
     });
 
     test("generate() resolves with the continued answer", async () => {

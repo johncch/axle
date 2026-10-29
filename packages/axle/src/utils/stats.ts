@@ -1,4 +1,4 @@
-import type { Stats, UsageEntry } from "../types.js";
+import type { Stats } from "../types.js";
 
 export function createStats(): Stats {
   return { in: 0, out: 0 };
@@ -12,7 +12,10 @@ export function addStats(total: Stats, usage?: Stats): void {
   addOptionalStat(total, "cacheWriteIn", usage.cacheWriteIn);
   addOptionalStat(total, "reasoningOut", usage.reasoningOut);
   if (usage.breakdown?.length) {
-    total.breakdown = mergeBreakdown(total.breakdown, usage.breakdown);
+    total.breakdown = [
+      ...(total.breakdown ?? []),
+      ...usage.breakdown.map((entry) => ({ ...entry })),
+    ];
   }
 }
 
@@ -23,16 +26,25 @@ export function mergeStats(...usages: Array<Stats | undefined>): Stats {
 }
 
 /**
- * Attribute provider-reported usage to its provider+model pair so it survives
- * aggregation across turns and subagents.
+ * Attribute a step's provider-reported usage to breakdown rows that survive
+ * aggregation across turns and subagents: one row for the step, or the
+ * provider's own per-request rows when it sent more than one request.
  */
-export function attributeStats(usage: Stats, source: { provider: string; model: string }): Stats {
+export function attributeStats(
+  usage: Stats,
+  source: { provider: string; model: string; agent?: string },
+): Stats {
+  const agent = source.agent !== undefined ? { agent: source.agent } : {};
+  if (usage.breakdown?.length) {
+    return { ...usage, breakdown: usage.breakdown.map((row) => ({ ...row, ...agent })) };
+  }
   return {
     ...usage,
     breakdown: [
       {
         provider: source.provider,
         model: source.model,
+        ...agent,
         in: usage.in,
         out: usage.out,
         ...(usage.cachedIn !== undefined ? { cachedIn: usage.cachedIn } : {}),
@@ -41,25 +53,6 @@ export function attributeStats(usage: Stats, source: { provider: string; model: 
       },
     ],
   };
-}
-
-function mergeBreakdown(into: UsageEntry[] | undefined, entries: UsageEntry[]): UsageEntry[] {
-  const merged = into ? [...into] : [];
-  for (const entry of entries) {
-    const existing = merged.find(
-      (candidate) => candidate.provider === entry.provider && candidate.model === entry.model,
-    );
-    if (!existing) {
-      merged.push({ ...entry });
-      continue;
-    }
-    existing.in += entry.in;
-    existing.out += entry.out;
-    addOptionalStat(existing, "cachedIn", entry.cachedIn);
-    addOptionalStat(existing, "cacheWriteIn", entry.cacheWriteIn);
-    addOptionalStat(existing, "reasoningOut", entry.reasoningOut);
-  }
-  return merged;
 }
 
 export function withUsageDetails(

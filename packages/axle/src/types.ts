@@ -22,17 +22,21 @@ export interface UsageEntry extends TokenStats {
   provider: string;
   /** Model identifier. */
   model: string;
+  /** Name of the `Agent` that made the request, when it has one. */
+  agent?: string;
 }
 
 /**
  * Aggregate usage reported by an Axle operation.
  *
- * `breakdown` holds one entry per provider+model pair so cost can be
- * reconstructed when an operation spans models (for example subagent tools).
- * Entries explain the aggregate numeric fields and must not be added to them
- * again.
+ * `breakdown` holds one entry per provider request, in request order, so
+ * cost can be computed at the tier each request's prompt size selected. A
+ * subagent's rows sit between the parent requests that bracket its tool
+ * call, each tagged with the agent that made it. Entries explain the
+ * aggregate numeric fields and must not be added to them again; a reader
+ * that wants per-model or per-agent totals groups them.
  */
 export interface Stats extends TokenStats {
-  /** @experimental The entry shape may gain dimensions in a minor release. */
+  /** @experimental One row per request; the row shape may gain dimensions in a minor release. */
   breakdown?: UsageEntry[];
 }

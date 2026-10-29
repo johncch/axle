@@ -325,7 +325,8 @@ describe("executeToolCalls", () => {
 
       expect(usage).toMatchObject({ in: 20, out: 10 });
       expect(usage?.breakdown).toEqual([
-        { provider: "anthropic", model: "claude-x", in: 20, out: 10 },
+        { provider: "anthropic", model: "claude-x", in: 10, out: 5 },
+        { provider: "anthropic", model: "claude-x", in: 10, out: 5 },
       ]);
     });
 
