@@ -16,7 +16,7 @@ in a message is in [provider-content.md](./provider-content.md).
 2. **The provider owns every provider tool.** Core hands `providerTools` to
    the provider unchanged on every request. Core does not read the names,
    does not ask a provider what it supports, and holds no fallback. Each
-   provider decides how to serve a name: as a tool the vendor hosts, as an
+   provider decides how to serve a name: as a tool the provider hosts, as an
    executable tool the provider brings, or not at all.
 3. **A provider may bring executable tools.** `AIProvider.tools` is an
    optional `ExecutableTool[]`. When the model calls a tool whose name is
@@ -41,30 +41,30 @@ in a message is in [provider-content.md](./provider-content.md).
    to translate. An attached tool is used wherever it is attached,
    including on OpenRouter, which hosts a search of its own.
 7. **A provider tool nothing serves fails the request.** A
-   `chatCompletions()` provider with no vendor that hosts tools, asked for a
+   `chatCompletions()` provider whose dialect hosts no tools, asked for a
    provider tool it has nothing attached for, fails before any HTTP request:
    the handle rejects with `AxleError` `PROVIDER_UNSUPPORTED` naming the
    tool, as for any request the adapter has no wire shape for (see
    [errors.md](./errors.md)). It is never dropped silently.
-8. **`config` belongs to a hosted tool.** It is merged into the vendor's
-   tool definition. A brought tool has no vendor definition to merge it
+8. **`config` belongs to a hosted tool.** It is merged into the provider's
+   tool definition. A brought tool has no provider definition to merge it
    into, so `config` on a provider tool served by a brought tool is ignored.
 
 ## What each provider does with a name
 
 As of 2026-10-09. The middle columns are what Axle sends; they are read from
-the adapters, not re-checked against vendor documentation on this date.
+the adapters, not re-checked against provider documentation on this date.
 
-| Provider                               | `web_search`                                                                 | `code_execution`                  | Any other name                              |
-| -------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------- |
-| `anthropic()`                          | Hosted: `type: "web_search_20260318"`, `allowed_callers: ["direct"]`, config | Hosted: `code_execution_20260521` | Sent as `type: <name>`; the API decides     |
-| `openai()`                             | Hosted: `type: "web_search"`, config                                         | Hosted: `code_interpreter`        | Sent as `type: <name>`; the API decides     |
-| `gemini()`                             | Hosted: `googleSearch: <config>`                                             | Hosted: `codeExecution: <config>` | Sent as `<name>: <config>`; the API decides |
-| `chatCompletions()`, OpenRouter vendor | Attached tool if one is attached, else hosted: `openrouter:web_search`       | Warned and skipped                | Warned and skipped                          |
-| `chatCompletions()`, Together vendor   | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
-| `chatCompletions()`, no vendor         | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
+| Provider                        | `web_search`                                                                 | `code_execution`                  | Any other name                              |
+| ------------------------------- | ---------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------- |
+| `anthropic()`                   | Hosted: `type: "web_search_20260318"`, `allowed_callers: ["direct"]`, config | Hosted: `code_execution_20260521` | Sent as `type: <name>`; the API decides     |
+| `openai()`                      | Hosted: `type: "web_search"`, config                                         | Hosted: `code_interpreter`        | Sent as `type: <name>`; the API decides     |
+| `gemini()`                      | Hosted: `googleSearch: <config>`                                             | Hosted: `codeExecution: <config>` | Sent as `<name>: <config>`; the API decides |
+| `openrouter()`                  | Attached tool if one is attached, else hosted: `openrouter:web_search`       | Warned and skipped                | Warned and skipped                          |
+| `together()`                    | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
+| `chatCompletions()`, no dialect | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
 
-The OpenRouter vendor's warn-and-skip for names it does not map predates
+`openrouter()`'s warn-and-skip for names it does not map predates
 this design and is the one place a provider tool is still dropped rather
 than failed.
 
@@ -117,4 +117,4 @@ mentions search.
 - **Hosted search first on OpenRouter when a tool is also attached**
   (2026-10-09): the old native-first order. An attached tool is an explicit
   choice by the person who built the provider, and "attached means used"
-  needs no vendor rule.
+  needs no provider rule.

@@ -33,11 +33,11 @@ with the agent's queue and continuations is in
    is a deterministic configuration mistake, and it resolves `ok: false`
    with `type: "authentication"`, because the provider is the one that
    noticed. Axle does not pre-validate what only the provider can judge.
-4. **A vendor module may pre-empt only what it knows for certain.** An
+4. **A dialect may pre-empt only what it knows for certain.** An
    adapter throws before the request for a feature it has no wire shape
-   for on this provider, and a vendor module may also throw for a request
-   it knows that vendor rejects. The generic path never guesses: a request
-   Axle can shape is sent, and the vendor's answer comes back on the
+   for on this provider, and a dialect may also throw for a request
+   it knows that provider rejects. The generic path never guesses: a request
+   Axle can shape is sent, and the provider's answer comes back on the
    result. Each pre-emption is a dated fact in the table below. The same
    mistake never takes both channels on one provider.
 5. **Codes are identity; classes are payload.** Every thrown error is an
@@ -47,7 +47,7 @@ with the agent's queue and continuations is in
    `code`, or on `instanceof` for a payload class, never on message text.
 6. **Tool failures are the model's to handle.** A tool that throws, is not
    found, is called with arguments that do not parse, or reports failure
-   from the vendor's side becomes a tool result part and the loop
+   from the provider's side becomes a tool result part and the loop
    continues. The caller sees it in the transcript only. A tool reaches
    the caller by throwing `AxleToolFatalError`, which propagates through
    the loop unchanged; it is the caller's own code refusing to continue,
@@ -67,10 +67,10 @@ with the agent's queue and continuations is in
 
 ## The three columns
 
-| Axle                    | Provider config                                                                                                           | Provider work                                                  |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| An Axle invariant broke | Axle has no wire shape for what was asked, on this provider, or a vendor module knows for certain the request is rejected | The request went out and the API or model answered             |
-| throws, `AXLE_ERROR`    | throws, `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `FILE_UNREADABLE`, or a registry code                                  | `ok: false`, `kind` `api`, `incomplete`, `refusal`, or `parse` |
+| Axle                    | Provider config                                                                                                     | Provider work                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| An Axle invariant broke | Axle has no wire shape for what was asked, on this provider, or a dialect knows for certain the request is rejected | The request went out and the API or model answered             |
+| throws, `AXLE_ERROR`    | throws, `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `FILE_UNREADABLE`, or a registry code                            | `ok: false`, `kind` `api`, `incomplete`, `refusal`, or `parse` |
 
 The consumer writes two checks, each with one meaning:
 
@@ -144,23 +144,23 @@ build failure would fill every one of those fields with nothing.
 
 As of 2026-10-20. Each row is a request the adapter throws
 `PROVIDER_UNSUPPORTED` for before any HTTP request, because Axle has no
-wire shape for it on that provider or because the vendor module knows the
-vendor rejects it. A request not listed here is sent, and the vendor's
+wire shape for it on that provider or because the dialect knows the
+provider rejects it. A request not listed here is sent, and the provider's
 answer arrives as `kind: "api"`. The middle column is read from the
-adapters, not re-checked against vendor documentation on this date.
+adapters, not re-checked against provider documentation on this date.
 
-| Provider                               | Pre-empted                                                                                                                                                    | Sent and left to the API                                                  |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `anthropic()`                          | Non-PDF document files; a tool whose schema is not an object; a content source with no block type                                                             | Any provider tool name; any image or PDF source it has a block for        |
-| `openai()`                             | A content source with no part type                                                                                                                            | Any provider tool name; any file or image source it has a part for        |
-| `gemini()`                             | Non-PDF document files; `parallelToolCalls: false`; provider tool choice; `toolChoice: "required"` with no function tools; a content source with no part type | Any provider tool name; any file source it has a part for                 |
-| `chatCompletions()`, OpenRouter vendor | Provider tool choice; a content source with no part type                                                                                                      | `web_search` (hosted or attached); PDFs and images as OpenAI-shaped parts |
-| `chatCompletions()`, Together vendor   | PDF file parts (vendor fact); any provider tool with nothing attached; provider tool choice                                                                   | Images as OpenAI-shaped parts                                             |
-| `chatCompletions()`, no vendor         | Any provider tool with nothing attached; provider tool choice; a content source with no part type                                                             | PDFs and images as OpenAI-shaped parts; the vendor decides                |
+| Provider                        | Pre-empted                                                                                                                                                    | Sent and left to the API                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `anthropic()`                   | Non-PDF document files; a tool whose schema is not an object; a content source with no block type                                                             | Any provider tool name; any image or PDF source it has a block for        |
+| `openai()`                      | A content source with no part type                                                                                                                            | Any provider tool name; any file or image source it has a part for        |
+| `gemini()`                      | Non-PDF document files; `parallelToolCalls: false`; provider tool choice; `toolChoice: "required"` with no function tools; a content source with no part type | Any provider tool name; any file source it has a part for                 |
+| `openrouter()`                  | Provider tool choice; a content source with no part type                                                                                                      | `web_search` (hosted or attached); PDFs and images as OpenAI-shaped parts |
+| `together()`                    | PDF file parts (provider fact); any provider tool with nothing attached; provider tool choice                                                                 | Images as OpenAI-shaped parts                                             |
+| `chatCompletions()`, no dialect | Any provider tool with nothing attached; provider tool choice; a content source with no part type                                                             | PDFs and images as OpenAI-shaped parts; the provider decides              |
 
-The Together PDF row is the only pre-emption that is a fact about a vendor
+The Together PDF row is the only pre-emption that is a fact about a provider
 rather than about the protocol. It stays because the message it produces
-is readable and the vendor's own 400 is not; it is the vendor module's job
+is readable and the provider's own 400 is not; it is the dialect's job
 to retire it when Together changes.
 
 A tool choice that names a tool not in the request is `INVALID_OPTIONS` on
@@ -194,7 +194,7 @@ OpenAI Responses (terminal events):
 | `response.incomplete`, undeclared reason          | `incomplete`, `type: "RESPONSES_API_INCOMPLETE"`                                                                                |
 | `response.failed`                                 | `api`, `type` = the event's error code (`server_error`, `rate_limit_exceeded`, `invalid_prompt`, the image errors), no `status` |
 
-Chat Completions (`finish_reason`, five declared values plus vendor extras):
+Chat Completions (`finish_reason`, five declared values plus provider extras):
 
 | Finish reason                                | Axle                                           |
 | -------------------------------------------- | ---------------------------------------------- |
@@ -221,7 +221,7 @@ Gemini (`FinishReason`, nineteen values):
 
 Two rows above change behaviour from 0.34.x and are part of this design.
 Chat Completions used to map an undeclared finish reason to `Stop`, which
-reported a vendor's novel bad stop as success; it now fails like the other
+reported a provider's novel bad stop as success; it now fails like the other
 three adapters, and the lenient synonyms (`eos`) are listed by name. Gemini
 `LANGUAGE` used to be an unmapped stop reason; it is the model declining,
 so it is a refusal.
@@ -256,7 +256,7 @@ to the subclass.
 | Code                           | Thrown when                                                                                                                                                                                                                                                                                                            | `details`                                 | Class                                   |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------- |
 | `INVALID_OPTIONS`              | An option is malformed: a loop limit below 1, a non-integer `maxRetries` or `timeoutMs`, a model id with an unknown publisher or no name, an unsupported reasoning setting, a tool choice naming an absent tool, a tool schema Zod cannot express as JSON Schema, a bad compaction option, a Brave option out of range | none                                      | `AxleError`                             |
-| `PROVIDER_UNSUPPORTED`         | A well-formed request Axle has no wire shape for on this provider, or a vendor module pre-empts                                                                                                                                                                                                                        | `{ protocol: Protocol, feature: string }` | `AxleError`                             |
+| `PROVIDER_UNSUPPORTED`         | A well-formed request Axle has no wire shape for on this provider, or a dialect pre-empts                                                                                                                                                                                                                              | `{ protocol: Protocol, feature: string }` | `AxleError`                             |
 | `FILE_UNREADABLE`              | A local file could not be resolved: not found, too large, unsupported type, wrong category, no `fileResolver`                                                                                                                                                                                                          | `{ path?: string, name?: string }`        | `AxleError`                             |
 | `TOOL_REGISTRY_DUPLICATE`      | Two tools share a name                                                                                                                                                                                                                                                                                                 | `{ name: string }`                        | `AxleError`                             |
 | `SKILL_REGISTRY_DUPLICATE`     | A skill is registered or listed twice                                                                                                                                                                                                                                                                                  | `{ name: string }`                        | `AxleError`                             |
@@ -346,9 +346,9 @@ which now have one meaning each.
 
 The boundary is drawn at "who answered" rather than "whose fault" because
 the alternative would require Axle to pre-validate credentials, quotas, and
-vendor capabilities it cannot know. A vendor module is allowed to encode a
-vendor fact it is certain of, which means `web_search` on one Chat
-Completions vendor may throw and on another may resolve `ok: false`, and
+provider capabilities it cannot know. A dialect is allowed to encode a
+provider fact it is certain of, which means `web_search` on one Chat
+Completions provider may throw and on another may resolve `ok: false`, and
 that is accepted: the knowledge lives in one dated table and never in a
 runtime probe or message text.
 
@@ -409,7 +409,7 @@ exist for the fields, not for identity.
   rationale. Also rejected: splitting `api` further by cause (rate limit,
   overloaded, context overflow). Beyond `authentication`, which every
   provider signals unambiguously, those need provider knowledge that
-  varies by vendor and SDK; `status` is the universal discriminator and
+  varies by provider and SDK; `status` is the universal discriminator and
   `withRetry` already keys on it.
 - **Folding `incomplete` into `refusal`** (2026-10-20): rejected; a refusal
   is the provider's decision and is never retried verbatim, while an

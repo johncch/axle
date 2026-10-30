@@ -176,7 +176,7 @@ describe("ModelCatalog.lookup", () => {
     expect(catalog.contextWindow(local)).toEqual({ window, id, match });
   });
 
-  it("matches a vendor slug by its model part when no provider is given", () => {
+  it("matches a publisher slug by its model part when no provider is given", () => {
     expect(catalog.lookup("z-ai/glm-4.7-flash")?.id).toBe("zhipuai/glm-4.7-flash");
   });
 

@@ -60,7 +60,7 @@ back `0.96`, not a sentence.
 
 ## Provider requirements
 
-Researched 2026-10-08 from each vendor's published reference, and for
+Researched 2026-10-08 from each provider's published reference, and for
 TypeSafe and OpenRouter confirmed against live responses.
 
 |               | TypeSafe                                                                      | OpenRouter                                                               | OpenAI (beta, not implemented)                                                  |
@@ -115,8 +115,8 @@ undocumented.
 The work exists to let the CLI and Agent layer classification steps on the
 same credential, retry, and tracing layer as chat calls (AXL-78). That
 purpose decided the shape. A layer that runs classification steps needs one
-question type and one answer type to hold; with a client per vendor, every
-consumer would branch on vendor. So there is a shared format even though a
+question type and one answer type to hold; with a client per provider, every
+consumer would branch on provider. So there is a shared format even though a
 decision call, unlike a chat call, has no message history to keep portable.
 
 Swapping providers is not the benefit. The types are the same across
@@ -129,7 +129,7 @@ OpenAI's API asks the same three kinds of question with renamed fields.
 Adopting it makes one adapter a passthrough and the other a rename, with no
 third vocabulary to maintain.
 
-A separate provider interface follows from what the vendors offer. TypeSafe
+A separate provider interface follows from what the providers offer. TypeSafe
 has no chat API and OpenAI has both. One interface with an optional method
 would let a caller pass `typesafe()` to an `Agent` and fail at runtime.
 
@@ -138,18 +138,18 @@ it. Adding it later would change the type every consumer narrows on.
 
 ## Rejected alternatives
 
-- **One client per vendor, no shared format** (2026-10-08): the simplest
+- **One client per provider, no shared format** (2026-10-08): the simplest
   thing, and defensible since nothing is reused across calls. Rejected
-  because the CLI and Agent layers would each branch on vendor.
-- **A neutral format neither vendor uses** (2026-10-08): two converters
-  instead of one, and a third vocabulary, for no gain while the two vendors'
+  because the CLI and Agent layers would each branch on provider.
+- **A neutral format neither provider uses** (2026-10-08): two converters
+  instead of one, and a third vocabulary, for no gain while the two providers'
   taxonomies map one to one.
 - **`predicate` instead of `noul`** (2026-10-08): plainer English, but it is
   the copy's word. TypeSafe coined the terms and Axle follows the source.
 - **A decision method on `AIProvider`** (2026-10-08): makes chat-only and
   decision-only providers indistinguishable to the type checker.
 - **Decisions on `chatCompletions()` for OpenRouter** (2026-10-08): the call
-  is not a Chat Completions call, and the other vendors behind that factory
+  is not a Chat Completions call, and the other providers behind that factory
   cannot serve it.
 - **An OpenRouter-specific provider on `/api/alpha/decisions`** (2026-10-08):
   the body is identical to System One and OpenRouter serves that path too, so

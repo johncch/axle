@@ -81,7 +81,7 @@ export async function readStep(
   const toolCallArgumentErrors = new Map<string, ToolCallArgumentError>();
   const chunkIndexToPartIndex = new Map<number, number>();
 
-  // Some chat-completions vendors stream the first tool_call delta before
+  // Some Chat Completions providers stream the first tool_call delta before
   // the function name is known. tool:request carries the name and the
   // registry-resolved kind, so its emission is deferred until then.
   const pendingToolRequests = new Set<string>();

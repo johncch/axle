@@ -76,7 +76,7 @@ export const cacheCases: CheckCase[] = [
     async run({ provider, model, requestOptions }) {
       const client = new GoogleGenAI({ apiKey: getEnv("GEMINI_API_KEY") });
       // The raw client wants the bare model id; Axle's provider strips the
-      // registry's vendor prefix itself.
+      // registry's publisher prefix itself.
       const cache = await client.caches.create({
         model: model.replace(/^google\//, ""),
         config: {

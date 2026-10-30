@@ -170,7 +170,7 @@ Not planned work; recorded so the option is on file.
 OpenRouter forwards the echoed entries to the upstream as signed blocks, and
 Anthropic rejects a signature whose text was altered, so the echo sends the
 message's content field verbatim. The echo is gated on the `openrouter`
-vendor, as Together's request shape is; a strict generic endpoint may reject
+provider, as Together's request shape is; a strict generic endpoint may reject
 an unknown field. Under `display: "hidden"` OpenRouter still returns
 `reasoning_details` with text for Claude (`exclude` strips only the
 convenience `reasoning` string there), while for Gemini it also drops the

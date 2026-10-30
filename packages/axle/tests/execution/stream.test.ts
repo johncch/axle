@@ -590,7 +590,7 @@ describe("stream()", () => {
         schema: z.object({ q: z.string() }),
         execute: async () => "child done",
       };
-      // Chat-completions vendors can stream tool-call-start before the
+      // Chat Completions providers can stream tool-call-start before the
       // function name is known.
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),

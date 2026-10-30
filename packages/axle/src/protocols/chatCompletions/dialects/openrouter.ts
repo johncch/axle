@@ -124,8 +124,8 @@ export function prepareOpenRouterProviderTools(
   for (const tool of providerTools) {
     const mappedType = resolveOpenRouterProviderToolName(tool.name);
     if (!mappedType) {
-      warn?.("providerTool not supported by ChatCompletions provider vendor", {
-        vendor: "openrouter",
+      warn?.("providerTool not supported by this Chat Completions provider", {
+        provider: "openrouter",
         name: tool.name,
       });
       continue;

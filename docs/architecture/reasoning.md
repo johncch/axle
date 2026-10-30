@@ -6,7 +6,7 @@ This document is normative for Axle's portable reasoning control: what the
 `reasoning` request option means, how each provider adapter translates it,
 and which model generations take which request syntax. Code and tests are
 built against it; divergence is a defect. The provider requirements section
-records what the vendors demanded on the research date so the translation
+records what the providers demanded on the research date so the translation
 can be re-checked when they change.
 
 ## Invariants
@@ -71,7 +71,7 @@ can be re-checked when they change.
 
 ## Provider and model requirements
 
-Researched 2026-09-07 against the vendors' current documentation and the
+Researched 2026-09-07 against the providers' current documentation and the
 `checks/` harness; the Opus 5.5 and Sonnet 5.5 rows were added 2026-10-01.
 Re-verify this section when a model generation ships.
 
