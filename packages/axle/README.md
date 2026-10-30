@@ -241,6 +241,17 @@ does not. Retries, the per-attempt timeout and the abort signal apply to it
 as they do to the global. `anthropic()`, `openai()` and `gemini()` hand it to
 their SDK client; `chatCompletions()` and `typesafe()` call it directly.
 
+#### Gemini long decode
+
+On `gemini-4-argon`, a `maxOutputTokens` above 65,536 turns on long decode:
+the model stops each request at 65,536 output tokens, and the Gemini SDK
+re-sends the request with the model's continuation token until the answer is
+complete, up to the cap. Axle sees one response and one usage row, with `in`
+and `out` summed over every request. Each resumed request counts all earlier
+output as input again, so a long answer costs more than its output tokens
+alone: a two-request answer of 95,000 output tokens was billed about 66,000
+input tokens. The cap counts thinking as well as text.
+
 ### `stream()` and `generate()`
 
 Agent is built on two lower-level primitives that can be used directly when you

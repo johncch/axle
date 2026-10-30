@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Gemini 4 answers longer than 65,536 tokens complete instead of
+  failing.** With `maxOutputTokens` above 65,536 on `gemini-4-argon`, the
+  Gemini SDK now resumes the answer at each per-request cap and the job sees
+  one complete response. The usage line sums every request; a resumed
+  request counts all earlier output as input again, so very long answers
+  cost more than their output alone.
 - **A step's tool calls run at the same time.** When the model asks for
   several tools in one message, they all start together and the step
   takes as long as its slowest tool instead of all of them added up. Tool

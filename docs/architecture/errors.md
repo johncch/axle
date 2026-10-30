@@ -1,6 +1,6 @@
 # Errors
 
-**Status**: current · **Last design revision**: 2026-10-20 (0.35.0)
+**Status**: current · **Last design revision**: 2026-10-29 (0.35.0)
 
 This document is normative for how a failure reaches the caller of
 `generate()`, `stream()`, `agent.send()`, and the tool loop beneath them:
@@ -215,7 +215,8 @@ Gemini (`FinishReason`, nineteen values):
 | `MAX_TOKENS`                                                                                                                                  | `ok: true`, `Length`                                                   |
 | `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `LANGUAGE`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, `IMAGE_RECITATION` | `refusal`, category = the reason                                       |
 | `MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`                                                                      | `incomplete`, `type` = the reason                                      |
-| `OTHER`, `IMAGE_OTHER`, `NO_IMAGE`, `CONTINUATION`                                                                                            | `incomplete`, `type` = the reason                                      |
+| `OTHER`, `IMAGE_OTHER`, `NO_IMAGE`                                                                                                            | `incomplete`, `type` = the reason                                      |
+| `CONTINUATION`                                                                                                                                | continued by the SDK; see below                                        |
 | undeclared                                                                                                                                    | `incomplete`, `type: "FinishReasonError"`                              |
 
 Two rows above change behaviour from 0.34.x and are part of this design.
@@ -225,12 +226,26 @@ three adapters, and the lenient synonyms (`eos`) are listed by name. Gemini
 `LANGUAGE` used to be an unmapped stop reason; it is the model declining,
 so it is a refusal.
 
-`CONTINUATION` is provisional. The SDK describes it as a per-request decode
-limit with a `continuationToken` to resume from, which is Gemini's
-`pause_turn`: the adapter should continue the turn inline rather than fail
-it. It has not been observed on the wire and Axle has no field for the
-token, so until a capture exists it stays `incomplete`, typed by the
-reason, and the host's move is to retry.
+`CONTINUATION` is Gemini's `pause_turn`, and the SDK, not the adapter,
+continues it. On `gemini-4-argon` with `maxOutputTokens` above 65,536 the
+model stops each request at 65,536 output tokens with
+`finishReason: CONTINUATION` and a `continuationToken`; the `@google/genai`
+SDK (2.29.1 and later; Axle requires 2.31.0) re-sends the same request with
+the token until the model finishes, clears the intermediate finish reason
+from the stream, and reports usage summed over every request. The adapter
+sees one stream that ends in `STOP` or `MAX_TOKENS`, and the step has one
+usage row whose `in` is the sum of each request's prompt, which is the
+billed figure: every resumed request counts all earlier output as input
+again. Observed on 2026-10-29 (AXL-92, `gemini-4-argon`, SDK 2.32.0): two
+requests, 65,536 then 29,385 output tokens, prompt counts 169 and 65,705,
+reported as `in: 65874, out: 94921`. The request boundary arrives as an
+empty text part carrying a thought signature, which the adapter stores as a
+signature-only thinking part between two text parts. A caller who turns the
+loop off (`providerOptions: { automaticContinuation: false }`) gets the
+request's own answer: `incomplete`, `type: "CONTINUATION"`, with the token
+on `raw.candidates[0].continuationToken`. `MAX_TOKENS` also carries a token
+when the cumulative cap is reached; it is `Length` as before, and resuming
+from it needs a higher `maxOutputTokens`, which Axle does not do.
 
 ## Codes
 
@@ -357,6 +372,13 @@ exist for the fields, not for identity.
 
 ## Rejected alternatives
 
+- **An adapter-owned continuation loop for Gemini `CONTINUATION`, like
+  Anthropic's `pause_turn` loop** (2026-10-29, AXL-92): would give one usage
+  row and one span entry per request. Rejected because Axle's SDK floor
+  already runs the loop by default, so the adapter would have to turn it off
+  and re-implement the SDK's checkpoint resume and dropped-request retry to
+  stay even; the per-request rows are not worth that. Recorded in
+  `docs/development/2026-10-29-gemini-long-decode.md`.
 - **A fourth `kind` on the result for a request Axle could not build**
   (2026-10-20): considered as `kind: "request"` to separate build failures
   from API failures without changing the channel. Rejected because the

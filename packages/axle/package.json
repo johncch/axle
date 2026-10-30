@@ -40,7 +40,7 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": ">=0.114.0",
-    "@google/genai": "^2.15.0",
+    "@google/genai": "^2.31.0",
     "@modelcontextprotocol/sdk": "^1.23.0",
     "chalk": "^6.0.0",
     "glob": "^13.0.0",
