@@ -1,0 +1,1000 @@
+import { ResponseStreamEvent } from "openai/resources/responses/responses.js";
+import { describe, expect, test, vi } from "vitest";
+import type { OpenAIProviderToolItem } from "../../../src/messages/providerTool.js";
+import { createStreamingAdapter } from "../../../src/protocols/responses/createStreamingAdapter.js";
+import { AxleStopReason } from "../../../src/protocols/types.js";
+
+describe("createResponsesAPIStreamingAdapter", () => {
+  describe("basic streaming events", () => {
+    test("should handle response.created event", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("start");
+      expect(chunks[0].id).toBe("resp_123");
+      if (chunks[0].type === "start") {
+        expect(chunks[0].data.model).toBe("gpt-4o");
+      }
+    });
+
+    test("should emit text-start before first text-delta", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Hello",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0].type).toBe("text-start");
+      expect(chunks[1].type).toBe("text-delta");
+      if (chunks[1].type === "text-delta") {
+        expect(chunks[1].data.text).toBe("Hello");
+        expect(chunks[1].data.index).toBe(0);
+      }
+    });
+
+    test("should not emit text-start on subsequent text deltas", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Hello",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: " world",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("text-delta");
+    });
+
+    test("should emit text-citation for output text annotations", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "OpenAI",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_text.annotation.added",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        annotation_index: 0,
+        sequence_number: 2,
+        annotation: {
+          type: "url_citation",
+          title: "OpenAI",
+          url: "https://openai.com",
+          start_index: 0,
+          end_index: 6,
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("text-citation");
+      if (chunks[0].type === "text-citation") {
+        expect(chunks[0].data.index).toBe(0);
+        expect(chunks[0].data.citation).toMatchObject({
+          source: { type: "web", title: "OpenAI", url: "https://openai.com" },
+          outputSpan: { start: 0, end: 6 },
+        });
+      }
+    });
+
+    test("drops an output text annotation that has no text part", () => {
+      const adapter = createStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_text.annotation.added",
+        item_id: "missing_item",
+        output_index: 0,
+        content_index: 0,
+        annotation_index: 0,
+        sequence_number: 1,
+        annotation: {
+          type: "url_citation",
+          title: "OpenAI",
+          url: "https://openai.com",
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toEqual([]);
+    });
+
+    test("should handle response.completed event", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 150,
+          },
+        },
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.usage.in).toBe(100);
+        expect(chunks[0].data.usage.out).toBe(50);
+      }
+    });
+
+    test("should include cache and reasoning usage details on completion", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 150,
+            input_tokens_details: { cached_tokens: 80, cache_write_tokens: 25 },
+            output_tokens_details: { reasoning_tokens: 12 },
+          },
+        },
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.usage).toEqual({
+          in: 100,
+          out: 50,
+          cachedIn: 80,
+          cacheWriteIn: 25,
+          reasoningOut: 12,
+        });
+      }
+    });
+
+    test("should handle response.failed event", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.failed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "failed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("error");
+      if (chunks[0].type === "error") {
+        expect(chunks[0].data.type).toBe("RESPONSES_API_ERROR");
+      }
+    });
+  });
+
+  describe("reasoning events", () => {
+    test("should handle response.output_item.added with reasoning type", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_0245d29486a558cc00690e48675edc81968d9d8ffbb51bebfc",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-start");
+      if (chunks[0].type === "thinking-start") {
+        expect(chunks[0].data.index).toBe(0);
+        expect(chunks[0].data.id).toBe("rs_0245d29486a558cc00690e48675edc81968d9d8ffbb51bebfc");
+        expect(chunks[0].data.redacted).toBeUndefined();
+      }
+    });
+
+    test("should handle response.reasoning_text.delta event", () => {
+      const adapter = createStreamingAdapter();
+
+      // First add the reasoning item
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      const event: ResponseStreamEvent = {
+        type: "response.reasoning_text.delta",
+        delta: "Let me think about this...",
+        item_id: "rs_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 3,
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-raw-delta");
+      if (chunks[0].type === "thinking-raw-delta") {
+        expect(chunks[0].data.text).toBe("Let me think about this...");
+        expect(chunks[0].data.index).toBe(0);
+      }
+    });
+
+    test("should emit thinking-complete on response.output_item.done for reasoning", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 4,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-complete");
+      if (chunks[0].type === "thinking-complete") {
+        expect(chunks[0].data.index).toBe(0);
+      }
+    });
+
+    test("takes encrypted content from the completed reasoning item, not the opening one", () => {
+      const adapter = createStreamingAdapter();
+
+      const opening = adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+          encrypted_content: "partial",
+        },
+      } as ResponseStreamEvent);
+      const closing = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 4,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+          encrypted_content: "complete",
+        },
+      } as ResponseStreamEvent);
+
+      expect(opening).toEqual([{ type: "thinking-start", data: { index: 0, id: "rs_123" } }]);
+      expect(closing).toEqual([
+        {
+          type: "thinking-metadata",
+          data: { index: 0, continuity: { provider: "openai", encrypted: "complete" } },
+        },
+        { type: "thinking-complete", data: { index: 0 } },
+      ]);
+    });
+
+    test("should handle multiple reasoning deltas", () => {
+      const adapter = createStreamingAdapter();
+
+      // Add the reasoning item
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      // Send multiple deltas
+      const chunks1 = adapter.handleEvent({
+        type: "response.reasoning_text.delta",
+        delta: "First, ",
+        item_id: "rs_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 3,
+      } as ResponseStreamEvent);
+
+      const chunks2 = adapter.handleEvent({
+        type: "response.reasoning_text.delta",
+        delta: "I need to analyze ",
+        item_id: "rs_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 4,
+      } as ResponseStreamEvent);
+
+      const chunks3 = adapter.handleEvent({
+        type: "response.reasoning_text.delta",
+        delta: "the problem.",
+        item_id: "rs_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 5,
+      } as ResponseStreamEvent);
+
+      if (chunks1[0].type === "thinking-raw-delta") {
+        expect(chunks1[0].data.text).toBe("First, ");
+        expect(chunks1[0].data.index).toBe(0);
+      }
+      if (chunks2[0].type === "thinking-raw-delta") {
+        expect(chunks2[0].data.text).toBe("I need to analyze ");
+        expect(chunks2[0].data.index).toBe(0);
+      }
+      if (chunks3[0].type === "thinking-raw-delta") {
+        expect(chunks3[0].data.text).toBe("the problem.");
+        expect(chunks3[0].data.index).toBe(0);
+      }
+    });
+
+    test("should emit thinking-summary-delta for reasoning_summary_text.delta", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.reasoning_summary_text.delta",
+        delta: "This is the summary reasoning...",
+        item_id: "rs_123",
+        output_index: 0,
+        content_index: 0,
+        summary_index: 0,
+        sequence_number: 3,
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("thinking-summary-delta");
+      if (chunks[0].type === "thinking-summary-delta") {
+        expect(chunks[0].data.text).toBe("This is the summary reasoning...");
+        expect(chunks[0].data.index).toBe(0);
+      }
+    });
+  });
+
+  describe("function call events", () => {
+    test("should handle response.function_call_arguments.delta event", () => {
+      const adapter = createStreamingAdapter();
+      const event: ResponseStreamEvent = {
+        type: "response.function_call_arguments.delta",
+        delta: '{"query": "',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      // First delta produces both tool-call-start (lazy init) and the args-delta.
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0].type).toBe("tool-call-start");
+      if (chunks[0].type === "tool-call-start") {
+        expect(chunks[0].data.id).toBe("call_123");
+        expect(chunks[0].data.index).toBe(0);
+      }
+      expect(chunks[1].type).toBe("tool-call-args-delta");
+      if (chunks[1].type === "tool-call-args-delta") {
+        expect(chunks[1].data.delta).toBe('{"query": "');
+        expect(chunks[1].data.accumulated).toBe('{"query": "');
+      }
+    });
+
+    test("should handle response.function_call_arguments.done event", () => {
+      const adapter = createStreamingAdapter();
+
+      // Start the function call
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: '{"query": "',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const event: ResponseStreamEvent = {
+        type: "response.function_call_arguments.done",
+        name: "search",
+        arguments: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent;
+
+      const chunks = adapter.handleEvent(event);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("tool-call-complete");
+      if (chunks[0].type === "tool-call-complete") {
+        expect(chunks[0].data.name).toBe("search");
+        expect(chunks[0].data.arguments).toEqual({ query: "test" });
+        expect(chunks[0].data.id).toBe("call_123");
+      }
+    });
+  });
+
+  describe("mixed events", () => {
+    test("should emit FunctionCall finish reason when tool calls are present", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "search",
+        arguments: '{"query": "test"}',
+        item_id: "call_123",
+        output_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.finishReason).toBe(AxleStopReason.FunctionCall);
+      }
+    });
+
+    test("reports unparseable function call arguments as an invalid-arguments error", () => {
+      const adapter = createStreamingAdapter();
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: "{invalid",
+        item_id: "call_1",
+        output_index: 0,
+        sequence_number: 0,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "search",
+        arguments: "{invalid json}",
+        item_id: "call_1",
+        output_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      expect(chunks).toMatchObject([
+        {
+          type: "tool-call-complete",
+          data: {
+            id: "call_1",
+            name: "search",
+            arguments: {},
+            error: {
+              type: "invalid-arguments",
+              message: expect.stringContaining(
+                "Failed to parse function call arguments for search",
+              ),
+              raw: "{invalid json}",
+            },
+          },
+        },
+      ]);
+    });
+
+    test("should emit Stop finish reason when no tool calls", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Hello",
+        item_id: "item_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 1,
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks[0].type).toBe("complete");
+      if (chunks[0].type === "complete") {
+        expect(chunks[0].data.finishReason).toBe(AxleStopReason.Stop);
+      }
+    });
+
+    test("should handle reasoning followed by text with full lifecycle", () => {
+      const adapter = createStreamingAdapter();
+
+      const chunks1 = adapter.handleEvent({
+        type: "response.created",
+        response: {
+          id: "resp_123",
+          model: "o4-mini",
+          status: "in_progress",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+        },
+      } as ResponseStreamEvent);
+
+      const chunks2 = adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 2,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      const chunks3 = adapter.handleEvent({
+        type: "response.reasoning_text.delta",
+        delta: "Thinking...",
+        item_id: "rs_123",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 3,
+      } as ResponseStreamEvent);
+
+      const chunks4 = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 4,
+        output_index: 0,
+        item: {
+          id: "rs_123",
+          type: "reasoning",
+          summary: [],
+        },
+      } as ResponseStreamEvent);
+
+      const chunks5 = adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Here is my response",
+        item_id: "item_123",
+        output_index: 1,
+        content_index: 0,
+        sequence_number: 5,
+      } as ResponseStreamEvent);
+
+      expect(chunks1[0].type).toBe("start");
+      expect(chunks2[0].type).toBe("thinking-start");
+      expect(chunks3[0].type).toBe("thinking-raw-delta");
+      if (chunks3[0].type === "thinking-raw-delta") {
+        expect(chunks3[0].data.text).toBe("Thinking...");
+      }
+      expect(chunks4).toHaveLength(1);
+      expect(chunks4[0].type).toBe("thinking-complete");
+      expect(chunks5).toHaveLength(2);
+      expect(chunks5[0].type).toBe("text-start");
+      expect(chunks5[1].type).toBe("text-delta");
+      if (chunks5[1].type === "text-delta") {
+        expect(chunks5[1].data.text).toBe("Here is my response");
+      }
+    });
+  });
+
+  describe("provider tools", () => {
+    const search: OpenAIProviderToolItem = {
+      id: "ws_123",
+      type: "web_search_call",
+      status: "completed",
+      action: { type: "search", query: "axle", queries: ["axle"] },
+    };
+
+    const run = (item: OpenAIProviderToolItem) => {
+      const adapter = createStreamingAdapter();
+      const added = adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: { ...item, status: "in_progress" },
+      });
+      const done = adapter.handleEvent({
+        type: "response.output_item.done",
+        sequence_number: 2,
+        output_index: 0,
+        item,
+      });
+      return { added, done };
+    };
+
+    test("starts a web search under Axle's tool name", () => {
+      expect(run(search).added).toEqual([
+        { type: "provider-tool-start", data: { index: 0, id: "ws_123", name: "web_search" } },
+      ]);
+    });
+
+    test("reports the search, then completes with the item kept for replay", () => {
+      const continuity = { provider: "openai", item: search };
+
+      expect(run(search).done).toEqual([
+        {
+          type: "provider-tool-input",
+          data: {
+            index: 0,
+            id: "ws_123",
+            name: "web_search",
+            input: { type: "search", queries: ["axle"] },
+            continuity,
+          },
+        },
+        {
+          type: "provider-tool-complete",
+          data: {
+            index: 0,
+            id: "ws_123",
+            name: "web_search",
+            result: { type: "success" },
+            continuity,
+          },
+        },
+      ]);
+    });
+
+    const items: Array<[string, OpenAIProviderToolItem, string, unknown]> = [
+      [
+        "a search that lists only one query",
+        { ...search, action: { type: "search", query: "axle" } },
+        "web_search",
+        { type: "search", queries: ["axle"] },
+      ],
+      [
+        "an opened page",
+        { ...search, action: { type: "open_page", url: "https://example.com" } },
+        "web_search",
+        { type: "open", url: "https://example.com" },
+      ],
+      [
+        "a find in page",
+        {
+          ...search,
+          action: { type: "find_in_page", url: "https://example.com", pattern: "axle" },
+        },
+        "web_search",
+        { type: "find", url: "https://example.com", pattern: "axle" },
+      ],
+      [
+        "code interpreter",
+        {
+          id: "ci_1",
+          type: "code_interpreter_call",
+          status: "completed",
+          code: "print(1)",
+          container_id: "cntr_1",
+          outputs: null,
+        },
+        "code_execution",
+        { type: "code", code: "print(1)" },
+      ],
+      [
+        "file search",
+        { id: "fs_1", type: "file_search_call", status: "completed", queries: ["axle"] },
+        "file_search",
+        { type: "search", queries: ["axle"] },
+      ],
+    ];
+
+    test.each(items)("gives %s Axle's name and input", (_label, item, name, input) => {
+      const { added, done } = run(item);
+
+      expect(added[0].data).toMatchObject({ name });
+      expect(done[0]).toMatchObject({ type: "provider-tool-input", data: { name, input } });
+    });
+
+    test("completes without an input event when the item says nothing Axle can show", () => {
+      const { done } = run({ ...search, action: { type: "open_page", url: null } });
+
+      expect(done.map((chunk) => chunk.type)).toEqual(["provider-tool-complete"]);
+    });
+
+    test("keeps code interpreter logs as the result output", () => {
+      const { done } = run({
+        id: "ci_1",
+        type: "code_interpreter_call",
+        status: "completed",
+        code: "print(1)",
+        container_id: "cntr_1",
+        outputs: [
+          { type: "logs", logs: "1\n" },
+          { type: "image", url: "https://example.com/plot.png" },
+          { type: "logs", logs: "done" },
+        ],
+      });
+
+      expect(done.at(-1)?.data).toMatchObject({
+        result: { type: "success", output: "1\n\ndone" },
+      });
+    });
+
+    test("reports an item whose status is failed as a failure", () => {
+      const { done } = run({ ...search, status: "failed" });
+
+      expect(done.at(-1)?.data).toMatchObject({
+        result: { type: "error", error: { type: "failed", message: "web_search failed" } },
+      });
+    });
+
+    test("counts web_search_call items in completion usage", () => {
+      const adapter = createStreamingAdapter();
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item: {
+          id: "ws_123",
+          type: "web_search_call",
+          status: "in_progress",
+        },
+      } as ResponseStreamEvent);
+
+      const chunks = adapter.handleEvent({
+        type: "response.completed",
+        response: {
+          id: "resp_123",
+          model: "gpt-4o",
+          status: "completed",
+          object: "response",
+          created_at: 1234567890,
+          instructions: "",
+          metadata: {},
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 150,
+          },
+        },
+      } as ResponseStreamEvent);
+
+      expect(chunks[0].type).toBe("complete");
+    });
+  });
+
+  describe("message phase", () => {
+    const textStart = (item: Record<string, unknown>) => {
+      const adapter = createStreamingAdapter();
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        sequence_number: 1,
+        output_index: 0,
+        item,
+      } as unknown as ResponseStreamEvent);
+      return adapter.handleEvent({
+        type: "response.output_text.delta",
+        delta: "Checking.",
+        item_id: "msg_1",
+        output_index: 0,
+        content_index: 0,
+        sequence_number: 2,
+      } as ResponseStreamEvent)[0];
+    };
+
+    test("carries the message item's phase on the text part", () => {
+      const chunk = textStart({ id: "msg_1", type: "message", phase: "commentary" });
+
+      expect(chunk).toEqual({
+        type: "text-start",
+        data: { index: 0, providerMetadata: { provider: "openai", phase: "commentary" } },
+      });
+    });
+
+    test("adds nothing when the message item has no phase", () => {
+      const chunk = textStart({ id: "msg_1", type: "message" });
+
+      expect(chunk).toEqual({ type: "text-start", data: { index: 0 } });
+    });
+  });
+  describe("citations attached to a function call", () => {
+    test("drops the citation and still completes the tool call", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = createStreamingAdapter();
+      const argumentsJson =
+        '{"path":"journal.md","content":"MSFT rose \ue200cite\ue202turn1search4\ue201"}';
+
+      adapter.handleEvent({
+        type: "response.output_item.added",
+        output_index: 10,
+        sequence_number: 28,
+        item: {
+          id: "fc_1",
+          type: "function_call",
+          status: "in_progress",
+          arguments: "",
+          call_id: "call_1",
+          name: "write-file",
+        },
+      } as ResponseStreamEvent);
+      adapter.handleEvent({
+        type: "response.function_call_arguments.delta",
+        delta: argumentsJson,
+        item_id: "fc_1",
+        output_index: 10,
+        sequence_number: 29,
+      } as ResponseStreamEvent);
+
+      const annotationChunks = adapter.handleEvent({
+        type: "response.output_text.annotation.added",
+        item_id: "fc_1",
+        output_index: 10,
+        content_index: 0,
+        annotation_index: 0,
+        sequence_number: 85,
+        annotation: {
+          type: "url_citation",
+          title: "MSFT News",
+          url: "https://example.com/msft",
+          start_index: 1708,
+          end_index: 1727,
+        },
+      } as ResponseStreamEvent);
+      const doneChunks = adapter.handleEvent({
+        type: "response.function_call_arguments.done",
+        name: "write-file",
+        arguments: argumentsJson,
+        item_id: "fc_1",
+        output_index: 10,
+        sequence_number: 86,
+      } as ResponseStreamEvent);
+
+      expect(annotationChunks).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+      expect(doneChunks.map((chunk) => chunk.type)).toEqual(["tool-call-complete"]);
+      warn.mockRestore();
+    });
+  });
+});

@@ -13,7 +13,7 @@ comes from mixing units across them.
 | Layer     | Unit    | Contains                  | Lives at                         |
 | --------- | ------- | ------------------------- | -------------------------------- |
 | Wire      | Message | content parts             | `agent.messages`                 |
-| Execution | Step    | one request + its fallout | the `send()` loop (`providers/`) |
+| Execution | Step    | one request + its fallout | the `send()` loop (`execution/`) |
 | Render    | Turn    | parts (+ annotations)     | the consumer's `Transcript`      |
 
 One `send()` = one or more **steps** of the execution loop, producing one

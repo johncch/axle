@@ -1,0 +1,1798 @@
+import { describe, expect, test } from "vitest";
+import * as z from "zod";
+import { Instruct } from "../../src/core/Instruct.js";
+import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import { AxleErrorCode } from "../../src/errors/AxleError.js";
+import { stream, type StreamEvent } from "../../src/execution/stream.js";
+import type { ProviderToolContinuity } from "../../src/messages/providerTool.js";
+import type {
+  AnyStreamChunk,
+  StreamCitationChunk,
+  StreamCompleteChunk,
+  StreamErrorChunk,
+  StreamStartChunk,
+  StreamTextCompleteChunk,
+  StreamTextDeltaChunk,
+  StreamTextStartChunk,
+  StreamThinkingCompleteChunk,
+  StreamThinkingRawDeltaChunk,
+  StreamThinkingStartChunk,
+  StreamToolCallCompleteChunk,
+  StreamToolCallStartChunk,
+} from "../../src/messages/stream.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
+
+// --- Helpers ---
+
+async function expectAbortError(promise: Promise<unknown>): Promise<AxleAbortError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(AxleAbortError);
+    return error as AxleAbortError;
+  }
+
+  throw new Error("Expected promise to reject with AxleAbortError");
+}
+
+function makeProvider(opts: {
+  streamChunks?: AnyStreamChunk[][];
+  streamFactory?: () => AsyncGenerator<AnyStreamChunk, void, unknown>;
+}): AIProvider {
+  const { streamChunks, streamFactory } = opts;
+  let streamCallIndex = 0;
+
+  const provider: AIProvider = {
+    protocol: "chatCompletions",
+    id: "test",
+    createStreamingRequest: streamFactory
+      ? ((() => streamFactory()) as any)
+      : (function* (_model: string) {
+          const chunks = streamChunks?.[streamCallIndex++];
+          if (!chunks) throw new Error("No stream chunks configured");
+          for (const chunk of chunks) {
+            yield chunk;
+          }
+        } as any),
+  };
+
+  return provider;
+}
+
+function startChunk(id = "msg_1", model = "test-model"): StreamStartChunk {
+  return { type: "start", id, data: { model, timestamp: Date.now() } };
+}
+
+function textStartChunk(index: number): StreamTextStartChunk {
+  return { type: "text-start", data: { index } };
+}
+
+function textChunk(index: number, text: string): StreamTextDeltaChunk {
+  return { type: "text-delta", data: { index, text } };
+}
+
+function textCompleteChunk(index: number): StreamTextCompleteChunk {
+  return { type: "text-complete", data: { index } };
+}
+
+function citationChunk(
+  index: number,
+  citations: StreamCitationChunk["data"]["citations"],
+): StreamCitationChunk {
+  return { type: "citation", data: { index, citations } };
+}
+
+function thinkingStartChunk(index: number): StreamThinkingStartChunk {
+  return { type: "thinking-start", data: { index } };
+}
+
+function thinkingDeltaChunk(index: number, text: string): StreamThinkingRawDeltaChunk {
+  return { type: "thinking-raw-delta", data: { index, text } };
+}
+
+function thinkingCompleteChunk(index: number): StreamThinkingCompleteChunk {
+  return { type: "thinking-complete", data: { index } };
+}
+
+function toolCallStartChunk(index: number, id: string, name: string): StreamToolCallStartChunk {
+  return { type: "tool-call-start", data: { index, id, name } };
+}
+
+function toolCallArgsDeltaChunk(
+  index: number,
+  id: string,
+  name: string,
+  delta: string,
+  accumulated: string,
+): AnyStreamChunk {
+  return { type: "tool-call-args-delta", data: { index, id, name, delta, accumulated } };
+}
+
+function toolCallCompleteChunk(
+  index: number,
+  id: string,
+  name: string,
+  args: any,
+): StreamToolCallCompleteChunk {
+  return { type: "tool-call-complete", data: { index, id, name, arguments: args } };
+}
+
+function completeChunk(
+  finishReason: AxleStopReason = AxleStopReason.Stop,
+  usage = { in: 10, out: 20 },
+): StreamCompleteChunk {
+  return { type: "complete", data: { finishReason, usage } };
+}
+
+function errorChunk(type = "server_error", message = "Something went wrong"): StreamErrorChunk {
+  return { type: "error", data: { type, message } };
+}
+
+function collectEvents() {
+  const events: StreamEvent[] = [];
+  const callback = (event: StreamEvent) => {
+    events.push(event);
+  };
+  return { events, callback };
+}
+
+// --- Tests ---
+
+describe("stream()", () => {
+  describe("no tool calls — text only", () => {
+    test("forwards text chunks and returns success", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textChunk(0, " world"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.messages).toHaveLength(1);
+      expect(final.messages[0].role).toBe("assistant");
+
+      const starts = events.filter((e) => e.type === "text:start");
+      expect(starts).toHaveLength(1);
+
+      const deltas = events.filter((e) => e.type === "text:delta");
+      expect(deltas).toHaveLength(2);
+      expect(deltas[0].type === "text:delta" && deltas[0].delta).toBe("Hello");
+      expect(deltas[0].type === "text:delta" && deltas[0].accumulated).toBe("Hello");
+      expect(deltas[1].type === "text:delta" && deltas[1].delta).toBe(" world");
+      expect(deltas[1].type === "text:delta" && deltas[1].accumulated).toBe("Hello world");
+
+      const ends = events.filter((e) => e.type === "text:end");
+      expect(ends).toHaveLength(1);
+      expect(ends[0].type === "text:end" && ends[0].final).toBe("Hello world");
+    });
+
+    test("handles thinking + text parts", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        thinkingDeltaChunk(0, "Let me think"),
+        thinkingCompleteChunk(0),
+        textStartChunk(1),
+        textChunk(1, "Answer"),
+        textCompleteChunk(1),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+
+      const partEvents = events
+        .filter((e) =>
+          ["thinking:start", "thinking:end", "text:start", "text:end"].includes(e.type),
+        )
+        .map((e) => e.type);
+      expect(partEvents).toEqual(["thinking:start", "thinking:end", "text:start", "text:end"]);
+    });
+
+    test("text-complete provider metadata lands on the text part", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Answer"),
+        {
+          type: "text-complete",
+          data: { index: 0, providerMetadata: { thoughtSignature: "sig" } },
+        },
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([
+        { type: "text", text: "Answer", providerMetadata: { thoughtSignature: "sig" } },
+      ]);
+    });
+
+    test("accumulates citations and thinking summary metadata", async () => {
+      const citation = {
+        source: { type: "web" as const, title: "OpenAI", url: "https://openai.com" },
+        outputSpan: { start: 0, end: 6 },
+      };
+      const continuity = { provider: "openai" as const, encrypted: "encrypted-reasoning" };
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "OpenAI"),
+        { type: "text-citation", data: { index: 0, citation } },
+        textCompleteChunk(0),
+        { type: "thinking-start", data: { index: 1 } },
+        { type: "thinking-summary-delta", data: { index: 1, text: "Checked sources." } },
+        { type: "thinking-metadata", data: { index: 1, continuity } },
+        thinkingCompleteChunk(1),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toMatchObject([
+        {
+          type: "text",
+          text: "OpenAI",
+          citations: [citation],
+        },
+        {
+          type: "thinking",
+          summary: "Checked sources.",
+          continuity,
+        },
+      ]);
+
+      expect(events.some((event) => event.type === "text:citation")).toBe(true);
+      expect(events.some((event) => event.type === "thinking:summary-delta")).toBe(true);
+      expect(events.some((event) => event.type === "thinking:update")).toBe(true);
+    });
+
+    test.each([
+      ["raw then summary", ["thinking-raw-delta", "thinking-summary-delta"]],
+      ["summary then raw", ["thinking-summary-delta", "thinking-raw-delta"]],
+    ] as const)("thinking:end carries both buffers, %s", async (_label, order) => {
+      const text = { "thinking-raw-delta": "chain", "thinking-summary-delta": "gist" } as const;
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        ...order.map((type) => ({ type, data: { index: 0, text: text[type] } })),
+        thinkingCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([{ type: "thinking", text: "chain", summary: "gist" }]);
+      expect(events.find((event) => event.type === "thinking:end")).toEqual({
+        type: "thinking:end",
+        raw: "chain",
+        summary: "gist",
+      });
+    });
+
+    test("an invalid reasoning setting throws at call time, before any request", () => {
+      const provider = makeProvider({ streamChunks: [[startChunk(), completeChunk()]] });
+      expect(() =>
+        stream({
+          provider,
+          model: "test-model",
+          messages: [],
+          reasoning: { effort: "extreme" } as never,
+        }),
+      ).toThrow(expect.objectContaining({ code: AxleErrorCode.INVALID_OPTIONS }));
+    });
+
+    test("hidden display keeps thinking on the message and off the stream events", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        { type: "thinking-summary-delta", data: { index: 0, text: "gist" } },
+        thinkingDeltaChunk(0, "chain"),
+        thinkingCompleteChunk(0),
+        textStartChunk(1),
+        textChunk(1, "Answer"),
+        textCompleteChunk(1),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        reasoning: { effort: "low", display: "hidden" },
+      });
+      result.on(callback);
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content[0]).toEqual({ type: "thinking", summary: "gist", text: "chain" });
+      const thinkingEvents = events.filter((event) => event.type.startsWith("thinking:"));
+      expect(thinkingEvents).toEqual([{ type: "thinking:start" }, { type: "thinking:end" }]);
+    });
+
+    test("redacted stays on the message part and off the stream events", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        {
+          type: "thinking-start",
+          data: {
+            index: 0,
+            redacted: true,
+            continuity: { provider: "anthropic", redactedData: "opaque" },
+          },
+        },
+        thinkingCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([
+        {
+          type: "thinking",
+          redacted: true,
+          continuity: { provider: "anthropic", redactedData: "opaque" },
+        },
+      ]);
+      const thinkingEvents = events.filter((event) => event.type.startsWith("thinking:"));
+      expect(thinkingEvents.map((event) => event.type)).toEqual(["thinking:start", "thinking:end"]);
+      for (const event of thinkingEvents) expect(event).not.toHaveProperty("redacted");
+      expect(thinkingEvents[1]).toEqual({ type: "thinking:end" });
+    });
+
+    test("accumulates unanchored citations as ordered citation parts", async () => {
+      const citation = {
+        source: { type: "web" as const, title: "Example", url: "https://example.com" },
+        providerMetadata: { type: "url_citation" },
+      };
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        thinkingStartChunk(0),
+        thinkingDeltaChunk(0, "Checking sources"),
+        thinkingCompleteChunk(0),
+        citationChunk(1, [citation]),
+        textStartChunk(2),
+        textChunk(2, "Answer"),
+        textCompleteChunk(2),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toMatchObject([
+        { type: "thinking", text: "Checking sources" },
+        { type: "citation", citations: [citation] },
+        { type: "text", text: "Answer" },
+      ]);
+
+      expect(events.find((event) => event.type === "citation")).toMatchObject({
+        type: "citation",
+        citations: [citation],
+      });
+    });
+  });
+
+  describe("with tool calls", () => {
+    test("full tool call cycle with correct messages", async () => {
+      // First LLM turn: thinking + tool call
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        thinkingStartChunk(0),
+        thinkingDeltaChunk(0, "I need to search"),
+        thinkingCompleteChunk(0),
+        toolCallStartChunk(1, "call_1", "web_search"),
+        toolCallCompleteChunk(1, "call_1", "web_search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      // Second LLM turn: text response
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Here are the results"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async (name, parameters) => {
+          expect(name).toBe("web_search");
+          expect(parameters).toEqual({ q: "test" });
+          return { type: "success", content: "search results here" };
+        },
+      });
+      result.on(callback);
+
+      const final = await result.final;
+
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      // Messages: assistant (turn 1), tool results, assistant (turn 2)
+      expect(final.messages).toHaveLength(3);
+      expect(final.messages[0].role).toBe("assistant");
+      expect(final.messages[1].role).toBe("tool");
+      expect(final.messages[2].role).toBe("assistant");
+
+      expect(events.filter((e) => e.type === "thinking:start")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "thinking:end")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "text:start")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "text:end")).toHaveLength(1);
+    });
+
+    test("awaits the tool batch callback and finishes before another provider turn", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "web_search"),
+        toolCallCompleteChunk(0, "call_1", "web_search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      let providerCalls = 0;
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          providerCalls += 1;
+          if (providerCalls > 1) throw new Error("Unexpected second provider turn");
+          for (const chunk of turn1Chunks) yield chunk;
+        },
+      });
+      let markBoundaryReached!: () => void;
+      const boundaryReached = new Promise<void>((resolve) => {
+        markBoundaryReached = resolve;
+      });
+      let releaseBoundary!: () => void;
+      const boundaryGate = new Promise<void>((resolve) => {
+        releaseBoundary = resolve;
+      });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      handle.onToolBatchComplete(async (message) => {
+        expect(message.role).toBe("tool");
+        markBoundaryReached();
+        await boundaryGate;
+        return "finish" as const;
+      });
+
+      await boundaryReached;
+      expect(providerCalls).toBe(1);
+      releaseBoundary();
+      const final = await handle.final;
+
+      expect(final.ok).toBe(true);
+      expect(final.messages.map((message) => message.role)).toEqual(["assistant", "tool"]);
+      expect(providerCalls).toBe(1);
+    });
+
+    test("emits tool:request, tool:exec-start, tool:exec-complete events", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "web_search"),
+        toolCallCompleteChunk(0, "call_1", "web_search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const toolRequests = events.filter((e) => e.type === "tool:request");
+      expect(toolRequests).toHaveLength(1);
+      expect(toolRequests[0].type === "tool:request" && toolRequests[0].id).toBe("call_1");
+      expect(toolRequests[0].type === "tool:request" && toolRequests[0].name).toBe("web_search");
+
+      const toolExecStarts = events.filter((e) => e.type === "tool:exec-start");
+      expect(toolExecStarts).toHaveLength(1);
+      expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].name).toBe(
+        "web_search",
+      );
+      expect(toolExecStarts[0].type === "tool:exec-start" && toolExecStarts[0].parameters).toEqual({
+        q: "test",
+      });
+
+      const toolExecCompletes = events.filter((e) => e.type === "tool:exec-complete");
+      expect(toolExecCompletes).toHaveLength(1);
+      expect(
+        toolExecCompletes[0].type === "tool:exec-complete" && toolExecCompletes[0].result,
+      ).toEqual({
+        type: "success",
+        content: "ok",
+      });
+    });
+
+    test("defers tool:request until a late-arriving tool name resolves the kind", async () => {
+      const { z } = await import("zod");
+      const agentTool = {
+        kind: "agent" as const,
+        name: "delegate",
+        description: "Agent-backed tool",
+        schema: z.object({ q: z.string() }),
+        execute: async () => "child done",
+      };
+      // Chat-completions vendors can stream tool-call-start before the
+      // function name is known.
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", ""),
+        toolCallCompleteChunk(0, "call_1", "delegate", { q: "x" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const handle = stream({ provider, model: "test-model", messages: [], tools: [agentTool] });
+      handle.on(callback);
+      await handle.final;
+
+      const requests = events.filter((e) => e.type === "tool:request");
+      expect(requests).toHaveLength(1);
+      expect(requests[0].type === "tool:request" && requests[0].name).toBe("delegate");
+      expect(requests[0].type === "tool:request" && requests[0].kind).toBe("agent");
+    });
+
+    test("executes a local tool without onToolCall", async () => {
+      const { z } = await import("zod");
+      const execute = async () => "local result";
+      const tool = {
+        name: "local_lookup",
+        description: "Local lookup tool",
+        schema: z.object({ q: z.string() }),
+        execute,
+      };
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "local_lookup"),
+        toolCallCompleteChunk(0, "call_1", "local_lookup", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+      });
+      result.on(callback);
+
+      const final = await result.final;
+
+      expect(final.ok).toBe(true);
+      const toolExecCompletes = events.filter((e) => e.type === "tool:exec-complete");
+      expect(toolExecCompletes).toHaveLength(1);
+      expect(
+        toolExecCompletes[0].type === "tool:exec-complete" && toolExecCompletes[0].result,
+      ).toEqual({
+        type: "success",
+        content: "local result",
+      });
+    });
+
+    test("parallel tool calls with deferred completes each get their own parameters", async () => {
+      // Mirrors the chatcompletions adapter: two tool calls stream their args,
+      // then BOTH completes are flushed together at finish_reason — i.e. after
+      // currentPartIndex has already moved off the first tool part. Each
+      // complete must land on the part it names (by index), not on whatever
+      // part happens to be active, or the earlier call executes with empty
+      // params.
+      const turn1: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "view-skill"),
+        toolCallArgsDeltaChunk(0, "call_1", "view-skill", '{"name":"pdf"}', '{"name":"pdf"}'),
+        toolCallStartChunk(1, "call_2", "exec"),
+        toolCallArgsDeltaChunk(1, "call_2", "exec", '{"command":"ls"}', '{"command":"ls"}'),
+        // Deferred: both completes arrive after both starts (the bug trigger).
+        toolCallCompleteChunk(0, "call_1", "view-skill", { name: "pdf" }),
+        toolCallCompleteChunk(1, "call_2", "exec", { command: "ls" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1, turn2] });
+      const received: Record<string, unknown> = {};
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async (name, parameters) => {
+          received[name] = parameters;
+          return { type: "success", content: "ok" };
+        },
+      });
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+
+      expect(received["view-skill"]).toEqual({ name: "pdf" });
+      expect(received["exec"]).toEqual({ command: "ls" });
+    });
+  });
+
+  describe("provider tools", () => {
+    test("a provider-tool-complete that arrives after later text lands on its own part", async () => {
+      const continuity: ProviderToolContinuity = {
+        provider: "openai",
+        item: {
+          id: "ps_1",
+          type: "web_search_call",
+          status: "completed",
+          action: { type: "search", query: "axle" },
+        },
+      };
+      const chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        { type: "provider-tool-start", data: { index: 0, id: "ps_1", name: "web_search" } },
+        textStartChunk(1),
+        textChunk(1, "searching the web"),
+        textCompleteChunk(1),
+        {
+          type: "provider-tool-complete",
+          data: {
+            index: 0,
+            id: "ps_1",
+            name: "web_search",
+            result: { type: "success" },
+            continuity,
+          },
+        },
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const result = stream({ provider, model: "test-model", messages: [] });
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+      if (!final.ok) return;
+
+      expect(final.final.content).toEqual([
+        {
+          type: "provider-tool",
+          id: "ps_1",
+          name: "web_search",
+          result: { type: "success" },
+          continuity,
+        },
+        { type: "text", text: "searching the web" },
+      ]);
+    });
+  });
+
+  describe("message boundary events", () => {
+    test("emits turn:start and turn:complete for simple text response", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk("msg_1", "test-model"),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+
+      const final = await result.final;
+      expect(final.ok).toBe(true);
+
+      const turnStarts = events.filter((e) => e.type === "step:start");
+      expect(turnStarts).toHaveLength(1);
+      expect(turnStarts[0].type === "step:start" && turnStarts[0].id).toBe("msg_1");
+      expect(turnStarts[0].type === "step:start" && turnStarts[0].model).toBe("test-model");
+
+      const turnCompletes = events.filter((e) => e.type === "step:complete");
+      expect(turnCompletes).toHaveLength(1);
+      if (turnCompletes[0].type === "step:complete") {
+        expect(turnCompletes[0].message.role).toBe("assistant");
+        expect(turnCompletes[0].message.id).toBe("msg_1");
+      }
+    });
+
+    test("emits all boundary events for tool call cycle", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const turnStarts = events.filter((e) => e.type === "step:start");
+      expect(turnStarts).toHaveLength(2);
+
+      const turnCompletes = events.filter((e) => e.type === "step:complete");
+      expect(turnCompletes).toHaveLength(2);
+
+      const toolResultsStarts = events.filter((e) => e.type === "tool-results:start");
+      expect(toolResultsStarts).toHaveLength(1);
+
+      const toolResultsCompletes = events.filter((e) => e.type === "tool-results:complete");
+      expect(toolResultsCompletes).toHaveLength(1);
+    });
+
+    test("tool-results:complete message has an id field", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const toolResultsComplete = events.find((e) => e.type === "tool-results:complete");
+      expect(toolResultsComplete).toBeDefined();
+      if (toolResultsComplete?.type === "tool-results:complete") {
+        expect(toolResultsComplete.message.id).toBeDefined();
+        expect(typeof toolResultsComplete.message.id).toBe("string");
+        expect(toolResultsComplete.message.id.length).toBeGreaterThan(0);
+        expect(toolResultsComplete.message.role).toBe("tool");
+        expect(toolResultsComplete.message.content).toHaveLength(1);
+      }
+    });
+
+    test("tool-results:start id matches tool-results:complete message id", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "Done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on(callback);
+
+      await result.final;
+
+      const trStart = events.find((e) => e.type === "tool-results:start");
+      const trComplete = events.find((e) => e.type === "tool-results:complete");
+      expect(trStart).toBeDefined();
+      expect(trComplete).toBeDefined();
+      if (trStart?.type === "tool-results:start" && trComplete?.type === "tool-results:complete") {
+        expect(trStart.id).toBe(trComplete.message.id);
+      }
+    });
+
+    test("boundary events order: turn:start → content → turn:complete → tool-results → turn:start", async () => {
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        textStartChunk(0),
+        textChunk(0, "thinking"),
+        textCompleteChunk(0),
+        toolCallStartChunk(1, "call_1", "search"),
+        toolCallCompleteChunk(1, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2Chunks: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks, turn2Chunks] });
+      const boundaryOrder: string[] = [];
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on((event) => {
+        if (
+          event.type === "step:start" ||
+          event.type === "step:complete" ||
+          event.type === "tool-results:start" ||
+          event.type === "tool-results:complete"
+        ) {
+          boundaryOrder.push(event.type);
+        }
+      });
+
+      await result.final;
+
+      expect(boundaryOrder).toEqual([
+        "step:start",
+        "step:complete",
+        "tool-results:start",
+        "tool-results:complete",
+        "step:start",
+        "step:complete",
+      ]);
+    });
+  });
+
+  describe("tool not found", () => {
+    test("reports not-found as tool error result and continues loop", async () => {
+      const toolCallChunks: AnyStreamChunk[] = [
+        startChunk(),
+        toolCallStartChunk(0, "call_1", "unknown_tool"),
+        toolCallCompleteChunk(0, "call_1", "unknown_tool", {}),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      // After the tool error, the LLM responds with text
+      const followUpChunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Sorry, that tool doesn't exist."),
+        textCompleteChunk(0),
+        completeChunk(AxleStopReason.Stop),
+      ];
+
+      const provider = makeProvider({ streamChunks: [toolCallChunks, followUpChunks] });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => null,
+      });
+
+      const events: Array<{ type: string; [key: string]: unknown }> = [];
+      handle.on((event) => {
+        events.push(event);
+      });
+
+      const final = await handle.final;
+
+      expect(final.ok).toBe(true);
+      const toolExecComplete = events.find((event) => event.type === "tool:exec-complete");
+      expect(toolExecComplete).toMatchObject({
+        type: "tool:exec-complete",
+        result: {
+          type: "error",
+          error: {
+            type: "not-found",
+            message: "Tool not found: unknown_tool",
+          },
+        },
+      });
+      // Messages should include: assistant (tool call), tool (error result), assistant (follow-up)
+      const toolMessage = final.messages.find((m) => m.role === "tool");
+      expect(toolMessage).toBeDefined();
+      if (toolMessage?.role === "tool") {
+        expect(toolMessage.content[0].isError).toBe(true);
+        expect(toolMessage.content[0].content).toContain("not-found");
+      }
+    });
+  });
+
+  describe("loop limits", () => {
+    test("throws on a non-positive maxSteps", () => {
+      const provider = makeProvider({ streamChunks: [] });
+
+      expect(() => stream({ provider, model: "test-model", messages: [], maxSteps: 0 })).toThrow(
+        "maxSteps must be at least 1",
+      );
+    });
+
+    test("throws on a non-positive maxContextTokens", () => {
+      const provider = makeProvider({ streamChunks: [] });
+
+      expect(() =>
+        stream({ provider, model: "test-model", messages: [], maxContextTokens: 0 }),
+      ).toThrow("maxContextTokens must be at least 1");
+    });
+
+    test("a limit stop on an Instruct call keeps the stopped marker through the parse failure", async () => {
+      const turn: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "x" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn] });
+      const result = stream({
+        provider,
+        model: "test-model",
+        instruct: new Instruct({ prompt: "answer", schema: z.object({ answer: z.string() }) }),
+        maxSteps: 1,
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+
+      const final = await result.final;
+      expect(final.ok).toBe(false);
+      if (final.ok) return;
+      expect(final.error.kind).toBe("parse");
+      expect(final.stopped).toBe("max-steps");
+    });
+  });
+
+  describe("provider error", () => {
+    test("returns error on stream error chunk", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        errorChunk("rate_limit", "Too many requests"),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+
+      const final = await result.final;
+
+      expect(final.ok).toBe(false);
+      if (final.ok) return;
+      expect(final.error.kind).toBe("api");
+      expect(final.error.message).toBe("Too many requests");
+    });
+  });
+
+  describe("callback ordering", () => {
+    test("text:start fires before text:delta, text:delta fires before text:end", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const order: string[] = [];
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on((event) => {
+        switch (event.type) {
+          case "text:start":
+          case "text:delta":
+          case "text:end":
+            order.push(event.type);
+            break;
+        }
+      });
+
+      await result.final;
+
+      expect(order).toEqual(["text:start", "text:delta", "text:end"]);
+    });
+
+    test("part events stay ordered across model turns", async () => {
+      const turn1: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        textStartChunk(0),
+        textChunk(0, "thinking..."),
+        textCompleteChunk(0),
+        toolCallStartChunk(1, "call_1", "search"),
+        toolCallCompleteChunk(1, "call_1", "search", { q: "x" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+
+      const turn2: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1, turn2] });
+      const order: string[] = [];
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      result.on((event) => {
+        if (event.type === "step:start") order.push(`turn:start:${event.id}`);
+        if (event.type === "text:start") order.push("text:start");
+        if (event.type === "text:end") order.push("text:end");
+        if (event.type === "tool:request") order.push(`tool:request:${event.id}`);
+      });
+
+      await result.final;
+
+      expect(order).toEqual([
+        "turn:start:msg_1",
+        "text:start",
+        "text:end",
+        "tool:request:call_1",
+        "turn:start:msg_2",
+        "text:start",
+        "text:end",
+      ]);
+    });
+  });
+
+  describe("usage tracking", () => {
+    test("accumulates usage across multiple turns", async () => {
+      const turn1: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      const turn2: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(AxleStopReason.Stop, { in: 15, out: 10 }),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1, turn2] });
+
+      const result = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+
+      const final = await result.final;
+
+      expect(final.usage).toBeDefined();
+      expect(final.usage!.in).toBe(25);
+      expect(final.usage!.out).toBe(15);
+    });
+
+    test("keeps one breakdown row per request in request order", async () => {
+      const toolStep = (id: string, usage: { in: number; out: number }): AnyStreamChunk[] => [
+        startChunk(id),
+        toolCallStartChunk(0, `call_${id}`, "search"),
+        toolCallCompleteChunk(0, `call_${id}`, "search", {}),
+        completeChunk(AxleStopReason.FunctionCall, usage),
+      ];
+      const finalStep: AnyStreamChunk[] = [
+        startChunk("msg_3"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(AxleStopReason.Stop, { in: 300, out: 30 }),
+      ];
+      const provider = makeProvider({
+        streamChunks: [
+          toolStep("msg_1", { in: 100, out: 10 }),
+          toolStep("msg_2", { in: 200, out: 20 }),
+          finalStep,
+        ],
+      });
+
+      const final = await stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      }).final;
+
+      expect(final.usage).toEqual({
+        in: 600,
+        out: 60,
+        breakdown: [
+          { provider: "test", model: "test-model", in: 100, out: 10 },
+          { provider: "test", model: "test-model", in: 200, out: 20 },
+          { provider: "test", model: "test-model", in: 300, out: 30 },
+        ],
+      });
+    });
+
+    test("stamps agentName on every row of the stream's own requests", async () => {
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk("msg_1"),
+            toolCallStartChunk(0, "call_1", "search"),
+            toolCallCompleteChunk(0, "call_1", "search", {}),
+            completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+          ],
+          [
+            startChunk("msg_2"),
+            textStartChunk(0),
+            textChunk(0, "done"),
+            textCompleteChunk(0),
+            completeChunk(AxleStopReason.Stop, { in: 15, out: 10 }),
+          ],
+        ],
+      });
+
+      const final = await stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        agentName: "researcher",
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      }).final;
+
+      expect(final.usage?.breakdown).toEqual([
+        { provider: "test", model: "test-model", agent: "researcher", in: 10, out: 5 },
+        { provider: "test", model: "test-model", agent: "researcher", in: 15, out: 10 },
+      ]);
+    });
+  });
+
+  describe("cancellation", () => {
+    test("cancel before content — no partial", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
+
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          await gate;
+          yield startChunk();
+          yield textStartChunk(0);
+          yield textChunk(0, "Hello");
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      });
+
+      const handle = stream({ provider, model: "test-model", messages: [] });
+      const reason = "before-content";
+      handle.cancel(reason);
+      yieldControl();
+
+      const error = await expectAbortError(handle.final);
+      expect(error.name).toBe("AbortError");
+      expect(error.reason).toBe(reason);
+      expect(error.partial).toBeUndefined();
+      expect(error.messages).toHaveLength(0);
+    });
+
+    test("cancel mid-stream — partial with accumulated text", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
+
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          yield startChunk();
+          yield textStartChunk(0);
+          yield textChunk(0, "Hello");
+          yield textChunk(0, " world");
+          await gate;
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      });
+
+      const handle = stream({ provider, model: "test-model", messages: [] });
+
+      // Wait a tick so the generator processes chunks before the gate
+      await new Promise((r) => setTimeout(r, 10));
+      const reason = { type: "mid-stream" };
+      handle.cancel(reason);
+      yieldControl();
+
+      const error = await expectAbortError(handle.final);
+      expect(error.reason).toBe(reason);
+      expect(error.partial).toBeDefined();
+      expect(error.partial!.content).toHaveLength(1);
+      expect((error.partial!.content[0] as any).text).toBe("Hello world");
+      expect(error.partial!.finishReason).toBe(AxleStopReason.Cancelled);
+      // Partial is also included in messages
+      expect(error.messages).toHaveLength(1);
+      expect(error.messages![0].role).toBe("assistant");
+    });
+
+    test("cancel between turns — completed messages, no partial", async () => {
+      let cancelHandle!: () => void;
+      let turn2Gate!: () => void;
+      const turn2Promise = new Promise<void>((resolve) => {
+        turn2Gate = resolve;
+      });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      let callIndex = 0;
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          if (callIndex === 0) {
+            callIndex++;
+            for (const chunk of turn1Chunks) yield chunk;
+          } else {
+            await turn2Promise;
+            yield startChunk("msg_2");
+            yield textStartChunk(0);
+            yield textChunk(0, "done");
+            yield textCompleteChunk(0);
+            yield completeChunk();
+          }
+        },
+      });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => {
+          // Cancel after tool execution completes but before turn 2 starts
+          setTimeout(() => {
+            cancelHandle();
+          }, 5);
+          return { type: "success", content: "results" };
+        },
+      });
+      cancelHandle = () => handle.cancel();
+
+      // Let the turn 2 gate open after cancel is processed
+      await new Promise((r) => setTimeout(r, 20));
+      turn2Gate();
+
+      const error = await expectAbortError(handle.final);
+      // Round 1 assistant + tool results should be in messages
+      expect(error.messages).toHaveLength(2);
+      expect(error.messages![0].role).toBe("assistant");
+      expect(error.messages![1].role).toBe("tool");
+      expect(error.partial).toBeUndefined();
+      // Usage should include turn 1 only
+      expect(error.usage!.in).toBe(10);
+      expect(error.usage!.out).toBe(5);
+    });
+
+    test("cancel during tool execution preserves completed assistant state without tool results", async () => {
+      let releaseTool!: () => void;
+      const toolGate = new Promise<void>((resolve) => {
+        releaseTool = resolve;
+      });
+      let markToolStarted!: () => void;
+      const toolStarted = new Promise<void>((resolve) => {
+        markToolStarted = resolve;
+      });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks] });
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => {
+          markToolStarted();
+          await toolGate;
+          return { type: "success", content: "results" };
+        },
+      });
+
+      await toolStarted;
+      const reason = { type: "tool-exec-cancel" };
+      handle.cancel(reason);
+      releaseTool();
+
+      const error = await expectAbortError(handle.final);
+      expect(error.reason).toEqual(reason);
+      expect(error.messages).toHaveLength(1);
+      expect(error.messages![0].role).toBe("assistant");
+      expect(error.partial).toBeUndefined();
+      expect(error.usage).toMatchObject({
+        in: 10,
+        out: 5,
+        breakdown: [{ provider: "test", model: "test-model" }],
+      });
+    });
+
+    test("cancel after completion is a no-op", async () => {
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "Hello"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const handle = stream({ provider, model: "test-model", messages: [] });
+
+      const final = await handle.final;
+      expect(final.ok).toBe(true);
+
+      // Should not throw
+      handle.cancel();
+      handle.cancel();
+
+      // Result unchanged
+      const final2 = await handle.final;
+      expect(final2.ok).toBe(true);
+    });
+
+    test("cancel is idempotent — multiple calls do not throw", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
+
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          await gate;
+          yield startChunk();
+          yield textStartChunk(0);
+          yield textChunk(0, "Hello");
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      });
+
+      const handle = stream({ provider, model: "test-model", messages: [] });
+
+      handle.cancel();
+      handle.cancel();
+      handle.cancel();
+      yieldControl();
+
+      const error = await expectAbortError(handle.final);
+      expect(error.name).toBe("AbortError");
+    });
+
+    test("usage only includes completed turns", async () => {
+      let yieldControl!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        yieldControl = resolve;
+      });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "search"),
+        toolCallCompleteChunk(0, "call_1", "search", {}),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      let callIndex = 0;
+      const provider = makeProvider({
+        streamFactory: async function* () {
+          if (callIndex === 0) {
+            callIndex++;
+            for (const chunk of turn1Chunks) yield chunk;
+          } else {
+            yield startChunk("msg_2");
+            yield textStartChunk(0);
+            yield textChunk(0, "partial");
+            await gate;
+            yield textCompleteChunk(0);
+            yield completeChunk(AxleStopReason.Stop, { in: 20, out: 15 });
+          }
+        },
+      });
+
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+
+      // Wait for turn 2 to start streaming
+      await new Promise((r) => setTimeout(r, 20));
+      handle.cancel();
+      yieldControl();
+
+      const error = await expectAbortError(handle.final);
+      // Messages: turn 1 assistant + tool results + partial turn 2 assistant
+      expect(error.messages).toHaveLength(3);
+      expect(error.messages![0].role).toBe("assistant");
+      expect(error.messages![1].role).toBe("tool");
+      expect(error.messages![2].role).toBe("assistant");
+      // Usage should only include turn 1 (completed)
+      expect(error.usage!.in).toBe(10);
+      expect(error.usage!.out).toBe(5);
+    });
+  });
+
+  describe("tool batch boundary", () => {
+    function pingTool(name: string, reply: string) {
+      return {
+        name,
+        description: name,
+        schema: z.object({}),
+        async execute() {
+          return reply;
+        },
+      };
+    }
+
+    function recordingProvider(chunks: AnyStreamChunk[][]) {
+      const requests: { system?: string; tools?: { name: string }[] }[] = [];
+      let call = 0;
+      const provider: AIProvider = {
+        protocol: "chatCompletions",
+        id: "recording",
+        async *createStreamingRequest(
+          _model,
+          params,
+        ): AsyncGenerator<AnyStreamChunk, void, unknown> {
+          requests.push({ system: params.system, tools: params.tools });
+          const batch = chunks[call++];
+          if (!batch) throw new Error("No stream chunks configured");
+          yield* batch;
+        },
+      };
+      return { provider, requests };
+    }
+
+    const toolCallStep = (name: string) => [
+      startChunk(),
+      toolCallStartChunk(0, "c1", name),
+      toolCallCompleteChunk(0, "c1", name, {}),
+      completeChunk(AxleStopReason.FunctionCall),
+    ];
+    const textStep = [
+      startChunk(),
+      textStartChunk(0),
+      textChunk(0, "done"),
+      textCompleteChunk(0),
+      completeChunk(),
+    ];
+
+    test("values returned from the boundary callback shape every later request", async () => {
+      const { provider, requests } = recordingProvider([
+        toolCallStep("ping"),
+        toolCallStep("pong"),
+        textStep,
+      ]);
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        system: "first",
+        tools: [pingTool("ping", "a")],
+      });
+      let boundaries = 0;
+      handle.onToolBatchComplete(() => {
+        boundaries += 1;
+        return boundaries === 1 ? { system: "second", tools: [pingTool("pong", "b")] } : "continue";
+      });
+
+      const final = await handle.final;
+
+      expect(final.ok).toBe(true);
+      expect(requests.map((request) => request.system)).toEqual(["first", "second", "second"]);
+      expect(requests.map((request) => request.tools?.map((tool) => tool.name))).toEqual([
+        ["ping"],
+        ["pong"],
+        ["pong"],
+      ]);
+    });
+
+    test("inputs replace rather than merge: a field left out is absent", async () => {
+      const { provider, requests } = recordingProvider([
+        toolCallStep("ping"),
+        toolCallStep("ping"),
+      ]);
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        system: "first",
+        tools: [pingTool("ping", "a")],
+      });
+      let boundaries = 0;
+      handle.onToolBatchComplete(() => (++boundaries === 1 ? { system: "second" } : "finish"));
+
+      const final = await handle.final;
+
+      expect(final.ok).toBe(true);
+      expect(requests).toHaveLength(2);
+      expect(requests[1]).toEqual({ system: "second", tools: undefined });
+    });
+
+    test("tool-call-args-delta chunks surface as tool:args-delta events", async () => {
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "make-it"),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", '{"path":"/', '{"path":"/'),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", 'tmp/foo"', '{"path":"/tmp/foo"'),
+            toolCallArgsDeltaChunk(0, "c1", "make-it", "}", '{"path":"/tmp/foo"}'),
+            toolCallCompleteChunk(0, "c1", "make-it", { path: "/tmp/foo" }),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "ok"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "ok" }),
+      });
+      handle.on(callback);
+      await handle.final;
+
+      const argDeltas = events.filter((e) => e.type === "tool:args-delta");
+      expect(argDeltas).toHaveLength(3);
+      if (argDeltas[0].type === "tool:args-delta") {
+        expect(argDeltas[0].delta).toBe('{"path":"/');
+        expect(argDeltas[0].accumulated).toBe('{"path":"/');
+        expect(argDeltas[0].name).toBe("make-it");
+      }
+      if (argDeltas[2].type === "tool:args-delta") {
+        expect(argDeltas[2].accumulated).toBe('{"path":"/tmp/foo"}');
+      }
+    });
+
+    test("ctx.emit fires tool:exec-delta events", async () => {
+      const { z } = await import("zod");
+      const tool = {
+        name: "stream-tool",
+        description: "emits progress",
+        schema: z.object({}),
+        async execute(_input: any, ctx: any) {
+          ctx.emit("first");
+          ctx.emit("second");
+          return "done";
+        },
+      };
+
+      const provider = makeProvider({
+        streamChunks: [
+          [
+            startChunk(),
+            toolCallStartChunk(0, "c1", "stream-tool"),
+            toolCallCompleteChunk(0, "c1", "stream-tool", {}),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "ok"),
+            textCompleteChunk(0),
+            completeChunk(),
+          ],
+        ],
+      });
+
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [tool],
+        onToolCall: async (_name, _params, ctx) => {
+          const result = await tool.execute(_params, ctx);
+          return { type: "success", content: result };
+        },
+      });
+      handle.on(callback);
+      await handle.final;
+
+      const deltas = events.filter((e) => e.type === "tool:exec-delta");
+      expect(deltas).toHaveLength(2);
+      expect(deltas[0].type === "tool:exec-delta" && deltas[0].chunk).toBe("first");
+      expect(deltas[1].type === "tool:exec-delta" && deltas[1].chunk).toBe("second");
+      expect(deltas[0].type === "tool:exec-delta" && deltas[0].name).toBe("stream-tool");
+    });
+  });
+
+  describe("session id", () => {
+    function sessionCapturingProvider(ids: Array<string | undefined>): AIProvider {
+      let call = 0;
+      return {
+        protocol: "chatCompletions",
+        id: "test",
+        async *createStreamingRequest(_model, params) {
+          ids.push(params.sessionId);
+          if (call++ === 0) {
+            yield startChunk("msg_1");
+            yield toolCallStartChunk(0, "call_1", "lookup");
+            yield toolCallCompleteChunk(0, "call_1", "lookup", { q: "x" });
+            yield completeChunk(AxleStopReason.FunctionCall);
+            return;
+          }
+          yield startChunk("msg_2");
+          yield textStartChunk(0);
+          yield textChunk(0, "done");
+          yield textCompleteChunk(0);
+          yield completeChunk();
+        },
+      };
+    }
+
+    test("generates one id per call and sends it on every step", async () => {
+      const ids: Array<string | undefined> = [];
+      const result = await stream({
+        provider: sessionCapturingProvider(ids),
+        model: "test-model",
+        messages: [],
+        onToolCall: async () => ({ type: "success", content: "result" }),
+      }).final;
+
+      expect(result.ok).toBe(true);
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
+      expect(ids[1]).toBe(ids[0]);
+    });
+
+    test("passes a caller's sessionId as-is on every step", async () => {
+      const ids: Array<string | undefined> = [];
+      await stream({
+        provider: sessionCapturingProvider(ids),
+        model: "test-model",
+        messages: [],
+        sessionId: "conversation-1",
+        onToolCall: async () => ({ type: "success", content: "result" }),
+      }).final;
+
+      expect(ids).toEqual(["conversation-1", "conversation-1"]);
+    });
+  });
+});

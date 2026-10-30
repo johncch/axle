@@ -1,8 +1,12 @@
 import * as z from "zod";
 import { AxleError } from "../../errors/AxleError.js";
-import { withRetry } from "../chatcompletions/retry.js";
-import type { DecisionProvider, DecisionRequestParams, DecisionResponse } from "../decide.js";
-import type { ProviderClientOptions } from "../types.js";
+import type {
+  DecisionProvider,
+  DecisionRequestParams,
+  DecisionResponse,
+} from "../../execution/decide.js";
+import { withRetry } from "../../protocols/chatCompletions/retry.js";
+import type { ProviderClientOptions } from "../../protocols/types.js";
 
 export const NAME = "TypeSafe" as const;
 

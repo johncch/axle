@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { splitModelId } from "../providers/model.js";
+import { splitModelId } from "../protocols/model.js";
 
 const MODELS_DEV_URL = "https://models.dev";
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;

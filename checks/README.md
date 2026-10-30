@@ -331,8 +331,8 @@ state after an escaped provider abort.
 
 Failed response events, SDK exceptions, preparation errors, and cancellation
 before the first chunk are injected in
-`packages/axle/tests/providers/streaming-errors.test.ts`; refusals and vendor
-safety blocks are injected in `packages/axle/tests/providers/refusals.test.ts`.
+`packages/axle/tests/protocols/streaming-errors.test.ts`; refusals and vendor
+safety blocks are injected in `packages/axle/tests/protocols/refusals.test.ts`.
 Live providers cannot reliably produce these exact failure conditions; these
 fixtures cover the vendor adapters and public API together. The live harness
 does not validate actual socket cancellation or provoke provider refusals.

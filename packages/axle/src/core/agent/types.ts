@@ -1,10 +1,10 @@
+import type { AxleProviderFailure } from "../../execution/helpers.js";
 import type { MCP } from "../../mcp/index.js";
 import type { AxleMessage, MessageMetadata } from "../../messages/message.js";
 import type { LogFn } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { EventLevel, Span } from "../../observability/types.js";
-import type { AxleProviderFailure } from "../../providers/helpers.js";
-import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
+import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
 import type { Skill } from "../../skills/types.js";
 import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";

@@ -1,5 +1,5 @@
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
-import type { AIProvider } from "../../../src/providers/types.js";
+import type { AIProvider } from "../../../src/protocols/types.js";
 
 export function makeStreamingProvider(streamChunks: AnyStreamChunk[][]): AIProvider {
   let callIndex = 0;

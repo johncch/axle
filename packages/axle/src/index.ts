@@ -43,17 +43,13 @@ export {
 } from "./errors/index.js";
 
 // AI Providers
-export { anthropic } from "./providers/anthropic/index.js";
-export { chatCompletions } from "./providers/chatcompletions/index.js";
-export { inferChatCompletionsVendor } from "./providers/chatcompletions/provider.js";
-export type {
-  ChatCompletionsOptions,
-  ChatCompletionsVendor,
-} from "./providers/chatcompletions/provider.js";
-export { estimateContextUsage } from "./providers/context.js";
+export { estimateContextUsage } from "./execution/context.js";
+export { anthropic } from "./providers/anthropic.js";
+export { chatCompletions, inferChatCompletionsVendor } from "./providers/chatCompletions.js";
+export type { ChatCompletionsOptions, ChatCompletionsVendor } from "./providers/chatCompletions.js";
 
 // Decisions (@experimental)
-export { choice, decide, noul, score } from "./providers/decide.js";
+export { choice, decide, noul, score } from "./execution/decide.js";
 export type {
   AnswerFor,
   ChoiceAnswer,
@@ -74,17 +70,15 @@ export type {
   NoulQuestion,
   ScoreAnswer,
   ScoreQuestion,
-} from "./providers/decide.js";
-export { gemini } from "./providers/gemini/index.js";
+} from "./execution/decide.js";
+export { generate } from "./execution/generate.js";
 export type {
   GenerateInstructParams,
   GenerateInstructResult,
   GenerateParams,
-} from "./providers/generate.js";
-export type { AxleProviderFailure, GenerateResult, StreamResult } from "./providers/helpers.js";
-export { generate, stream } from "./providers/index.js";
-export { openai } from "./providers/openai/index.js";
-export type { ReasoningEffort, ReasoningSetting } from "./providers/reasoning.js";
+} from "./execution/generate.js";
+export type { AxleProviderFailure, GenerateResult, StreamResult } from "./execution/helpers.js";
+export { stream } from "./execution/stream.js";
 export type {
   StreamEvent,
   StreamEventCallback,
@@ -95,18 +89,21 @@ export type {
   StreamParams,
   ToolBatchCompleteCallback,
   ToolBatchDecision,
-} from "./providers/stream.js";
-export { AxleStopReason } from "./providers/types.js";
+} from "./execution/stream.js";
+export type { ReasoningEffort, ReasoningSetting } from "./protocols/reasoning.js";
+export { AxleStopReason } from "./protocols/types.js";
 export type {
   AIProvider,
   AxleModelRequestOptions,
   ContextUsage,
-  ProviderClientOptions,
   Protocol,
+  ProviderClientOptions,
   ProviderOptions,
   Refusal,
   ToolChoice,
-} from "./providers/types.js";
+} from "./protocols/types.js";
+export { gemini } from "./providers/gemini.js";
+export { openai } from "./providers/openai.js";
 export { typesafe } from "./providers/typesafe/index.js";
 export type { TypesafeOptions } from "./providers/typesafe/index.js";
 

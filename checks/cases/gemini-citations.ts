@@ -1,6 +1,6 @@
 import { generate, stream, type AIProvider } from "@fifthrevision/axle";
 import { FinishReason, type GenerateContentResponse } from "@google/genai";
-import { createGeminiStreamingAdapter } from "../../packages/axle/src/providers/gemini/createStreamingAdapter.js";
+import { createGeminiStreamingAdapter } from "../../packages/axle/src/protocols/generateContent/createStreamingAdapter.js";
 import type { CheckCase } from "./types.js";
 
 export const geminiCitationCases: CheckCase[] = [

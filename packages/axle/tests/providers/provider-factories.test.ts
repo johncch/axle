@@ -15,7 +15,7 @@ describe("provider client factory options", () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
 
-    const { openai } = await import("../../src/providers/openai/provider.js");
+    const { openai } = await import("../../src/providers/openai.js");
     const provider = openai("sk-test", { maxRetries: 4, timeoutMs: 1_000 });
 
     expect(OpenAI).toHaveBeenCalledWith({
@@ -29,7 +29,7 @@ describe("provider client factory options", () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
 
-    const { openai } = await import("../../src/providers/openai/provider.js");
+    const { openai } = await import("../../src/providers/openai.js");
     openai("sk-test", { headers: HEADERS });
 
     expect(OpenAI).toHaveBeenCalledWith({
@@ -44,7 +44,7 @@ describe("provider client factory options", () => {
     vi.doMock("openai", () => ({ default: OpenAI }));
     const customFetch = vi.fn<typeof fetch>();
 
-    const { openai } = await import("../../src/providers/openai/provider.js");
+    const { openai } = await import("../../src/providers/openai.js");
     openai("sk-test", { fetch: customFetch });
 
     expect(OpenAI).toHaveBeenCalledWith({ apiKey: "sk-test", maxRetries: 2, fetch: customFetch });
@@ -54,7 +54,7 @@ describe("provider client factory options", () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
 
-    const { openai } = await import("../../src/providers/openai/provider.js");
+    const { openai } = await import("../../src/providers/openai.js");
     openai("sk-test", { baseUrl: "https://gateway.example.test/openai/v1" });
 
     expect(OpenAI).toHaveBeenCalledWith({
@@ -68,7 +68,7 @@ describe("provider client factory options", () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
 
-    const { openai } = await import("../../src/providers/openai/provider.js");
+    const { openai } = await import("../../src/providers/openai.js");
 
     expect(() => openai("sk-test", { maxRetries: -1 })).toThrow(
       "maxRetries must be an integer greater than or equal to 0",
@@ -84,7 +84,7 @@ describe("provider client factory options", () => {
     const Anthropic = vi.fn();
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
 
-    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    const { anthropic } = await import("../../src/providers/anthropic.js");
     const provider = anthropic("sk-ant-test", { maxRetries: 4, timeoutMs: 1_000 });
 
     expect(Anthropic).toHaveBeenCalledWith({
@@ -98,7 +98,7 @@ describe("provider client factory options", () => {
     const Anthropic = vi.fn();
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
 
-    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    const { anthropic } = await import("../../src/providers/anthropic.js");
     anthropic("sk-ant-test", { headers: HEADERS });
 
     expect(Anthropic).toHaveBeenCalledWith({
@@ -113,7 +113,7 @@ describe("provider client factory options", () => {
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
     const customFetch = vi.fn<typeof fetch>();
 
-    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    const { anthropic } = await import("../../src/providers/anthropic.js");
     anthropic("sk-ant-test", { fetch: customFetch });
 
     expect(Anthropic).toHaveBeenCalledWith({
@@ -127,7 +127,7 @@ describe("provider client factory options", () => {
     const Anthropic = vi.fn();
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
 
-    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    const { anthropic } = await import("../../src/providers/anthropic.js");
     anthropic("sk-ant-test", { baseUrl: "https://gateway.example.test/anthropic" });
 
     expect(Anthropic).toHaveBeenCalledWith({
@@ -141,7 +141,7 @@ describe("provider client factory options", () => {
     const Anthropic = vi.fn();
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
 
-    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    const { anthropic } = await import("../../src/providers/anthropic.js");
 
     expect(() => anthropic("sk-ant-test", { maxRetries: -1 })).toThrow(
       "maxRetries must be an integer greater than or equal to 0",
@@ -161,7 +161,7 @@ describe("provider client factory options", () => {
     const GoogleGenAI = vi.fn();
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
 
-    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    const { gemini } = await import("../../src/providers/gemini.js");
     const provider = gemini("gemini-test", { maxRetries: 4, timeoutMs: 1_000 });
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
@@ -174,7 +174,7 @@ describe("provider client factory options", () => {
     const GoogleGenAI = vi.fn();
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
 
-    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    const { gemini } = await import("../../src/providers/gemini.js");
     gemini("gemini-test", { headers: HEADERS });
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
@@ -188,7 +188,7 @@ describe("provider client factory options", () => {
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
     const customFetch = vi.fn<typeof fetch>();
 
-    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    const { gemini } = await import("../../src/providers/gemini.js");
     gemini("gemini-test", { fetch: customFetch });
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
@@ -201,7 +201,7 @@ describe("provider client factory options", () => {
     const GoogleGenAI = vi.fn();
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
 
-    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    const { gemini } = await import("../../src/providers/gemini.js");
     gemini("gemini-test", { baseUrl: "https://gateway.example.test/gemini" });
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
@@ -217,7 +217,7 @@ describe("provider client factory options", () => {
     const GoogleGenAI = vi.fn();
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
 
-    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    const { gemini } = await import("../../src/providers/gemini.js");
 
     expect(() => gemini("gemini-test", { maxRetries: -1 })).toThrow(
       "maxRetries must be an integer greater than or equal to 0",
@@ -232,7 +232,7 @@ describe("provider client factory options", () => {
   });
 
   test("rejects invalid ChatCompletions client options", async () => {
-    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
 
     expect(() => chatCompletions("http://example.test", { maxRetries: -1 })).toThrow(
       "maxRetries must be an integer greater than or equal to 0",
@@ -249,17 +249,17 @@ describe("provider client factory options", () => {
   });
 
   test("keeps baseUrl out of ChatCompletions options", async () => {
-    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
 
     // @ts-expect-error The base URL is chatCompletions' first argument.
     chatCompletions("http://example.test", { baseUrl: "http://other.test" });
   });
 
   test("each factory declares its protocol and provider id", async () => {
-    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
-    const { openai } = await import("../../src/providers/openai/provider.js");
-    const { gemini } = await import("../../src/providers/gemini/provider.js");
-    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+    const { anthropic } = await import("../../src/providers/anthropic.js");
+    const { openai } = await import("../../src/providers/openai.js");
+    const { gemini } = await import("../../src/providers/gemini.js");
+    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
 
     expect(anthropic("k")).toMatchObject({ protocol: "messages", id: "anthropic" });
     expect(openai("k")).toMatchObject({ protocol: "responses", id: "openai" });
@@ -273,8 +273,7 @@ describe("provider client factory options", () => {
   });
 
   test("detects ChatCompletions vendors from official endpoint hostnames", async () => {
-    const { inferChatCompletionsVendor } =
-      await import("../../src/providers/chatcompletions/provider.js");
+    const { inferChatCompletionsVendor } = await import("../../src/providers/chatCompletions.js");
 
     expect(inferChatCompletionsVendor("http://example.test")).toBeUndefined();
     expect(inferChatCompletionsVendor("https://openrouter.example.test/v1")).toBeUndefined();
@@ -304,7 +303,7 @@ describe("provider client factory options", () => {
       ),
     );
 
-    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
     const together = chatCompletions("https://api.together.ai/v1");
 
     for await (const _chunk of together.createStreamingRequest("test-model", {

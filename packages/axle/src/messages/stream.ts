@@ -1,4 +1,4 @@
-import { AxleStopReason, type Refusal } from "../providers/types.js";
+import { AxleStopReason, type Refusal } from "../protocols/types.js";
 import { Stats } from "../types.js";
 import type { Citation, ThinkingContinuity } from "./message.js";
 import type {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { AxleStopReason } from "../../src/providers/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import { TurnEventBuilder } from "../../src/turns/eventBuilder.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 

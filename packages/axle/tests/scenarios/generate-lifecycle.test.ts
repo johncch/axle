@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
-import { generate } from "../../src/providers/generate.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import { generate } from "../../src/execution/generate.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import { makeStreamingProvider } from "./helpers/providers.js";
 import { createTracerAndWriter } from "./helpers/recording-writer.js";
 

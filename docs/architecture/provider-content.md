@@ -201,7 +201,7 @@ appended, since Gemini gives the search none.
 ## Chat Completions (generic, OpenRouter, Together)
 
 Axle speaks the wire format directly, with its own types in
-`providers/chatcompletions/types.ts`. A field those types do not list is
+`protocols/chatCompletions/types.ts`. A field those types do not list is
 ignored.
 
 | Content                                           | Stored as                                                                 | Sent back                                   | Provider requires                         | Owner    |

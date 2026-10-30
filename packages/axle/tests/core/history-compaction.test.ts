@@ -12,8 +12,8 @@ import type {
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { SpanData } from "../../src/observability/index.js";
 import { Tracer } from "../../src/observability/index.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import type { CompactionPart, Turn } from "../../src/turns/types.js";

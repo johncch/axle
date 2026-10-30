@@ -11,7 +11,7 @@ import type {
   StreamToolCallCompleteChunk,
   StreamToolCallStartChunk,
 } from "../../../src/messages/stream.js";
-import { AxleStopReason } from "../../../src/providers/types.js";
+import { AxleStopReason } from "../../../src/protocols/types.js";
 
 export function startChunk(id = "msg_1", model = "test-model"): StreamStartChunk {
   return { type: "start", id, data: { model, timestamp: Date.now() } };

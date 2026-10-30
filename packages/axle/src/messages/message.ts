@@ -1,4 +1,4 @@
-import { AxleStopReason } from "../providers/types.js";
+import { AxleStopReason } from "../protocols/types.js";
 import type { FileInfo } from "../utils/file.js";
 import type {
   ProviderToolContinuity,

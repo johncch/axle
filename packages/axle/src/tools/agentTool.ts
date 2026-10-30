@@ -2,7 +2,7 @@ import type { z, ZodObject } from "zod";
 import type { Agent, MaybePromise } from "../core/agent/index.js";
 import { AxleAbortError } from "../errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../errors/AxleToolFatalError.js";
-import type { AxleModelRequestOptions } from "../providers/types.js";
+import type { AxleModelRequestOptions } from "../protocols/types.js";
 import type { ExecutableTool, ToolContext } from "./types.js";
 
 export interface CreateAgentToolOptions<TSchema extends ZodObject<any>> {

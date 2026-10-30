@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { stream } from "../../src/execution/stream.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import { stream } from "../../src/providers/stream.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import type { ExecutableTool } from "../../src/tools/types.js";
 import { braveWebSearch } from "../../src/tools/webSearch.js";
 

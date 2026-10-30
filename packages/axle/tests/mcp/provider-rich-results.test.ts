@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import type { AxleToolCallMessage } from "../../src/messages/message.js";
-import { convertToProviderMessages } from "../../src/providers/anthropic/utils.js";
-import { convertAxleMessages } from "../../src/providers/chatcompletions/utils.js";
-import { convertAxleMessagesToGemini } from "../../src/providers/gemini/utils.js";
-import { convertAxleMessageToResponseInput } from "../../src/providers/openai/utils.js";
+import { convertAxleMessages } from "../../src/protocols/chatCompletions/utils.js";
+import { convertAxleMessagesToGemini } from "../../src/protocols/generateContent/utils.js";
+import { convertToProviderMessages } from "../../src/protocols/messages/utils.js";
+import { convertAxleMessageToResponseInput } from "../../src/protocols/responses/utils.js";
 import type { FileResolver } from "../../src/utils/file.js";
 
 describe("Provider rich tool result conversion", () => {

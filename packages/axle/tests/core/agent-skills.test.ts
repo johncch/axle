@@ -3,8 +3,8 @@ import { z } from "zod";
 import { Agent } from "../../src/core/agent/index.js";
 import { AxleError } from "../../src/errors/AxleError.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import type { Skill } from "../../src/skills/types.js";
 import type { ExecutableTool } from "../../src/tools/types.js";
 

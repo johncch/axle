@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { choice, decide, noul, score } from "../../src/providers/decide.js";
+import { choice, decide, noul, score } from "../../src/execution/decide.js";
 import { typesafe } from "../../src/providers/typesafe/index.js";
 
 const questions = {

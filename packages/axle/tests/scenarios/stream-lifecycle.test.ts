@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
+import { stream } from "../../src/execution/stream.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import { stream } from "../../src/providers/stream.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import {
   completeChunk,
   errorChunk,

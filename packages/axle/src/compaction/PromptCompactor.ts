@@ -1,12 +1,12 @@
 import type { CompactionCallback, ShouldCompactOnTriggerCallback } from "../core/agent/types.js";
 import { AxleError } from "../errors/AxleError.js";
+import { estimateContextUsage } from "../execution/context.js";
+import { stream } from "../execution/stream.js";
 import { getCompactionStamp } from "../messages/compaction.js";
 import type { AxleMessage } from "../messages/message.js";
 import { getTextContent } from "../messages/utils.js";
-import { estimateContextUsage } from "../providers/context.js";
-import type { ReasoningSetting } from "../providers/reasoning.js";
-import { stream } from "../providers/stream.js";
-import type { AIProvider, ProviderOptions } from "../providers/types.js";
+import type { ReasoningSetting } from "../protocols/reasoning.js";
+import type { AIProvider, ProviderOptions } from "../protocols/types.js";
 
 export interface PromptCompactorOptions {
   provider: AIProvider;
