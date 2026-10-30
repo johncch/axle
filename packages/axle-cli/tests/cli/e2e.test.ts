@@ -62,7 +62,7 @@ function stubProfileConfig(baseUrl: string, extraDefaults = ""): string {
   return [
     "providers:",
     "  stub:",
-    "    type: chatcompletions",
+    "    protocol: chatCompletions",
     `    baseUrl: ${baseUrl}`,
     "defaults:",
     "  provider: stub",
@@ -191,7 +191,7 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
       writeRecipe: (name, extra = "") =>
         writeRecipeFile(name, [
           "provider:",
-          "  type: chatcompletions",
+          "  protocol: chatCompletions",
           `  baseUrl: ${baseUrl}`,
           "model: stub-model",
           "task: |",
@@ -204,7 +204,7 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
       writeOverThresholdRecipe: (name, extra = "") =>
         writeRecipeFile(name, [
           "provider:",
-          "  type: chatcompletions",
+          "  protocol: chatCompletions",
           `  baseUrl: ${baseUrl}`,
           "  contextWindow: 1000",
           "model: stub-model",
@@ -368,7 +368,7 @@ describe.concurrent("cli.ts end-to-end", () => {
         recipe,
         [
           "provider:",
-          "  type: chatcompletions",
+          "  protocol: chatCompletions",
           `  baseUrl: ${baseUrl}`,
           "model: stub-model",
           "task: Use {{token}}",
@@ -454,7 +454,7 @@ describe.concurrent("cli.ts end-to-end", () => {
         [
           "providers:",
           "  stub:",
-          "    type: chatcompletions",
+          "    protocol: chatCompletions",
           `    baseUrl: ${url}`,
           "    maxRetries: 0",
           "",

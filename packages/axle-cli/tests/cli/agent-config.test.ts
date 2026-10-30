@@ -75,7 +75,7 @@ describe("createCliAgentConfig", () => {
   test("creates an agent config from a CLI job config", async () => {
     const { agentConfig, mcps } = await fromRecipe(
       {
-        provider: { type: "chatcompletions", baseUrl: "https://example.test/v1" },
+        provider: { protocol: "chatCompletions", baseUrl: "https://example.test/v1" },
         model: "test-model",
         task: "Read something",
         tools: ["read-file"],
@@ -98,7 +98,8 @@ describe("createCliAgentConfig", () => {
     const { agentConfig } = await fromRecipe(
       {
         provider: {
-          type: "openai",
+          protocol: "responses",
+          baseUrl: "https://gateway.example.test/v1",
           apiKeyEnv: "AXLE_TEST_OPENAI_KEY",
         },
         model: "openai/gpt-test",
@@ -139,7 +140,7 @@ describe("createCliAgentConfig", () => {
       {
         providers: {
           gw: {
-            type: "chatcompletions",
+            protocol: "chatCompletions",
             baseUrl: "https://gw.example.test/v1",
             apiKeyEnv: "GW_KEY",
           },
@@ -153,7 +154,7 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.model).toBe("some/model");
   });
 
-  test("chatcompletions is a type, not a provider name", async () => {
+  test("chatcompletions is not a provider name", async () => {
     await expect(
       fromRecipe(
         { provider: { name: "chatcompletions" }, model: "some/model", task: "Run" },
@@ -162,27 +163,96 @@ describe("createCliAgentConfig", () => {
         {},
       ),
     ).rejects.toThrow(
-      'Provider "chatcompletions" is not a provider profile in cli.yaml or a built-in provider type.',
+      'Provider "chatcompletions" is not a preset (anthropic, openai, gemini, openrouter, together, bedrock) or a provider profile in cli.yaml.',
     );
   });
 
-  test("a chatcompletions profile with no model names no model variable", async () => {
+  test("a generic profile with no model names no model variable", async () => {
     await expect(
       fromRecipe(
         { provider: { name: "gw" }, task: "Run" },
-        { providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } } },
+        {
+          providers: { gw: { protocol: "chatCompletions", baseUrl: "https://gw.example.test/v1" } },
+        },
         {},
         {},
       ),
     ).rejects.toThrow(
-      "No model resolved for provider chatcompletions. Add model: to the job, or set defaults.models in ~/.axle/cli.yaml.",
+      "No model resolved for provider gw. Add model: to the job, or set defaults.models in ~/.axle/cli.yaml.",
     );
   });
 
-  test("rejects a provider name that is neither profile nor built-in", async () => {
+  test("rejects a provider name that is neither profile nor preset", async () => {
+    await expect(
+      fromRecipe({ provider: { name: "mystery" }, task: "Run" }, {}, {}, process.env),
+    ).rejects.toThrow(/"mystery" is not a preset .* or a provider profile/);
+  });
+
+  test("bedrock needs a profile for its protocol and region", async () => {
     await expect(
       fromRecipe({ provider: { name: "bedrock" }, task: "Run" }, {}, {}, process.env),
-    ).rejects.toThrow(/"bedrock" is not a provider profile/);
+    ).rejects.toThrow("bedrock needs a protocol and a region.");
+  });
+
+  test("a preset profile extends the preset of its name", async () => {
+    const { agentConfig } = await fromRecipe(
+      { provider: { name: "anthropic" }, model: "claude-x", task: "Run" },
+      { providers: { anthropic: { apiKeyEnv: "AXLE_TEST_WORK_KEY" } } },
+      {},
+      { AXLE_TEST_WORK_KEY: "work-key" },
+    );
+
+    expect(agentConfig.provider).toMatchObject({ protocol: "messages", id: "anthropic" });
+  });
+
+  test("a bedrock profile builds the protocol it names", async () => {
+    const { agentConfig } = await fromRecipe(
+      { provider: { name: "bedrock" }, model: "openai.gpt-oss-20b", task: "Run" },
+      { providers: { bedrock: { protocol: "responses", region: "us-east-1" } } },
+      { bedrock: { apiKey: "key" } },
+      {},
+    );
+
+    expect(agentConfig.provider).toMatchObject({ protocol: "responses", id: "amazon-bedrock" });
+  });
+
+  test("openrouter and together are presets with no profile", async () => {
+    const { agentConfig } = await fromRecipe(
+      { provider: { name: "together" }, model: "m", task: "Run" },
+      {},
+      { together: { apiKey: "key" } },
+      {},
+    );
+
+    expect(agentConfig.provider).toMatchObject({ protocol: "chatCompletions", id: "togetherai" });
+  });
+
+  test("a generic profile infers its id from the hostname", async () => {
+    const { agentConfig } = await fromRecipe(
+      { provider: { name: "eu" }, model: "m", task: "Run" },
+      {
+        providers: {
+          eu: { protocol: "chatCompletions", baseUrl: "https://eu.openrouter.ai/api/v1" },
+        },
+      },
+      {},
+      {},
+    );
+
+    expect(agentConfig.provider.id).toBe("openrouter");
+  });
+
+  test("a generic profile on an SDK protocol needs a key, so the SDK reads none from the environment", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "must-not-reach-the-proxy");
+
+    await expect(
+      fromRecipe(
+        { provider: { name: "proxy" }, model: "m", task: "Run" },
+        { providers: { proxy: { protocol: "messages", baseUrl: "https://proxy.test" } } },
+        {},
+        {},
+      ),
+    ).rejects.toThrow("No API key for proxy. Set apiKeyEnv on the provider.");
   });
 
   test("defaults.models resolves by provider name, profiles included", async () => {
@@ -190,7 +260,7 @@ describe("createCliAgentConfig", () => {
       { provider: { name: "gw" }, task: "Run" },
       {
         providers: {
-          gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" },
+          gw: { protocol: "chatCompletions", baseUrl: "https://gw.example.test/v1" },
         },
         defaults: { models: { gw: "vendor/model-a" } },
       },
@@ -215,7 +285,7 @@ describe("createCliAgentConfig", () => {
   test("no hardcoded model defaults: an unresolvable model is an error", async () => {
     await expect(
       fromRecipe(
-        { provider: { type: "anthropic" }, task: "Run" },
+        { provider: { name: "anthropic" }, task: "Run" },
         {},
         { anthropic: { apiKey: "key" } },
         process.env,
@@ -226,7 +296,7 @@ describe("createCliAgentConfig", () => {
   test("a missing api key names the variable to set", async () => {
     await expect(
       fromRecipe(
-        { provider: { type: "anthropic" }, model: "anthropic/claude-sonnet-5", task: "Run" },
+        { provider: { name: "anthropic" }, model: "anthropic/claude-sonnet-5", task: "Run" },
         {},
         {},
         process.env,
@@ -239,7 +309,11 @@ describe("createCliAgentConfig", () => {
   test("apiKeyEnv is resolved from the credentials it is given, not the process environment", async () => {
     const { agentConfig } = await fromRecipe(
       {
-        provider: { type: "openai", apiKeyEnv: "AXLE_TEST_FILE_ONLY_KEY" },
+        provider: {
+          protocol: "responses",
+          baseUrl: "https://gateway.example.test/v1",
+          apiKeyEnv: "AXLE_TEST_FILE_ONLY_KEY",
+        },
         model: "openai/gpt-test",
         task: "Run",
       },
@@ -251,14 +325,14 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.provider.protocol).toBe("responses");
   });
 
-  test("a chatcompletions profile whose apiKeyEnv is unset fails by name", async () => {
+  test("a generic profile whose apiKeyEnv is unset fails by name", async () => {
     await expect(
       fromRecipe(
         { provider: { name: "router" }, model: "some/model", task: "Run" },
         {
           providers: {
             router: {
-              type: "chatcompletions",
+              protocol: "chatCompletions",
               baseUrl: "https://router.example.test/v1",
               apiKeyEnv: "AXLE_TEST_MISSING_KEY",
             },
@@ -268,14 +342,14 @@ describe("createCliAgentConfig", () => {
         {},
       ),
     ).rejects.toThrow(
-      "No API key for chatcompletions: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
+      "No API key for router: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
     );
   });
 
   test("a chatcompletions endpoint with no key configured runs keyless", async () => {
     const { agentConfig } = await fromRecipe(
       {
-        provider: { type: "chatcompletions", baseUrl: "http://localhost:11434/v1" },
+        provider: { protocol: "chatCompletions", baseUrl: "http://localhost:11434/v1" },
         model: "local/model",
         task: "Run",
       },
@@ -291,7 +365,11 @@ describe("createCliAgentConfig", () => {
     await expect(
       fromRecipe(
         {
-          provider: { type: "openai", apiKeyEnv: "AXLE_TEST_MISSING_KEY" },
+          provider: {
+            protocol: "responses",
+            baseUrl: "https://gateway.example.test/v1",
+            apiKeyEnv: "AXLE_TEST_MISSING_KEY",
+          },
           model: "openai/gpt-test",
           task: "Run",
         },
@@ -300,14 +378,14 @@ describe("createCliAgentConfig", () => {
         process.env,
       ),
     ).rejects.toThrow(
-      "No API key for openai: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
+      "No API key for responses: apiKeyEnv names AXLE_TEST_MISSING_KEY, which is not set.",
     );
   });
 
   test("top-level model wins over the service config model", async () => {
     const { agentConfig } = await fromRecipe(
       {
-        provider: { type: "anthropic" },
+        provider: { name: "anthropic" },
         model: "anthropic/claude-sonnet-5",
         task: "Run",
       },
@@ -322,7 +400,7 @@ describe("createCliAgentConfig", () => {
   test("passes system and request options through to the agent config", async () => {
     const { agentConfig } = await fromRecipe(
       {
-        provider: { type: "anthropic" },
+        provider: { name: "anthropic" },
         system: "You are terse.",
         request: {
           reasoning: { effort: "low" },
@@ -395,14 +473,14 @@ describe("a named provider against the current configuration", () => {
       target,
       {},
       {
-        providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } },
+        providers: { gw: { protocol: "chatCompletions", baseUrl: "https://gw.example.test/v1" } },
       },
     );
     const asAnthropic = await fromTarget(
       target,
       {},
       {
-        providers: { gw: { type: "anthropic", apiKey: "key" } },
+        providers: { gw: { protocol: "messages", baseUrl: "https://gw.test", apiKey: "key" } },
       },
     );
 
@@ -411,13 +489,15 @@ describe("a named provider against the current configuration", () => {
   });
 
   test("a named provider whose profile is gone fails by name", async () => {
-    await expect(fromTarget(target, {}, {})).rejects.toThrow(/"gw" is not a provider profile/);
+    await expect(fromTarget(target, {}, {})).rejects.toThrow(
+      /"gw" is not a preset .* or a provider profile/,
+    );
   });
 
   test("an inline endpoint resolves without cli.yaml", async () => {
     const { agentConfig } = await fromTarget(
       {
-        provider: { type: "chatcompletions", baseUrl: "https://old.example.test/v1" },
+        provider: { protocol: "chatCompletions", baseUrl: "https://old.example.test/v1" },
         model: "m",
       },
       {},
@@ -432,7 +512,7 @@ describe("resolveTarget", () => {
   test("a named profile stays a name, for the session and the defaults.models lookup", () => {
     const target = resolveTarget(
       { provider: { name: "work" } },
-      { providers: { work: { type: "anthropic" } } },
+      { providers: { work: { protocol: "messages", baseUrl: "https://work.test" } } },
       {},
     );
 
@@ -440,22 +520,25 @@ describe("resolveTarget", () => {
     expect(target.provider).toEqual({ name: "work" });
   });
 
-  test("an inline endpoint is carried as written; its type doubles as its name", () => {
+  test("an inline endpoint is carried as written; its protocol doubles as its name", () => {
     const target = resolveTarget(
-      { provider: { type: "chatcompletions", baseUrl: "http://localhost:1/v1" } },
+      { provider: { protocol: "chatCompletions", baseUrl: "http://localhost:1/v1" } },
       {},
       {},
     );
 
-    expect(target.providerName).toBe("chatcompletions");
-    expect(target.provider).toEqual({ type: "chatcompletions", baseUrl: "http://localhost:1/v1" });
+    expect(target.providerName).toBe("chatCompletions");
+    expect(target.provider).toEqual({
+      protocol: "chatCompletions",
+      baseUrl: "http://localhost:1/v1",
+    });
   });
 
   test("chat takes the default provider and its default model", () => {
     const target = resolveTarget(
       undefined,
       {
-        providers: { gw: { type: "chatcompletions", baseUrl: "https://gw.example.test/v1" } },
+        providers: { gw: { protocol: "chatCompletions", baseUrl: "https://gw.example.test/v1" } },
         defaults: { provider: "gw", models: { gw: "vendor/model-a" } },
       },
       {},

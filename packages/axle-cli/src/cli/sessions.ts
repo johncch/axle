@@ -41,11 +41,43 @@ interface LegacySessionFile {
   turns: Turn[];
 }
 
+const VENDOR_DIALECTS: Record<string, "openrouter" | "together"> = {
+  openrouter: "openrouter",
+  togetherai: "together",
+};
+
+class SessionProviderError extends Error {}
+
+// Recipes saved before 0.35 wrote an inline provider with `type`: the
+// protocol for chatcompletions, otherwise a built-in name.
+function upgradeInlineProvider(
+  provider: Record<string, unknown>,
+): Record<string, unknown> | string {
+  const { type, vendor, ...config } = provider;
+  if (typeof type !== "string") return provider;
+  if (type !== "chatcompletions") {
+    const settings = Object.keys(provider).filter((key) => key !== "type");
+    if (settings.length > 0) {
+      throw new SessionProviderError(
+        `This session's provider sets ${settings.join(", ")} on "${type}", which a saved session can no longer carry. Put it in providers.${type} in cli.yaml and start a new run.`,
+      );
+    }
+    return type;
+  }
+  return {
+    protocol: "chatCompletions",
+    ...config,
+    ...(typeof vendor === "string" ? { id: vendor, dialect: VENDOR_DIALECTS[vendor] } : {}),
+  };
+}
+
 function fromLegacy(file: LegacySessionFile): CliSessionFile {
   const { version: _, provider, tools, providerTools, ...rest } = file.definition;
   const recipe = AgentRecipeSchema.parse({
     ...rest,
-    provider: provider.config ? { type: provider.type, ...provider.config } : provider.type,
+    provider: provider.config
+      ? upgradeInlineProvider({ type: provider.type, ...provider.config })
+      : provider.type,
     tools: tools?.map((ref) => ref.name),
     providerTools: providerTools?.map((ref) => ref.name),
     compaction: file.compaction,
@@ -160,12 +192,23 @@ export async function loadSession(sessionId: string, home?: string): Promise<Cli
   if ("definition" in file) {
     try {
       return fromLegacy(file);
-    } catch {
+    } catch (e) {
+      if (e instanceof SessionProviderError) throw e;
       throw new Error(`Unsupported or corrupt session file at ${path}`);
     }
   }
   if (!file.recipe) {
     throw new Error(`Unsupported or corrupt session file at ${path}`);
+  }
+  const saved: unknown = file.recipe.provider;
+  if (saved && typeof saved === "object" && "type" in saved) {
+    const upgraded = upgradeInlineProvider({ ...saved });
+    try {
+      const { provider } = AgentRecipeSchema.parse({ provider: upgraded });
+      return { ...file, recipe: { ...file.recipe, provider } };
+    } catch {
+      throw new Error(`Unsupported or corrupt session file at ${path}`);
+    }
   }
   return file;
 }

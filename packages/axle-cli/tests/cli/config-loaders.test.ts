@@ -11,6 +11,7 @@ import {
   readConfigHome,
 } from "../../src/cli/configs/loaders.js";
 import { listProjectInputs } from "../../src/cli/configs/paths.js";
+import type { CliConfig } from "../../src/cli/configs/schemas.js";
 
 const TEST_DIR = join(import.meta.dirname, "__config_loader_tmp__");
 const ORIGINAL_CWD = process.cwd();
@@ -31,8 +32,7 @@ describe("config loaders", () => {
     await writeFile(
       path,
       [
-        "provider:",
-        "  type: openai",
+        "provider: openai",
         "task: Summarize {{file}}",
         "mcps:",
         "  - transport: http",
@@ -43,7 +43,7 @@ describe("config loaders", () => {
     const config = await getJobConfig(path, {});
 
     expect(config.name).toBeUndefined();
-    expect(config.provider).toEqual({ type: "openai" });
+    expect(config.provider).toEqual({ name: "openai" });
     expect(config.mcps?.[0]).toMatchObject({ transport: "http" });
   });
 
@@ -53,7 +53,8 @@ describe("config loaders", () => {
       path,
       [
         "provider:",
-        "  type: openai",
+        "  protocol: responses",
+        "  baseUrl: https://gateway.example.test/v1",
         "  apiKeyEnv: CUSTOM_OPENAI_KEY",
         "model: openai/gpt-test",
         "task: Run",
@@ -63,21 +64,23 @@ describe("config loaders", () => {
     const config = await getJobConfig(path, {});
 
     expect(config.provider).toEqual({
-      type: "openai",
+      protocol: "responses",
+      baseUrl: "https://gateway.example.test/v1",
       apiKeyEnv: "CUSTOM_OPENAI_KEY",
     });
     expect(config.model).toBe("openai/gpt-test");
   });
 
-  it("accepts a ChatCompletions vendor override", async () => {
+  it("accepts an id and dialect on an inline provider", async () => {
     const path = join(TEST_DIR, "openrouter.yml");
     await writeFile(
       path,
       [
         "provider:",
-        "  type: chatcompletions",
+        "  protocol: chatCompletions",
         "  baseUrl: https://gateway.example.test/v1",
-        "  vendor: openrouter",
+        "  id: openrouter",
+        "  dialect: openrouter",
         "model: test-model",
         "task: Run",
       ].join("\n"),
@@ -86,9 +89,10 @@ describe("config loaders", () => {
     const config = await getJobConfig(path, {});
 
     expect(config.provider).toMatchObject({
-      type: "chatcompletions",
+      protocol: "chatCompletions",
       baseUrl: "https://gateway.example.test/v1",
-      vendor: "openrouter",
+      id: "openrouter",
+      dialect: "openrouter",
     });
     expect(config.model).toBe("test-model");
   });
@@ -125,7 +129,13 @@ describe("config loaders", () => {
     const path = join(TEST_DIR, "inline-key.yml");
     await writeFile(
       path,
-      ["provider:", "  type: openai", "  apiKey: sk-secret", "task: Run"].join("\n"),
+      [
+        "provider:",
+        "  protocol: responses",
+        "  baseUrl: https://gateway.example.test/v1",
+        "  apiKey: sk-secret",
+        "task: Run",
+      ].join("\n"),
     );
 
     await expect(getJobConfig(path, {})).rejects.toThrow(/provider: Unrecognized key: "apiKey"/);
@@ -133,7 +143,7 @@ describe("config loaders", () => {
 
   it("rejects non-YAML job files", async () => {
     const path = join(TEST_DIR, "summarize.json");
-    await writeFile(path, JSON.stringify({ provider: { type: "openai" }, task: "test" }));
+    await writeFile(path, JSON.stringify({ provider: "openai", task: "test" }));
 
     await expect(getJobConfig(path, {})).rejects.toThrow(
       "Invalid job file format. Expected .yaml or .yml",
@@ -254,9 +264,10 @@ describe("config loaders", () => {
       [
         "providers:",
         "  work:",
-        "    type: anthropic",
+        "    protocol: messages",
+        "    baseUrl: https://anthropic.test",
         "  local:",
-        "    type: chatcompletions",
+        "    protocol: chatCompletions",
         "    baseUrl: http://localhost:11434/v1",
         "defaults:",
         "  provider: work",
@@ -271,7 +282,8 @@ describe("config loaders", () => {
       [
         "providers:",
         "  work:",
-        "    type: openai",
+        "    protocol: responses",
+        "    baseUrl: https://openai.test/v1",
         "defaults:",
         "  provider: local",
         "  models:",
@@ -297,8 +309,6 @@ describe("config loaders", () => {
       [
         "providers:",
         "  openrouter:",
-        "    type: chatcompletions",
-        "    baseUrl: https://openrouter.ai/api/v1",
         "    apiKeyEnv: OPENROUTER_API_KEY",
         "defaults:",
         "  provider: anthropic",
@@ -316,11 +326,7 @@ describe("config loaders", () => {
     const config = await getCliConfig({ trusted: true, cwd, home });
 
     expect(config.providers).toEqual({
-      openrouter: {
-        type: "chatcompletions",
-        baseUrl: "https://openrouter.ai/api/v1",
-        apiKeyEnv: "OPENROUTER_API_KEY",
-      },
+      openrouter: { apiKeyEnv: "OPENROUTER_API_KEY" },
     });
     expect(config.defaults).toEqual({
       provider: "openrouter",
@@ -348,27 +354,130 @@ describe("config loaders", () => {
       [
         "providers:",
         "  gw:",
-        "    type: chatcompletions",
+        "    protocol: chatCompletions",
         "    baseUrl: https://gw.example.test/v1",
         "    apiKeyEnv: GW_KEY",
       ].join("\n"),
     );
     await writeFile(
       join(cwd, ".axle", "cli.yaml"),
-      ["providers:", "  gw:", "    type: anthropic"].join("\n"),
+      ["providers:", "  gw:", "    protocol: messages", "    baseUrl: https://gw.test"].join("\n"),
     );
 
     const config = await getCliConfig({ trusted: true, cwd, home });
 
-    expect(config.providers?.gw).toEqual({ type: "anthropic" });
+    expect(config.providers?.gw).toEqual({ protocol: "messages", baseUrl: "https://gw.test" });
   });
 
-  it("rejects a chatcompletions profile with no baseUrl", async () => {
+  describe("provider profile names", () => {
+    async function loadProviders(lines: string[]): Promise<CliConfig> {
+      const home = join(TEST_DIR, "home");
+      await mkdir(join(home, ".axle"), { recursive: true });
+      await writeFile(join(home, ".axle", "cli.yaml"), ["providers:", ...lines].join("\n"));
+      return getCliConfig({ trusted: true, cwd: join(TEST_DIR, "proj"), home });
+    }
+
+    it("a preset's name takes the preset's options", async () => {
+      const config = await loadProviders([
+        "  anthropic:",
+        "    apiKeyEnv: WORK_KEY",
+        "  bedrock:",
+        "    protocol: messages",
+        "    region: us-east-1",
+        "  openrouter:",
+        "    baseUrl: https://eu.openrouter.ai/api/v1",
+      ]);
+
+      expect(config.providers).toEqual({
+        anthropic: { apiKeyEnv: "WORK_KEY" },
+        bedrock: { protocol: "messages", region: "us-east-1" },
+        openrouter: { baseUrl: "https://eu.openrouter.ai/api/v1" },
+      });
+    });
+
+    it("rejects a baseUrl on a preset that takes none, and says what to do", async () => {
+      await expect(
+        loadProviders(["  anthropic:", "    baseUrl: https://proxy.test"]),
+      ).rejects.toThrow(
+        'providers.anthropic: "anthropic" is a preset and takes no baseUrl. Remove it, or rename this profile to use your own URL.',
+      );
+    });
+
+    it("rejects the old keys on a preset", async () => {
+      await expect(
+        loadProviders(["  openrouter:", "    type: chatcompletions", "    vendor: openrouter"]),
+      ).rejects.toThrow(
+        'providers.openrouter: "openrouter" is a preset and takes no type or vendor. Remove them.',
+      );
+    });
+
+    it("says what replaced the old keys on a generic profile", async () => {
+      await expect(
+        loadProviders([
+          "  local:",
+          "    type: chatcompletions",
+          "    baseUrl: http://localhost:1/v1",
+          "    vendor: openrouter",
+        ]),
+      ).rejects.toThrow("providers.local: type is now protocol; vendor is now id and dialect.");
+    });
+
+    it("rejects a dialect outside chatCompletions", async () => {
+      await expect(
+        loadProviders([
+          "  proxy:",
+          "    protocol: messages",
+          "    baseUrl: https://proxy.test",
+          "    dialect: openrouter",
+        ]),
+      ).rejects.toThrow("providers.proxy.dialect: dialect applies only");
+    });
+
+    it("says a missing key is required, not invalid", async () => {
+      await expect(loadProviders(["  local:", "    apiKeyEnv: KEY"])).rejects.toThrow(
+        "providers.local.protocol: protocol is required: messages, responses, generateContent or chatCompletions.",
+      );
+      await expect(loadProviders(["  local:", "    protocol: responses"])).rejects.toThrow(
+        "providers.local.baseUrl: baseUrl is required.",
+      );
+      await expect(loadProviders(["  bedrock:", "    protocol: messages"])).rejects.toThrow(
+        "providers.bedrock.region: region is required, e.g. us-east-1.",
+      );
+    });
+
+    it("still rejects a wrong protocol as a wrong value", async () => {
+      await expect(
+        loadProviders(["  local:", "    protocol: nope", "    baseUrl: http://x/v1"]),
+      ).rejects.toThrow(/providers\.local\.protocol: Invalid option/);
+    });
+
+    it("reports every invalid file, not only the first", async () => {
+      const home = join(TEST_DIR, "home");
+      const cwd = join(TEST_DIR, "proj");
+      await mkdir(join(home, ".axle"), { recursive: true });
+      await mkdir(join(cwd, ".axle"), { recursive: true });
+      await writeFile(
+        join(home, ".axle", "cli.yaml"),
+        ["providers:", "  anthropic:", "    type: anthropic"].join("\n"),
+      );
+      await writeFile(
+        join(cwd, ".axle", "cli.yaml"),
+        ["providers:", "  gemini:", "    type: gemini"].join("\n"),
+      );
+
+      const load = getCliConfig({ trusted: true, cwd, home });
+
+      await expect(load).rejects.toThrow(/home\/\.axle\/cli\.yaml:\n.*providers\.anthropic/);
+      await expect(load).rejects.toThrow(/proj\/\.axle\/cli\.yaml:\n.*providers\.gemini/);
+    });
+  });
+
+  it("rejects a generic profile with no baseUrl", async () => {
     const home = join(TEST_DIR, "home");
     await mkdir(join(home, ".axle"), { recursive: true });
     await writeFile(
       join(home, ".axle", "cli.yaml"),
-      ["providers:", "  local:", "    type: chatcompletions"].join("\n"),
+      ["providers:", "  local:", "    protocol: chatCompletions"].join("\n"),
     );
 
     await expect(
@@ -422,9 +531,13 @@ describe("config loaders", () => {
     await mkdir(join(home, ".axle"), { recursive: true });
     await writeFile(
       join(home, ".axle", "cli.yaml"),
-      ["providers:", "  mine:", "    type: anthropic", "    model: anthropic/claude-sonnet-5"].join(
-        "\n",
-      ),
+      [
+        "providers:",
+        "  mine:",
+        "    protocol: messages",
+        "    baseUrl: https://anthropic.test",
+        "    model: anthropic/claude-sonnet-5",
+      ].join("\n"),
     );
 
     await expect(
@@ -484,14 +597,17 @@ describe("config loaders", () => {
 
   it("reports validation errors with paths", async () => {
     const path = join(TEST_DIR, "bad.yml");
-    await writeFile(path, "provider:\n  type: nope\ntask: test\n");
+    await writeFile(path, "provider:\n  protocol: nope\ntask: test\n");
 
-    await expect(getJobConfig(path, {})).rejects.toThrow(/provider\.type/);
+    await expect(getJobConfig(path, {})).rejects.toThrow(/provider\.protocol/);
   });
 
   it("rejects unknown provider fields", async () => {
     const path = join(TEST_DIR, "unknown-field.yml");
-    await writeFile(path, "provider:\n  type: openai\n  unknown: nope\ntask: test\n");
+    await writeFile(
+      path,
+      "provider:\n  protocol: responses\n  baseUrl: https://a.test/v1\n  unknown: nope\ntask: test\n",
+    );
 
     await expect(getJobConfig(path, {})).rejects.toThrow(/provider/);
   });
@@ -500,7 +616,7 @@ describe("config loaders", () => {
 describe("schedule block", () => {
   async function loadWith(block: string[]): Promise<Awaited<ReturnType<typeof getJobConfig>>> {
     const path = join(TEST_DIR, "scheduled.yml");
-    await writeFile(path, ["provider:", "  type: openai", "task: Check", ...block].join("\n"));
+    await writeFile(path, ["provider: openai", "task: Check", ...block].join("\n"));
     return getJobConfig(path, {});
   }
 

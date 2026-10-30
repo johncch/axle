@@ -109,7 +109,7 @@ describe("updateCliDefaults", () => {
         "# my hand-written config",
         "providers:",
         "  gw:",
-        "    type: chatcompletions",
+        "    protocol: chatCompletions",
         "    baseUrl: https://gw.example.test/v1 # gateway",
         "defaults:",
         "  provider: gw",
@@ -143,7 +143,7 @@ describe("upsertCliProvider", () => {
     const path = await upsertCliProvider(
       "openrouter",
       {
-        type: "chatcompletions",
+        protocol: "chatCompletions",
         baseUrl: "https://openrouter.ai/api/v1",
         apiKeyEnv: "OPENROUTER_API_KEY",
       },
@@ -156,7 +156,7 @@ describe("upsertCliProvider", () => {
     expect(content).toContain("provider: anthropic");
     expect(YAML.parse(content).providers).toEqual({
       openrouter: {
-        type: "chatcompletions",
+        protocol: "chatCompletions",
         baseUrl: "https://openrouter.ai/api/v1",
         apiKeyEnv: "OPENROUTER_API_KEY",
       },
@@ -166,17 +166,17 @@ describe("upsertCliProvider", () => {
   it("replaces a profile of the same name", async () => {
     await upsertCliProvider(
       "local",
-      { type: "chatcompletions", baseUrl: "http://old.test/v1", apiKeyEnv: "LOCAL_API_KEY" },
+      { protocol: "chatCompletions", baseUrl: "http://old.test/v1", apiKeyEnv: "LOCAL_API_KEY" },
       { home: HOME },
     );
     await upsertCliProvider(
       "local",
-      { type: "chatcompletions", baseUrl: "http://new.test/v1" },
+      { protocol: "chatCompletions", baseUrl: "http://new.test/v1" },
       { home: HOME },
     );
 
     expect(YAML.parse(await readFile(CLI_YAML, "utf-8")).providers).toEqual({
-      local: { type: "chatcompletions", baseUrl: "http://new.test/v1" },
+      local: { protocol: "chatCompletions", baseUrl: "http://new.test/v1" },
     });
   });
 });

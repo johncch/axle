@@ -48,7 +48,9 @@ describe("needsSetupWizard", () => {
 
   it("skips when cli.yaml has a provider profile", () => {
     const cliConfig: CliConfig = {
-      providers: { work: { type: "anthropic", apiKeyEnv: "WORK_KEY" } },
+      providers: {
+        work: { protocol: "messages", baseUrl: "https://work.test", apiKeyEnv: "WORK_KEY" },
+      },
     };
     expect(needsSetupWizard({}, cliConfig, undefined)).toBe(false);
   });
@@ -60,7 +62,7 @@ describe("needsSetupWizard", () => {
   it("skips when the recipe carries inline provider configuration", () => {
     const jobConfig = {
       task: "x",
-      provider: { type: "chatcompletions", baseUrl: "http://localhost:1/v1" },
+      provider: { protocol: "chatCompletions", baseUrl: "http://localhost:1/v1" },
     } as JobConfig;
     expect(needsSetupWizard({}, {}, jobConfig)).toBe(false);
   });
@@ -87,24 +89,42 @@ describe("runSetupWizard", () => {
   it("saves an OpenAI-compatible endpoint as a named profile with its own key variable", async () => {
     vi.mocked(ask.select).mockResolvedValueOnce("user").mockResolvedValueOnce("endpoint");
     vi.mocked(ask.text)
-      .mockResolvedValueOnce("https://openrouter.ai/api/v1")
-      .mockResolvedValueOnce("openrouter")
+      .mockResolvedValueOnce("https://gateway.test/v1")
+      .mockResolvedValueOnce("gateway")
       .mockResolvedValueOnce("z-ai/glm-4.6");
+    vi.mocked(ask.password).mockResolvedValue("sk-gw");
+
+    await runSetupWizard();
+
+    const validateName = vi.mocked(ask.text).mock.calls[1][0].validate;
+    if (typeof validateName !== "function") throw new Error("expected a name validator");
+    expect(validateName("openrouter")).toMatch(/is a preset/);
+    expect(validateName("gateway")).toBeUndefined();
+    expect(upsertCredentials).toHaveBeenCalledWith({ GATEWAY_API_KEY: "sk-gw" }, USER);
+    expect(upsertCliProvider).toHaveBeenCalledWith(
+      "gateway",
+      {
+        protocol: "chatCompletions",
+        baseUrl: "https://gateway.test/v1",
+        apiKeyEnv: "GATEWAY_API_KEY",
+      },
+      USER,
+    );
+    expect(updateCliDefaults).toHaveBeenCalledWith(
+      { provider: "gateway", models: { gateway: "z-ai/glm-4.6" } },
+      USER,
+    );
+  });
+
+  it("offers OpenRouter as a preset that needs no profile", async () => {
+    vi.mocked(ask.select).mockResolvedValueOnce("user").mockResolvedValueOnce("openrouter");
+    vi.mocked(ask.text).mockResolvedValueOnce("z-ai/glm-4.6");
     vi.mocked(ask.password).mockResolvedValue("sk-or");
 
     await runSetupWizard();
 
-    expect(vi.mocked(ask.text).mock.calls[1][0].initialValue).toBe("openrouter");
     expect(upsertCredentials).toHaveBeenCalledWith({ OPENROUTER_API_KEY: "sk-or" }, USER);
-    expect(upsertCliProvider).toHaveBeenCalledWith(
-      "openrouter",
-      {
-        type: "chatcompletions",
-        baseUrl: "https://openrouter.ai/api/v1",
-        apiKeyEnv: "OPENROUTER_API_KEY",
-      },
-      USER,
-    );
+    expect(upsertCliProvider).not.toHaveBeenCalled();
     expect(updateCliDefaults).toHaveBeenCalledWith(
       { provider: "openrouter", models: { openrouter: "z-ai/glm-4.6" } },
       USER,
@@ -124,7 +144,7 @@ describe("runSetupWizard", () => {
     expect(upsertCredentials).not.toHaveBeenCalled();
     expect(upsertCliProvider).toHaveBeenCalledWith(
       "my-ollama",
-      { type: "chatcompletions", baseUrl: "http://localhost:11434/v1" },
+      { protocol: "chatCompletions", baseUrl: "http://localhost:11434/v1" },
       USER,
     );
   });
@@ -162,7 +182,7 @@ describe("runSetupWizard", () => {
     vi.mocked(readConfigHome).mockResolvedValue({
       credentials: {},
       cliConfig: {
-        providers: { local: { type: "chatcompletions", baseUrl: "http://old.test/v1" } },
+        providers: { local: { protocol: "chatCompletions", baseUrl: "http://old.test/v1" } },
       },
     });
     vi.mocked(ask.select).mockResolvedValueOnce("user").mockResolvedValueOnce("endpoint");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextPie, formatActionResult } from "../../src/ui/format.js";
+import { contextPie, formatActionResult, formatFailure } from "../../src/ui/format.js";
 
 describe("contextPie", () => {
   it.each([
@@ -14,6 +14,33 @@ describe("contextPie", () => {
     [1.1, "● 110%"],
   ])("renders %s as %s", (fraction, expected) => {
     expect(contextPie(fraction)).toBe(expected);
+  });
+});
+
+describe("formatFailure", () => {
+  it("marks a one-line failure", () => {
+    expect(formatFailure("Recipe not found", 80)).toBe("✖ Recipe not found");
+  });
+
+  it("wraps under the message and keeps a list item's text aligned", () => {
+    const message = [
+      "Invalid config file at /home/me/.axle/cli.yaml:",
+      '  - providers.anthropic: "anthropic" is a preset and takes no baseUrl. Remove it.',
+    ].join("\n");
+
+    expect(formatFailure(message, 40).split("\n")).toEqual([
+      "✖ Invalid config file at",
+      "  /home/me/.axle/cli.yaml:",
+      '    - providers.anthropic: "anthropic"',
+      "      is a preset and takes no baseUrl.",
+      "      Remove it.",
+    ]);
+  });
+
+  it("leaves lines whole at an unlimited width", () => {
+    const message = `first ${"word ".repeat(40).trim()}`;
+
+    expect(formatFailure(message, Number.POSITIVE_INFINITY)).toBe(`✖ ${message}`);
   });
 });
 

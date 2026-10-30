@@ -104,20 +104,20 @@ A recipe is a YAML file run with \`axle -j path/to/job.yaml\`.
         temperature: 0.2
     compaction: false                   # optional, default on
 
-\`provider\` is a string (a built-in type: anthropic, openai, gemini; or a
-profile name from cli.yaml) or an inline object. chatcompletions is only a
-\`type\`, on a profile or inline, and always needs \`baseUrl\`:
+\`provider\` is a string (a preset: anthropic, openai, gemini, openrouter,
+together, bedrock; or a profile name from cli.yaml) or an inline generic
+profile, which always needs \`protocol\` and \`baseUrl\`:
 
     provider:
-      type: chatcompletions
+      protocol: chatCompletions
       baseUrl: http://localhost:11434/v1
       apiKeyEnv: CUSTOM_KEY             # optional, names an env var
     model: gemma3
 
 Both \`provider\` and \`model\` are optional. Missing values resolve through:
 provider: recipe -> cli.yaml defaults.provider. model: recipe ->
-cli.yaml defaults.models.<provider> -> <TYPE>_MODEL env or credentials
-(built-in types only) -> interactive prompt.
+cli.yaml defaults.models.<provider> -> <PRESET>_MODEL env or credentials
+(presets only) -> interactive prompt.
 
 \`{{variables}}\` in the task are filled with \`--args key=value\`. A \`batch:\`
 block makes the recipe a batch run (topic: batch). A \`schedule:\` block
@@ -244,24 +244,30 @@ then \`~/.axle/credentials\`. A \`.env\` in the working directory is not
 read. Files use the same KEY=value names as the environment:
 
     ANTHROPIC_API_KEY=...   OPENAI_API_KEY=...   GEMINI_API_KEY=...
+    OPENROUTER_API_KEY=...  TOGETHER_API_KEY=...  AWS_BEARER_TOKEN_BEDROCK=...
     ANTHROPIC_MODEL=anthropic/claude-sonnet-5          # optional per-provider model
 
-An OpenAI-compatible endpoint is a chatcompletions profile, not a set of
-variables. Its key lives under the name its \`apiKeyEnv\` gives; with no
-\`apiKeyEnv\` it is called keyless.
+Any other endpoint is a generic profile, not a set of variables. Its key
+lives under the name its \`apiKeyEnv\` gives; with no \`apiKeyEnv\` a
+chatCompletions endpoint is called keyless and the other protocols stop.
 
 \`cli.yaml\` (\`~/.axle/cli.yaml\`, overridden per project by \`.axle/cli.yaml\`
 once the folder is trusted) holds provider profiles and defaults:
 
     providers:
-      openrouter:                     # a profile: endpoint config, no model
-        type: chatcompletions
-        baseUrl: https://openrouter.ai/api/v1
-        apiKeyEnv: OPENROUTER_API_KEY
+      anthropic:                      # a preset's name: settings for that preset
+        apiKeyEnv: WORK_ANTHROPIC_KEY
+      bedrock:
+        protocol: messages            # follows the model: messages for Claude
+        region: us-east-1
+      work-proxy:                     # any other name: a generic profile
+        protocol: chatCompletions
+        baseUrl: https://llm.internal.example.com/v1
+        apiKeyEnv: WORK_PROXY_KEY
     defaults:
-      provider: openrouter            # used when a recipe names no provider
+      provider: work-proxy            # used when a recipe names no provider
       models:
-        openrouter: z-ai/glm-4.6
+        work-proxy: z-ai/glm-4.6
         anthropic: anthropic/claude-sonnet-5
       tools: [read-file, exec]        # replaces the built-in default tool set
 

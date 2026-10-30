@@ -1,28 +1,33 @@
-import type {
-  AgentConfig,
-  AIProvider,
-  ChatCompletionsDialect,
-  MCP,
-  Skill,
-  Span,
-} from "@fifthrevision/axle";
+import type { AgentConfig, AIProvider, MCP, Skill, Span } from "@fifthrevision/axle";
 import {
   anthropic,
+  bedrock,
   chatCompletions,
   gemini,
+  generateContent,
+  messages,
   openai,
+  openrouter,
   openrouterDialect,
+  responses,
+  together,
   togetherDialect,
 } from "@fifthrevision/axle";
 import type { Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type {
   AgentRecipe,
+  BedrockProfile,
   CliConfig,
+  GenericProfile,
   JobConfig,
+  OpenRouterProfile,
+  PresetProfile,
+  ProviderProfiles,
   ProviderUse,
   ServiceConfig,
 } from "./configs/schemas.js";
+import { PRESET_NAMES } from "./configs/schemas.js";
 import { connectMcps } from "./mcp.js";
 import { availableTools, createTools, defaultToolNames, partitionByTrust } from "./tools.js";
 
@@ -44,24 +49,33 @@ export interface RunTarget {
   providerName: string;
 }
 
-const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini"];
+/** What a provider use resolves to: a preset call, or a protocol constructor call. */
+export type Endpoint =
+  | {
+      kind: "preset";
+      preset: "anthropic" | "openai" | "gemini" | "together";
+      config: PresetProfile;
+    }
+  | { kind: "preset"; preset: "openrouter"; config: OpenRouterProfile }
+  | { kind: "preset"; preset: "bedrock"; config: BedrockProfile }
+  | { kind: "generic"; config: GenericProfile };
 
-/** The name a provider use goes by: its profile name, or an inline endpoint's type. */
+/** The name a provider use goes by: its name, or an inline profile's protocol. */
 export function providerNameOf(provider: ProviderUse): string {
-  return "name" in provider ? provider.name : provider.type;
+  return "name" in provider ? provider.name : provider.protocol;
 }
 
 /**
  * The uniform resolution chain (AXL-22):
  *   provider name := job.provider → defaults.provider → error
- *   endpoint      := cli.yaml providers[name] → built-in type → error
+ *   endpoint      := preset of that name → cli.yaml providers[name] → error
  *   model         := job.model → defaults.models[name] → env/credentials
- *                    `*_MODEL` (built-in types) → undefined (caller decides:
+ *                    `*_MODEL` (presets) → undefined (caller decides:
  *                    picker or error)
  *
  * A named provider stays a name; `resolveEndpoint` looks the profile up
- * again on every run. An inline provider object is its own endpoint; its
- * type doubles as the name for the defaults.models lookup.
+ * again on every run. An inline provider object is a generic profile; its
+ * protocol doubles as the name for the defaults.models lookup.
  */
 export function resolveTarget(
   jobConfig: Pick<JobConfig, "provider" | "model"> | undefined,
@@ -88,35 +102,97 @@ export function resolveTarget(
   const model =
     jobConfig?.model ??
     cliConfig.defaults?.models?.[providerName] ??
-    serviceConfig[endpoint.type as keyof ServiceConfig]?.model;
+    (endpoint.kind === "preset" ? serviceConfig[endpoint.preset]?.model : undefined);
 
   return { provider, model, providerName };
 }
 
+function isGenericProfile(
+  profile: NonNullable<ProviderProfiles[string]>,
+): profile is GenericProfile {
+  return "protocol" in profile && "baseUrl" in profile;
+}
+
 /**
- * Resolves a provider use against the current cli.yaml: an inline endpoint
- * is returned as is; a name finds its profile, else a built-in type, else
- * fails.
+ * Resolves a provider use against the current cli.yaml. An inline provider
+ * is a generic profile. A name that matches a preset is that preset, with
+ * its profile if there is one; any other name finds its generic profile.
  */
-export function resolveEndpoint(
-  provider: ProviderUse,
-  cliConfig: CliConfig,
-): { type: string; config: Record<string, unknown> } {
-  if (!("name" in provider)) {
-    const { type, ...config } = provider;
-    return { type, config };
+export function resolveEndpoint(provider: ProviderUse, cliConfig: CliConfig): Endpoint {
+  if (!("name" in provider)) return { kind: "generic", config: provider };
+
+  const { name } = provider;
+  const profiles = cliConfig.providers;
+  switch (name) {
+    case "anthropic":
+    case "openai":
+    case "gemini":
+    case "together":
+      return { kind: "preset", preset: name, config: profiles?.[name] ?? {} };
+    case "openrouter":
+      return { kind: "preset", preset: name, config: profiles?.openrouter ?? {} };
+    case "bedrock": {
+      const config = profiles?.bedrock;
+      if (!config) {
+        throw new Error(
+          "bedrock needs a protocol and a region. Add providers.bedrock to cli.yaml with both.",
+        );
+      }
+      return { kind: "preset", preset: name, config };
+    }
   }
-  const profile = cliConfig.providers?.[provider.name];
-  if (profile) {
-    const { type, ...config } = profile;
-    return { type, config };
-  }
-  if (BUILT_IN_PROVIDER_TYPES.includes(provider.name)) {
-    return { type: provider.name, config: {} };
-  }
+  const profile = profiles?.[name];
+  if (profile && isGenericProfile(profile)) return { kind: "generic", config: profile };
   throw new Error(
-    `Provider "${provider.name}" is not a provider profile in cli.yaml or a built-in provider type.`,
+    `Provider "${name}" is not a preset (${PRESET_NAMES.join(", ")}) or a provider profile in cli.yaml.`,
   );
+}
+
+/** Builds the provider an endpoint describes. A generic endpoint with no key passes "". */
+export function createProvider(endpoint: Endpoint, apiKey: string): AIProvider {
+  const { maxRetries, timeoutMs } = endpoint.config;
+  const client = { maxRetries, timeoutMs };
+
+  if (endpoint.kind === "preset") {
+    switch (endpoint.preset) {
+      case "anthropic":
+        return anthropic(apiKey, client);
+      case "openai":
+        return openai(apiKey, client);
+      case "gemini":
+        return gemini(apiKey, client);
+      case "together":
+        return together(apiKey, client);
+      case "openrouter":
+        return openrouter(apiKey, { ...client, baseUrl: endpoint.config.baseUrl });
+      case "bedrock": {
+        const { protocol, region } = endpoint.config;
+        return bedrock(apiKey, { ...client, protocol, region });
+      }
+    }
+  }
+
+  const { protocol, baseUrl, id, dialect } = endpoint.config;
+  const options = { ...client, baseUrl, apiKey, id };
+  switch (protocol) {
+    case "messages":
+      return messages(options);
+    case "responses":
+      return responses(options);
+    case "generateContent":
+      return generateContent(options);
+    case "chatCompletions":
+      return chatCompletions({
+        ...options,
+        apiKey: apiKey || undefined,
+        dialect:
+          dialect === "openrouter"
+            ? openrouterDialect
+            : dialect === "together"
+              ? togetherDialect
+              : undefined,
+      });
+  }
 }
 
 function resolveCliProvider(
@@ -126,94 +202,48 @@ function resolveCliProvider(
   credentials: Credentials,
 ): { provider: AIProvider; model: string } {
   const endpoint = resolveEndpoint(target.provider, cliConfig);
-  const type = endpoint.type;
-  const config = {
-    ...serviceConfig[type as keyof ServiceConfig],
-    ...endpoint.config,
-  } as Record<string, any>;
+  const service = endpoint.kind === "preset" ? serviceConfig[endpoint.preset] : undefined;
+  const label = endpoint.kind === "preset" ? endpoint.preset : providerNameOf(target.provider);
 
-  const model = target.model ?? config.model;
+  const model = target.model ?? service?.model;
   if (!model) {
-    const modelVariable = type in API_KEY_VARIABLES ? `, or set ${type.toUpperCase()}_MODEL` : "";
+    const modelVariable =
+      endpoint.kind === "preset" ? `, or set ${endpoint.preset.toUpperCase()}_MODEL` : "";
     throw new Error(
-      `No model resolved for provider ${type}. Add model: to the job, or set defaults.models in ~/.axle/cli.yaml${modelVariable}.`,
+      `No model resolved for provider ${label}. Add model: to the job, or set defaults.models in ~/.axle/cli.yaml${modelVariable}.`,
     );
   }
 
-  switch (type) {
-    case "openai": {
-      const apiKey = requireApiKey(type, config, credentials);
-      return {
-        provider: openai(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
-        model,
-      };
-    }
+  const apiKey = resolveApiKey(label, endpoint.config, service, credentials);
+  if (apiKey) return { provider: createProvider(endpoint, apiKey), model };
 
-    case "anthropic": {
-      const apiKey = requireApiKey(type, config, credentials);
-      return {
-        provider: anthropic(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
-        model,
-      };
-    }
-
-    case "gemini": {
-      const apiKey = requireApiKey(type, config, credentials);
-      return {
-        provider: gemini(apiKey, { maxRetries: config.maxRetries, timeoutMs: config.timeoutMs }),
-        model,
-      };
-    }
-
-    case "chatcompletions": {
-      const baseUrl = config.baseUrl;
-      if (!baseUrl) {
-        throw new Error("No base URL for chatcompletions. Set baseUrl on the provider.");
-      }
-      return {
-        provider: chatCompletions({
-          baseUrl,
-          apiKey: resolveApiKey(type, config, credentials),
-          maxRetries: config.maxRetries,
-          timeoutMs: config.timeoutMs,
-          ...(typeof config.vendor === "string" ? vendorProvider(config.vendor) : {}),
-        }),
-        model,
-      };
-    }
-
-    default:
-      throw new Error(`Unknown provider type: ${type}`);
+  if (endpoint.kind === "preset") {
+    throw new Error(
+      `No API key for ${label}. Set ${API_KEY_VARIABLES[endpoint.preset]} in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.`,
+    );
   }
+  if (endpoint.config.protocol !== "chatCompletions") {
+    throw new Error(`No API key for ${label}. Set apiKeyEnv on the provider.`);
+  }
+  return { provider: createProvider(endpoint, ""), model };
 }
 
 function resolveApiKey(
-  type: string,
-  config: Record<string, any>,
+  label: string,
+  config: { apiKey?: string; apiKeyEnv?: string },
+  service: { apiKey?: string } | undefined,
   credentials: Credentials,
 ): string | undefined {
   const envName = config.apiKeyEnv;
-  if (typeof envName === "string" && envName.length > 0) {
+  if (envName) {
     const apiKey = credentials[envName];
     if (!apiKey) {
-      throw new Error(`No API key for ${type}: apiKeyEnv names ${envName}, which is not set.`);
+      throw new Error(`No API key for ${label}: apiKeyEnv names ${envName}, which is not set.`);
     }
     return apiKey;
   }
 
-  return config.apiKey;
-}
-
-function requireApiKey(
-  type: keyof typeof API_KEY_VARIABLES,
-  config: Record<string, any>,
-  credentials: Credentials,
-): string {
-  const apiKey = resolveApiKey(type, config, credentials);
-  if (apiKey) return apiKey;
-  throw new Error(
-    `No API key for ${type}. Set ${API_KEY_VARIABLES[type]} in the environment or ~/.axle/credentials, or apiKeyEnv on the provider.`,
-  );
+  return config.apiKey ?? service?.apiKey;
 }
 
 /**
@@ -280,12 +310,4 @@ export async function createCliAgentConfig(
     mcps,
     droppedTools: dropped,
   };
-}
-
-function vendorProvider(
-  vendor: string,
-): { id: string; dialect: ChatCompletionsDialect } | undefined {
-  if (vendor === "openrouter") return { id: "openrouter", dialect: openrouterDialect };
-  if (vendor === "togetherai") return { id: "togetherai", dialect: togetherDialect };
-  return undefined;
 }

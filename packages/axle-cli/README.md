@@ -114,17 +114,17 @@ key a recipe accepts, with its type and what it does, and
 `axle explain recipe.<key>` goes one level down (for example
 `axle explain recipe.request`).
 
-`provider` says where requests go. A string names a provider — a built-in
-type (`anthropic`, `openai`, `gemini`) or a provider profile from
-`cli.yaml` — and an object is inline endpoint configuration.
-`chatcompletions` is a protocol, not a provider: it is the `type` of a
-profile or an inline object, always with a `baseUrl`, never a name.
+`provider` says where requests go. A string names a provider — a preset
+(`anthropic`, `openai`, `gemini`, `openrouter`, `together`, `bedrock`) or a
+provider profile from `cli.yaml` — and an object is a generic profile
+written inline: a `protocol` and a `baseUrl`, plus any of the keys below.
+`bedrock` needs a profile for its protocol and region.
 Both `provider` and `model` are optional; anything the job leaves out
 resolves through the config chain:
 
 - provider: job → `defaults.provider` in `cli.yaml`
-- model: job → `defaults.models.<provider name>` → `<TYPE>_MODEL` env or
-  credentials (built-in types only) → interactive model prompt
+- model: job → `defaults.models.<provider name>` → `<PRESET>_MODEL` env or
+  credentials (presets only) → interactive model prompt
 
 So a model-only job runs on the configured default provider, and a job with
 neither runs entirely on defaults. `model` is a publisher-qualified id (e.g.
@@ -133,7 +133,7 @@ neither runs entirely on defaults. `model` is a publisher-qualified id (e.g.
 ```yaml
 # Ollama, or any OpenAI-compatible endpoint
 provider:
-  type: chatcompletions
+  protocol: chatCompletions
   baseUrl: http://localhost:11434/v1
 model: gemma3
 ```
@@ -207,7 +207,7 @@ their maximum:
 ```yaml
 providers:
   ollama:
-    type: chatcompletions
+    protocol: chatCompletions
     baseUrl: http://localhost:11434/v1
     contextWindow: 32768
 ```
@@ -510,10 +510,13 @@ ANTHROPIC_MODEL=anthropic/claude-sonnet-5
 GEMINI_MODEL=google/gemini-3.5-flash
 ```
 
-An OpenAI-compatible endpoint has no variables of its own. It is a
-`chatcompletions` profile in `cli.yaml` (below) or an inline provider in a
-job, and its key, if it needs one, lives under whatever name its
-`apiKeyEnv` gives. Without `apiKeyEnv` the endpoint is called with no key.
+The other presets read `OPENROUTER_API_KEY`, `TOGETHER_API_KEY` and
+`AWS_BEARER_TOKEN_BEDROCK`, with the same `<PRESET>_MODEL` override.
+
+Any other endpoint has no variables of its own. It is a generic profile in
+`cli.yaml` (below) or an inline provider in a job, and its key lives under
+whatever name its `apiKeyEnv` gives. A `chatCompletions` endpoint without
+`apiKeyEnv` is called with no key; the other protocols require one.
 
 A job file never holds a key — it is meant to be checked in — so its inline
 provider rejects `apiKey`. To reference a non-standard environment variable
@@ -521,8 +524,9 @@ from a job file, use `apiKeyEnv`:
 
 ```yaml
 provider:
-  type: openai
-  apiKeyEnv: CUSTOM_OPENAI_KEY
+  protocol: responses
+  baseUrl: https://gateway.example.com/v1
+  apiKeyEnv: GATEWAY_KEY
 ```
 
 A run with no key for its provider stops with the variable to set, e.g.
@@ -534,19 +538,39 @@ and defaults:
 
 ```yaml
 providers:
-  openrouter: # a profile: pure endpoint config, no model
-    type: chatcompletions
-    baseUrl: https://openrouter.ai/api/v1
-    apiKeyEnv: OPENROUTER_API_KEY
+  anthropic: # a preset's name: settings for that preset
+    apiKeyEnv: WORK_ANTHROPIC_KEY
+  bedrock:
+    protocol: messages # follows the model: messages for Claude
+    region: us-east-1
+
+  work-proxy: # any other name: a generic profile, everything specified
+    protocol: chatCompletions
+    baseUrl: https://llm.internal.example.com/v1
+    apiKeyEnv: WORK_PROXY_KEY
+    id: openrouter
+    dialect: openrouter
 
 defaults:
-  provider: openrouter # used when a job names no provider
+  provider: work-proxy # used when a job names no provider
   models: # per-provider default models
-    openrouter: z-ai/glm-4.6
+    work-proxy: z-ai/glm-4.6
     anthropic: anthropic/claude-sonnet-5
   tools: [read-file, exec] # replaces the built-in default tool set
 ```
 
-Profile names share a namespace with the built-in types and may shadow
-them. Across the user and project layers, `defaults` merge per key while
+A profile's name decides what it is. A name that matches a preset configures
+that preset, so it takes the preset's options and no others: `anthropic`,
+`openai`, `gemini` and `together` take a key and client options, `openrouter`
+also takes a `baseUrl` for its regional hosts, and `bedrock` needs `protocol`
+and `region`. Any other name is a generic profile, which needs `protocol`
+(`messages`, `responses`, `generateContent` or `chatCompletions`) and
+`baseUrl`. `id` is the [models.dev](https://models.dev) provider id, used to
+look up the context window, and `dialect` (`openrouter` or `together`)
+turns on that service's own request fields. Both are inferred from a known
+hostname, so they are only needed behind a proxy. To point a preset's
+service at your own URL, give the profile another name. Run `axle explain
+config.providers` for every key.
+
+Across the user and project layers, `defaults` merge per key while
 profiles replace wholesale.

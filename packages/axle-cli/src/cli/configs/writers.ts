@@ -4,7 +4,7 @@ import YAML from "yaml";
 import { writeFileAtomic } from "../atomic-write.js";
 import type { ConfigTarget } from "./paths.js";
 import { CONFIG_FILE, CREDENTIALS_FILE, resolveConfigDir } from "./paths.js";
-import type { AIProviderUse } from "./schemas.js";
+import type { GenericProfile } from "./schemas.js";
 
 /**
  * Upsert keys in a `credentials` file, `~/.axle/credentials` by default. The file is shared with sibling
@@ -80,7 +80,7 @@ export async function updateCliDefaults(
  */
 export async function upsertCliProvider(
   name: string,
-  profile: AIProviderUse,
+  profile: GenericProfile,
   target?: ConfigTarget,
 ): Promise<string> {
   return editCliConfig(target, (doc) => {

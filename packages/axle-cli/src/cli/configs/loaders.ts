@@ -11,6 +11,7 @@ import {
   CliConfigSchema,
   JobConfig,
   JobConfigSchema,
+  PRESET_NAMES,
   ServiceConfig,
 } from "./schemas.js";
 
@@ -95,6 +96,9 @@ export const API_KEY_VARIABLES = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   gemini: "GEMINI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  together: "TOGETHER_API_KEY",
+  bedrock: "AWS_BEARER_TOKEN_BEDROCK",
 } as const;
 
 /**
@@ -176,11 +180,17 @@ async function loadCliConfigLayers(context: ConfigContext): Promise<CliConfigLay
   const dirs = resolveConfigDirs(context);
 
   const layers: CliConfigLayer[] = [];
+  const problems: string[] = [];
   for (const dir of context.trusted ? [dirs.user, dirs.project] : [dirs.user]) {
     const path = join(dir, CONFIG_FILE);
-    const config = await readCliConfigFile(path);
-    if (config) layers.push({ path, config });
+    try {
+      const config = await readCliConfigFile(path);
+      if (config) layers.push({ path, config });
+    } catch (e) {
+      problems.push(e instanceof Error ? e.message : String(e));
+    }
   }
+  if (problems.length > 0) throw new Error(problems.join("\n"));
   return layers;
 }
 
@@ -252,26 +262,15 @@ async function readCredentialsFile(path: string): Promise<Record<string, string>
 }
 
 function buildServiceConfig(lookup: (key: string) => string | undefined): ServiceConfig {
-  return compactServiceConfig({
-    openai: lookup(API_KEY_VARIABLES.openai)
-      ? {
-          apiKey: lookup(API_KEY_VARIABLES.openai),
-          model: lookup("OPENAI_MODEL"),
-        }
-      : undefined,
-    anthropic: lookup(API_KEY_VARIABLES.anthropic)
-      ? {
-          apiKey: lookup(API_KEY_VARIABLES.anthropic),
-          model: lookup("ANTHROPIC_MODEL"),
-        }
-      : undefined,
-    gemini: lookup(API_KEY_VARIABLES.gemini)
-      ? {
-          apiKey: lookup(API_KEY_VARIABLES.gemini),
-          model: lookup("GEMINI_MODEL"),
-        }
-      : undefined,
-  });
+  return compactServiceConfig(
+    Object.fromEntries(
+      PRESET_NAMES.map((preset) => {
+        const apiKey = lookup(API_KEY_VARIABLES[preset]);
+        const model = lookup(`${preset.toUpperCase()}_MODEL`);
+        return [preset, apiKey ? { apiKey, model } : undefined];
+      }),
+    ),
+  );
 }
 
 function compactServiceConfig(config: ServiceConfig): ServiceConfig {

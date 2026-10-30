@@ -34,7 +34,7 @@ const ProviderClientFieldsSchema = {
     .positive()
     .optional()
     .describe(
-      "Timeout for one request attempt, in milliseconds. Defaults to the provider SDK's own; 10 minutes for chatcompletions.",
+      "Timeout for one request attempt, in milliseconds. Defaults to the provider SDK's own; 10 minutes for chatCompletions.",
     ),
   contextWindow: z
     .number()
@@ -46,65 +46,151 @@ const ProviderClientFieldsSchema = {
     ),
 };
 
-// AI Provider Use - Discriminated by 'type'
-const ChatCompletionsProviderUseSchema = z.strictObject({
-  type: z.literal("chatcompletions").describe("Provider API the endpoint speaks."),
+export const PRESET_NAMES = [
+  "anthropic",
+  "openai",
+  "gemini",
+  "openrouter",
+  "together",
+  "bedrock",
+] as const;
+
+export type PresetName = (typeof PRESET_NAMES)[number];
+
+function requiredKey(message: string) {
+  return {
+    error: (issue: z.core.$ZodRawIssue) => (issue.input === undefined ? message : undefined),
+  };
+}
+
+function presetKeyError(name: PresetName, keys: string[]): string {
+  if (keys.includes("baseUrl")) {
+    return `"${name}" is a preset and takes no baseUrl. Remove it, or rename this profile to use your own URL.`;
+  }
+  return `"${name}" is a preset and takes no ${keys.join(" or ")}. Remove ${keys.length > 1 ? "them" : "it"}.`;
+}
+
+function presetProfile<TShape extends z.ZodRawShape>(name: PresetName, shape: TShape) {
+  return z.strictObject(
+    { ...ApiKeyFieldsSchema, ...ProviderClientFieldsSchema, ...shape },
+    {
+      error: (issue) =>
+        issue.code === "unrecognized_keys" ? presetKeyError(name, issue.keys) : undefined,
+    },
+  );
+}
+
+const OpenRouterProfileSchema = presetProfile("openrouter", {
   baseUrl: z
     .string()
     .min(1)
-    .describe("Base URL of the OpenAI-compatible endpoint, e.g. http://localhost:11434/v1."),
-  vendor: z
-    .enum(["openrouter", "togetherai"])
     .optional()
-    .describe("Vendor behind the endpoint; turns on that vendor's own request fields."),
-  ...ApiKeyFieldsSchema,
-  ...ProviderClientFieldsSchema,
+    .describe("OpenRouter host, e.g. https://eu.openrouter.ai/api/v1. Defaults to openrouter.ai."),
 });
 
-const AnthropicProviderUseSchema = z.strictObject({
-  type: z.literal("anthropic").describe("Provider API the endpoint speaks."),
-  ...ApiKeyFieldsSchema,
-  ...ProviderClientFieldsSchema,
+const BedrockProfileSchema = presetProfile("bedrock", {
+  protocol: z
+    .enum(
+      ["messages", "responses", "chatCompletions"],
+      requiredKey("protocol is required: messages, responses or chatCompletions."),
+    )
+    .describe("Protocol to speak, which follows the model: messages for Claude."),
+  region: z
+    .string(requiredKey("region is required, e.g. us-east-1."))
+    .min(1)
+    .describe("AWS region of the Bedrock endpoint, e.g. us-east-1."),
 });
 
-const OpenAIProviderUseSchema = z.strictObject({
-  type: z.literal("openai").describe("Provider API the endpoint speaks."),
+function genericKeyError(keys: string[]): string | undefined {
+  const replaced = [
+    ...(keys.includes("type") ? ["type is now protocol"] : []),
+    ...(keys.includes("vendor") ? ["vendor is now id and dialect"] : []),
+  ];
+  return replaced.length > 0 ? `${replaced.join("; ")}.` : undefined;
+}
+
+const GenericProfileFields = {
+  protocol: z
+    .enum(
+      ["messages", "responses", "generateContent", "chatCompletions"],
+      requiredKey("protocol is required: messages, responses, generateContent or chatCompletions."),
+    )
+    .describe("Protocol the endpoint speaks."),
+  baseUrl: z
+    .string(requiredKey("baseUrl is required."))
+    .min(1)
+    .describe(
+      "Base URL of the endpoint, in the protocol's convention, e.g. http://localhost:11434/v1.",
+    ),
+  id: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "models.dev provider id of the service behind the endpoint; inferred from a known hostname.",
+    ),
+  dialect: z
+    .enum(["openrouter", "together"])
+    .optional()
+    .describe(
+      "Chat Completions dialect of the service behind the endpoint; inferred from a known hostname.",
+    ),
   ...ApiKeyFieldsSchema,
   ...ProviderClientFieldsSchema,
+};
+
+const genericProfileError = {
+  error: (issue: z.core.$ZodRawIssue) =>
+    issue.code === "unrecognized_keys" ? genericKeyError(issue.keys) : undefined,
+};
+
+function dialectNeedsChatCompletions(profile: { protocol: string; dialect?: string }): boolean {
+  return profile.dialect === undefined || profile.protocol === "chatCompletions";
+}
+
+const DIALECT_PROTOCOL_ERROR = "dialect applies only to the chatCompletions protocol.";
+
+const GenericProfileObject = z.strictObject(GenericProfileFields, genericProfileError);
+
+const GenericProfileSchema = GenericProfileObject.refine(dialectNeedsChatCompletions, {
+  error: DIALECT_PROTOCOL_ERROR,
+  path: ["dialect"],
 });
 
-const GeminiProviderUseSchema = z.strictObject({
-  type: z.literal("gemini").describe("Provider API the endpoint speaks."),
-  ...ApiKeyFieldsSchema,
-  ...ProviderClientFieldsSchema,
-});
+export type GenericProfile = z.infer<typeof GenericProfileSchema>;
+export type PresetProfile = z.infer<ReturnType<typeof presetProfile<Record<never, never>>>>;
+export type OpenRouterProfile = z.infer<typeof OpenRouterProfileSchema>;
+export type BedrockProfile = z.infer<typeof BedrockProfileSchema>;
 
-export const AIProviderUseSchema = z.discriminatedUnion("type", [
-  ChatCompletionsProviderUseSchema,
-  AnthropicProviderUseSchema,
-  OpenAIProviderUseSchema,
-  GeminiProviderUseSchema,
-]);
-
-export type AIProviderUse = z.infer<typeof AIProviderUseSchema>;
+// A key that names a preset extends that preset; any other key is a generic
+// profile, spelled out in full.
+export const ProviderProfilesSchema = z
+  .strictObject({
+    anthropic: presetProfile("anthropic", {}).optional().describe("The anthropic preset."),
+    openai: presetProfile("openai", {}).optional().describe("The openai preset."),
+    gemini: presetProfile("gemini", {}).optional().describe("The gemini preset."),
+    openrouter: OpenRouterProfileSchema.optional().describe("The openrouter preset."),
+    together: presetProfile("together", {}).optional().describe("The together preset."),
+    bedrock: BedrockProfileSchema.optional().describe(
+      "The bedrock preset; needs protocol and region.",
+    ),
+  })
+  .catchall(GenericProfileSchema.describe("A generic profile, under any name but a preset's."));
 
 // A recipe is check-in-able, so its inline provider never holds a key —
 // only apiKeyEnv, a reference to one.
-const RecipeProviderSchema = z.discriminatedUnion("type", [
-  ChatCompletionsProviderUseSchema.omit({ apiKey: true }),
-  AnthropicProviderUseSchema.omit({ apiKey: true }),
-  OpenAIProviderUseSchema.omit({ apiKey: true }),
-  GeminiProviderUseSchema.omit({ apiKey: true }),
-]);
+const RecipeProviderSchema = GenericProfileObject.omit({ apiKey: true }).refine(
+  dialectNeedsChatCompletions,
+  { error: DIALECT_PROTOCOL_ERROR, path: ["dialect"] },
+);
 
-// A string names a provider: a cli.yaml profile or a built-in type (one
-// namespace; validated at resolution, not here). An object is inline
-// endpoint configuration.
+// A string names a provider: a preset or a cli.yaml profile (one namespace;
+// validated at resolution, not here). An object is a generic profile inline.
 export const ProviderUseSchema = z.union([
   z
     .string()
     .min(1)
-    .describe("A cli.yaml provider profile or a built-in type: anthropic, openai, gemini.")
+    .describe(`A preset (${PRESET_NAMES.join(", ")}) or a cli.yaml provider profile.`)
     .transform((name) => ({ name })),
   RecipeProviderSchema,
 ]);
@@ -120,29 +206,22 @@ export interface ProviderServiceConfig {
   timeoutMs?: number;
 }
 
-export interface ServiceConfig {
-  anthropic?: ProviderServiceConfig;
-  openai?: ProviderServiceConfig;
-  gemini?: ProviderServiceConfig;
-}
+export type ServiceConfig = Partial<Record<PresetName, ProviderServiceConfig>>;
 
 /* ============================================================================
  * CLI Config Schema (cli.yaml)
  * ========================================================================== */
 
 export const CliConfigSchema = z.strictObject({
-  providers: z
-    .record(z.string(), AIProviderUseSchema)
-    .optional()
-    .describe("Named provider profiles: endpoint configuration a recipe refers to by name."),
+  providers: ProviderProfilesSchema.optional().describe(
+    "Provider profiles a recipe refers to by name. A key naming a preset extends that preset; any other key is a generic profile.",
+  ),
   defaults: z
     .strictObject({
       provider: z
         .string()
         .optional()
-        .describe(
-          "Provider used when a recipe or chat names none: a profile name or built-in type.",
-        ),
+        .describe("Provider used when a recipe or chat names none: a preset or a profile name."),
       models: z
         .record(z.string(), z.string())
         .optional()
@@ -158,7 +237,21 @@ export const CliConfigSchema = z.strictObject({
     .describe("Values used when a recipe or the command line leaves them out."),
 });
 
-export type CliConfig = z.infer<typeof CliConfigSchema>;
+// Zod types a catchall as an index signature every key must satisfy, which a
+// preset's profile does not, so this type states the name-decides rule itself.
+export interface ProviderProfiles {
+  [name: string]: GenericProfile | PresetProfile | OpenRouterProfile | BedrockProfile | undefined;
+  anthropic?: PresetProfile;
+  openai?: PresetProfile;
+  gemini?: PresetProfile;
+  openrouter?: OpenRouterProfile;
+  together?: PresetProfile;
+  bedrock?: BedrockProfile;
+}
+
+export type CliConfig = Omit<z.infer<typeof CliConfigSchema>, "providers"> & {
+  providers?: ProviderProfiles;
+};
 
 /* ============================================================================
  * MCP Config Schemas

@@ -61,8 +61,8 @@ against it; divergence is a defect. State ownership is defined in
    start, resume included, and never stored (invariant 6): the provider's
    `contextWindow` if set (profile or inline — an endpoint fact, since a
    local server loads models below their maximum), else core's
-   `ModelCatalog` (models.dev, provider derived from the endpoint type or
-   `vendor`), else an assumed 200,000. The catalog is cached at
+   `ModelCatalog` (models.dev, keyed by the `id` of the provider the endpoint
+   builds), else an assumed 200,000. The catalog is cached at
    `~/.axle/cache/models.json`; a run reads the cache and refreshes it in
    the background when it is a day old, `axle info` awaits the refresh, and
    no run ever waits on or fails for the network. `axle info` prints each
@@ -185,16 +185,25 @@ against it; divergence is a defect. State ownership is defined in
    wizard: it never writes a home the next run would not read.
    On top of the layered sources, one uniform chain resolves the seat:
    provider name := recipe →
-   `defaults.provider` → error; endpoint := `providers[name]` profile →
-   built-in type → error; model := recipe → `defaults.models[name]` →
-   `*_MODEL` credential → interactive prompt (TTY) or error. The built-in
-   types are `anthropic`, `openai` and `gemini`: each is a provider with
-   one endpoint, a key variable and a model variable. `chatcompletions` is
-   a protocol, so it is only ever the `type` of a profile or of a recipe's
-   inline provider, always with its own `baseUrl`; it is not a name, has no
-   credential variables, and takes nothing from another endpoint of the
-   same type. Its key is whatever its `apiKeyEnv` names, and with no
-   `apiKeyEnv` it is called keyless. The provider
+   `defaults.provider` → error; endpoint := preset of that name →
+   `providers[name]` generic profile → error; model := recipe →
+   `defaults.models[name]` → `*_MODEL` credential → interactive prompt
+   (TTY) or error. The name alone decides what a `providers` entry is. A
+   name that matches a preset (`anthropic`, `openai`, `gemini`, `openrouter`,
+   `together`, `bedrock`) configures that preset and takes only that
+   preset's options: a key and client options, plus `baseUrl` on
+   `openrouter`, and a required `protocol` and `region` on `bedrock`, which
+   for that reason cannot run without a profile. Each preset has a key
+   variable and a model variable. Any other name is a generic profile: the
+   protocol constructor's options as YAML, with `protocol` and `baseUrl`
+   required and `id` and `dialect` inferred from the hostname as the library
+   infers them. A recipe's inline provider is a generic profile with no
+   `apiKey`. A protocol is never a name, has no credential variables, and
+   takes nothing from another endpoint of the same protocol. A generic
+   profile's key is whatever its `apiKeyEnv` names; with none, a
+   `chatCompletions` endpoint is called keyless and the other protocols
+   stop, since their SDKs would otherwise send their own environment
+   variable to that `baseUrl`. The provider
    is never inferred from the model string. The endpoint step runs on every
    invocation, resume included (invariant 6); the model step runs once, at
    the run that creates the session.
@@ -344,6 +353,29 @@ against it; divergence is a defect. State ownership is defined in
 
 ## Decisions
 
+- **2026-10-30 — a profile's name decides whether it is a preset (AXL-94).**
+  `type` and `vendor` are gone. Profiles mirror the library's two shapes, a
+  preset call and a protocol constructor call, and the name picks which.
+  Cost: a preset added later claims that name, so an existing generic
+  profile of that name stops loading, loudly, and the release says so.
+  Rejected: an explicit `preset:` key — a second way to say what the name
+  already says. Rejected: constructors only — a second Anthropic key would
+  need the URL by hand and lose the prefix-stripping model rule, and
+  Bedrock's regional URLs would be spelled out. Rejected: `baseUrl` deciding
+  the kind — a name would then mean different things by what sits under it.
+  Rejected: dropping keys a preset does not take to keep old files loading —
+  dropping `baseUrl` would send a proxy's prompts and key to the public
+  service without a sign. Rejected: warnings for old keys — a load error is
+  seen once and fixed. Saved sessions are upgraded on read instead, since a
+  session file is not the user's to edit; the exception is a built-in type
+  carrying its own settings, which refuses to resume, because keeping only
+  its name would run on another key. Rejected for that case: rewriting it as
+  a generic profile — the preset's model rule would be lost.
+- **2026-10-30 — a provider's `id` comes from building it (AXL-94).**
+  `axle info` and the context window read `.id` off the provider an endpoint
+  builds, with a placeholder key, since building makes no request. Rejected:
+  a CLI table of preset ids and hostnames (`catalogProvider()`) — a second
+  copy of what the presets and the hostname tables already state.
 - **2026-10-29 — a session is the recipe as written; the rest is runtime
   (AXL-88; settles 2026-10-07 without its model exception).** The owner's
   words: _everything in the recipe file is written into the session;

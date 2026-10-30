@@ -1,14 +1,11 @@
 import type { ContextWindowMatch } from "@fifthrevision/axle";
-import { chatCompletions, ModelCatalog } from "@fifthrevision/axle";
+import { ModelCatalog } from "@fifthrevision/axle";
 import { join } from "node:path";
+import type { Endpoint } from "./agent-config.js";
+import { createProvider } from "./agent-config.js";
 import { resolveConfigDirs } from "./configs/paths.js";
 
 export const ASSUMED_CONTEXT_WINDOW = 200_000;
-
-export interface Endpoint {
-  type: string;
-  config: Record<string, unknown>;
-}
 
 export type ContextWindowSource =
   | { kind: "provider" }
@@ -28,19 +25,14 @@ export function openModelCatalog(home?: string): Promise<ModelCatalog> {
   return ModelCatalog.open({ cachePath: modelCatalogPath(home) });
 }
 
-const FIRST_PARTY_PUBLISHERS: Record<string, string> = {
+const FIRST_PARTY_PUBLISHERS: Partial<Record<string, string>> = {
   anthropic: "anthropic",
   openai: "openai",
   gemini: "google",
 };
 
-/** The models.dev provider id for an endpoint, when the endpoint says which service it is. */
-export function catalogProvider(endpoint: Endpoint): string | undefined {
-  if (endpoint.type !== "chatcompletions") return FIRST_PARTY_PUBLISHERS[endpoint.type];
-  const { vendor, baseUrl } = endpoint.config;
-  if (vendor === "openrouter" || vendor === "togetherai") return vendor;
-  return typeof baseUrl === "string" ? chatCompletions({ baseUrl }).id : undefined;
-}
+// Building a provider makes no request, so the key is never used.
+const CATALOG_LOOKUP_KEY = "catalog-lookup";
 
 /**
  * The context window for a run: the endpoint's `contextWindow` if set, else
@@ -53,10 +45,10 @@ export function resolveContextWindow(
   catalog: ModelCatalog,
 ): ResolvedContextWindow {
   const configured = endpoint.config.contextWindow;
-  if (typeof configured === "number") return { window: configured, source: { kind: "provider" } };
+  if (configured !== undefined) return { window: configured, source: { kind: "provider" } };
   const found = catalog.contextWindow(model, {
-    provider: catalogProvider(endpoint),
-    publisher: FIRST_PARTY_PUBLISHERS[endpoint.type],
+    provider: createProvider(endpoint, CATALOG_LOOKUP_KEY).id,
+    publisher: endpoint.kind === "preset" ? FIRST_PARTY_PUBLISHERS[endpoint.preset] : undefined,
   });
   if (found) {
     return { window: found.window, source: { kind: "catalog", id: found.id, match: found.match } };

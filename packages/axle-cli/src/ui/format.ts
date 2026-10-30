@@ -36,6 +36,31 @@ export function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+export function wrap(text: string, indent: string, width: number): string[] {
+  if (text === "") return [];
+  const lines: string[] = [];
+  let line = indent;
+  for (const word of text.split(" ")) {
+    if (line !== indent && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = indent;
+    }
+    line += line === indent ? word : ` ${word}`;
+  }
+  return [...lines, line];
+}
+
+/** A failure as `✖ message`, wrapped to `width` with a list item's text kept aligned. */
+export function formatFailure(message: string, width: number): string {
+  const lines = message.split("\n").flatMap((line) => {
+    const marker = line.match(/^\s*(?:- )?/)?.[0] ?? "";
+    const indent = " ".repeat(marker.length);
+    const wrapped = wrap(line.slice(marker.length), indent, width - 2);
+    return wrapped.map((text, index) => (index === 0 ? marker + text.slice(marker.length) : text));
+  });
+  return lines.map((line, index) => `${index === 0 ? "✖" : " "} ${line}`).join("\n");
+}
+
 export function indentContinuation(text: string): string {
   return text.split("\n").join("\n  ");
 }

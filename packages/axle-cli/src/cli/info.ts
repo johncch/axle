@@ -1,18 +1,17 @@
 import type { ModelCatalog } from "@fifthrevision/axle";
 import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { resolveTarget } from "./agent-config.js";
+import { resolveEndpoint, resolveTarget } from "./agent-config.js";
 import type { CliConfigSources, Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type { ConfigDirs } from "./configs/paths.js";
 import { CONFIG_FILE, CREDENTIALS_FILE } from "./configs/paths.js";
-import type { AIProviderUse, CliConfig, ServiceConfig } from "./configs/schemas.js";
+import type { CliConfig, ServiceConfig } from "./configs/schemas.js";
+import { PRESET_NAMES } from "./configs/schemas.js";
 import type { ContextWindowSource } from "./context-window.js";
 import { formatTokens, resolveContextWindow } from "./context-window.js";
 import type { SkillEntry } from "./skills.js";
 import { defaultToolNames } from "./tools.js";
-
-const BUILT_IN_PROVIDER_TYPES = ["anthropic", "openai", "gemini"] as const;
 
 const UNSET = "unset";
 const ALIGNED_VALUE_WIDTH = 32;
@@ -77,21 +76,21 @@ export function formatInfo(input: InfoInput): string[] {
   ];
 
   const profiles = cliConfig.providers ?? {};
-  const builtIns = BUILT_IN_PROVIDER_TYPES.filter((type) => !(type in profiles));
-  const configuredBuiltIns = builtIns.filter(
-    (type) => serviceConfig[type] !== undefined || type === defaultProvider,
+  const presets = PRESET_NAMES.filter((preset) => !(preset in profiles) && preset !== "bedrock");
+  const configuredPresets = presets.filter(
+    (preset) => serviceConfig[preset] !== undefined || preset === defaultProvider,
   );
 
   const providerBlocks = [
-    ...Object.entries(profiles).map(([name, profile]) => ({
+    ...Object.keys(profiles).map((name) => ({
       title: `${name}${name === defaultProvider ? " (default)" : ""}`,
       source: displayPath(cliConfigSources.providers[name]),
-      rows: describeProvider(name, profile.type, profile, input),
+      rows: describeProvider(name, input),
     })),
-    ...configuredBuiltIns.map((type) => ({
-      title: `${type}${type === defaultProvider ? " (default)" : ""}`,
+    ...configuredPresets.map((preset) => ({
+      title: `${preset}${preset === defaultProvider ? " (default)" : ""}`,
       source: undefined,
-      rows: describeProvider(type, type, undefined, input),
+      rows: describeProvider(preset, input),
     })),
   ];
 
@@ -168,21 +167,22 @@ function defaultProviderProblem(cliConfig: CliConfig, serviceConfig: ServiceConf
   }
 }
 
-function describeProvider(
-  name: string,
-  type: AIProviderUse["type"],
-  profile: AIProviderUse | undefined,
-  input: InfoInput,
-): Row[] {
+function describeProvider(name: string, input: InfoInput): Row[] {
   const { cliConfig, cliConfigSources, serviceConfig, credentialSources, credentials } = input;
-  const builtIn = type === "chatcompletions" ? undefined : type;
-  const service = builtIn ? serviceConfig[builtIn] : undefined;
+  const endpoint = resolveEndpoint({ name }, cliConfig);
+  const preset = endpoint.kind === "preset" ? endpoint.preset : undefined;
+  const service = preset ? serviceConfig[preset] : undefined;
+  const config = endpoint.config;
   const rows: Row[] = [];
 
-  if (profile) rows.push({ label: "type", value: type });
-
-  if (profile?.type === "chatcompletions") {
-    rows.push({ label: "url", value: profile.baseUrl });
+  if (endpoint.kind === "generic") {
+    rows.push({ label: "protocol", value: endpoint.config.protocol });
+    rows.push({ label: "url", value: endpoint.config.baseUrl });
+  } else if (endpoint.preset === "bedrock") {
+    rows.push({ label: "protocol", value: endpoint.config.protocol });
+    rows.push({ label: "region", value: endpoint.config.region });
+  } else if (endpoint.preset === "openrouter" && endpoint.config.baseUrl) {
+    rows.push({ label: "url", value: endpoint.config.baseUrl });
   }
 
   const defaultModel = cliConfig.defaults?.models?.[name];
@@ -196,18 +196,14 @@ function describeProvider(
     rows.push({
       label: "model",
       value: service?.model ?? UNSET,
-      source: service?.model ? credentialSources[`${type.toUpperCase()}_MODEL`] : undefined,
+      source:
+        preset && service?.model ? credentialSources[`${preset.toUpperCase()}_MODEL`] : undefined,
     });
   }
 
   const model = defaultModel ?? service?.model;
   if (model !== undefined) {
-    const { type: _profileType, ...profileConfig } = profile ?? { type };
-    const resolved = resolveContextWindow(
-      { type, config: { ...service, ...profileConfig } },
-      model,
-      input.catalog,
-    );
+    const resolved = resolveContextWindow(endpoint, model, input.catalog);
     rows.push({
       label: "window",
       value: formatTokens(resolved.window),
@@ -215,19 +211,19 @@ function describeProvider(
     });
   }
 
-  const apiKeyEnv = profile?.apiKeyEnv;
+  const apiKeyEnv = config.apiKeyEnv;
   if (apiKeyEnv) {
     rows.push(
       credentials[apiKeyEnv]
         ? { label: "key", value: `$${apiKeyEnv}`, source: credentialSources[apiKeyEnv] }
         : { label: "key", value: `$${apiKeyEnv}`, source: UNSET },
     );
-  } else if (profile?.apiKey) {
+  } else if (config.apiKey) {
     rows.push({ label: "key", value: "set", source: cliConfigSources.providers[name] });
-  } else if (builtIn === undefined) {
+  } else if (preset === undefined) {
     rows.push({ label: "key", value: "none" });
   } else {
-    const variable = API_KEY_VARIABLES[builtIn];
+    const variable = API_KEY_VARIABLES[preset];
     rows.push({
       label: "key",
       value: `$${variable}`,

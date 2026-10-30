@@ -14,146 +14,61 @@ properties:
     anyOf:
       - type: string
         minLength: 1
-        description: "A cli.yaml provider profile or a built-in type: anthropic, openai,
-          gemini."
-      - oneOf:
-          - type: object
-            properties:
-              type:
-                type: string
-                const: chatcompletions
-                description: Provider API the endpoint speaks.
-              baseUrl:
-                type: string
-                minLength: 1
-                description: Base URL of the OpenAI-compatible endpoint, e.g.
-                  http://localhost:11434/v1.
-              vendor:
-                description: Vendor behind the endpoint; turns on that vendor's own request
-                  fields.
-                type: string
-                enum:
-                  - openrouter
-                  - togetherai
-              apiKeyEnv:
-                description: Name of the environment variable or credentials entry that holds
-                  the API key.
-                type: string
-              maxRetries:
-                description: Retries after a failed request. Defaults to 2.
-                type: integer
-                minimum: 0
-                maximum: 9007199254740991
-              timeoutMs:
-                description: Timeout for one request attempt, in milliseconds. Defaults to the
-                  provider SDK's own; 10 minutes for chatcompletions.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-              contextWindow:
-                description: Context window in tokens for every model on this endpoint;
-                  overrides the models.dev lookup. Set it for a local server
-                  that loads models below their maximum.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-            required:
-              - type
-              - baseUrl
-            additionalProperties: false
-          - type: object
-            properties:
-              type:
-                type: string
-                const: anthropic
-                description: Provider API the endpoint speaks.
-              apiKeyEnv:
-                description: Name of the environment variable or credentials entry that holds
-                  the API key.
-                type: string
-              maxRetries:
-                description: Retries after a failed request. Defaults to 2.
-                type: integer
-                minimum: 0
-                maximum: 9007199254740991
-              timeoutMs:
-                description: Timeout for one request attempt, in milliseconds. Defaults to the
-                  provider SDK's own; 10 minutes for chatcompletions.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-              contextWindow:
-                description: Context window in tokens for every model on this endpoint;
-                  overrides the models.dev lookup. Set it for a local server
-                  that loads models below their maximum.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-            required:
-              - type
-            additionalProperties: false
-          - type: object
-            properties:
-              type:
-                type: string
-                const: openai
-                description: Provider API the endpoint speaks.
-              apiKeyEnv:
-                description: Name of the environment variable or credentials entry that holds
-                  the API key.
-                type: string
-              maxRetries:
-                description: Retries after a failed request. Defaults to 2.
-                type: integer
-                minimum: 0
-                maximum: 9007199254740991
-              timeoutMs:
-                description: Timeout for one request attempt, in milliseconds. Defaults to the
-                  provider SDK's own; 10 minutes for chatcompletions.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-              contextWindow:
-                description: Context window in tokens for every model on this endpoint;
-                  overrides the models.dev lookup. Set it for a local server
-                  that loads models below their maximum.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-            required:
-              - type
-            additionalProperties: false
-          - type: object
-            properties:
-              type:
-                type: string
-                const: gemini
-                description: Provider API the endpoint speaks.
-              apiKeyEnv:
-                description: Name of the environment variable or credentials entry that holds
-                  the API key.
-                type: string
-              maxRetries:
-                description: Retries after a failed request. Defaults to 2.
-                type: integer
-                minimum: 0
-                maximum: 9007199254740991
-              timeoutMs:
-                description: Timeout for one request attempt, in milliseconds. Defaults to the
-                  provider SDK's own; 10 minutes for chatcompletions.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-              contextWindow:
-                description: Context window in tokens for every model on this endpoint;
-                  overrides the models.dev lookup. Set it for a local server
-                  that loads models below their maximum.
-                type: integer
-                exclusiveMinimum: 0
-                maximum: 9007199254740991
-            required:
-              - type
-            additionalProperties: false
+        description: A preset (anthropic, openai, gemini, openrouter, together, bedrock)
+          or a cli.yaml provider profile.
+      - type: object
+        properties:
+          protocol:
+            type: string
+            enum:
+              - messages
+              - responses
+              - generateContent
+              - chatCompletions
+            description: Protocol the endpoint speaks.
+          baseUrl:
+            type: string
+            minLength: 1
+            description: Base URL of the endpoint, in the protocol's convention, e.g.
+              http://localhost:11434/v1.
+          id:
+            description: models.dev provider id of the service behind the endpoint; inferred
+              from a known hostname.
+            type: string
+            minLength: 1
+          dialect:
+            description: Chat Completions dialect of the service behind the endpoint;
+              inferred from a known hostname.
+            type: string
+            enum:
+              - openrouter
+              - together
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        required:
+          - protocol
+          - baseUrl
+        additionalProperties: false
   model:
     description: Model id, publisher-qualified (anthropic/claude-sonnet-5) or
       provider-native. Falls back to defaults.models in cli.yaml.

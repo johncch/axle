@@ -5,6 +5,7 @@ import type { Stats } from "@fifthrevision/axle";
 import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { styleText } from "node:util";
 import { createCliAgentConfig, requestedToolNames, resolveEndpoint } from "./cli/agent-config.js";
 import { resolveBuildInfo } from "./cli/build.js";
 import { runCleanup } from "./cli/cleanup.js";
@@ -47,6 +48,7 @@ import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
 import { discoverSkills } from "./cli/skills.js";
 import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
 import * as ask from "./ui/ask.js";
+import { formatFailure } from "./ui/format.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
@@ -118,11 +120,16 @@ function exitAfterStdoutDrains(code: number): Promise<never> {
   });
 }
 
+function printFailure(message: string): void {
+  const width = process.stderr.isTTY ? process.stderr.columns : Number.POSITIVE_INFINITY;
+  console.error(styleText("red", formatFailure(message, width), { stream: process.stderr }));
+}
+
 async function manage(command: () => Promise<void>): Promise<never> {
   try {
     await command();
   } catch (e) {
-    console.error(`✖ ${e instanceof Error ? e.message : String(e)}`);
+    printFailure(e instanceof Error ? e.message : String(e));
     return exitAfterStdoutDrains(1);
   }
   return exitAfterStdoutDrains(0);
@@ -426,13 +433,13 @@ if (common.debug) {
 
 async function fail(e: unknown): Promise<never> {
   const error = e instanceof Error ? e : new Error(String(e));
-  (screen ?? console).error(error.message);
+  if (screen) screen.error(error.message);
+  else printFailure(error.message);
   rootSpan.error(error.message);
   rootSpan.debug(error.stack ?? "");
   rootSpan.end("error");
   await recordScheduleRun("failed", []);
   await shutdown();
-  if (!screen) program.outputHelp();
   process.exit(1);
 }
 

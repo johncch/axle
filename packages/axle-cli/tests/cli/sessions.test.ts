@@ -257,6 +257,76 @@ describe("loadSession", () => {
     await expect(loadSession("broken", HOME)).rejects.toThrow(/Invalid session file at/);
   });
 
+  async function loadSavedRecipe(provider: Record<string, string>): Promise<CliSessionFile> {
+    await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
+    await writeFile(
+      sessionFilePath("saved", HOME),
+      JSON.stringify({
+        version: 1,
+        createdAt: "2026-10-01T00:00:00.000Z",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+        cwd: "/old/project",
+        recipe: { name: "old-job", provider },
+        session: { sessionId: "saved", messages: [] },
+        turns: [],
+      }),
+    );
+    return loadSession("saved", HOME);
+  }
+
+  it("upgrades a saved recipe's inline provider to a protocol", async () => {
+    const file = await loadSavedRecipe({
+      type: "chatcompletions",
+      baseUrl: "https://gw.test/v1",
+      vendor: "togetherai",
+    });
+
+    expect(file.recipe).toEqual({
+      name: "old-job",
+      provider: {
+        protocol: "chatCompletions",
+        baseUrl: "https://gw.test/v1",
+        id: "togetherai",
+        dialect: "together",
+      },
+    });
+  });
+
+  it("upgrades a saved recipe's built-in provider to its preset name", async () => {
+    const file = await loadSavedRecipe({ type: "anthropic" });
+
+    expect(file.recipe.provider).toEqual({ name: "anthropic" });
+  });
+
+  it("refuses a saved built-in provider with its own settings rather than drop them", async () => {
+    await expect(loadSavedRecipe({ type: "openai", apiKeyEnv: "WORK_KEY" })).rejects.toThrow(
+      'This session\'s provider sets apiKeyEnv on "openai", which a saved session can no longer carry. Put it in providers.openai in cli.yaml and start a new run.',
+    );
+  });
+
+  it("refuses the same provider in core's old definition shape", async () => {
+    await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
+    await writeFile(
+      sessionFilePath("legacy-key", HOME),
+      JSON.stringify({
+        version: 1,
+        createdAt: "2026-10-01T00:00:00.000Z",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+        cwd: "/old/project",
+        definition: {
+          version: 1,
+          provider: { type: "anthropic", config: { apiKeyEnv: "WORK_KEY", maxRetries: 5 } },
+        },
+        session: { sessionId: "legacy-key", messages: [] },
+        turns: [],
+      }),
+    );
+
+    await expect(loadSession("legacy-key", HOME)).rejects.toThrow(
+      'This session\'s provider sets apiKeyEnv, maxRetries on "anthropic"',
+    );
+  });
+
   it("reads a file in core's old definition shape as a recipe", async () => {
     await mkdir(join(HOME, ".axle", "sessions", "cli"), { recursive: true });
     const legacy = {
@@ -282,7 +352,7 @@ describe("loadSession", () => {
 
     expect(file.recipe).toEqual({
       name: "old-job",
-      provider: { type: "chatcompletions", baseUrl: "https://old.example.test/v1" },
+      provider: { protocol: "chatCompletions", baseUrl: "https://old.example.test/v1" },
       model: "old/model",
       system: "You are old.",
       tools: ["exec"],
