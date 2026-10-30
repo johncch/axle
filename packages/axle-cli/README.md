@@ -84,7 +84,8 @@ prints debug detail, and `--args key=value` supplies `{{variables}}` to the
 recipe's task template.
 
 Every run persists a resumable session to `~/.axle/sessions/cli/<id>.json`
-(the id is printed at run start and exit). Resuming restores the saved
+(the id is printed at run start and exit), with the session's accumulated
+usage rows. Resuming restores the saved
 conversation, model, and recipe — no job file needed — and resolves a
 provider name or the default tools against the current `cli.yaml`, so a
 profile edit reaches existing sessions.
@@ -198,9 +199,19 @@ the model id — through the provider's own ids for first-party providers,
 OpenRouter and Together, with a best-effort match for local runtimes' names
 (`gemma4:26b-mlx`) — and falls back to 200,000 for a model the catalog
 lacks. The catalog is cached at `~/.axle/cache/models.json` and refreshed in
-the background once a day; a run never waits on the network. `axle info`
+the background once a day. The first run on a machine waits once for the
+download (at most ten seconds, then proceeds without it); every later run
+reads the cache. `axle info`
 shows each provider's window and where it came from, including the matched
-catalog id. A provider's `contextWindow` overrides the lookup for every
+catalog id.
+
+The same catalog prices the run. The usage bar, the batch footer and the
+exit summary show the tokens this invocation spent and their cost in US
+dollars as models.dev lists it: `$0.42`, or `$0.42 (2 unpriced)` when some
+requests went to a model or provider the catalog has no price for, and no
+dollar figure at all when none could be priced (a local model, or no
+catalog yet). A resumed session's earlier turns are not in the bar; the
+session file keeps the full record. A provider's `contextWindow` overrides the lookup for every
 model on that endpoint — set it for a local server that loads models below
 their maximum:
 
