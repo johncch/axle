@@ -279,8 +279,9 @@ program
   .description("Print version, config file locations, and resolved configuration")
   .action(async () => {
     await manage(async () => {
-      const catalog = await openModelCatalog();
+      const catalog = openModelCatalog();
       await catalog.ready;
+      if (catalog.state.status === "loaded" && catalog.state.stale) await catalog.refresh();
       const trusted = await isFolderTrusted(process.cwd());
       const lines = formatInfo({
         version: build.version,
@@ -569,8 +570,9 @@ for (const line of [
   renderer.warn(line);
   rootSpan.warn(line);
 }
-const catalog = await openModelCatalog();
+const catalog = openModelCatalog();
 const meter = new Meter(catalog, savedSession?.meter);
+await catalog.ready;
 const contextWindow = resolveContextWindow(
   resolveEndpoint(pending.target.provider, cliConfig),
   agentConfig.model,

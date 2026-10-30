@@ -73,7 +73,7 @@ describe("ModelCatalog.lookup", () => {
 
   beforeEach(async () => {
     await stubBoth();
-    catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
     await catalog.ready;
   });
 
@@ -205,13 +205,11 @@ describe("ModelCatalog.lookup", () => {
 describe("ModelCatalog cache", () => {
   it("is unavailable when there is no cache and the fetch fails", async () => {
     stubFetch({ models: () => new Error("offline"), api: () => new Error("offline") });
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [] });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [] });
     await catalog.ready;
 
     expect(catalog.state).toEqual({ status: "unavailable" });
     expect(catalog.size).toBe(0);
-    expect(catalog.fetchedAt).toBeUndefined();
-    expect(catalog.stale).toBe(true);
     expect(catalog.contextWindow("anthropic/claude-sonnet-5")).toBeUndefined();
   });
 
@@ -230,7 +228,7 @@ describe("ModelCatalog cache", () => {
           gate.then(() => (url.endsWith("/models.json") ? models() : api())),
         ),
     );
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
     const changes: string[] = [];
     catalog.onChange(() => changes.push(catalog.state.status));
 
@@ -247,7 +245,7 @@ describe("ModelCatalog cache", () => {
 
   it("retries an unavailable catalog after each delay", async () => {
     stubFetch({ models: () => new Error("offline"), api: () => new Error("offline") });
-    const catalog = await ModelCatalog.open({
+    const catalog = ModelCatalog.open({
       cachePath: CACHE_PATH,
       retryDelays: Array<number>(50).fill(10),
     });
@@ -278,7 +276,7 @@ describe("ModelCatalog cache", () => {
   it("keeps a fetched catalog in memory when the cache cannot be written", async () => {
     await stubBoth();
     await writeFile(join(TEST_DIR, "not-a-dir"), "");
-    const catalog = await ModelCatalog.open({
+    const catalog = ModelCatalog.open({
       cachePath: join(TEST_DIR, "not-a-dir", "models.json"),
     });
     await catalog.ready;
@@ -289,7 +287,7 @@ describe("ModelCatalog cache", () => {
 
   it("open fetches a missing cache and writes a slimmed two-layer file that a later open reads without fetching", async () => {
     const fetched = await stubBoth();
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
     await catalog.ready;
     expect(fetched).toHaveBeenCalledTimes(2);
 
@@ -307,16 +305,18 @@ describe("ModelCatalog cache", () => {
     expect(catalog.size).toBe(14);
 
     fetched.mockClear();
-    const reopened = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const reopened = ModelCatalog.open({ cachePath: CACHE_PATH });
+    expect(reopened.state).toEqual({ status: "loading" });
+    await reopened.ready;
     expect(fetched).not.toHaveBeenCalled();
-    expect(reopened.stale).toBe(false);
+    expect(reopened.state).toMatchObject({ status: "loaded", stale: false });
     expect(reopened.contextWindow("openai/gpt-5")?.window).toBe(400_000);
     expect(reopened.lookup("claude-sonnet-5", { provider: "anthropic" })?.cost?.input).toBe(2);
   });
 
   it("holds the catalog in memory when no cachePath is given", async () => {
     await stubBoth();
-    const catalog = await ModelCatalog.open();
+    const catalog = ModelCatalog.open();
     await catalog.ready;
 
     expect(catalog.size).toBe(14);
@@ -328,7 +328,7 @@ describe("ModelCatalog cache", () => {
 
   it("providers: [] skips api.json; providers: [...] keeps only those", async () => {
     const fetched = await stubBoth();
-    const none = await ModelCatalog.open({ providers: [] });
+    const none = ModelCatalog.open({ providers: [] });
     await none.ready;
     expect(fetched.mock.calls.map(([url]) => String(url))).toEqual([
       "https://models.dev/models.json",
@@ -337,7 +337,7 @@ describe("ModelCatalog cache", () => {
     expect(viaName?.match).toBe("exact");
     expect(viaName?.cost).toBeUndefined();
 
-    const some = await ModelCatalog.open({ providers: ["anthropic"] });
+    const some = ModelCatalog.open({ providers: ["anthropic"] });
     await some.ready;
     expect(some.lookup("claude-sonnet-5", { provider: "anthropic" })?.match).toBe("provider");
     const unkeptProvider = some.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
@@ -351,17 +351,21 @@ describe("ModelCatalog cache", () => {
       models: () => new Response(null, { status: 304 }),
       api: () => new Response(null, { status: 304 }),
     });
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
-    const before = catalog.fetchedAt!;
-    expect(catalog.state).toMatchObject({ status: "loaded", stale: true });
-
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
     await catalog.ready;
+    const before = catalog.state;
+    expect(before).toMatchObject({ status: "loaded", stale: true });
+    expect(fetched).toHaveBeenCalledTimes(2);
 
-    const headers = fetched.mock.calls.map(([, init]) => init.headers);
+    await catalog.refresh();
+
+    const headers = fetched.mock.calls.slice(0, 2).map(([, init]) => init.headers);
     expect(headers).toEqual([{ "If-None-Match": '"m0"' }, { "If-None-Match": '"a0"' }]);
     expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
-    expect(catalog.fetchedAt!.getTime()).toBeGreaterThan(before.getTime());
-    expect(catalog.state).toMatchObject({ status: "loaded", stale: false });
+    const after = catalog.state;
+    if (before.status !== "loaded" || after.status !== "loaded") throw new Error("not loaded");
+    expect(Date.parse(after.fetchedAt)).toBeGreaterThan(Date.parse(before.fetchedAt));
+    expect(after.stale).toBe(false);
   });
 
   it("updates one layer while the other is unchanged", async () => {
@@ -370,9 +374,10 @@ describe("ModelCatalog cache", () => {
       models: () => new Response(null, { status: 304 }),
       api: await fixture("models-dev-api.json", { etag: '"a1"' }),
     });
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
 
     await catalog.ready;
+    await catalog.refresh();
 
     expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
     expect(catalog.lookup("claude-sonnet-5", { provider: "anthropic" })?.id).toBe(
@@ -390,20 +395,21 @@ describe("ModelCatalog cache", () => {
       models: () => new Response(null, { status: 304 }),
       api: () => new Error("offline"),
     });
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
-    const before = catalog.fetchedAt!;
-
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
     await catalog.ready;
+    const before = catalog.state;
 
-    expect(catalog.stale).toBe(true);
-    expect(catalog.fetchedAt).toEqual(before);
+    await catalog.refresh();
+
+    expect(catalog.state).toEqual(before);
+    expect(catalog.state).toMatchObject({ status: "loaded", stale: true });
     expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
 
     stubFetch({ models: await fixture("models-dev.json"), api: () => new Error("offline") });
-    const fresh = await ModelCatalog.open();
+    const fresh = ModelCatalog.open();
     await fresh.ready;
     expect(fresh.size).toBe(14);
-    expect(fresh.stale).toBe(true);
+    expect(fresh.state).toMatchObject({ status: "loaded", stale: true });
   });
 
   it("keeps the cache when the network fails or the server errors", async () => {
@@ -413,7 +419,8 @@ describe("ModelCatalog cache", () => {
       () => new Response("nope", { status: 500 }),
     ]) {
       stubFetch({ models: outcome, api: outcome });
-      const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+      const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
+      await catalog.ready;
       await expect(catalog.refresh()).resolves.toBeUndefined();
       expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
     }
@@ -423,7 +430,7 @@ describe("ModelCatalog cache", () => {
     await mkdir(join(TEST_DIR, "cache"), { recursive: true });
     await writeFile(CACHE_PATH, JSON.stringify({ version: 1, contexts: { "acme/old": 1 } }));
     const fetched = await stubBoth();
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
 
     await catalog.ready;
 
@@ -439,15 +446,15 @@ describe("ModelCatalog cache", () => {
       api: () => new Response(null, { status: 304 }),
     });
 
-    const stale = await ModelCatalog.open({ cachePath: CACHE_PATH, maxAge: 30_000 });
-    expect(stale.stale).toBe(true);
+    const stale = ModelCatalog.open({ cachePath: CACHE_PATH, maxAge: 30_000 });
     await stale.ready;
+    expect(stale.state).toMatchObject({ status: "loaded", stale: true });
     expect(fetched).toHaveBeenCalledTimes(2);
 
     fetched.mockClear();
-    const fresh = await ModelCatalog.open({ cachePath: CACHE_PATH, maxAge: 120_000 });
-    expect(fresh.stale).toBe(false);
-    await expect(fresh.ready).resolves.toBeUndefined();
+    const fresh = ModelCatalog.open({ cachePath: CACHE_PATH, maxAge: 120_000 });
+    await fresh.ready;
+    expect(fresh.state).toMatchObject({ status: "loaded", stale: false });
     expect(fetched).not.toHaveBeenCalled();
     await fresh.refresh();
     expect(fetched).toHaveBeenCalledTimes(2);

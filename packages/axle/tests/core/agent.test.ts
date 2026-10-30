@@ -860,7 +860,14 @@ describe("Agent", () => {
       in: 10,
       out: 20,
       breakdown: [
-        { provider: "mock-stream", model: "mock", requestedModel: "mock", in: 10, out: 20 },
+        {
+          provider: "mock-stream",
+          model: "mock",
+          requestedModel: "mock",
+          at: expect.any(String),
+          in: 10,
+          out: 20,
+        },
       ],
     });
   });

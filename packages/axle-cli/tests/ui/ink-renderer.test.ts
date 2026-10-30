@@ -54,7 +54,13 @@ describe("UiStore", () => {
 
 describe("App", () => {
   it("omits the status bar when it is disabled for a non-interactive run", () => {
-    const row = { model: "m", requestedModel: "m", in: 300, out: 60 };
+    const row = {
+      model: "m",
+      requestedModel: "m",
+      at: "2026-10-30T12:00:00.000Z",
+      in: 300,
+      out: 60,
+    };
     const priced = { ...row, usd: 0.1405 };
     const unpriced = { ...row, reason: "no-provider" as const };
     const store = new UiStore<UiState>({

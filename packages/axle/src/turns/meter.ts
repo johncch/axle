@@ -27,6 +27,8 @@ export interface Cost {
   usd: number;
   priced: PricedEntry[];
   unpriced: UnpricedEntry[];
+  /** `fetchedAt` of the catalog that priced the rows, ISO 8601; absent when none was priced. */
+  pricedWith?: string;
 }
 
 /**
@@ -88,6 +90,8 @@ function priceRows(rows: readonly UsageEntry[], catalog: ModelCatalog | undefine
       cost.unpriced.push({ ...row, reason: outcome });
     }
   }
+  const state = catalog?.state;
+  if (cost.priced.length > 0 && state?.status === "loaded") cost.pricedWith = state.fetchedAt;
   return cost;
 }
 

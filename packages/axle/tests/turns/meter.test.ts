@@ -43,11 +43,15 @@ const cacheFile = {
 
 async function openCatalog(): Promise<ModelCatalog> {
   await writeFile(CACHE_PATH, JSON.stringify(cacheFile));
-  return ModelCatalog.open({ cachePath: CACHE_PATH });
+  const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
+  await catalog.ready;
+  return catalog;
 }
 
+const AT = "2026-10-30T12:00:00.000Z";
+
 function row(entry: Partial<UsageEntry> & Pick<UsageEntry, "in" | "out">): UsageEntry {
-  return { provider: "acme", model: "sonnet", requestedModel: "sonnet", ...entry };
+  return { provider: "acme", model: "sonnet", requestedModel: "sonnet", at: AT, ...entry };
 }
 
 function turnEnd(rows: UsageEntry[]) {
@@ -110,6 +114,7 @@ describe("Meter cost", () => {
       usd: 1.2,
       priced: [{ ...row({ in: 100_000, out: 100_000 }), usd: 1.2 }],
       unpriced: [],
+      pricedWith: cacheFile.fetchedAt,
     });
   });
 
@@ -162,7 +167,13 @@ describe("Meter cost", () => {
 
   test("names why a row is unpriced: no provider, unlisted, or listed without a price", async () => {
     const meter = new Meter(await openCatalog());
-    const noProvider: UsageEntry = { model: "sonnet", requestedModel: "sonnet", in: 10, out: 1 };
+    const noProvider: UsageEntry = {
+      model: "sonnet",
+      requestedModel: "sonnet",
+      at: AT,
+      in: 10,
+      out: 1,
+    };
     const unlisted = row({ model: "nope", requestedModel: "nope", in: 10, out: 1 });
     const noPrice = row({ model: "free", requestedModel: "free", in: 10, out: 1 });
     meter.apply(turnEnd([noProvider, unlisted, noPrice, row({ in: 100_000, out: 0 })]));
@@ -211,11 +222,12 @@ describe("Meter cost", () => {
           gate.then(() => new Response(url.endsWith("/models.json") ? body : api, { status: 200 })),
         ),
     );
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
     const meter = new Meter(catalog);
     meter.apply(turnEnd([row({ in: 100_000, out: 0 })]));
 
     expect(meter.cost.unpriced.map((entry) => entry.reason)).toEqual(["loading"]);
+    expect(meter.cost.pricedWith).toBeUndefined();
 
     release();
     const cost = await meter.priced();
@@ -227,7 +239,7 @@ describe("Meter cost", () => {
 
   test("reports unavailable when the catalog has no cache and cannot fetch", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
-    const catalog = await ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [] });
+    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [] });
     const meter = new Meter(catalog);
     meter.apply(turnEnd([row({ in: 100_000, out: 0 })]));
 

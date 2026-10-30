@@ -144,13 +144,14 @@ export interface ModelCatalogOptions {
 }
 
 /**
- * Where the catalog stands: `loading` while the first fetch of a catalog with no cache
- * is in flight, `loaded` once a cache has been read or fetched (`stale` when older than
- * `maxAge`), `unavailable` when there is no cache and the fetch failed.
+ * Where the catalog stands: `loading` until the cache has been read or, with no cache,
+ * until the first fetch has ended; `loaded` once it holds a catalog (`stale` when older
+ * than `maxAge`, `fetchedAt` ISO 8601); `unavailable` when there is no cache and the
+ * fetch failed.
  */
 export type CatalogState =
   | { status: "loading" }
-  | { status: "loaded"; fetchedAt: Date; stale: boolean }
+  | { status: "loaded"; fetchedAt: string; stale: boolean }
   | { status: "unavailable" };
 
 /**
@@ -158,11 +159,12 @@ export type CatalogState =
  * (`publisher/model`, provider-independent) and a per-provider layer (each provider's
  * own ids with its limits and prices, linked to the canonical entry).
  *
- * `open()` reads the cache and resolves at once. With no cache it starts a
- * fetch and resolves in the `loading` state; with a cache older than `maxAge`
- * it serves the cache and refreshes in the background. `ready` resolves when
- * that fetch has ended either way, `state` says where the catalog stands,
- * and `onChange` fires when the state or the contents change. `refresh()`
+ * `open()` returns at once and loads in the background: it reads the cache,
+ * fetches when there is none, and refreshes a cache older than `maxAge` while
+ * serving it. `state` says where the catalog stands, `ready` resolves when it
+ * first leaves `loading`, and `onChange` fires when the state or the contents
+ * change. A consumer that cares about the answer awaits `ready`; one that does
+ * not gets `undefined` from `lookup` until the catalog is there. `refresh()`
  * always fetches, sending ETags so an unchanged catalog downloads nothing, and
  * never throws — a failed fetch keeps the cached copy.
  *
@@ -181,64 +183,39 @@ export class ModelCatalog {
   private readonly retryDelays: number[];
   private cache: CacheFile | undefined;
   private normalized: { id: string; key: string }[] = [];
+  private opening = true;
   private inflight = 0;
   private readonly listeners: Array<() => void> = [];
   private readonly _ready: Promise<void>;
 
-  private constructor(options: ModelCatalogOptions, cache: CacheFile | undefined) {
+  private constructor(options: ModelCatalogOptions) {
     this.cachePath = options.cachePath;
     this.maxAge = options.maxAge ?? DEFAULT_MAX_AGE_MS;
     this.providers = options.providers;
     this.baseUrl = options.baseUrl ?? MODELS_DEV_URL;
     this.fetchTimeout = options.fetchTimeout ?? DEFAULT_FETCH_TIMEOUT_MS;
     this.retryDelays = options.retryDelays ?? DEFAULT_RETRY_DELAYS_MS;
-    this.setCache(cache);
-    if (!this.cache) {
-      this._ready = this.attempt(0);
-    } else if (this.stale) {
-      this._ready = this.refresh();
-    } else {
-      this._ready = Promise.resolve();
-    }
+    this._ready = this.load();
   }
 
-  static async open(options: ModelCatalogOptions = {}): Promise<ModelCatalog> {
-    let cache: CacheFile | undefined;
-    if (options.cachePath) {
-      try {
-        const parsed = CacheFileSchema.safeParse(
-          JSON.parse(await readFile(options.cachePath, "utf-8")),
-        );
-        if (parsed.success) cache = parsed.data;
-      } catch {
-        cache = undefined;
-      }
-    }
-    return new ModelCatalog(options, cache);
+  static open(options: ModelCatalogOptions = {}): ModelCatalog {
+    return new ModelCatalog(options);
   }
 
   get state(): CatalogState {
     if (this.cache) {
-      return { status: "loaded", fetchedAt: new Date(this.cache.fetchedAt), stale: this.stale };
+      return { status: "loaded", fetchedAt: this.cache.fetchedAt, stale: this.isStale() };
     }
-    return this.inflight > 0 ? { status: "loading" } : { status: "unavailable" };
+    return this.opening || this.inflight > 0 ? { status: "loading" } : { status: "unavailable" };
   }
 
-  /** Resolves when the fetch `open()` started has ended, either way; at once when it started none. */
+  /** Resolves when `state` first leaves `loading`; never rejects. */
   get ready(): Promise<void> {
     return this._ready;
   }
 
   get size(): number {
     return this.normalized.length;
-  }
-
-  get fetchedAt(): Date | undefined {
-    return this.cache ? new Date(this.cache.fetchedAt) : undefined;
-  }
-
-  get stale(): boolean {
-    return !this.cache || Date.now() - Date.parse(this.cache.fetchedAt) >= this.maxAge;
   }
 
   onChange(listener: () => void): () => void {
@@ -262,13 +239,47 @@ export class ModelCatalog {
     }
   }
 
-  private async attempt(index: number): Promise<void> {
+  private async load(): Promise<void> {
+    const cached = await this.readCacheFile();
+    if (cached) {
+      const before = this.snapshot();
+      this.setCache(cached);
+      this.opening = false;
+      this.notifyIfChanged(before);
+      if (this.isStale()) void this.refresh();
+      return;
+    }
     await this.refresh();
-    if (this.cache) return;
+    const before = this.snapshot();
+    this.opening = false;
+    this.notifyIfChanged(before);
+    if (!this.cache) this.scheduleRetry(0);
+  }
+
+  private async readCacheFile(): Promise<CacheFile | undefined> {
+    if (!this.cachePath) return undefined;
+    try {
+      const parsed = CacheFileSchema.safeParse(JSON.parse(await readFile(this.cachePath, "utf-8")));
+      return parsed.success ? parsed.data : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private scheduleRetry(index: number): void {
     const delay = this.retryDelays[index];
     if (delay === undefined) return;
-    const timer = setTimeout(() => void this.attempt(index + 1), delay);
+    const timer = setTimeout(() => void this.retry(index), delay);
     timer.unref?.();
+  }
+
+  private async retry(index: number): Promise<void> {
+    await this.refresh();
+    if (!this.cache) this.scheduleRetry(index + 1);
+  }
+
+  private isStale(): boolean {
+    return !this.cache || Date.now() - Date.parse(this.cache.fetchedAt) >= this.maxAge;
   }
 
   private snapshot(): { cache: CacheFile | undefined; status: CatalogState["status"] } {
@@ -277,7 +288,13 @@ export class ModelCatalog {
 
   private notifyIfChanged(before: ReturnType<ModelCatalog["snapshot"]>): void {
     if (this.cache === before.cache && this.state.status === before.status) return;
-    for (const listener of [...this.listeners]) listener();
+    for (const listener of [...this.listeners]) {
+      try {
+        listener();
+      } catch {
+        // A listener's failure is its own; it must not break the catalog or the other listeners.
+      }
+    }
   }
 
   private async fetchAndStore(): Promise<void> {
