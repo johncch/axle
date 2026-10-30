@@ -36,7 +36,8 @@ export interface Cost {
  * `cost` and `observedCost` are computed from those rows and the catalog's
  * current state each time they are read, so a row the catalog could not price
  * yet is priced on the first read after the catalog arrives. `priced()` resolves
- * to `cost` once the catalog's `ready` has settled; it never rejects.
+ * to `cost` once the catalog's `ready` has settled; it never rejects. Pass the
+ * saved `usage` to the constructor to restore a meter.
  */
 export class Meter {
   private readonly catalog: ModelCatalog | undefined;
@@ -46,10 +47,6 @@ export class Meter {
   constructor(catalog?: ModelCatalog, saved?: Stats) {
     this.catalog = catalog;
     this._usage = saved ? mergeStats(saved) : createStats();
-  }
-
-  static restore(usage: Stats, catalog?: ModelCatalog): Meter {
-    return new Meter(catalog, usage);
   }
 
   get usage(): Stats {

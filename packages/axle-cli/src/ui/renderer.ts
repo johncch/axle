@@ -1,9 +1,9 @@
-import type { Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
+import type { Cost, Stats, Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
 
 /** Cumulative run usage plus a rough estimate of the current context size. */
 export interface SessionUsage {
-  in: number;
-  out: number;
+  usage: Stats;
+  cost: Cost;
   contextTokens: number;
   contextLimit?: number;
 }

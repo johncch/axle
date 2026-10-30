@@ -97,6 +97,7 @@ export async function buildPendingPlan(options: {
         spanName: "resume",
         session: saved.session,
         priorTurns: saved.turns,
+        priorUsage: saved.meter,
         resumedFromCwd: saved.cwd,
         initial: inv.message,
         interactive: inv.message === undefined,

@@ -1,11 +1,13 @@
+import type { Cost, Stats } from "@fifthrevision/axle/ui";
+
 /** Running totals for a batch, shown in the progress renderer's footer. */
 export interface BatchTotals {
   total: number;
   completed: number;
   skipped: number;
   failed: number;
-  tokensIn: number;
-  tokensOut: number;
+  usage: Stats;
+  cost: Cost;
 }
 
 /**

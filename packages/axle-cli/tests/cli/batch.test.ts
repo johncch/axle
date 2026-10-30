@@ -1,5 +1,5 @@
 import type { AIProvider } from "@fifthrevision/axle";
-import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
+import { AxleStopReason, Meter, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -95,7 +95,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider()),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("batch"),
       renderer,
     );
@@ -123,7 +123,7 @@ describe("runBatch (--each fan-out)", () => {
     await runBatch(
       batchSpec(createMockProvider()),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("first"),
       createRecordingRenderer().renderer,
     );
@@ -132,7 +132,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider(), { incremental: true }),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("second"),
       renderer,
     );
@@ -147,7 +147,7 @@ describe("runBatch (--each fan-out)", () => {
     await runBatch(
       batchSpec(createMockProvider()),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("first"),
       createRecordingRenderer().renderer,
     );
@@ -156,7 +156,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider()),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("second"),
       renderer,
     );
@@ -170,7 +170,7 @@ describe("runBatch (--each fan-out)", () => {
     await runBatch(
       batchSpec(createMockProvider()),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("first"),
       createRecordingRenderer().renderer,
     );
@@ -180,7 +180,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider(), { incremental: true }),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("second"),
       renderer,
     );
@@ -194,7 +194,7 @@ describe("runBatch (--each fan-out)", () => {
     await runBatch(
       { ...batchSpec(createMockProvider()), jobName: "other-job" },
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("first"),
       createRecordingRenderer().renderer,
     );
@@ -203,7 +203,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider(), { incremental: true }),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("second"),
       renderer,
     );
@@ -220,7 +220,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider()),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("batch"),
       renderer,
     );
@@ -240,7 +240,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider({ failOnCall: 2 })),
       {},
-      createStats(),
+      new Meter(),
       tracer.startSpan("batch"),
       renderer,
     );
@@ -267,7 +267,7 @@ describe("runBatch (--each fan-out)", () => {
     const succeeded = await runBatch(
       batchSpec(createMockProvider({ failOnCall: 2 })),
       {},
-      createStats(),
+      new Meter(),
       new Tracer().startSpan("batch"),
       renderer,
     );

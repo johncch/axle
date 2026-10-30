@@ -90,14 +90,14 @@ export class Transcript<
     return this._turns.find((turn) => turn.id === turnId);
   }
 
-  apply(
+  apply = (
     event: TranscriptInput<TAnnotation, TConsumerEvent>,
-  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> => {
     if (!isTurnEvent<TAnnotation>(event)) {
       return { handled: false, event: event as TConsumerEvent };
     }
     return this.applyTurnEvent(event);
-  }
+  };
 
   private applyTurnEvent(
     event: TurnEvent<TAnnotation>,
@@ -424,7 +424,9 @@ export class Transcript<
     });
   }
 
-  private handled(event: TurnEvent<TAnnotation>): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
+  private handled(
+    event: TurnEvent<TAnnotation>,
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     return {
       handled: true,
       event,

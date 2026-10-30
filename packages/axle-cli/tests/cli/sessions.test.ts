@@ -1,5 +1,5 @@
 import type { AgentConfig, AIProvider } from "@fifthrevision/axle";
-import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
+import { AxleStopReason, Meter, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -160,7 +160,7 @@ describe("SessionStore", () => {
     const store = new SessionStore(recipe, { cwd: "/some/project", home: HOME });
     const session = { sessionId: "abc-123", messages: [] };
 
-    const path = await store.save(session, []);
+    const path = await store.save(session, [], { in: 0, out: 0 });
 
     expect(path).toBe(sessionFilePath("abc-123", HOME));
     const file = await readSessionFile("abc-123");
@@ -174,7 +174,10 @@ describe("SessionStore", () => {
   });
 
   it("stores an empty recipe for a chat session", async () => {
-    await new SessionStore({}, { home: HOME }).save({ sessionId: "chat", messages: [] }, []);
+    await new SessionStore({}, { home: HOME }).save({ sessionId: "chat", messages: [] }, [], {
+      in: 0,
+      out: 0,
+    });
 
     expect((await readSessionFile("chat")).recipe).toEqual({});
   });
@@ -183,10 +186,10 @@ describe("SessionStore", () => {
     const store = new SessionStore(recipe, { home: HOME });
     const session = { sessionId: "abc-123", messages: [] };
 
-    await store.save(session, []);
+    await store.save(session, [], { in: 0, out: 0 });
     const first = await readSessionFile("abc-123");
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await store.save(session, []);
+    await store.save(session, [], { in: 0, out: 0 });
     const second = await readSessionFile("abc-123");
 
     expect(second.createdAt).toBe(first.createdAt);
@@ -196,7 +199,7 @@ describe("SessionStore", () => {
   it("leaves no temp files behind", async () => {
     const store = new SessionStore(recipe, { home: HOME });
 
-    await store.save({ sessionId: "abc-123", messages: [] }, []);
+    await store.save({ sessionId: "abc-123", messages: [] }, [], { in: 0, out: 0 });
 
     const entries = await readdir(join(HOME, ".axle", "sessions", "cli"));
     expect(entries).toEqual(["abc-123.json"]);
@@ -210,9 +213,12 @@ describe("listSessionSummaries", () => {
 
   it("summarizes sessions newest-first, corrupt files aged by mtime", async () => {
     const store = new SessionStore(recipe, { cwd: "/proj", home: HOME });
-    await store.save({ sessionId: "older", messages: [] }, []);
+    await store.save({ sessionId: "older", messages: [] }, [], { in: 0, out: 0 });
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await new SessionStore(recipe, { home: HOME }).save({ sessionId: "newer", messages: [] }, []);
+    await new SessionStore(recipe, { home: HOME }).save({ sessionId: "newer", messages: [] }, [], {
+      in: 0,
+      out: 0,
+    });
     await new Promise((resolve) => setTimeout(resolve, 5));
     await writeFile(sessionFilePath("broken", HOME), "not json");
 
@@ -235,7 +241,7 @@ describe("loadSession", () => {
 
   it("resolves a unique session id prefix", async () => {
     const store = new SessionStore(recipe, { home: HOME });
-    await store.save({ sessionId: "abcdef12-3456", messages: [] }, []);
+    await store.save({ sessionId: "abcdef12-3456", messages: [] }, [], { in: 0, out: 0 });
 
     const file = await loadSession("abcdef12", HOME);
 
@@ -244,8 +250,8 @@ describe("loadSession", () => {
 
   it("rejects an ambiguous session id prefix", async () => {
     const store = new SessionStore(recipe, { home: HOME });
-    await store.save({ sessionId: "abc-one", messages: [] }, []);
-    await store.save({ sessionId: "abc-two", messages: [] }, []);
+    await store.save({ sessionId: "abc-one", messages: [] }, [], { in: 0, out: 0 });
+    await store.save({ sessionId: "abc-two", messages: [] }, [], { in: 0, out: 0 });
 
     await expect(loadSession("abc", HOME)).rejects.toThrow(/ambiguous/);
   });
@@ -390,7 +396,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       span,
       nullRenderer,
       store,
@@ -404,6 +410,57 @@ describe("runSingle session persistence", () => {
     expect(file.session.messages).toHaveLength(2);
     expect(file.session.messages[0].role).toBe("user");
     expect(file.turns.length).toBeGreaterThanOrEqual(2);
+    expect(file.meter).toMatchObject({ in: 10, out: 20 });
+    expect(file.meter?.breakdown).toHaveLength(1);
+  });
+
+  it("the run meter sees what the session meter sees, and a resumed session restores its lifetime usage", async () => {
+    const store = new SessionStore(recipe, { home: HOME });
+    const tracer = new Tracer();
+    const runMeter = new Meter();
+
+    await runAgentSession(
+      {
+        agentConfig: {
+          provider: createMockProvider("first"),
+          model: "test-model",
+          sessionId: "m-1",
+        },
+        spanName: "job",
+        contextWindow: 200_000,
+        initial: "Say hi",
+        interactive: false,
+      },
+      runMeter,
+      tracer.startSpan("first"),
+      nullRenderer,
+      store,
+    );
+    const saved = await loadSession("m-1", HOME);
+    expect(runMeter.observedUsage).toEqual(saved.meter);
+
+    const resumeMeter = new Meter();
+    await runAgentSession(
+      {
+        agentConfig: { provider: createMockProvider("second"), model: "test-model" },
+        spanName: "resume",
+        contextWindow: 200_000,
+        session: saved.session,
+        priorTurns: saved.turns,
+        priorUsage: saved.meter,
+        initial: "Say more",
+        interactive: false,
+      },
+      resumeMeter,
+      tracer.startSpan("resume"),
+      nullRenderer,
+      new SessionStore(saved.recipe, { createdAt: saved.createdAt, home: HOME }),
+    );
+
+    expect(resumeMeter.observedUsage).toMatchObject({ in: 10, out: 20 });
+    const after = await readSessionFile("m-1");
+    expect(after.meter).toMatchObject({ in: 20, out: 40 });
+    expect(after.meter?.breakdown).toHaveLength(2);
   });
 
   it("resumes a saved session: prior messages reach the model and the file grows", async () => {
@@ -423,7 +480,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       tracer.startSpan("first"),
       nullRenderer,
       store,
@@ -452,7 +509,7 @@ describe("runSingle session persistence", () => {
         initial: "Say more",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       tracer.startSpan("resume"),
       nullRenderer,
       resumeStore,
@@ -487,7 +544,7 @@ describe("runSingle session persistence", () => {
 
     const succeeded = await runAgentSession(
       { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
-      createStats(),
+      new Meter(),
       tracer.startSpan("chat"),
       scriptedRenderer,
       store,
@@ -540,7 +597,7 @@ describe("runSingle session persistence", () => {
           contextWindow: 200_000,
           interactive: true,
         },
-        createStats(),
+        new Meter(),
         new Tracer().startSpan("chat"),
         renderer,
         new SessionStore(recipe, { home: HOME }),
@@ -666,7 +723,7 @@ describe("runSingle session persistence", () => {
 
       const succeeded = await runAgentSession(
         { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
-        createStats(),
+        new Meter(),
         tracer.startSpan("chat"),
         scriptedRenderer,
         store,
@@ -692,7 +749,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       new Tracer().startSpan("first"),
       nullRenderer,
       store,
@@ -710,7 +767,7 @@ describe("runSingle session persistence", () => {
         priorTurns: saved.turns,
         interactive: true,
       },
-      createStats(),
+      new Meter(),
       new Tracer().startSpan("resume"),
       quitRenderer,
       new SessionStore(saved.recipe, { createdAt: saved.createdAt, home: HOME }),
@@ -738,7 +795,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       tracer.startSpan("job"),
       renderer,
       store,
@@ -772,7 +829,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       new Tracer().startSpan("job"),
       renderer,
       new SessionStore(recipe, { home: blockedHome }),
@@ -795,7 +852,7 @@ describe("runSingle session persistence", () => {
 
     const succeeded = await runAgentSession(
       { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
-      createStats(),
+      new Meter(),
       tracer.startSpan("chat"),
       renderer,
       store,
@@ -822,7 +879,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       span,
       nullRenderer,
     );

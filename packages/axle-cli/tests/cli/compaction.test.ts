@@ -1,5 +1,5 @@
 import type { AgentConfig, AIProvider, ContextUsage } from "@fifthrevision/axle";
-import { Agent, AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
+import { Agent, AxleStopReason, Meter, Tracer } from "@fifthrevision/axle";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -208,7 +208,7 @@ describe("compacted session snapshot/resume", () => {
         initial: "please continue",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       tracer.startSpan("test"),
       usageRenderer,
       store,
@@ -258,7 +258,7 @@ describe("compacted session snapshot/resume", () => {
         initial: "and again",
         interactive: false,
       },
-      createStats(),
+      new Meter(),
       tracer.startSpan("test"),
       nullRenderer,
       store,
@@ -291,7 +291,7 @@ describe("compacted session snapshot/resume", () => {
         interactive: false,
         compaction: false,
       },
-      createStats(),
+      new Meter(),
       new Tracer().startSpan("test"),
       nullRenderer,
     );

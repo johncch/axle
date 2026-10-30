@@ -36,7 +36,7 @@ span:start → span:update (setResult) → span:end
 | ---- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.1  | Single text response       | Span ordering, setResult + end lifecycle, usage/finishReason on spans                                                                        |
 | 1.2  | Tool call → text           | 4 spans (root + turn + tool + turn), correct parent/type, messages accumulate (assistant → tool result → assistant), usage sums across turns |
-| 1.3  | Two tool calls in one turn | Both tool spans open under root before either closes (concurrent), both end before turn-2 starts                                            |
+| 1.3  | Two tool calls in one turn | Both tool spans open under root before either closes (concurrent), both end before turn-2 starts                                             |
 | 1.5  | Thinking + text            | Span result contains both thinking and text parts                                                                                            |
 
 ### stream() — Error Paths

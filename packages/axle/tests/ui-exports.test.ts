@@ -3,10 +3,10 @@ import type {
   Annotation,
   FileInfo,
   Stats,
+  TimingInfo,
   TranscriptApplyResult,
   TranscriptInput,
   Turn,
-  TimingInfo,
   TurnMetadata,
 } from "../src/ui.js";
 import { Transcript } from "../src/ui.js";

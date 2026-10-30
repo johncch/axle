@@ -2,7 +2,7 @@ import type { Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
 import { render, Static, Text, useInput } from "ink";
 import { useSyncExternalStore } from "react";
 import type { BatchProgress, BatchTotals } from "../batch.js";
-import { formatMs, formatTokens } from "../format.js";
+import { formatCost, formatMs, formatTokens } from "../format.js";
 import type { Renderer, SessionUsage } from "../renderer.js";
 import { RunnerLine, useSpinner } from "./App.js";
 import { UiStore } from "./store.js";
@@ -58,12 +58,14 @@ function BatchApp({ store }: { store: UiStore<BatchUiState> }) {
 
 function TotalsLine({ totals }: { totals: BatchTotals }) {
   const settled = totals.completed + totals.skipped + totals.failed;
+  const cost = formatCost(totals.cost);
   return (
     <Text dimColor>
       {"  "}
       {settled}/{totals.total} settled
-      {totals.failed > 0 ? ` · ${totals.failed} failed` : ""} · ↑ {formatTokens(totals.tokensIn)} ↓{" "}
-      {formatTokens(totals.tokensOut)}
+      {totals.failed > 0 ? ` · ${totals.failed} failed` : ""} · ↑ {formatTokens(totals.usage.in)} ↓{" "}
+      {formatTokens(totals.usage.out)}
+      {cost ? ` · ${cost}` : ""}
     </Text>
   );
 }

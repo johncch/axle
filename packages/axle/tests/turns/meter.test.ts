@@ -87,7 +87,7 @@ describe("Meter usage", () => {
 
   test("restore seeds usage; observed holds only what this instance applied", async () => {
     const saved: Stats = { in: 1000, out: 100, breakdown: [row({ in: 1000, out: 100 })] };
-    const meter = Meter.restore(saved, await openCatalog());
+    const meter = new Meter(await openCatalog(), saved);
     meter.apply(turnEnd([row({ in: 100_000, out: 0 })]));
 
     expect(meter.usage.in).toBe(101_000);
