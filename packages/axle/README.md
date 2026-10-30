@@ -916,7 +916,8 @@ Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
 when reported). `usage.breakdown` holds one entry per provider request, in
 request order, tagged with the provider that served it (its `AIProvider.id`,
 omitted when the provider has none), the model the response reported
-(`model`), the model string the agent was given (`requestedModel`), and, when
+(`model`), the model string the agent was given (`requestedModel`), when the
+provider finished the request (`at`, ISO 8601), and, when
 the agent has a `name`, with that name as `agent`. Providers bill a request
 at the tier its prompt size selects, so each row's `in` is what prices that
 row; a subagent's requests appear between the parent requests that bracket
@@ -926,9 +927,9 @@ its tool call, under the subagent's own name:
 const result = await orchestrator.send("...").final;
 // result.usage.breakdown:
 // [
-//   { provider: "anthropic", model: "claude-sonnet-4-6", agent: "orchestrator", in: 1200, out: 40 },
-//   { provider: "openai", model: "gpt-5", agent: "researcher", in: 800, out: 120 },
-//   { provider: "anthropic", model: "claude-sonnet-4-6", agent: "orchestrator", in: 2100, out: 300 },
+//   { provider: "anthropic", model: "claude-sonnet-4-6", agent: "orchestrator", at: "2026-10-30T12:00:01.210Z", in: 1200, out: 40 },
+//   { provider: "openai", model: "gpt-5", agent: "researcher", at: "2026-10-30T12:00:04.877Z", in: 800, out: 120 },
+//   { provider: "anthropic", model: "claude-sonnet-4-6", agent: "orchestrator", at: "2026-10-30T12:00:09.302Z", in: 2100, out: 300 },
 // ]
 ```
 
@@ -936,6 +937,59 @@ Breakdown entries explain the aggregate totals; they are attribution metadata,
 not additional usage. A reader that wants per-model or per-agent totals groups
 the rows. An Anthropic step that paused (`pause_turn`) took several requests
 and yields one row each.
+
+### Meter
+
+`Meter` accumulates usage across turns and prices it. It is a sink over the
+turn event stream like `Transcript`: attach it with `agent.on(meter.apply)`,
+persist its `usage`, and pass that back to the constructor to restore it.
+
+```typescript
+import { Meter, ModelCatalog } from "@fifthrevision/axle";
+
+const catalog = ModelCatalog.open({ cachePath });
+const meter = new Meter(catalog, savedUsage); // both arguments optional
+agent.on(meter.apply);
+
+meter.usage; // Stats: restored rows plus everything applied since
+meter.observedUsage; // Stats: only what this instance applied
+meter.cost; // Cost, computed now from the rows and the catalog's current state
+await meter.priced(); // Cost, after the catalog's `ready` has settled
+```
+
+A `Cost` is `{ usd, priced, unpriced, pricedWith? }`. `priced` holds each
+row with its `usd`; `unpriced` holds each row the catalog could not price,
+with a `reason`: `loading` and `unavailable` are the catalog's state and may
+resolve on a later read, while `no-catalog`, `no-provider`, `unlisted` and
+`no-price` are facts about the row. Nothing is stored: `cost` prices the rows
+against the catalog each time it is read, so a row that was `loading` a
+moment ago is priced the first time you read after the catalog arrives, in
+this process or the next. `pricedWith` is the `fetchedAt` of the catalog that
+priced the rows.
+
+Each row is priced at the tier its own `in` selects, with cache reads, cache
+writes and reasoning tokens at their own rate where the provider lists one
+and at the plain input or output rate otherwise. Only the provider layer
+prices a row (`lookup(model, { provider: row.provider })`); a row whose
+provider has no id is `no-provider`, and the row's `requestedModel` is tried
+when the reported `model` is not listed.
+
+If you care about pricing, await the catalog: `priced()` does that and
+returns `cost`. It is bounded by the catalog's `ready` and never rejects; a
+catalog that failed to load yields a `Cost` whose rows say `unavailable`.
+`cost` is a plain getter and cannot hang, so it is safe anywhere a value is
+needed now:
+
+```typescript
+agent.onSettled(async () => {
+  const cost = await meter.priced();
+  await db.write({ usage: meter.usage, usd: cost.usd, pricedWith: cost.pricedWith });
+});
+```
+
+`usage` and `cost` cover what the meter was restored with plus what it has
+applied; `observedUsage` and `observedCost` only what this instance applied.
+A resumed session that wants "this run" and "all time" keeps both.
 
 ### Provider Tools
 
@@ -1693,10 +1747,10 @@ import { ModelCatalog } from "@fifthrevision/axle";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const catalog = await ModelCatalog.open({
+const catalog = ModelCatalog.open({
   cachePath: join(homedir(), ".myapp", "models.json"),
 });
-if (catalog.stale) void catalog.refresh(); // or await it — never throws
+await catalog.ready; // if you care about the answer; see below
 
 catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
 // → { id: "zhipuai/glm-5.3-flash", match: "provider", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
@@ -1731,15 +1785,37 @@ match first, else a unique prefix. The result's `match` and `id` say how it
 was found, so a best-effort guess is visible. No match returns `undefined`;
 what to assume then is yours.
 
-`open()` reads the cache and never touches the network; without `cachePath`
-the catalog lives in memory for the process. `stale` is true when there is
-no cache or it is older than `maxAge` (default one day); when to act on that
-is yours. `refresh()` always fetches both layers (about 0.4 MB and 0.5 MB
-compressed), sends each layer's ETag so an unchanged file downloads
-nothing, and keeps the cached copy on any failure, so an offline run is
-never blocked; if only one layer fetched, the catalog stays `stale` so the
-other is retried next time. `providers: ["anthropic", "openrouter"]` keeps only those providers
-(the full provider layer is about 1.9 MB on disk); `providers: []` skips it.
+`open()` returns at once and loads in the background: it reads the cache,
+fetches both layers when there is none, and when the cache is older than
+`maxAge` (default one day) serves it while refreshing it. Where the
+catalog stands is `state`:
+
+```ts
+type CatalogState =
+  | { status: "loading" } // reading the cache, or fetching with none
+  | { status: "loaded"; fetchedAt: string; stale: boolean } // fetchedAt ISO 8601
+  | { status: "unavailable" }; // no cache and the fetch failed
+```
+
+`lookup` and `contextWindow` return `undefined` while `loading` or
+`unavailable`, so check `state` when the difference from an unlisted model
+matters. `ready` resolves when `state` first leaves `loading` and never
+rejects: with a cache that is the file read; without one it is a single
+fetch bounded by `fetchTimeout` (default ten seconds). A catalog whose
+first fetch failed is `unavailable` and retries on its own at `retryDelays`
+(default 10 s, 30 s, 90 s; `[]` never retries); `ready` does not wait for
+those. `onChange(listener)` fires when `state` or the contents change and
+returns an unsubscribe; a listener that throws stops neither the catalog
+nor the other listeners. If you care about the answer, await `ready`; if
+you want a number now, read what is there and redraw on `onChange`.
+
+`refresh()` fetches both layers (about 0.4 MB and 0.5 MB compressed), sends
+each layer's ETag so an unchanged file downloads nothing, keeps the current
+copy on any failure, and never throws; the fetched catalog is held in
+memory even when the cache file cannot be written. Without `cachePath` the
+catalog lives in memory for the process. `providers: ["anthropic",
+"openrouter"]` keeps only those providers (the full provider layer is about
+1.9 MB on disk); `providers: []` skips it.
 
 ### Sessions and persistence
 

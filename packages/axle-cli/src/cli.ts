@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { Command, Option } from "@commander-js/extra-typings";
-import type { Stats } from "@fifthrevision/axle";
-import { createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
+import { Meter, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { styleText } from "node:util";
@@ -48,7 +47,7 @@ import { needsSetupWizard, runSetupWizard } from "./cli/setup.js";
 import { discoverSkills } from "./cli/skills.js";
 import { isFolderTrusted, trustFolder, trustWouldChange, untrustFolder } from "./cli/trust.js";
 import * as ask from "./ui/ask.js";
-import { formatFailure } from "./ui/format.js";
+import { formatCost, formatFailure } from "./ui/format.js";
 import type { Renderer } from "./ui/index.js";
 import { createRenderer, supportsBatchProgress } from "./ui/index.js";
 
@@ -280,8 +279,9 @@ program
   .description("Print version, config file locations, and resolved configuration")
   .action(async () => {
     await manage(async () => {
-      const catalog = await openModelCatalog();
-      if (catalog.stale) await catalog.refresh();
+      const catalog = openModelCatalog();
+      await catalog.ready;
+      if (catalog.state.status === "loaded" && catalog.state.stale) await catalog.refresh();
       const trusted = await isFolderTrusted(process.cwd());
       const lines = formatInfo({
         version: build.version,
@@ -570,8 +570,9 @@ for (const line of [
   renderer.warn(line);
   rootSpan.warn(line);
 }
-const catalog = await openModelCatalog();
-if (catalog.stale) void catalog.refresh();
+const catalog = openModelCatalog();
+const meter = new Meter(catalog, savedSession?.meter);
+await catalog.ready;
 const contextWindow = resolveContextWindow(
   resolveEndpoint(pending.target.provider, cliConfig),
   agentConfig.model,
@@ -584,7 +585,6 @@ rootSpan.info(
 try {
   rootSpan.info("All systems operational. Running job...");
 
-  const stats: Stats = createStats();
   const startTime = performance.now();
 
   let succeeded = false;
@@ -596,9 +596,10 @@ try {
           recipe: pending.recipe,
           agentConfig,
           contextWindow: contextWindow.window,
+          catalog,
         },
         variables,
-        stats,
+        meter,
         rootSpan,
         renderer,
         supportsBatchProgress(renderer) ? renderer : undefined,
@@ -609,9 +610,10 @@ try {
           ...pending.spec,
           agentConfig,
           contextWindow: contextWindow.window,
+          catalog,
           providerName: pending.target.providerName,
         },
-        stats,
+        meter,
         rootSpan,
         renderer,
         pending.sessionStore,
@@ -642,15 +644,18 @@ try {
           .map((entry) => entry.sessionId);
   await recordScheduleRun(succeeded ? "succeeded" : "failed", sessionIds);
   rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
-  rootSpan.info(`Input tokens: ${stats.in}`);
-  rootSpan.info(`Output tokens: ${stats.out}`);
-  if (stats.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${stats.cachedIn}`);
-  if (stats.cacheWriteIn !== undefined)
-    rootSpan.info(`Cache write input tokens: ${stats.cacheWriteIn}`);
-  if (stats.reasoningOut !== undefined)
-    rootSpan.info(`Reasoning output tokens: ${stats.reasoningOut}`);
+  const usage = meter.observedUsage;
+  const cost = formatCost(meter.observedCost);
+  rootSpan.info(`Input tokens: ${usage.in}`);
+  rootSpan.info(`Output tokens: ${usage.out}`);
+  if (usage.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${usage.cachedIn}`);
+  if (usage.cacheWriteIn !== undefined)
+    rootSpan.info(`Cache write input tokens: ${usage.cacheWriteIn}`);
+  if (usage.reasoningOut !== undefined)
+    rootSpan.info(`Reasoning output tokens: ${usage.reasoningOut}`);
+  if (cost) rootSpan.info(`Cost: ${cost}`);
 
-  const runSummary = `in ${(duration / 1000).toFixed(1)}s · ↑ ${stats.in} ↓ ${stats.out} tokens`;
+  const runSummary = `in ${(duration / 1000).toFixed(1)}s · ↑ ${usage.in} ↓ ${usage.out} tokens${cost ? ` · ${cost}` : ""}`;
   if (succeeded) {
     renderer.success(`Done ${runSummary}`);
     rootSpan.info("Complete. Goodbye");

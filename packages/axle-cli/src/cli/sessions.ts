@@ -1,4 +1,4 @@
-import type { AgentSession, Turn } from "@fifthrevision/axle";
+import type { AgentSession, Stats, Turn } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { writeFileAtomic } from "./atomic-write.js";
@@ -15,6 +15,8 @@ export interface CliSessionFile {
   recipe: AgentRecipe;
   session: AgentSession;
   turns: Turn[];
+  /** Lifetime usage of the session, every request row included; absent in files written before 0.35. */
+  meter?: Stats;
 }
 
 // Files written before 2026-10-29 carried the recipe in core's AgentDefinition
@@ -233,7 +235,7 @@ export class SessionStore {
     this.createdAt = options?.createdAt;
   }
 
-  async save(session: AgentSession, turns: readonly Turn[]): Promise<string> {
+  async save(session: AgentSession, turns: readonly Turn[], meter: Stats): Promise<string> {
     this.createdAt ??= new Date().toISOString();
     const file: CliSessionFile = {
       version: 1,
@@ -243,6 +245,7 @@ export class SessionStore {
       recipe: this.recipe,
       session,
       turns: [...turns],
+      meter,
     };
 
     await mkdir(sessionsDir(this.home), { recursive: true });

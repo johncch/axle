@@ -54,17 +54,31 @@ describe("UiStore", () => {
 
 describe("App", () => {
   it("omits the status bar when it is disabled for a non-interactive run", () => {
+    const row = {
+      model: "m",
+      requestedModel: "m",
+      at: "2026-10-30T12:00:00.000Z",
+      in: 300,
+      out: 60,
+    };
+    const priced = { ...row, usd: 0.1405 };
+    const unpriced = { ...row, reason: "no-provider" as const };
     const store = new UiStore<UiState>({
       staticItems: [],
       awaitingInput: false,
       pending: [],
       queuedInputs: [],
-      usage: { in: 1_000, out: 200, contextTokens: 4_000, contextLimit: 10_000 },
+      usage: {
+        usage: { in: 1_000, out: 200 },
+        cost: { usd: 0.4215, priced: [priced, priced, priced], unpriced: [unpriced] },
+        contextTokens: 4_000,
+        contextLimit: 10_000,
+      },
     });
     const renderApp = (statusBar: boolean) =>
       renderToString(createElement(App, { store, statusBar, onSubmit() {} }));
 
-    expect(renderApp(true)).toContain("↑ 1.0k ↓ 200");
+    expect(renderApp(true)).toContain("↑ 1.0k ↓ 200 · $0.42 (1 unpriced)");
     expect(renderApp(false)).not.toContain("↑ 1.0k ↓ 200");
   });
 

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Cost beside tokens.** The usage bar, the batch footer and the exit
+  summary show what the run cost in US dollars, priced from the models.dev
+  catalog per request: `$0.42`, `$0.42 (2 unpriced)` when some requests
+  went to a model the catalog has no price for, nothing when none could be
+  priced. The figures are this invocation's, not a resumed session's
+  history.
+- Session files carry the session's usage rows (`meter`), one per provider
+  request with its timestamp, so a resumed session keeps its record and can
+  be priced later. Older files without it resume as before.
+- The first run on a machine waits once for the models.dev catalog to
+  download (at most ten seconds) instead of running with an empty one;
+  later runs read the cache and refresh it in the background. `axle info`
+  reports "assumed (models.dev not loaded)" when the catalog could not be
+  loaded, in place of "not cached".
+
 - **Breaking: `cli.yaml` profiles and inline providers replace `type` and
   `vendor`.** A profile's name now decides what it is. A name matching a
   preset (`anthropic`, `openai`, `gemini`, `openrouter`, `together`,

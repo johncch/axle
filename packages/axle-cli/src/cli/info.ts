@@ -245,7 +245,9 @@ function describeWindowSource(
     case "catalog":
       return `models.dev (${source.id})`;
     case "assumed":
-      return input.catalog.size === 0 ? "assumed (models.dev not cached)" : "assumed";
+      return input.catalog.state.status === "loaded"
+        ? "assumed"
+        : "assumed (models.dev not loaded)";
   }
 }
 

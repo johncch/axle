@@ -1,9 +1,7 @@
 {
   "anthropic": {
     "id": "anthropic",
-    "env": [
-      "ANTHROPIC_API_KEY"
-    ],
+    "env": ["ANTHROPIC_API_KEY"],
     "npm": "@ai-sdk/anthropic",
     "name": "Anthropic",
     "doc": "https://docs.anthropic.com/en/docs/about-claude/models",
@@ -21,13 +19,7 @@
           },
           {
             "type": "effort",
-            "values": [
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ]
+            "values": ["low", "medium", "high", "xhigh", "max"]
           }
         ],
         "tool_call": true,
@@ -37,14 +29,8 @@
         "release_date": "2026-06-29",
         "last_updated": "2026-06-30",
         "modalities": {
-          "input": [
-            "text",
-            "image",
-            "pdf"
-          ],
-          "output": [
-            "text"
-          ]
+          "input": ["text", "image", "pdf"],
+          "output": ["text"]
         },
         "open_weights": false,
         "limit": {
@@ -62,9 +48,7 @@
   },
   "openrouter": {
     "id": "openrouter",
-    "env": [
-      "OPENROUTER_API_KEY"
-    ],
+    "env": ["OPENROUTER_API_KEY"],
     "npm": "@openrouter/ai-sdk-provider",
     "api": "https://openrouter.ai/api/v1",
     "name": "OpenRouter",
@@ -80,11 +64,7 @@
         "reasoning_options": [
           {
             "type": "effort",
-            "values": [
-              "low",
-              "high",
-              "max"
-            ]
+            "values": ["low", "high", "max"]
           }
         ],
         "tool_call": true,
@@ -93,14 +73,8 @@
         "release_date": "2026-08-26",
         "last_updated": "2026-08-26",
         "modalities": {
-          "input": [
-            "text",
-            "image",
-            "video"
-          ],
-          "output": [
-            "text"
-          ]
+          "input": ["text", "image", "video"],
+          "output": ["text"]
         },
         "open_weights": true,
         "limit": {
@@ -128,12 +102,8 @@
         "release_date": "2024-08-13",
         "last_updated": "2024-08-13",
         "modalities": {
-          "input": [
-            "text"
-          ],
-          "output": [
-            "text"
-          ]
+          "input": ["text"],
+          "output": ["text"]
         },
         "open_weights": true,
         "limit": {
@@ -159,12 +129,8 @@
         "release_date": "2024-08-13",
         "last_updated": "2024-08-13",
         "modalities": {
-          "input": [
-            "text"
-          ],
-          "output": [
-            "text"
-          ]
+          "input": ["text"],
+          "output": ["text"]
         },
         "open_weights": true,
         "limit": {
@@ -183,9 +149,7 @@
   },
   "togetherai": {
     "id": "togetherai",
-    "env": [
-      "TOGETHER_API_KEY"
-    ],
+    "env": ["TOGETHER_API_KEY"],
     "npm": "@ai-sdk/togetherai",
     "name": "Together AI",
     "doc": "https://docs.together.ai/docs/serverless-models",
@@ -209,12 +173,8 @@
         "release_date": "2026-04-07",
         "last_updated": "2026-07-02",
         "modalities": {
-          "input": [
-            "text"
-          ],
-          "output": [
-            "text"
-          ]
+          "input": ["text"],
+          "output": ["text"]
         },
         "open_weights": true,
         "limit": {
@@ -232,11 +192,7 @@
   },
   "google": {
     "id": "google",
-    "env": [
-      "GOOGLE_API_KEY",
-      "GOOGLE_GENERATIVE_AI_API_KEY",
-      "GEMINI_API_KEY"
-    ],
+    "env": ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
     "npm": "@ai-sdk/google",
     "name": "Google",
     "doc": "https://ai.google.dev/gemini-api/docs/models",
@@ -262,16 +218,8 @@
         "release_date": "2025-06-17",
         "last_updated": "2025-06-17",
         "modalities": {
-          "input": [
-            "text",
-            "image",
-            "audio",
-            "video",
-            "pdf"
-          ],
-          "output": [
-            "text"
-          ]
+          "input": ["text", "image", "audio", "video", "pdf"],
+          "output": ["text"]
         },
         "open_weights": false,
         "limit": {

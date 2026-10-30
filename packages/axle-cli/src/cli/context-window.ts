@@ -21,7 +21,7 @@ export function modelCatalogPath(home?: string): string {
   return join(resolveConfigDirs({ home }).user, "cache", "models.json");
 }
 
-export function openModelCatalog(home?: string): Promise<ModelCatalog> {
+export function openModelCatalog(home?: string): ModelCatalog {
   return ModelCatalog.open({ cachePath: modelCatalogPath(home) });
 }
 

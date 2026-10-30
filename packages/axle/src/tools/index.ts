@@ -11,7 +11,4 @@ export type {
   ToolProgressChunk,
 } from "./types.js";
 export { braveWebSearch } from "./webSearch.js";
-export type {
-  BraveWebSearchOptions,
-  WebSearchResult,
-} from "./webSearch.js";
+export type { BraveWebSearchOptions, WebSearchResult } from "./webSearch.js";

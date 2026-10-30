@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-10-09 (AXL-79)
+**Status**: current · **Last design revision**: 2026-10-30 (AXL-93)
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -50,7 +50,8 @@ against it; divergence is a defect. State ownership is defined in
 3. **Every run is a session.** Chat, one-shot, recipe run, and every
    individual batch item persist the same shape — the recipe's agent keys
    as written (`AgentRecipe`) + `agent.snapshot()` + `Transcript.turns` +
-   cwd — to `~/.axle/sessions/cli/<id>.json`, saved on every exit path. Anything
+   `Meter.usage` (as `meter`) + cwd — to `~/.axle/sessions/cli/<id>.json`,
+   saved on every exit path. Anything
    that produced a session can be re-entered with `axle resume <id>`.
    Sessions accumulate; `axle cleanup` deletes by age window. There is no
    automatic retention. Sessions compact automatically near the context
@@ -63,11 +64,24 @@ against it; divergence is a defect. State ownership is defined in
    local server loads models below their maximum), else core's
    `ModelCatalog` (models.dev, keyed by the `id` of the provider the endpoint
    builds), else an assumed 200,000. The catalog is cached at
-   `~/.axle/cache/models.json`; a run reads the cache and refreshes it in
-   the background when it is a day old, `axle info` awaits the refresh, and
-   no run ever waits on or fails for the network. `axle info` prints each
-   provider's window with its source and the matched catalog id, so a
-   best-effort match is visible.
+   `~/.axle/cache/models.json`. A run opens the catalog and awaits its
+   `ready` once at startup: with a cache that is the file read, and a stale
+   cache is served while the catalog refreshes it in the background; the
+   first run on a machine waits for one fetch, bounded by the catalog's
+   `fetchTimeout`, and proceeds without a catalog if it fails. No run ever
+   fails for the network. `axle info` awaits `ready` and then a refresh
+   when the cache is stale. It prints each provider's window with its
+   source and the matched catalog id, so a best-effort match is visible.
+
+   Usage and cost come from two `Meter`s on the same catalog: the session's,
+   owned by `SessionRuntime`, restored from the file's `meter` and saved
+   back; and the run's, created in `cli.ts` for the usage bar, the batch
+   footer and the exit summary, which therefore show what this invocation
+   spent and not a resumed session's history. Cost is `formatCost(cost)`:
+   `$0.42`, `<$0.01`, `$0.42 (2 unpriced)`, or nothing when no row was
+   priced; the bar redraws on `turn:end`, `compaction:complete` and
+   `catalog.onChange`, so a price that arrives after the turn is shown
+   without another turn.
 
 4. **Batch is map(recipe, inputs), composed on the kernel.** One isolated
    session per input, run mechanically — no orchestrator model in the loop,
@@ -566,6 +580,16 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   is exactly `exit` or `quit`, in any case, ends the session like `/quit`
   and is never sent to the model. They are magic words, not more slash
   commands.
+- **2026-10-30 — usage and cost are a `Meter`'s, and a run awaits the
+  catalog once (AXL-93).** The runners summed `in`/`out` themselves and the
+  session file carried no usage; the catalog was read and refreshed by
+  hand at each site. Both now go through core's `Meter` and the catalog's
+  own `ready`/`state`/`onChange`. Rejected: reading usage from
+  `Transcript.turns` on resume (a compacted or trimmed transcript loses
+  rows; the meter's rows are the record); one meter with a "since resume"
+  filter (two instances is less code than a cursor); showing the session's
+  cumulative cost in the bar (the bar is this run's spend, like the token
+  counts beside it; the file keeps the total).
 - **2026-10-08 — the context window is looked up, not assumed (AXL-73).**
   Every model was assumed to have 200,000 tokens unless
   `AXLE_CONTEXT_WINDOW` said otherwise, so 1M-context models compacted at

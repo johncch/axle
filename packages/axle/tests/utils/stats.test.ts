@@ -52,6 +52,7 @@ describe("stats utilities", () => {
           provider: "child-provider",
           model: "child-model",
           requestedModel: "child-model",
+          at: expect.any(String),
           in: 3,
           out: 4,
           cachedIn: 1,
@@ -80,8 +81,16 @@ describe("stats utilities", () => {
       out: 6,
       cachedIn: 5,
       breakdown: [
-        { provider: "p", model: "m", requestedModel: "m", in: 1, out: 2 },
-        { provider: "p", model: "m", requestedModel: "m", in: 3, out: 4, cachedIn: 5 },
+        { provider: "p", model: "m", requestedModel: "m", at: expect.any(String), in: 1, out: 2 },
+        {
+          provider: "p",
+          model: "m",
+          requestedModel: "m",
+          at: expect.any(String),
+          in: 3,
+          out: 4,
+          cachedIn: 5,
+        },
       ],
     });
   });
@@ -93,7 +102,15 @@ describe("stats utilities", () => {
         { provider: "p", model: "m", requestedModel: "m", agent: "researcher" },
       ).breakdown,
     ).toEqual([
-      { provider: "p", model: "m", requestedModel: "m", agent: "researcher", in: 1, out: 2 },
+      {
+        provider: "p",
+        model: "m",
+        requestedModel: "m",
+        agent: "researcher",
+        at: expect.any(String),
+        in: 1,
+        out: 2,
+      },
     ]);
   });
 
@@ -112,6 +129,7 @@ describe("stats utilities", () => {
         provider: "amazon-bedrock",
         model: "anthropic.claude-haiku-4-5-20251001-v1:0",
         requestedModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        at: expect.any(String),
         in: 1,
         out: 2,
       },
@@ -121,7 +139,7 @@ describe("stats utilities", () => {
   test("leaves provider off the row when the provider has no id", () => {
     expect(
       attributeStats({ in: 1, out: 2 }, { model: "m", requestedModel: "m" }).breakdown,
-    ).toEqual([{ model: "m", requestedModel: "m", in: 1, out: 2 }]);
+    ).toEqual([{ model: "m", requestedModel: "m", at: expect.any(String), in: 1, out: 2 }]);
   });
 
   test("writes one row per request when the step took several", () => {
@@ -148,6 +166,7 @@ describe("stats utilities", () => {
           model: "claude-x",
           requestedModel: "anthropic/claude-x",
           agent: "researcher",
+          at: expect.any(String),
           in: 10,
           out: 20,
         },
@@ -156,6 +175,7 @@ describe("stats utilities", () => {
           model: "claude-x",
           requestedModel: "anthropic/claude-x",
           agent: "researcher",
+          at: expect.any(String),
           in: 40,
           out: 7,
         },
@@ -179,8 +199,22 @@ describe("stats utilities", () => {
       in: 4,
       out: 6,
       breakdown: [
-        { provider: "anthropic", model: "parent", requestedModel: "parent", in: 1, out: 2 },
-        { provider: "openai", model: "child", requestedModel: "child", in: 3, out: 4 },
+        {
+          provider: "anthropic",
+          model: "parent",
+          requestedModel: "parent",
+          at: expect.any(String),
+          in: 1,
+          out: 2,
+        },
+        {
+          provider: "openai",
+          model: "child",
+          requestedModel: "child",
+          at: expect.any(String),
+          in: 3,
+          out: 4,
+        },
       ],
     });
   });

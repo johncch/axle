@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InfoInput } from "../../src/cli/info.js";
 import { formatInfo } from "../../src/cli/info.js";
 
-const emptyCatalog = await ModelCatalog.open();
+vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+const emptyCatalog = ModelCatalog.open({ retryDelays: [] });
+await emptyCatalog.ready;
+vi.unstubAllGlobals();
 
 const catalogEntry = {
   name: "Claude X",
@@ -31,8 +34,8 @@ async function catalogWith(models: Record<string, unknown>, hosts: Record<string
     ),
   );
   try {
-    const catalog = await ModelCatalog.open();
-    await catalog.refresh();
+    const catalog = ModelCatalog.open();
+    await catalog.ready;
     return catalog;
   } finally {
     vi.unstubAllGlobals();
@@ -161,7 +164,7 @@ describe("formatInfo", () => {
       "    protocol  messages",
       "    url       https://work.test",
       "    model     claude-x           ./.axle/cli.yaml",
-      "    window    200,000            assumed (models.dev not cached)",
+      "    window    200,000            assumed (models.dev not loaded)",
       "    key       $WORK_KEY          environment",
       "",
       "  inline                              ~/.axle/cli.yaml",
@@ -178,7 +181,7 @@ describe("formatInfo", () => {
       "",
       "  gemini",
       "    model   gemini-x         ./.axle/credentials",
-      "    window  200,000          assumed (models.dev not cached)",
+      "    window  200,000          assumed (models.dev not loaded)",
       "    key     $GEMINI_API_KEY  ~/.axle/credentials",
     ]);
   });
@@ -250,7 +253,7 @@ describe("formatInfo", () => {
       serviceConfig: { anthropic: { apiKey: "sk-a" } },
     });
 
-    expect(lines).toContain("    window  200,000             assumed (models.dev not cached)");
+    expect(lines).toContain("    window  200,000             assumed (models.dev not loaded)");
   });
 });
 

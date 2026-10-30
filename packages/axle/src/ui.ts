@@ -8,6 +8,8 @@ export type {
 } from "./messages/message.js";
 export type { ConsoleOutput, ProviderToolInput } from "./messages/providerTool.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export { Meter } from "./turns/meter.js";
+export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./turns/meter.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput, UnknownEvent } from "./turns/transcript.js";
 export type {

@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-10-14 (0.35.0)
+**Status**: current · **Last design revision**: 2026-10-30 (0.35.0, AXL-93)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -22,7 +22,13 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    attach with `agent.on(...)`; there is no injected store, no engine-side
    read-back, no `session:restore` event. Restore means the consumer re-seeds
    its own transcript (`new Transcript(savedTurns)`) from its own copy,
-   persisted next to the `AgentSession` in one atomic write.
+   persisted next to the `AgentSession` in one atomic write. The transcript
+   is one _sink_ over that stream; `Meter` is another, and a consumer's own
+   folds are more. Every sink has the same contract: `apply(event)` is a
+   bound property handed straight to `agent.on`, it folds what it needs
+   from each event and ignores the rest, it exposes a readonly view, and
+   the consumer persists that view and seeds the constructor with it on
+   restore. The Agent knows none of them.
 4. **Historical messages are disposable.** Compaction replaces `messages`
    and the old ones cease to exist. Lookback is served by the transcript; consumers
    wanting pre-compaction messages (undo/fork, exact-request audit) copy
@@ -37,10 +43,15 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `turn:user`, then the same `Instruct` parses the final assistant response.
 6. **Usage accounting belongs to the consumer.** Every `turn:end` carries
    `turn.usage`; consumers accumulate totals in their own storage. The Agent
-   exposes no usage meter, and `AgentSession` carries none. `usage.breakdown`
+   exposes no usage meter, and `AgentSession` carries none; the shipped
+   `Meter` is a sink (invariant 3) the consumer attaches, reads and
+   persists, like `Transcript`. `usage.breakdown`
    holds one `UsageEntry` per provider request, in request order, never a
    sum per model: a consumer prices each row at the tier its own `in` selects
-   and groups rows when it wants per-model totals. An Agent with a `name`
+   and groups rows when it wants per-model totals. Each row carries `at`,
+   when the provider finished the request, so the row is a billing record
+   on its own: it can be priced later, by a catalog that has the price sheet
+   for that date, without the turn that produced it. An Agent with a `name`
    stamps it on the rows of its own requests as `agent`, and leaves the
    rows a subagent tool reports under that subagent's name, so a consumer can
    also group by who spent what.
@@ -432,6 +443,77 @@ Accepted consequences:
   flight, so it returns `false`. `ctx.pending` is how a loop notices that
   the user already typed a correction.
 - **A continuation must bound itself.** Attempt limits are the consumer's.
+
+## Sinks and the Meter (2026-10-30)
+
+Invariant 3 said "transcript" where it meant "whoever folds the stream".
+AXL-93 names the plural: a _sink_ is any fold over `TurnEvent`s with the
+contract invariant 3 now states, `Transcript` is the first and `Meter` the
+second. The Meter answers the question invariant 6 left to every consumer:
+what did this conversation cost. It folds `turn:end` usage and prices the
+rows against a `ModelCatalog`.
+
+- **Cost is a view, never stored.** `meter.cost` is computed from
+  `usage.breakdown` and the catalog's current `state` each time it is
+  read. The rows are the record; the price sheet is the catalog's. A row
+  the catalog could not price is in `unpriced` with a `reason`, and the
+  same row is priced on the first read after the catalog can, in this
+  process or the next. `pricedWith` on a `Cost` is the `fetchedAt` of the
+  catalog that priced it, so a stored total says which price sheet it came
+  from.
+- **The synchronous read cannot hang; the asynchronous one is bounded and
+  never rejects.** `cost` reads whatever the catalog has now. `priced()`
+  awaits the catalog's `ready` and returns `cost`; `ready` is the cache
+  read or one fetch under `fetchTimeout`, so a consumer that writes
+  `db.write(await meter.priced())` cannot be held past that, and a failed
+  catalog yields a `Cost` whose rows say `unavailable` rather than a
+  rejection. The rule for consumers: if you care about pricing, await
+  `ready` (or `priced()`); if you only want a number now, read `cost`.
+- **Loading is the catalog's job, not the consumer's.** `ModelCatalog.open()`
+  returns synchronously in `loading` and does every load behind it: cache,
+  fetch when there is none, refresh when stale while serving the stale
+  copy, retries at `retryDelays` while `unavailable`. The consumer sees one
+  value, `state`, one promise, `ready`, and one signal, `onChange`. Before
+  this a catalog whose `refresh()` was forgotten answered `undefined` to
+  every `lookup`, which the Meter could not tell from an unlisted model.
+- **Two meters, not one with a filter.** `usage`/`cost` cover what the
+  meter was restored with plus what it applied; `observedUsage`/
+  `observedCost` only what this instance applied. The CLI keeps one meter
+  per session file and one per run, and a resumed session shows the run's
+  spend in the bar while persisting the session's total.
+
+Rejected alternatives:
+
+- **A usage counter on the Agent or in `AgentSession`** (2026-10-30): the
+  Agent records facts about one operation; totals across operations are
+  the consumer's storage (invariant 6), and a counter in the session would
+  be the first field there that is not resumable state.
+- **Cost computed at `apply` time and stored on the row** (2026-10-30):
+  the catalog may be `loading` when the row arrives, so the stored price is
+  "whatever was known then", and a repriced row would contradict its own
+  stored value. Pricing on read makes the rows the only record.
+- **The consumer calls `refresh()` when the catalog reports `stale`**
+  (2026-10-30, the 2026-10-08 design): every consumer wrote the same two
+  lines and the one that forgot ran empty. A catalog that owns its own
+  loading can be asked where it stands; one that does not has to be told
+  what to do.
+- **`lookup` returning a "not loaded" marker** (2026-10-30): it would have
+  answered the Meter's question by making every `lookup` call site handle a
+  third outcome. `state` is one place to ask, and `lookup` keeps meaning
+  "listed or not".
+
+Decided not yet, recorded so the next debate starts here:
+
+- **`maxStale`**: how old a stale copy may get before it is treated as
+  `unavailable`, with HTTP stale-while-revalidate / stale-if-error
+  semantics. Today a stale copy is served indefinitely and the Meter
+  reports it as `loaded`.
+- **Consumer price overrides on the catalog** (`match: "override"`): a
+  negotiated rate or a self-hosted model's amortized cost. The lookup
+  shape already has a `match` field to carry it.
+- **`meter.onChange`**: a Meter-side signal that a cost may have changed.
+  Today a host redraws on `turn:end` and on `catalog.onChange`, which is
+  the same information from its two sources.
 
 ## Rejected alternatives
 

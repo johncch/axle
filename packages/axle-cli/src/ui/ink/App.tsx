@@ -11,6 +11,7 @@ import {
   contextPie,
   formatActionArgs,
   formatActionResult,
+  formatCost,
   formatDuration,
   formatTokens,
   indentContinuation,
@@ -73,9 +74,11 @@ function UsageBar({ usage }: { usage: SessionUsage }) {
   const context = usage.contextLimit
     ? contextPie(usage.contextTokens / usage.contextLimit)
     : `ctx ~${formatTokens(usage.contextTokens)}`;
+  const cost = formatCost(usage.cost);
   return (
     <Text dimColor>
-      {"  "}↑ {formatTokens(usage.in)} ↓ {formatTokens(usage.out)} {context}
+      {"  "}↑ {formatTokens(usage.usage.in)} ↓ {formatTokens(usage.usage.out)}
+      {cost ? ` · ${cost}` : ""} {context}
     </Text>
   );
 }

@@ -423,6 +423,7 @@ describe("executeToolCalls", () => {
                 provider: "anthropic",
                 model: "claude-x",
                 requestedModel: "claude-x",
+                at: "2026-10-30T12:00:00.000Z",
                 in: 10,
                 out: 5,
               },
@@ -444,10 +445,15 @@ describe("executeToolCalls", () => {
       );
 
       expect(usage).toMatchObject({ in: 20, out: 10 });
-      expect(usage?.breakdown).toEqual([
-        { provider: "anthropic", model: "claude-x", requestedModel: "claude-x", in: 10, out: 5 },
-        { provider: "anthropic", model: "claude-x", requestedModel: "claude-x", in: 10, out: 5 },
-      ]);
+      const row = {
+        provider: "anthropic",
+        model: "claude-x",
+        requestedModel: "claude-x",
+        at: "2026-10-30T12:00:00.000Z",
+        in: 10,
+        out: 5,
+      };
+      expect(usage?.breakdown).toEqual([row, row]);
     });
 
     test("treats a tool-thrown AbortError as recoverable while the signal is live", async () => {

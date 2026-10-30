@@ -3,17 +3,18 @@ import type {
   AgentSession,
   AxleProviderFailure,
   CompactionConfig,
+  ModelCatalog,
   Span,
   Stats,
   Turn,
   TurnEvent,
 } from "@fifthrevision/axle";
 import {
-  addStats,
   Agent,
   AxleAgentAbortError,
   Instruct,
   loadFileContent,
+  Meter,
   PromptCompactor,
   Transcript,
 } from "@fifthrevision/axle";
@@ -49,6 +50,10 @@ export interface AgentSessionSpec {
   session?: AgentSession;
   /** Saved turns to replay before the first send. */
   priorTurns?: readonly Turn[];
+  /** The session's lifetime usage as saved, restored into its meter. */
+  priorUsage?: Stats;
+  /** Prices requests; without it every request is unpriced. */
+  catalog?: ModelCatalog;
   /** The cwd recorded when the session was created, for the mismatch warning. */
   resumedFromCwd?: string;
   /** First message to send; absent drops straight into the chat loop. */
@@ -92,6 +97,8 @@ export function createSessionCompaction(agent: Agent, contextWindow: number): Co
 class SessionRuntime {
   readonly agent: Agent;
   readonly transcript: Transcript;
+  /** The session's own lifetime usage, what the session file persists. */
+  readonly meter: Meter;
 
   private readonly sessionStore?: SessionStore;
   private readonly span: Span;
@@ -106,6 +113,8 @@ class SessionRuntime {
     contextWindow: number;
     session?: AgentSession;
     priorTurns?: readonly Turn[];
+    priorUsage?: Stats;
+    catalog?: ModelCatalog;
     sessionStore?: SessionStore;
     onEvent: (event: TurnEvent, transcript: Transcript) => void;
   }) {
@@ -117,6 +126,7 @@ class SessionRuntime {
       this.agent.setCompaction(createSessionCompaction(this.agent, options.contextWindow));
     }
     this.transcript = new Transcript(options.priorTurns ?? []);
+    this.meter = new Meter(options.catalog, options.priorUsage);
     this.sessionStore = options.sessionStore;
     this.span = options.span;
     this.persisted = Boolean(options.session);
@@ -125,6 +135,7 @@ class SessionRuntime {
     this.unsaved = !options.session;
     this.agent.on((event) => {
       this.transcript.apply(event);
+      this.meter.apply(event);
       options.onEvent(event, this.transcript);
     });
   }
@@ -153,7 +164,7 @@ class SessionRuntime {
   private async write(session: AgentSession, turns: readonly Turn[]): Promise<boolean> {
     if (!this.sessionStore) return false;
     try {
-      await this.sessionStore.save(session, turns);
+      await this.sessionStore.save(session, turns, this.meter.usage);
       this.persisted = true;
       this.unsaved = false;
       return true;
@@ -178,7 +189,7 @@ type SendOutcome = "ok" | "failed" | "interrupted";
 
 export async function runAgentSession(
   spec: AgentSessionSpec,
-  stats: Stats,
+  meter: Meter,
   parentSpan: Span,
   renderer: Renderer,
   sessionStore?: SessionStore,
@@ -191,8 +202,13 @@ export async function runAgentSession(
     contextWindow: spec.contextWindow,
     session: spec.session,
     priorTurns: spec.priorTurns,
+    priorUsage: spec.priorUsage,
+    catalog: spec.catalog,
     sessionStore,
-    onEvent: (event, transcript) => renderer.onEvent(event, transcript),
+    onEvent: (event, transcript) => {
+      meter.apply(event);
+      renderer.onEvent(event, transcript);
+    },
   });
   const { agent } = runtime;
 
@@ -249,23 +265,21 @@ export async function runAgentSession(
 
   const reportUsage = () => {
     renderer.updateUsage({
-      in: stats.in,
-      out: stats.out,
+      usage: meter.observedUsage,
+      cost: meter.observedCost,
       contextTokens: agent.context().total,
       contextLimit: spec.contextWindow,
     });
   };
   reportUsage();
   agent.on((event) => {
-    if (event.type === "compaction:complete") reportUsage();
+    if (event.type === "turn:end" || event.type === "compaction:complete") reportUsage();
   });
+  const unsubscribeCatalog = spec.catalog?.onChange(reportUsage);
 
   const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
     try {
       const result = await agent.send(message, { signal: controller.signal }).final;
-
-      addStats(stats, result.usage);
-      reportUsage();
 
       if (!result.ok) {
         const msg = describeFailure(result.error);
@@ -353,6 +367,7 @@ export async function runAgentSession(
   } finally {
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
+    unsubscribeCatalog?.();
     await runtime.finishSaving();
     const resumeCommand = runtime.resumeCommand();
     if (sessionStore && resumeCommand) {
@@ -381,6 +396,8 @@ export interface BatchRunSpec {
   compaction?: boolean;
   /** The model's context window in tokens; drives the compaction threshold. */
   contextWindow: number;
+  /** Prices requests; without it every request is unpriced. */
+  catalog?: ModelCatalog;
   /** Session home override for tests. */
   home?: string;
 }
@@ -388,7 +405,7 @@ export interface BatchRunSpec {
 export async function runBatch(
   spec: BatchRunSpec,
   variables: Record<string, any>,
-  stats: Stats,
+  meter: Meter,
   parentSpan: Span,
   renderer: Renderer,
   progress?: BatchProgress,
@@ -416,15 +433,13 @@ export async function runBatch(
   let completed = 0;
   let skipped = 0;
   let failed = 0;
-  let tokensIn = 0;
-  let tokensOut = 0;
   const totals = (): BatchTotals => ({
     total: filePaths.length,
     completed,
     skipped,
     failed,
-    tokensIn,
-    tokensOut,
+    usage: meter.observedUsage,
+    cost: meter.observedCost,
   });
   progress?.batchStarted(totals());
 
@@ -474,8 +489,10 @@ export async function runBatch(
         span: itemSpan,
         compaction: spec.compaction,
         contextWindow: spec.contextWindow,
+        catalog: spec.catalog,
         sessionStore,
         onEvent: (event, transcript) => {
+          meter.apply(event);
           if (spec.verbose) {
             renderer.onEvent(event, transcript);
           } else if (progress && event.type === "part:start") {
@@ -527,9 +544,6 @@ export async function runBatch(
           },
         ).final;
 
-        addStats(stats, result.usage);
-        tokensIn += result.usage.in;
-        tokensOut += result.usage.out;
         await runtime.save();
 
         if (!result.ok) {

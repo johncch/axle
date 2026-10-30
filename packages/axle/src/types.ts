@@ -26,6 +26,8 @@ export interface UsageEntry extends TokenStats {
   requestedModel: string;
   /** Name of the `Agent` that made the request, when it has one. */
   agent?: string;
+  /** When the provider finished the request, ISO 8601. */
+  at: string;
 }
 
 /**

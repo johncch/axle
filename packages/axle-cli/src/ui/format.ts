@@ -1,4 +1,4 @@
-import type { ConsoleOutput } from "@fifthrevision/axle/ui";
+import type { ConsoleOutput, Cost } from "@fifthrevision/axle/ui";
 export function capitalize(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
@@ -18,6 +18,16 @@ export function formatTokens(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
   return String(count);
+}
+
+/**
+ * `$0.42`, or `$0.42 (2 unpriced)` when some requests had no price; undefined
+ * when none did, so a run with no catalog prices shows no dollar figure.
+ */
+export function formatCost(cost: Cost): string | undefined {
+  if (cost.priced.length === 0) return undefined;
+  const dollars = cost.usd > 0 && cost.usd < 0.01 ? "<$0.01" : `$${cost.usd.toFixed(2)}`;
+  return cost.unpriced.length > 0 ? `${dollars} (${cost.unpriced.length} unpriced)` : dollars;
 }
 
 const COMPACTION_FRACTION = 0.8;

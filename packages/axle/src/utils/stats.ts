@@ -43,6 +43,7 @@ export function attributeStats(
   const provider = source.provider !== undefined ? { provider: source.provider } : {};
   const agent = source.agent !== undefined ? { agent: source.agent } : {};
   const requests = source.requests?.length ? source.requests : [usage];
+  const at = new Date().toISOString();
   return {
     ...usage,
     breakdown: requests.map((request) => ({
@@ -50,6 +51,7 @@ export function attributeStats(
       model: source.model,
       requestedModel: source.requestedModel,
       ...agent,
+      at,
       in: request.in,
       out: request.out,
       ...(request.cachedIn !== undefined ? { cachedIn: request.cachedIn } : {}),
