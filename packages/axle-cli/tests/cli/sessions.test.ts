@@ -53,7 +53,8 @@ function createFailingProvider(options: {
 }): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock",
+    protocol: "chatCompletions",
+    id: "mock",
     async *createStreamingRequest(_model, params) {
       options.requestMessages?.push([...(params as { messages: unknown[] }).messages]);
       callIndex += 1;
@@ -83,7 +84,8 @@ function createFailingProvider(options: {
 function createMockProvider(text: string, requestMessages?: unknown[][]): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock",
+    protocol: "chatCompletions",
+    id: "mock",
     async *createStreamingRequest(_model, params) {
       requestMessages?.push([...(params as { messages: unknown[] }).messages]);
       callIndex += 1;
@@ -106,7 +108,8 @@ function createMockProvider(text: string, requestMessages?: unknown[][]): AIProv
 function createHangingFirstCallProvider(requestMessages: unknown[][]): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock",
+    protocol: "chatCompletions",
+    id: "mock",
     async *createStreamingRequest(_model, params) {
       requestMessages.push([...params.messages]);
       callIndex += 1;
@@ -495,7 +498,8 @@ describe("runSingle session persistence", () => {
       const secondCallGate = new Promise<void>((resolve) => (releaseSecondCall = resolve));
       let callIndex = 0;
       const provider: AIProvider = {
-        name: "mock",
+        protocol: "chatCompletions",
+        id: "mock",
         async *createStreamingRequest() {
           callIndex += 1;
           yield {

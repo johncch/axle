@@ -4,8 +4,6 @@ import { resolveFirstPartyModel } from "../model.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-import { NAME } from "./utils.js";
-export { NAME };
 
 export function anthropic(apiKey: string, options: ProviderClientOptions = {}): AIProvider {
   const client = new AnthropicSDK({
@@ -20,7 +18,8 @@ export function anthropic(apiKey: string, options: ProviderClientOptions = {}): 
   });
 
   return {
-    name: NAME,
+    protocol: "messages",
+    id: "anthropic",
 
     /** @internal */
     createStreamingRequest(

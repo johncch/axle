@@ -18,8 +18,8 @@ export interface TokenStats {
 }
 
 export interface UsageEntry extends TokenStats {
-  /** Provider identifier. */
-  provider: string;
+  /** models.dev id of the provider that served the request (`AIProvider.id`); absent when unknown. */
+  provider?: string;
   /** Model identifier. */
   model: string;
   /** Name of the `Agent` that made the request, when it has one. */

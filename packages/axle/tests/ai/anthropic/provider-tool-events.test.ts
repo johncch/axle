@@ -94,7 +94,8 @@ describe("Anthropic provider tool events", () => {
     mockCreate = vi.fn().mockResolvedValue(responseOf(searchesTwiceWithLimitOfOne));
     const mockClient = { messages: { create: mockCreate } } as unknown as Anthropic;
     provider = {
-      name: "anthropic",
+      protocol: "messages",
+      id: "anthropic",
       createStreamingRequest: (model, params) =>
         createStreamingRequest({ client: mockClient, model, ...params }),
     };

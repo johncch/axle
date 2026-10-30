@@ -21,7 +21,8 @@ import type { Turn } from "../../src/turns/types.js";
 function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock-stream",
+    protocol: "chatCompletions",
+    id: "mock-stream",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const text = responses[callIndex++] ?? "default";
       yield {
@@ -44,7 +45,8 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
   let callCount = 0;
   const requests: unknown[][] = [];
   const provider: AIProvider = {
-    name: "mock-tool-stream",
+    protocol: "chatCompletions",
+    id: "mock-tool-stream",
     async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
       callCount += 1;
       requests.push([...messages]);
@@ -99,7 +101,8 @@ function createToolThenTextProvider(toolNames: string[], finalText = "Recovered"
 function createEchoStreamProvider(requests: string[]): AIProvider {
   let callCount = 0;
   return {
-    name: "mock-echo-stream",
+    protocol: "chatCompletions",
+    id: "mock-echo-stream",
     async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
       callCount += 1;
       const userMessage = messages.findLast((message) => message.role === "user");
@@ -377,7 +380,8 @@ describe("Agent", () => {
     test("cancel() cancels only the active send and the queued one runs", async () => {
       let calls = 0;
       const provider: AIProvider = {
-        name: "first-call-hangs",
+        protocol: "chatCompletions",
+        id: "first-call-hangs",
         async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
           calls += 1;
           yield { type: "start", id: `c${calls}`, data: { model: "mock", timestamp: 0 } };
@@ -416,7 +420,8 @@ describe("Agent", () => {
 
     test("a cancelled turn settles cancelled even when the provider rethrows a non-error reason", async () => {
       const provider: AIProvider = {
-        name: "rethrows-reason",
+        protocol: "chatCompletions",
+        id: "rethrows-reason",
         async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
           yield { type: "start", id: "r1", data: { model: "mock", timestamp: 0 } };
           await new Promise<never>((_resolve, reject) => {
@@ -629,7 +634,8 @@ describe("Agent", () => {
   test("passes its sessionId to the provider on every request", async () => {
     const sessionIds: Array<string | undefined> = [];
     const provider: AIProvider = {
-      name: "session-provider",
+      protocol: "chatCompletions",
+      id: "session-provider",
       async *createStreamingRequest(_model, { sessionId }): AsyncGenerator<AnyStreamChunk, void> {
         sessionIds.push(sessionId);
         yield {
@@ -658,7 +664,8 @@ describe("Agent", () => {
   test("snapshot and restore preserve model and render state", async () => {
     const requests: unknown[][] = [];
     const provider: AIProvider = {
-      name: "snapshot-provider",
+      protocol: "chatCompletions",
+      id: "snapshot-provider",
       async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
         requests.push([...messages]);
         yield {
@@ -730,7 +737,8 @@ describe("Agent", () => {
   test("constructor restores continuation state from an agent session", async () => {
     const requests: unknown[][] = [];
     const provider: AIProvider = {
-      name: "restore-provider",
+      protocol: "chatCompletions",
+      id: "restore-provider",
       async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
         requests.push([...messages]);
         yield {
@@ -928,7 +936,8 @@ describe("Agent", () => {
   test("send() merges per-call request options over agent defaults", async () => {
     let observedRequest: unknown;
     const provider: AIProvider = {
-      name: "mock-stream",
+      protocol: "chatCompletions",
+      id: "mock-stream",
       async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void> {
         observedRequest = {
           reasoning: params.reasoning,
@@ -1241,7 +1250,8 @@ describe("Agent", () => {
 
     test("fires for a send cancelled mid-turn, with its user message committed", async () => {
       const provider: AIProvider = {
-        name: "hanging",
+        protocol: "chatCompletions",
+        id: "hanging",
         async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
           yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
           await new Promise<never>((_resolve, reject) => {
@@ -1439,7 +1449,8 @@ describe("Agent", () => {
 
     function hangingProvider(): AIProvider {
       return {
-        name: "hanging",
+        protocol: "chatCompletions",
+        id: "hanging",
         async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
           yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
           await new Promise<never>((_resolve, reject) => {
@@ -1815,7 +1826,8 @@ describe("Agent", () => {
     test("send(string, { signal }) passes an abort signal to the provider", async () => {
       let providerSignal: AbortSignal | undefined;
       const provider: AIProvider = {
-        name: "mock-stream",
+        protocol: "chatCompletions",
+        id: "mock-stream",
         async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
           providerSignal = signal;
           yield {
@@ -1846,7 +1858,8 @@ describe("Agent", () => {
       let providerSignal: AbortSignal | undefined;
       let requestMessages: Array<{ role: string }> = [];
       const provider: AIProvider = {
-        name: "mock-stream",
+        protocol: "chatCompletions",
+        id: "mock-stream",
         async *createStreamingRequest(
           _model,
           { messages, signal },
@@ -1886,7 +1899,8 @@ describe("Agent", () => {
       let observedSignal: AbortSignal | undefined;
 
       const provider: AIProvider = {
-        name: "mock-stream",
+        protocol: "chatCompletions",
+        id: "mock-stream",
         async *createStreamingRequest(
           _model,
           { signal },
@@ -1945,7 +1959,8 @@ describe("Agent", () => {
       let callCount = 0;
 
       const provider: AIProvider = {
-        name: "mock-stream",
+        protocol: "chatCompletions",
+        id: "mock-stream",
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callCount += 1;
           const isFirstCall = callCount === 1;
@@ -2016,7 +2031,8 @@ describe("Agent", () => {
       let callCount = 0;
 
       const provider: AIProvider = {
-        name: "mock-stream",
+        protocol: "chatCompletions",
+        id: "mock-stream",
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callCount += 1;
           yield {
@@ -2260,7 +2276,8 @@ describe("Agent", () => {
     let callIndex = 0;
     const offered: (string[] | undefined)[] = [];
     const provider: AIProvider = {
-      name: "mock",
+      protocol: "chatCompletions",
+      id: "mock",
       async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
         callIndex++;
         offered.push(params.tools?.map((tool) => tool.name));
@@ -2415,7 +2432,8 @@ describe("Agent", () => {
 
       let callIndex = 0;
       const provider: AIProvider = {
-        name: "mock",
+        protocol: "chatCompletions",
+        id: "mock",
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callIndex++;
           yield {
@@ -2501,7 +2519,8 @@ describe("Agent", () => {
 
       let callIndex = 0;
       const provider: AIProvider = {
-        name: "mock",
+        protocol: "chatCompletions",
+        id: "mock",
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           callIndex++;
           yield {
@@ -2535,7 +2554,8 @@ describe("Agent", () => {
       };
 
       const childProvider: AIProvider = {
-        name: "child-provider",
+        protocol: "chatCompletions",
+        id: "child-provider",
         async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
           yield {
             type: "start",

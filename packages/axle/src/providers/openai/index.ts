@@ -1,1 +1,1 @@
-export { NAME, openai } from "./provider.js";
+export { openai } from "./provider.js";

@@ -488,9 +488,8 @@ describe("stream() error paths", () => {
     const rootSpan = tracer.startSpan("stream", { type: "workflow" });
 
     const provider: AIProvider = {
-      get name() {
-        return "test";
-      },
+      protocol: "chatCompletions",
+      id: "test",
       async *createStreamingRequest() {
         yield startChunk();
         throw new Error("Connection refused");

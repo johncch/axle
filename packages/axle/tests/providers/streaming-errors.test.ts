@@ -20,7 +20,8 @@ function providerFor(name: keyof typeof adapters, invoke: ReturnType<typeof vi.f
     gemini: { models: { generateContentStream: invoke } },
   };
   return {
-    name,
+    protocol: "chatCompletions",
+    id: name,
     createStreamingRequest: (model, params) =>
       (adapters[name] as (params: any) => ReturnType<typeof openai>)({
         ...params,
@@ -82,7 +83,8 @@ test("a numeric status on the error becomes status", () => {
 test.each([401, 429])("Chat Completions retains HTTP %s", async (status) => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bad request", { status })));
   const provider: AIProvider = {
-    name: "chat",
+    protocol: "chatCompletions",
+    id: "chat",
     createStreamingRequest: (model, params) =>
       chat({ ...params, model, baseUrl: "https://example.test", maxRetries: 0 }),
   };
@@ -120,7 +122,8 @@ test.each([
     const provider = providerFor(name, invoke);
     const { tracer, writer } = createTracerAndWriter();
     const wrapped: AIProvider = {
-      name,
+      protocol: "chatCompletions",
+      id: name,
       createStreamingRequest: (model, params) =>
         provider.createStreamingRequest(model, { ...params, ...options } as ProviderStreamParams),
     };
@@ -147,7 +150,8 @@ test("OpenAI failed response preserves code, message and usage", async () => {
     },
   };
   const provider: AIProvider = {
-    name: "openai",
+    protocol: "responses",
+    id: "openai",
     async *createStreamingRequest() {
       yield* createStreamingAdapter().handleEvent(raw as any);
     },

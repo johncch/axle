@@ -75,13 +75,19 @@ describe("stats utilities", () => {
     ).toEqual([{ provider: "p", model: "m", agent: "researcher", in: 1, out: 2 }]);
   });
 
-  test("keeps a provider's own per-request rows and stamps the agent on each", () => {
+  test("leaves provider off the row when the provider has no id", () => {
+    expect(attributeStats({ in: 1, out: 2 }, { model: "m" }).breakdown).toEqual([
+      { model: "m", in: 1, out: 2 },
+    ]);
+  });
+
+  test("keeps a provider's own per-request rows and stamps the provider and agent on each", () => {
     const stepUsage = {
       in: 50,
       out: 27,
       breakdown: [
-        { provider: "anthropic", model: "claude-x", in: 10, out: 20 },
-        { provider: "anthropic", model: "claude-x", in: 40, out: 7 },
+        { model: "claude-x", in: 10, out: 20 },
+        { model: "claude-x", in: 40, out: 7 },
       ],
     };
 

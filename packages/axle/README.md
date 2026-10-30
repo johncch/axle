@@ -868,8 +868,9 @@ under its action (interleaved across items).
 
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
 when reported). `usage.breakdown` holds one entry per provider request, in
-request order, tagged with the provider and model that served it and, when
-the agent has a `name`, with that name as `agent`. Providers bill a request
+request order, tagged with the provider that served it (its `AIProvider.id`,
+omitted when the provider has none), the model, and, when the agent has a
+`name`, with that name as `agent`. Providers bill a request
 at the tier its prompt size selects, so each row's `in` is what prices that
 row; a subagent's requests appear between the parent requests that bracket
 its tool call, under the subagent's own name:
@@ -1637,12 +1638,12 @@ const catalog = await ModelCatalog.open({
 });
 if (catalog.stale) void catalog.refresh(); // or await it — never throws
 
-catalog.lookup("z-ai/glm-5.3-flash", { host: "openrouter" });
-// → { id: "zhipuai/glm-5.3-flash", match: "host", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
-catalog.lookup("claude-sonnet-5", { host: "anthropic" });
-// → { id: "anthropic/claude-sonnet-5", match: "host", model: {…}, cost: {…} }
+catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
+// → { id: "zhipuai/glm-5.3-flash", match: "provider", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
+catalog.lookup("claude-sonnet-5", { provider: "anthropic" });
+// → { id: "anthropic/claude-sonnet-5", match: "provider", model: {…}, cost: {…} }
 catalog.lookup("anthropic/claude-sonnet-5");
-// → { id: "anthropic/claude-sonnet-5", match: "exact", model: {…} }   (no host: no price)
+// → { id: "anthropic/claude-sonnet-5", match: "exact", model: {…} }   (no provider: no price)
 catalog.lookup("gemma4:26b-mlx");
 // → { id: "google/gemma-4-26b-a4b-it", match: "prefix", model: {…} }
 catalog.contextWindow("gemma4:26b-mlx");
@@ -1652,15 +1653,15 @@ catalog.lookup("something-unlisted"); // → undefined
 
 `model` is a `CatalogModel`: `name`, `limit.context` / `limit.output`,
 `reasoning`, `toolCall`, `structuredOutput`, `attachment`, `modalities`, and
-`knowledge` cutoff. `cost` is per million tokens as that host charges it,
+`knowledge` cutoff. `cost` is per million tokens as that provider charges it,
 with `tiers` for models priced by request size (`{ size: 200000, input:
 2.5, … }` applies to a request whose context exceeds 200,000 tokens).
 
 The catalog has two layers. The canonical layer keys models by
-`publisher/model`, independent of who serves them. The host layer keys each
+`publisher/model`, independent of who serves them. The provider layer keys each
 models.dev provider's own ids (`anthropic`, `openrouter`, `togetherai`, …)
-with that host's limits and prices, linked back to the canonical entry.
-`lookup(model, { host })` tries the host's id first (for a first-party host,
+with that provider's limits and prices, linked back to the canonical entry.
+`lookup(model, { provider })` tries the provider's id first (for a first-party provider,
 `anthropic/claude-sonnet-5` also matches its `claude-sonnet-5`), then the
 canonical key (a bare id is qualified with `publisher` if given), then a
 best-effort match
@@ -1677,8 +1678,8 @@ is yours. `refresh()` always fetches both layers (about 0.4 MB and 0.5 MB
 compressed), sends each layer's ETag so an unchanged file downloads
 nothing, and keeps the cached copy on any failure, so an offline run is
 never blocked; if only one layer fetched, the catalog stays `stale` so the
-other is retried next time. `hosts: ["anthropic", "openrouter"]` keeps only those hosts
-(the full host layer is about 1.9 MB on disk); `hosts: []` skips it.
+other is retried next time. `providers: ["anthropic", "openrouter"]` keeps only those providers
+(the full provider layer is about 1.9 MB on disk); `providers: []` skips it.
 
 ### Sessions and persistence
 

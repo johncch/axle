@@ -9,7 +9,8 @@ import { AxleStopReason } from "../../src/providers/types.js";
 function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock-stream",
+    protocol: "chatCompletions",
+    id: "mock-stream",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const text = responses[callIndex++] ?? "default";
       yield {

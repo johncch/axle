@@ -13,7 +13,7 @@ import { AnyStreamChunk } from "../../messages/stream.js";
 import type { Stats } from "../../types.js";
 import { mergeStats, withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
-import { NAME, convertStopReason, normalizeAnthropicCitation } from "./utils.js";
+import { convertStopReason, normalizeAnthropicCitation } from "./utils.js";
 
 export function createAnthropicStreamingAdapter(
   openProviderToolCalls: Array<{ id: string; name: string }> = [],
@@ -89,7 +89,7 @@ export function createAnthropicStreamingAdapter(
           requests.push(requestUsage());
           const usage = mergeStats(...requests);
           if (requests.length > 1) {
-            usage.breakdown = requests.map((request) => ({ provider: NAME, model, ...request }));
+            usage.breakdown = requests.map((request) => ({ model, ...request }));
           }
           if (event.delta.stop_reason === "refusal") {
             const details = event.delta.stop_details;

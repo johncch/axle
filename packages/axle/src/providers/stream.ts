@@ -424,7 +424,7 @@ async function run(
         addStats(
           usage,
           attributeStats(outcome.failure.usage, {
-            provider: provider.name,
+            provider: provider.id,
             model: outcome.model || model,
             agent: agentName,
           }),
@@ -443,7 +443,7 @@ async function run(
       addStats(
         usage,
         attributeStats(outcome.usage, {
-          provider: provider.name,
+          provider: provider.id,
           model: outcome.model || model,
           agent: agentName,
         }),
@@ -472,7 +472,7 @@ async function run(
     } = outcome;
 
     const attributedStepUsage = attributeStats(stepUsage, {
-      provider: provider.name,
+      provider: provider.id,
       model: stepModel || model,
       agent: agentName,
     });

@@ -53,7 +53,7 @@ export function useCLIHelper(): [AIProvider, string] {
   const firstProviderOption = providerOptions[0];
   const provider = getProvider(firstProviderOption);
   const model = options.model ?? getDefaultModel(firstProviderOption);
-  console.log(`[Helper] Using ${provider.name} with model ${model}`);
+  console.log(`[Helper] Using ${provider.id ?? provider.protocol} with model ${model}`);
   return [provider, model];
 }
 

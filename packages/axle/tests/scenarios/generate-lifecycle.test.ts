@@ -19,13 +19,13 @@ async function expectAbortError(promise: Promise<unknown>): Promise<AxleAbortErr
 }
 
 import {
+  completeChunk,
   startChunk,
-  textStartChunk,
   textChunk,
   textCompleteChunk,
-  completeChunk,
-  toolCallStartChunk,
+  textStartChunk,
   toolCallCompleteChunk,
+  toolCallStartChunk,
 } from "./helpers/chunks.js";
 
 describe("generate() wrapper lifecycle", () => {
@@ -83,9 +83,8 @@ describe("generate() wrapper lifecycle", () => {
     });
 
     const provider: AIProvider = {
-      get name() {
-        return "test";
-      },
+      protocol: "chatCompletions",
+      id: "test",
       async *createStreamingRequest(_model, { signal }) {
         requestStarted();
         await gate;
@@ -185,9 +184,8 @@ describe("generate() wrapper lifecycle", () => {
 
     const createStreamingRequest = vi.fn();
     const provider: AIProvider = {
-      get name() {
-        return "test";
-      },
+      protocol: "chatCompletions",
+      id: "test",
       createStreamingRequest,
     };
 

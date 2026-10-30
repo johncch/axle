@@ -103,8 +103,9 @@ not a tool batch: its arguments are validated as a whole, so one invalid item
 rejects the call. Not "batch tool".
 
 **UsageEntry** — one row of `Stats.breakdown`: the usage of one provider
-request, tagged with the provider and model that served it and, when the
-`Agent` that made it has a `name`, with that name as `agent`. Rows are kept
+request, tagged with the provider that served it (its `AIProvider.id`, absent
+when the provider has none), the model, and, when the `Agent` that made it has
+a `name`, with that name as `agent`. Rows are kept
 in request order and never summed per model, because providers bill a request at
 the tier its own prompt size selects; a row's `in` is that prompt size. A
 subagent's rows sit between the parent requests that bracket its tool call,

@@ -183,7 +183,8 @@ function makeProvider(options: { tools: ExecutableTool[] }): AIProvider & {
   let callCount = 0;
   const requests: Array<{ tools?: unknown[]; providerTools?: unknown[] }> = [];
   return {
-    name: "test-provider",
+    protocol: "chatCompletions",
+    id: "test-provider",
     requests,
     tools: options.tools,
     async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {

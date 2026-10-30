@@ -255,6 +255,23 @@ describe("provider client factory options", () => {
     chatCompletions("http://example.test", { baseUrl: "http://other.test" });
   });
 
+  test("each factory declares its protocol and provider id", async () => {
+    const { anthropic } = await import("../../src/providers/anthropic/provider.js");
+    const { openai } = await import("../../src/providers/openai/provider.js");
+    const { gemini } = await import("../../src/providers/gemini/provider.js");
+    const { chatCompletions } = await import("../../src/providers/chatcompletions/provider.js");
+
+    expect(anthropic("k")).toMatchObject({ protocol: "messages", id: "anthropic" });
+    expect(openai("k")).toMatchObject({ protocol: "responses", id: "openai" });
+    expect(gemini("k")).toMatchObject({ protocol: "generateContent", id: "google" });
+    expect(chatCompletions("https://openrouter.ai/api/v1")).toMatchObject({
+      protocol: "chatCompletions",
+      id: "openrouter",
+    });
+    expect(chatCompletions("http://example.test", { vendor: "togetherai" }).id).toBe("togetherai");
+    expect(chatCompletions("http://localhost:11434/v1").id).toBeUndefined();
+  });
+
   test("detects ChatCompletions vendors from official endpoint hostnames", async () => {
     const { inferChatCompletionsVendor } =
       await import("../../src/providers/chatcompletions/provider.js");

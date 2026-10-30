@@ -142,7 +142,8 @@ describe("validateCompactedMessages", () => {
 function createCapturingProvider(): { provider: AIProvider; requests: AxleMessage[][] } {
   const requests: AxleMessage[][] = [];
   const provider: AIProvider = {
-    name: "mock-capture",
+    protocol: "chatCompletions",
+    id: "mock-capture",
     async *createStreamingRequest(_model, { messages }): AsyncGenerator<AnyStreamChunk, void> {
       requests.push([...messages]);
       yield { type: "start", id: "mock-1", data: { model: "mock", timestamp: 0 } };
@@ -494,7 +495,8 @@ describe("Agent.compact", () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
-      name: "gated",
+      protocol: "chatCompletions",
+      id: "gated",
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;
@@ -628,7 +630,8 @@ describe("Agent.compact", () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
-      name: "gated",
+      protocol: "chatCompletions",
+      id: "gated",
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;
@@ -674,7 +677,8 @@ describe("Agent.compact", () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
-      name: "gated",
+      protocol: "chatCompletions",
+      id: "gated",
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;
@@ -805,7 +809,8 @@ describe("Agent.compact", () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const provider: AIProvider = {
-      name: "gated",
+      protocol: "chatCompletions",
+      id: "gated",
       async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
         yield { type: "start", id: "g1", data: { model: "mock", timestamp: 0 } };
         await gate;

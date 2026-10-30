@@ -1,1 +1,1 @@
-export { NAME, anthropic } from "./provider.js";
+export { anthropic } from "./provider.js";

@@ -22,7 +22,8 @@ function sdkProvider(name: keyof typeof adapters, error: Error): AIProvider {
     gemini: { models: { generateContentStream: invoke } },
   };
   return {
-    name,
+    protocol: "chatCompletions",
+    id: name,
     createStreamingRequest: (model, params) =>
       (adapters[name] as (params: any) => ReturnType<typeof openai>)({
         ...params,
@@ -35,7 +36,8 @@ function sdkProvider(name: keyof typeof adapters, error: Error): AIProvider {
 function chatProvider(status: number, body: string): AIProvider {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status })));
   return {
-    name: "chat",
+    protocol: "chatCompletions",
+    id: "chat",
     createStreamingRequest: (model, params) =>
       chat({ ...params, model, baseUrl: "https://example.test", maxRetries: 0 }),
   };

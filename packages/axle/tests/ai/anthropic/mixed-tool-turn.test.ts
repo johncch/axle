@@ -133,7 +133,8 @@ describe("Anthropic server tool called alongside a client tool", () => {
   };
 
   const provider = (): AIProvider => ({
-    name: "anthropic",
+    protocol: "messages",
+    id: "anthropic",
     createStreamingRequest: (model, params) =>
       createStreamingRequest({ client: mockClient, model, ...params }),
   });

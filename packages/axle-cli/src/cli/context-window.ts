@@ -35,7 +35,7 @@ const FIRST_PARTY_PUBLISHERS: Record<string, string> = {
 };
 
 /** The models.dev provider id for an endpoint, when the endpoint says which service it is. */
-export function catalogHost(endpoint: Endpoint): string | undefined {
+export function catalogProvider(endpoint: Endpoint): string | undefined {
   if (endpoint.type !== "chatcompletions") return FIRST_PARTY_PUBLISHERS[endpoint.type];
   const { vendor, baseUrl } = endpoint.config;
   if (vendor === "openrouter" || vendor === "togetherai") return vendor;
@@ -55,7 +55,7 @@ export function resolveContextWindow(
   const configured = endpoint.config.contextWindow;
   if (typeof configured === "number") return { window: configured, source: { kind: "provider" } };
   const found = catalog.contextWindow(model, {
-    host: catalogHost(endpoint),
+    provider: catalogProvider(endpoint),
     publisher: FIRST_PARTY_PUBLISHERS[endpoint.type],
   });
   if (found) {

@@ -43,7 +43,8 @@ export function chatCompletions(
   const webSearch = clientOptions?.webSearch;
 
   return {
-    name: "ChatCompletions",
+    protocol: "chatCompletions",
+    id: vendor,
     tools: webSearch ? [webSearch] : undefined,
 
     /** @internal */

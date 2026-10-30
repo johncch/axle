@@ -261,7 +261,8 @@ function harness(
     vi.stubGlobal("fetch", fetchMock);
     return {
       provider: {
-        name: api,
+        protocol: "chatCompletions",
+        id: api,
         createStreamingRequest: (model, params) =>
           chat({ ...params, model, baseUrl: "https://example.test", maxRetries: 0 }),
       },
@@ -285,7 +286,8 @@ function harness(
   };
   return {
     provider: {
-      name: api,
+      protocol: "chatCompletions",
+      id: api,
       createStreamingRequest: (model, params) =>
         (sdkRequests[api] as (params: any) => ReturnType<typeof openai>)({
           ...params,

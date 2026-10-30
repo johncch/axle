@@ -85,7 +85,7 @@ describe("createCliAgentConfig", () => {
       process.env,
     );
 
-    expect(agentConfig.provider.name).toBe("ChatCompletions");
+    expect(agentConfig.provider.protocol).toBe("chatCompletions");
     expect(agentConfig.model).toBe("test-model");
     expect(agentConfig.tools?.map((tool) => tool.name)).toEqual(["read-file"]);
     expect(agentConfig).not.toHaveProperty("memory");
@@ -109,7 +109,7 @@ describe("createCliAgentConfig", () => {
       process.env,
     );
 
-    expect(agentConfig.provider.name).toBe("OpenAI");
+    expect(agentConfig.provider.protocol).toBe("responses");
     expect(agentConfig.model).toBe("openai/gpt-test");
   });
 
@@ -127,7 +127,7 @@ describe("createCliAgentConfig", () => {
       process.env,
     );
 
-    expect(agentConfig.provider.name).toBe("anthropic");
+    expect(agentConfig.provider.protocol).toBe("messages");
     expect(agentConfig.model).toBe("anthropic/claude-sonnet-5");
   });
 
@@ -149,7 +149,7 @@ describe("createCliAgentConfig", () => {
       process.env,
     );
 
-    expect(agentConfig.provider.name).toBe("ChatCompletions");
+    expect(agentConfig.provider.protocol).toBe("chatCompletions");
     expect(agentConfig.model).toBe("some/model");
   });
 
@@ -248,7 +248,7 @@ describe("createCliAgentConfig", () => {
       { AXLE_TEST_FILE_ONLY_KEY: "from-credentials-file" },
     );
 
-    expect(agentConfig.provider.name).toBe("OpenAI");
+    expect(agentConfig.provider.protocol).toBe("responses");
   });
 
   test("a chatcompletions profile whose apiKeyEnv is unset fails by name", async () => {
@@ -284,7 +284,7 @@ describe("createCliAgentConfig", () => {
       {},
     );
 
-    expect(agentConfig.provider.name).toBe("ChatCompletions");
+    expect(agentConfig.provider.protocol).toBe("chatCompletions");
   });
 
   test("an unset apiKeyEnv variable is named", async () => {
@@ -406,8 +406,8 @@ describe("a named provider against the current configuration", () => {
       },
     );
 
-    expect(asChatCompletions.agentConfig.provider.name).toBe("ChatCompletions");
-    expect(asAnthropic.agentConfig.provider.name).toBe("anthropic");
+    expect(asChatCompletions.agentConfig.provider.protocol).toBe("chatCompletions");
+    expect(asAnthropic.agentConfig.provider.protocol).toBe("messages");
   });
 
   test("a named provider whose profile is gone fails by name", async () => {
@@ -424,7 +424,7 @@ describe("a named provider against the current configuration", () => {
       {},
     );
 
-    expect(agentConfig.provider.name).toBe("ChatCompletions");
+    expect(agentConfig.provider.protocol).toBe("chatCompletions");
   });
 });
 

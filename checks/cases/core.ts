@@ -986,7 +986,7 @@ export const coreCases: CheckCase[] = [
     async run({ provider, model, requestOptions }) {
       const childProvider: AIProvider = {
         ...provider,
-        name: `${provider.name}:child`,
+        id: `${provider.id ?? provider.protocol}:child`,
       };
       const subagentTool = createAgentTool({
         name: "delegate_code_word",
@@ -1020,7 +1020,7 @@ export const coreCases: CheckCase[] = [
       const usageAttributed =
         result.usage.breakdown?.some(
           (entry) =>
-            entry.provider === childProvider.name &&
+            entry.provider === childProvider.id &&
             entry.model.length > 0 &&
             entry.in > 0 &&
             entry.out > 0,
@@ -1044,7 +1044,7 @@ export const coreCases: CheckCase[] = [
           response: result.response,
           toolResults,
           turnCount: transcript.turns.length,
-          childProvider: childProvider.name,
+          childProvider: childProvider.id,
           usage: result.usage,
         },
       };

@@ -12,7 +12,8 @@ export const geminiCitationCases: CheckCase[] = [
       "Gemini grounding survives a trailing thought signature through generate and stream.",
     async run() {
       const provider: AIProvider = {
-        name: "Gemini",
+        protocol: "generateContent",
+        id: "google",
         async *createStreamingRequest() {
           const adapter = createGeminiStreamingAdapter();
           for (const candidate of [

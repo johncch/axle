@@ -144,9 +144,8 @@ describe("Instruct options", () => {
 
 function makeStreamProvider(requests: AxleMessage[][], chunks: AnyStreamChunk[]): AIProvider {
   return {
-    get name() {
-      return "test";
-    },
+    protocol: "chatCompletions",
+    id: "test",
     async *createStreamingRequest(_model, params) {
       requests.push([...params.messages]);
       for (const chunk of chunks) yield chunk;

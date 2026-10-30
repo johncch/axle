@@ -1243,7 +1243,8 @@ function makeSpan() {
 
 function makeProvider(): AIProvider {
   return {
-    name: "chatcompletions-test",
+    protocol: "chatCompletions",
+    id: "chatcompletions-test",
     createStreamingRequest(_model, params) {
       return createStreamingRequest({
         ...params,

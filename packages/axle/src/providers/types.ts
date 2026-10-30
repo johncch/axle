@@ -67,8 +67,19 @@ export interface AxleModelRequestOptions {
   signal?: AbortSignal;
 }
 
+/** A wire format for requests and streamed responses. */
+export type Protocol = "messages" | "responses" | "generateContent" | "chatCompletions";
+
 export interface AIProvider {
-  get name(): string;
+  /** The wire format this provider speaks. */
+  readonly protocol: Protocol;
+
+  /**
+   * The models.dev provider id of the service this provider reaches
+   * (`anthropic`, `openrouter`, `amazon-bedrock`), stamped on every usage row
+   * its requests produce. Absent when the service is unknown.
+   */
+  readonly id?: string;
 
   /**
    * Executable tools the provider brings. The loop runs a tool call against

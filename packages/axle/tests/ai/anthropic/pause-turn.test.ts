@@ -216,8 +216,8 @@ describe("Anthropic pause_turn continuation", () => {
             in: 50,
             out: 27,
             breakdown: [
-              { provider: "anthropic", model: "claude-opus-4-8", in: 10, out: 20 },
-              { provider: "anthropic", model: "claude-opus-4-8", in: 40, out: 7 },
+              { model: "claude-opus-4-8", in: 10, out: 20 },
+              { model: "claude-opus-4-8", in: 40, out: 7 },
             ],
           },
         },
@@ -366,7 +366,8 @@ describe("Anthropic pause_turn continuation", () => {
 
   describe("through stream() and generate()", () => {
     const provider = (): AIProvider => ({
-      name: "anthropic",
+      protocol: "messages",
+      id: "anthropic",
       createStreamingRequest: (model, params) =>
         createStreamingRequest({ client: mockClient, model, ...params }),
     });

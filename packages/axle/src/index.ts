@@ -102,6 +102,7 @@ export type {
   AxleModelRequestOptions,
   ContextUsage,
   ProviderClientOptions,
+  Protocol,
   ProviderOptions,
   Refusal,
   ToolChoice,

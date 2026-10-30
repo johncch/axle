@@ -294,7 +294,8 @@ function runAgentTool(
 
 function createProvider(response: string, prompts: string[] = []): AIProvider {
   return {
-    name: "child-provider",
+    protocol: "chatCompletions",
+    id: "child-provider",
     async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const user = params.messages.findLast((message) => message.role === "user");
       const prompt = getMessageText(user?.content);
@@ -319,7 +320,8 @@ function createProvider(response: string, prompts: string[] = []): AIProvider {
 function createParentProvider(): AIProvider {
   let call = 0;
   return {
-    name: "parent-provider",
+    protocol: "chatCompletions",
+    id: "parent-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       call += 1;
       yield {
@@ -361,7 +363,8 @@ function createParentProvider(): AIProvider {
 
 function createErrorChildProvider(): AIProvider {
   return {
-    name: "error-child-provider",
+    protocol: "chatCompletions",
+    id: "error-child-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",
@@ -378,7 +381,8 @@ function createErrorChildProvider(): AIProvider {
 
 function createFatalChildProvider(): AIProvider {
   return {
-    name: "fatal-child-provider",
+    protocol: "chatCompletions",
+    id: "fatal-child-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",
@@ -403,7 +407,8 @@ function createFatalChildProvider(): AIProvider {
 
 function createBlockingChildProvider(): AIProvider {
   return {
-    name: "blocking-child-provider",
+    protocol: "chatCompletions",
+    id: "blocking-child-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",

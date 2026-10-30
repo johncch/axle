@@ -32,17 +32,21 @@ export function mergeStats(...usages: Array<Stats | undefined>): Stats {
  */
 export function attributeStats(
   usage: Stats,
-  source: { provider: string; model: string; agent?: string },
+  source: { provider?: string; model: string; agent?: string },
 ): Stats {
+  const provider = source.provider !== undefined ? { provider: source.provider } : {};
   const agent = source.agent !== undefined ? { agent: source.agent } : {};
   if (usage.breakdown?.length) {
-    return { ...usage, breakdown: usage.breakdown.map((row) => ({ ...row, ...agent })) };
+    return {
+      ...usage,
+      breakdown: usage.breakdown.map((row) => ({ ...row, ...provider, ...agent })),
+    };
   }
   return {
     ...usage,
     breakdown: [
       {
-        provider: source.provider,
+        ...provider,
         model: source.model,
         ...agent,
         in: usage.in,

@@ -44,9 +44,8 @@ function makeProvider(opts: {
   let streamCallIndex = 0;
 
   const provider: AIProvider = {
-    get name() {
-      return "test";
-    },
+    protocol: "chatCompletions",
+    id: "test",
     createStreamingRequest: streamFactory
       ? ((() => streamFactory()) as any)
       : (function* (_model: string) {
@@ -1566,7 +1565,8 @@ describe("stream()", () => {
       const requests: { system?: string; tools?: { name: string }[] }[] = [];
       let call = 0;
       const provider: AIProvider = {
-        name: "recording",
+        protocol: "chatCompletions",
+        id: "recording",
         async *createStreamingRequest(
           _model,
           params,
@@ -1747,9 +1747,8 @@ describe("stream()", () => {
     function sessionCapturingProvider(ids: Array<string | undefined>): AIProvider {
       let call = 0;
       return {
-        get name() {
-          return "test";
-        },
+        protocol: "chatCompletions",
+        id: "test",
         async *createStreamingRequest(_model, params) {
           ids.push(params.sessionId);
           if (call++ === 0) {

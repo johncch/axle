@@ -413,7 +413,8 @@ function createProvider(...results: ({ text: string } | { error: string })[]): {
     requests,
     models,
     provider: {
-      name: "test",
+      protocol: "chatCompletions",
+      id: "test",
       async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void> {
         const result = results[Math.min(models.length, results.length - 1)];
         models.push(model);

@@ -24,7 +24,8 @@ describe("deferred file resolution", () => {
     };
 
     const provider: AIProvider = {
-      name: "test-openai-converter",
+      protocol: "chatCompletions",
+      id: "test-openai-converter",
       async *createStreamingRequest(model, params) {
         providerInput = await convertAxleMessageToResponseInput(params.messages, {
           model,
@@ -94,7 +95,8 @@ describe("deferred file resolution", () => {
     let requestCount = 0;
     const providerInputs: unknown[] = [];
     const provider: AIProvider = {
-      name: "test-tool-result-replay",
+      protocol: "chatCompletions",
+      id: "test-tool-result-replay",
       async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
         requestCount += 1;
         providerInputs.push(
@@ -170,7 +172,8 @@ describe("deferred file resolution", () => {
     };
 
     const provider: AIProvider = {
-      name: "test-signal",
+      protocol: "chatCompletions",
+      id: "test-signal",
       async *createStreamingRequest(model, params) {
         await convertAxleMessageToResponseInput(params.messages, {
           model,

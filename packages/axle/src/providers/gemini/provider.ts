@@ -4,8 +4,6 @@ import { resolveFirstPartyModel } from "../model.js";
 import { AIProvider, ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
-export const NAME = "Gemini" as const;
-
 export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIProvider {
   const client = new GoogleGenAI({
     apiKey,
@@ -21,7 +19,8 @@ export function gemini(apiKey: string, options: ProviderClientOptions = {}): AIP
   });
 
   return {
-    name: NAME,
+    protocol: "generateContent",
+    id: "google",
 
     /** @internal */
     createStreamingRequest(
