@@ -187,12 +187,14 @@ step reader withholds it (thinking.md invariant 9).
 
 ### Legacy budget sets
 
-Both sets hold bare provider model IDs as literal strings. The adapters
-receive the bare ID and lowercase it for the set lookup and the
-output-ceiling lookup.
+The Gemini set holds bare model IDs and is looked up exactly. The Anthropic
+sets hold undated model names, matched anywhere in the lowercased ID and not
+followed by a digit, so a dated ID or a Bedrock inference-profile ID
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) names the same model and
+`claude-haiku-4-50` does not.
 
 - **Anthropic** (`ANTHROPIC_THINKING_BUDGET_MODELS`): Haiku 4.5, Opus 4.5,
-  Sonnet 4.5, each in alias and dated form.
+  Sonnet 4.5.
 - **Gemini** (`GEMINI_THINKING_BUDGET_MODELS`): Gemini 2.5 Flash, Flash
   Lite, and Pro.
 
@@ -211,7 +213,7 @@ ceiling:
 | `stream()`, and therefore `generate()` and `Agent` | 128,000, or 64,000 for a model in the 64k set   |
 
 The 64k set (`ANTHROPIC_64K_OUTPUT_MODELS`) is Haiku 4.5, Opus 4.5, and
-Sonnet 4.5, each in alias and dated form. Every Claude model since Opus 4.6
+Sonnet 4.5. Every Claude model since Opus 4.6
 has a 128,000 ceiling, so an unknown ID is assumed to have one. A new model
 with a lower ceiling is rejected by the provider until it joins the set or
 the caller passes `maxOutputTokens`; adding it is a same-diff change to this

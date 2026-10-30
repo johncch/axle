@@ -130,11 +130,31 @@ describe("reasoning translation", () => {
       );
     });
 
+    test("reads a Bedrock inference-profile id as the model it names", () => {
+      expect(
+        toAnthropicThinking({ effort: "low" }, "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+      ).toEqual({
+        thinking: {
+          type: "enabled",
+          budget_tokens: LEGACY_REASONING_BUDGETS.low,
+          display: "summarized",
+        },
+      });
+    });
+
     describe("implicit max_tokens", () => {
       test("stream() defaults to 128,000, or 64,000 for the 64k-ceiling models", () => {
         expect(getAnthropicStreamMaxTokens("claude-haiku-4-5")).toBe(64000);
         expect(getAnthropicStreamMaxTokens("claude-fable-5-1")).toBe(128000);
         expect(getAnthropicStreamMaxTokens("claude-nova-7")).toBe(128000);
+        expect(getAnthropicStreamMaxTokens("claude-haiku-4-5-20251001")).toBe(64000);
+        expect(getAnthropicStreamMaxTokens("claude-haiku-4-50")).toBe(128000);
+        expect(getAnthropicStreamMaxTokens("us.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe(
+          64000,
+        );
+        expect(getAnthropicStreamMaxTokens("anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(
+          64000,
+        );
       });
       test("every legacy budget model's default ceiling exceeds the high preset", () => {
         for (const model of ANTHROPIC_THINKING_BUDGET_MODELS) {

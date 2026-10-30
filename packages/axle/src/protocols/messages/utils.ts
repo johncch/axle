@@ -296,36 +296,36 @@ export function toAnthropicThinking(
 }
 
 /**
- * Every Claude ID that only accepts `thinking.type: enabled` with a token
- * budget. Anything else, including unknown IDs, takes the adaptive route.
+ * Every Claude model that only accepts `thinking.type: enabled` with a token
+ * budget, matched anywhere in an ID. Anything else, including unknown IDs,
+ * takes the adaptive route.
  */
 export const ANTHROPIC_THINKING_BUDGET_MODELS: ReadonlySet<string> = new Set([
   "claude-haiku-4-5",
-  "claude-haiku-4-5-20251001",
   "claude-opus-4-5",
-  "claude-opus-4-5-20251101",
   "claude-sonnet-4-5",
-  "claude-sonnet-4-5-20250929",
 ]);
 
+function namesAnthropicModel(model: string, names: ReadonlySet<string>): boolean {
+  const id = model.toLowerCase();
+  return [...names].some((name) => new RegExp(`${name}(?!\\d)`).test(id));
+}
+
 function usesAnthropicThinkingBudget(model: string): boolean {
-  return ANTHROPIC_THINKING_BUDGET_MODELS.has(model.toLowerCase());
+  return namesAnthropicModel(model, ANTHROPIC_THINKING_BUDGET_MODELS);
 }
 
 const ANTHROPIC_64K_OUTPUT_MODELS: ReadonlySet<string> = new Set([
   "claude-haiku-4-5",
-  "claude-haiku-4-5-20251001",
   "claude-opus-4-5",
-  "claude-opus-4-5-20251101",
   "claude-sonnet-4-5",
-  "claude-sonnet-4-5-20250929",
 ]);
 
 const ANTHROPIC_STREAM_MAX_TOKENS = 128_000;
 const ANTHROPIC_STREAM_64K_MAX_TOKENS = 64_000;
 
 export function getAnthropicStreamMaxTokens(model: string): number {
-  return ANTHROPIC_64K_OUTPUT_MODELS.has(model.toLowerCase())
+  return namesAnthropicModel(model, ANTHROPIC_64K_OUTPUT_MODELS)
     ? ANTHROPIC_STREAM_64K_MAX_TOKENS
     : ANTHROPIC_STREAM_MAX_TOKENS;
 }

@@ -57,6 +57,60 @@ describe("provider client factory options", () => {
     });
   });
 
+  test("bedrock() sends messages to the runtime hostname", async () => {
+    const Anthropic = vi.fn();
+    vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
+
+    const { bedrock } = await import("../../src/providers/bedrock.js");
+    const provider = bedrock("key", { protocol: "messages", region: "us-east-1", maxRetries: 4 });
+
+    expect(provider).toMatchObject({ protocol: "messages", id: "amazon-bedrock" });
+    expect(Anthropic).toHaveBeenCalledWith({
+      apiKey: "key",
+      baseURL: "https://bedrock-runtime.us-east-1.amazonaws.com/anthropic",
+      maxRetries: 4,
+    });
+  });
+
+  test("bedrock() sends responses to the Mantle hostname", async () => {
+    const OpenAI = vi.fn();
+    vi.doMock("openai", () => ({ default: OpenAI }));
+
+    const { bedrock } = await import("../../src/providers/bedrock.js");
+    const provider = bedrock("key", { protocol: "responses", region: "eu-west-1" });
+
+    expect(provider).toMatchObject({ protocol: "responses", id: "amazon-bedrock" });
+    expect(OpenAI).toHaveBeenCalledWith({
+      apiKey: "key",
+      baseURL: "https://bedrock-mantle.eu-west-1.api.aws/v1",
+      maxRetries: 2,
+    });
+  });
+
+  test("bedrock() sends chat completions to the Mantle hostname", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("", { status: 500 }));
+
+    const { bedrock } = await import("../../src/providers/bedrock.js");
+    const provider = bedrock("key", {
+      protocol: "chatCompletions",
+      region: "us-west-2",
+      fetch: fetchMock,
+      maxRetries: 0,
+    });
+    expect(provider).toMatchObject({ protocol: "chatCompletions", id: "amazon-bedrock" });
+
+    for await (const _chunk of provider.createStreamingRequest("openai.gpt-oss-20b", {
+      messages: [{ role: "user", content: "Hi" }],
+      runtime: {},
+    })) {
+      // drain
+    }
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions",
+    );
+  });
+
   test("responses() passes its base URL to the OpenAI SDK", async () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));

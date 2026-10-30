@@ -57,6 +57,8 @@ export { responses } from "./protocols/responses/responses.js";
 
 // Providers
 export { anthropic } from "./providers/anthropic.js";
+export { bedrock } from "./providers/bedrock.js";
+export type { BedrockOptions } from "./providers/bedrock.js";
 export { openrouter } from "./providers/openrouter.js";
 export { together } from "./providers/together.js";
 

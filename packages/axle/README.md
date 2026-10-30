@@ -234,6 +234,21 @@ service's own base URL: `anthropic(key)` is `messages({ baseUrl:
 To reach the same service somewhere else, such as a proxy, call the
 constructor with that base URL.
 
+`bedrock()` reaches Amazon Bedrock with a Bedrock API key. It takes the
+protocol because the model decides it: `messages` for Claude, `responses` or
+`chatCompletions` for the models Bedrock's Mantle endpoint serves.
+
+```typescript
+const provider = bedrock(process.env.AWS_BEARER_TOKEN_BEDROCK!, {
+  protocol: "messages",
+  region: "us-east-1",
+});
+const agent = new Agent({
+  provider,
+  model: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+});
+```
+
 Each provider carries `protocol` and `id`, the [models.dev](https://models.dev)
 provider id of the service it reaches (`anthropic`, `openrouter`, …), which
 usage rows record. A constructor infers `id` from a base URL whose hostname
