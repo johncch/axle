@@ -426,7 +426,9 @@ async function run(
           attributeStats(outcome.failure.usage, {
             provider: provider.id,
             model: outcome.model || model,
+            requestedModel: model,
             agent: agentName,
+            requests: outcome.requests,
           }),
         );
       }
@@ -445,7 +447,9 @@ async function run(
         attributeStats(outcome.usage, {
           provider: provider.id,
           model: outcome.model || model,
+          requestedModel: model,
           agent: agentName,
+          requests: outcome.requests,
         }),
       );
       const message =
@@ -469,12 +473,15 @@ async function run(
       parts: stepParts,
       finishReason: stepFinishReason,
       usage: stepUsage,
+      requests: stepRequests,
     } = outcome;
 
     const attributedStepUsage = attributeStats(stepUsage, {
       provider: provider.id,
       model: stepModel || model,
+      requestedModel: model,
       agent: agentName,
+      requests: stepRequests,
     });
     addStats(usage, attributedStepUsage);
 

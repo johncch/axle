@@ -7,7 +7,7 @@ import type {
 import type { ProviderToolResult } from "../messages/providerTool.js";
 import type { AnyStreamChunk } from "../messages/stream.js";
 import { AxleStopReason, type Refusal } from "../protocols/types.js";
-import type { Stats } from "../types.js";
+import type { Stats, TokenStats } from "../types.js";
 import { createStats } from "../utils/stats.js";
 import type { AxleProviderFailure, ResolvedTools } from "./helpers.js";
 import type { StreamEvent } from "./stream.js";
@@ -37,6 +37,7 @@ export interface CompletedStep {
   parts: AssistantContentPart[];
   finishReason: AxleStopReason;
   usage: Stats;
+  requests?: TokenStats[];
   /** Tool call id → argument parse error, surfaced as synthetic tool errors. */
   toolCallArgumentErrors: Map<string, ToolCallArgumentError>;
 }
@@ -44,10 +45,11 @@ export interface CompletedStep {
 export type StepReadOutcome =
   | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
-  | { kind: "refused"; refusal: Refusal; usage: Stats; model: string }
+  | { kind: "refused"; refusal: Refusal; usage: Stats; requests?: TokenStats[]; model: string }
   | {
       kind: "failed";
       failure: Extract<AxleProviderFailure, { kind: "api" | "incomplete" }>;
+      requests?: TokenStats[];
       model: string;
     };
 
@@ -69,6 +71,7 @@ export async function readStep(
   let stepModel = "";
   let finishReason: AxleStopReason | null = null;
   let usage: Stats = createStats();
+  let requests: TokenStats[] | undefined;
 
   let openPartType: "text" | "thinking" | null = null;
   let openText = "";
@@ -375,6 +378,7 @@ export async function readStep(
         closePart();
         finishReason = chunk.data.finishReason;
         usage = chunk.data.usage;
+        requests = chunk.data.requests;
         break;
       }
 
@@ -384,6 +388,7 @@ export async function readStep(
           kind: "refused",
           refusal: chunk.data.refusal,
           usage: chunk.data.usage,
+          ...(chunk.data.requests ? { requests: chunk.data.requests } : {}),
           model: stepModel,
         };
       }
@@ -399,6 +404,7 @@ export async function readStep(
             ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
             ...(chunk.data.raw === undefined ? {} : { raw: chunk.data.raw }),
           },
+          ...(chunk.data.requests ? { requests: chunk.data.requests } : {}),
           model: stepModel,
         };
       }
@@ -460,6 +466,7 @@ export async function readStep(
     parts,
     finishReason,
     usage,
+    ...(requests ? { requests } : {}),
     toolCallArgumentErrors,
   };
 }

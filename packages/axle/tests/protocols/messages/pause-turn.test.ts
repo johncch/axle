@@ -212,14 +212,11 @@ describe("Anthropic pause_turn continuation", () => {
       expect(chunks.at(-1)).toMatchObject({
         type: "complete",
         data: {
-          usage: {
-            in: 50,
-            out: 27,
-            breakdown: [
-              { model: "claude-opus-4-8", in: 10, out: 20 },
-              { model: "claude-opus-4-8", in: 40, out: 7 },
-            ],
-          },
+          usage: { in: 50, out: 27 },
+          requests: [
+            { in: 10, out: 20 },
+            { in: 40, out: 7 },
+          ],
         },
       });
     });
@@ -309,15 +306,12 @@ describe("Anthropic pause_turn continuation", () => {
       expect(chunks.at(-1)).toMatchObject({
         type: "complete",
         data: {
-          usage: {
-            in: 140,
-            out: 53,
-            breakdown: [
-              { in: 10, out: 20 },
-              { in: 40, out: 30 },
-              { in: 90, out: 3 },
-            ],
-          },
+          usage: { in: 140, out: 53 },
+          requests: [
+            { in: 10, out: 20 },
+            { in: 40, out: 30 },
+            { in: 90, out: 3 },
+          ],
         },
       });
     });
@@ -422,8 +416,20 @@ describe("Anthropic pause_turn continuation", () => {
         in: 50,
         out: 27,
         breakdown: [
-          { provider: "anthropic", model: "claude-opus-4-8", in: 10, out: 20 },
-          { provider: "anthropic", model: "claude-opus-4-8", in: 40, out: 7 },
+          {
+            provider: "anthropic",
+            model: "claude-opus-4-8",
+            requestedModel: "claude-opus-4-8",
+            in: 10,
+            out: 20,
+          },
+          {
+            provider: "anthropic",
+            model: "claude-opus-4-8",
+            requestedModel: "claude-opus-4-8",
+            in: 40,
+            out: 7,
+          },
         ],
       });
     });

@@ -418,7 +418,15 @@ describe("executeToolCalls", () => {
           ctx.reportUsage?.({
             in: 10,
             out: 5,
-            breakdown: [{ provider: "anthropic", model: "claude-x", in: 10, out: 5 }],
+            breakdown: [
+              {
+                provider: "anthropic",
+                model: "claude-x",
+                requestedModel: "claude-x",
+                in: 10,
+                out: 5,
+              },
+            ],
           });
           return input.input;
         },
@@ -437,8 +445,8 @@ describe("executeToolCalls", () => {
 
       expect(usage).toMatchObject({ in: 20, out: 10 });
       expect(usage?.breakdown).toEqual([
-        { provider: "anthropic", model: "claude-x", in: 10, out: 5 },
-        { provider: "anthropic", model: "claude-x", in: 10, out: 5 },
+        { provider: "anthropic", model: "claude-x", requestedModel: "claude-x", in: 10, out: 5 },
+        { provider: "anthropic", model: "claude-x", requestedModel: "claude-x", in: 10, out: 5 },
       ]);
     });
 

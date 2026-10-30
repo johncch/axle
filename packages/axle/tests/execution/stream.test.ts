@@ -1229,9 +1229,9 @@ describe("stream()", () => {
         in: 600,
         out: 60,
         breakdown: [
-          { provider: "test", model: "test-model", in: 100, out: 10 },
-          { provider: "test", model: "test-model", in: 200, out: 20 },
-          { provider: "test", model: "test-model", in: 300, out: 30 },
+          { provider: "test", model: "test-model", requestedModel: "test-model", in: 100, out: 10 },
+          { provider: "test", model: "test-model", requestedModel: "test-model", in: 200, out: 20 },
+          { provider: "test", model: "test-model", requestedModel: "test-model", in: 300, out: 30 },
         ],
       });
     });
@@ -1264,8 +1264,22 @@ describe("stream()", () => {
       }).final;
 
       expect(final.usage?.breakdown).toEqual([
-        { provider: "test", model: "test-model", agent: "researcher", in: 10, out: 5 },
-        { provider: "test", model: "test-model", agent: "researcher", in: 15, out: 10 },
+        {
+          provider: "test",
+          model: "test-model",
+          requestedModel: "test-model",
+          agent: "researcher",
+          in: 10,
+          out: 5,
+        },
+        {
+          provider: "test",
+          model: "test-model",
+          requestedModel: "test-model",
+          agent: "researcher",
+          in: 15,
+          out: 10,
+        },
       ]);
     });
   });

@@ -859,7 +859,9 @@ describe("Agent", () => {
     expect(result.usage).toEqual({
       in: 10,
       out: 20,
-      breakdown: [{ provider: "mock-stream", model: "mock", in: 10, out: 20 }],
+      breakdown: [
+        { provider: "mock-stream", model: "mock", requestedModel: "mock", in: 10, out: 20 },
+      ],
     });
   });
 

@@ -52,7 +52,14 @@ describe("createAgentTool", () => {
       in: 3,
       out: 4,
       breakdown: [
-        { provider: "child-provider", model: "mock", agent: "child-researcher", in: 3, out: 4 },
+        {
+          provider: "child-provider",
+          model: "mock",
+          requestedModel: "child-model",
+          agent: "child-researcher",
+          in: 3,
+          out: 4,
+        },
       ],
     });
   });
@@ -120,14 +127,23 @@ describe("createAgentTool", () => {
       {
         provider: "parent-provider",
         model: "parent-runtime-model",
+        requestedModel: "parent-configured-model",
         agent: "orchestrator",
         in: 1,
         out: 2,
       },
-      { provider: "child-provider", model: "mock", agent: "researcher", in: 3, out: 4 },
+      {
+        provider: "child-provider",
+        model: "mock",
+        requestedModel: "child-configured-model",
+        agent: "researcher",
+        in: 3,
+        out: 4,
+      },
       {
         provider: "parent-provider",
         model: "parent-runtime-model",
+        requestedModel: "parent-configured-model",
         agent: "orchestrator",
         in: 1,
         out: 2,
@@ -179,10 +195,17 @@ describe("createAgentTool", () => {
       in: 4,
       out: 6,
       breakdown: [
-        { provider: "parent-provider", model: "parent-runtime-model", in: 1, out: 2 },
+        {
+          provider: "parent-provider",
+          model: "parent-runtime-model",
+          requestedModel: "parent-configured-model",
+          in: 1,
+          out: 2,
+        },
         {
           provider: "fatal-child-provider",
           model: "fatal-child-runtime-model",
+          requestedModel: "child-configured-model",
           agent: "researcher",
           in: 3,
           out: 4,
@@ -253,10 +276,17 @@ describe("createAgentTool", () => {
       in: 4,
       out: 6,
       breakdown: [
-        { provider: "parent-provider", model: "parent-runtime-model", in: 1, out: 2 },
+        {
+          provider: "parent-provider",
+          model: "parent-runtime-model",
+          requestedModel: "parent-configured-model",
+          in: 1,
+          out: 2,
+        },
         {
           provider: "blocking-child-provider",
           model: "blocking-child-runtime-model",
+          requestedModel: "child-configured-model",
           agent: "researcher",
           in: 3,
           out: 4,

@@ -65,9 +65,9 @@ what content it returns is in [provider-content.md](./provider-content.md).
    first-party presets pass one to accept their publisher prefix and strip
    it (`anthropic/`, `openai/`, `gemini/` or `google/`),
    rejecting another publisher's. It is input normalization, not a wire
-   difference, so it is not part of a dialect. Which id a usage row records
-   (the reported one by default; the requested one for Bedrock, below) is
-   settled with `bedrock()`.
+   difference, so it is not part of a dialect. A usage row records the
+   caller's string as `requestedModel` and the response's as `model`; no
+   provider chooses between them.
 8. **Auth is the protocol SDK's own.** `apiKey` is sent the way the SDK
    sends it (`x-api-key` for Messages, `Authorization: Bearer` for
    Responses and Chat Completions, `x-goog-api-key` for generateContent).
@@ -127,18 +127,19 @@ long-term Bedrock API key. Bedrock has two hostnames: **runtime**
 Anthropic-compatible routes for a subset of models). Both bill as
 `amazon-bedrock`.
 
-| Route                            | Protocol        | Bedrock requires                                                                                                                        | Axle sends                                                     | Evidence (2026-10-29)                                                                                                                                                                                                                    |
-| -------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| runtime `/anthropic/v1/messages` | messages        | API key in `x-api-key`; inference-profile ids (`global.…`, `us.…`) for current Claude models; the bare `anthropic.…-v1:0` id is refused | the requested id unchanged; usage rows record the requested id | `global.anthropic.claude-haiku-4-5-20251001-v1:0`: 200, response `model` reported **without** the `global.` prefix; bare id: 400 "on-demand throughput isn't supported"; Mantle-style alias `anthropic.claude-haiku-4-5`: 400 invalid id |
-| Mantle `/anthropic/v1/messages`  | messages        | API key in `x-api-key`; Mantle aliases (`anthropic.claude-haiku-4-5`); serves a subset of Claude                                        | not used: `bedrock()` sends Claude to runtime                  | `anthropic.claude-sonnet-5-5`: 404 "does not exist" while runtime knows it; `/v1/models` lists 7 of the console's 15 Claude models                                                                                                       |
-| Mantle `/v1/responses`           | responses       | API key as Bearer; per model: gpt-oss and GPT-5.x serve it                                                                              | standard Responses request                                     | `openai.gpt-oss-20b`: 200, reported id as requested, usage with `reasoning_tokens`                                                                                                                                                       |
-| Mantle `/v1/chat/completions`    | chatCompletions | API key as Bearer; most non-Claude models; GPT-5.x reportedly Responses only                                                            | standard Chat Completions request                              | `openai.gpt-oss-20b`: 200, reported id as requested, no reasoning breakdown in usage                                                                                                                                                     |
+| Route                            | Protocol        | Bedrock requires                                                                                                                        | Axle sends                                    | Evidence (2026-10-29)                                                                                                                                                                                                                    |
+| -------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| runtime `/anthropic/v1/messages` | messages        | API key in `x-api-key`; inference-profile ids (`global.…`, `us.…`) for current Claude models; the bare `anthropic.…-v1:0` id is refused | the requested id unchanged                    | `global.anthropic.claude-haiku-4-5-20251001-v1:0`: 200, response `model` reported **without** the `global.` prefix; bare id: 400 "on-demand throughput isn't supported"; Mantle-style alias `anthropic.claude-haiku-4-5`: 400 invalid id |
+| Mantle `/anthropic/v1/messages`  | messages        | API key in `x-api-key`; Mantle aliases (`anthropic.claude-haiku-4-5`); serves a subset of Claude                                        | not used: `bedrock()` sends Claude to runtime | `anthropic.claude-sonnet-5-5`: 404 "does not exist" while runtime knows it; `/v1/models` lists 7 of the console's 15 Claude models                                                                                                       |
+| Mantle `/v1/responses`           | responses       | API key as Bearer; per model: gpt-oss and GPT-5.x serve it                                                                              | standard Responses request                    | `openai.gpt-oss-20b`: 200, reported id as requested, usage with `reasoning_tokens`                                                                                                                                                       |
+| Mantle `/v1/chat/completions`    | chatCompletions | API key as Bearer; most non-Claude models; GPT-5.x reportedly Responses only                                                            | standard Chat Completions request             | `openai.gpt-oss-20b`: 200, reported id as requested, no reasoning breakdown in usage                                                                                                                                                     |
 
-Usage rows on the runtime Messages route record the **requested** id because
-the price depends on the inference-profile prefix and the response drops it:
-in models.dev, `us.`/`eu.`/`jp.`/`au.`/`in.` are 10% above `global.` and the
-bare id. Whether a `us.` request also reports the bare id is unconfirmed;
-recording the requested id is right either way.
+On the runtime Messages route the price depends on the inference-profile
+prefix and the response drops it (both `global.` and `us.` requests report
+the bare `anthropic.…` id): in models.dev, `us.`/`eu.`/`jp.`/`au.`/`in.` are
+10% above `global.` and the bare id. The prefix survives in the usage row's
+`requestedModel`, which every provider records; `bedrock()` needs nothing of
+its own for it.
 
 models.dev's `amazon-bedrock` ids are runtime's. Of the 61 ids Mantle's
 `/v1/models` listed, 48 match a models.dev id exactly; pricing the rest is

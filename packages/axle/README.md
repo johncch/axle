@@ -899,8 +899,9 @@ under its action (interleaved across items).
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
 when reported). `usage.breakdown` holds one entry per provider request, in
 request order, tagged with the provider that served it (its `AIProvider.id`,
-omitted when the provider has none), the model, and, when the agent has a
-`name`, with that name as `agent`. Providers bill a request
+omitted when the provider has none), the model the response reported
+(`model`), the model string the agent was given (`requestedModel`), and, when
+the agent has a `name`, with that name as `agent`. Providers bill a request
 at the tier its prompt size selects, so each row's `in` is what prices that
 row; a subagent's requests appear between the parent requests that bracket
 its tool call, under the subagent's own name:

@@ -110,8 +110,15 @@ rejects the call. Not "batch tool".
 
 **UsageEntry** — one row of `Stats.breakdown`: the usage of one provider
 request, tagged with the provider that served it (its `AIProvider.id`, absent
-when the provider has none), the model, and, when the `Agent` that made it has
-a `name`, with that name as `agent`. Rows are kept
+when the provider has none), two models, and, when the `Agent` that made it
+has a `name`, with that name as `agent`. `model` is the model the response
+reported, or the requested one when it reported none; `requestedModel` is
+the string the caller passed to `Agent` or `stream()`, before `resolveModel`.
+The two differ when the provider reports a different id than the one asked
+for: a Bedrock inference profile (`us.anthropic.…` reported as
+`anthropic.…`) or a gateway alias reported as the model it routed to. A row
+records both and decides neither; which one to price by is the consumer's
+policy. Rows are kept
 in request order and never summed per model, because providers bill a request at
 the tier its own prompt size selects; a row's `in` is that prompt size. A
 subagent's rows sit between the parent requests that bracket its tool call,

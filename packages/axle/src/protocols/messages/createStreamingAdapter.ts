@@ -88,9 +88,7 @@ export function createAnthropicStreamingAdapter(
         } else if (event.delta.stop_reason) {
           requests.push(requestUsage());
           const usage = mergeStats(...requests);
-          if (requests.length > 1) {
-            usage.breakdown = requests.map((request) => ({ model, ...request }));
-          }
+          const perRequest = requests.length > 1 ? { requests } : {};
           if (event.delta.stop_reason === "refusal") {
             const details = event.delta.stop_details;
             chunks.push({
@@ -101,6 +99,7 @@ export function createAnthropicStreamingAdapter(
                   ...(details?.category ? { category: details.category } : {}),
                 },
                 usage,
+                ...perRequest,
               },
             });
           } else {
@@ -113,10 +112,11 @@ export function createAnthropicStreamingAdapter(
                       type: "FinishReasonError",
                       message: `Unexpected stop reason: ${event.delta.stop_reason}`,
                       usage,
+                      ...perRequest,
                       raw: event,
                     },
                   }
-                : { type: "complete", data: { finishReason, usage } },
+                : { type: "complete", data: { finishReason, usage, ...perRequest } },
             );
           }
         }
