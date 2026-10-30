@@ -5,7 +5,9 @@ import type {
 } from "../../../messages/message.js";
 import type { ProviderTool } from "../../../tools/types.js";
 import { resolveReasoning, type ReasoningSetting } from "../../reasoning.js";
+import type { ChatCompletionsDialect } from "../dialect.js";
 import type { ChatCompletionAnnotation, ChatCompletionReasoningDetail } from "../types.js";
+import { normalizeCitation } from "../utils.js";
 
 export type OpenRouterThinkingContinuity = Extract<ThinkingContinuity, { provider: "openrouter" }>;
 
@@ -42,12 +44,13 @@ export function reasoningDetailContentText(detail: ChatCompletionReasoningDetail
 
 export function reasoningDetailContinuity(
   detail: ChatCompletionReasoningDetail,
-  previous?: OpenRouterThinkingContinuity,
+  previous?: ThinkingContinuity,
 ): OpenRouterThinkingContinuity {
+  const prior = previous?.provider === "openrouter" ? previous : undefined;
   return {
-    ...previous,
+    ...prior,
     provider: "openrouter",
-    type: previous?.type ?? detail.type,
+    type: prior?.type ?? detail.type,
     ...(detail.id ? { id: detail.id } : {}),
     ...(detail.format ? { format: detail.format } : {}),
     ...(detail.index !== undefined ? { index: detail.index } : {}),
@@ -137,32 +140,11 @@ export function prepareOpenRouterProviderTools(
   return mappedTools.length > 0 ? mappedTools : undefined;
 }
 
-export function normalizeOpenRouterCitation(annotation: ChatCompletionAnnotation): Citation | null {
-  switch (annotation.type) {
-    case "url_citation": {
-      const citation = annotation.url_citation;
-      if (!citation?.url) return null;
-      return {
-        source: {
-          type: "web",
-          title: citation.title,
-          url: citation.url,
-          citedText: citation.content,
-        },
-        outputSpan: { start: citation.start_index, end: citation.end_index },
-        providerMetadata: { type: annotation.type },
-      };
-    }
-    default:
-      return null;
-  }
-}
-
-export function isOpenRouterTextAnchoredCitation(citation: Citation): boolean {
-  const span = citation.outputSpan;
-  if (!span) return false;
-  if (span.start === undefined && span.end === undefined) return false;
-  return span.start !== 0 || span.end !== 0;
+export function openRouterCitation(annotation: ChatCompletionAnnotation): Citation | null {
+  const citation = normalizeCitation(annotation);
+  const citedText = annotation.url_citation?.content;
+  if (!citation || citation.source.type !== "web" || citedText === undefined) return citation;
+  return { ...citation, source: { ...citation.source, citedText } };
 }
 
 export function toOpenRouterRequestFields(fields: {
@@ -174,3 +156,18 @@ export function toOpenRouterRequestFields(fields: {
     ...(fields.cache !== false ? { cache_control: { type: "ephemeral" as const } } : {}),
   };
 }
+
+export const openrouterDialect: ChatCompletionsDialect = {
+  reasoning: toOpenRouterReasoning,
+  requestFields: toOpenRouterRequestFields,
+  providerTools: prepareOpenRouterProviderTools,
+  reasoningDetails: {
+    toRequest: toOpenRouterReasoningDetails,
+    contentField: reasoningDetailContentField,
+    contentText: reasoningDetailContentText,
+    continuity: reasoningDetailContinuity,
+    carriesContinuity: reasoningDetailCarriesContinuity,
+    identity: reasoningDetailIdentity,
+  },
+  citation: openRouterCitation,
+};

@@ -107,3 +107,11 @@ function isRejectedCredential(status: number | undefined, message: string): bool
   if (status === 401) return true;
   return status === 400 && message.includes("API_KEY_INVALID");
 }
+
+export function lookupHost<T>(table: Readonly<Record<string, T>>, baseUrl: string): T | undefined {
+  try {
+    return table[new URL(baseUrl).hostname.toLowerCase()];
+  } catch {
+    return undefined;
+  }
+}

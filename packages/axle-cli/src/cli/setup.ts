@@ -1,4 +1,4 @@
-import { inferChatCompletionsVendor } from "@fifthrevision/axle";
+import { chatCompletions } from "@fifthrevision/axle";
 import * as ask from "../ui/ask.js";
 import type { ConfigHome } from "./configs/loaders.js";
 import { readConfigHome } from "./configs/loaders.js";
@@ -237,7 +237,7 @@ async function promptForProfileName(baseUrl: string, cliConfig: CliConfig): Prom
       await ask.text({
         message: "Name for this provider",
         defaultValue: defaultName,
-        initialValue: inferChatCompletionsVendor(baseUrl) ?? "",
+        initialValue: chatCompletions({ baseUrl }).id ?? "",
         validate: (value) => {
           const typed = (value ?? "").trim();
           if (typed.length === 0 && defaultName !== undefined) return undefined;

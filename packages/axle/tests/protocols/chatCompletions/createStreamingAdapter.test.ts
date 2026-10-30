@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { createStreamingAdapter } from "../../../src/protocols/chatCompletions/createStreamingAdapter.js";
+import { openrouterDialect } from "../../../src/protocols/chatCompletions/dialects/openrouter.js";
 import { ChatCompletionChunk } from "../../../src/protocols/chatCompletions/types.js";
 import { AxleStopReason } from "../../../src/protocols/types.js";
 
@@ -60,7 +61,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("emits citation part for url citation annotations", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       adapter.handleChunk(makeChunk({ reasoning_content: "Thinking" }));
       const chunks = adapter.handleChunk(
         makeChunk({
@@ -214,7 +215,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("reasoning.text with a Claude format is a summary and carries continuity", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const chunks = adapter.handleChunk(
         makeChunk({
           reasoning_details: [
@@ -251,7 +252,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("providerMetadata carries the detail's identity, never its content", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const chunks = adapter.handleChunk(
         makeChunk({
           reasoning_details: [
@@ -282,7 +283,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("continuity updates fire once per change, not per delta", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const first = adapter.handleChunk(
         makeChunk({
           reasoning_details: [{ type: "reasoning.summary", summary: "a", id: "rs_1", index: 0 }],
@@ -318,7 +319,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("reasoning.text with a Gemini format is a summary, and its encrypted sibling is its own part", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const textChunks = adapter.handleChunk(
         makeChunk({
           reasoning_details: [
@@ -371,7 +372,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("reasoning.text without a recognized format stays raw", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const chunks = adapter.handleChunk(
         makeChunk({
           reasoning_details: [
@@ -387,7 +388,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("a signature arriving on a later delta updates the open part's continuity", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       adapter.handleChunk(
         makeChunk({
           reasoning_details: [
@@ -427,7 +428,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("a new detail index opens a new thinking part", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       adapter.handleChunk(
         makeChunk({
           reasoning_details: [{ type: "reasoning.text", text: "first block", index: 0 }],
@@ -449,7 +450,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("the first indexed entry joins a part opened by the bare reasoning string", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       adapter.handleChunk(makeChunk({ reasoning: "Let me" }));
       const chunks = adapter.handleChunk(
         makeChunk({
@@ -492,7 +493,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("a later bare reasoning string continues the part an entry opened", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       adapter.handleChunk(
         makeChunk({ reasoning_details: [{ type: "reasoning.text", text: "entry", index: 0 }] }),
       );
@@ -503,7 +504,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("the bare reasoning string is skipped in a chunk that also carries entries", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const chunks = adapter.handleChunk(
         makeChunk({
           reasoning: "entry",
@@ -516,7 +517,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("emits summary and redaction chunks for structured OpenRouter reasoning details", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const summaryChunks = adapter.handleChunk(
         makeChunk({
           reasoning_details: [
@@ -566,7 +567,7 @@ describe("createStreamingAdapter", () => {
     });
 
     test("does not duplicate reasoning when structured and legacy fields are both present", () => {
-      const adapter = createStreamingAdapter();
+      const adapter = createStreamingAdapter(openrouterDialect);
       const chunks = adapter.handleChunk(
         makeChunk({
           reasoning: "Legacy duplicate",
@@ -624,6 +625,59 @@ describe("createStreamingAdapter", () => {
       const types = all.map((c) => c.type);
       expect(types).toContain("thinking-complete");
       expect(types.indexOf("thinking-complete")).toBeLessThan(types.indexOf("complete"));
+    });
+  });
+
+  describe("without a dialect", () => {
+    test("ignores reasoning_details and reads the bare reasoning string", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          reasoning: "plain",
+          reasoning_details: [
+            { type: "reasoning.summary", summary: "detail", index: 0, signature: "sig" },
+          ],
+        }),
+      );
+
+      expect(chunks.filter((chunk) => chunk.type.startsWith("thinking-"))).toEqual([
+        { type: "thinking-start", data: { index: 0 } },
+        { type: "thinking-raw-delta", data: { index: 0, text: "plain" } },
+      ]);
+    });
+
+    test("reads the standard url_citation fields and not OpenRouter's content", () => {
+      const adapter = createStreamingAdapter();
+      const chunks = adapter.handleChunk(
+        makeChunk({
+          annotations: [
+            {
+              type: "url_citation",
+              url_citation: {
+                url: "https://example.com/news",
+                title: "Example News",
+                content: "A relevant excerpt.",
+                start_index: 0,
+                end_index: 0,
+              },
+            },
+          ],
+        }),
+      );
+
+      expect(chunks.find((chunk) => chunk.type === "citation")).toEqual({
+        type: "citation",
+        data: {
+          index: 0,
+          citations: [
+            {
+              source: { type: "web", title: "Example News", url: "https://example.com/news" },
+              outputSpan: { start: 0, end: 0 },
+              providerMetadata: { type: "url_citation" },
+            },
+          ],
+        },
+      });
     });
   });
 
@@ -900,7 +954,7 @@ function makeChunk(
 }
 
 function replaySseFixture(path: string) {
-  const adapter = createStreamingAdapter();
+  const adapter = createStreamingAdapter(openrouterDialect);
   const fixture = readFileSync(new URL(path, import.meta.url), "utf8");
   const chunks = [];
 

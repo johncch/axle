@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { AxleErrorCode } from "../../src/errors/AxleError.js";
+import { toOpenRouterReasoning } from "../../src/protocols/chatCompletions/dialects/openrouter.js";
+import { toTogetherReasoning } from "../../src/protocols/chatCompletions/dialects/together.js";
 import { toReasoningEffort } from "../../src/protocols/chatCompletions/utils.js";
-import { toOpenRouterReasoning } from "../../src/protocols/chatCompletions/vendors/openrouter.js";
-import { toTogetherReasoning } from "../../src/protocols/chatCompletions/vendors/together.js";
 import { toGeminiThinkingConfig } from "../../src/protocols/generateContent/utils.js";
 import {
   ANTHROPIC_THINKING_BUDGET_MODELS,

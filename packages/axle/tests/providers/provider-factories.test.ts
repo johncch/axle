@@ -20,6 +20,7 @@ describe("provider client factory options", () => {
 
     expect(OpenAI).toHaveBeenCalledWith({
       apiKey: "sk-test",
+      baseURL: "https://api.openai.com/v1",
       maxRetries: 4,
       timeout: 1_000,
     });
@@ -34,6 +35,7 @@ describe("provider client factory options", () => {
 
     expect(OpenAI).toHaveBeenCalledWith({
       apiKey: "sk-test",
+      baseURL: "https://api.openai.com/v1",
       maxRetries: 2,
       defaultHeaders: HEADERS,
     });
@@ -47,20 +49,25 @@ describe("provider client factory options", () => {
     const { openai } = await import("../../src/providers/openai.js");
     openai("sk-test", { fetch: customFetch });
 
-    expect(OpenAI).toHaveBeenCalledWith({ apiKey: "sk-test", maxRetries: 2, fetch: customFetch });
+    expect(OpenAI).toHaveBeenCalledWith({
+      apiKey: "sk-test",
+      baseURL: "https://api.openai.com/v1",
+      maxRetries: 2,
+      fetch: customFetch,
+    });
   });
 
-  test("passes a base URL to the OpenAI SDK", async () => {
+  test("responses() passes its base URL to the OpenAI SDK", async () => {
     const OpenAI = vi.fn();
     vi.doMock("openai", () => ({ default: OpenAI }));
 
-    const { openai } = await import("../../src/providers/openai.js");
-    openai("sk-test", { baseUrl: "https://gateway.example.test/openai/v1" });
+    const { responses } = await import("../../src/protocols/responses/responses.js");
+    responses({ baseUrl: "https://gateway.example.test/openai/v1", apiKey: "sk-test" });
 
     expect(OpenAI).toHaveBeenCalledWith({
       apiKey: "sk-test",
-      maxRetries: 2,
       baseURL: "https://gateway.example.test/openai/v1",
+      maxRetries: 2,
     });
   });
 
@@ -89,6 +96,7 @@ describe("provider client factory options", () => {
 
     expect(Anthropic).toHaveBeenCalledWith({
       apiKey: "sk-ant-test",
+      baseURL: "https://api.anthropic.com",
       maxRetries: 4,
       timeout: 1_000,
     });
@@ -103,6 +111,7 @@ describe("provider client factory options", () => {
 
     expect(Anthropic).toHaveBeenCalledWith({
       apiKey: "sk-ant-test",
+      baseURL: "https://api.anthropic.com",
       maxRetries: 2,
       defaultHeaders: HEADERS,
     });
@@ -118,22 +127,23 @@ describe("provider client factory options", () => {
 
     expect(Anthropic).toHaveBeenCalledWith({
       apiKey: "sk-ant-test",
+      baseURL: "https://api.anthropic.com",
       maxRetries: 2,
       fetch: customFetch,
     });
   });
 
-  test("passes a base URL to the Anthropic SDK", async () => {
+  test("messages() passes its base URL to the Anthropic SDK", async () => {
     const Anthropic = vi.fn();
     vi.doMock("@anthropic-ai/sdk", () => ({ default: Anthropic }));
 
-    const { anthropic } = await import("../../src/providers/anthropic.js");
-    anthropic("sk-ant-test", { baseUrl: "https://gateway.example.test/anthropic" });
+    const { messages } = await import("../../src/protocols/messages/messages.js");
+    messages({ baseUrl: "https://gateway.example.test/anthropic", apiKey: "sk-ant-test" });
 
     expect(Anthropic).toHaveBeenCalledWith({
       apiKey: "sk-ant-test",
-      maxRetries: 2,
       baseURL: "https://gateway.example.test/anthropic",
+      maxRetries: 2,
     });
   });
 
@@ -166,7 +176,11 @@ describe("provider client factory options", () => {
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
       apiKey: "gemini-test",
-      httpOptions: { retryOptions: { attempts: 5 }, timeout: 1_000 },
+      httpOptions: {
+        baseUrl: "https://generativelanguage.googleapis.com",
+        retryOptions: { attempts: 5 },
+        timeout: 1_000,
+      },
     });
   });
 
@@ -179,7 +193,11 @@ describe("provider client factory options", () => {
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
       apiKey: "gemini-test",
-      httpOptions: { retryOptions: { attempts: 3 }, headers: HEADERS },
+      httpOptions: {
+        baseUrl: "https://generativelanguage.googleapis.com",
+        retryOptions: { attempts: 3 },
+        headers: HEADERS,
+      },
     });
   });
 
@@ -193,22 +211,27 @@ describe("provider client factory options", () => {
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
       apiKey: "gemini-test",
-      httpOptions: { retryOptions: { attempts: 3 }, fetch: customFetch },
+      httpOptions: {
+        baseUrl: "https://generativelanguage.googleapis.com",
+        retryOptions: { attempts: 3 },
+        fetch: customFetch,
+      },
     });
   });
 
-  test("passes a base URL to Gemini HTTP options", async () => {
+  test("generateContent() passes its base URL to Gemini HTTP options", async () => {
     const GoogleGenAI = vi.fn();
     vi.doMock("@google/genai", () => ({ GoogleGenAI }));
 
-    const { gemini } = await import("../../src/providers/gemini.js");
-    gemini("gemini-test", { baseUrl: "https://gateway.example.test/gemini" });
+    const { generateContent } =
+      await import("../../src/protocols/generateContent/generateContent.js");
+    generateContent({ baseUrl: "https://gateway.example.test/gemini", apiKey: "gemini-test" });
 
     expect(GoogleGenAI).toHaveBeenCalledWith({
       apiKey: "gemini-test",
       httpOptions: {
-        retryOptions: { attempts: 3 },
         baseUrl: "https://gateway.example.test/gemini",
+        retryOptions: { attempts: 3 },
       },
     });
   });
@@ -232,52 +255,122 @@ describe("provider client factory options", () => {
   });
 
   test("rejects invalid ChatCompletions client options", async () => {
-    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
+    const { chatCompletions } =
+      await import("../../src/protocols/chatCompletions/chatCompletions.js");
 
-    expect(() => chatCompletions("http://example.test", { maxRetries: -1 })).toThrow(
+    expect(() => chatCompletions({ baseUrl: "http://example.test", maxRetries: -1 })).toThrow(
       "maxRetries must be an integer greater than or equal to 0",
     );
-    expect(() => chatCompletions("http://example.test", { maxRetries: 1.5 })).toThrow(
+    expect(() => chatCompletions({ baseUrl: "http://example.test", maxRetries: 1.5 })).toThrow(
       "maxRetries must be an integer",
     );
-    expect(() => chatCompletions("http://example.test", { timeoutMs: 0 })).toThrow(
+    expect(() => chatCompletions({ baseUrl: "http://example.test", timeoutMs: 0 })).toThrow(
       "timeoutMs must be an integer greater than or equal to 1",
     );
-    expect(() => chatCompletions("http://example.test", { timeoutMs: 1.5 })).toThrow(
+    expect(() => chatCompletions({ baseUrl: "http://example.test", timeoutMs: 1.5 })).toThrow(
       "timeoutMs must be an integer",
     );
   });
 
-  test("keeps baseUrl out of ChatCompletions options", async () => {
-    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
-
-    // @ts-expect-error The base URL is chatCompletions' first argument.
-    chatCompletions("http://example.test", { baseUrl: "http://other.test" });
-  });
-
-  test("each factory declares its protocol and provider id", async () => {
+  test("each preset declares its protocol and provider id", async () => {
     const { anthropic } = await import("../../src/providers/anthropic.js");
     const { openai } = await import("../../src/providers/openai.js");
     const { gemini } = await import("../../src/providers/gemini.js");
-    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
+    const { openrouter } = await import("../../src/providers/openrouter.js");
+    const { together } = await import("../../src/providers/together.js");
 
     expect(anthropic("k")).toMatchObject({ protocol: "messages", id: "anthropic" });
     expect(openai("k")).toMatchObject({ protocol: "responses", id: "openai" });
     expect(gemini("k")).toMatchObject({ protocol: "generateContent", id: "google" });
-    expect(chatCompletions("https://openrouter.ai/api/v1")).toMatchObject({
-      protocol: "chatCompletions",
-      id: "openrouter",
-    });
-    expect(chatCompletions("http://example.test", { vendor: "togetherai" }).id).toBe("togetherai");
-    expect(chatCompletions("http://localhost:11434/v1").id).toBeUndefined();
+    expect(openrouter("k")).toMatchObject({ protocol: "chatCompletions", id: "openrouter" });
+    expect(together("k")).toMatchObject({ protocol: "chatCompletions", id: "togetherai" });
   });
 
-  test("detects ChatCompletions vendors from official endpoint hostnames", async () => {
-    const { inferChatCompletionsVendor } = await import("../../src/providers/chatCompletions.js");
+  test("infers the provider id from a known hostname, exactly", async () => {
+    const { chatCompletions } =
+      await import("../../src/protocols/chatCompletions/chatCompletions.js");
+    const { messages } = await import("../../src/protocols/messages/messages.js");
+    const { responses } = await import("../../src/protocols/responses/responses.js");
+    const { generateContent } =
+      await import("../../src/protocols/generateContent/generateContent.js");
 
-    expect(inferChatCompletionsVendor("http://example.test")).toBeUndefined();
-    expect(inferChatCompletionsVendor("https://openrouter.example.test/v1")).toBeUndefined();
-    expect(inferChatCompletionsVendor("https://openrouter.ai/api/v1")).toBe("openrouter");
+    expect(chatCompletions({ baseUrl: "https://openrouter.ai/api/v1", apiKey: "k" }).id).toBe(
+      "openrouter",
+    );
+    expect(chatCompletions({ baseUrl: "https://api.together.xyz/v1", apiKey: "k" }).id).toBe(
+      "togetherai",
+    );
+    expect(messages({ baseUrl: "https://api.anthropic.com", apiKey: "k" }).id).toBe("anthropic");
+    expect(responses({ baseUrl: "https://api.openai.com/v1", apiKey: "k" }).id).toBe("openai");
+    expect(
+      generateContent({ baseUrl: "https://generativelanguage.googleapis.com", apiKey: "k" }).id,
+    ).toBe("google");
+    expect(
+      chatCompletions({ baseUrl: "https://openrouter.example.test/v1", apiKey: "k" }).id,
+    ).toBeUndefined();
+    expect(
+      chatCompletions({ baseUrl: "http://localhost:11434/v1", apiKey: "k" }).id,
+    ).toBeUndefined();
+    expect(
+      messages({ baseUrl: "https://gateway.example.test/anthropic", apiKey: "k" }).id,
+    ).toBeUndefined();
+  });
+
+  test("an explicit id wins over the hostname", async () => {
+    const { chatCompletions } =
+      await import("../../src/protocols/chatCompletions/chatCompletions.js");
+
+    expect(chatCompletions({ baseUrl: "https://openrouter.ai/api/v1", id: "acme" }).id).toBe(
+      "acme",
+    );
+    expect(chatCompletions({ baseUrl: "http://localhost:11434/v1", id: "openrouter" }).id).toBe(
+      "openrouter",
+    );
+  });
+
+  test("sends the model id through resolveModel, and unchanged without one", async () => {
+    const okStream = () =>
+      new Response(
+        [
+          `data: ${JSON.stringify({
+            id: "chatcmpl-1",
+            model: "m",
+            choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          })}`,
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => okStream());
+    vi.stubGlobal("fetch", fetchMock);
+    const { chatCompletions } =
+      await import("../../src/protocols/chatCompletions/chatCompletions.js");
+    const sentModel = async (provider: ReturnType<typeof chatCompletions>, model: string) => {
+      for await (const _chunk of provider.createStreamingRequest(model, {
+        messages: [{ role: "user", content: "Hi" }],
+        runtime: {},
+      })) {
+        // drain
+      }
+      return JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).model;
+    };
+
+    const local = "http://localhost:11434/v1";
+    expect(
+      await sentModel(
+        chatCompletions({
+          baseUrl: local,
+          resolveModel: (model) => model.replace(/^ollama\//, ""),
+        }),
+        "ollama/gemma3",
+      ),
+    ).toBe("gemma3");
+    expect(await sentModel(chatCompletions({ baseUrl: local }), "ollama/gemma3")).toBe(
+      "ollama/gemma3",
+    );
   });
 
   test("detects Together from its official endpoint hostname", async () => {
@@ -303,8 +396,9 @@ describe("provider client factory options", () => {
       ),
     );
 
-    const { chatCompletions } = await import("../../src/providers/chatCompletions.js");
-    const together = chatCompletions("https://api.together.ai/v1");
+    const { chatCompletions } =
+      await import("../../src/protocols/chatCompletions/chatCompletions.js");
+    const together = chatCompletions({ baseUrl: "https://api.together.ai/v1" });
 
     for await (const _chunk of together.createStreamingRequest("test-model", {
       messages: [{ role: "user", content: "Hi" }],

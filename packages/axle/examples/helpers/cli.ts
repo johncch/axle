@@ -106,7 +106,7 @@ function getProvider(name: ProviderName): AIProvider {
         console.error(`${preset.envVar} not found. Check your .env file`);
         process.exit(1);
       }
-      return chatCompletions(url, key);
+      return chatCompletions({ baseUrl: url, apiKey: key });
     }
   }
 }

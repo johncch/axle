@@ -42,11 +42,25 @@ export {
   isAxleError,
 } from "./errors/index.js";
 
-// AI Providers
-export { estimateContextUsage } from "./execution/context.js";
+// Protocols
+export { chatCompletions } from "./protocols/chatCompletions/chatCompletions.js";
+export type { ChatCompletionsOptions } from "./protocols/chatCompletions/chatCompletions.js";
+export type {
+  ChatCompletionsDialect,
+  ChatCompletionsReasoningDetails,
+} from "./protocols/chatCompletions/dialect.js";
+export { openrouterDialect } from "./protocols/chatCompletions/dialects/openrouter.js";
+export { togetherDialect } from "./protocols/chatCompletions/dialects/together.js";
+export { generateContent } from "./protocols/generateContent/generateContent.js";
+export { messages } from "./protocols/messages/messages.js";
+export { responses } from "./protocols/responses/responses.js";
+
+// Providers
 export { anthropic } from "./providers/anthropic.js";
-export { chatCompletions, inferChatCompletionsVendor } from "./providers/chatCompletions.js";
-export type { ChatCompletionsOptions, ChatCompletionsVendor } from "./providers/chatCompletions.js";
+export { openrouter } from "./providers/openrouter.js";
+export { together } from "./providers/together.js";
+
+export { estimateContextUsage } from "./execution/context.js";
 
 // Decisions (@experimental)
 export { choice, decide, noul, score } from "./execution/decide.js";
@@ -97,6 +111,7 @@ export type {
   AxleModelRequestOptions,
   ContextUsage,
   Protocol,
+  ProtocolOptions,
   ProviderClientOptions,
   ProviderOptions,
   Refusal,

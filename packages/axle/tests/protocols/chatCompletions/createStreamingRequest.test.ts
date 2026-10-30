@@ -3,10 +3,13 @@ import { z } from "zod";
 import { AxleErrorCode } from "../../../src/errors/AxleError.js";
 import { stream } from "../../../src/execution/stream.js";
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
+import { chatCompletions } from "../../../src/protocols/chatCompletions/chatCompletions.js";
 import { createStreamingRequest } from "../../../src/protocols/chatCompletions/createStreamingRequest.js";
+import type { ChatCompletionsDialect } from "../../../src/protocols/chatCompletions/dialect.js";
+import { openrouterDialect } from "../../../src/protocols/chatCompletions/dialects/openrouter.js";
+import { togetherDialect } from "../../../src/protocols/chatCompletions/dialects/together.js";
 import type { AIProvider } from "../../../src/protocols/types.js";
 import { AxleStopReason } from "../../../src/protocols/types.js";
-import { chatCompletions } from "../../../src/providers/chatCompletions.js";
 
 const BASE_URL = "http://localhost:11434/v1";
 const MODEL = "gemma3";
@@ -87,7 +90,7 @@ describe("createStreamingRequest", () => {
     (fetch as any).mockResolvedValue(makeSSEResponse(sseLines.join("\n")));
 
     const handle = stream({
-      provider: makeProvider(),
+      provider: makeProvider(openrouterDialect),
       model: MODEL,
       messages: [{ role: "user", content: "Think first" }],
     });
@@ -152,7 +155,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        vendor: "togetherai",
+        dialect: togetherDialect,
         reasoning: { effort: "high" },
       }),
     );
@@ -608,7 +611,11 @@ describe("createStreamingRequest", () => {
 
     test("sends the request through it and leaves the global alone", async () => {
       const customFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(okResponse());
-      const provider = chatCompletions(BASE_URL, { apiKey: "sk-test", fetch: customFetch });
+      const provider = chatCompletions({
+        baseUrl: BASE_URL,
+        apiKey: "sk-test",
+        fetch: customFetch,
+      });
 
       const chunks = await collectChunks(
         provider.createStreamingRequest(MODEL, {
@@ -632,7 +639,7 @@ describe("createStreamingRequest", () => {
           new Response("slow down", { status: 429, headers: { "retry-after-ms": "0" } }),
         )
         .mockResolvedValueOnce(okResponse());
-      const provider = chatCompletions(BASE_URL, { fetch: customFetch, maxRetries: 1 });
+      const provider = chatCompletions({ baseUrl: BASE_URL, fetch: customFetch, maxRetries: 1 });
 
       const chunks = await collectChunks(
         provider.createStreamingRequest(MODEL, {
@@ -649,7 +656,8 @@ describe("createStreamingRequest", () => {
     test("times out an unanswered request and aborts its signal", async () => {
       vi.useFakeTimers();
       const customFetch = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
-      const provider = chatCompletions(BASE_URL, {
+      const provider = chatCompletions({
+        baseUrl: BASE_URL,
         fetch: customFetch,
         maxRetries: 0,
         timeoutMs: 50,
@@ -765,13 +773,13 @@ describe("createStreamingRequest", () => {
       expect(body.parallel_tool_calls).toBe(true);
     });
 
-    test("sends sessionId as session_id for the OpenRouter vendor only", async () => {
-      const request = (vendor?: "openrouter" | "togetherai") =>
+    test("sends sessionId as session_id for the OpenRouter dialect only", async () => {
+      const request = (dialect?: ChatCompletionsDialect) =>
         collectChunks(
           createStreamingRequest({
             baseUrl: BASE_URL,
             model: MODEL,
-            vendor,
+            dialect,
             sessionId: "conversation-1",
             messages: [{ role: "user", content: "Hi" }],
             runtime: {},
@@ -779,11 +787,11 @@ describe("createStreamingRequest", () => {
         );
 
       (fetch as any).mockResolvedValue(okStream());
-      await request("openrouter");
+      await request(openrouterDialect);
       expect(JSON.parse((fetch as any).mock.calls[0][1].body).session_id).toBe("conversation-1");
 
       (fetch as any).mockResolvedValue(okStream());
-      await request("togetherai");
+      await request(togetherDialect);
       expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("session_id");
 
       (fetch as any).mockResolvedValue(okStream());
@@ -792,12 +800,12 @@ describe("createStreamingRequest", () => {
     });
 
     test("asks OpenRouter for prompt caching by default and only there", async () => {
-      const request = (vendor?: "openrouter" | "togetherai", cache?: boolean) =>
+      const request = (dialect?: ChatCompletionsDialect, cache?: boolean) =>
         collectChunks(
           createStreamingRequest({
             baseUrl: BASE_URL,
             model: MODEL,
-            vendor,
+            dialect,
             cache,
             messages: [{ role: "user", content: "Hi" }],
             runtime: {},
@@ -805,17 +813,17 @@ describe("createStreamingRequest", () => {
         );
 
       (fetch as any).mockResolvedValue(okStream());
-      await request("openrouter");
+      await request(openrouterDialect);
       expect(JSON.parse((fetch as any).mock.calls[0][1].body).cache_control).toEqual({
         type: "ephemeral",
       });
 
       (fetch as any).mockResolvedValue(okStream());
-      await request("openrouter", false);
+      await request(openrouterDialect, false);
       expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("cache_control");
 
       (fetch as any).mockResolvedValue(okStream());
-      await request("togetherai");
+      await request(togetherDialect);
       expect(JSON.parse((fetch as any).mock.calls[2][1].body)).not.toHaveProperty("cache_control");
 
       (fetch as any).mockResolvedValue(okStream());
@@ -829,7 +837,7 @@ describe("createStreamingRequest", () => {
         createStreamingRequest({
           baseUrl: BASE_URL,
           model: MODEL,
-          vendor: "openrouter",
+          dialect: openrouterDialect,
           messages: [{ role: "user", content: "Hi" }],
           runtime: {},
         }),
@@ -843,7 +851,7 @@ describe("createStreamingRequest", () => {
         createStreamingRequest({
           baseUrl: BASE_URL,
           model: MODEL,
-          vendor: "openrouter",
+          dialect: openrouterDialect,
           sessionId: "conversation-1",
           providerOptions: { session_id: "host-key" },
           messages: [{ role: "user", content: "Hi" }],
@@ -853,7 +861,7 @@ describe("createStreamingRequest", () => {
       expect(JSON.parse((fetch as any).mock.calls[0][1].body).session_id).toBe("host-key");
     });
 
-    test("echoes reasoning_details on assistant messages for the OpenRouter vendor only", async () => {
+    test("echoes reasoning_details on assistant messages for the OpenRouter dialect only", async () => {
       const messages = [
         { role: "user" as const, content: "Question" },
         {
@@ -902,7 +910,7 @@ describe("createStreamingRequest", () => {
         createStreamingRequest({
           baseUrl: BASE_URL,
           model: MODEL,
-          vendor: "openrouter",
+          dialect: openrouterDialect,
           messages,
           runtime: {},
         }),
@@ -1144,7 +1152,7 @@ describe("createStreamingRequest", () => {
       createStreamingRequest({
         baseUrl: BASE_URL,
         model: MODEL,
-        vendor: "openrouter",
+        dialect: openrouterDialect,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
         providerTools: [{ type: "provider", name: "web_search" }],
@@ -1173,7 +1181,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        vendor: "openrouter",
+        dialect: openrouterDialect,
         tools: [{ name: "lookup", description: "Lookup", schema: z.object({ q: z.string() }) }],
         providerTools: [{ type: "provider", name: "web_search", config: { max_results: 3 } }],
       }),
@@ -1241,7 +1249,7 @@ function makeSpan() {
   } as any;
 }
 
-function makeProvider(): AIProvider {
+function makeProvider(dialect?: ChatCompletionsDialect): AIProvider {
   return {
     protocol: "chatCompletions",
     id: "chatcompletions-test",
@@ -1251,6 +1259,7 @@ function makeProvider(): AIProvider {
         baseUrl: BASE_URL,
         model: _model,
         maxRetries: 0,
+        dialect,
       });
     },
   };

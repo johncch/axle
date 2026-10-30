@@ -166,17 +166,25 @@ export interface ProviderClientOptions {
    * timeout and the abort signal apply to it as they do to the global.
    */
   fetch?: typeof fetch;
+}
+
+/**
+ * Options every protocol constructor takes beside its base URL.
+ */
+export interface ProtocolOptions extends ProviderClientOptions {
+  /** Where requests go; what it includes follows the protocol's SDK convention. */
+  baseUrl: string;
+  apiKey?: string;
   /**
-   * Sends requests to this host instead of the vendor's. Each SDK appends its
-   * own path, so the base differs by provider:
-   * - `anthropic()`: origin, requests go to `${baseUrl}/v1/messages`
-   * - `openai()`: includes the version, requests go to `${baseUrl}/responses`
-   * - `gemini()`: origin, requests go to `${baseUrl}/v1beta/models/...`
-   * - `typesafe()`: origin, requests go to `${baseUrl}/v1/systemone`
-   *
-   * `chatCompletions()` takes its base URL as the first argument instead.
+   * The models.dev provider id stamped on usage rows. Inferred from the base
+   * URL's hostname when omitted; absent when the hostname is not known.
    */
-  baseUrl?: string;
+  id?: string;
+  /**
+   * Rewrites the model id before it is sent; without it the model id is
+   * sent as given.
+   */
+  resolveModel?: (model: string) => string;
 }
 
 export enum AxleStopReason {

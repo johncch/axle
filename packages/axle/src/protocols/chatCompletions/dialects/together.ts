@@ -1,6 +1,7 @@
 import { AxleError, AxleErrorCode } from "../../../errors/AxleError.js";
 import type { FileInfo } from "../../../utils/file.js";
 import { resolveReasoning, type ReasoningSetting } from "../../reasoning.js";
+import type { ChatCompletionsDialect } from "../dialect.js";
 
 /**
  * Together toggles hybrid models with `reasoning.enabled` and steers GPT-OSS
@@ -22,3 +23,8 @@ export function assertTogetherFilePartSupported(file: FileInfo): void {
     });
   }
 }
+
+export const togetherDialect: ChatCompletionsDialect = {
+  reasoning: toTogetherReasoning,
+  assertFileSupported: assertTogetherFilePartSupported,
+};

@@ -1,5 +1,5 @@
 import type { ContextWindowMatch } from "@fifthrevision/axle";
-import { inferChatCompletionsVendor, ModelCatalog } from "@fifthrevision/axle";
+import { chatCompletions, ModelCatalog } from "@fifthrevision/axle";
 import { join } from "node:path";
 import { resolveConfigDirs } from "./configs/paths.js";
 
@@ -39,7 +39,7 @@ export function catalogProvider(endpoint: Endpoint): string | undefined {
   if (endpoint.type !== "chatcompletions") return FIRST_PARTY_PUBLISHERS[endpoint.type];
   const { vendor, baseUrl } = endpoint.config;
   if (vendor === "openrouter" || vendor === "togetherai") return vendor;
-  return typeof baseUrl === "string" ? inferChatCompletionsVendor(baseUrl) : undefined;
+  return typeof baseUrl === "string" ? chatCompletions({ baseUrl }).id : undefined;
 }
 
 /**

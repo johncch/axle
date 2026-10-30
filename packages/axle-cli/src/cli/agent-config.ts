@@ -1,5 +1,19 @@
-import type { AgentConfig, AIProvider, MCP, Skill, Span } from "@fifthrevision/axle";
-import { anthropic, chatCompletions, gemini, openai } from "@fifthrevision/axle";
+import type {
+  AgentConfig,
+  AIProvider,
+  ChatCompletionsDialect,
+  MCP,
+  Skill,
+  Span,
+} from "@fifthrevision/axle";
+import {
+  anthropic,
+  chatCompletions,
+  gemini,
+  openai,
+  openrouterDialect,
+  togetherDialect,
+} from "@fifthrevision/axle";
 import type { Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
 import type {
@@ -157,11 +171,12 @@ function resolveCliProvider(
         throw new Error("No base URL for chatcompletions. Set baseUrl on the provider.");
       }
       return {
-        provider: chatCompletions(baseUrl, {
+        provider: chatCompletions({
+          baseUrl,
           apiKey: resolveApiKey(type, config, credentials),
           maxRetries: config.maxRetries,
           timeoutMs: config.timeoutMs,
-          vendor: config.vendor,
+          ...(typeof config.vendor === "string" ? vendorProvider(config.vendor) : {}),
         }),
         model,
       };
@@ -265,4 +280,12 @@ export async function createCliAgentConfig(
     mcps,
     droppedTools: dropped,
   };
+}
+
+function vendorProvider(
+  vendor: string,
+): { id: string; dialect: ChatCompletionsDialect } | undefined {
+  if (vendor === "openrouter") return { id: "openrouter", dialect: openrouterDialect };
+  if (vendor === "togetherai") return { id: "togetherai", dialect: togetherDialect };
+  return undefined;
 }

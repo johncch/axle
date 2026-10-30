@@ -194,23 +194,62 @@ For plain text interactions, pass a string directly to `send()` instead.
 
 ### Providers
 
-Axle ships with first-party support for Anthropic, OpenAI, and Gemini, plus a
-generic ChatCompletions provider for any OpenAI-compatible API.
+A provider is a protocol (the wire format) configured with a base URL, a
+key and, where the service needs one, a dialect. Axle has a constructor per
+protocol, and presets for the services it knows:
 
 ```typescript
-import { anthropic, openai, gemini, chatCompletions } from "@fifthrevision/axle";
+import {
+  anthropic,
+  chatCompletions,
+  gemini,
+  messages,
+  openai,
+  openrouter,
+} from "@fifthrevision/axle";
 
 const a = anthropic(process.env.ANTHROPIC_API_KEY);
 const o = openai(process.env.OPENAI_API_KEY);
 const g = gemini(process.env.GEMINI_API_KEY);
-const local = chatCompletions("http://localhost:11434/v1");
+const or = openrouter(process.env.OPENROUTER_API_KEY);
+const local = chatCompletions({ baseUrl: "http://localhost:11434/v1" });
+const proxied = messages({
+  baseUrl: "https://proxy.example.com",
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 ```
 
-Every factory takes the same client options, applied when the client is
-built rather than per request:
+| Protocol constructor | Base URL                                                          | Presets                      |
+| -------------------- | ----------------------------------------------------------------- | ---------------------------- |
+| `messages()`         | origin; requests go to `/v1/messages` under it                    | `anthropic()`                |
+| `responses()`        | includes the version; requests go to `/responses` under it        | `openai()`                   |
+| `generateContent()`  | origin; requests go to `/v1beta/models/...` under it              | `gemini()`                   |
+| `chatCompletions()`  | includes the version; requests go to `/chat/completions` under it | `openrouter()`, `together()` |
+
+A protocol constructor takes one options object: `baseUrl`, `apiKey`, the
+client options below, `id`, `resolveModel`, and for Chat Completions
+`dialect`. A preset is shorthand for its protocol constructor at the
+service's own base URL: `anthropic(key)` is `messages({ baseUrl:
+"https://api.anthropic.com", apiKey: key, id: "anthropic", resolveModel })`.
+To reach the same service somewhere else, such as a proxy, call the
+constructor with that base URL.
+
+Each provider carries `protocol` and `id`, the [models.dev](https://models.dev)
+provider id of the service it reaches (`anthropic`, `openrouter`, …), which
+usage rows record. A constructor infers `id` from a base URL whose hostname
+it knows (`chatCompletions({ baseUrl: "https://openrouter.ai/api/v1" })` is
+`openrouter`)
+and leaves it unset otherwise; pass `id` to set it. `resolveModel` rewrites
+the model id before it is sent: the first-party presets accept a
+publisher-qualified id (`anthropic/claude-sonnet-5`) and send the bare one.
+Without it, the model id is sent as given.
+
+Every constructor and preset takes the same client options, applied when the
+client is built rather than per request:
 
 ```typescript
-const provider = chatCompletions("https://gateway.example.com/v1", {
+const provider = chatCompletions({
+  baseUrl: "https://gateway.example.com/v1",
   apiKey: process.env.GATEWAY_API_KEY,
   maxRetries: 2, // retries after the first attempt; 0 disables
   timeoutMs: 60_000, // per attempt; omit for the SDK default (chatCompletions: 10 minutes)
@@ -223,15 +262,6 @@ const provider = chatCompletions("https://gateway.example.com/v1", {
 ChatCompletions they are added after Axle's own `Content-Type` and
 `Authorization`. Axle does not reserve any header name, so a caller-supplied
 `Authorization` replaces the one derived from the API key on every provider.
-
-`baseUrl` sends requests somewhere other than the vendor, such as a proxy
-that speaks the vendor's API. Each SDK appends its own path, so what the base
-includes differs: for `anthropic()` and `gemini()` it is the origin
-(`https://proxy.example.com`, requests go to `/v1/messages` or
-`/v1beta/models/...` under it), for `openai()` it includes the version
-(`https://proxy.example.com/v1`, requests go to `/responses` under it), and for
-`typesafe()` it is the root that serves `/v1/systemone`. `chatCompletions()`
-takes its base URL as the first argument and does not accept the option.
 
 `fetch` substitutes the HTTP call without touching `globalThis.fetch`. It is
 the Fetch API contract, not any HTTP client: Axle calls it as `(url, init)`
@@ -1027,7 +1057,8 @@ provider:
 ```typescript
 import { braveWebSearch, chatCompletions } from "@fifthrevision/axle";
 
-const provider = chatCompletions("https://api.together.ai/v1", {
+const provider = chatCompletions({
+  baseUrl: "https://api.together.ai/v1",
   apiKey: process.env.TOGETHER_API_KEY!,
   webSearch: braveWebSearch({
     apiKey: process.env.BRAVE_API_KEY!,
@@ -1070,10 +1101,22 @@ Requesting a provider tool from a Chat Completions provider that has nothing
 to serve it fails before the request is sent: the result has `ok: false`
 and `error.message` names the tool.
 
-Axle recognizes the official OpenRouter and Together endpoint hostnames and
-applies their request differences automatically. Set `vendor: "openrouter"`
-or `vendor: "togetherai"` explicitly when using a proxy or gateway with a
-different hostname.
+OpenRouter and Together differ from plain Chat Completions in their request
+fields; a `ChatCompletionsDialect` carries those differences.
+`openrouter()` and `together()` apply theirs, and so does `chatCompletions()`
+at their official hostnames. Behind a proxy or gateway with another hostname,
+pass the dialect and id yourself:
+
+```typescript
+import { chatCompletions, openrouterDialect } from "@fifthrevision/axle";
+
+const provider = chatCompletions({
+  baseUrl: "https://gateway.example.com/v1",
+  apiKey: process.env.GATEWAY_API_KEY,
+  id: "openrouter",
+  dialect: openrouterDialect,
+});
+```
 
 On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,
 so every request in a conversation routes to the same upstream provider and

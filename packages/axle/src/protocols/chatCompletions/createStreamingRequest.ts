@@ -4,6 +4,7 @@ import { redactResolvedFileValues } from "../../utils/redact.js";
 import { ProviderClientOptions, ProviderStreamParams } from "../types.js";
 import { wireCall } from "../utils.js";
 import { createStreamingAdapter } from "./createStreamingAdapter.js";
+import type { ChatCompletionsDialect } from "./dialect.js";
 import { withRetry } from "./retry.js";
 import { ChatCompletionChunk, ChatCompletionStreamError } from "./types.js";
 import {
@@ -12,8 +13,6 @@ import {
   prepareProviderTools,
   toChatCompletionsReasoning,
   toChatCompletionsToolChoice,
-  toChatCompletionsVendorFields,
-  type ChatCompletionsVendor,
 } from "./utils.js";
 
 export async function* createStreamingRequest(
@@ -22,7 +21,8 @@ export async function* createStreamingRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
-      vendor?: ChatCompletionsVendor;
+      providerId?: string;
+      dialect?: ChatCompletionsDialect;
       webSearch?: ToolDefinition;
     },
 ): AsyncGenerator<AnyStreamChunk, void, unknown> {
@@ -35,7 +35,8 @@ export async function* createStreamingRequest(
     runtime,
     signal,
     apiKey,
-    vendor,
+    providerId,
+    dialect,
     webSearch,
     maxRetries,
     timeoutMs,
@@ -56,17 +57,22 @@ export async function* createStreamingRequest(
     ? params.providerTools?.filter((tool) => tool.name !== "web_search")
     : params.providerTools;
 
-  const adapter = createStreamingAdapter();
+  const adapter = createStreamingAdapter(dialect);
 
   const chatMessages = await convertAxleMessages(messages, system, {
     model,
-    vendor,
+    dialect,
     fileResolver: runtime?.fileResolver,
     signal,
     warn: span?.warn.bind(span),
   });
   const chatTools = convertTools(tools);
-  const chatProviderTools = prepareProviderTools(providerTools, vendor, span?.warn.bind(span));
+  const chatProviderTools = prepareProviderTools(
+    providerTools,
+    dialect,
+    providerId,
+    span?.warn.bind(span),
+  );
   const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
   const requestBody: Record<string, any> = {
@@ -77,11 +83,11 @@ export async function* createStreamingRequest(
 
     // Axle-normalized options.
     ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-    ...toChatCompletionsReasoning(reasoning, vendor),
+    ...toChatCompletionsReasoning(reasoning, dialect),
     ...(maxOutputTokens !== undefined ? { max_tokens: maxOutputTokens } : {}),
     ...toChatCompletionsToolChoice(toolChoice, tools, providerTools),
     ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
-    ...toChatCompletionsVendorFields(vendor, { sessionId, cache }),
+    ...dialect?.requestFields?.({ sessionId, cache }),
 
     // Raw provider options are applied last so they can override Axle mappings.
     ...providerOptions,

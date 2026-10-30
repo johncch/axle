@@ -1,5 +1,5 @@
 import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
-import { AxleMessage, ContentPart } from "../../messages/message.js";
+import { AxleMessage, ContentPart, type Citation } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
 import type { Stats } from "../../types.js";
 import {
@@ -12,25 +12,18 @@ import { withUsageDetails } from "../../utils/stats.js";
 import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
+import type { ChatCompletionsDialect } from "./dialect.js";
 import {
   ChatCompletionContentPart,
   ChatCompletionMessage,
   ChatCompletionTool,
+  type ChatCompletionAnnotation,
   type ChatCompletionUsage,
 } from "./types.js";
-import {
-  prepareOpenRouterProviderTools,
-  toOpenRouterReasoning,
-  toOpenRouterReasoningDetails,
-  toOpenRouterRequestFields,
-} from "./vendors/openrouter.js";
-import { assertTogetherFilePartSupported, toTogetherReasoning } from "./vendors/together.js";
-
-export type ChatCompletionsVendor = "openrouter" | "togetherai";
 
 interface ChatCompletionsConversionContext {
   model: string;
-  vendor?: ChatCompletionsVendor;
+  dialect?: ChatCompletionsDialect;
   fileResolver?: FileResolver;
   signal?: AbortSignal;
   warn?: (message: string, fields?: Record<string, unknown>) => void;
@@ -54,19 +47,9 @@ export async function convertAxleMessages(
 
 export function toChatCompletionsReasoning(
   reasoning: ReasoningSetting | undefined,
-  vendor?: ChatCompletionsVendor,
+  dialect?: ChatCompletionsDialect,
 ) {
-  if (vendor === "togetherai") return toTogetherReasoning(reasoning);
-  if (vendor === "openrouter") return toOpenRouterReasoning(reasoning);
-  return toReasoningEffort(reasoning);
-}
-
-export function toChatCompletionsVendorFields(
-  vendor: ChatCompletionsVendor | undefined,
-  fields: { sessionId: string | undefined; cache: boolean | undefined },
-) {
-  if (vendor === "openrouter") return toOpenRouterRequestFields(fields);
-  return {};
+  return dialect?.reasoning ? dialect.reasoning(reasoning) : toReasoningEffort(reasoning);
 }
 
 export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
@@ -115,17 +98,18 @@ export function convertTools(tools?: Array<ToolDefinition>): ChatCompletionTool[
 
 export function prepareProviderTools(
   providerTools?: Array<ProviderTool>,
-  vendor?: ChatCompletionsVendor,
+  dialect?: ChatCompletionsDialect,
+  providerId?: string,
   warn?: (message: string, attributes?: Record<string, unknown>) => void,
 ): any[] | undefined {
   if (!providerTools || providerTools.length === 0) return undefined;
 
-  if (vendor === "openrouter") return prepareOpenRouterProviderTools(providerTools, warn);
+  if (dialect?.providerTools) return dialect.providerTools(providerTools, warn);
 
   throw new AxleError(`ChatCompletions does not support provider tool: ${providerTools[0].name}`, {
     code: AxleErrorCode.PROVIDER_UNSUPPORTED,
     details: {
-      provider: vendor ?? "chatcompletions",
+      provider: providerId ?? "chatcompletions",
       feature: `providerTool:${providerTools[0].name}`,
     },
   });
@@ -207,8 +191,7 @@ function convertAssistantMessage(
 ): ChatCompletionMessage {
   const toolCallParts = msg.content.filter((c) => c.type === "tool-call");
   const textParts = msg.content.filter((c) => c.type === "text");
-  const reasoningDetails =
-    context.vendor === "openrouter" ? toOpenRouterReasoningDetails(msg.content) : [];
+  const reasoningDetails = context.dialect?.reasoningDetails?.toRequest(msg.content) ?? [];
 
   const toolCalls =
     toolCallParts.length > 0
@@ -317,9 +300,7 @@ async function convertFilePart(
   context: ChatCompletionsConversionContext,
   purpose: "user-message" | "tool-result",
 ): Promise<ChatCompletionContentPart> {
-  if (context.vendor === "togetherai") {
-    assertTogetherFilePartSupported(file);
-  }
+  context.dialect?.assertFileSupported?.(file);
 
   if (file.kind === "text") {
     const resolved = await resolveFileSource(file, {
@@ -424,4 +405,27 @@ function formatUnsupportedToolResultFile(file: FileInfo): string {
     "",
     `This tool returned a file of kind "${file.kind}", but Chat Completions tool-result messages support text only. The file content was not included. Continue without the file or ask for it to be attached in a user message.`,
   ].join("\n");
+}
+
+export function normalizeCitation(annotation: ChatCompletionAnnotation): Citation | null {
+  switch (annotation.type) {
+    case "url_citation": {
+      const citation = annotation.url_citation;
+      if (!citation?.url) return null;
+      return {
+        source: { type: "web", title: citation.title, url: citation.url },
+        outputSpan: { start: citation.start_index, end: citation.end_index },
+        providerMetadata: { type: annotation.type },
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+export function isTextAnchoredCitation(citation: Citation): boolean {
+  const span = citation.outputSpan;
+  if (!span) return false;
+  if (span.start === undefined && span.end === undefined) return false;
+  return span.start !== 0 || span.end !== 0;
 }
