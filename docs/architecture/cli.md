@@ -61,7 +61,7 @@ against it; divergence is a defect. State ownership is defined in
    start, resume included, and never stored (invariant 6): the provider's
    `contextWindow` if set (profile or inline — an endpoint fact, since a
    local server loads models below their maximum), else core's
-   `ModelCatalog` (models.dev, host derived from the provider type or
+   `ModelCatalog` (models.dev, provider derived from the endpoint type or
    `vendor`), else an assumed 200,000. The catalog is cached at
    `~/.axle/cache/models.json`; a run reads the cache and refreshes it in
    the background when it is a day old, `axle info` awaits the refresh, and
@@ -124,12 +124,12 @@ against it; divergence is a defect. State ownership is defined in
 
 7. **Two output channels; renderers are folds, not deciders.** Everything
    on screen is either _transcript_ (the model's conversation: `TurnEvent`s
-   folded into the host-owned `Transcript`) or a _host line_
+   folded into the consumer-owned `Transcript`) or a _runner line_
    (`info`/`success`/`warn`/`error` from the runner). The runner applies
    each event to the transcript **before** `onEvent(event, transcript)`, so
    a renderer reads settled state and holds no business logic — the same
    events replay through `renderPriorTurns` on resume. The dialect is a
-   task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for host
+   task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for runner
    lines, work lines that settle with a duration (`✔ Calculator {…}
 (430ms)`), model text as unadorned stdout, and the user's `❯` as the
    only persona glyph. Under ink an agent text part, streaming or
@@ -156,7 +156,7 @@ against it; divergence is a defect. State ownership is defined in
    drawing the transcript's pending turns as queued rows; the plain
    renderer prompts only between turns.
    `close()` is async and paints one final frame before unmounting.
-   Questions the host asks (`setup`, `cleanup`, the missing-model fallback)
+   Questions the CLI asks (`setup`, `cleanup`, the missing-model fallback)
    speak the GitHub CLI dialect: a green `?` before the question, the
    answer echoed in cyan on the same line once given, a `>` cursor for
    lists, `y`/`n` answering a confirm without Enter. They are rendered over
@@ -171,7 +171,7 @@ against it; divergence is a defect. State ownership is defined in
    `credentials` (dotenv format) and `cli.yaml`. Credentials resolve per
    key: process env → project → user; an empty string counts as unset and
    falls through. The working directory's `.env` is not read (dropped
-   2026-10-08): it was the one project input outside `.axle/`, and a host
+   2026-10-08): it was the one project input outside `.axle/`, and a
    project's own `.env` silently overrode the user's credentials. The
    credentials files are shared with sibling tools (axle-code): writers
    upsert individual keys and preserve foreign lines verbatim — never
@@ -459,7 +459,7 @@ schedule -j` kicked off a live run with side effects when the user only
   run) or from the batch ledger entries written during the run (batch);
   `runAgentSession`/`runBatch` keep their boolean result. Rejected: widening
   the runner return type — the ticket held the runners fixed, and the
-  values already reach the host through owned channels. Rejected: tagging
+  values already reach the consumer through owned channels. Rejected: tagging
   session files with a schedule id — a persistence-format change for one
   reader.
 - **2026-09-13 — `launchd` apply always boots out first.** launchctl refuses
@@ -501,7 +501,7 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   Rejected across one day of iteration: a chat-app persona gutter (a glyph
   in front of every line, `■` for the model), circle/quadrant spinners
   ending on a filled glyph, and decorated model text. Settled on the
-  consola/tsdown family: work lines spin and settle with durations, host
+  consola/tsdown family: work lines spin and settle with durations, runner
   lines carry the gutter, model prose is plain stdout. The model's words
   are the product; the frame should look like tooling.
 - **2026-10-09 — `axle setup` asks which home to write.** Rejected: always

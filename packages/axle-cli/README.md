@@ -433,7 +433,7 @@ shadowed, ignored, or invalid. `axle-help` has a `skills` topic.
 ## Folder trust
 
 A folder can make the CLI do two things on its behalf: its `.axle/` can
-reconfigure a run (point a profile at another host, change the default
+reconfigure a run (point a profile at another endpoint, change the default
 tools), and content the model reads there can steer a model that has
 shell and file access. Both are gated by one per-folder switch. Every
 folder starts untrusted; `axle trust` flips it:
@@ -494,7 +494,7 @@ file. Credentials files use the same key names as the environment
 variables, one `KEY=value` per line, and are read in order — environment
 first, then the project's `.axle/credentials`, then the user-level
 `~/.axle/credentials`. A `.env` in the working directory is not read, so a
-host project's own `.env` never leaks into the CLI:
+project's own `.env` never leaks into the CLI:
 
 ```bash
 OPENAI_API_KEY=...

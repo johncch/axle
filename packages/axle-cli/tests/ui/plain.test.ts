@@ -91,7 +91,7 @@ describe("PlainRenderer", () => {
     expect(text()).toBe("✖ Calculator\n");
   });
 
-  it("renders host lines with the consola gutter", () => {
+  it("renders runner lines with the consola gutter", () => {
     const { renderer, text } = createHarness();
 
     renderer.info("Session abc");
@@ -102,15 +102,15 @@ describe("PlainRenderer", () => {
     expect(text()).toBe("ℹ Session abc\n✔ Done in 1.9s\n⚠ careful\n✖ boom\n");
   });
 
-  it("breaks an in-progress delta line before a host line", () => {
+  it("breaks an in-progress delta line before a runner line", () => {
     const { renderer, feed, text } = createHarness();
 
     feed({ type: "turn:start", turnId: "t1" });
     feed({ type: "part:start", turnId: "t1", part: { id: "p1", type: "text", text: "" } });
     feed({ type: "text:delta", turnId: "t1", partId: "p1", delta: "partial" });
-    renderer.info("host message");
+    renderer.info("runner message");
 
-    expect(text()).toBe("partial\nℹ host message\n");
+    expect(text()).toBe("partial\nℹ runner message\n");
   });
 
   it("renders a settled compaction as a work line", () => {

@@ -5,8 +5,8 @@
 This document is normative for how core represents Agent Skills and
 discloses them to the model. Code and tests are built against it;
 divergence is a defect. Vocabulary is defined in
-[terminology.md](../terminology.md). Host-side discovery, precedence, and
-trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
+[terminology.md](../terminology.md). Consumer-side discovery, precedence, and
+trust are the consumer's concern; the CLI's rules are in [cli.md](./cli.md).
 
 ## Invariants
 
@@ -23,7 +23,7 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
 2. **A `Skill` is plain data; core never reads a skill's files.** `name`,
    `description`, `instructions` (the body, frontmatter stripped), optional
    `root`, optional `files`, optional `frontmatter`. `root` is opaque: the
-   base the host's own tools accept — a directory, an `s3://` prefix,
+   base the consumer's own tools accept — a directory, an `s3://` prefix,
    anything — printed to the model verbatim and never interpreted. `files`
    are relative names under `root`, listed, never read.
    `parseSkillMarkdown(text)` is the parser and takes text, not a path;
@@ -45,12 +45,12 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    prompt — a heading, a short instruction to call `view-skill`, one
    `- name: description` line per skill — rendered from `agent.skills` as
    it is now. Tier two: a `view-skill` tool in the Agent's registry beside
-   the host's tools, whose `name` argument is an enum of the loaded names;
+   the consumer's tools, whose `name` argument is an enum of the loaded names;
    it returns
    `<skill_content name="…">` holding the body, then `Compatibility:` when
    present, then `Skill directory: <root>` with a relative-path reminder
    when `root` is set, then a `Files:` listing when there is one. Tier three
-   (reading references, running scripts) works exactly as far as the host's
+   (reading references, running scripts) works exactly as far as the consumer's
    tools can read what `root` names. The catalog does not print `root`; the
    activation result does.
    **Escaping** (2026-10-09): `description` and `compatibility` are author
@@ -59,19 +59,19 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    bare `\r`) collapse to a space.
    The name needs none (invariant 3). The body, `root` and `files` are
    printed raw: the body is Markdown whose code samples escaping would
-   mangle, and the model hands paths back to the host's tools exactly, with
+   mangle, and the model hands paths back to the consumer's tools exactly, with
    no decoder in between. A `</skill_content>` in the body or a line break
    in a file name therefore closes or forges structure in the activation
    result; this is accepted, since the author of a skill already writes
    the instructions the model follows.
 5. **No skills, no surface.** With no skills `system` is the configured
    prompt alone and no tool is registered, at construction and after the
-   last skill is removed. A host tool named `view-skill` collides
+   last skill is removed. A consumer tool named `view-skill` collides
    (`TOOL_REGISTRY_DUPLICATE`) at construction or at the `add` that would
    publish, whichever comes first; the registry never removes a tool it
    did not publish.
-6. **Core does not persist skills; hosts re-resolve.** A `Skill` is plain
-   data handed to `AgentConfig.skills` at construction. A host that saves
+6. **Core does not persist skills; consumers re-resolve.** A `Skill` is plain
+   data handed to `AgentConfig.skills` at construction. A consumer that saves
    which skills an agent had stores their names in its own shape and loads
    the current skill behind each name on restore, as it does for tools; a
    deleted skill is absent, not an error. The CLI stores none at all
@@ -83,7 +83,7 @@ trust are the host's concern; the CLI's rules are in [cli.md](./cli.md).
    because the system prompt does.
 8. **Skills are live state, and every provider request reads them.**
    `agent.skills` is a `SkillRegistry` (`add`, `remove`, `set`, `has`,
-   `get`, `list`, `size`) the host or a tool changes at any time. `set`
+   `get`, `list`, `size`) the consumer or a tool changes at any time. `set`
    replaces the whole list: it checks every name and rejects one listed
    twice before touching anything, so a throw leaves the old list, and it
    republishes once. A name already registered is not an error there. It owns
@@ -102,19 +102,19 @@ Skills are the precursor to custom tools for the CLI (AXL-74 settled folder
 trust first): executable code ships as a skill script and runs through
 `exec`, which is already trust-gated, so no bespoke tool format is needed.
 Core provides the reference toolset — type, parser, catalog, activation
-tool — so every host (CLI, axle-code, sunnyday) gets
+tool — so every consumer (CLI, axle-code, sunnyday) gets
 the same disclosure behaviour instead of a prompt builder and a tool each.
 
 Sunnyday settled the storage question. Its skills are zip bundles in object
 storage at rest and a bundled directory for built-ins; at run time they are
 unpacked into a sandbox and the model reads them with sandbox tools. The
 app never reads a skill's files for the model. Any adapter interface with
-read methods would be implemented by every host and called by nothing, so
-a skill is data and `root` is a string the host's tools understand.
+read methods would be implemented by every consumer and called by nothing, so
+a skill is data and `root` is a string the consumer's tools understand.
 
 The integration guide allows activation by file read (the catalog lists a
 path, the model opens it) or by a dedicated tool. A tool works when the
-host registers no file tool (a recipe with `tools: []`, a host with virtual
+consumer registers no file tool (a recipe with `tools: []`, a consumer with virtual
 storage), lets core control the output shape, and constrains the name to
 an enum. The catalog therefore omits the location and the tool result
 carries it.
@@ -122,7 +122,7 @@ carries it.
 ## Runtime skills and the request boundary (2026-10-09)
 
 Skills were materialized once, in the constructor: the catalog spliced into
-`system`, the tool added to the registry. A host whose skills come from
+`system`, the tool added to the registry. A consumer whose skills come from
 connectors needs to add and remove them while a session is alive — the
 user connects a source between messages, or the model activates one with a
 tool — and the natural API is the one tools already have: a registry.
@@ -136,7 +136,7 @@ loop to learn of a change. There is now. `onToolBatchComplete` fires at
 the one moment inside a turn when anything can have changed — a tool just
 ran — and right before the next request is built, so the Agent answers it
 with the current prompt and tools. Between turns the Agent snapshots them
-when the turn opens, and `onSettled` orders host changes against a busy
+when the turn opens, and `onSettled` orders consumer changes against a busy
 queue ([agent-state.md](./agent-state.md)). `stream()` became a function
 of what it is told: `registry` left its parameters, the private lookup it
 built from arrays stayed, and `ToolContext.registry` — handed to every
@@ -156,7 +156,7 @@ Accepted consequences:
 - **Changing skills invalidates the provider's prompt-cache prefix** from
   the next request on, as any system-prompt change does.
 - **`agent.system` cannot be assigned.** It is what the model sees; the
-  configured prompt is set at construction. A host that needs to change the
+  configured prompt is set at construction. A consumer that needs to change the
   base prompt at runtime asks for a setter and gets one then.
 - **A skill updated in place is `remove` then `add`.** `add` of a name
   already present throws `SKILL_REGISTRY_DUPLICATE`, as the tool registry
@@ -171,10 +171,10 @@ Accepted consequences:
   resolution into the loop, and was only ever read in one place: before
   each request, which the boundary callback already marks.
 - **The catalog in `view-skill`'s description** (2026-10-09): see above.
-- **`agent.setSkills(list)`** (2026-10-09): the host keeps the full list and
+- **`agent.setSkills(list)`** (2026-10-09): the consumer keeps the full list and
   re-sends it on every change; a registry lets it add and remove by name,
   which is what a connector does. Later the same day `skills.set(list)`
-  was added beside `add` and `remove`, at sunnyday's request: a host that
+  was added beside `add` and `remove`, at sunnyday's request: a consumer that
   already stores the full list hands it over in one call. It is a
   convenience on the registry, not a replacement for it.
 - **Taking effect at the next turn only** (2026-10-09): simpler to state,
@@ -182,7 +182,7 @@ Accepted consequences:
   spoke again. The boundary callback makes "next request" cost the same.
 - **An adapter interface (`readFile`, `list`) on the skill object**
   (2026-10-08): nothing in core would call it; tier three is always the
-  host's tools reading what `root` names.
+  consumer's tools reading what `root` names.
 - **Flat injection of every body into the system prompt** (2026-10-08):
   less code, but a folder of ten skills would cost its full instruction
   set on every turn, which is what the format exists to avoid.
@@ -193,7 +193,7 @@ Accepted consequences:
   guide recommends it; rejected in [compaction.md](./compaction.md).
 - **Acting on `allowed-tools`** (2026-10-08): it is a permission-layer
   field in another client's syntax; core has no permission layer, and the
-  host decides the tool set.
+  consumer decides the tool set.
 - **Strict name validation per the specification** (2026-10-08): the guide
   itself recommends warning and loading; core has no warning channel in
   the parser and the enum tolerates any string.
@@ -205,4 +205,4 @@ Accepted consequences:
   so `&quot;` would only add noise to ordinary descriptions; no failure
   from other control characters has been observed.
 - **Encoding `root` and `files`** (2026-10-09): the model would ask the
-  host's tools for `a&lt;b.md`, a file that does not exist.
+  consumer's tools for `a&lt;b.md`, a file that does not exist.

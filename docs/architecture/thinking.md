@@ -161,7 +161,7 @@ block that vanishes on settle.
 **A summary is a body, not a headline.** What providers put in `summary`
 runs to paragraphs. It is a condensed body, an alternative to raw text, and
 a consumer never holds both for one block. Headline-and-body is a render
-contract across every part type and the headline is host-owned. The single
+contract across every part type and the headline is consumer-owned. The single
 exception is Anthropic's progress update under `display: "updates"`, the
 one place a provider hands back a real headline; it arrives as a sibling
 block describing the next action, not as a field on the reasoning block.

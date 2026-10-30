@@ -5,12 +5,12 @@ export type UnknownEvent = { type: string };
 
 export type TranscriptInput<
   TAnnotation extends Annotation = Annotation,
-  THostEvent extends UnknownEvent = UnknownEvent,
-> = TurnEvent<TAnnotation> | THostEvent;
+  TConsumerEvent extends UnknownEvent = UnknownEvent,
+> = TurnEvent<TAnnotation> | TConsumerEvent;
 
 export type TranscriptApplyResult<
   TAnnotation extends Annotation = Annotation,
-  THostEvent extends UnknownEvent = UnknownEvent,
+  TConsumerEvent extends UnknownEvent = UnknownEvent,
 > =
   | {
       handled: true;
@@ -18,7 +18,7 @@ export type TranscriptApplyResult<
     }
   | {
       handled: false;
-      event: THostEvent;
+      event: TConsumerEvent;
     };
 
 /**
@@ -65,7 +65,7 @@ function isTurnEvent<TAnnotation extends Annotation>(
 
 export class Transcript<
   TAnnotation extends Annotation = Annotation,
-  THostEvent extends UnknownEvent = UnknownEvent,
+  TConsumerEvent extends UnknownEvent = UnknownEvent,
 > {
   private _turns: Turn<TAnnotation>[];
   private _pending: Turn<TAnnotation>[];
@@ -91,17 +91,17 @@ export class Transcript<
   }
 
   apply(
-    event: TranscriptInput<TAnnotation, THostEvent>,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+    event: TranscriptInput<TAnnotation, TConsumerEvent>,
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     if (!isTurnEvent<TAnnotation>(event)) {
-      return { handled: false, event: event as THostEvent };
+      return { handled: false, event: event as TConsumerEvent };
     }
     return this.applyTurnEvent(event);
   }
 
   private applyTurnEvent(
     event: TurnEvent<TAnnotation>,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     switch (event.type) {
       case "pending:queued":
         this._pending = [...this._pending, event.turn];
@@ -340,7 +340,7 @@ export class Transcript<
   private replaceTurns(
     turns: Turn<TAnnotation>[],
     event: TurnEvent<TAnnotation>,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     this._turns = turns;
     return this.handled(event);
   }
@@ -349,7 +349,7 @@ export class Transcript<
     turnId: string,
     event: TurnEvent<TAnnotation>,
     updater: (turn: Turn<TAnnotation>) => Turn<TAnnotation>,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     let updated = false;
     const turns = this._turns.map((entry) => {
       if (entry.id !== turnId) return entry;
@@ -368,7 +368,7 @@ export class Transcript<
     partId: string,
     event: TurnEvent<TAnnotation>,
     updater: (part: TurnPart<TAnnotation>) => TurnPart<TAnnotation>,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     return this.updateTurn(turnId, event, (turn) => {
       let updated = false;
       const parts = turn.parts.map((part) => {
@@ -385,7 +385,7 @@ export class Transcript<
 
   private addAnnotation(
     event: AnnotationEvent<TAnnotation> & { type: "annotation:start" },
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     const target = event.target;
     const annotation = normalizeAnnotation(event.annotation);
     if (!annotation) return this.handled(event);
@@ -406,7 +406,7 @@ export class Transcript<
   private replaceAnnotation(
     event: AnnotationEvent<TAnnotation> & { type: "annotation:update" | "annotation:end" },
     completeWhenMissing: boolean,
-  ): TranscriptApplyResult<TAnnotation, THostEvent> {
+  ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     const target = event.target;
     const annotation = normalizeAnnotation(event.annotation, completeWhenMissing);
     if (!annotation) return this.handled(event);
@@ -424,7 +424,7 @@ export class Transcript<
     });
   }
 
-  private handled(event: TurnEvent<TAnnotation>): TranscriptApplyResult<TAnnotation, THostEvent> {
+  private handled(event: TurnEvent<TAnnotation>): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     return {
       handled: true,
       event,

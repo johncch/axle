@@ -6,7 +6,7 @@ import type { StaticItem, UiState } from "./store.js";
 import { partitionTurns, UiStore } from "./store.js";
 
 /**
- * Ink terminal-flow renderer: finished turns and host lines commit to
+ * Ink terminal-flow renderer: finished turns and runner lines commit to
  * scrollback via `<Static>`; a small live region shows the in-flight turn
  * (streaming text tail, current action) with a spinner. The chat input line
  * renders inside the app while a prompt is pending.
@@ -75,19 +75,19 @@ export class InkRenderer implements Renderer {
   }
 
   info(message: string): void {
-    this.host("info", message);
+    this.runnerLine("info", message);
   }
 
   success(message: string): void {
-    this.host("success", message);
+    this.runnerLine("success", message);
   }
 
   warn(message: string): void {
-    this.host("warn", message);
+    this.runnerLine("warn", message);
   }
 
   error(message: string): void {
-    this.host("error", message);
+    this.runnerLine("error", message);
   }
 
   updateUsage(usage: SessionUsage): void {
@@ -131,10 +131,10 @@ export class InkRenderer implements Renderer {
     this.instance.unmount();
   }
 
-  private host(level: "info" | "success" | "warn" | "error", text: string): void {
+  private runnerLine(level: "info" | "success" | "warn" | "error", text: string): void {
     this.store.update((state) => ({
       ...state,
-      staticItems: [...state.staticItems, { kind: "host", level, text }],
+      staticItems: [...state.staticItems, { kind: "runner", level, text }],
     }));
   }
 }

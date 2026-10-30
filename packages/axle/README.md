@@ -168,7 +168,7 @@ or tool batch; use cancellation when a hard stop is required.
 ### Instruct
 
 Instruct is a rich message. Use it when you need structured output, file
-attachments, bound template inputs, or host-supplied supporting context.
+attachments, bound template inputs, or consumer-supplied supporting context.
 
 ```typescript
 import * as z from "zod";
@@ -437,7 +437,7 @@ continuation also carries `after`: the inline turns it ran, in order (see
 
 `ok: false` carries one thing only: the provider's answer to a request that
 went out. Everything else throws an `AxleError` before the request is sent,
-so a host needs one `if (!result.ok)` and one `catch`:
+so a consumer needs one `if (!result.ok)` and one `catch`:
 
 ```typescript
 import { isAxleError } from "@fifthrevision/axle";
@@ -461,13 +461,13 @@ try {
     case "TOOL_FATAL_ERROR": // a tool ended the run; error.toolName
     case "INVALID_OPTIONS": // an option value is malformed
     case "PROVIDER_UNSUPPORTED": // this provider has no wire shape for the request; error.details.feature
-    case "FILE_UNREADABLE": // a host file could not be resolved; error.details.path
+    case "FILE_UNREADABLE": // a local file could not be resolved; error.details.path
     default: // a registry, skill, compaction, or decision code, or AXLE_ERROR
   }
 }
 ```
 
-The four kinds are cut on what the API did, because that fixes the host's
+The four kinds are cut on what the API did, because that fixes the consumer's
 next move:
 
 | Kind         | What the API did                                                                   | `status`                   | `usage`                       |
@@ -578,7 +578,7 @@ For one-shot structured calls without agent-managed history, pass the same
 
 ### Supporting Context and Files
 
-Use `addContext` for host-supplied information that should remain separate from
+Use `addContext` for consumer-supplied information that should remain separate from
 the user-authored prompt until final rendering. Typical examples include a
 sandbox file manifest, environment details, retrieved records, or application
 state:
@@ -673,7 +673,7 @@ may run concurrently across the calls of one batch.
 #### File results and deferred references
 
 Tools can return structured text/file parts. A file may be inline, a URL, or a
-host-owned deferred reference resolved only when a provider request needs it:
+consumer-owned deferred reference resolved only when a provider request needs it:
 
 ```typescript
 import type { ExecutableTool, FileResolver } from "@fifthrevision/axle";
@@ -701,7 +701,7 @@ const readFile: ExecutableTool<typeof readFileSchema> = {
 };
 
 const fileResolver: FileResolver = async ({ ref, accepted }) => {
-  // Authorize the opaque host ref and return one of the requested formats.
+  // Authorize the opaque consumer ref and return one of the requested formats.
   if (!accepted.includes("text")) {
     throw new Error(`Text resolution is not supported here: ${accepted.join(", ")}`);
   }
@@ -722,7 +722,7 @@ const agent = new Agent({
 Deferred refs remain in message history and session snapshots. Axle resolves
 them again on every provider conversion, which avoids persisting expiring
 signed URLs. Persisted `ref` values should therefore be JSON-serializable, and
-the host must restore a compatible `FileResolver` when resuming a session.
+the consumer must restore a compatible `FileResolver` when resuming a session.
 
 Anthropic, OpenAI Responses, and Gemini accept tool-result files within their
 normal image/PDF/text constraints. Chat Completions currently accepts text
@@ -789,7 +789,7 @@ const pdf: Skill = {
 ```
 
 A skill with neither `root` nor `files` is instructions only. Axle does not
-persist skills; a host that saves which skills an agent had stores their
+persist skills; a consumer that saves which skills an agent had stores their
 names and loads them again itself, the same way it does for tools.
 
 ### Subagent Tools
@@ -1077,7 +1077,7 @@ different hostname.
 On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,
 so every request in a conversation routes to the same upstream provider and
 keeps its prompt cache warm, and the requests are grouped under that id in the
-OpenRouter dashboard. A host-chosen `sessionId` is sent as-is; OpenRouter
+OpenRouter dashboard. A consumer-chosen `sessionId` is sent as-is; OpenRouter
 accepts up to 256 characters. Pass `sessionId` to `stream()` or `generate()`
 to get the same without an agent, and set `providerOptions.session_id` to
 send a different key.
@@ -1258,7 +1258,7 @@ The constructor drops a pending turn whose id is already in `turns`, since
 that turn opened before the mirror's cursor and its `turn:user` will not be
 replayed.
 
-Hosts that transport Axle events over SSE, WebSockets, or another mixed event
+Consumers that transport Axle events over SSE, WebSockets, or another mixed event
 stream can use `Transcript` instead of reimplementing this reducer:
 
 ```typescript
@@ -1290,7 +1290,7 @@ providers, MCP, tools, or other server-side runtime code.
 `transcript.turns` is a readonly array and serves as both the read and
 persistence surface. The constructor accepts a readonly array and makes a
 shallow copy, so later changes to the supplied array do not alter the
-transcript. The transcript accepts open event objects. Unknown host events, such as
+transcript. The transcript accepts open event objects. Unknown consumer events, such as
 `run:terminal` or `session:expired`, return `handled: false` and leave the
 state unchanged. Annotations are embedded on their turn or part targets. The
 transcript is not idempotent; callers should deduplicate replayed transport
@@ -1298,7 +1298,7 @@ events before applying them.
 
 #### Turn metadata
 
-User messages can carry stable host-owned metadata for rendering. Metadata is
+User messages can carry stable consumer-owned metadata for rendering. Metadata is
 stored in history, copied onto the corresponding user `Turn`, and ignored by
 providers.
 
@@ -1501,7 +1501,7 @@ current operation settles.
 
 Compaction is destructive at the message layer: the returned messages become
 the entire active conversation, and the old messages cease to exist the
-moment the part settles `complete` (settle ⇔ applied, atomically). Hosts
+moment the part settles `complete` (settle ⇔ applied, atomically). Consumers
 wanting the pre-compaction messages (undo, audit) copy them in their own
 wrapper before returning. Compaction runs on the agent's work queue, so it
 never interleaves with in-flight Agent work. `agent.context()` returns the
@@ -1607,7 +1607,7 @@ const viaOpenRouter = typesafe(process.env.OPENROUTER_API_KEY, {
 ```
 
 `typesafe()` reaches TypeSafe's Jev models. `baseUrl` sends the same request
-to any host that serves TypeSafe's System One path; with OpenRouter, use an
+to any endpoint that serves TypeSafe's System One path; with OpenRouter, use an
 OpenRouter key and either `jev-latest` or `~typesafe/jev-latest` as the
 model. It takes the same client options as the other factories, with one
 different default: `timeoutMs` is ten seconds per attempt, since a decision
@@ -1622,7 +1622,7 @@ The normative design lives in
 
 ### Model Catalog
 
-Axle ships no table of models. A host that needs a model's context window,
+Axle ships no table of models. A consumer that needs a model's context window,
 output ceiling, capabilities, or price can look them up in the
 [models.dev](https://models.dev) catalog through `ModelCatalog`, which keeps
 a slimmed copy at a path you choose, or in memory:
@@ -1684,7 +1684,7 @@ other is retried next time. `hosts: ["anthropic", "openrouter"]` keeps only thos
 
 Axle stops at the agent runtime boundary. If you need long-lived sessions,
 SSE transport, resumable cursors, or React client hooks, build those concerns
-in your host application on top of `Agent`, `agent.on(...)`, and the streamed
+in your application on top of `Agent`, `agent.on(...)`, and the streamed
 turn events that Axle emits.
 
 `agent.messages` exposes the active, model-facing conversation as a copy —
@@ -1756,7 +1756,7 @@ warning, the remaining callbacks still run, and the handle settles with its
 real result. Handle your own save failures inside the callback. Like `on`,
 it returns a function that unregisters it.
 
-A host that takes the outcome here does not have to read the handle. An
+A consumer that takes the outcome here does not have to read the handle. An
 unread `final` that rejects raises no unhandled rejection, so
 `agent.send(text)` with the handle dropped is safe. `final` still rejects
 for code that awaits or chains from it.

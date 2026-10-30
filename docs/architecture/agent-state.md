@@ -18,13 +18,13 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    its turns. Lose those turns, lose the transcript — the Agent cannot recreate
    it. Internally the Agent keeps only a turn-scoped fold to build
    `result.turn`, discarded when the operation settles.
-3. **The event stream is the only channel between engine and transcript.** Hosts
+3. **The event stream is the only channel between engine and transcript.** Consumers
    attach with `agent.on(...)`; there is no injected store, no engine-side
-   read-back, no `session:restore` event. Restore means the host re-seeds
+   read-back, no `session:restore` event. Restore means the consumer re-seeds
    its own transcript (`new Transcript(savedTurns)`) from its own copy,
    persisted next to the `AgentSession` in one atomic write.
 4. **Historical messages are disposable.** Compaction replaces `messages`
-   and the old ones cease to exist. Lookback is served by the transcript; hosts
+   and the old ones cease to exist. Lookback is served by the transcript; consumers
    wanting pre-compaction messages (undo/fork, exact-request audit) copy
    them themselves before returning from their compactor.
 5. **A user message commits together with its turn event.** Once `turn:user`
@@ -35,14 +35,14 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    its `Instruct` and materializes the `AxleUserMessage` and its user turn
    synchronously before scheduling; execution emits that same turn as
    `turn:user`, then the same `Instruct` parses the final assistant response.
-6. **Usage accounting is host-domain.** Every `turn:end` carries
-   `turn.usage`; hosts accumulate totals in their own storage. The Agent
+6. **Usage accounting is consumer-domain.** Every `turn:end` carries
+   `turn.usage`; consumers accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none. `usage.breakdown`
    holds one `UsageEntry` per provider request, in request order, never a
-   sum per model: a host prices each row at the tier its own `in` selects
+   sum per model: a consumer prices each row at the tier its own `in` selects
    and groups rows when it wants per-model totals. An Agent with a `name`
    stamps it on the rows of its own requests as `agent`, and leaves the
-   rows a subagent tool reports under that subagent's name, so a host can
+   rows a subagent tool reports under that subagent's name, so a consumer can
    also group by who spent what.
 7. **Pending is live state, kept apart from turns, and shaped like them.**
    An operation — a send or a manual compaction — is announced with
@@ -57,63 +57,63 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    means the operation ended before opening its turn and committed nothing:
    `cancelled` for a handle cancel, `clear()`, or an aborted signal; `error`
    for a failed setup. `turns` stays append-only. Pending turns are never
-   persisted: hosts save `turns` only and `AgentSession` carries no queue,
+   persisted: consumers save `turns` only and `AgentSession` carries no queue,
    so a transcript restored from storage has none. The constructor takes
    `pending` only to mirror a live transcript, and discards any entry whose
    id is already in `turns`. `snapshot()` opens no turn and is neither
    queued nor pending (invariant 10).
 8. **The Agent hands over the session and the outcome after every turn
-   that commits, and waits for the host.** `agent.onSettled(...)` fires
+   that commits, and waits for the consumer.** `agent.onSettled(...)` fires
    after each turn an operation commits, however it ended, and once for an
    operation that ran without opening a turn: after the `turn:end`, and
    before the handle settles or the next turn opens, with the value
    `snapshot()` returns and a `SettledOperation` carrying that turn's
    outcome (`fulfilled` with the result, `rejected` with the reason) and
    its `id`. For an operation's own turn the id is the one its
-   `pending:queued` turn carried, so a host follows one operation from
+   `pending:queued` turn carried, so a consumer follows one operation from
    queued to settled without counting; an inline turn (invariant 11)
-   settles under its own id, which no `pending:queued` announced, and a host
+   settles under its own id, which no `pending:queued` announced, and a consumer
    that keys rows by id ignores it by construction. An operation without a
    continuation therefore fires exactly once. An operation cancelled while
    still queued never ran and does not fire. Callbacks run together and are
    awaited: the handle does not settle, the continuation does not resume,
    and the next queued operation does not start until every callback has
-   settled, so a host that reads its `Transcript.turns` inside the callback
+   settled, so a consumer that reads its `Transcript.turns` inside the callback
    holds turns and messages that match exactly, and nothing from the next
    turn is observable before the callback resolves. The callback receives
-   no signal — the work inside it is the host's to cancel — and the turn is
+   no signal — the work inside it is the consumer's to cancel — and the turn is
    already done while callbacks run: `stop()` returns `false` in that
    window, and so does `cancel()` unless a continuation remains to run
    (invariant 11). The callback is its own channel: the session
-   never rides the turn event stream, which hosts forward to clients. A
+   never rides the turn event stream, which consumers forward to clients. A
    callback reports an outcome and cannot change it: one that throws or
    rejects is caught, recorded on the trace, and does not stop the other
    callbacks or alter the handle's result. `snapshot()` remains the pull
    form and waits for the Agent to go idle. A handle nobody reads is not an
    error: the scheduler marks every `final` as handled, so a rejection the
-   host took from the hook or from `pending:dropped` raises no unhandled
+   consumer took from the hook or from `pending:dropped` raises no unhandled
    rejection. `final` still rejects for whoever awaits or chains from it.
 9. **Events carry the transcript; hooks carry lifecycle.** Turn events
    (`agent.on`) are synchronous fan-out and each one changes what a
-   `Transcript` holds: hosts forward them to clients, and nothing listening
+   `Transcript` holds: consumers forward them to clients, and nothing listening
    can hold the engine. Lifecycle goes through hooks, and whether a hook is
    awaited is a property of that hook. `onSettled` is awaited: it is the
-   host's save channel at each rest point, able to hold the queue,
+   consumer's save channel at each rest point, able to hold the queue,
    carrying what must not ride the event stream. Work that has to finish
    before the next turn starts goes there. A continuation (invariant 11) is
-   the host's steering channel, attached to one send: it holds the queue
+   the consumer's steering channel, attached to one send: it holds the queue
    too, and it is where turns are run and per-operation work is done.
    `onIdle` is not awaited: it reports that the Agent went from busy to
    idle. The scheduler owns the rest point as a task state (`queued`,
    `running`, `settling`, `continuing`, `settled`); the Agent adds no flag
    of its own. The Agent's tool and skill registries
-   are live state the host changes at any time; the Agent hands their
+   are live state the consumer changes at any time; the Agent hands their
    current values to `stream()` when a turn opens and at every tool-batch
    boundary, and `stream()` holds no registry ([skills.md](./skills.md)).
 10. **The Agent says when it goes idle.** `agent.onIdle(...)` fires each
     time the scheduler finishes a task and nothing is queued behind it: after
     that task's `onSettled` callbacks have settled and its handle has been
-    settled. Only the scheduler knows this moment, so the host is told
+    settled. Only the scheduler knows this moment, so the consumer is told
     rather than left to work it out from settles and drops. A `clear()` that
     empties the queue while the last operation settles is covered, because
     the scheduler looks at the queue only afterwards. Work scheduled during
@@ -122,7 +122,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     free, so a `send()` from inside it starts at once. A callback that
     throws is caught and recorded on the trace. Only operations make the Agent
     busy, so every firing follows at least one `pending:queued` and every
-    `pending:queued` is followed by a firing: a host that opens something
+    `pending:queued` is followed by a firing: a consumer that opens something
     opens it there, not before the call, since `compact()` with no
     compaction configured schedules nothing. `snapshot()` is not queued
     work. It resolves at once when the Agent is idle and otherwise at the
@@ -182,29 +182,29 @@ neither-here-nor-there: the Agent didn't enforce coherence between them,
 carried turns only as a convenience, yet paid unbounded growth and
 serialization weight. The fix was a deletion: turns left the Agent entirely,
 and the unused session-annotation target was removed rather than moved into
-the transcript. Session-wide application state belongs to the host. Consumers
+the transcript. Session-wide application state belongs to the consumer. Consumers
 that already ran their own folds paid nothing; the engine stopped holding
 state it didn't own.
 
 Consequences that fall out of the split: a DB-backed transcript is just a
 subscriber with storage (no shared axle interface until a second
 storage-backed implementation wants one); compaction events are natural
-chapter boundaries for hosts that rotate storage; and there is deliberately
-no retrieval/paging API on the Agent — deep-history readers are host-storage
+chapter boundaries for consumers that rotate storage; and there is deliberately
+no retrieval/paging API on the Agent — deep-history readers are consumer-storage
 readers, exactly as they already are for messages.
 
 Semantic memory follows the same ownership boundary. The Agent has no memory
 service or automatic recall/record lifecycle. Model-directed retrieval and
-writing are ordinary tools; deterministic host-directed context is supplied
+writing are ordinary tools; deterministic consumer-directed context is supplied
 through `Instruct.addContext()`. Complete transcript persistence consumes the
 turn event stream instead of masquerading as semantic memory.
 
 ## Pending and settle (2026-10-08)
 
-Hosts could not render work the Agent had accepted but not started. A send
+Consumers could not render work the Agent had accepted but not started. A send
 made during an active turn was a closure in the scheduler until `turn:user`;
 a queued manual compaction was the same; `clear()` and a cancelled handle
-rejected a promise and emitted nothing. Hosts kept their own lists and could
+rejected a promise and emitted nothing. Consumers kept their own lists and could
 not keep them correct, because no event tied a `turn:user` to its send.
 
 The queue belongs to the Agent, so the Agent announces it. The fold belongs
@@ -224,8 +224,8 @@ preview turns the next day, see below.)
 Saving had the mirror-image problem. `snapshot()` is at rest because it
 waits for the Agent to go idle, which means that with five sends queued a
 save requested after the first one resolves after the fifth. `onSettled` hands the session over at each
-rest point instead of making the host wait in line for it, and it fires at
-the one moment the host's transcript and the Agent's messages are known to
+rest point instead of making the consumer wait in line for it, and it fires at
+the one moment the consumer's transcript and the Agent's messages are known to
 agree.
 
 Accepted consequences:
@@ -235,7 +235,7 @@ Accepted consequences:
   because it was cleared, and connected clients received the drops.
 - **A crash, or a save taken while work is queued, loses the queued
   operations.** After restore the pending rows are gone and nothing recorded
-  them — the same loss a mid-stream turn already had. A host that needs
+  them — the same loss a mid-stream turn already had. A consumer that needs
   queued input to survive a restart keeps its own inbox, written on
   `pending:queued`.
 - **A failed or cancelled manual compaction still fires `onSettled`** with
@@ -251,9 +251,9 @@ turn, a compaction carried only an id. The CLI rendered them through a
 live server transcript could not seed them, since the constructor took only
 `turns` and the doc read that as "pending is never constructed".
 
-The `Turn` type was designed so a host renders a transcript with one
+The `Turn` type was designed so a consumer renders a transcript with one
 component in one loop. A pending entry that is not turn-shaped breaks that
-for the one list the host most wants to draw next to the turns. So a
+for the one list the consumer most wants to draw next to the turns. So a
 pending entry is now a `Turn` whose `status` is `"pending"`, built by the
 Agent at the moment it accepts the operation: a send's preview is the user
 turn it will commit (`send()` already built it); a compaction's preview is
@@ -270,7 +270,7 @@ was considered and dropped: nothing else wants a constructor option, and
 `save(session, transcript.state)` the obvious call and that call would
 persist pending, which a restore would then show as queued rows no queue
 backs; `AgentSession` excludes the queue for the same reason. The
-persistence rule does not move: hosts save `turns` only, and nothing
+persistence rule does not move: consumers save `turns` only, and nothing
 restores pending from storage. Seeding discards an entry whose id is already in `turns`,
 because the fold resolves an entry only when its turn opens or it is
 dropped, and a turn that opened before the client's stream cursor is never
@@ -284,18 +284,18 @@ Accepted consequences:
 - **The preview and the committed user turn are no longer the same
   object**: `send()` emits `{ ...userTurn, status: "pending" }` and commits
   `userTurn` as `complete`. Same id, same parts, same timing.
-- **A host seeding a mirror captures `turns`, `pending` and its stream
+- **A consumer seeding a mirror captures `turns`, `pending` and its stream
   cursor in one synchronous read** of the server's transcript. The
   constructor's discard covers ids already in `turns`, not an entry whose
   turn opens between the read and the cursor.
 
 ## Awaited settle and the outcome (2026-10-09)
 
-The first host outside the CLI to adopt `onSettled` snapshots a sandbox
+The first consumer outside the CLI to adopt `onSettled` snapshots a sandbox
 between turns. With a synchronous callback the scheduler started the next
 queued operation the moment the callback returned, so the next turn's tool
 calls overlapped the snapshot; the CLI had lived with the same gap by
-chaining its saves on a promise of its own. The same host emits a
+chaining its saves on a promise of its own. The same consumer emits a
 "turn finished" signal that needs the operation's result, which only the
 handle carried, and the handle resolves on a microtask the next turn's
 `turn:user` could in principle beat.
@@ -310,15 +310,15 @@ says so, and the outcome reaches the hook without a second shape.
 
 Firing for every operation that ran, rather than only those that opened a
 turn, fell out of the same move. The old rule existed because a drop had
-nothing to save; once the hook carries the outcome it is the host's
+nothing to save; once the hook carries the outcome it is the consumer's
 lifecycle channel, and a lifecycle channel that goes silent exactly when
 setup fails is a worse one. The scheduler knows whether a task ran; the
 Agent would have needed a flag to know whether it committed.
 
 Accepted consequences:
 
-- **A slow callback slows the queue.** That is the point. A host that does
-  not want to hold the queue returns nothing from its callback; a host that
+- **A slow callback slows the queue.** That is the point. A consumer that does
+  not want to hold the queue returns nothing from its callback; a consumer that
   starts async work and does not return the promise has fire-and-forget,
   as the CLI's chained saves do today.
 - **Awaiting `snapshot()`, `compact()` or another send's `final` inside
@@ -327,7 +327,7 @@ Accepted consequences:
   idle for `snapshot()` until it returns. The session the hook passes is
   the one `snapshot()` would return.
 - **A send that failed before its turn opened fires** with a rejected
-  result and an unchanged session. A save-on-settle host writes one
+  result and an unchanged session. A save-on-settle consumer writes one
   redundant save, the trade already accepted for a failed manual
   compaction. A send with an already-aborted signal therefore fires when
   the Agent was idle (it activated, ran, and threw) and not when it was
@@ -340,10 +340,10 @@ Accepted consequences:
 ## Unread handles (2026-10-09)
 
 The handle was designed to be awaited: `try { await agent.send(x).final }
-catch { … }`. A host that returns before the send finishes and takes the
+catch { … }`. A consumer that returns before the send finishes and takes the
 outcome from `onSettled` leaves `final` with no reader, and a user stop
 then rejected a promise nobody held. Node reports that as an unhandled
-rejection and exits by default, so the host wrote
+rejection and exits by default, so the consumer wrote
 `agent.send(x).final.catch(() => {})` at every call site to stay up.
 
 The scheduler now attaches that no-op itself when it creates the promise.
@@ -355,19 +355,19 @@ reason.
 
 Accepted consequence:
 
-- **A host that drops the handle and registers no hook learns of a
+- **A consumer that drops the handle and registers no hook learns of a
   rejection only from the trace and the turn events.** It used to exit.
-  The same host already heard nothing when the model call failed, since
-  that resolves with `ok: false`. Whether to exit is the host's decision.
+  The same consumer already heard nothing when the model call failed, since
+  that resolves with `ok: false`. Whether to exit is the consumer's decision.
 
 ## Continuations (2026-10-14)
 
-A host that judges an answer and feeds a correction back needs
+A consumer that judges an answer and feeds a correction back needs
 `A → judge → correction → B`, where B is a user message that may have been
-queued while the judge ran. The host had no way to put the correction
+queued while the judge ran. The consumer had no way to put the correction
 ahead of B: `agent.send()` queues at the back, and awaiting it from inside
 a tool or `onSettled` deadlocks, since the current operation holds the
-queue the new one waits for. The same host wanted one place for the whole
+queue the new one waits for. The same consumer wanted one place for the whole
 cycle around a message, and kept a queue of its own in front of the
 Agent's to get it, two queues to keep consistent.
 
@@ -395,7 +395,7 @@ return.
 
 The handle keeps its type and the result records what happened. The Agent
 knows what was sent and what came back, in order; it does not know which
-attempt won, and the host's judge does. So `AgentResult` and
+attempt won, and the consumer's judge does. So `AgentResult` and
 `AgentErrorResult` gain `after`, the inline turns as a list, each with its
 own `ok`, and the top-level fields stay the message that was sent and its
 reply. The field is present only when the send carried a continuation:
@@ -407,7 +407,7 @@ when it called `ctx.send()`.
 
 The continuation receives a result, so it runs when the turn resolved,
 `ok: true` or `ok: false`: a model error or parse failure is exactly the
-case where a host wants to fetch more data and `ctx.send()` it. A rejected
+case where a consumer wants to fetch more data and `ctx.send()` it. A rejected
 turn has no result to hand over. A cancel is the user saying stop; a fatal
 tool error or a setup failure is an exception, and exceptions propagate to
 the handle. All three skip the continuation, and a cancel during one
@@ -423,7 +423,7 @@ Accepted consequences:
 - **The handle's `response` is the first answer, not the last.** A caller
   wanting the corrected answer reads the last entry of `after`.
 - **An inline turn's settle carries an id no `pending:queued` announced.**
-  Id-keyed hosts ignore it. The settle carries no parent id: every job that
+  Id-keyed consumers ignore it. The settle carries no parent id: every job that
   would tell inline turns apart lives in the continuation.
 - **A crash mid-continuation loses the program and keeps the committed
   turns.** The same loss a mid-stream turn already has. Unawaited work
@@ -431,22 +431,22 @@ Accepted consequences:
 - **`stop()` has no gentle option while the judge runs.** No turn is in
   flight, so it returns `false`. `ctx.pending` is how a loop notices that
   the user already typed a correction.
-- **A continuation must bound itself.** Attempt limits are the host's.
+- **A continuation must bound itself.** Attempt limits are the consumer's.
 
 ## Rejected alternatives
 
 - **A serializable `AgentDefinition` in core** (2026-05-24, removed
   2026-10-29, AXL-88): the 0.20 core/CLI split gave core a portable
-  recipe type — provider, tool, MCP and skill _references_ that a host
+  recipe type — provider, tool, MCP and skill _references_ that a consumer
   resolver callback turned into live objects in `createAgentConfig`. It
   mirrored `AgentConfig` field for field, so every executable field cost
   three edits plus a "did you resolve what you named" check; its only
   consumer, the CLI, resolved everything from its own configuration and
   returned `droppedTools` through a closure because the callback had no
   channel for it; and three of its four throws policed a contract the
-  host itself wrote. Invariant 1 already says what the Agent persists:
-  `AgentSession`, nothing else. What rebuilds the config is the host's,
-  in the host's shape — the CLI stores its recipe's keys as written
+  consumer itself wrote. Invariant 1 already says what the Agent persists:
+  `AgentSession`, nothing else. What rebuilds the config is the consumer's,
+  in the consumer's shape — the CLI stores its recipe's keys as written
   ([cli.md](./cli.md) invariant 6), Sunnyday rebuilds tools from code.
 - **A queued `agent.run(program)` that reserves the slot** (2026-08-25,
   rejected 2026-10-09): the right inside, inline sends in a held slot, in
@@ -456,7 +456,7 @@ Accepted consequences:
   collided with `run` in terminology. Attaching the program to its send
   removes all three.
 - **Front-of-queue send as the steering primitive** (2026-10-09): solves
-  the ordering, leaves the judge loop on the host as state across settle
+  the ordering, leaves the judge loop on the consumer as state across settle
   firings, and blurs the user's queue with system interjections. Front
   insertion stays a user-side queue feature.
 - **Inline sends from inside `onSettled`** (2026-10-09): the hook already
@@ -473,7 +473,7 @@ Accepted consequences:
   continuation's own return already mark the operation's end.
 - **The handle resolves with the continuation's return value**
   (2026-10-14): subsumes any shape, but makes the handle's type depend on
-  host code, needing extra overloads and a type parameter, and a
+  consumer code, needing extra overloads and a type parameter, and a
   continuation that returns nothing yields a void handle. The Agent records
   facts, not meaning.
 - **The handle resolves with the last turn's result** (2026-10-14): keeps
@@ -489,7 +489,7 @@ Accepted consequences:
   front of every judge loop. Bookkeeping still has the turn's `onSettled`
   and the rejected handle.
 - **A parent operation id on an inline turn's `SettledOperation`, as a
-  field or as a third callback argument** (2026-10-14): hosts key rows by
+  field or as a third callback argument** (2026-10-14): consumers key rows by
   id, so an unannounced id is a no-op, and the jobs that would distinguish
   inline turns live in the continuation. A field with no reader. Naming it
   `after` was rejected on its own: the word already means the inline-turn
@@ -507,21 +507,21 @@ Accepted consequences:
   registered** (2026-10-09): the same send would or would not take the
   process down depending on whether a callback was registered at that
   moment, and a send withdrawn from the queue reaches no callback at all.
-- **Leaving the catch to the host** (2026-10-09): the status quo. Using the
+- **Leaving the catch to the consumer** (2026-10-09): the status quo. Using the
   hook as documented then required a second line whose absence shows up
   only when a user cancels.
-- **Creating `final` on first read** (2026-10-09): a host that never reads
+- **Creating `final` on first read** (2026-10-09): a consumer that never reads
   it has nothing to reject. Same effect as the no-op, with a getter that
   has a side effect.
 - **Resolving a cancelled send with `ok: false`** (2026-10-09): not
   rejected, left open. On its own it does not help, because a fatal tool
   error and a setup failure reject too; the question is which outcomes
-  reject at all, and it is a breaking change for every host that catches
+  reject at all, and it is a breaking change for every consumer that catches
   the abort error.
 - **A `{ kind, turn }` pending entry** (2026-10-09): every entry would
   carry a turn, so one loop could render both lists, but `kind` restated
   what the turn already says (a user turn is a send; an agent turn with a
-  compaction part is a compaction) and kept a second shape for hosts to
+  compaction part is a compaction) and kept a second shape for consumers to
   learn. The compaction preview needed one part to be self-describing, and
   `pending` on a compaction part is the status action parts already have.
 - **Marking pending on the entry rather than on the turn** (2026-10-09):
@@ -533,22 +533,22 @@ Accepted consequences:
   false, since a `pending` turn lives only in `transcript.pending`.
 - **An `onStarting` hook** (2026-10-09): an operation has two rest points,
   before start and after settle, and they are the same instant — the end of
-  N's settle is the moment before N+1 starts. The host can see what is next
+  N's settle is the moment before N+1 starts. The consumer can see what is next
   in `transcript.pending[0]`, and when the Agent is idle it preps before
   calling `send()`. A sibling hook with identical semantics would exist for
   no consumer.
   Amended the same day: `pending[0]` is what is next, not what started. It
   can still be dropped between the end of the settle and the start, so a
-  host that opens something on it can be left holding it open. The start is
+  consumer that opens something on it can be left holding it open. The start is
   the turn opening (`turn:user` for a send, `turn:start` for a
-  compaction), and the first host to hit this wanted the end of the busy
+  compaction), and the first consumer to hit this wanted the end of the busy
   period rather than the start of each operation, which is `onIdle`.
-- **Leaving the id off `SettledOperation`** (2026-10-09): a host would
+- **Leaving the id off `SettledOperation`** (2026-10-09): a consumer would
   match settles to queued rows by position. A send that fails in setup
-  emits `pending:dropped` and also settles, so a host that removes the row
+  emits `pending:dropped` and also settles, so a consumer that removes the row
   on the drop then credits the settle to the next row.
 - **Putting the id on the handle instead** (2026-10-09): `compact()`
-  returns a bare promise, and the hook exists so a host does not need the
+  returns a bare promise, and the hook exists so a consumer does not need the
   handle.
 - **An idle turn event** (2026-10-09): every turn event changes what a
   `Transcript` holds, and going idle changes nothing there. It is lifecycle,
@@ -559,13 +559,13 @@ Accepted consequences:
   must finish first already has `onSettled`.
 - **`snapshot()` as a queued task** (2026-10-09): how it was built. It
   made the Agent busy, so a snapshot taken while idle fired `onIdle` with
-  no operation before it, and the first host's "clear conversation" action
+  no operation before it, and the first consumer's "clear conversation" action
   did exactly that. A snapshot is not something the user asked the Agent
   to do; it only needs the Agent at rest, which is what idle means. Waiting
   for idle changes one case: `send(a); snapshot(); send(b)` now includes
   `b`.
 - **Firing `onIdle` only after a send or a compaction** (2026-10-09): the
-  other way to spare hosts that firing. The scheduler would have to
+  other way to spare consumers that firing. The scheduler would have to
   remember what kind of task ran since the last firing, a flag beside its
   task state. With `snapshot()` out of the queue, "a task finished and
   nothing is queued" needs no memory.
@@ -573,8 +573,8 @@ Accepted consequences:
   a waiting snapshot has little left to do, but mid-turn the messages can
   hold a user message with no reply, and `agent.messages` already returns
   the current state. Changing what the same call returns would also break
-  hosts with no error to show for it.
-- **Leaving idle to the host** (2026-10-09): a host can derive it from
+  consumers with no error to show for it.
+- **Leaving idle to the consumer** (2026-10-09): a consumer can derive it from
   `onSettled` with an empty queue plus `pending:dropped`, but a drop during
   the last settle and a drop just after it need opposite handling, and
   telling them apart means mirroring the scheduler's task state.
@@ -589,13 +589,13 @@ Accepted consequences:
   whether the turn opened. See above for why the rule itself was wrong once
   the hook carries the outcome.
 - **A second outcome shape** (2026-10-09): status plus the agent turn, say.
-  Hosts need the error object and the abort reason to tell a timeout from a
+  Consumers need the error object and the abort reason to tell a timeout from a
   user stop; the handle already settles with those, and `PromiseSettledResult`
   is the standard name for "what a promise settled with".
 - **Awaiting callbacks in registration order** (2026-10-09): each callback
   is independent and none sees another's result; running them together is
   the simpler rule and the faster one.
-- **Host-side pending lists** (2026-10-08): the status quo. A host mirrors
+- **Consumer-side pending lists** (2026-10-08): the status quo. A consumer mirrors
   state the Agent owns, with no event linking a `turn:user` to its send and
   no signal from `clear()`.
 - **Pending entries inside `turns` with a `queued` status** (2026-10-08):
@@ -608,24 +608,24 @@ Accepted consequences:
   abort signal, and the handle someone awaits do not survive serialization.
   An Agent that re-ran them on construction would start provider calls with
   no handle; one that held them would keep an entry pending forever when the
-  host never acted.
+  consumer never acted.
 - **`Transcript.snapshot()` that filters pending** (2026-10-08): redundant
-  once pending lives outside `turns`, and a second way to save that hosts
+  once pending lives outside `turns`, and a second way to save that consumers
   could confuse with the first.
-- **Putting the session on the turn event stream** (2026-10-08): hosts
+- **Putting the session on the turn event stream** (2026-10-08): consumers
   forward turn events to clients; the model-facing conversation would ship
   to the browser on every turn.
 - **A callback after every event** (2026-10-08): messages change only when
   an operation settles; mid-turn they would be identical to the last firing
   or hold a user message with no reply.
 - **Letting `snapshot()` jump the queue** (2026-10-08): changes what it
-  means for every host — `send(); send(); snapshot()` is expected to include
+  means for every consumer — `send(); send(); snapshot()` is expected to include
   both sends. Waiting for idle (2026-10-09) keeps that.
 - **Letting an `onSettled` throw propagate, or rethrowing it outside the
   operation** (2026-10-08): propagating replaces the result of a send whose
   messages are already committed, so a caller that retries sends the message
   twice. Rethrowing as an uncaught exception takes the process down with
-  work still queued. A host handles its own save failures in its callback.
+  work still queued. A consumer handles its own save failures in its callback.
 - **`onSnapshot` as the name** (2026-10-08): the pair with `snapshot()`
   invites reading it as "fires when `snapshot()` is called". The callback is
   named for the moment, `onSettled`.
@@ -633,25 +633,25 @@ Accepted consequences:
 - **Keeping `History.turns` as an in-RAM convenience mirror** (2026-08-12):
   a mirror that is neither serialized nor authoritative recreates the
   neither-here-nor-there problem at smaller scale.
-- **`AgentSession.version`** (2026-08-12): duplicates host-side versioning
-  (hosts already version their stored blobs); an incompatible shape change
+- **`AgentSession.version`** (2026-08-12): duplicates consumer-side versioning
+  (consumers already version their stored blobs); an incompatible shape change
   is an ordinary breaking release. Unknown-key tolerance replaces it.
 - **`archive` (append-only message log in the Agent)** (2026-08-12): no
   readers existed; the transcript is a strict superset for lookback; retention is
-  a host choice at the compaction boundary.
+  a consumer choice at the compaction boundary.
 - **Injected transcript (`new Agent(new Transcript(), …)`)** (2026-08-12):
   the engine only ever writes to it — that is a subscriber with extra
   ceremony, and it falsely implies the Agent owns the transcript's lifecycle.
   The event stream is the channel designed for this. Revisit only if turn
   commit must await durable writes (WAL semantics), which no consumer wants.
 - **`agent.sessionUsage` meter** (2026-08-12): usage fails the resumable-state
-  test (instance-lifetime, resets on restore) and hosts already receive
+  test (instance-lifetime, resets on restore) and consumers already receive
   per-turn usage on `turn:end`.
 - **Turn retrieval/paging API on the Agent** (2026-08-11): deep-history
-  readers are host-storage readers; messages already work this way.
+  readers are consumer-storage readers; messages already work this way.
 - **Injected semantic-memory lifecycle** (2026-08-12): automatic recall and
   record mixed prompt augmentation, persistence, tool registration, and
-  failure policy into the Agent. Tools and host-supplied `Instruct` context
+  failure policy into the Agent. Tools and consumer-supplied `Instruct` context
   cover the actual behaviors without a memory-specific runtime contract.
 - **`CompiledUserTurn` intermediate** (2026-08-12): paired an already-rendered
   message with a response parser, but split knowledge of rendering and parsing

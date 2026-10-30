@@ -49,9 +49,9 @@ side is in [provider-tools.md](./provider-tools.md).
    what it reported before the abort. `executeStepTools` then merges the
    loop's accumulated usage on top, as [errors.md](./errors.md) records for
    a rejected handle.
-7. **`onToolCall` and `execute` may run concurrently.** A host callback is
+7. **`onToolCall` and `execute` may run concurrently.** A consumer callback is
    called once per call with no ordering between calls in a batch. State a
-   host shares between calls is the host's to guard.
+   consumer shares between calls is the consumer's to guard.
 8. **Events and spans are per call, correlated by id.** `tool:exec-start`
    fires for every call before any completes; `tool:exec-delta`,
    `tool:exec-complete` and `tool:exec-error` arrive in finish order and

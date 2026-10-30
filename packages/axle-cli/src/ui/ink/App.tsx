@@ -159,7 +159,7 @@ export const HOST_MARKS = {
   error: { glyph: "\u2716", color: "red" },
 } as const;
 
-export function HostLine({ level, text }: { level: keyof typeof HOST_MARKS; text: string }) {
+export function RunnerLine({ level, text }: { level: keyof typeof HOST_MARKS; text: string }) {
   const mark = HOST_MARKS[level];
   return (
     <Text>
@@ -169,8 +169,8 @@ export function HostLine({ level, text }: { level: keyof typeof HOST_MARKS; text
 }
 
 function StaticItemView({ item }: { item: StaticItem }) {
-  if (item.kind === "host") {
-    return <HostLine level={item.level} text={item.text} />;
+  if (item.kind === "runner") {
+    return <RunnerLine level={item.level} text={item.text} />;
   }
   return <TurnView turn={item.turn} />;
 }

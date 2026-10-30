@@ -19,7 +19,7 @@ import type { OutputSchema, ParsedSchema } from "../parse.js";
  * Runtime configuration for an `Agent`.
  *
  * This contains executable objects and process-local services. It is not meant
- * to be serialized; the host rebuilds it from its own configuration and
+ * to be serialized; the consumer rebuilds it from its own configuration and
  * passes an `AgentSession` alongside to resume a conversation.
  */
 export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
@@ -73,9 +73,9 @@ export type MaybePromise<T> = T | Promise<T>;
  *
  * It intentionally does not include executable runtime objects (providers,
  * tools, MCP clients, file resolvers, tracers) or renderable turn
- * state — transcripts are folds of the event stream owned by the host; persist
+ * state — transcripts are folds of the event stream owned by the consumer; persist
  * your `Transcript.turns` alongside this if you want one back. Recreate
- * runtime objects from host-owned configuration, then construct a new agent
+ * runtime objects from consumer-owned configuration, then construct a new agent
  * with the session: `new Agent(config, session)`. Unknown keys in stored
  * sessions from older versions are ignored.
  */
@@ -248,7 +248,7 @@ export interface CompactionConfig {
 export interface SendMessageOptions<T = any> extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
   /**
-   * Stable host-owned metadata attached to the user message and copied to the
+   * Stable consumer-owned metadata attached to the user message and copied to the
    * renderable user turn. Providers ignore this data.
    */
   metadata?: MessageMetadata;

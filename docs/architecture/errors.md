@@ -24,7 +24,7 @@ with the agent's queue and continuations is in
    (`refusal`), or it completed and the model's answer is outside the
    Instruct's shape (`parse`). Nothing else is a result.
 2. **Everything that is not the provider's answer rejects.** A mistake in
-   the caller's setup or in this message, a host file that could not be
+   the caller's setup or in this message, a local file that could not be
    read, a tool that chose to end the run, a cancel, and a broken Axle
    invariant all throw an `AxleError`. The test is one question: could
    Axle have put this on the wire? If not, it throws. A rejection commits
@@ -42,8 +42,8 @@ with the agent's queue and continuations is in
    mistake never takes both channels on one provider.
 5. **Codes are identity; classes are payload.** Every thrown error is an
    `AxleError` with a `code` from `AxleErrorCode`. A subclass exists only
-   when the error carries data the host needs to act (`AxleAbortError`,
-   `AxleToolFatalError`, `AxleInstructVariableError`). A host matches on
+   when the error carries data the consumer needs to act (`AxleAbortError`,
+   `AxleToolFatalError`, `AxleInstructVariableError`). A consumer matches on
    `code`, or on `instanceof` for a payload class, never on message text.
 6. **Tool failures are the model's to handle.** A tool that throws, is not
    found, is called with arguments that do not parse, or reports failure
@@ -72,7 +72,7 @@ with the agent's queue and continuations is in
 | An Axle invariant broke | Axle has no wire shape for what was asked, on this provider, or a vendor module knows for certain the request is rejected | The request went out and the API or model answered             |
 | throws, `AXLE_ERROR`    | throws, `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `FILE_UNREADABLE`, or a registry code                                  | `ok: false`, `kind` `api`, `incomplete`, `refusal`, or `parse` |
 
-The host writes two checks, each with one meaning:
+The consumer writes two checks, each with one meaning:
 
 ```ts
 try {
@@ -95,7 +95,7 @@ the type.
 | ------------------------ | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Configuration mistake    | Setup is wrong: an option value, a registry, a definition, a feature this provider has no shape for | rejects                                        | `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `TOOL_REGISTRY_DUPLICATE`, `SKILL_*`, `COMPACTION_INVALID_MESSAGES` |
 | Request content mistake  | This message is malformed: a missing template variable, a content source the adapter cannot map     | rejects                                        | `INSTRUCT_VARIABLE_ERROR`, `PROVIDER_UNSUPPORTED`                                                              |
-| Host environment failure | A file on the host could not be resolved: missing, too large, wrong category, no resolver           | rejects                                        | `FILE_UNREADABLE`                                                                                              |
+| Local environment failure | A local file could not be resolved: missing, too large, wrong category, no resolver           | rejects                                        | `FILE_UNREADABLE`                                                                                              |
 | Provider or wire failure | The request went out and the API did not complete it                                                | `ok: false`                                    | `kind: "api"`                                                                                                  |
 | Model output             | The API completed the request and the answer is the problem                                         | `ok: false`, or a tool error                   | `kind: "incomplete"`, `kind: "refusal"`, `kind: "parse"`; `not-found` and `invalid-arguments` tool errors      |
 | Tool execution failure   | A tool ran and failed                                                                               | tool error, or rejects when the tool escalates | `execution`, `exception`, `failed` tool errors; `TOOL_FATAL_ERROR`                                             |
@@ -107,9 +107,9 @@ them is where the caller fixes the mistake, in the setup or in the call,
 and the message says which. The caller's handling is the same.
 
 The two `ok: false` types share the result, and the four kinds are cut on
-what the API did, because that fixes the host's next move:
+what the API did, because that fixes the consumer's next move:
 
-| Kind         | What the API did                                                                   | HTTP                                            | `status`                   | `usage`                       | Host's next move                  |
+| Kind         | What the API did                                                                   | HTTP                                            | `status`                   | `usage`                       | Consumer's next move                  |
 | ------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------- | ----------------------------- | --------------------------------- |
 | `api`        | Did not complete the request: rejected it, failed mid-way, or the connection broke | non-2xx, or 2xx with an error event in the body | present when there was one | usually absent                | fix on 4xx, back off on 429 / 5xx |
 | `incomplete` | Completed the request and stopped for a reason that is not a usable end            | 2xx                                             | absent                     | present; the call was charged | retry the same request            |
@@ -125,7 +125,7 @@ Those are the API failing to complete, so they are `api` with `type` set
 and no `status`. A stop reason Axle cannot use is the API completing badly,
 so it is `incomplete`. A stream that ends with no completion signal at all
 (`IncompleteStream`) could be either and Axle cannot tell; it is
-`incomplete` because output may have flowed and the host's move is the
+`incomplete` because output may have flowed and the consumer's move is the
 same.
 
 `Length` is not a failure. The model produced output and stopped at a limit
@@ -257,7 +257,7 @@ to the subclass.
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------- |
 | `INVALID_OPTIONS`              | An option is malformed: a loop limit below 1, a non-integer `maxRetries` or `timeoutMs`, a model id with an unknown publisher or no name, an unsupported reasoning setting, a tool choice naming an absent tool, a tool schema Zod cannot express as JSON Schema, a bad compaction option, a Brave option out of range | none                                     | `AxleError`                             |
 | `PROVIDER_UNSUPPORTED`         | A well-formed request Axle has no wire shape for on this provider, or a vendor module pre-empts                                                                                                                                                                                                                        | `{ provider: string, feature: string }`  | `AxleError`                             |
-| `FILE_UNREADABLE`              | A host file could not be resolved: not found, too large, unsupported type, wrong category, no `fileResolver`                                                                                                                                                                                                           | `{ path?: string, name?: string }`       | `AxleError`                             |
+| `FILE_UNREADABLE`              | A local file could not be resolved: not found, too large, unsupported type, wrong category, no `fileResolver`                                                                                                                                                                                                           | `{ path?: string, name?: string }`       | `AxleError`                             |
 | `TOOL_REGISTRY_DUPLICATE`      | Two tools share a name                                                                                                                                                                                                                                                                                                 | `{ name: string }`                       | `AxleError`                             |
 | `SKILL_REGISTRY_DUPLICATE`     | A skill is registered or listed twice                                                                                                                                                                                                                                                                                  | `{ name: string }`                       | `AxleError`                             |
 | `SKILL_INVALID`                | `SKILL.md` has bad frontmatter, bad YAML, a schema miss, or a forbidden name                                                                                                                                                                                                                                           | `{ issues? }`                            | `AxleError`                             |
@@ -272,7 +272,7 @@ to the subclass.
 | `MCP_NOT_CONNECTED`            | An MCP tool is called before `connect()`                                                                                                                                                                                                                                                                               | none                                     | `AxleError`                             |
 | `TOOL_FATAL_ERROR`             | A tool threw `AxleToolFatalError` to end the run                                                                                                                                                                                                                                                                       | none; the payload is fields on the class | `AxleToolFatalError`                    |
 | `ABORTED`                      | The signal fired                                                                                                                                                                                                                                                                                                       | none; the payload is fields on the class | `AxleAbortError`, `AxleAgentAbortError` |
-| `AXLE_ERROR`                   | The default. An Axle invariant broke; nothing the host can act on                                                                                                                                                                                                                                                      | none                                     | `AxleError`                             |
+| `AXLE_ERROR`                   | The default. An Axle invariant broke; nothing the consumer can act on                                                                                                                                                                                                                                                      | none                                     | `AxleError`                             |
 
 `AxleToolFatalError` carries `toolName`, `messages`, `partial`, and `usage`
 as fields. `AxleAbortError` carries `reason`, `messages`, `partial`, and
@@ -340,7 +340,7 @@ answer, and a throw is for everything else. It falls out of what the
 `ok: false` arm carries (`messages`, `final`, `usage`), none of which exist
 before a request is sent. It makes continuations sound, since a
 continuation runs on `ok: false` and a setup mistake would otherwise run
-the continuation into the same mistake. And it matches what every host in
+the continuation into the same mistake. And it matches what every consumer in
 the repo already writes: an `if (!result.ok)` and a `catch` around it,
 which now have one meaning each.
 
@@ -354,7 +354,7 @@ runtime probe or message text.
 
 The result's `kind` was `model | refusal | parse` before 0.35.0. `model`
 held both the API refusing to complete a request and the API completing
-one with a stop reason Axle could not use, which call for different host
+one with a stop reason Axle could not use, which call for different consumer
 moves (fix or back off, versus retry as-is) and differ in whether the call
 was charged. It is split into `api` and `incomplete` on the line of what
 the API did, and `model` is retired because the API-level failures are the
@@ -366,7 +366,7 @@ and a class per code explodes. Classes only where there is a payload. For
 the same reason `isAxleError` does not test `instanceof`: it accepts any
 `Error` whose `code` is an `AxleErrorCode`, so an error built by a second
 copy of the package (a `pnpm link` beside an install, two dependents on
-different versions) still reaches the host's `switch`. A host that needs a
+different versions) still reaches the consumer's `switch`. A consumer that needs a
 payload field reads it through the narrowed type; the payload classes
 exist for the fields, not for identity.
 
