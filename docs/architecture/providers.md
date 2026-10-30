@@ -52,8 +52,8 @@ what content it returns is in [provider-content.md](./provider-content.md).
    the same; its rows are unpriced.
 5. **Explicit wins, then the hostname table, then nothing.** When `id` or
    `dialect` is omitted, the protocol constructor looks up the base URL's
-   hostname in a fixed per-protocol table (exact match, no network, no
-   pattern). Each field is resolved on its own: passing `id` does not
+   hostname in a fixed per-protocol table (the hostname or a parent domain
+   of it, no network, no pattern). Each field is resolved on its own: passing `id` does not
    suppress an inferred dialect. A hostname not in the table yields
    neither. `resolveModel` is never inferred.
 6. **The base URL keeps each protocol's SDK convention.** The SDK appends
@@ -102,6 +102,11 @@ one of these protocols. It carries an `id` and is otherwise out of scope.
 `bedrock()` takes `protocol` because the model decides which one it speaks
 (below). The other presets speak one.
 
+`openrouter()` is the one preset with a `baseUrl` option, the table's URL
+being its default: OpenRouter serves the same API from regional hosts
+(`https://eu.openrouter.ai/api/v1`), so a different host is still the same
+provider. Any other destination is a protocol constructor call.
+
 ## Hostname table
 
 | Protocol        | Hostname                              | `id`         | Dialect    |
@@ -109,8 +114,12 @@ one of these protocols. It carries an `id` and is otherwise out of scope.
 | messages        | `api.anthropic.com`                   | `anthropic`  | none       |
 | responses       | `api.openai.com`                      | `openai`     | none       |
 | generateContent | `generativelanguage.googleapis.com`   | `google`     | none       |
-| chatCompletions | `openrouter.ai`, `api.openrouter.ai`  | `openrouter` | openrouter |
+| chatCompletions | `openrouter.ai`                       | `openrouter` | openrouter |
 | chatCompletions | `api.together.xyz`, `api.together.ai` | `togetherai` | together   |
+
+A row matches its hostname and every subdomain of it, on a dot boundary:
+`openrouter.ai` covers `eu.openrouter.ai` and not `notopenrouter.ai`. A row
+is a domain the provider controls, so a subdomain is the same provider.
 
 A label-only row (an `id` with no dialect) costs nothing and gets that
 provider's usage priced. Bedrock is not in the table: its hostnames vary by
@@ -170,8 +179,11 @@ the model catalog's concern, not the provider's.
   shape. Most Chat Completions providers need a label and no dialect
   (Groq, Fireworks); one field forced a vendor value that changed nothing.
 - **Explicit `id` and `dialect` only, no inference** (2026-10-29): the
-  hostname table is an exact lookup with no network and no fuzziness, so
-  it never surprises anyone who knows it exists. Kept.
+  hostname table is a lookup with no network and no fuzziness, so it never
+  surprises anyone who knows it exists. Kept.
+- **Exact hostname matching** (2026-10-30): the table's first form. OpenRouter's
+  regional hosts (`eu.openrouter.ai`) would each have needed a row, and a
+  host missing from the table silently lost its `id` and dialect.
 - **A deprecated `vendor` shim** (2026-10-29): breaking is acceptable for
   0.35.0; the migration entry maps each value to a preset.
 - **SigV4 request signing as Bedrock's auth** (2026-10-29): the ticket's

@@ -109,9 +109,16 @@ function isRejectedCredential(status: number | undefined, message: string): bool
 }
 
 export function lookupHost<T>(table: Readonly<Record<string, T>>, baseUrl: string): T | undefined {
+  let hostname: string;
   try {
-    return table[new URL(baseUrl).hostname.toLowerCase()];
+    hostname = new URL(baseUrl).hostname.toLowerCase();
   } catch {
     return undefined;
+  }
+  for (;;) {
+    if (Object.hasOwn(table, hostname)) return table[hostname];
+    const dot = hostname.indexOf(".");
+    if (dot === -1) return undefined;
+    hostname = hostname.slice(dot + 1);
   }
 }

@@ -15,7 +15,6 @@ export interface ChatCompletionsOptions extends ProtocolOptions {
 
 const KNOWN_HOSTS: Readonly<Record<string, { id: string; dialect?: ChatCompletionsDialect }>> = {
   "openrouter.ai": { id: "openrouter", dialect: openrouterDialect },
-  "api.openrouter.ai": { id: "openrouter", dialect: openrouterDialect },
   "api.together.xyz": { id: "togetherai", dialect: togetherDialect },
   "api.together.ai": { id: "togetherai", dialect: togetherDialect },
 };

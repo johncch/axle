@@ -370,6 +370,45 @@ describe("provider client factory options", () => {
     ).toBeUndefined();
   });
 
+  test("infers the provider from a subdomain of a known hostname", async () => {
+    const { chatCompletions } =
+      await import("../../src/protocols/chatCompletions/chatCompletions.js");
+
+    expect(chatCompletions({ baseUrl: "https://eu.openrouter.ai/api/v1", apiKey: "k" }).id).toBe(
+      "openrouter",
+    );
+    expect(chatCompletions({ baseUrl: "https://api.openrouter.ai/v1", apiKey: "k" }).id).toBe(
+      "openrouter",
+    );
+    expect(
+      chatCompletions({ baseUrl: "https://notopenrouter.ai/api/v1", apiKey: "k" }).id,
+    ).toBeUndefined();
+    expect(
+      chatCompletions({ baseUrl: "https://openrouter.ai.example.test/v1", apiKey: "k" }).id,
+    ).toBeUndefined();
+  });
+
+  test("openrouter() takes a base URL for a regional host", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("", { status: 500 }));
+
+    const { openrouter } = await import("../../src/providers/openrouter.js");
+    const provider = openrouter("k", {
+      baseUrl: "https://eu.openrouter.ai/api/v1",
+      fetch: fetchMock,
+      maxRetries: 0,
+    });
+    expect(provider).toMatchObject({ protocol: "chatCompletions", id: "openrouter" });
+
+    for await (const _chunk of provider.createStreamingRequest("deepseek/deepseek-chat", {
+      messages: [{ role: "user", content: "Hi" }],
+      runtime: {},
+    })) {
+      // drain
+    }
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://eu.openrouter.ai/api/v1/chat/completions");
+  });
+
   test("an explicit id wins over the hostname", async () => {
     const { chatCompletions } =
       await import("../../src/protocols/chatCompletions/chatCompletions.js");

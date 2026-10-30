@@ -232,7 +232,8 @@ client options below, `id`, `resolveModel`, and for Chat Completions
 service's own base URL: `anthropic(key)` is `messages({ baseUrl:
 "https://api.anthropic.com", apiKey: key, id: "anthropic", resolveModel })`.
 To reach the same service somewhere else, such as a proxy, call the
-constructor with that base URL.
+constructor with that base URL. `openrouter()` is the exception: it takes a
+`baseUrl` for OpenRouter's regional hosts.
 
 `bedrock()` reaches Amazon Bedrock with a Bedrock API key. It takes the
 protocol because the model decides it: `messages` for Claude, `responses` or
