@@ -9,45 +9,47 @@ export interface PricedEntry extends UsageEntry {
 }
 
 /**
- * Cost accumulated from usage rows. `usd` sums `priced`; `unpriced` holds the
- * rows the catalog had no provider price for, so a host can tell a partial
- * total from a complete one.
+ * Why a row has no price. `loading` and `unavailable` are the catalog's state and may
+ * resolve on a later read; the rest are facts about the row and will not.
+ */
+export type UnpricedReason =
+  "loading" | "unavailable" | "no-catalog" | "no-provider" | "unlisted" | "no-price";
+
+export interface UnpricedEntry extends UsageEntry {
+  reason: UnpricedReason;
+}
+
+/**
+ * Cost derived from usage rows at the moment it is read. `usd` sums `priced`;
+ * `unpriced` holds every row the catalog could not price, each with its reason.
  */
 export interface Cost {
   usd: number;
   priced: PricedEntry[];
-  unpriced: UsageEntry[];
-}
-
-/** What a host persists to restore a `Meter`. */
-export interface SavedMeter {
-  usage: Stats;
-  cost: Cost;
+  unpriced: UnpricedEntry[];
 }
 
 /**
- * A sink over the turn event stream that accumulates usage and cost from
- * `turn:end`. `usage` and `cost` hold everything the meter was restored with
- * plus what it has applied; `observedUsage` and `observedCost` hold only what
- * this instance applied. Each request row is priced at `apply` time from the
- * catalog's price for its provider and model, at the tier its own prompt size
- * selects; a row with no provider price lands in `cost.unpriced`.
+ * A sink over the turn event stream that accumulates usage from `turn:end` and
+ * prices it against a `ModelCatalog`. `usage` holds what the meter was restored
+ * with plus what it has applied; `observedUsage` only what this instance applied.
+ * `cost` and `observedCost` are computed from those rows and the catalog's
+ * current state each time they are read, so a row the catalog could not price
+ * yet is priced on the first read after the catalog arrives. `priced()` resolves
+ * to `cost` once the catalog's `ready` has settled; it never rejects.
  */
 export class Meter {
   private readonly catalog: ModelCatalog | undefined;
   private readonly _usage: Stats;
-  private readonly _cost: Cost;
   private readonly _observedUsage: Stats = createStats();
-  private readonly _observedCost: Cost = createCost();
 
-  constructor(catalog?: ModelCatalog, saved?: SavedMeter) {
+  constructor(catalog?: ModelCatalog, saved?: Stats) {
     this.catalog = catalog;
-    this._usage = saved ? mergeStats(saved.usage) : createStats();
-    this._cost = saved ? copyCost(saved.cost) : createCost();
+    this._usage = saved ? mergeStats(saved) : createStats();
   }
 
-  static restore(saved: SavedMeter, catalog?: ModelCatalog): Meter {
-    return new Meter(catalog, saved);
+  static restore(usage: Stats, catalog?: ModelCatalog): Meter {
+    return new Meter(catalog, usage);
   }
 
   get usage(): Stats {
@@ -59,57 +61,64 @@ export class Meter {
   }
 
   get cost(): Cost {
-    return this._cost;
+    return priceRows(this._usage.breakdown ?? [], this.catalog);
   }
 
   get observedCost(): Cost {
-    return this._observedCost;
+    return priceRows(this._observedUsage.breakdown ?? [], this.catalog);
+  }
+
+  async priced(): Promise<Cost> {
+    await this.catalog?.ready;
+    return this.cost;
   }
 
   apply = (event: TurnEvent): void => {
     if (event.type !== "turn:end") return;
     addStats(this._usage, event.usage);
     addStats(this._observedUsage, event.usage);
-    for (const entry of event.usage.breakdown ?? []) {
-      const usd = this.catalog ? priceEntry(entry, this.catalog) : undefined;
-      if (usd === undefined) {
-        this._cost.unpriced.push({ ...entry });
-        this._observedCost.unpriced.push({ ...entry });
-      } else {
-        this._cost.usd += usd;
-        this._cost.priced.push({ ...entry, usd });
-        this._observedCost.usd += usd;
-        this._observedCost.priced.push({ ...entry, usd });
-      }
+  };
+}
+
+function priceRows(rows: readonly UsageEntry[], catalog: ModelCatalog | undefined): Cost {
+  const cost: Cost = { usd: 0, priced: [], unpriced: [] };
+  for (const row of rows) {
+    const outcome = priceRow(row, catalog);
+    if (typeof outcome === "number") {
+      cost.usd += outcome;
+      cost.priced.push({ ...row, usd: outcome });
+    } else {
+      cost.unpriced.push({ ...row, reason: outcome });
     }
-  };
+  }
+  return cost;
 }
 
-function createCost(): Cost {
-  return { usd: 0, priced: [], unpriced: [] };
-}
+function priceRow(row: UsageEntry, catalog: ModelCatalog | undefined): number | UnpricedReason {
+  if (!catalog) return "no-catalog";
+  if (row.provider === undefined) return "no-provider";
+  const status = catalog.state.status;
+  if (status !== "loaded") return status;
 
-function copyCost(cost: Cost): Cost {
-  return {
-    usd: cost.usd,
-    priced: cost.priced.map((entry) => ({ ...entry })),
-    unpriced: cost.unpriced.map((entry) => ({ ...entry })),
-  };
+  let reason: UnpricedReason = "unlisted";
+  for (const model of [row.model, row.requestedModel]) {
+    const found = catalog.lookup(model, { provider: row.provider });
+    if (found?.match !== "provider") continue;
+    if (found.cost) return priceAt(found.cost, row);
+    reason = "no-price";
+  }
+  return reason;
 }
 
 type Price = Pick<ModelCost, "input" | "output" | "cacheRead" | "cacheWrite" | "reasoning">;
 
-function priceEntry(entry: UsageEntry, catalog: ModelCatalog): number | undefined {
-  if (entry.provider === undefined) return undefined;
-  const cost = providerPrice(entry, catalog);
-  if (!cost) return undefined;
-  const price = tierFor(cost, entry.in);
-
-  const cached = entry.cachedIn ?? 0;
-  const written = entry.cacheWriteIn ?? 0;
-  const reasoning = entry.reasoningOut ?? 0;
-  const plainIn = Math.max(0, entry.in - cached - written);
-  const plainOut = Math.max(0, entry.out - reasoning);
+function priceAt(cost: ModelCost, row: UsageEntry): number {
+  const price = tierFor(cost, row.in);
+  const cached = row.cachedIn ?? 0;
+  const written = row.cacheWriteIn ?? 0;
+  const reasoning = row.reasoningOut ?? 0;
+  const plainIn = Math.max(0, row.in - cached - written);
+  const plainOut = Math.max(0, row.out - reasoning);
 
   const perMillion =
     plainIn * price.input +
@@ -120,24 +129,10 @@ function priceEntry(entry: UsageEntry, catalog: ModelCatalog): number | undefine
   return perMillion / 1_000_000;
 }
 
-function providerPrice(entry: UsageEntry, catalog: ModelCatalog): ModelCost | undefined {
-  for (const model of [entry.model, entry.requestedModel]) {
-    const found = catalog.lookup(model, { provider: entry.provider });
-    if (found?.match === "provider" && found.cost) return found.cost;
-  }
-  return undefined;
-}
-
 function tierFor(cost: ModelCost, context: number): Price {
   let price: Price = cost;
   for (const tier of cost.tiers ?? []) {
     if (context > tier.size) price = tier;
   }
-  return {
-    input: price.input,
-    output: price.output,
-    ...(price.cacheRead !== undefined ? { cacheRead: price.cacheRead } : {}),
-    ...(price.cacheWrite !== undefined ? { cacheWrite: price.cacheWrite } : {}),
-    ...(price.reasoning !== undefined ? { reasoning: price.reasoning } : {}),
-  };
+  return price;
 }
