@@ -54,7 +54,6 @@ export function chatCompletions(options: ChatCompletionsOptions): AIProvider {
         timeoutMs,
         headers: options.headers,
         fetch: options.fetch,
-        providerId: id,
         dialect,
         webSearch,
         ...params,

@@ -134,7 +134,7 @@ async function convertFilePart(
 ): Promise<Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam | Anthropic.TextBlockParam> {
   if (file.kind === "image") {
     const resolved = await resolveFileSource(file, {
-      provider: "anthropic",
+      protocol: "messages",
       model: context.model,
       accepted: ["url", "base64"],
       purpose,
@@ -151,11 +151,11 @@ async function convertFilePart(
     if (file.mimeType !== "application/pdf") {
       throw new AxleError(`Anthropic only supports PDF document files. Received ${file.mimeType}`, {
         code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-        details: { provider: "anthropic", feature: `document:${file.mimeType}` },
+        details: { protocol: "messages", feature: `document:${file.mimeType}` },
       });
     }
     const resolved = await resolveFileSource(file, {
-      provider: "anthropic",
+      protocol: "messages",
       model: context.model,
       accepted: ["url", "base64"],
       purpose,
@@ -171,7 +171,7 @@ async function convertFilePart(
   }
 
   const resolved = await resolveFileSource(file, {
-    provider: "anthropic",
+    protocol: "messages",
     model: context.model,
     accepted: ["text"],
     purpose,
@@ -181,7 +181,7 @@ async function convertFilePart(
   if (resolved.type !== "text") {
     throw new AxleError(`Unsupported Anthropic text source: ${resolved.type}`, {
       code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-      details: { provider: "anthropic", feature: `text-source:${resolved.type}` },
+      details: { protocol: "messages", feature: `text-source:${resolved.type}` },
     });
   }
 
@@ -216,7 +216,7 @@ function toAnthropicImageMediaType(mimeType: string): AnthropicImageMediaType {
     `Anthropic does not support image MIME type: ${mimeType}. Supported types: image/jpeg, image/png, image/gif, image/webp.`,
     {
       code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-      details: { provider: "anthropic", feature: `image:${mimeType}` },
+      details: { protocol: "messages", feature: `image:${mimeType}` },
     },
   );
 }
@@ -237,7 +237,7 @@ function toAnthropicImageSource(
   }
   throw new AxleError(`Unsupported Anthropic image source: ${resolved.type}`, {
     code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-    details: { provider: "anthropic", feature: `image-source:${resolved.type}` },
+    details: { protocol: "messages", feature: `image-source:${resolved.type}` },
   });
 }
 
@@ -256,7 +256,7 @@ function toAnthropicPdfSource(
   }
   throw new AxleError(`Unsupported Anthropic PDF source: ${resolved.type}`, {
     code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-    details: { provider: "anthropic", feature: `document-source:${resolved.type}` },
+    details: { protocol: "messages", feature: `document-source:${resolved.type}` },
   });
 }
 
@@ -338,7 +338,7 @@ export function convertToAnthropicTools(
     if (!isObjectSchema(schema)) {
       throw new AxleError(`Schema for tool ${tool.name} must be an object type`, {
         code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-        details: { provider: "anthropic", feature: `tool-schema:${tool.name}` },
+        details: { protocol: "messages", feature: `tool-schema:${tool.name}` },
       });
     }
     return {

@@ -57,6 +57,12 @@ service is unknown (a local server) has no `id`. Two providers can share an
 shorthand for a protocol constructor with the configuration filled in.
 Prices are per provider, so usage is priced by `id` and model.
 
+The `provider` field of a thinking or provider-tool `continuity` is an
+exception: it names the wire format the continuity came from (`anthropic`
+for Messages, `gemini` for generateContent, `openai` for Responses,
+`openrouter`), and keeps those values because continuity is stored in
+conversation history.
+
 **Host** — whose hardware ran a request, when that differs from the
 provider: a router such as OpenRouter bills the request and forwards it to
 a host. Axle does not record hosts; models.dev does not price by them.

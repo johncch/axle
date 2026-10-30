@@ -162,7 +162,7 @@ describe("Provider rich tool result conversion", () => {
 
       expect(resolver).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider: "anthropic",
+          protocol: "messages",
           model: "claude-test",
           ref: { id: "image-1" },
         }),
@@ -187,7 +187,7 @@ describe("Provider rich tool result conversion", () => {
 
       expect(resolver).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider: "openai",
+          protocol: "responses",
           model: "gpt-test",
           ref: { id: "image-1" },
         }),
@@ -209,7 +209,7 @@ describe("Provider rich tool result conversion", () => {
 
       expect(resolver).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider: "gemini",
+          protocol: "generateContent",
           model: "gemini-test",
           ref: { id: "image-1" },
         }),
@@ -256,7 +256,7 @@ describe("Provider rich tool result conversion", () => {
 
       expect(resolver).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider: "chatcompletions",
+          protocol: "chatCompletions",
           model: "chat-test",
           ref: { id: "text-1" },
         }),

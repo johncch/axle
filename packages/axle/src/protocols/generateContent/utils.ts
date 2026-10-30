@@ -87,7 +87,7 @@ export function toGeminiToolConfig(
   if (parallelToolCalls === false) {
     throw new AxleError("Gemini does not support disabling parallel tool calls", {
       code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-      details: { provider: "gemini", feature: "parallelToolCalls:false" },
+      details: { protocol: "generateContent", feature: "parallelToolCalls:false" },
     });
   }
   if (choice === undefined) return {};
@@ -101,7 +101,7 @@ export function toGeminiToolConfig(
     if (!tools || tools.length === 0) {
       throw new AxleError("Gemini requires function tools for required tool choice", {
         code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-        details: { provider: "gemini", feature: "toolChoice:required" },
+        details: { protocol: "generateContent", feature: "toolChoice:required" },
       });
     }
     return { toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY } } };
@@ -121,7 +121,7 @@ export function toGeminiToolConfig(
   if (providerTools?.some((tool) => tool.name === choice.name)) {
     throw new AxleError(`Gemini does not support provider tool choice: ${choice.name}`, {
       code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-      details: { provider: "gemini", feature: `toolChoice:${choice.name}` },
+      details: { protocol: "generateContent", feature: `toolChoice:${choice.name}` },
     });
   }
 
@@ -316,7 +316,7 @@ async function convertFilePart(
 ): Promise<any> {
   if (file.kind === "text") {
     const resolved = await resolveFileSource(file, {
-      provider: "gemini",
+      protocol: "generateContent",
       model: context.model,
       accepted: ["text"],
       purpose,
@@ -326,7 +326,7 @@ async function convertFilePart(
     if (resolved.type !== "text") {
       throw new AxleError(`Unsupported Gemini text source: ${resolved.type}`, {
         code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-        details: { provider: "gemini", feature: `text-source:${resolved.type}` },
+        details: { protocol: "generateContent", feature: `text-source:${resolved.type}` },
       });
     }
     return {
@@ -339,13 +339,13 @@ async function convertFilePart(
       `Gemini document file support is limited to PDFs. Received ${file.mimeType}`,
       {
         code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-        details: { provider: "gemini", feature: `document:${file.mimeType}` },
+        details: { protocol: "generateContent", feature: `document:${file.mimeType}` },
       },
     );
   }
 
   const resolved = await resolveFileSource(file, {
-    provider: "gemini",
+    protocol: "generateContent",
     model: context.model,
     accepted: ["gemini-file-uri", "url", "base64"],
     purpose,
@@ -382,7 +382,7 @@ function resolvedToGeminiPart(resolved: ResolvedFileSource, file: FileInfo): any
   }
   throw new AxleError(`Unsupported Gemini file source: ${resolved.type}`, {
     code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-    details: { provider: "gemini", feature: `file-source:${resolved.type}` },
+    details: { protocol: "generateContent", feature: `file-source:${resolved.type}` },
   });
 }
 

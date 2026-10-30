@@ -19,7 +19,7 @@ export function assertTogetherFilePartSupported(file: FileInfo): void {
   if (file.kind === "document") {
     throw new AxleError("Together Chat Completions does not support PDF file parts", {
       code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-      details: { provider: "together", feature: "document:application/pdf" },
+      details: { protocol: "chatCompletions", feature: "document:application/pdf" },
     });
   }
 }

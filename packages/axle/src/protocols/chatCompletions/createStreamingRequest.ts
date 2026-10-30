@@ -21,7 +21,6 @@ export async function* createStreamingRequest(
       baseUrl: string;
       model: string;
       apiKey?: string;
-      providerId?: string;
       dialect?: ChatCompletionsDialect;
       webSearch?: ToolDefinition;
     },
@@ -35,7 +34,6 @@ export async function* createStreamingRequest(
     runtime,
     signal,
     apiKey,
-    providerId,
     dialect,
     webSearch,
     maxRetries,
@@ -67,12 +65,7 @@ export async function* createStreamingRequest(
     warn: span?.warn.bind(span),
   });
   const chatTools = convertTools(tools);
-  const chatProviderTools = prepareProviderTools(
-    providerTools,
-    dialect,
-    providerId,
-    span?.warn.bind(span),
-  );
+  const chatProviderTools = prepareProviderTools(providerTools, dialect, span?.warn.bind(span));
   const requestTools = [...(chatTools ?? []), ...(chatProviderTools ?? [])];
 
   const requestBody: Record<string, any> = {

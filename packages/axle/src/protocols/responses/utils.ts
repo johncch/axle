@@ -270,7 +270,7 @@ async function convertFilePart(
 ) {
   if (file.kind === "image") {
     const resolved = await resolveFileSource(file, {
-      provider: "openai",
+      protocol: "responses",
       model: context.model,
       accepted: ["url", "base64"],
       purpose,
@@ -290,12 +290,12 @@ async function convertFilePart(
         `OpenAI file inputs currently support PDF documents. Received ${file.mimeType}`,
         {
           code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-          details: { provider: "openai", feature: `document:${file.mimeType}` },
+          details: { protocol: "responses", feature: `document:${file.mimeType}` },
         },
       );
     }
     const resolved = await resolveFileSource(file, {
-      provider: "openai",
+      protocol: "responses",
       model: context.model,
       accepted: ["url", "base64"],
       purpose,
@@ -306,7 +306,7 @@ async function convertFilePart(
   }
 
   const resolved = await resolveFileSource(file, {
-    provider: "openai",
+    protocol: "responses",
     model: context.model,
     accepted: ["text", "url", "base64"],
     purpose,
@@ -327,7 +327,7 @@ function resolvedToImageUrl(resolved: ResolvedFileSource, file: FileInfo): strin
   }
   throw new AxleError(`Unsupported OpenAI image source: ${resolved.type}`, {
     code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-    details: { provider: "openai", feature: `image-source:${resolved.type}` },
+    details: { protocol: "responses", feature: `image-source:${resolved.type}` },
   });
 }
 
@@ -347,6 +347,6 @@ function resolvedToInputFile(resolved: ResolvedFileSource, file: FileInfo) {
   }
   throw new AxleError(`Unsupported OpenAI file source: ${resolved.type}`, {
     code: AxleErrorCode.PROVIDER_UNSUPPORTED,
-    details: { provider: "openai", feature: `document-source:${resolved.type}` },
+    details: { protocol: "responses", feature: `document-source:${resolved.type}` },
   });
 }

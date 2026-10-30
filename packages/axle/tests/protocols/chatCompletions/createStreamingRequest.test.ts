@@ -1108,7 +1108,7 @@ describe("createStreamingRequest", () => {
     ).rejects.toMatchObject({
       code: AxleErrorCode.PROVIDER_UNSUPPORTED,
       message: "ChatCompletions does not support provider tool: web_search",
-      details: { provider: "chatcompletions", feature: "providerTool:web_search" },
+      details: { protocol: "chatCompletions", feature: "providerTool:web_search" },
     });
     expect(fetch).not.toHaveBeenCalled();
   });

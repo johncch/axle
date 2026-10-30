@@ -263,7 +263,6 @@ export type {
   DeferredFileInfo,
   FileInfo,
   FileKind,
-  FileProviderId,
   FileResolveFormat,
   FileResolveRequest,
   FileResolver,
