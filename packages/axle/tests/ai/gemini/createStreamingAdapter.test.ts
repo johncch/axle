@@ -625,6 +625,68 @@ describe("createGeminiStreamingAdapter", () => {
 
 // Helpers
 
+describe("createGeminiStreamingAdapter long decode", () => {
+  test("replays a captured gemini-4-argon answer the SDK continued across two requests", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { chunks } = replayFixture("../../fixtures/gemini-long-decode.jsonl");
+
+    expect(chunks.map((chunk) => chunk.type)).toEqual([
+      "start",
+      "text-start",
+      "text-delta",
+      "text-delta",
+      "text-delta",
+      "text-complete",
+      "thinking-start",
+      "thinking-complete",
+      "text-start",
+      "text-delta",
+      "text-delta",
+      "text-complete",
+      "complete",
+    ]);
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
+
+    expect(chunks.filter((chunk) => chunk.type === "start")).toHaveLength(1);
+    expect(chunks.at(-1)).toMatchObject({
+      type: "complete",
+      data: { finishReason: AxleStopReason.Stop, usage: { in: 65874, out: 94921 } },
+    });
+  });
+
+  test("with the SDK loop off, CONTINUATION is incomplete and the token rides on raw", () => {
+    const adapter = createGeminiStreamingAdapter();
+    adapter.handleChunk(makeChunk({ parts: [{ text: "1 | 1 | 1 | 1 | 1\n" }] }));
+    const stopped = makeChunk({
+      parts: [{ text: "", thoughtSignature: "CtQBAVSoXO4..." }],
+      finishReason: FinishReason.CONTINUATION,
+      usage: { promptTokenCount: 169, totalTokenCount: 65705 },
+    });
+    const paused = {
+      ...stopped,
+      candidates: [{ ...stopped.candidates[0], continuationToken: "CtMCAVSoXO6..." }],
+    };
+
+    const chunks = adapter.handleChunk(paused);
+
+    expect(chunks.map((chunk) => chunk.type)).toEqual([
+      "text-complete",
+      "thinking-start",
+      "thinking-complete",
+      "incomplete",
+    ]);
+    expect(chunks.at(-1)).toMatchObject({
+      type: "incomplete",
+      data: {
+        type: "CONTINUATION",
+        usage: { in: 169, out: 65536 },
+        raw: { candidates: [{ continuationToken: "CtMCAVSoXO6..." }] },
+      },
+    });
+  });
+});
+
 function makeChunk(options: {
   parts: any[];
   finishReason?: FinishReason;

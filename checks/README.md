@@ -203,6 +203,7 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `agent-stop` (stop() finishes the active tool batch; the queued send continues)
 - `generate-parallelized-tool`
 - `generate-concurrent-tool-batch` (two slow calls in one message overlap; results answer in request order)
+- `generate-long-decode` (extended; `gemini-4-argon` only: a 3,000-line answer crosses the 65,536-token per-request cap and arrives as one step through the SDK's automatic continuation; run with `--provider gemini --model gemini-4-argon --case generate-long-decode`, about 95,000 output tokens)
 - `agent-subagent-tool` (including child usage attribution)
 - `agent-tool-fatal` (fatal tool error terminates the send with usage intact)
 - `agent-subagent-abort` (cancel mid-delegation; no child conversation leak)

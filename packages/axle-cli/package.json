@@ -40,7 +40,7 @@
     "@clack/core": "^1.5.1",
     "@commander-js/extra-typings": "^15.0.0",
     "@fifthrevision/axle": "workspace:*",
-    "@google/genai": "^2.28.0",
+    "@google/genai": "^2.31.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "chalk": "^6.0.1",
     "commander": "^15.0.0",

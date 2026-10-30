@@ -1,6 +1,7 @@
 import {
   Agent,
   AxleAgentAbortError,
+  AxleStopReason,
   AxleToolFatalError,
   Instruct,
   PromptCompactor,
@@ -911,6 +912,68 @@ export const coreCases: CheckCase[] = [
           batchElapsedMs: batchElapsed,
           timings,
           messageCount: result.messages.length,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    group: "extended",
+    id: "generate-long-decode",
+    description:
+      "A Gemini 4 response that crosses the 65,536-token per-request cap arrives as one step through the SDK's automatic continuation.",
+    providers: ["google"],
+    exclusions: [
+      {
+        provider: "google",
+        model: /^(?!gemini-4)/,
+        reason: "long decode is a Gemini 4 feature; run with --model gemini-4-argon",
+      },
+    ],
+    async run({ provider, model, requestOptions }) {
+      const lineCount = 3000;
+      const perRequestCap = 65536;
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        maxOutputTokens: 131072,
+        system:
+          "This request runs with long decode enabled. The maximum output for this response is 131,072 tokens, well above the usual 65,536. Very long outputs are expected and must be produced in full. Never refuse, shorten, or summarize a task because of output length.",
+        messages: [
+          {
+            role: "user",
+            content: `For every integer n from 1 to ${lineCount}, print one line of the form: n | n*n | n*n*n | sum of the decimal digits of n | n mod 7. Begin immediately with the line for n=1. No commentary, no headings, no code fences, no stopping early.`,
+          },
+        ],
+      });
+
+      if (!result.ok) return fail({ error: result.error, usage: result.usage });
+      const text = getAssistantText(result.final);
+      const lines = text.split("\n").filter((line) => line.trim().length > 0);
+      const out = result.usage?.out ?? 0;
+      const failureReasons = [
+        ...(result.final.finishReason !== AxleStopReason.Stop
+          ? [`Finish reason is ${result.final.finishReason}, expected Stop.`]
+          : []),
+        ...(out <= perRequestCap
+          ? [`Output usage ${out} did not cross the ${perRequestCap} per-request cap.`]
+          : []),
+        ...(lines.length < lineCount * 0.98
+          ? [`Only ${lines.length} of ${lineCount} lines came back.`]
+          : []),
+        ...(result.messages.filter((message) => message.role === "assistant").length !== 1
+          ? ["The response did not arrive as one assistant message."]
+          : []),
+      ];
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          finishReason: result.final.finishReason,
+          lineCount: lines.length,
+          firstLine: lines[0],
+          lastLine: lines[lines.length - 1],
           usage: result.usage,
         },
       };

@@ -41,10 +41,11 @@ stops the loop. Steps are invisible in conversation state — each step's
 output is flattened into messages and into the agent turn's parts. Spans are
 named `step-N`; stream events are `step:start` / `step:complete`. This
 matches the unit's industry usage (Vercel AI SDK `maxSteps`, OpenAI run
-steps). One exception to "one provider request": when Anthropic pauses a
-response (`pause_turn`), the adapter sends the follow-up requests itself, and
-the step still yields one assistant message and counts once toward
-`maxSteps`.
+steps). Two exceptions to "one provider request": when Anthropic pauses a
+response (`pause_turn`), the adapter sends the follow-up requests itself; and
+when Gemini 4 stops at its per-request cap (`CONTINUATION`), the Gemini SDK
+does. Either way the step still yields one assistant message and counts once
+toward `maxSteps`.
 
 **Tool batch** — the set of separate tool calls one assistant message
 requests. Each call in a tool batch is validated, executed, and answered with
@@ -65,7 +66,10 @@ the tier its own prompt size selects; a row's `in` is that prompt size. A
 subagent's rows sit between the parent requests that bracket its tool call,
 under the subagent's own name; several subagents in one tool batch
 interleave their rows in wall-clock order. A paused Anthropic response (`pause_turn`)
-is one step but several requests, and yields one row per request. Rows
+is one step but several requests, and yields one row per request. A Gemini 4
+response continued past its per-request cap (`CONTINUATION`) is also several
+requests but yields one row, because the SDK runs those requests and reports
+their usage summed; that row's `in` is the sum of each request's prompt. Rows
 explain the aggregate `in` / `out`; they are never added to them again.
 
 **Turn** — the render-layer unit only: one conversation entry in a transcript — a
