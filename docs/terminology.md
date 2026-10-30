@@ -14,7 +14,7 @@ comes from mixing units across them.
 | --------- | ------- | ------------------------- | -------------------------------- |
 | Wire      | Message | content parts             | `agent.messages`                 |
 | Execution | Step    | one request + its fallout | the `send()` loop (`providers/`) |
-| Render    | Turn    | parts (+ annotations)     | the consumer's `Transcript`          |
+| Render    | Turn    | parts (+ annotations)     | the consumer's `Transcript`      |
 
 One `send()` = one or more **steps** of the execution loop, producing one
 user **turn** and one agent **turn** built from streamed events, carried on
@@ -22,18 +22,17 @@ the wire as **messages**.
 
 ## Who serves a request
 
-A request names a model, speaks a protocol, goes to an endpoint, and is
-billed by a provider, which may hand it to a consumer to run. Each word below
-names one of these layers and nothing else.
+A request names a model, speaks a protocol, and goes to a provider, which
+may hand it to a host to run. Each word below names one of these layers and
+nothing else.
 
 | Term      | Example                            | Answers                        |
 | --------- | ---------------------------------- | ------------------------------ |
 | Model     | `anthropic.claude-sonnet-4-5-v1:0` | which weights, by this name    |
 | Publisher | `anthropic`                        | who made the model             |
 | Protocol  | `messages`                         | which wire format              |
-| Endpoint  | Bedrock `us-east-1`, SigV4         | where and how to connect       |
-| Provider  | `amazon-bedrock`                   | who bills the request          |
-| Consumer      | Together, behind OpenRouter        | whose hardware ran the request |
+| Provider  | `amazon-bedrock`                   | who serves and bills it        |
+| Host      | Together, behind OpenRouter        | whose hardware ran the request |
 
 **Model** — the model id as the provider names it, sent on the request and
 recorded as the response reported it. The same weights carry different
@@ -45,24 +44,22 @@ canonical `publisher/model` id in the model catalog. A model's publisher
 never changes with where it is served.
 
 **Protocol** — a wire format for requests and streamed responses:
-`messages`, `responses`, `chatCompletions`, `generateContent`. One protocol
-adapter serves every endpoint that speaks it.
+`messages`, `responses`, `chatCompletions`, `generateContent`. Each has a
+constructor of the same name that returns a provider speaking it.
 
-**Endpoint** — a configured way to reach a provider: a base URL, an auth
-scheme, and the dialect that provider's copy of a protocol needs (model id
-form, capabilities, wire deltas, extension fields). It is the object a
-consumer configures. Two endpoints can reach one provider (Bedrock in two
-regions).
+**Provider** — the service that serves and bills a request, named by its
+models.dev id (`anthropic`, `amazon-bedrock`, `openrouter`). In code, the
+`AIProvider` an `Agent` takes: a protocol configured with a base URL, auth
+and a dialect (the provider's deltas from the protocol: model id form,
+capabilities, extension fields), carrying that id as `id`. A provider whose
+service is unknown (a local server) has no `id`. Two providers can share an
+`id` (Bedrock in two regions). Presets (`anthropic()`, `openrouter()`) are
+shorthand for a protocol constructor with the configuration filled in.
+Prices are per provider, so usage is priced by `id` and model.
 
-**Provider** — the business that serves and bills a request, named by its
-models.dev provider id (`anthropic`, `openai`, `google`, `amazon-bedrock`,
-`openrouter`, `togetherai`). An endpoint declares its provider; an endpoint
-whose provider is unknown (a local server) declares none. Prices are per
-provider, so usage is priced by provider and model.
-
-**Consumer** — whose hardware ran a request, when that differs from the
+**Host** — whose hardware ran a request, when that differs from the
 provider: a router such as OpenRouter bills the request and forwards it to
-a consumer. Axle does not record consumers; models.dev does not price by them.
+a host. Axle does not record hosts; models.dev does not price by them.
 
 **Consumer** — the application that embeds Axle (the CLI, Sunnyday). It
 owns what Axle hands over: transcripts, sessions, usage totals.

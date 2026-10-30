@@ -143,7 +143,7 @@ export interface ModelCatalogOptions {
  * `open()` reads the cache and never touches the network; `refresh()`
  * always fetches, sending ETags so an unchanged catalog downloads nothing,
  * and never throws — a failed fetch keeps the cached copy. `stale` says
- * whether the cache is older than `maxAge`; when to refresh is the host's
+ * whether the cache is older than `maxAge`; when to refresh is the consumer's
  * call.
  *
  * `lookup()` tries the host's own id first when a host is given, then the

@@ -459,7 +459,7 @@ schedule -j` kicked off a live run with side effects when the user only
   run) or from the batch ledger entries written during the run (batch);
   `runAgentSession`/`runBatch` keep their boolean result. Rejected: widening
   the runner return type — the ticket held the runners fixed, and the
-  values already reach the consumer through owned channels. Rejected: tagging
+  values already reach the occurrence through owned channels. Rejected: tagging
   session files with a schedule id — a persistence-format change for one
   reader.
 - **2026-09-13 — `launchd` apply always boots out first.** launchctl refuses

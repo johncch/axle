@@ -1680,7 +1680,7 @@ never blocked; if only one layer fetched, the catalog stays `stale` so the
 other is retried next time. `hosts: ["anthropic", "openrouter"]` keeps only those hosts
 (the full host layer is about 1.9 MB on disk); `hosts: []` skips it.
 
-### Hosting / Sessions
+### Sessions and persistence
 
 Axle stops at the agent runtime boundary. If you need long-lived sessions,
 SSE transport, resumable cursors, or React client hooks, build those concerns

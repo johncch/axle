@@ -35,7 +35,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    its `Instruct` and materializes the `AxleUserMessage` and its user turn
    synchronously before scheduling; execution emits that same turn as
    `turn:user`, then the same `Instruct` parses the final assistant response.
-6. **Usage accounting is consumer-domain.** Every `turn:end` carries
+6. **Usage accounting belongs to the consumer.** Every `turn:end` carries
    `turn.usage`; consumers accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none. `usage.breakdown`
    holds one `UsageEntry` per provider request, in request order, never a
@@ -182,7 +182,7 @@ neither-here-nor-there: the Agent didn't enforce coherence between them,
 carried turns only as a convenience, yet paid unbounded growth and
 serialization weight. The fix was a deletion: turns left the Agent entirely,
 and the unused session-annotation target was removed rather than moved into
-the transcript. Session-wide application state belongs to the consumer. Consumers
+the transcript. Session-wide application state belongs to the consumer. Those
 that already ran their own folds paid nothing; the engine stopped holding
 state it didn't own.
 
@@ -190,12 +190,12 @@ Consequences that fall out of the split: a DB-backed transcript is just a
 subscriber with storage (no shared axle interface until a second
 storage-backed implementation wants one); compaction events are natural
 chapter boundaries for consumers that rotate storage; and there is deliberately
-no retrieval/paging API on the Agent — deep-history readers are consumer-storage
-readers, exactly as they already are for messages.
+no retrieval/paging API on the Agent — deep-history readers read the
+consumer's storage, exactly as they already do for messages.
 
 Semantic memory follows the same ownership boundary. The Agent has no memory
 service or automatic recall/record lifecycle. Model-directed retrieval and
-writing are ordinary tools; deterministic consumer-directed context is supplied
+writing are ordinary tools; deterministic context the consumer supplies is passed
 through `Instruct.addContext()`. Complete transcript persistence consumes the
 turn event stream instead of masquerading as semantic memory.
 
@@ -648,7 +648,7 @@ Accepted consequences:
   test (instance-lifetime, resets on restore) and consumers already receive
   per-turn usage on `turn:end`.
 - **Turn retrieval/paging API on the Agent** (2026-08-11): deep-history
-  readers are consumer-storage readers; messages already work this way.
+  readers read the consumer's storage; messages already work this way.
 - **Injected semantic-memory lifecycle** (2026-08-12): automatic recall and
   record mixed prompt augmentation, persistence, tool registration, and
   failure policy into the Agent. Tools and consumer-supplied `Instruct` context

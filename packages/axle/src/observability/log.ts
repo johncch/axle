@@ -10,7 +10,7 @@ export interface LogEntry {
 export type LogFn = (entry: LogEntry) => void;
 
 /**
- * Projects a tracer's diagnostics into flat, correlated consumer log entries:
+ * Projects a tracer's diagnostics into flat, correlated log entries for the consumer's logger:
  * leveled messages emitted within a span, and every span's completion as a line
  * carrying its name, `type`, `spanId`, and `parentSpanId` — enough to
  * reconstruct the trace skeleton from the log stream alone. The full span tree

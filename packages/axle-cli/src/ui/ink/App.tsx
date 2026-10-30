@@ -152,15 +152,21 @@ function InputLine({
   );
 }
 
-export const HOST_MARKS = {
+export const RUNNER_LINE_MARKS = {
   info: { glyph: "\u2139", color: "cyan" },
   success: { glyph: "\u2714", color: "green" },
   warn: { glyph: "\u26a0", color: "yellow" },
   error: { glyph: "\u2716", color: "red" },
 } as const;
 
-export function RunnerLine({ level, text }: { level: keyof typeof HOST_MARKS; text: string }) {
-  const mark = HOST_MARKS[level];
+export function RunnerLine({
+  level,
+  text,
+}: {
+  level: keyof typeof RUNNER_LINE_MARKS;
+  text: string;
+}) {
+  const mark = RUNNER_LINE_MARKS[level];
   return (
     <Text>
       <Text color={mark.color}>{mark.glyph}</Text> {indentContinuation(text)}
