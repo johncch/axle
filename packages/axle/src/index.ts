@@ -201,6 +201,8 @@ export type { CompactionStamp } from "./messages/compaction.js";
 // Turns (public format)
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export { Meter } from "./turns/meter.js";
+export type { Cost, PricedEntry, SavedMeter } from "./turns/meter.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export type {
