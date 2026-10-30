@@ -12,7 +12,7 @@ import type { FileInfo } from "../utils/file.js";
 export type TurnStatus = "pending" | "streaming" | "complete" | "cancelled" | "error";
 
 /**
- * Host-owned stable render metadata attached to a turn.
+ * Consumer-owned stable render metadata attached to a turn.
  *
  * Metadata is not model state and has no lifecycle. Use annotations for
  * mutable, async, or explicitly placed UI state.
@@ -45,7 +45,7 @@ export type AnnotationStatus = "running" | "complete" | "cancelled" | "error";
 /**
  * Render metadata attached to a session, turn, or turn part.
  *
- * Annotations let hosts attach out-of-band UI such as sandbox startup, eval
+ * Annotations let consumers attach out-of-band UI such as sandbox startup, eval
  * results, or deployment state without turning that data into model state.
  *
  * @typeParam TData - Consumer-owned payload for the annotation kind.
@@ -75,7 +75,7 @@ export interface Annotation<TData = unknown, TKind extends string = string> {
  * and turns are the accumulated render state. The model-facing conversation
  * remains `AxleMessage[]`.
  *
- * @typeParam TAnnotation - Annotation union supported by the host renderer.
+ * @typeParam TAnnotation - Annotation union supported by the consumer renderer.
  */
 export interface Turn<TAnnotation extends Annotation = Annotation> {
   /** Stable turn id. */
@@ -88,7 +88,7 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   status: TurnStatus;
   /** Annotations attached to the whole turn. */
   annotations?: TAnnotation[];
-  /** Stable host-owned render metadata copied from the source message. */
+  /** Stable consumer-owned render metadata copied from the source message. */
   metadata?: TurnMetadata;
   /** Optional timing metadata. */
   timing?: TimingInfo;

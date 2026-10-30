@@ -56,7 +56,9 @@
 
 - `packages/axle/`: Core runtime package
   - `src/core/`: Agent, Instruct, compile, parse
-  - `src/providers/`: LLM provider integrations
+  - `src/protocols/`: Wire formats: one adapter per protocol (`messages`, `responses`, `generateContent`, `chatCompletions`), plus `AIProvider` and what adapters share
+  - `src/providers/`: Presets: a protocol plus base URL, provider id and dialect (`anthropic()`, `openai()`, …)
+  - `src/execution/`: The primitives that run requests: `stream()`, `generate()`, `decide()`, the step reader and tool batch
   - `src/mcp/`: Model Context Protocol adapter
   - `src/messages/`: Conversation history and message types
   - `src/tools/`: Tool interfaces and registry

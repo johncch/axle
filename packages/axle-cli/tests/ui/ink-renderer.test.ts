@@ -39,7 +39,7 @@ describe("UiStore", () => {
 
     store.update((state) => ({
       ...state,
-      staticItems: [...state.staticItems, { kind: "host", level: "info", text: "hi" }],
+      staticItems: [...state.staticItems, { kind: "runner", level: "info", text: "hi" }],
     }));
 
     expect(notified).toBe(1);

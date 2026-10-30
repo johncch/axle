@@ -1,5 +1,6 @@
 import { styleText } from "node:util";
 import { z } from "zod";
+import { wrap } from "../ui/format.js";
 import { CliConfigSchema, JobConfigSchema } from "./configs/schemas.js";
 
 type Schema = z.core.JSONSchema.JSONSchema;
@@ -145,20 +146,6 @@ function descriptionOf(field: Field): string {
   return descriptions.join(" ");
 }
 
-function wrap(text: string, indent: string, width: number): string[] {
-  if (text === "") return [];
-  const lines: string[] = [];
-  let line = indent;
-  for (const word of text.split(" ")) {
-    if (line !== indent && line.length + 1 + word.length > width) {
-      lines.push(line);
-      line = indent;
-    }
-    line += line === indent ? word : ` ${word}`;
-  }
-  return [...lines, line];
-}
-
 function alternativesOf(schema: Schema): Schema[] {
   const branches = schema.anyOf ?? schema.oneOf;
   return branches === undefined ? [schema] : branches.flatMap(alternativesOf);
@@ -181,7 +168,11 @@ function childrenOf(field: Field): Field[] {
       ? keys.find((key) => objects.every((object) => propertyOf(object, key)?.const !== undefined))
       : undefined;
 
-  return keys.map((key) => {
+  const named = objects.flatMap(namedEntryOf);
+  const namedFields: Field[] =
+    named.length > 0 ? [{ key: "<name>", schemas: named, required: false }] : [];
+
+  const fields = keys.map((key) => {
     const holders = objects.filter((object) => propertyOf(object, key) !== undefined);
     const condition =
       discriminator !== undefined && holders.length < objects.length
@@ -198,6 +189,12 @@ function childrenOf(field: Field): Field[] {
       condition,
     };
   });
+  return [...fields, ...namedFields];
+}
+
+function namedEntryOf(object: Schema): Schema[] {
+  const entry = object.additionalProperties;
+  return typeof entry === "object" && !Array.isArray(entry) ? [entry] : [];
 }
 
 function propertyOf(object: Schema, key: string): Schema | undefined {

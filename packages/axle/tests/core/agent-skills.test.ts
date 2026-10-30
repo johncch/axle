@@ -3,13 +3,14 @@ import { z } from "zod";
 import { Agent } from "../../src/core/agent/index.js";
 import { AxleError } from "../../src/errors/AxleError.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import type { Skill } from "../../src/skills/types.js";
 import type { ExecutableTool } from "../../src/tools/types.js";
 
 const provider: AIProvider = {
-  name: "never-called",
+  protocol: "chatCompletions",
+  id: "never-called",
   async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
     throw new Error("not expected");
   },
@@ -34,7 +35,8 @@ function recordingProvider(steps: ("text" | { call: string })[]): {
   const requests: SeenRequest[] = [];
   let index = 0;
   const provider: AIProvider = {
-    name: "recording",
+    protocol: "chatCompletions",
+    id: "recording",
     async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
       requests.push({ system: params.system, tools: params.tools?.map((tool) => tool.name) });
       const step = steps[index++];

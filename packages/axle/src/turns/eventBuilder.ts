@@ -1,5 +1,5 @@
+import type { StreamEvent } from "../execution/stream.js";
 import type { AxleUserMessage } from "../messages/message.js";
-import type { StreamEvent } from "../providers/stream.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats } from "../utils/stats.js";
 import type { TurnEvent } from "./events.js";

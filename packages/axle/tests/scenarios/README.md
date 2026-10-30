@@ -75,7 +75,7 @@ span:start → span:update (setResult) → span:end
 | 6.6 | Pre-aborted signal prevents provider work                           |
 
 Shared lifecycle behavior is covered by `stream-lifecycle.test.ts`. Instruct
-history and parsing contracts are covered by `providers/instruct-options.test.ts`.
+history and parsing contracts are covered by `execution/instruct-options.test.ts`.
 
 ## Adding a New Test
 

@@ -1,4 +1,4 @@
-import type { Stats } from "../types.js";
+import type { Stats, TokenStats } from "../types.js";
 
 export function createStats(): Stats {
   return { in: 0, out: 0 };
@@ -27,31 +27,35 @@ export function mergeStats(...usages: Array<Stats | undefined>): Stats {
 
 /**
  * Attribute a step's provider-reported usage to breakdown rows that survive
- * aggregation across turns and subagents: one row for the step, or the
- * provider's own per-request rows when it sent more than one request.
+ * aggregation across turns and subagents: one row for the step, or one per
+ * request when the step took more than one.
  */
 export function attributeStats(
   usage: Stats,
-  source: { provider: string; model: string; agent?: string },
+  source: {
+    provider?: string;
+    model: string;
+    requestedModel: string;
+    agent?: string;
+    requests?: TokenStats[];
+  },
 ): Stats {
+  const provider = source.provider !== undefined ? { provider: source.provider } : {};
   const agent = source.agent !== undefined ? { agent: source.agent } : {};
-  if (usage.breakdown?.length) {
-    return { ...usage, breakdown: usage.breakdown.map((row) => ({ ...row, ...agent })) };
-  }
+  const requests = source.requests?.length ? source.requests : [usage];
   return {
     ...usage,
-    breakdown: [
-      {
-        provider: source.provider,
-        model: source.model,
-        ...agent,
-        in: usage.in,
-        out: usage.out,
-        ...(usage.cachedIn !== undefined ? { cachedIn: usage.cachedIn } : {}),
-        ...(usage.cacheWriteIn !== undefined ? { cacheWriteIn: usage.cacheWriteIn } : {}),
-        ...(usage.reasoningOut !== undefined ? { reasoningOut: usage.reasoningOut } : {}),
-      },
-    ],
+    breakdown: requests.map((request) => ({
+      ...provider,
+      model: source.model,
+      requestedModel: source.requestedModel,
+      ...agent,
+      in: request.in,
+      out: request.out,
+      ...(request.cachedIn !== undefined ? { cachedIn: request.cachedIn } : {}),
+      ...(request.cacheWriteIn !== undefined ? { cacheWriteIn: request.cacheWriteIn } : {}),
+      ...(request.reasoningOut !== undefined ? { reasoningOut: request.reasoningOut } : {}),
+    })),
   };
 }
 

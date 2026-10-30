@@ -3,13 +3,14 @@ import { Agent } from "../../src/core/agent/index.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import type { MCP } from "../../src/mcp/MCP.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 
 function createMockStreamProvider(responses: string[]): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock-stream",
+    protocol: "chatCompletions",
+    id: "mock-stream",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const text = responses[callIndex++] ?? "default";
       yield {

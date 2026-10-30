@@ -1,23 +1,25 @@
-import { inferChatCompletionsVendor } from "@fifthrevision/axle";
 import * as ask from "../ui/ask.js";
 import type { ConfigHome } from "./configs/loaders.js";
 import { readConfigHome } from "./configs/loaders.js";
 import type { ConfigScope, ConfigTarget } from "./configs/paths.js";
-import type { AIProviderUse, CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
+import type { CliConfig, GenericProfile, JobConfig, ServiceConfig } from "./configs/schemas.js";
+import { PRESET_NAMES } from "./configs/schemas.js";
 import { updateCliDefaults, upsertCliProvider, upsertCredentials } from "./configs/writers.js";
 import { isFolderTrusted, trustFolder } from "./trust.js";
 
 interface BuiltInChoice {
-  value: "anthropic" | "openai" | "gemini";
+  value: "anthropic" | "openai" | "gemini" | "openrouter" | "together";
   label: string;
   keyName: string;
-  publisher: string;
+  publisher?: string;
 }
 
 const BUILT_IN_CHOICES: BuiltInChoice[] = [
   { value: "anthropic", label: "Anthropic", keyName: "ANTHROPIC_API_KEY", publisher: "anthropic/" },
   { value: "openai", label: "OpenAI", keyName: "OPENAI_API_KEY", publisher: "openai/" },
   { value: "gemini", label: "Google Gemini", keyName: "GEMINI_API_KEY", publisher: "google/" },
+  { value: "openrouter", label: "OpenRouter", keyName: "OPENROUTER_API_KEY" },
+  { value: "together", label: "Together", keyName: "TOGETHER_API_KEY" },
 ];
 
 const ENDPOINT_CHOICE = "endpoint";
@@ -123,7 +125,7 @@ export async function runSetupWizard(): Promise<void> {
 
   const options: { value: string; label: string }[] = [
     ...BUILT_IN_CHOICES.map((c) => ({ value: c.value, label: c.label })),
-    { value: ENDPOINT_CHOICE, label: "OpenAI-compatible endpoint (Ollama, OpenRouter, …)" },
+    { value: ENDPOINT_CHOICE, label: "OpenAI-compatible endpoint (Ollama, LM Studio, …)" },
   ];
   const selected = ensureNotCancelled(
     await ask.select({ message: "Which provider should axle use by default?", options }),
@@ -134,7 +136,7 @@ export async function runSetupWizard(): Promise<void> {
     ? await setUpBuiltIn(builtIn, home, target)
     : await setUpEndpoint(home, target);
 
-  const model = await promptForModel(provider.type);
+  const model = await promptForModel(provider.name);
   const configPath = await updateCliDefaults(
     { provider: provider.name, models: { [provider.name]: model } },
     target,
@@ -181,7 +183,7 @@ async function setUpBuiltIn(
   choice: BuiltInChoice,
   home: ConfigHome,
   target: ConfigTarget,
-): Promise<{ name: string; type: AIProviderUse["type"] }> {
+): Promise<{ name: string }> {
   let replaceKey = true;
   if (home.credentials[choice.keyName]) {
     replaceKey = ensureNotCancelled(
@@ -201,13 +203,10 @@ async function setUpBuiltIn(
     ).trim();
     await writeKey(choice.keyName, key, target);
   }
-  return { name: choice.value, type: choice.value };
+  return { name: choice.value };
 }
 
-async function setUpEndpoint(
-  home: ConfigHome,
-  target: ConfigTarget,
-): Promise<{ name: string; type: AIProviderUse["type"] }> {
+async function setUpEndpoint(home: ConfigHome, target: ConfigTarget): Promise<{ name: string }> {
   const baseUrl = ensureNotCancelled(
     await ask.text({ message: "Base URL of the endpoint", defaultValue: OLLAMA_BASE_URL }),
   ).trim();
@@ -218,7 +217,7 @@ async function setUpEndpoint(
     await ask.password({ message: "API key (leave empty if the endpoint needs none)" }),
   ).trim();
 
-  const profile: AIProviderUse = { type: "chatcompletions", baseUrl };
+  const profile: GenericProfile = { protocol: "chatCompletions", baseUrl };
   if (key.length > 0) {
     const keyName = `${name.toUpperCase().replaceAll("-", "_")}_API_KEY`;
     await writeKey(keyName, key, target);
@@ -227,7 +226,7 @@ async function setUpEndpoint(
 
   const configPath = await upsertCliProvider(name, profile, target);
   ask.log.success(`Provider ${name} saved to ${configPath}`);
-  return { name, type: profile.type };
+  return { name };
 }
 
 async function promptForProfileName(baseUrl: string, cliConfig: CliConfig): Promise<string> {
@@ -237,10 +236,12 @@ async function promptForProfileName(baseUrl: string, cliConfig: CliConfig): Prom
       await ask.text({
         message: "Name for this provider",
         defaultValue: defaultName,
-        initialValue: inferChatCompletionsVendor(baseUrl) ?? "",
         validate: (value) => {
           const typed = (value ?? "").trim();
           if (typed.length === 0 && defaultName !== undefined) return undefined;
+          if ((PRESET_NAMES as readonly string[]).includes(typed)) {
+            return `${typed} is a preset; choose another name for your own endpoint`;
+          }
           return PROFILE_NAME_PATTERN.test(typed)
             ? undefined
             : "Use letters, digits, - and _, starting with a letter";

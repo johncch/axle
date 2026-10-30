@@ -1,5 +1,5 @@
-import { AxleStopReason, type Refusal } from "../providers/types.js";
-import { Stats } from "../types.js";
+import { AxleStopReason, type Refusal } from "../protocols/types.js";
+import { Stats, TokenStats } from "../types.js";
 import type { Citation, ThinkingContinuity } from "./message.js";
 import type {
   ProviderToolContinuity,
@@ -54,6 +54,8 @@ export interface StreamCompleteChunk extends StreamChunk {
   data: {
     finishReason: AxleStopReason;
     usage: Stats;
+    /** Each request's usage, when the step took more than one; `usage` is their sum. */
+    requests?: TokenStats[];
   };
 }
 
@@ -74,6 +76,8 @@ export interface StreamIncompleteChunk extends StreamChunk {
     type: string;
     message: string;
     usage?: Stats;
+    /** Each request's usage, when the step took more than one; `usage` is their sum. */
+    requests?: TokenStats[];
     raw?: unknown;
   };
 }
@@ -83,6 +87,8 @@ export interface StreamRefusalChunk extends StreamChunk {
   data: {
     refusal: Refusal;
     usage: Stats;
+    /** Each request's usage, when the step took more than one; `usage` is their sum. */
+    requests?: TokenStats[];
   };
 }
 

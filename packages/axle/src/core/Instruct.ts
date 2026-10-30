@@ -94,7 +94,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     this.files.push(options?.name ? { ...file, name: options.name } : file);
   }
 
-  /** Append host-supplied supporting material without modifying the authored prompt. */
+  /** Append consumer-supplied supporting material without modifying the authored prompt. */
   addContext(content: string, options?: { title?: string }): this {
     this.contextSections.push({
       content,

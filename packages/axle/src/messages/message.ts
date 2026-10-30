@@ -1,4 +1,4 @@
-import { AxleStopReason } from "../providers/types.js";
+import { AxleStopReason } from "../protocols/types.js";
 import type { FileInfo } from "../utils/file.js";
 import type {
   ProviderToolContinuity,
@@ -17,9 +17,9 @@ import type {
 export type AxleMessage = AxleUserMessage | AxleAssistantMessage | AxleToolCallMessage;
 
 /**
- * Host-owned render metadata attached to a message.
+ * Consumer-owned render metadata attached to a message.
  *
- * Providers ignore this data; it exists so hosts can carry stable presentation
+ * Providers ignore this data; it exists so consumers can carry stable presentation
  * hints through history and into renderable turns.
  */
 export type MessageMetadata = Record<string, unknown>;
@@ -34,7 +34,7 @@ export type MessageMetadata = Record<string, unknown>;
 export type ToolResultPart = { type: "text"; text: string } | { type: "file"; file: FileInfo };
 
 /**
- * Message authored by the user or host application.
+ * Message authored by the user or consumer application.
  */
 export interface AxleUserMessage {
   /** Message role discriminator. */
@@ -45,7 +45,7 @@ export interface AxleUserMessage {
   name?: string;
   /** User-authored text or mixed content parts. */
   content: string | Array<ContentPart>;
-  /** Stable host-owned render metadata copied to the corresponding user turn. */
+  /** Stable consumer-owned render metadata copied to the corresponding user turn. */
   metadata?: MessageMetadata;
 }
 

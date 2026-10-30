@@ -4,6 +4,7 @@ import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 import type { Span } from "../observability/types.js";
+import type { Protocol } from "../protocols/types.js";
 import type { FilePathInfo } from "./types.js";
 
 export async function loadManyFiles(filenames: string[], span?: Span) {
@@ -110,7 +111,6 @@ export type ConcreteFileInfo = FileInfo & {
   source: { type: "text" } | { type: "base64" } | { type: "url" };
 };
 
-export type FileProviderId = "anthropic" | "openai" | "gemini" | "chatcompletions";
 export type FilePurpose = "user-message" | "tool-result";
 export type FileResolveFormat = "base64" | "url" | "text" | "gemini-file-uri";
 
@@ -123,7 +123,8 @@ export type ResolvedFileSource =
 export interface FileResolveRequest {
   file: DeferredFileInfo;
   ref: unknown;
-  provider: FileProviderId;
+  /** The wire format the file is resolved for. */
+  protocol: Protocol;
   model: string;
   accepted: FileResolveFormat[];
   signal?: AbortSignal;
@@ -132,7 +133,7 @@ export interface FileResolveRequest {
 export type FileResolver = (request: FileResolveRequest) => Promise<ResolvedFileSource>;
 
 export interface ResolveFileSourceOptions {
-  provider: FileProviderId;
+  protocol: Protocol;
   model: string;
   accepted: FileResolveFormat[];
   purpose: FilePurpose;
@@ -169,7 +170,7 @@ export async function resolveFileSource(
   const resolved = await options.resolver({
     file: file as DeferredFileInfo,
     ref: source.ref,
-    provider: options.provider,
+    protocol: options.protocol,
     model: options.model,
     accepted: options.accepted,
     signal: options.signal,
@@ -191,7 +192,7 @@ function assertAccepted(
   }
 
   throw new AxleError(
-    `File source '${resolved.type}' is not supported for ${options.provider} ${file.kind} file '${file.name}'. Accepted: ${options.accepted.join(", ")}`,
+    `File source '${resolved.type}' is not supported for ${options.protocol} ${file.kind} file '${file.name}'. Accepted: ${options.accepted.join(", ")}`,
     { code: AxleErrorCode.FILE_UNREADABLE, details: { name: file.name } },
   );
 }

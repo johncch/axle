@@ -38,7 +38,7 @@ describe("stats utilities", () => {
     const total = { in: 2, out: 1 };
     const child = attributeStats(
       { in: 3, out: 4, cachedIn: 1 },
-      { provider: "child-provider", model: "child-model" },
+      { provider: "child-provider", model: "child-model", requestedModel: "child-model" },
     );
 
     addStats(total, child);
@@ -47,52 +47,118 @@ describe("stats utilities", () => {
       in: 5,
       out: 5,
       cachedIn: 1,
-      breakdown: [{ provider: "child-provider", model: "child-model", in: 3, out: 4, cachedIn: 1 }],
+      breakdown: [
+        {
+          provider: "child-provider",
+          model: "child-model",
+          requestedModel: "child-model",
+          in: 3,
+          out: 4,
+          cachedIn: 1,
+        },
+      ],
     });
   });
 
   test("keeps one breakdown row per request for the same provider and model", () => {
     const total = { in: 0, out: 0 };
 
-    addStats(total, attributeStats({ in: 1, out: 2 }, { provider: "p", model: "m" }));
-    addStats(total, attributeStats({ in: 3, out: 4, cachedIn: 5 }, { provider: "p", model: "m" }));
+    addStats(
+      total,
+      attributeStats({ in: 1, out: 2 }, { provider: "p", model: "m", requestedModel: "m" }),
+    );
+    addStats(
+      total,
+      attributeStats(
+        { in: 3, out: 4, cachedIn: 5 },
+        { provider: "p", model: "m", requestedModel: "m" },
+      ),
+    );
 
     expect(total).toEqual({
       in: 4,
       out: 6,
       cachedIn: 5,
       breakdown: [
-        { provider: "p", model: "m", in: 1, out: 2 },
-        { provider: "p", model: "m", in: 3, out: 4, cachedIn: 5 },
+        { provider: "p", model: "m", requestedModel: "m", in: 1, out: 2 },
+        { provider: "p", model: "m", requestedModel: "m", in: 3, out: 4, cachedIn: 5 },
       ],
     });
   });
 
   test("stamps the agent name on the row it attributes", () => {
     expect(
-      attributeStats({ in: 1, out: 2 }, { provider: "p", model: "m", agent: "researcher" })
-        .breakdown,
-    ).toEqual([{ provider: "p", model: "m", agent: "researcher", in: 1, out: 2 }]);
+      attributeStats(
+        { in: 1, out: 2 },
+        { provider: "p", model: "m", requestedModel: "m", agent: "researcher" },
+      ).breakdown,
+    ).toEqual([
+      { provider: "p", model: "m", requestedModel: "m", agent: "researcher", in: 1, out: 2 },
+    ]);
   });
 
-  test("keeps a provider's own per-request rows and stamps the agent on each", () => {
-    const stepUsage = {
-      in: 50,
-      out: 27,
-      breakdown: [
-        { provider: "anthropic", model: "claude-x", in: 10, out: 20 },
-        { provider: "anthropic", model: "claude-x", in: 40, out: 7 },
-      ],
-    };
-
+  test("records the requested model next to the one the response reported", () => {
     expect(
-      attributeStats(stepUsage, { provider: "anthropic", model: "claude-x", agent: "researcher" }),
+      attributeStats(
+        { in: 1, out: 2 },
+        {
+          provider: "amazon-bedrock",
+          model: "anthropic.claude-haiku-4-5-20251001-v1:0",
+          requestedModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        },
+      ).breakdown,
+    ).toEqual([
+      {
+        provider: "amazon-bedrock",
+        model: "anthropic.claude-haiku-4-5-20251001-v1:0",
+        requestedModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        in: 1,
+        out: 2,
+      },
+    ]);
+  });
+
+  test("leaves provider off the row when the provider has no id", () => {
+    expect(
+      attributeStats({ in: 1, out: 2 }, { model: "m", requestedModel: "m" }).breakdown,
+    ).toEqual([{ model: "m", requestedModel: "m", in: 1, out: 2 }]);
+  });
+
+  test("writes one row per request when the step took several", () => {
+    expect(
+      attributeStats(
+        { in: 50, out: 27 },
+        {
+          provider: "anthropic",
+          model: "claude-x",
+          requestedModel: "anthropic/claude-x",
+          agent: "researcher",
+          requests: [
+            { in: 10, out: 20 },
+            { in: 40, out: 7 },
+          ],
+        },
+      ),
     ).toEqual({
       in: 50,
       out: 27,
       breakdown: [
-        { provider: "anthropic", model: "claude-x", agent: "researcher", in: 10, out: 20 },
-        { provider: "anthropic", model: "claude-x", agent: "researcher", in: 40, out: 7 },
+        {
+          provider: "anthropic",
+          model: "claude-x",
+          requestedModel: "anthropic/claude-x",
+          agent: "researcher",
+          in: 10,
+          out: 20,
+        },
+        {
+          provider: "anthropic",
+          model: "claude-x",
+          requestedModel: "anthropic/claude-x",
+          agent: "researcher",
+          in: 40,
+          out: 7,
+        },
       ],
     });
   });
@@ -100,15 +166,21 @@ describe("stats utilities", () => {
   test("keeps rows in request order across providers", () => {
     expect(
       mergeStats(
-        attributeStats({ in: 1, out: 2 }, { provider: "anthropic", model: "parent" }),
-        attributeStats({ in: 3, out: 4 }, { provider: "openai", model: "child" }),
+        attributeStats(
+          { in: 1, out: 2 },
+          { provider: "anthropic", model: "parent", requestedModel: "parent" },
+        ),
+        attributeStats(
+          { in: 3, out: 4 },
+          { provider: "openai", model: "child", requestedModel: "child" },
+        ),
       ),
     ).toEqual({
       in: 4,
       out: 6,
       breakdown: [
-        { provider: "anthropic", model: "parent", in: 1, out: 2 },
-        { provider: "openai", model: "child", in: 3, out: 4 },
+        { provider: "anthropic", model: "parent", requestedModel: "parent", in: 1, out: 2 },
+        { provider: "openai", model: "child", requestedModel: "child", in: 3, out: 4 },
       ],
     });
   });

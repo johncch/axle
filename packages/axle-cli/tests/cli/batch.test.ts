@@ -36,7 +36,8 @@ function createRecordingRenderer() {
 function createMockProvider(options?: { failOnCall?: number }): AIProvider {
   let callIndex = 0;
   return {
-    name: "mock",
+    protocol: "chatCompletions",
+    id: "mock",
     async *createStreamingRequest() {
       callIndex += 1;
       if (callIndex === options?.failOnCall) {

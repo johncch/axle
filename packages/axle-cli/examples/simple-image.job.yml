@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../../../schemas/v3/job.yaml
 provider:
-  type: chatcompletions
+  protocol: chatCompletions
   baseUrl: http://localhost:11434/v1
 
 model: gemma3

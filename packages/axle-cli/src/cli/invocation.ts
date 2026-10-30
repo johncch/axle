@@ -1,6 +1,6 @@
 import { Instruct, loadFileContent } from "@fifthrevision/axle";
 import type { RunTarget } from "./agent-config.js";
-import { resolveEndpoint, resolveTarget } from "./agent-config.js";
+import { resolveTarget } from "./agent-config.js";
 import type { AgentRecipe, CliConfig, JobConfig, ServiceConfig } from "./configs/schemas.js";
 import { agentRecipeOf } from "./configs/schemas.js";
 import type { AgentSessionSpec, BatchRunSpec } from "./runners.js";
@@ -181,8 +181,7 @@ export async function buildPendingPlan(options: {
   // A picked model is this run's, not the recipe's: the session does not
   // record it, so every run offers to make it the default.
   if (!pending.target.model && interactiveTerminal) {
-    const endpoint = resolveEndpoint(pending.target.provider, cliConfig);
-    pending.target.model = await promptForMissingModel(endpoint.type, {
+    pending.target.model = await promptForMissingModel(pending.target.providerName, {
       saveAs: pending.target.providerName,
     });
   }

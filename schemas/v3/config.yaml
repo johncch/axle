@@ -5,169 +5,274 @@ $schema: http://json-schema.org/draft-07/schema#
 type: object
 properties:
   providers:
-    description: "Named provider profiles: endpoint configuration a recipe refers to
-      by name."
+    description: Provider profiles a recipe refers to by name. A key naming a preset
+      extends that preset; any other key is a generic profile.
     type: object
-    propertyNames:
-      type: string
+    properties:
+      anthropic:
+        description: The anthropic preset.
+        type: object
+        properties:
+          apiKey:
+            description: API key, inline. Prefer apiKeyEnv or a credentials file.
+            type: string
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        additionalProperties: false
+      openai:
+        description: The openai preset.
+        type: object
+        properties:
+          apiKey:
+            description: API key, inline. Prefer apiKeyEnv or a credentials file.
+            type: string
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        additionalProperties: false
+      gemini:
+        description: The gemini preset.
+        type: object
+        properties:
+          apiKey:
+            description: API key, inline. Prefer apiKeyEnv or a credentials file.
+            type: string
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        additionalProperties: false
+      openrouter:
+        description: The openrouter preset.
+        type: object
+        properties:
+          apiKey:
+            description: API key, inline. Prefer apiKeyEnv or a credentials file.
+            type: string
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          baseUrl:
+            description: OpenRouter host, e.g. https://eu.openrouter.ai/api/v1. Defaults to
+              openrouter.ai.
+            type: string
+            minLength: 1
+        additionalProperties: false
+      together:
+        description: The together preset.
+        type: object
+        properties:
+          apiKey:
+            description: API key, inline. Prefer apiKeyEnv or a credentials file.
+            type: string
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        additionalProperties: false
+      bedrock:
+        description: The bedrock preset; needs protocol and region.
+        type: object
+        properties:
+          apiKey:
+            description: API key, inline. Prefer apiKeyEnv or a credentials file.
+            type: string
+          apiKeyEnv:
+            description: Name of the environment variable or credentials entry that holds
+              the API key.
+            type: string
+          maxRetries:
+            description: Retries after a failed request. Defaults to 2.
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          timeoutMs:
+            description: Timeout for one request attempt, in milliseconds. Defaults to the
+              provider SDK's own; 10 minutes for chatCompletions.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          contextWindow:
+            description: Context window in tokens for every model on this endpoint;
+              overrides the models.dev lookup. Set it for a local server that
+              loads models below their maximum.
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+          protocol:
+            type: string
+            enum:
+              - messages
+              - responses
+              - chatCompletions
+            description: "Protocol to speak, which follows the model: messages for Claude."
+          region:
+            type: string
+            minLength: 1
+            description: AWS region of the Bedrock endpoint, e.g. us-east-1.
+        required:
+          - protocol
+          - region
+        additionalProperties: false
     additionalProperties:
-      oneOf:
-        - type: object
-          properties:
-            type:
-              type: string
-              const: chatcompletions
-              description: Provider API the endpoint speaks.
-            baseUrl:
-              type: string
-              minLength: 1
-              description: Base URL of the OpenAI-compatible endpoint, e.g.
-                http://localhost:11434/v1.
-            vendor:
-              description: Vendor behind the endpoint; turns on that vendor's own request
-                fields.
-              type: string
-              enum:
-                - openrouter
-                - togetherai
-            apiKey:
-              description: API key, inline. Prefer apiKeyEnv or a credentials file.
-              type: string
-            apiKeyEnv:
-              description: Name of the environment variable or credentials entry that holds
-                the API key.
-              type: string
-            maxRetries:
-              description: Retries after a failed request. Defaults to 2.
-              type: integer
-              minimum: 0
-              maximum: 9007199254740991
-            timeoutMs:
-              description: Timeout for one request attempt, in milliseconds. Defaults to the
-                provider SDK's own; 10 minutes for chatcompletions.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-            contextWindow:
-              description: Context window in tokens for every model on this endpoint;
-                overrides the models.dev lookup. Set it for a local server that
-                loads models below their maximum.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-          required:
-            - type
-            - baseUrl
-          additionalProperties: false
-        - type: object
-          properties:
-            type:
-              type: string
-              const: anthropic
-              description: Provider API the endpoint speaks.
-            apiKey:
-              description: API key, inline. Prefer apiKeyEnv or a credentials file.
-              type: string
-            apiKeyEnv:
-              description: Name of the environment variable or credentials entry that holds
-                the API key.
-              type: string
-            maxRetries:
-              description: Retries after a failed request. Defaults to 2.
-              type: integer
-              minimum: 0
-              maximum: 9007199254740991
-            timeoutMs:
-              description: Timeout for one request attempt, in milliseconds. Defaults to the
-                provider SDK's own; 10 minutes for chatcompletions.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-            contextWindow:
-              description: Context window in tokens for every model on this endpoint;
-                overrides the models.dev lookup. Set it for a local server that
-                loads models below their maximum.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-          required:
-            - type
-          additionalProperties: false
-        - type: object
-          properties:
-            type:
-              type: string
-              const: openai
-              description: Provider API the endpoint speaks.
-            apiKey:
-              description: API key, inline. Prefer apiKeyEnv or a credentials file.
-              type: string
-            apiKeyEnv:
-              description: Name of the environment variable or credentials entry that holds
-                the API key.
-              type: string
-            maxRetries:
-              description: Retries after a failed request. Defaults to 2.
-              type: integer
-              minimum: 0
-              maximum: 9007199254740991
-            timeoutMs:
-              description: Timeout for one request attempt, in milliseconds. Defaults to the
-                provider SDK's own; 10 minutes for chatcompletions.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-            contextWindow:
-              description: Context window in tokens for every model on this endpoint;
-                overrides the models.dev lookup. Set it for a local server that
-                loads models below their maximum.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-          required:
-            - type
-          additionalProperties: false
-        - type: object
-          properties:
-            type:
-              type: string
-              const: gemini
-              description: Provider API the endpoint speaks.
-            apiKey:
-              description: API key, inline. Prefer apiKeyEnv or a credentials file.
-              type: string
-            apiKeyEnv:
-              description: Name of the environment variable or credentials entry that holds
-                the API key.
-              type: string
-            maxRetries:
-              description: Retries after a failed request. Defaults to 2.
-              type: integer
-              minimum: 0
-              maximum: 9007199254740991
-            timeoutMs:
-              description: Timeout for one request attempt, in milliseconds. Defaults to the
-                provider SDK's own; 10 minutes for chatcompletions.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-            contextWindow:
-              description: Context window in tokens for every model on this endpoint;
-                overrides the models.dev lookup. Set it for a local server that
-                loads models below their maximum.
-              type: integer
-              exclusiveMinimum: 0
-              maximum: 9007199254740991
-          required:
-            - type
-          additionalProperties: false
+      type: object
+      properties:
+        protocol:
+          type: string
+          enum:
+            - messages
+            - responses
+            - generateContent
+            - chatCompletions
+          description: Protocol the endpoint speaks.
+        baseUrl:
+          type: string
+          minLength: 1
+          description: Base URL of the endpoint, in the protocol's convention, e.g.
+            http://localhost:11434/v1.
+        id:
+          description: models.dev provider id of the service behind the endpoint; inferred
+            from a known hostname.
+          type: string
+          minLength: 1
+        dialect:
+          description: Chat Completions dialect of the service behind the endpoint;
+            inferred from a known hostname.
+          type: string
+          enum:
+            - openrouter
+            - together
+        apiKey:
+          description: API key, inline. Prefer apiKeyEnv or a credentials file.
+          type: string
+        apiKeyEnv:
+          description: Name of the environment variable or credentials entry that holds
+            the API key.
+          type: string
+        maxRetries:
+          description: Retries after a failed request. Defaults to 2.
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        timeoutMs:
+          description: Timeout for one request attempt, in milliseconds. Defaults to the
+            provider SDK's own; 10 minutes for chatCompletions.
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 9007199254740991
+        contextWindow:
+          description: Context window in tokens for every model on this endpoint;
+            overrides the models.dev lookup. Set it for a local server that
+            loads models below their maximum.
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 9007199254740991
+      required:
+        - protocol
+        - baseUrl
+      additionalProperties: false
+      description: A generic profile, under any name but a preset's.
   defaults:
     description: Values used when a recipe or the command line leaves them out.
     type: object
     properties:
       provider:
-        description: "Provider used when a recipe or chat names none: a profile name or
-          built-in type."
+        description: "Provider used when a recipe or chat names none: a preset or a
+          profile name."
         type: string
       models:
         description: Default model per provider name, used when a recipe names no model.

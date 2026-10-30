@@ -1,6 +1,6 @@
 import { generate, stream, type AIProvider } from "@fifthrevision/axle";
 import { FinishReason, type GenerateContentResponse } from "@google/genai";
-import { createGeminiStreamingAdapter } from "../../packages/axle/src/providers/gemini/createStreamingAdapter.js";
+import { createGeminiStreamingAdapter } from "../../packages/axle/src/protocols/generateContent/createStreamingAdapter.js";
 import type { CheckCase } from "./types.js";
 
 export const geminiCitationCases: CheckCase[] = [
@@ -12,7 +12,8 @@ export const geminiCitationCases: CheckCase[] = [
       "Gemini grounding survives a trailing thought signature through generate and stream.",
     async run() {
       const provider: AIProvider = {
-        name: "Gemini",
+        protocol: "generateContent",
+        id: "google",
         async *createStreamingRequest() {
           const adapter = createGeminiStreamingAdapter();
           for (const candidate of [

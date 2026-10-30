@@ -161,7 +161,7 @@ block that vanishes on settle.
 **A summary is a body, not a headline.** What providers put in `summary`
 runs to paragraphs. It is a condensed body, an alternative to raw text, and
 a consumer never holds both for one block. Headline-and-body is a render
-contract across every part type and the headline is host-owned. The single
+contract across every part type and the headline is consumer-owned. The single
 exception is Anthropic's progress update under `display: "updates"`, the
 one place a provider hands back a real headline; it arrives as a sibling
 block describing the next action, not as a field on the reasoning block.
@@ -170,7 +170,7 @@ Not planned work; recorded so the option is on file.
 OpenRouter forwards the echoed entries to the upstream as signed blocks, and
 Anthropic rejects a signature whose text was altered, so the echo sends the
 message's content field verbatim. The echo is gated on the `openrouter`
-vendor, as Together's request shape is; a strict generic endpoint may reject
+provider, as Together's request shape is; a strict generic endpoint may reject
 an unknown field. Under `display: "hidden"` OpenRouter still returns
 `reasoning_details` with text for Claude (`exclude` strips only the
 convenience `reasoning` string there), while for Gemini it also drops the

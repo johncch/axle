@@ -1,0 +1,198 @@
+import { afterEach, expect, test, vi } from "vitest";
+import { z } from "zod";
+import { AxleErrorCode } from "../../src/errors/AxleError.js";
+import { generate } from "../../src/execution/generate.js";
+import { createStreamingRequest as chat } from "../../src/protocols/chatCompletions/createStreamingRequest.js";
+import { createStreamingRequest as gemini } from "../../src/protocols/generateContent/createStreamingRequest.js";
+import { createStreamingRequest as anthropic } from "../../src/protocols/messages/createStreamingRequest.js";
+import { createStreamingAdapter } from "../../src/protocols/responses/createStreamingAdapter.js";
+import { createStreamingRequest as openai } from "../../src/protocols/responses/createStreamingRequest.js";
+import type { AIProvider, ProviderStreamParams } from "../../src/protocols/types.js";
+import { normalizeProviderError } from "../../src/protocols/utils.js";
+import { createTracerAndWriter } from "../scenarios/helpers/recording-writer.js";
+
+const messages = [{ role: "user" as const, content: "hello" }];
+const adapters = { openai, anthropic, gemini };
+function providerFor(name: keyof typeof adapters, invoke: ReturnType<typeof vi.fn>): AIProvider {
+  const clients = {
+    openai: { responses: { create: invoke } },
+    anthropic: { messages: { create: invoke } },
+    gemini: { models: { generateContentStream: invoke } },
+  };
+  return {
+    protocol: "chatCompletions",
+    id: name,
+    createStreamingRequest: (model, params) =>
+      (adapters[name] as (params: any) => ReturnType<typeof openai>)({
+        ...params,
+        model,
+        client: clients[name],
+      }),
+  };
+}
+afterEach(() => vi.unstubAllGlobals());
+
+test.each(["openai", "anthropic", "gemini"] as const)(
+  "%s retains SDK error type and raw payload through generate",
+  async (name) => {
+    const error = Object.assign(new Error("rate limited"), { name: "RateLimitError" });
+    const result = await generate({
+      provider: providerFor(
+        name,
+        vi.fn(() => {
+          throw error;
+        }),
+      ),
+      model: "test",
+      messages,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { kind: "api", type: "RateLimitError", message: "rate limited" },
+    });
+    if (!result.ok && result.error.kind === "api") expect(result.error.raw).toBe(error);
+  },
+);
+
+test.each([
+  [{ error: { error: { type: "overloaded_error", message: "busy" } } }, "overloaded_error", "busy"],
+  [
+    { error: { type: "authentication_error", message: "bad key" } },
+    "authentication_error",
+    "bad key",
+  ],
+  [{ code: "invalid_api_key", message: "bad key" }, "invalid_api_key", "bad key"],
+  [{ error: { code: "rate_limited" } }, "Undetermined", "Unexpected error"],
+  [{ error: "quota exceeded" }, "Undetermined", "quota exceeded"],
+  [null, "Undetermined", "Unknown error occurred"],
+  ["oops", "Undetermined", "oops"],
+])("normalizes structured and unknown errors", (error, type, message) => {
+  expect(normalizeProviderError(error)).toEqual({ type, message, raw: error });
+});
+
+test("a numeric status on the error becomes status", () => {
+  const error = { status: 429, message: "slow down" };
+  expect(normalizeProviderError(error)).toEqual({
+    type: "429",
+    message: "slow down",
+    status: 429,
+    raw: error,
+  });
+});
+
+test.each([401, 429])("Chat Completions retains HTTP %s", async (status) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bad request", { status })));
+  const provider: AIProvider = {
+    protocol: "chatCompletions",
+    id: "chat",
+    createStreamingRequest: (model, params) =>
+      chat({ ...params, model, baseUrl: "https://example.test", maxRetries: 0 }),
+  };
+  const result = await generate({ provider, model: "test", messages });
+  expect(result).toMatchObject({
+    ok: false,
+    error: { status, raw: { status, body: "bad request" } },
+  });
+});
+
+test.each([
+  ["openai", { toolChoice: { type: "tool", name: "missing" } }, AxleErrorCode.INVALID_OPTIONS],
+  [
+    "anthropic",
+    { tools: [{ name: "invalid", schema: z.string(), description: "invalid" }] },
+    AxleErrorCode.PROVIDER_UNSUPPORTED,
+  ],
+  [
+    "gemini",
+    {
+      tools: [
+        {
+          name: "invalid",
+          schema: z.object({ value: z.transform(() => "x") }),
+          description: "invalid",
+        },
+      ],
+    },
+    AxleErrorCode.INVALID_OPTIONS,
+  ],
+] as const)(
+  "%s preparation failure rejects before any request and closes spans",
+  async (name, options, code) => {
+    const invoke = vi.fn();
+    const provider = providerFor(name, invoke);
+    const { tracer, writer } = createTracerAndWriter();
+    const wrapped: AIProvider = {
+      protocol: "chatCompletions",
+      id: name,
+      createStreamingRequest: (model, params) =>
+        provider.createStreamingRequest(model, { ...params, ...options } as ProviderStreamParams),
+    };
+    await expect(
+      generate({
+        provider: wrapped,
+        model: "test",
+        messages,
+        span: tracer.startSpan("generate", { type: "workflow" }),
+      }),
+    ).rejects.toMatchObject({ name: "AxleError", code });
+    expect(invoke).not.toHaveBeenCalled();
+    expect([...writer.spans.values()].map((s) => s.status)).toEqual(["error", "error"]);
+  },
+);
+
+test("OpenAI failed response preserves code, message and usage", async () => {
+  const raw = {
+    type: "response.failed",
+    response: {
+      status: "failed",
+      error: { code: "server_error", message: "upstream failed" },
+      usage: { input_tokens: 12, output_tokens: 3 },
+    },
+  };
+  const provider: AIProvider = {
+    protocol: "responses",
+    id: "openai",
+    async *createStreamingRequest() {
+      yield* createStreamingAdapter().handleEvent(raw as any);
+    },
+  };
+  const result = await generate({ provider, model: "test", messages });
+  expect(result).toMatchObject({
+    ok: false,
+    usage: { in: 12, out: 3 },
+    error: { type: "server_error", message: "upstream failed", raw },
+  });
+});
+
+test("Gemini cancellation settles while waiting for the first chunk", async () => {
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const invoke = vi.fn(
+    ({ config }) =>
+      new Promise((_resolve, reject) => {
+        config.abortSignal.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+        started();
+      }),
+  );
+  const controller = new AbortController();
+  const pending = generate({
+    provider: providerFor("gemini", invoke),
+    model: "test",
+    messages,
+    signal: controller.signal,
+  });
+  await ready;
+  controller.abort("cancelled");
+  await expect(pending).rejects.toMatchObject({
+    name: "AbortError",
+    reason: "cancelled",
+    messages: [],
+    usage: { in: 0, out: 0 },
+  });
+});

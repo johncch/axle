@@ -3,7 +3,7 @@ import type { SkillFrontmatter } from "./parse.js";
 /**
  * An Agent Skill (agentskills.io): instructions a model loads on demand, plus
  * the files that travel with them. Plain data — core never reads a skill's
- * files. `root` is whatever base the host's own tools accept (a directory, an
+ * files. `root` is whatever base the consumer's own tools accept (a directory, an
  * `s3://` prefix, anything) and is printed to the model verbatim so relative
  * paths in `instructions` resolve; `files` lists what is under it.
  */

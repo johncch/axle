@@ -16,7 +16,8 @@ interface CapturedRequest {
 
 function createCapturingProvider(name: string, requests: CapturedRequest[]): AIProvider {
   return {
-    name,
+    protocol: "chatCompletions",
+    id: name,
     async *createStreamingRequest(model, params) {
       requests.push({
         reasoning: (params as { reasoning?: unknown }).reasoning,
@@ -152,7 +153,8 @@ interface RunnerCall {
 
 function createRunnerProvider(calls: RunnerCall[]): AIProvider {
   return {
-    name: "mock",
+    protocol: "chatCompletions",
+    id: "mock",
     async *createStreamingRequest(model, params) {
       const { system, messages } = params as unknown as RunnerCall & { system?: string };
       calls.push({ system, messages: [...messages] });

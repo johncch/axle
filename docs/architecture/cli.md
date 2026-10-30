@@ -61,8 +61,8 @@ against it; divergence is a defect. State ownership is defined in
    start, resume included, and never stored (invariant 6): the provider's
    `contextWindow` if set (profile or inline — an endpoint fact, since a
    local server loads models below their maximum), else core's
-   `ModelCatalog` (models.dev, host derived from the provider type or
-   `vendor`), else an assumed 200,000. The catalog is cached at
+   `ModelCatalog` (models.dev, keyed by the `id` of the provider the endpoint
+   builds), else an assumed 200,000. The catalog is cached at
    `~/.axle/cache/models.json`; a run reads the cache and refreshes it in
    the background when it is a day old, `axle info` awaits the refresh, and
    no run ever waits on or fails for the network. `axle info` prints each
@@ -124,12 +124,12 @@ against it; divergence is a defect. State ownership is defined in
 
 7. **Two output channels; renderers are folds, not deciders.** Everything
    on screen is either _transcript_ (the model's conversation: `TurnEvent`s
-   folded into the host-owned `Transcript`) or a _host line_
+   folded into the consumer-owned `Transcript`) or a _runner line_
    (`info`/`success`/`warn`/`error` from the runner). The runner applies
    each event to the transcript **before** `onEvent(event, transcript)`, so
    a renderer reads settled state and holds no business logic — the same
    events replay through `renderPriorTurns` on resume. The dialect is a
-   task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for host
+   task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for runner
    lines, work lines that settle with a duration (`✔ Calculator {…}
 (430ms)`), model text as unadorned stdout, and the user's `❯` as the
    only persona glyph. Under ink an agent text part, streaming or
@@ -156,7 +156,7 @@ against it; divergence is a defect. State ownership is defined in
    drawing the transcript's pending turns as queued rows; the plain
    renderer prompts only between turns.
    `close()` is async and paints one final frame before unmounting.
-   Questions the host asks (`setup`, `cleanup`, the missing-model fallback)
+   Questions the CLI asks (`setup`, `cleanup`, the missing-model fallback)
    speak the GitHub CLI dialect: a green `?` before the question, the
    answer echoed in cyan on the same line once given, a `>` cursor for
    lists, `y`/`n` answering a confirm without Enter. They are rendered over
@@ -171,7 +171,7 @@ against it; divergence is a defect. State ownership is defined in
    `credentials` (dotenv format) and `cli.yaml`. Credentials resolve per
    key: process env → project → user; an empty string counts as unset and
    falls through. The working directory's `.env` is not read (dropped
-   2026-10-08): it was the one project input outside `.axle/`, and a host
+   2026-10-08): it was the one project input outside `.axle/`, and a
    project's own `.env` silently overrode the user's credentials. The
    credentials files are shared with sibling tools (axle-code): writers
    upsert individual keys and preserve foreign lines verbatim — never
@@ -185,16 +185,25 @@ against it; divergence is a defect. State ownership is defined in
    wizard: it never writes a home the next run would not read.
    On top of the layered sources, one uniform chain resolves the seat:
    provider name := recipe →
-   `defaults.provider` → error; endpoint := `providers[name]` profile →
-   built-in type → error; model := recipe → `defaults.models[name]` →
-   `*_MODEL` credential → interactive prompt (TTY) or error. The built-in
-   types are `anthropic`, `openai` and `gemini`: each is a provider with
-   one endpoint, a key variable and a model variable. `chatcompletions` is
-   a protocol, so it is only ever the `type` of a profile or of a recipe's
-   inline provider, always with its own `baseUrl`; it is not a name, has no
-   credential variables, and takes nothing from another endpoint of the
-   same type. Its key is whatever its `apiKeyEnv` names, and with no
-   `apiKeyEnv` it is called keyless. The provider
+   `defaults.provider` → error; endpoint := preset of that name →
+   `providers[name]` generic profile → error; model := recipe →
+   `defaults.models[name]` → `*_MODEL` credential → interactive prompt
+   (TTY) or error. The name alone decides what a `providers` entry is. A
+   name that matches a preset (`anthropic`, `openai`, `gemini`, `openrouter`,
+   `together`, `bedrock`) configures that preset and takes only that
+   preset's options: a key and client options, plus `baseUrl` on
+   `openrouter`, and a required `protocol` and `region` on `bedrock`, which
+   for that reason cannot run without a profile. Each preset has a key
+   variable and a model variable. Any other name is a generic profile: the
+   protocol constructor's options as YAML, with `protocol` and `baseUrl`
+   required and `id` and `dialect` inferred from the hostname as the library
+   infers them. A recipe's inline provider is a generic profile with no
+   `apiKey`. A protocol is never a name, has no credential variables, and
+   takes nothing from another endpoint of the same protocol. A generic
+   profile's key is whatever its `apiKeyEnv` names; with none, a
+   `chatCompletions` endpoint is called keyless and the other protocols
+   stop, since their SDKs would otherwise send their own environment
+   variable to that `baseUrl`. The provider
    is never inferred from the model string. The endpoint step runs on every
    invocation, resume included (invariant 6); the model step runs once, at
    the run that creates the session.
@@ -344,6 +353,29 @@ against it; divergence is a defect. State ownership is defined in
 
 ## Decisions
 
+- **2026-10-30 — a profile's name decides whether it is a preset (AXL-94).**
+  `type` and `vendor` are gone. Profiles mirror the library's two shapes, a
+  preset call and a protocol constructor call, and the name picks which.
+  Cost: a preset added later claims that name, so an existing generic
+  profile of that name stops loading, loudly, and the release says so.
+  Rejected: an explicit `preset:` key — a second way to say what the name
+  already says. Rejected: constructors only — a second Anthropic key would
+  need the URL by hand and lose the prefix-stripping model rule, and
+  Bedrock's regional URLs would be spelled out. Rejected: `baseUrl` deciding
+  the kind — a name would then mean different things by what sits under it.
+  Rejected: dropping keys a preset does not take to keep old files loading —
+  dropping `baseUrl` would send a proxy's prompts and key to the public
+  service without a sign. Rejected: warnings for old keys — a load error is
+  seen once and fixed. Saved sessions are upgraded on read instead, since a
+  session file is not the user's to edit; the exception is a built-in type
+  carrying its own settings, which refuses to resume, because keeping only
+  its name would run on another key. Rejected for that case: rewriting it as
+  a generic profile — the preset's model rule would be lost.
+- **2026-10-30 — a provider's `id` comes from building it (AXL-94).**
+  `axle info` and the context window read `.id` off the provider an endpoint
+  builds, with a placeholder key, since building makes no request. Rejected:
+  a CLI table of preset ids and hostnames (`catalogProvider()`) — a second
+  copy of what the presets and the hostname tables already state.
 - **2026-10-29 — a session is the recipe as written; the rest is runtime
   (AXL-88; settles 2026-10-07 without its model exception).** The owner's
   words: _everything in the recipe file is written into the session;
@@ -459,7 +491,7 @@ schedule -j` kicked off a live run with side effects when the user only
   run) or from the batch ledger entries written during the run (batch);
   `runAgentSession`/`runBatch` keep their boolean result. Rejected: widening
   the runner return type — the ticket held the runners fixed, and the
-  values already reach the host through owned channels. Rejected: tagging
+  values already reach the occurrence through owned channels. Rejected: tagging
   session files with a schedule id — a persistence-format change for one
   reader.
 - **2026-09-13 — `launchd` apply always boots out first.** launchctl refuses
@@ -501,7 +533,7 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   Rejected across one day of iteration: a chat-app persona gutter (a glyph
   in front of every line, `■` for the model), circle/quadrant spinners
   ending on a filled glyph, and decorated model text. Settled on the
-  consola/tsdown family: work lines spin and settle with durations, host
+  consola/tsdown family: work lines spin and settle with durations, runner
   lines carry the gutter, model prose is plain stdout. The model's words
   are the product; the frame should look like tooling.
 - **2026-10-09 — `axle setup` asks which home to write.** Rejected: always

@@ -3,7 +3,7 @@ import type { SessionUsage } from "../renderer.js";
 
 export type StaticItem =
   | { kind: "turn"; turn: Turn }
-  | { kind: "host"; level: "info" | "success" | "warn" | "error"; text: string };
+  | { kind: "runner"; level: "info" | "success" | "warn" | "error"; text: string };
 
 export interface UiState {
   staticItems: StaticItem[];

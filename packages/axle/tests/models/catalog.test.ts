@@ -41,11 +41,11 @@ async function writeCache(ageMs: number, models: Record<string, unknown>, etags 
   await writeFile(
     CACHE_PATH,
     JSON.stringify({
-      version: 2,
+      version: 3,
       fetchedAt: new Date(Date.now() - ageMs).toISOString(),
       etags,
       models,
-      hosts: {},
+      providers: {},
     }),
   );
 }
@@ -77,72 +77,74 @@ describe("ModelCatalog.lookup", () => {
     await catalog.refresh();
   });
 
-  it("matches a host's own id and returns the host's limits and prices", () => {
-    const found = catalog.lookup("z-ai/glm-5.3-flash", { host: "openrouter" });
+  it("matches a provider's own id and returns the provider's limits and prices", () => {
+    const found = catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
     expect(found).toMatchObject({
       id: "zhipuai/glm-5.3-flash",
-      match: "host",
+      match: "provider",
       model: { name: "GLM-5.3-Flash", limit: { context: 1_048_576, output: 943_717 } },
       cost: { input: 0.15, output: 0.5, cacheRead: 0.03 },
     });
     expect(found?.model.toolCall).toBe(true);
   });
 
-  it("qualifies a first-party host id into the canonical key", () => {
-    expect(catalog.lookup("claude-sonnet-5", { host: "anthropic" })).toMatchObject({
+  it("qualifies a first-party provider id into the canonical key", () => {
+    expect(catalog.lookup("claude-sonnet-5", { provider: "anthropic" })).toMatchObject({
       id: "anthropic/claude-sonnet-5",
-      match: "host",
+      match: "provider",
       model: { limit: { context: 1_000_000, output: 128_000 } },
       cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
     });
   });
 
-  it("matches a publisher-qualified id against a first-party host by its model part", () => {
-    expect(catalog.lookup("anthropic/claude-sonnet-5", { host: "anthropic" })).toMatchObject({
+  it("matches a publisher-qualified id against a first-party provider by its model part", () => {
+    expect(catalog.lookup("anthropic/claude-sonnet-5", { provider: "anthropic" })).toMatchObject({
       id: "anthropic/claude-sonnet-5",
-      match: "host",
+      match: "provider",
       cost: { input: 2, output: 10 },
     });
-    const otherPublisher = catalog.lookup("openai/claude-sonnet-5", { host: "anthropic" });
+    const otherPublisher = catalog.lookup("openai/claude-sonnet-5", { provider: "anthropic" });
     expect(otherPublisher?.match).toBe("exact");
     expect(otherPublisher?.cost).toBeUndefined();
   });
 
   it("carries context-size price tiers", () => {
-    const found = catalog.lookup("gemini-2.5-pro", { host: "google" });
+    const found = catalog.lookup("gemini-2.5-pro", { provider: "google" });
     expect(found?.cost).toMatchObject({ input: 1.25, output: 10, cacheRead: 0.125 });
     expect(found?.cost?.tiers).toEqual([
       { size: 200_000, input: 2.5, output: 15, cacheRead: 0.25 },
     ]);
-    expect(catalog.lookup("claude-sonnet-5", { host: "anthropic" })?.cost?.tiers).toBeUndefined();
+    expect(
+      catalog.lookup("claude-sonnet-5", { provider: "anthropic" })?.cost?.tiers,
+    ).toBeUndefined();
   });
 
-  it("keeps a host-only model's record when the catalog has no canonical entry", () => {
-    expect(catalog.lookup("zai-org/GLM-5.1", { host: "togetherai" })).toMatchObject({
+  it("keeps a provider-only model's record when the catalog has no canonical entry", () => {
+    expect(catalog.lookup("zai-org/GLM-5.1", { provider: "togetherai" })).toMatchObject({
       id: "togetherai/zai-org/GLM-5.1",
-      match: "host",
+      match: "provider",
       model: { limit: { context: 202_752 } },
       cost: { input: 1.4, output: 4.4 },
     });
     expect(
-      catalog.lookup("sao10k/l3-lunaris-8b", { host: "openrouter" })?.model.limit.context,
+      catalog.lookup("sao10k/l3-lunaris-8b", { provider: "openrouter" })?.model.limit.context,
     ).toBe(8192);
   });
 
-  it("ignores case in a host id", () => {
-    expect(catalog.lookup("zai-org/glm-5.1", { host: "togetherai" })?.match).toBe("host");
+  it("ignores case in a provider id", () => {
+    expect(catalog.lookup("zai-org/glm-5.1", { provider: "togetherai" })?.match).toBe("provider");
   });
 
-  it("falls through to the canonical layer for an unknown host or id", () => {
-    expect(catalog.lookup("anthropic/claude-sonnet-5", { host: "nowhere" })).toMatchObject({
+  it("falls through to the canonical layer for an unknown provider or id", () => {
+    expect(catalog.lookup("anthropic/claude-sonnet-5", { provider: "nowhere" })).toMatchObject({
       id: "anthropic/claude-sonnet-5",
       match: "exact",
     });
-    expect(catalog.lookup("anthropic/claude-sonnet-5", { host: "openrouter" })?.match).toBe(
+    expect(catalog.lookup("anthropic/claude-sonnet-5", { provider: "openrouter" })?.match).toBe(
       "exact",
     );
     expect(
-      catalog.lookup("anthropic/claude-sonnet-5", { host: "openrouter" })?.cost,
+      catalog.lookup("anthropic/claude-sonnet-5", { provider: "openrouter" })?.cost,
     ).toBeUndefined();
   });
 
@@ -174,7 +176,7 @@ describe("ModelCatalog.lookup", () => {
     expect(catalog.contextWindow(local)).toEqual({ window, id, match });
   });
 
-  it("matches a vendor slug by its model part when no host is given", () => {
+  it("matches a publisher slug by its model part when no provider is given", () => {
     expect(catalog.lookup("z-ai/glm-4.7-flash")?.id).toBe("zhipuai/glm-4.7-flash");
   });
 
@@ -187,16 +189,16 @@ describe("ModelCatalog.lookup", () => {
     expect(catalog.size).toBe(14);
     expect(catalog.lookup("bytedance-seed/seedance-2.0")).toBeUndefined();
     expect(catalog.lookup("acme/broken")).toBeUndefined();
-    expect(catalog.lookup("acme/zero-output", { host: "openrouter" })?.model.limit).toEqual({
+    expect(catalog.lookup("acme/zero-output", { provider: "openrouter" })?.model.limit).toEqual({
       context: 4096,
     });
-    expect(catalog.lookup("acme/broken", { host: "openrouter" })).toBeUndefined();
+    expect(catalog.lookup("acme/broken", { provider: "openrouter" })).toBeUndefined();
   });
 
   it("gives up on a name the catalog lacks", () => {
     expect(catalog.lookup("totally-unknown")).toBeUndefined();
     expect(catalog.lookup("acme/unknown")).toBeUndefined();
-    expect(catalog.lookup("acme/unknown", { host: "openrouter" })).toBeUndefined();
+    expect(catalog.lookup("acme/unknown", { provider: "openrouter" })).toBeUndefined();
   });
 });
 
@@ -216,16 +218,16 @@ describe("ModelCatalog cache", () => {
     expect(fetched).toHaveBeenCalledTimes(2);
 
     const file = JSON.parse(await readFile(CACHE_PATH, "utf-8"));
-    expect(file.version).toBe(2);
+    expect(file.version).toBe(3);
     expect(file.etags).toEqual({ models: '"m1"', api: '"a1"' });
     expect(file.models["anthropic/claude-sonnet-5"].limit.context).toBe(1_000_000);
     expect(file.models["anthropic/claude-sonnet-5"]).not.toHaveProperty("benchmarks");
-    expect(file.hosts.openrouter["z-ai/glm-5.3-flash"]).toMatchObject({
+    expect(file.providers.openrouter["z-ai/glm-5.3-flash"]).toMatchObject({
       canonical: "zhipuai/glm-5.3-flash",
     });
-    expect(file.hosts.openrouter["z-ai/glm-5.3-flash"]).not.toHaveProperty("model");
-    expect(file.hosts.togetherai["zai-org/GLM-5.1"]).not.toHaveProperty("canonical");
-    expect(file.hosts.togetherai["zai-org/GLM-5.1"].model.name).toBe("GLM-5.1");
+    expect(file.providers.openrouter["z-ai/glm-5.3-flash"]).not.toHaveProperty("model");
+    expect(file.providers.togetherai["zai-org/GLM-5.1"]).not.toHaveProperty("canonical");
+    expect(file.providers.togetherai["zai-org/GLM-5.1"].model.name).toBe("GLM-5.1");
     expect(catalog.size).toBe(14);
 
     fetched.mockClear();
@@ -233,7 +235,7 @@ describe("ModelCatalog cache", () => {
     expect(fetched).not.toHaveBeenCalled();
     expect(reopened.stale).toBe(false);
     expect(reopened.contextWindow("openai/gpt-5")?.window).toBe(400_000);
-    expect(reopened.lookup("claude-sonnet-5", { host: "anthropic" })?.cost?.input).toBe(2);
+    expect(reopened.lookup("claude-sonnet-5", { provider: "anthropic" })?.cost?.input).toBe(2);
   });
 
   it("holds the catalog in memory when no cachePath is given", async () => {
@@ -242,27 +244,29 @@ describe("ModelCatalog cache", () => {
     await catalog.refresh();
 
     expect(catalog.size).toBe(14);
-    expect(catalog.lookup("z-ai/glm-5.3-flash", { host: "openrouter" })?.match).toBe("host");
+    expect(catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" })?.match).toBe(
+      "provider",
+    );
     await expect(stat(CACHE_PATH)).rejects.toThrow();
   });
 
-  it("hosts: [] skips api.json; hosts: [...] keeps only those", async () => {
+  it("providers: [] skips api.json; providers: [...] keeps only those", async () => {
     const fetched = await stubBoth();
-    const none = await ModelCatalog.open({ hosts: [] });
+    const none = await ModelCatalog.open({ providers: [] });
     await none.refresh();
     expect(fetched.mock.calls.map(([url]) => String(url))).toEqual([
       "https://models.dev/models.json",
     ]);
-    const viaName = none.lookup("claude-sonnet-5", { host: "anthropic" });
+    const viaName = none.lookup("claude-sonnet-5", { provider: "anthropic" });
     expect(viaName?.match).toBe("exact");
     expect(viaName?.cost).toBeUndefined();
 
-    const some = await ModelCatalog.open({ hosts: ["anthropic"] });
+    const some = await ModelCatalog.open({ providers: ["anthropic"] });
     await some.refresh();
-    expect(some.lookup("claude-sonnet-5", { host: "anthropic" })?.match).toBe("host");
-    const unkeptHost = some.lookup("z-ai/glm-5.3-flash", { host: "openrouter" });
-    expect(unkeptHost?.match).toBe("exact");
-    expect(unkeptHost?.cost).toBeUndefined();
+    expect(some.lookup("claude-sonnet-5", { provider: "anthropic" })?.match).toBe("provider");
+    const unkeptProvider = some.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
+    expect(unkeptProvider?.match).toBe("exact");
+    expect(unkeptProvider?.cost).toBeUndefined();
   });
 
   it("sends each layer's ETag and keeps the layer on 304", async () => {
@@ -293,7 +297,7 @@ describe("ModelCatalog cache", () => {
     await catalog.refresh();
 
     expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
-    expect(catalog.lookup("claude-sonnet-5", { host: "anthropic" })?.id).toBe(
+    expect(catalog.lookup("claude-sonnet-5", { provider: "anthropic" })?.id).toBe(
       "anthropic/claude-sonnet-5",
     );
     expect(JSON.parse(await readFile(CACHE_PATH, "utf-8")).etags).toEqual({
@@ -347,7 +351,7 @@ describe("ModelCatalog cache", () => {
     await catalog.refresh();
 
     expect(catalog.size).toBe(14);
-    expect(JSON.parse(await readFile(CACHE_PATH, "utf-8")).version).toBe(2);
+    expect(JSON.parse(await readFile(CACHE_PATH, "utf-8")).version).toBe(3);
   });
 
   it("reports stale by maxAge; refresh itself is unconditional", async () => {

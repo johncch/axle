@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { PromptCompactor } from "../../src/compaction/PromptCompactor.js";
+import { estimateContextUsage } from "../../src/execution/context.js";
 import type { AxleMessage } from "../../src/messages/message.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import { estimateContextUsage } from "../../src/providers/context.js";
-import type { AIProvider } from "../../src/providers/types.js";
-import { AxleStopReason } from "../../src/providers/types.js";
+import type { AIProvider } from "../../src/protocols/types.js";
+import { AxleStopReason } from "../../src/protocols/types.js";
 import type { CompactionUpdate } from "../../src/turns/types.js";
 
 describe("PromptCompactor", () => {
@@ -413,7 +413,8 @@ function createProvider(...results: ({ text: string } | { error: string })[]): {
     requests,
     models,
     provider: {
-      name: "test",
+      protocol: "chatCompletions",
+      id: "test",
       async *createStreamingRequest(model, params): AsyncGenerator<AnyStreamChunk, void> {
         const result = results[Math.min(models.length, results.length - 1)];
         models.push(model);

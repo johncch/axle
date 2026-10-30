@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { splitModelId } from "../providers/model.js";
+import { splitModelId } from "../protocols/model.js";
 
 const MODELS_DEV_URL = "https://models.dev";
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -35,7 +35,7 @@ const ModelCostSchema = PriceSchema.extend({
   tiers: z.array(PriceSchema.extend({ size: z.number().int().nonnegative() })).optional(),
 });
 
-const HostEntrySchema = z.object({
+const ProviderEntrySchema = z.object({
   canonical: z.string().optional(),
   model: CatalogModelSchema.optional(),
   limit: CatalogModelSchema.shape.limit.partial().optional(),
@@ -43,15 +43,15 @@ const HostEntrySchema = z.object({
 });
 
 const CacheFileSchema = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   fetchedAt: z.string(),
   etags: z.object({ models: z.string().optional(), api: z.string().optional() }),
   models: z.record(z.string(), CatalogModelSchema),
-  hosts: z.record(z.string(), z.record(z.string(), HostEntrySchema)),
+  providers: z.record(z.string(), z.record(z.string(), ProviderEntrySchema)),
 });
 
 type CacheFile = z.infer<typeof CacheFileSchema>;
-type HostEntry = z.infer<typeof HostEntrySchema>;
+type ProviderEntry = z.infer<typeof ProviderEntrySchema>;
 
 const ModelsDevPriceSchema = z.looseObject({
   input: z.number(),
@@ -102,16 +102,16 @@ const ModelsDevApiSchema = z.record(
 /** What the catalog records about a model, independent of who serves it. */
 export type CatalogModel = z.infer<typeof CatalogModelSchema>;
 
-/** Price per million tokens, as the host charges it. */
+/** Price per million tokens, as the provider charges it. */
 export type ModelCost = z.infer<typeof ModelCostSchema>;
 
 export interface CatalogMatch {
-  /** The canonical `publisher/model` id, or `host/id` for a model only that host lists. */
+  /** The canonical `publisher/model` id, or `provider/id` for a model only that provider lists. */
   id: string;
-  /** `host`: the host's own id matched exactly; `exact`/`prefix`: matched by canonical id or name. */
-  match: "host" | "exact" | "prefix";
+  /** `provider`: the provider's own id matched exactly; `exact`/`prefix`: matched by canonical id or name. */
+  match: "provider" | "exact" | "prefix";
   model: CatalogModel;
-  /** Present only for a host match. */
+  /** Present only for a provider match. */
   cost?: ModelCost;
 }
 
@@ -128,25 +128,25 @@ export interface ModelCatalogOptions {
   maxAge?: number;
   /**
    * models.dev provider ids whose own model ids to keep (`anthropic`, `openrouter`,
-   * `togetherai`, …). Omit for every host; `[]` skips the per-host catalog entirely.
+   * `togetherai`, …). Omit for every provider; `[]` skips the per-provider catalog entirely.
    */
-  hosts?: string[];
+  providers?: string[];
   /** Catalog origin; defaults to models.dev. */
   baseUrl?: string;
 }
 
 /**
  * Model metadata looked up from the models.dev catalog: a canonical layer
- * (`publisher/model`, host-independent) and a per-host layer (each host's
+ * (`publisher/model`, provider-independent) and a per-provider layer (each provider's
  * own ids with its limits and prices, linked to the canonical entry).
  *
  * `open()` reads the cache and never touches the network; `refresh()`
  * always fetches, sending ETags so an unchanged catalog downloads nothing,
  * and never throws — a failed fetch keeps the cached copy. `stale` says
- * whether the cache is older than `maxAge`; when to refresh is the host's
+ * whether the cache is older than `maxAge`; when to refresh is the consumer's
  * call.
  *
- * `lookup()` tries the host's own id first when a host is given, then the
+ * `lookup()` tries the provider's own id first when a provider is given, then the
  * canonical key, then a best-effort match for local runtimes' names
  * (`gemma4:26b-mlx`): trailing build tags dropped, punctuation and case
  * ignored, publisher ignored, exact normalized match first, else a unique
@@ -155,7 +155,7 @@ export interface ModelCatalogOptions {
 export class ModelCatalog {
   private readonly cachePath: string | undefined;
   private readonly maxAge: number;
-  private readonly hosts: string[] | undefined;
+  private readonly providers: string[] | undefined;
   private readonly baseUrl: string;
   private cache: CacheFile | undefined;
   private normalized: { id: string; key: string }[] = [];
@@ -163,7 +163,7 @@ export class ModelCatalog {
   private constructor(options: ModelCatalogOptions, cache: CacheFile | undefined) {
     this.cachePath = options.cachePath;
     this.maxAge = options.maxAge ?? DEFAULT_MAX_AGE_MS;
-    this.hosts = options.hosts;
+    this.providers = options.providers;
     this.baseUrl = options.baseUrl ?? MODELS_DEV_URL;
     this.setCache(cache);
   }
@@ -196,13 +196,15 @@ export class ModelCatalog {
   }
 
   async refresh(): Promise<void> {
-    const wantHosts = this.hosts === undefined || this.hosts.length > 0;
+    const wantProviders = this.providers === undefined || this.providers.length > 0;
     const [modelsResult, apiResult] = await Promise.all([
       this.fetchLayer("/models.json", this.cache?.etags.models),
-      wantHosts ? this.fetchLayer("/api.json", this.cache?.etags.api) : Promise.resolve(undefined),
+      wantProviders
+        ? this.fetchLayer("/api.json", this.cache?.etags.api)
+        : Promise.resolve(undefined),
     ]);
     if (modelsResult === undefined && apiResult === undefined) return;
-    const complete = modelsResult !== undefined && (!wantHosts || apiResult !== undefined);
+    const complete = modelsResult !== undefined && (!wantProviders || apiResult !== undefined);
 
     let models = this.cache?.models ?? {};
     let etagModels = this.cache?.etags.models;
@@ -217,20 +219,20 @@ export class ModelCatalog {
       etagModels = modelsResult.etag;
     }
 
-    let hosts = this.cache?.hosts ?? {};
+    let providers = this.cache?.providers ?? {};
     let etagApi = this.cache?.etags.api;
-    if (!wantHosts) {
-      hosts = {};
+    if (!wantProviders) {
+      providers = {};
       etagApi = undefined;
     } else if (apiResult && apiResult.body !== undefined) {
       const parsed = ModelsDevApiSchema.safeParse(apiResult.body);
       if (!parsed.success) return;
-      hosts = {};
-      for (const [host, provider] of Object.entries(parsed.data)) {
-        if (this.hosts && !this.hosts.includes(host)) continue;
-        hosts[host] = {};
-        for (const [id, entry] of Object.entries(provider.models)) {
-          if (entry) hosts[host][id] = toHostEntry(host, id, entry, models);
+      providers = {};
+      for (const [provider, listing] of Object.entries(parsed.data)) {
+        if (this.providers && !this.providers.includes(provider)) continue;
+        providers[provider] = {};
+        for (const [id, entry] of Object.entries(listing.models)) {
+          if (entry) providers[provider][id] = toProviderEntry(provider, id, entry, models);
         }
       }
       etagApi = apiResult.etag;
@@ -238,36 +240,39 @@ export class ModelCatalog {
 
     try {
       await this.writeCache({
-        version: 2,
+        version: 3,
         fetchedAt: complete
           ? new Date().toISOString()
           : (this.cache?.fetchedAt ?? new Date(0).toISOString()),
         etags: { models: etagModels, api: etagApi },
         models,
-        hosts,
+        providers,
       });
     } catch {
       return;
     }
   }
 
-  lookup(model: string, options?: { host?: string; publisher?: string }): CatalogMatch | undefined {
+  lookup(
+    model: string,
+    options?: { provider?: string; publisher?: string },
+  ): CatalogMatch | undefined {
     if (!this.cache) return undefined;
     const { publisher, name } = splitModelId(model);
 
-    if (options?.host) {
-      const entries = this.cache.hosts[options.host];
-      const publisherIsHost = publisher === options.host.toLowerCase();
-      const hostId = entries
-        ? (findKey(entries, model) ?? (publisherIsHost ? findKey(entries, name) : undefined))
+    if (options?.provider) {
+      const entries = this.cache.providers[options.provider];
+      const publisherIsProvider = publisher === options.provider.toLowerCase();
+      const providerModelId = entries
+        ? (findKey(entries, model) ?? (publisherIsProvider ? findKey(entries, name) : undefined))
         : undefined;
-      if (entries && hostId !== undefined) {
-        const entry = entries[hostId];
+      if (entries && providerModelId !== undefined) {
+        const entry = entries[providerModelId];
         const base = entry.canonical ? this.cache.models[entry.canonical] : entry.model;
         if (base) {
           return {
-            id: entry.canonical ?? `${options.host}/${hostId}`,
-            match: "host",
+            id: entry.canonical ?? `${options.provider}/${providerModelId}`,
+            match: "provider",
             model: { ...base, limit: { ...base.limit, ...entry.limit } },
             cost: entry.cost,
           };
@@ -302,7 +307,7 @@ export class ModelCatalog {
 
   contextWindow(
     model: string,
-    options?: { host?: string; publisher?: string },
+    options?: { provider?: string; publisher?: string },
   ): ContextWindowMatch | undefined {
     const found = this.lookup(model, options);
     return found
@@ -384,13 +389,13 @@ function toCatalogModel(entry: ModelsDevEntry): CatalogModel | undefined {
   };
 }
 
-function toHostEntry(
-  host: string,
+function toProviderEntry(
+  provider: string,
   id: string,
   entry: ModelsDevEntry,
   models: Record<string, CatalogModel>,
-): HostEntry {
-  const canonical = entry.canonical_model_id ?? `${host}/${id}`;
+): ProviderEntry {
+  const canonical = entry.canonical_model_id ?? `${provider}/${id}`;
   const cost = entry.cost
     ? {
         ...toPrice(entry.cost),

@@ -10,7 +10,7 @@ export interface BatchTotals {
 
 /**
  * Live-progress hooks for a batch run — a progress fold, not transcripts.
- * Settled item lines and the summary still arrive as host lines on the
+ * Settled item lines and the summary still arrive as runner lines on the
  * `Renderer`; these hooks only drive the in-flight rows and totals.
  */
 export interface BatchProgress {

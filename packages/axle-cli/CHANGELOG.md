@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+- **Breaking: `cli.yaml` profiles and inline providers replace `type` and
+  `vendor`.** A profile's name now decides what it is. A name matching a
+  preset (`anthropic`, `openai`, `gemini`, `openrouter`, `together`,
+  `bedrock`) configures that preset and needs no `type`. Any other name is a
+  generic profile, which spells out `protocol` and `baseUrl`. A file using
+  the old keys fails at load and says what to change.
+
+  ```yaml
+  # Before
+  providers:
+    openrouter:
+      type: chatcompletions
+      baseUrl: https://openrouter.ai/api/v1
+      vendor: openrouter
+      apiKeyEnv: OPENROUTER_API_KEY
+    local:
+      type: chatcompletions
+      baseUrl: http://localhost:11434/v1
+    work:
+      type: anthropic
+      apiKeyEnv: WORK_KEY
+
+  # After
+  providers:
+    openrouter:
+      apiKeyEnv: OPENROUTER_API_KEY
+    local:
+      protocol: chatCompletions
+      baseUrl: http://localhost:11434/v1
+    anthropic:
+      apiKeyEnv: WORK_KEY
+  ```
+
+  Pointing a preset's service at your own URL now takes a profile with
+  another name, with `id` and `dialect` if it fronts a known service. Saved
+  sessions keep working, with one exception: an old inline provider is
+  upgraded on resume, but one that set its own key or client options on a
+  built-in type (`{ type: openai, apiKeyEnv: WORK_KEY }`) refuses to resume
+  and says why, rather than silently running on the default key. An
+  inline `provider: { type: anthropic }` becomes `provider: anthropic`; a
+  `defaults.models` entry for an inline provider moves from `chatcompletions`
+  to `chatCompletions`.
+
+- **Breaking: a generic profile on `messages`, `responses` or
+  `generateContent` needs a key.** Without `apiKeyEnv` the run stops instead
+  of letting the SDK send `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
+  `GEMINI_API_KEY` to that URL. `chatCompletions` endpoints can still run
+  keyless.
+- **OpenRouter, Together and Amazon Bedrock work by name.** `provider:
+openrouter` and `provider: together` need no profile: set
+  `OPENROUTER_API_KEY` or `TOGETHER_API_KEY`, and `<NAME>_MODEL` if you want
+  a default model. Bedrock reads `AWS_BEARER_TOKEN_BEDROCK` and needs a
+  `providers.bedrock` profile with `protocol` and `region`. `axle setup`
+  offers OpenRouter and Together.
+- **A profile can name any protocol.** `protocol` takes `messages`,
+  `responses`, `generateContent` or `chatCompletions`, so a proxy in front
+  of Anthropic or OpenAI is a generic profile. `openrouter` takes a `baseUrl`
+  for OpenRouter's regional hosts, and any `*.openrouter.ai` host is
+  recognised.
 - **Gemini 4 answers longer than 65,536 tokens complete instead of
   failing.** With `maxOutputTokens` above 65,536 on `gemini-4-argon`, the
   Gemini SDK now resumes the answer at each per-request cap and the job sees

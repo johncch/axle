@@ -168,7 +168,7 @@ or tool batch; use cancellation when a hard stop is required.
 ### Instruct
 
 Instruct is a rich message. Use it when you need structured output, file
-attachments, bound template inputs, or host-supplied supporting context.
+attachments, bound template inputs, or consumer-supplied supporting context.
 
 ```typescript
 import * as z from "zod";
@@ -194,23 +194,78 @@ For plain text interactions, pass a string directly to `send()` instead.
 
 ### Providers
 
-Axle ships with first-party support for Anthropic, OpenAI, and Gemini, plus a
-generic ChatCompletions provider for any OpenAI-compatible API.
+A provider is a protocol (the wire format) configured with a base URL, a
+key and, where the service needs one, a dialect. Axle has a constructor per
+protocol, and presets for the services it knows:
 
 ```typescript
-import { anthropic, openai, gemini, chatCompletions } from "@fifthrevision/axle";
+import {
+  anthropic,
+  chatCompletions,
+  gemini,
+  messages,
+  openai,
+  openrouter,
+} from "@fifthrevision/axle";
 
 const a = anthropic(process.env.ANTHROPIC_API_KEY);
 const o = openai(process.env.OPENAI_API_KEY);
 const g = gemini(process.env.GEMINI_API_KEY);
-const local = chatCompletions("http://localhost:11434/v1");
+const or = openrouter(process.env.OPENROUTER_API_KEY);
+const local = chatCompletions({ baseUrl: "http://localhost:11434/v1" });
+const proxied = messages({
+  baseUrl: "https://proxy.example.com",
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 ```
 
-Every factory takes the same client options, applied when the client is
-built rather than per request:
+| Protocol constructor | Base URL                                                          | Presets                      |
+| -------------------- | ----------------------------------------------------------------- | ---------------------------- |
+| `messages()`         | origin; requests go to `/v1/messages` under it                    | `anthropic()`                |
+| `responses()`        | includes the version; requests go to `/responses` under it        | `openai()`                   |
+| `generateContent()`  | origin; requests go to `/v1beta/models/...` under it              | `gemini()`                   |
+| `chatCompletions()`  | includes the version; requests go to `/chat/completions` under it | `openrouter()`, `together()` |
+
+A protocol constructor takes one options object: `baseUrl`, `apiKey`, the
+client options below, `id`, `resolveModel`, and for Chat Completions
+`dialect`. A preset is shorthand for its protocol constructor at the
+service's own base URL: `anthropic(key)` is `messages({ baseUrl:
+"https://api.anthropic.com", apiKey: key, id: "anthropic", resolveModel })`.
+To reach the same service somewhere else, such as a proxy, call the
+constructor with that base URL. `openrouter()` is the exception: it takes a
+`baseUrl` for OpenRouter's regional hosts.
+
+`bedrock()` reaches Amazon Bedrock with a Bedrock API key. It takes the
+protocol because the model decides it: `messages` for Claude, `responses` or
+`chatCompletions` for the models Bedrock's Mantle endpoint serves.
 
 ```typescript
-const provider = chatCompletions("https://gateway.example.com/v1", {
+const provider = bedrock(process.env.AWS_BEARER_TOKEN_BEDROCK!, {
+  protocol: "messages",
+  region: "us-east-1",
+});
+const agent = new Agent({
+  provider,
+  model: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+});
+```
+
+Each provider carries `protocol` and `id`, the [models.dev](https://models.dev)
+provider id of the service it reaches (`anthropic`, `openrouter`, …), which
+usage rows record. A constructor infers `id` from a base URL whose hostname
+it knows (`chatCompletions({ baseUrl: "https://openrouter.ai/api/v1" })` is
+`openrouter`)
+and leaves it unset otherwise; pass `id` to set it. `resolveModel` rewrites
+the model id before it is sent: the first-party presets accept a
+publisher-qualified id (`anthropic/claude-sonnet-5`) and send the bare one.
+Without it, the model id is sent as given.
+
+Every constructor and preset takes the same client options, applied when the
+client is built rather than per request:
+
+```typescript
+const provider = chatCompletions({
+  baseUrl: "https://gateway.example.com/v1",
   apiKey: process.env.GATEWAY_API_KEY,
   maxRetries: 2, // retries after the first attempt; 0 disables
   timeoutMs: 60_000, // per attempt; omit for the SDK default (chatCompletions: 10 minutes)
@@ -223,15 +278,6 @@ const provider = chatCompletions("https://gateway.example.com/v1", {
 ChatCompletions they are added after Axle's own `Content-Type` and
 `Authorization`. Axle does not reserve any header name, so a caller-supplied
 `Authorization` replaces the one derived from the API key on every provider.
-
-`baseUrl` sends requests somewhere other than the vendor, such as a proxy
-that speaks the vendor's API. Each SDK appends its own path, so what the base
-includes differs: for `anthropic()` and `gemini()` it is the origin
-(`https://proxy.example.com`, requests go to `/v1/messages` or
-`/v1beta/models/...` under it), for `openai()` it includes the version
-(`https://proxy.example.com/v1`, requests go to `/responses` under it), and for
-`typesafe()` it is the root that serves `/v1/systemone`. `chatCompletions()`
-takes its base URL as the first argument and does not accept the option.
 
 `fetch` substitutes the HTTP call without touching `globalThis.fetch`. It is
 the Fetch API contract, not any HTTP client: Axle calls it as `(url, init)`
@@ -437,7 +483,7 @@ continuation also carries `after`: the inline turns it ran, in order (see
 
 `ok: false` carries one thing only: the provider's answer to a request that
 went out. Everything else throws an `AxleError` before the request is sent,
-so a host needs one `if (!result.ok)` and one `catch`:
+so a consumer needs one `if (!result.ok)` and one `catch`:
 
 ```typescript
 import { isAxleError } from "@fifthrevision/axle";
@@ -461,13 +507,13 @@ try {
     case "TOOL_FATAL_ERROR": // a tool ended the run; error.toolName
     case "INVALID_OPTIONS": // an option value is malformed
     case "PROVIDER_UNSUPPORTED": // this provider has no wire shape for the request; error.details.feature
-    case "FILE_UNREADABLE": // a host file could not be resolved; error.details.path
+    case "FILE_UNREADABLE": // a local file could not be resolved; error.details.path
     default: // a registry, skill, compaction, or decision code, or AXLE_ERROR
   }
 }
 ```
 
-The four kinds are cut on what the API did, because that fixes the host's
+The four kinds are cut on what the API did, because that fixes the consumer's
 next move:
 
 | Kind         | What the API did                                                                   | `status`                   | `usage`                       |
@@ -578,7 +624,7 @@ For one-shot structured calls without agent-managed history, pass the same
 
 ### Supporting Context and Files
 
-Use `addContext` for host-supplied information that should remain separate from
+Use `addContext` for consumer-supplied information that should remain separate from
 the user-authored prompt until final rendering. Typical examples include a
 sandbox file manifest, environment details, retrieved records, or application
 state:
@@ -673,7 +719,7 @@ may run concurrently across the calls of one batch.
 #### File results and deferred references
 
 Tools can return structured text/file parts. A file may be inline, a URL, or a
-host-owned deferred reference resolved only when a provider request needs it:
+consumer-owned deferred reference resolved only when a provider request needs it:
 
 ```typescript
 import type { ExecutableTool, FileResolver } from "@fifthrevision/axle";
@@ -701,7 +747,7 @@ const readFile: ExecutableTool<typeof readFileSchema> = {
 };
 
 const fileResolver: FileResolver = async ({ ref, accepted }) => {
-  // Authorize the opaque host ref and return one of the requested formats.
+  // Authorize the opaque consumer ref and return one of the requested formats.
   if (!accepted.includes("text")) {
     throw new Error(`Text resolution is not supported here: ${accepted.join(", ")}`);
   }
@@ -722,7 +768,7 @@ const agent = new Agent({
 Deferred refs remain in message history and session snapshots. Axle resolves
 them again on every provider conversion, which avoids persisting expiring
 signed URLs. Persisted `ref` values should therefore be JSON-serializable, and
-the host must restore a compatible `FileResolver` when resuming a session.
+the consumer must restore a compatible `FileResolver` when resuming a session.
 
 Anthropic, OpenAI Responses, and Gemini accept tool-result files within their
 normal image/PDF/text constraints. Chat Completions currently accepts text
@@ -789,7 +835,7 @@ const pdf: Skill = {
 ```
 
 A skill with neither `root` nor `files` is instructions only. Axle does not
-persist skills; a host that saves which skills an agent had stores their
+persist skills; a consumer that saves which skills an agent had stores their
 names and loads them again itself, the same way it does for tools.
 
 ### Subagent Tools
@@ -868,7 +914,9 @@ under its action (interleaved across items).
 
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
 when reported). `usage.breakdown` holds one entry per provider request, in
-request order, tagged with the provider and model that served it and, when
+request order, tagged with the provider that served it (its `AIProvider.id`,
+omitted when the provider has none), the model the response reported
+(`model`), the model string the agent was given (`requestedModel`), and, when
 the agent has a `name`, with that name as `agent`. Providers bill a request
 at the tier its prompt size selects, so each row's `in` is what prices that
 row; a subagent's requests appear between the parent requests that bracket
@@ -1026,7 +1074,8 @@ provider:
 ```typescript
 import { braveWebSearch, chatCompletions } from "@fifthrevision/axle";
 
-const provider = chatCompletions("https://api.together.ai/v1", {
+const provider = chatCompletions({
+  baseUrl: "https://api.together.ai/v1",
   apiKey: process.env.TOGETHER_API_KEY!,
   webSearch: braveWebSearch({
     apiKey: process.env.BRAVE_API_KEY!,
@@ -1069,15 +1118,27 @@ Requesting a provider tool from a Chat Completions provider that has nothing
 to serve it fails before the request is sent: the result has `ok: false`
 and `error.message` names the tool.
 
-Axle recognizes the official OpenRouter and Together endpoint hostnames and
-applies their request differences automatically. Set `vendor: "openrouter"`
-or `vendor: "togetherai"` explicitly when using a proxy or gateway with a
-different hostname.
+OpenRouter and Together differ from plain Chat Completions in their request
+fields; a `ChatCompletionsDialect` carries those differences.
+`openrouter()` and `together()` apply theirs, and so does `chatCompletions()`
+at their official hostnames. Behind a proxy or gateway with another hostname,
+pass the dialect and id yourself:
+
+```typescript
+import { chatCompletions, openrouterDialect } from "@fifthrevision/axle";
+
+const provider = chatCompletions({
+  baseUrl: "https://gateway.example.com/v1",
+  apiKey: process.env.GATEWAY_API_KEY,
+  id: "openrouter",
+  dialect: openrouterDialect,
+});
+```
 
 On OpenRouter, an `Agent` sends its `sessionId` as the request's `session_id`,
 so every request in a conversation routes to the same upstream provider and
 keeps its prompt cache warm, and the requests are grouped under that id in the
-OpenRouter dashboard. A host-chosen `sessionId` is sent as-is; OpenRouter
+OpenRouter dashboard. A consumer-chosen `sessionId` is sent as-is; OpenRouter
 accepts up to 256 characters. Pass `sessionId` to `stream()` or `generate()`
 to get the same without an agent, and set `providerOptions.session_id` to
 send a different key.
@@ -1258,7 +1319,7 @@ The constructor drops a pending turn whose id is already in `turns`, since
 that turn opened before the mirror's cursor and its `turn:user` will not be
 replayed.
 
-Hosts that transport Axle events over SSE, WebSockets, or another mixed event
+Consumers that transport Axle events over SSE, WebSockets, or another mixed event
 stream can use `Transcript` instead of reimplementing this reducer:
 
 ```typescript
@@ -1290,7 +1351,7 @@ providers, MCP, tools, or other server-side runtime code.
 `transcript.turns` is a readonly array and serves as both the read and
 persistence surface. The constructor accepts a readonly array and makes a
 shallow copy, so later changes to the supplied array do not alter the
-transcript. The transcript accepts open event objects. Unknown host events, such as
+transcript. The transcript accepts open event objects. Unknown consumer events, such as
 `run:terminal` or `session:expired`, return `handled: false` and leave the
 state unchanged. Annotations are embedded on their turn or part targets. The
 transcript is not idempotent; callers should deduplicate replayed transport
@@ -1298,7 +1359,7 @@ events before applying them.
 
 #### Turn metadata
 
-User messages can carry stable host-owned metadata for rendering. Metadata is
+User messages can carry stable consumer-owned metadata for rendering. Metadata is
 stored in history, copied onto the corresponding user `Turn`, and ignored by
 providers.
 
@@ -1501,7 +1562,7 @@ current operation settles.
 
 Compaction is destructive at the message layer: the returned messages become
 the entire active conversation, and the old messages cease to exist the
-moment the part settles `complete` (settle ⇔ applied, atomically). Hosts
+moment the part settles `complete` (settle ⇔ applied, atomically). Consumers
 wanting the pre-compaction messages (undo, audit) copy them in their own
 wrapper before returning. Compaction runs on the agent's work queue, so it
 never interleaves with in-flight Agent work. `agent.context()` returns the
@@ -1607,7 +1668,7 @@ const viaOpenRouter = typesafe(process.env.OPENROUTER_API_KEY, {
 ```
 
 `typesafe()` reaches TypeSafe's Jev models. `baseUrl` sends the same request
-to any host that serves TypeSafe's System One path; with OpenRouter, use an
+to any endpoint that serves TypeSafe's System One path; with OpenRouter, use an
 OpenRouter key and either `jev-latest` or `~typesafe/jev-latest` as the
 model. It takes the same client options as the other factories, with one
 different default: `timeoutMs` is ten seconds per attempt, since a decision
@@ -1622,7 +1683,7 @@ The normative design lives in
 
 ### Model Catalog
 
-Axle ships no table of models. A host that needs a model's context window,
+Axle ships no table of models. A consumer that needs a model's context window,
 output ceiling, capabilities, or price can look them up in the
 [models.dev](https://models.dev) catalog through `ModelCatalog`, which keeps
 a slimmed copy at a path you choose, or in memory:
@@ -1637,12 +1698,12 @@ const catalog = await ModelCatalog.open({
 });
 if (catalog.stale) void catalog.refresh(); // or await it — never throws
 
-catalog.lookup("z-ai/glm-5.3-flash", { host: "openrouter" });
-// → { id: "zhipuai/glm-5.3-flash", match: "host", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
-catalog.lookup("claude-sonnet-5", { host: "anthropic" });
-// → { id: "anthropic/claude-sonnet-5", match: "host", model: {…}, cost: {…} }
+catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
+// → { id: "zhipuai/glm-5.3-flash", match: "provider", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
+catalog.lookup("claude-sonnet-5", { provider: "anthropic" });
+// → { id: "anthropic/claude-sonnet-5", match: "provider", model: {…}, cost: {…} }
 catalog.lookup("anthropic/claude-sonnet-5");
-// → { id: "anthropic/claude-sonnet-5", match: "exact", model: {…} }   (no host: no price)
+// → { id: "anthropic/claude-sonnet-5", match: "exact", model: {…} }   (no provider: no price)
 catalog.lookup("gemma4:26b-mlx");
 // → { id: "google/gemma-4-26b-a4b-it", match: "prefix", model: {…} }
 catalog.contextWindow("gemma4:26b-mlx");
@@ -1652,15 +1713,15 @@ catalog.lookup("something-unlisted"); // → undefined
 
 `model` is a `CatalogModel`: `name`, `limit.context` / `limit.output`,
 `reasoning`, `toolCall`, `structuredOutput`, `attachment`, `modalities`, and
-`knowledge` cutoff. `cost` is per million tokens as that host charges it,
+`knowledge` cutoff. `cost` is per million tokens as that provider charges it,
 with `tiers` for models priced by request size (`{ size: 200000, input:
 2.5, … }` applies to a request whose context exceeds 200,000 tokens).
 
 The catalog has two layers. The canonical layer keys models by
-`publisher/model`, independent of who serves them. The host layer keys each
+`publisher/model`, independent of who serves them. The provider layer keys each
 models.dev provider's own ids (`anthropic`, `openrouter`, `togetherai`, …)
-with that host's limits and prices, linked back to the canonical entry.
-`lookup(model, { host })` tries the host's id first (for a first-party host,
+with that provider's limits and prices, linked back to the canonical entry.
+`lookup(model, { provider })` tries the provider's id first (for a first-party provider,
 `anthropic/claude-sonnet-5` also matches its `claude-sonnet-5`), then the
 canonical key (a bare id is qualified with `publisher` if given), then a
 best-effort match
@@ -1677,14 +1738,14 @@ is yours. `refresh()` always fetches both layers (about 0.4 MB and 0.5 MB
 compressed), sends each layer's ETag so an unchanged file downloads
 nothing, and keeps the cached copy on any failure, so an offline run is
 never blocked; if only one layer fetched, the catalog stays `stale` so the
-other is retried next time. `hosts: ["anthropic", "openrouter"]` keeps only those hosts
-(the full host layer is about 1.9 MB on disk); `hosts: []` skips it.
+other is retried next time. `providers: ["anthropic", "openrouter"]` keeps only those providers
+(the full provider layer is about 1.9 MB on disk); `providers: []` skips it.
 
-### Hosting / Sessions
+### Sessions and persistence
 
 Axle stops at the agent runtime boundary. If you need long-lived sessions,
 SSE transport, resumable cursors, or React client hooks, build those concerns
-in your host application on top of `Agent`, `agent.on(...)`, and the streamed
+in your application on top of `Agent`, `agent.on(...)`, and the streamed
 turn events that Axle emits.
 
 `agent.messages` exposes the active, model-facing conversation as a copy —
@@ -1756,7 +1817,7 @@ warning, the remaining callbacks still run, and the handle settles with its
 real result. Handle your own save failures inside the callback. Like `on`,
 it returns a function that unregisters it.
 
-A host that takes the outcome here does not have to read the handle. An
+A consumer that takes the outcome here does not have to read the handle. An
 unread `final` that rejects raises no unhandled rejection, so
 `agent.send(text)` with the handle dropped is safe. `final` still rejects
 for code that awaits or chains from it.

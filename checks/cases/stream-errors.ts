@@ -16,7 +16,8 @@ export const streamErrorCases: CheckCase[] = [
     async run() {
       const raw = { code: "rate_limit_error", requestId: "fault-fixture" };
       const provider: AIProvider = {
-        name: "fault-fixture",
+        protocol: "chatCompletions",
+        id: "fault-fixture",
         async *createStreamingRequest() {
           yield {
             type: "error",
@@ -55,7 +56,8 @@ export const streamErrorCases: CheckCase[] = [
       ]) {
         let step = 0;
         const provider: AIProvider = {
-          name: "fault-fixture",
+          protocol: "chatCompletions",
+          id: "fault-fixture",
           async *createStreamingRequest() {
             if (step++ > 0) throw Object.assign(new Error("aborted"), { name: "AbortError" });
             yield { type: "start", id: "step-1", data: { model: "fixture", timestamp: 0 } };

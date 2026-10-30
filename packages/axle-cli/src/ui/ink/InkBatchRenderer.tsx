@@ -4,10 +4,10 @@ import { useSyncExternalStore } from "react";
 import type { BatchProgress, BatchTotals } from "../batch.js";
 import { formatMs, formatTokens } from "../format.js";
 import type { Renderer, SessionUsage } from "../renderer.js";
-import { HostLine, useSpinner } from "./App.js";
+import { RunnerLine, useSpinner } from "./App.js";
 import { UiStore } from "./store.js";
 
-interface HostItem {
+interface RunnerLineItem {
   level: "info" | "success" | "warn" | "error";
   text: string;
 }
@@ -19,7 +19,7 @@ interface BatchRow {
 }
 
 interface BatchUiState {
-  staticItems: HostItem[];
+  staticItems: RunnerLineItem[];
   rows: BatchRow[];
   totals?: BatchTotals;
   onInterrupt?: () => void;
@@ -40,7 +40,7 @@ function BatchApp({ store }: { store: UiStore<BatchUiState> }) {
   return (
     <>
       <Static items={state.staticItems}>
-        {(item, index) => <HostLine key={index} level={item.level} text={item.text} />}
+        {(item, index) => <RunnerLine key={index} level={item.level} text={item.text} />}
       </Static>
       {!state.closed &&
         state.rows.map((row) => (
@@ -76,7 +76,7 @@ function shortName(input: string): string {
 /**
  * Test-runner-style batch UI: one spinner row per in-flight item (naturally
  * capped at the concurrency limit), a totals footer, and settled item lines
- * committed to scrollback via the shared host-line dialect.
+ * committed to scrollback via the shared runner-line dialect.
  */
 export class InkBatchRenderer implements Renderer, BatchProgress {
   readonly acceptsInputDuringTurn = false;
@@ -121,19 +121,19 @@ export class InkBatchRenderer implements Renderer, BatchProgress {
   onEvent(_event: TurnEvent, _transcript: Transcript): void {}
 
   info(message: string): void {
-    this.host("info", message);
+    this.runnerLine("info", message);
   }
 
   success(message: string): void {
-    this.host("success", message);
+    this.runnerLine("success", message);
   }
 
   warn(message: string): void {
-    this.host("warn", message);
+    this.runnerLine("warn", message);
   }
 
   error(message: string): void {
-    this.host("error", message);
+    this.runnerLine("error", message);
   }
 
   promptInput(): Promise<string | null> {
@@ -153,7 +153,7 @@ export class InkBatchRenderer implements Renderer, BatchProgress {
     this.instance.unmount();
   }
 
-  private host(level: HostItem["level"], text: string): void {
+  private runnerLine(level: RunnerLineItem["level"], text: string): void {
     this.store.update((state) => ({
       ...state,
       staticItems: [...state.staticItems, { level, text }],

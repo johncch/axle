@@ -88,8 +88,8 @@ describe("formatExplain", () => {
   });
 
   it("walks through maps", () => {
-    expect(formatExplain("config.providers.vendor", WIDE)[0]).toBe(
-      "config.providers.vendor  openrouter | togetherai  (only with type: chatcompletions)",
+    expect(formatExplain("config.providers.<name>.dialect", WIDE)[0]).toBe(
+      "config.providers.<name>.dialect  openrouter | together",
     );
   });
 

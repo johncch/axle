@@ -2,6 +2,8 @@ import { AxleAbortError } from "../../errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
+import { estimateContextUsage } from "../../execution/context.js";
+import { stream } from "../../execution/stream.js";
 import type { MCP } from "../../mcp/index.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
 import type { AxleMessage, AxleUserMessage } from "../../messages/message.js";
@@ -9,9 +11,7 @@ import { getTextContent } from "../../messages/utils.js";
 import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { Span, SpanStatus } from "../../observability/types.js";
-import { estimateContextUsage } from "../../providers/context.js";
-import { stream } from "../../providers/stream.js";
-import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../providers/types.js";
+import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
 import { renderSkillsCatalog } from "../../skills/prompt.js";
 import { SkillRegistry } from "../../skills/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
@@ -168,7 +168,7 @@ export class Agent {
    * the handle settles or the next turn opens. A send without a continuation
    * fires exactly once; a send with one also fires for each inline turn,
    * under that turn's own id. The agent is at rest and nothing else has
-   * started, so a host that reads its `Transcript.turns` inside the callback
+   * started, so a consumer that reads its `Transcript.turns` inside the callback
    * gets turns and messages that match. An operation cancelled while still
    * queued never ran and does not fire. The session is the one `snapshot()`
    * returns; unlike `snapshot()`, it does not wait behind queued operations.
@@ -825,7 +825,7 @@ export class Agent {
    * fires no `onIdle`, and is not cancelled by `clear()`.
    * The returned object is the resumable state: session id and the active
    * model-facing conversation. It contains no renderable turn state —
-   * transcripts are host-owned; persist your `Transcript.turns`
+   * transcripts are consumer-owned; persist your `Transcript.turns`
    * alongside it.
    *
    * Do not await this from inside a running send (a tool's `execute`,

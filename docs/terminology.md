@@ -1,7 +1,7 @@
 # Terminology
 
 Names in Axle are load-bearing: they appear in event types, span names,
-option names, and host code. This document is normative — code, docs, and
+option names, and consumer code. This document is normative — code, docs, and
 events use these words with exactly these meanings. When a change would
 introduce a new unit of work or state, name it here first.
 
@@ -13,19 +13,69 @@ comes from mixing units across them.
 | Layer     | Unit    | Contains                  | Lives at                         |
 | --------- | ------- | ------------------------- | -------------------------------- |
 | Wire      | Message | content parts             | `agent.messages`                 |
-| Execution | Step    | one request + its fallout | the `send()` loop (`providers/`) |
-| Render    | Turn    | parts (+ annotations)     | the host's `Transcript`          |
+| Execution | Step    | one request + its fallout | the `send()` loop (`execution/`) |
+| Render    | Turn    | parts (+ annotations)     | the consumer's `Transcript`      |
 
 One `send()` = one or more **steps** of the execution loop, producing one
 user **turn** and one agent **turn** built from streamed events, carried on
 the wire as **messages**.
+
+## Who serves a request
+
+A request names a model, speaks a protocol, and goes to a provider, which
+may hand it to a host to run. Each word below names one of these layers and
+nothing else.
+
+| Term      | Example                            | Answers                        |
+| --------- | ---------------------------------- | ------------------------------ |
+| Model     | `anthropic.claude-sonnet-4-5-v1:0` | which weights, by this name    |
+| Publisher | `anthropic`                        | who made the model             |
+| Protocol  | `messages`                         | which wire format              |
+| Provider  | `amazon-bedrock`                   | who serves and bills it        |
+| Host      | Together, behind OpenRouter        | whose hardware ran the request |
+
+**Model** — the model id as the provider names it, sent on the request and
+recorded as the response reported it. The same weights carry different
+model ids at different providers (`claude-sonnet-4-5-20250929` at
+`anthropic`, `anthropic.claude-sonnet-4-5-v1:0` at `amazon-bedrock`).
+
+**Publisher** — who trained and released the model, the first half of a
+canonical `publisher/model` id in the model catalog. A model's publisher
+never changes with where it is served.
+
+**Protocol** — a wire format for requests and streamed responses:
+`messages`, `responses`, `chatCompletions`, `generateContent`. Each has a
+constructor of the same name that returns a provider speaking it.
+
+**Provider** — the service that serves and bills a request, named by its
+models.dev id (`anthropic`, `amazon-bedrock`, `openrouter`). In code, the
+`AIProvider` an `Agent` takes: a protocol configured with a base URL, auth
+and a dialect (the provider's deltas from the protocol: model id form,
+capabilities, extension fields), carrying that id as `id`. A provider whose
+service is unknown (a local server) has no `id`. Two providers can share an
+`id` (Bedrock in two regions). Presets (`anthropic()`, `openrouter()`) are
+shorthand for a protocol constructor with the configuration filled in.
+Prices are per provider, so usage is priced by `id` and model.
+
+The `provider` field of a thinking or provider-tool `continuity` is an
+exception: it names the wire format the continuity came from (`anthropic`
+for Messages, `gemini` for generateContent, `openai` for Responses,
+`openrouter`), and keeps those values because continuity is stored in
+conversation history.
+
+**Host** — whose hardware ran a request, when that differs from the
+provider: a router such as OpenRouter bills the request and forwards it to
+a host. Axle does not record hosts; models.dev does not price by them.
+
+**Consumer** — the application that embeds Axle (the CLI, Sunnyday). It
+owns what Axle hands over: transcripts, sessions, usage totals.
 
 ## Terms
 
 **Message** — the wire-layer unit: a role-tagged (`user` / `assistant` /
 `tool`) `AxleMessage` whose `content` is a list of parts. Messages are what
 providers consume and what compaction rewrites. "Message" never refers to
-render state or to host-level chat input.
+render state or to consumer-level chat input.
 
 **Part** — the atomic content unit: text, thinking, tool-call, file,
 citation. Parts are the shared vocabulary of the wire layer
@@ -59,9 +109,17 @@ not a tool batch: its arguments are validated as a whole, so one invalid item
 rejects the call. Not "batch tool".
 
 **UsageEntry** — one row of `Stats.breakdown`: the usage of one provider
-request, tagged with the provider and model that served it and, when the
-`Agent` that made it has a `name`, with that name as `agent`. Rows are kept
-in request order and never summed per model, because hosts bill a request at
+request, tagged with the provider that served it (its `AIProvider.id`, absent
+when the provider has none), two models, and, when the `Agent` that made it
+has a `name`, with that name as `agent`. `model` is the model the response
+reported, or the requested one when it reported none; `requestedModel` is
+the string the caller passed to `Agent` or `stream()`, before `resolveModel`.
+The two differ when the provider reports a different id than the one asked
+for: a Bedrock inference profile (`us.anthropic.…` reported as
+`anthropic.…`) or a gateway alias reported as the model it routed to. A row
+records both and decides neither; which one to price by is the consumer's
+policy. Rows are kept
+in request order and never summed per model, because providers bill a request at
 the tier its own prompt size selects; a row's `in` is that prompt size. A
 subagent's rows sit between the parent requests that bracket its tool call,
 under the subagent's own name; several subagents in one tool batch
@@ -83,15 +141,15 @@ turn skips `streaming`, and a `pending` turn lives only in
 to a provider request.
 
 **Send** — the Agent API verb: one scheduled conversation exchange
-(`agent.send(...)`), executed as a FIFO queue item. The host-facing unit of
+(`agent.send(...)`), executed as a FIFO queue item. The consumer-facing unit of
 "the agent took its turn."
 
 **Operation** — a queued unit of agent work that opens a turn: a Send or a
 manual compaction. Operations run one at a time in FIFO order. An operation
 is _pending_ from the call until its turn opens, and ends when its turn
 ends or, for a send with a continuation, when the continuation returns.
-Every turn it commits _settles_: `agent.onSettled(...)` hands the host the
-session and that turn's outcome, and waits for the host before anything
+Every turn it commits _settles_: `agent.onSettled(...)` hands the consumer the
+session and that turn's outcome, and waits for the consumer before anything
 else runs. An operation cancelled while still queued never ran and does not
 settle. `agent.snapshot()` opens no turn, is not queued, and is not an
 operation.
@@ -125,11 +183,11 @@ prompt as a _catalog_ line and _activated_ when the model calls `view-skill`.
 `agent.skills` is the `SkillRegistry` that holds them; like `agent.registry`
 for tools, it changes at any time and the next provider request reads it.
 A skill is not a tool: it adds instructions, and reaches files only through
-the tools the host registered.
+the tools the consumer registered.
 
-**Transcript** — the host-owned, reader-facing fold of `TurnEvent`s into turns
+**Transcript** — the consumer-owned, reader-facing fold of `TurnEvent`s into turns
 and annotations. The exported `Transcript` class is the shipped in-memory
-implementation; hosts persist its `turns` and pass them to the constructor on
+implementation; consumers persist its `turns` and pass them to the constructor on
 restore. The constructor shallow-copies that array, and the public `turns`
 view is readonly; structural changes go through `apply`. Its `pending` view
 holds operations the Agent has accepted but not started; that is live state
@@ -144,13 +202,13 @@ with `status: "pending"` and the id the real turn will carry, and it lives
 in `Transcript.pending`, never in `turns`. It ends when that turn opens or
 when the operation is dropped (cancelled, or failed during setup). Pending
 turns are live state: they are not saved, a transcript restored from saved
-turns has none, and a host seeds them through the constructor only to
+turns has none, and a consumer seeds them through the constructor only to
 mirror a live transcript.
 
 **Session** — the continuable identity of a conversation (`sessionId`).
 `AgentSession` is its serialized form — the pure continuation
 `{ sessionId, messages }` that `agent.snapshot()` captures and the `Agent`
-constructor restores. The transcript is not part of it; hosts persist its
+constructor restores. The transcript is not part of it; consumers persist its
 state alongside.
 
 **Compaction** — replacing the active conversation with a condensed
@@ -163,7 +221,7 @@ answer to a request that went out. It is a value on a result, never
 thrown.
 
 **Rejection** — a handle or promise that throws an `AxleError`: a mistake
-in the setup or the message, a host file that could not be read, a tool
+in the setup or the message, a local file that could not be read, a tool
 that ended the run, a cancel, or a broken invariant. Nothing was sent, or
 what was sent is carried on the error. The rule is in
 [architecture/errors.md](./architecture/errors.md).
@@ -293,9 +351,9 @@ end, status, and the session ids it produced. Read by `schedule sessions`
 and `schedule list`; distinct from the batch ledger, which is per project
 and keyed by input.
 
-**Host line** — renderer output that is not transcript: `info` / `success`
+**Runner line** — renderer output that is not transcript: `info` / `success`
 / `warn` / `error` from the runner, drawn with the consola gutter. The
-transcript channel renders the model's conversation; host lines frame it.
+transcript channel renders the model's conversation; runner lines frame it.
 
 ## Reserved and avoided words
 
@@ -308,7 +366,7 @@ transcript channel renders the model's conversation; host lines frame it.
 - **turn** for an assistant message or provider request — the pre-0.29
   usage; renamed to _step_ (`StreamEvent`'s former `turn:start` /
   `turn:complete` collided with `TurnEvent`'s render-layer `turn:start`).
-- **run** — host vocabulary: Sunnyday's durable conversation, one level
+- **run** — consumer vocabulary: Sunnyday's durable conversation, one level
   above send. A run starts and stops per incoming message (state
   transitions, not sub-entities). Core never uses it as a unit name.
 - **tape** — the pre-0.30 design term for the event fold. Rejected for the

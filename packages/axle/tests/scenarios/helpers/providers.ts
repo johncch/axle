@@ -1,12 +1,11 @@
 import type { AnyStreamChunk } from "../../../src/messages/stream.js";
-import type { AIProvider } from "../../../src/providers/types.js";
+import type { AIProvider } from "../../../src/protocols/types.js";
 
 export function makeStreamingProvider(streamChunks: AnyStreamChunk[][]): AIProvider {
   let callIndex = 0;
   return {
-    get name() {
-      return "test";
-    },
+    protocol: "chatCompletions",
+    id: "test",
     createStreamingRequest: function* () {
       const chunks = streamChunks[callIndex++];
       if (!chunks) throw new Error("No stream chunks configured");
@@ -35,9 +34,8 @@ export function makeAsyncStreamingProvider(
 
   let callIndex = 0;
   const provider: AIProvider = {
-    get name() {
-      return "test";
-    },
+    protocol: "chatCompletions",
+    id: "test",
     async *createStreamingRequest() {
       const chunks = streamChunks[callIndex++];
       if (!chunks) throw new Error("No stream chunks configured");

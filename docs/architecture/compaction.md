@@ -156,13 +156,13 @@ the threshold), keeping artificially small windows coherent.
 - **Turn policy in the compaction transform** — `{messages, turns}` return,
   suffix constraint, `retainedFrom` boundary event, `keepTurns` option
   (2026-08-11): dissolved entirely when turns left the Agent; transcript
-  retention is host storage policy, zero engine surface.
+  retention is consumer storage policy, zero engine surface.
 - **Eviction API / engine-invariant turn eviction** (2026-08-10): compaction
   is the channel; the Agent makes no coherence promise between transcript
   and messages, and once it holds no transcript there is nothing to evict.
 - **Session turnover** (compaction rotates a session, old turns evicted as a
   closed chapter) (2026-08-11): an eviction API with lifecycle ceremony;
-  chapters survive as a host storage pattern keyed off compaction parts.
+  chapters survive as a consumer storage pattern keyed off compaction parts.
 - **Dedicated state-bearing lifecycle events** (`compaction:start`/`end`
   creating and settling their own turn, with skip-removal in every fold)
   (2026-08-12): the skip-erasure rule existed only because the compaction

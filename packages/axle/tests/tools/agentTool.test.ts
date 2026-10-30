@@ -3,9 +3,9 @@ import { z } from "zod";
 import { Agent } from "../../src/core/agent/index.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
+import { executeToolCalls, type ToolExecutionObserver } from "../../src/execution/helpers.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import { executeToolCalls, type ToolExecutionObserver } from "../../src/providers/helpers.js";
-import { AxleStopReason, type AIProvider } from "../../src/providers/types.js";
+import { AxleStopReason, type AIProvider } from "../../src/protocols/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import { Transcript } from "../../src/turns/transcript.js";
@@ -52,7 +52,14 @@ describe("createAgentTool", () => {
       in: 3,
       out: 4,
       breakdown: [
-        { provider: "child-provider", model: "mock", agent: "child-researcher", in: 3, out: 4 },
+        {
+          provider: "child-provider",
+          model: "mock",
+          requestedModel: "child-model",
+          agent: "child-researcher",
+          in: 3,
+          out: 4,
+        },
       ],
     });
   });
@@ -120,14 +127,23 @@ describe("createAgentTool", () => {
       {
         provider: "parent-provider",
         model: "parent-runtime-model",
+        requestedModel: "parent-configured-model",
         agent: "orchestrator",
         in: 1,
         out: 2,
       },
-      { provider: "child-provider", model: "mock", agent: "researcher", in: 3, out: 4 },
+      {
+        provider: "child-provider",
+        model: "mock",
+        requestedModel: "child-configured-model",
+        agent: "researcher",
+        in: 3,
+        out: 4,
+      },
       {
         provider: "parent-provider",
         model: "parent-runtime-model",
+        requestedModel: "parent-configured-model",
         agent: "orchestrator",
         in: 1,
         out: 2,
@@ -179,10 +195,17 @@ describe("createAgentTool", () => {
       in: 4,
       out: 6,
       breakdown: [
-        { provider: "parent-provider", model: "parent-runtime-model", in: 1, out: 2 },
+        {
+          provider: "parent-provider",
+          model: "parent-runtime-model",
+          requestedModel: "parent-configured-model",
+          in: 1,
+          out: 2,
+        },
         {
           provider: "fatal-child-provider",
           model: "fatal-child-runtime-model",
+          requestedModel: "child-configured-model",
           agent: "researcher",
           in: 3,
           out: 4,
@@ -253,10 +276,17 @@ describe("createAgentTool", () => {
       in: 4,
       out: 6,
       breakdown: [
-        { provider: "parent-provider", model: "parent-runtime-model", in: 1, out: 2 },
+        {
+          provider: "parent-provider",
+          model: "parent-runtime-model",
+          requestedModel: "parent-configured-model",
+          in: 1,
+          out: 2,
+        },
         {
           provider: "blocking-child-provider",
           model: "blocking-child-runtime-model",
+          requestedModel: "child-configured-model",
           agent: "researcher",
           in: 3,
           out: 4,
@@ -294,7 +324,8 @@ function runAgentTool(
 
 function createProvider(response: string, prompts: string[] = []): AIProvider {
   return {
-    name: "child-provider",
+    protocol: "chatCompletions",
+    id: "child-provider",
     async *createStreamingRequest(_model, params): AsyncGenerator<AnyStreamChunk, void, unknown> {
       const user = params.messages.findLast((message) => message.role === "user");
       const prompt = getMessageText(user?.content);
@@ -319,7 +350,8 @@ function createProvider(response: string, prompts: string[] = []): AIProvider {
 function createParentProvider(): AIProvider {
   let call = 0;
   return {
-    name: "parent-provider",
+    protocol: "chatCompletions",
+    id: "parent-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       call += 1;
       yield {
@@ -361,7 +393,8 @@ function createParentProvider(): AIProvider {
 
 function createErrorChildProvider(): AIProvider {
   return {
-    name: "error-child-provider",
+    protocol: "chatCompletions",
+    id: "error-child-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",
@@ -378,7 +411,8 @@ function createErrorChildProvider(): AIProvider {
 
 function createFatalChildProvider(): AIProvider {
   return {
-    name: "fatal-child-provider",
+    protocol: "chatCompletions",
+    id: "fatal-child-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",
@@ -403,7 +437,8 @@ function createFatalChildProvider(): AIProvider {
 
 function createBlockingChildProvider(): AIProvider {
   return {
-    name: "blocking-child-provider",
+    protocol: "chatCompletions",
+    id: "blocking-child-provider",
     async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void, unknown> {
       yield {
         type: "start",

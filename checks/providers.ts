@@ -67,7 +67,8 @@ export const providerTargets: ProviderTarget[] = [
     model: "deepseek/deepseek-v4.1-flash",
     default: false,
     createProvider: () =>
-      chatCompletions("https://openrouter.ai/api/v1", {
+      chatCompletions({
+        baseUrl: "https://openrouter.ai/api/v1",
         apiKey: getEnv("OPENROUTER_API_KEY"),
       }),
   },
@@ -77,7 +78,8 @@ export const providerTargets: ProviderTarget[] = [
     model: process.env.TOGETHER_MODEL ?? "zai-org/GLM-5.3-Flash",
     default: true,
     createProvider: () =>
-      chatCompletions("https://api.together.ai/v1", {
+      chatCompletions({
+        baseUrl: "https://api.together.ai/v1",
         apiKey: getEnv("TOGETHER_API_KEY"),
         webSearch: braveWebSearch({ apiKey: getEnv("BRAVE_API_KEY") }),
       }),
@@ -88,7 +90,8 @@ export const providerTargets: ProviderTarget[] = [
     model: process.env.OLLAMA_MODEL ?? "muse-glimmer:30b-mlx",
     default: false,
     createProvider: () =>
-      chatCompletions("http://localhost:11434/v1", {
+      chatCompletions({
+        baseUrl: "http://localhost:11434/v1",
         webSearch: braveWebSearch({ apiKey: getEnv("BRAVE_API_KEY") }),
       }),
   },

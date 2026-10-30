@@ -1,8 +1,12 @@
 import * as z from "zod";
 import { AxleError } from "../../errors/AxleError.js";
-import { withRetry } from "../chatcompletions/retry.js";
-import type { DecisionProvider, DecisionRequestParams, DecisionResponse } from "../decide.js";
-import type { ProviderClientOptions } from "../types.js";
+import type {
+  DecisionProvider,
+  DecisionRequestParams,
+  DecisionResponse,
+} from "../../execution/decide.js";
+import { withRetry } from "../../protocols/chatCompletions/retry.js";
+import type { ProviderClientOptions } from "../../protocols/types.js";
 
 export const NAME = "TypeSafe" as const;
 
@@ -11,10 +15,13 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
  * `timeoutMs` defaults to ten seconds per attempt, matching TypeSafe's own
- * SDKs. `baseUrl` can point at a compatible host, e.g.
+ * SDKs. `baseUrl` (the origin; requests go to `${baseUrl}/v1/systemone`) can
+ * point at another provider serving the same path, e.g.
  * `https://openrouter.ai/api` with an OpenRouter key.
  */
-export type TypesafeOptions = ProviderClientOptions;
+export interface TypesafeOptions extends ProviderClientOptions {
+  baseUrl?: string;
+}
 
 const systemOneResponseSchema = z.object({
   model: z.string(),
