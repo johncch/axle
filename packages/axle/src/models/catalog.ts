@@ -5,7 +5,8 @@ import { splitModelId } from "../protocols/model.js";
 
 const MODELS_DEV_URL = "https://models.dev";
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 10_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const DEFAULT_RETRY_DELAYS_MS = [10_000, 30_000, 90_000];
 
 const CatalogModelSchema = z.object({
   name: z.string(),
@@ -133,18 +134,37 @@ export interface ModelCatalogOptions {
   providers?: string[];
   /** Catalog origin; defaults to models.dev. */
   baseUrl?: string;
+  /** Milliseconds a fetch of one layer may take before it is abandoned. Defaults to ten seconds. */
+  fetchTimeout?: number;
+  /**
+   * Delays in milliseconds between retries while the catalog is `unavailable`, in order;
+   * `[]` never retries. Defaults to 10 s, 30 s, 90 s.
+   */
+  retryDelays?: number[];
 }
+
+/**
+ * Where the catalog stands: `loading` while the first fetch of a catalog with no cache
+ * is in flight, `loaded` once a cache has been read or fetched (`stale` when older than
+ * `maxAge`), `unavailable` when there is no cache and the fetch failed.
+ */
+export type CatalogState =
+  | { status: "loading" }
+  | { status: "loaded"; fetchedAt: Date; stale: boolean }
+  | { status: "unavailable" };
 
 /**
  * Model metadata looked up from the models.dev catalog: a canonical layer
  * (`publisher/model`, provider-independent) and a per-provider layer (each provider's
  * own ids with its limits and prices, linked to the canonical entry).
  *
- * `open()` reads the cache and never touches the network; `refresh()`
- * always fetches, sending ETags so an unchanged catalog downloads nothing,
- * and never throws — a failed fetch keeps the cached copy. `stale` says
- * whether the cache is older than `maxAge`; when to refresh is the consumer's
- * call.
+ * `open()` reads the cache and resolves at once. With no cache it starts a
+ * fetch and resolves in the `loading` state; with a cache older than `maxAge`
+ * it serves the cache and refreshes in the background. `ready` resolves when
+ * that fetch has ended either way, `state` says where the catalog stands,
+ * and `onChange` fires when the state or the contents change. `refresh()`
+ * always fetches, sending ETags so an unchanged catalog downloads nothing, and
+ * never throws — a failed fetch keeps the cached copy.
  *
  * `lookup()` tries the provider's own id first when a provider is given, then the
  * canonical key, then a best-effort match for local runtimes' names
@@ -157,15 +177,29 @@ export class ModelCatalog {
   private readonly maxAge: number;
   private readonly providers: string[] | undefined;
   private readonly baseUrl: string;
+  private readonly fetchTimeout: number;
+  private readonly retryDelays: number[];
   private cache: CacheFile | undefined;
   private normalized: { id: string; key: string }[] = [];
+  private inflight = 0;
+  private readonly listeners: Array<() => void> = [];
+  private readonly _ready: Promise<void>;
 
   private constructor(options: ModelCatalogOptions, cache: CacheFile | undefined) {
     this.cachePath = options.cachePath;
     this.maxAge = options.maxAge ?? DEFAULT_MAX_AGE_MS;
     this.providers = options.providers;
     this.baseUrl = options.baseUrl ?? MODELS_DEV_URL;
+    this.fetchTimeout = options.fetchTimeout ?? DEFAULT_FETCH_TIMEOUT_MS;
+    this.retryDelays = options.retryDelays ?? DEFAULT_RETRY_DELAYS_MS;
     this.setCache(cache);
+    if (!this.cache) {
+      this._ready = this.attempt(0);
+    } else if (this.stale) {
+      this._ready = this.refresh();
+    } else {
+      this._ready = Promise.resolve();
+    }
   }
 
   static async open(options: ModelCatalogOptions = {}): Promise<ModelCatalog> {
@@ -183,6 +217,18 @@ export class ModelCatalog {
     return new ModelCatalog(options, cache);
   }
 
+  get state(): CatalogState {
+    if (this.cache) {
+      return { status: "loaded", fetchedAt: new Date(this.cache.fetchedAt), stale: this.stale };
+    }
+    return this.inflight > 0 ? { status: "loading" } : { status: "unavailable" };
+  }
+
+  /** Resolves when the fetch `open()` started has ended, either way; at once when it started none. */
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
   get size(): number {
     return this.normalized.length;
   }
@@ -195,7 +241,46 @@ export class ModelCatalog {
     return !this.cache || Date.now() - Date.parse(this.cache.fetchedAt) >= this.maxAge;
   }
 
+  onChange(listener: () => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      const index = this.listeners.indexOf(listener);
+      if (index >= 0) this.listeners.splice(index, 1);
+    };
+  }
+
   async refresh(): Promise<void> {
+    const idle = this.snapshot();
+    this.inflight += 1;
+    this.notifyIfChanged(idle);
+    const fetching = this.snapshot();
+    try {
+      await this.fetchAndStore();
+    } finally {
+      this.inflight -= 1;
+      this.notifyIfChanged(fetching);
+    }
+  }
+
+  private async attempt(index: number): Promise<void> {
+    await this.refresh();
+    if (this.cache) return;
+    const delay = this.retryDelays[index];
+    if (delay === undefined) return;
+    const timer = setTimeout(() => void this.attempt(index + 1), delay);
+    timer.unref?.();
+  }
+
+  private snapshot(): { cache: CacheFile | undefined; status: CatalogState["status"] } {
+    return { cache: this.cache, status: this.state.status };
+  }
+
+  private notifyIfChanged(before: ReturnType<ModelCatalog["snapshot"]>): void {
+    if (this.cache === before.cache && this.state.status === before.status) return;
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  private async fetchAndStore(): Promise<void> {
     const wantProviders = this.providers === undefined || this.providers.length > 0;
     const [modelsResult, apiResult] = await Promise.all([
       this.fetchLayer("/models.json", this.cache?.etags.models),
@@ -238,19 +323,17 @@ export class ModelCatalog {
       etagApi = apiResult.etag;
     }
 
-    try {
-      await this.writeCache({
-        version: 3,
-        fetchedAt: complete
-          ? new Date().toISOString()
-          : (this.cache?.fetchedAt ?? new Date(0).toISOString()),
-        etags: { models: etagModels, api: etagApi },
-        models,
-        providers,
-      });
-    } catch {
-      return;
-    }
+    const cache: CacheFile = {
+      version: 3,
+      fetchedAt: complete
+        ? new Date().toISOString()
+        : (this.cache?.fetchedAt ?? new Date(0).toISOString()),
+      etags: { models: etagModels, api: etagApi },
+      models,
+      providers,
+    };
+    this.setCache(cache);
+    await this.writeCache(cache).catch(() => {});
   }
 
   lookup(
@@ -322,7 +405,7 @@ export class ModelCatalog {
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         headers: etag ? { "If-None-Match": etag } : {},
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(this.fetchTimeout),
       });
       if (response.status === 304) return { etag };
       if (!response.ok) return undefined;
@@ -341,18 +424,16 @@ export class ModelCatalog {
   }
 
   private async writeCache(cache: CacheFile): Promise<void> {
-    if (this.cachePath) {
-      const tmpPath = `${this.cachePath}.tmp`;
-      await mkdir(dirname(this.cachePath), { recursive: true });
-      try {
-        await writeFile(tmpPath, JSON.stringify(cache));
-        await rename(tmpPath, this.cachePath);
-      } catch (e) {
-        await rm(tmpPath, { force: true }).catch(() => {});
-        throw e;
-      }
+    if (!this.cachePath) return;
+    const tmpPath = `${this.cachePath}.tmp`;
+    await mkdir(dirname(this.cachePath), { recursive: true });
+    try {
+      await writeFile(tmpPath, JSON.stringify(cache));
+      await rename(tmpPath, this.cachePath);
+    } catch (e) {
+      await rm(tmpPath, { force: true }).catch(() => {});
+      throw e;
     }
-    this.setCache(cache);
   }
 }
 

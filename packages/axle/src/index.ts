@@ -256,6 +256,7 @@ export { ModelCatalog } from "./models/catalog.js";
 export type {
   CatalogMatch,
   CatalogModel,
+  CatalogState,
   ContextWindowMatch,
   ModelCatalogOptions,
   ModelCost,
