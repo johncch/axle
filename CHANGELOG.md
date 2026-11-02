@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Tool call arguments are now parsed with the tool's schema before `execute`. Invalid arguments no longer reach `execute`: the model gets an error tool result with type `validation` naming each issue (for example `description: Invalid input: expected string, received undefined`) and can correct the call in the same turn. `execute` receives the parsed value, so schema defaults and transforms now apply. A parallelized tool's call is rejected as a whole when any item is invalid. MCP tools are validated too, and unknown top-level keys are dropped before the call reaches the server, matching a default `z.object()`, rather than rejected.
+- A parallelized tool's default description now starts with the wrapped tool's description, followed by a sentence on concurrent, ordered execution, so the model learns what each item does. Neither the description nor the `items` schema names the wrapped tool anymore: with a batch name one letter off the wrapped tool's, GLM-5.3-Flash on Together lost its tool calls, which came back as an empty reply.
 
 ## [0.34.2] - 2026-10-24
 

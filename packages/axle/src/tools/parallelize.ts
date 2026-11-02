@@ -51,11 +51,7 @@ export function parallelize<TSchema extends ZodObject<any>>(
   const maxConcurrency = Math.max(1, options.maxConcurrency ?? 8);
   const maxResultBytes = Math.max(0, options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES);
   const schema = z.object({
-    items: z
-      .array(tool.schema)
-      .min(1)
-      .max(maxItems)
-      .describe(`Inputs to run through ${tool.name}. Results are returned in the same order.`),
+    items: z.array(tool.schema).min(1).max(maxItems).describe("One input per item."),
   });
 
   return {
@@ -65,7 +61,7 @@ export function parallelize<TSchema extends ZodObject<any>>(
     name: options.name ?? `${tool.name}_batch`,
     description:
       options.description ??
-      `Run ${tool.name} for multiple inputs concurrently and return ordered per-item results.`,
+      `${tool.description} Accepts many inputs in one call, runs them concurrently, and returns results in input order.`,
     schema,
     async execute(input, ctx) {
       const results = await runWithConcurrency(

@@ -898,8 +898,9 @@ tool preserves input order and reports per-item execution failures instead of
 failing the whole call; fatal (`AxleToolFatalError`) and abort errors still
 terminate the run like an unbatched tool. It returns ordered tool-result parts:
 each item starts with a text marker containing `index` and `ok`/`error`,
-followed by the child's text or file parts. Options: `name`, `description`,
-`maxItems` (default 50), `maxConcurrency` (default 8), and `maxResultBytes`
+followed by the child's text or file parts. Options: `name` (default
+`<tool>_batch`), `description` (default: the wrapped tool's description plus a
+sentence on concurrent, ordered execution), `maxItems` (default 50), `maxConcurrency` (default 8), and `maxResultBytes`
 (default 20 MiB). Over-budget child output is omitted per item with a marker
 that includes the item index, input, output size, remaining budget, and total
 limit; later items still render if they fit. The parallelized tool inherits the

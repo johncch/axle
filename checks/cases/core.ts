@@ -788,7 +788,6 @@ export const coreCases: CheckCase[] = [
         },
       };
       const lookupBatchTool = parallelize(lookupTool, {
-        name: "lookup_codes",
         description: "Lookup multiple fixed codes by id.",
       });
 
@@ -800,7 +799,7 @@ export const coreCases: CheckCase[] = [
           {
             role: "user",
             content:
-              "Use the lookup_codes tool once to look up ids alpha and beta. Then answer with both code words.",
+              "Use the lookup_code_batch tool once to look up ids alpha and beta. Then answer with both code words.",
           },
         ],
         tools: [lookupBatchTool],
@@ -809,13 +808,13 @@ export const coreCases: CheckCase[] = [
       if (!result.ok) return fail({ error: result.error });
       const text = getAssistantText(result.final);
       const toolResults = getToolResultDetails(result.messages);
-      const batchResult = toolResults.find((toolResult) => toolResult.name === "lookup_codes");
+      const batchResult = toolResults.find((toolResult) => toolResult.name === "lookup_code_batch");
       const lowerText = text.toLowerCase();
       const failureReasons = [
         ...(!batchResult
-          ? ["The model never called lookup_codes."]
+          ? ["The model never called lookup_code_batch."]
           : !batchResult.content.includes("orchid") || !batchResult.content.includes("violet")
-            ? ["The lookup_codes result does not hold both orchid and violet."]
+            ? ["The lookup_code_batch result does not hold both orchid and violet."]
             : []),
         ...(!lowerText.includes("orchid") || !lowerText.includes("violet")
           ? ["The final answer does not hold both orchid and violet."]
