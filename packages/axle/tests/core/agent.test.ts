@@ -447,6 +447,64 @@ describe("Agent", () => {
       expect(transcript.turns.at(-1)?.status).toBe("cancelled");
     });
 
+    test("a tool running when the turn is cancelled settles cancelled", async () => {
+      let toolStarted = false;
+      const slow = {
+        name: "slow",
+        description: "Waits until aborted",
+        schema: z.object({ input: z.string() }),
+        execute: (_input: { input: string }, ctx: { signal: AbortSignal }) => {
+          toolStarted = true;
+          return new Promise<string>((_resolve, reject) => {
+            ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
+          });
+        },
+      };
+      const { provider } = createToolThenTextProvider(["slow"]);
+      const agent = new Agent({ provider, model: "mock", tools: [slow] });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const final = agent.send("go").final.catch((error) => error);
+      await vi.waitFor(() => expect(toolStarted).toBe(true));
+      agent.cancel();
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      const turn = transcript.turns.at(-1);
+      expect(turn?.status).toBe("cancelled");
+      expect(turn?.parts.find((part) => part.type === "action")?.status).toBe("cancelled");
+    });
+
+    test("a tool call still streaming when the turn is cancelled settles cancelled", async () => {
+      const provider: AIProvider = {
+        protocol: "chatCompletions",
+        id: "tool-call-hangs",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
+          yield { type: "tool-call-start", data: { index: 0, id: "tc1", name: "search" } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const transcript = new Transcript();
+      let actionOpened = false;
+      agent.on((event) => {
+        transcript.apply(event);
+        if (event.type === "part:start" && event.part.type === "action") actionOpened = true;
+      });
+
+      const final = agent.send("go").final.catch((error) => error);
+      await vi.waitFor(() => expect(actionOpened).toBe(true));
+      agent.cancel();
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      const turn = transcript.turns.at(-1);
+      expect(turn?.status).toBe("cancelled");
+      expect(turn?.parts.find((part) => part.type === "action")?.status).toBe("cancelled");
+    });
+
     test("cancel() returns false when nothing is running", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
 

@@ -80,7 +80,7 @@ export class TurnEventBuilder {
   private currentTurnTiming: TimingInfo | undefined;
   private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
   private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
-  private toolIdMap = new Map<
+  private openActions = new Map<
     string,
     {
       partId: string;
@@ -102,7 +102,7 @@ export class TurnEventBuilder {
     this.currentTurnTiming = startTiming();
     this.currentTextPart = null;
     this.currentThinkingPart = null;
-    this.toolIdMap.clear();
+    this.openActions.clear();
     this.accumulatedUsage = createStats();
     return { type: "turn:start", turnId, timing: this.currentTurnTiming };
   }
@@ -269,7 +269,7 @@ export class TurnEventBuilder {
                 timing,
                 detail: { name: event.name, parameters: {} },
               };
-        this.toolIdMap.set(event.id, {
+        this.openActions.set(event.id, {
           partId,
           turnId,
           timing,
@@ -281,7 +281,7 @@ export class TurnEventBuilder {
       }
 
       case "tool:args-delta": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           events.push({
             type: "action:args-delta",
@@ -295,7 +295,7 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-start": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           events.push({
             type: "action:running",
@@ -308,7 +308,7 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-delta": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           if (typeof event.chunk === "string") {
             events.push({
@@ -330,11 +330,11 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-complete": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           addStats(this.accumulatedUsage, event.usage);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
           if (event.result.type === "success") {
             events.push({
               type: "action:complete",
@@ -357,18 +357,22 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-error": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           addStats(this.accumulatedUsage, event.usage);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
-          events.push({
-            type: "action:error",
-            turnId,
-            partId: mapping.partId,
-            error: event.error,
-            timing,
-          });
+          if (event.error.type === "aborted") {
+            events.push({ type: "action:cancelled", turnId, partId: mapping.partId, timing });
+          } else {
+            events.push({
+              type: "action:error",
+              turnId,
+              partId: mapping.partId,
+              error: event.error,
+              timing,
+            });
+          }
         }
         break;
       }
@@ -385,14 +389,14 @@ export class TurnEventBuilder {
           timing,
           detail: { name: event.name },
         };
-        this.toolIdMap.set(event.id, { partId, turnId, timing });
+        this.openActions.set(event.id, { partId, turnId, timing });
         events.push({ type: "part:start", turnId, part });
         events.push({ type: "action:running", turnId, partId });
         break;
       }
 
       case "provider-tool:input": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           events.push({
             type: "action:input",
@@ -405,10 +409,10 @@ export class TurnEventBuilder {
       }
 
       case "provider-tool:complete": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
           events.push({
             type: "action:complete",
             turnId,
@@ -424,10 +428,10 @@ export class TurnEventBuilder {
       }
 
       case "provider-tool:error": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
           events.push({
             type: "action:error",
             turnId,
@@ -468,6 +472,17 @@ export class TurnEventBuilder {
     if (!turnId) return [];
     const events: TurnEvent[] = [];
     this.closeOpenParts(events);
+    if (outcome !== "complete") {
+      for (const action of this.openActions.values()) {
+        events.push({
+          type: "action:cancelled",
+          turnId,
+          partId: action.partId,
+          timing: completeTiming(action.timing),
+        });
+      }
+    }
+    this.openActions.clear();
     const timing = completeTiming(this.currentTurnTiming);
     events.push({
       type: "turn:end",

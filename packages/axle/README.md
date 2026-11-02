@@ -1295,7 +1295,7 @@ try {
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
 `action:running`, `action:input`, `action:progress`, `action:complete`,
-`action:error`,
+`action:cancelled`, `action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:error`, `annotation:start`, `annotation:update`,
 `annotation:end`, `error`.
@@ -1305,6 +1305,13 @@ arrives `running` via `part:start`, `compaction:update` replaces transient
 `summary` and `progress` fields, and exactly one of `compaction:complete` /
 `compaction:error` settles it. Completion sets `progress` to `1` and its
 returned summary replaces any transient summary.
+
+An action part settles with exactly one of `action:complete`,
+`action:error` or `action:cancelled`. A tool call the run cancelled ends
+`cancelled`, whether it was running or not yet started; when a turn ends
+`cancelled` or `error`, every action part still open is settled
+`cancelled` before `turn:end`. A tool that throws `AxleToolFatalError` ends
+`error`.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"citation"`, `"action"`, `"compaction"`). Action parts

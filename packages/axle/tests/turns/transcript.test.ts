@@ -125,6 +125,43 @@ describe("Transcript", () => {
     });
   });
 
+  test("action:cancelled settles the part cancelled and keeps what it had", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: {
+        id: "p1",
+        type: "action",
+        kind: "tool",
+        status: "pending",
+        detail: { name: "search", parameters: {} },
+      },
+    });
+    transcript.apply({
+      type: "action:running",
+      turnId: "t1",
+      partId: "p1",
+      parameters: { q: "axle" },
+    });
+    transcript.apply({
+      type: "action:cancelled",
+      turnId: "t1",
+      partId: "p1",
+      timing: { start: "2026-11-02T00:00:00.000Z", end: "2026-11-02T00:00:01.000Z" },
+    });
+
+    const part = (transcript.turns[0] as Turn).parts[0];
+    expect(part).toMatchObject({
+      type: "action",
+      status: "cancelled",
+      detail: { name: "search", parameters: { q: "axle" } },
+      timing: { end: "2026-11-02T00:00:01.000Z" },
+    });
+    expect(part.type === "action" && part.detail.result).toBeUndefined();
+  });
+
   test("records a provider tool's input on its action", () => {
     const transcript = new Transcript();
 

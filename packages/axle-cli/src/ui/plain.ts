@@ -49,6 +49,7 @@ export class PlainRenderer implements Renderer {
         break;
       }
       case "action:complete":
+      case "action:cancelled":
       case "action:error": {
         const part = findPart(transcript, event.turnId, event.partId);
         if (part?.type === "action") {

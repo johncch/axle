@@ -197,6 +197,36 @@ describe("TurnEventBuilder", () => {
     });
   });
 
+  test("an aborted tool emits action:cancelled; a fatal one still emits action:error", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+    builder.handleStreamEvent({ type: "tool:request", id: "tc1", name: "slow" });
+    builder.handleStreamEvent({ type: "tool:request", id: "tc2", name: "strict" });
+
+    const aborted = builder.handleStreamEvent({
+      type: "tool:exec-error",
+      id: "tc1",
+      name: "slow",
+      error: { type: "aborted", message: "Operation aborted" },
+    });
+    const fatal = builder.handleStreamEvent({
+      type: "tool:exec-error",
+      id: "tc2",
+      name: "strict",
+      error: { type: "fatal", message: "stop" },
+    });
+
+    expect(aborted).toEqual([
+      expect.objectContaining({ type: "action:cancelled", partId: expect.any(String) }),
+    ]);
+    expect(fatal).toEqual([
+      expect.objectContaining({
+        type: "action:error",
+        error: { type: "fatal", message: "stop" },
+      }),
+    ]);
+  });
+
   test("provider tool lifecycle emits action events", () => {
     const builder = new TurnEventBuilder();
     builder.startAgentTurn();
@@ -362,6 +392,55 @@ describe("TurnEventBuilder", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: "turn:end", status });
+  });
+
+  test.each(["cancelled" as const, "error" as const])(
+    "finalizeTurn(%s) cancels actions that never settled, before turn:end",
+    (outcome) => {
+      const builder = new TurnEventBuilder();
+      builder.startAgentTurn();
+      const [pending] = builder.handleStreamEvent({
+        type: "tool:request",
+        id: "tc1",
+        name: "search",
+      });
+      const [running] = builder.handleStreamEvent({
+        type: "provider-tool:start",
+        id: "pt1",
+        name: "web_search",
+      });
+      builder.handleStreamEvent({ type: "tool:request", id: "tc2", name: "done" });
+      builder.handleStreamEvent({
+        type: "tool:exec-complete",
+        id: "tc2",
+        name: "done",
+        result: { type: "success", content: "ok" },
+      });
+
+      const events = builder.finalizeTurn(outcome);
+
+      const partIdOf = (event: TurnEvent | undefined) =>
+        event?.type === "part:start" ? event.part.id : undefined;
+      expect(events.map((event) => event.type)).toEqual([
+        "action:cancelled",
+        "action:cancelled",
+        "turn:end",
+      ]);
+      expect(events.slice(0, 2).map((event) => "partId" in event && event.partId)).toEqual([
+        partIdOf(pending),
+        partIdOf(running),
+      ]);
+    },
+  );
+
+  test("finalizeTurn() on a complete turn leaves unsettled actions alone", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+    builder.handleStreamEvent({ type: "provider-tool:start", id: "pt1", name: "web_search" });
+
+    const events = builder.finalizeTurn();
+
+    expect(events.map((event) => event.type)).toEqual(["turn:end"]);
   });
 
   test("finalizeTurn and handleStreamEvent return empty with no active turn", () => {

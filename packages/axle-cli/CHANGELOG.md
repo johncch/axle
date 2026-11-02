@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A tool call interrupted by a cancel shows as `⚠ … (cancelled)` instead
+  of `✖`, and a tool call the model was still writing when the run stopped
+  no longer stays pending in the transcript.
 - **Cost beside tokens.** The usage bar, the batch footer and the exit
   summary show what the run cost in US dollars, priced from the models.dev
   catalog per request: `$0.42`, `$0.42 (2 unpriced)` when some requests

@@ -1,6 +1,6 @@
 # Tool loop
 
-**Status**: current · **Last design revision**: 2026-10-29 (0.35.0)
+**Status**: current · **Last design revision**: 2026-11-02 (0.35.0, AXL-91)
 
 This document is normative for how a step's tool batch is executed: when
 the calls start, the order their results answer in, what one call's failure
@@ -60,6 +60,16 @@ side is in [provider-tools.md](./provider-tools.md).
    starts before the call's first await, and close in finish order. Usage
    breakdown rows from several subagents in one batch interleave in
    wall-clock order; each row still carries its `agent`.
+9. **Every action part in a turn that did not complete settles.** On the
+   turn event stream an action part ends with exactly one of
+   `action:complete`, `action:error` or `action:cancelled`. A call that
+   observed the run's abort ends `action:cancelled`, not `action:error`; a
+   fatal call ends `action:error`. When a turn ends `cancelled` or `error`,
+   every action part still open (a call still streaming, one whose batch
+   never started, a provider tool with no result) gets `action:cancelled`
+   before `turn:end`. A `complete` turn closes nothing: every call there
+   was answered, and an open provider tool is an adapter defect left
+   visible rather than relabelled. (2026-11-02, AXL-91)
 
 ## What the model sees
 

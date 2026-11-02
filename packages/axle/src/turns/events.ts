@@ -70,6 +70,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       result: ActionResult;
       timing?: TimingInfo;
     }
+  | { type: "action:cancelled"; turnId: string; partId: string; timing?: TimingInfo }
   | {
       type: "action:error";
       turnId: string;

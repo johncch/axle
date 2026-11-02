@@ -47,6 +47,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "action:input": true,
   "action:progress": true,
   "action:complete": true,
+  "action:cancelled": true,
   "action:error": true,
   "action:child-event": true,
   "annotation:start": true,
@@ -270,6 +271,16 @@ export class Transcript<
             },
             timing: event.timing ?? part.timing,
           } as TurnPart<TAnnotation>;
+        });
+
+      case "action:cancelled":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action") return part;
+          return {
+            ...part,
+            status: "cancelled",
+            timing: event.timing ?? part.timing,
+          };
         });
 
       case "action:error":
