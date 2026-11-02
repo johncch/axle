@@ -160,7 +160,7 @@ describe("App", () => {
           id: "c1",
           owner: "agent",
           status: "pending",
-          parts: [{ id: "c1", type: "compaction", status: "pending" }],
+          parts: [{ id: "c1", type: "compaction", trigger: "manual", status: "pending" }],
         },
       ],
       queuedInputs: [],

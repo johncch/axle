@@ -60,19 +60,32 @@ describe("Transcript", () => {
     });
   });
 
-  test("retains model errors on their turn", () => {
+  test("records the failure turn:end carries on the turn", () => {
     const transcript = new Transcript();
     transcript.apply({ type: "turn:start", turnId: "t1" });
 
     transcript.apply({
-      type: "error",
+      type: "turn:end",
       turnId: "t1",
-      error: { type: "model", message: "Rate limit exceeded" },
+      status: "error",
+      usage: { in: 0, out: 0 },
+      failure: {
+        kind: "api",
+        type: "rate_limit_error",
+        message: "Rate limit exceeded",
+        status: 429,
+      },
     });
 
     expect(transcript.turns[0]).toMatchObject({
       id: "t1",
-      error: { type: "model", message: "Rate limit exceeded" },
+      status: "error",
+      failure: {
+        kind: "api",
+        type: "rate_limit_error",
+        message: "Rate limit exceeded",
+        status: 429,
+      },
     });
   });
 
@@ -422,7 +435,7 @@ describe("Transcript", () => {
     transcript.apply({
       type: "part:start",
       turnId: "t1",
-      part: { id: "c1", type: "compaction", status: "running" },
+      part: { id: "c1", type: "compaction", trigger: "beforeTurn", status: "running" },
     });
     transcript.apply({
       type: "compaction:update",
@@ -465,7 +478,7 @@ describe("Transcript", () => {
     transcript.apply({
       type: "part:start",
       turnId: "t1",
-      part: { id: "c1", type: "compaction", status: "running" },
+      part: { id: "c1", type: "compaction", trigger: "beforeTurn", status: "running" },
     });
     transcript.apply({
       type: "compaction:update",
@@ -490,13 +503,29 @@ describe("Transcript", () => {
     });
   });
 
+  test("compaction:cancelled settles the part cancelled with no error", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", trigger: "manual", status: "running" },
+    });
+
+    transcript.apply({ type: "compaction:cancelled", turnId: "t1", partId: "c1" });
+
+    const part = (transcript.turns[0] as Turn).parts[0];
+    expect(part).toMatchObject({ type: "compaction", trigger: "manual", status: "cancelled" });
+    expect(part).not.toHaveProperty("error");
+  });
+
   test("compaction completion without a summary keeps the latest transient summary", () => {
     const transcript = new Transcript();
     transcript.apply({ type: "turn:start", turnId: "t1" });
     transcript.apply({
       type: "part:start",
       turnId: "t1",
-      part: { id: "c1", type: "compaction", status: "running" },
+      part: { id: "c1", type: "compaction", trigger: "beforeTurn", status: "running" },
     });
     transcript.apply({
       type: "compaction:update",
@@ -540,7 +569,7 @@ describe("Transcript", () => {
       ({
         id,
         owner: "agent",
-        parts: [{ id, type: "compaction", status: "pending" }],
+        parts: [{ id, type: "compaction", trigger: "manual", status: "pending" }],
         status: "pending",
       }) as const satisfies Turn;
     const queuedSend = (id: string) => ({ type: "pending:queued", turn: pendingUser(id) }) as const;

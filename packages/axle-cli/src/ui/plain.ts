@@ -30,6 +30,7 @@ export class PlainRenderer implements Renderer {
       for (const part of turn.parts) {
         this.renderStaticPart(turn.owner, part);
       }
+      if (turn.failure) this.line(`✖ ${turn.failure.message}`);
       if (turn.status === "cancelled") this.line("(interrupted)");
     }
   }
@@ -58,6 +59,7 @@ export class PlainRenderer implements Renderer {
         break;
       }
       case "compaction:complete":
+      case "compaction:cancelled":
       case "compaction:error": {
         const part = findPart(transcript, event.turnId, event.partId);
         if (part?.type === "compaction") {
@@ -66,10 +68,8 @@ export class PlainRenderer implements Renderer {
         break;
       }
       case "turn:end":
+        if (event.failure) this.line(`✖ ${event.failure.message}`);
         if (event.status === "cancelled") this.line("(interrupted)");
-        break;
-      case "error":
-        this.line(`✖ ${event.error.message}`);
         break;
       default:
         break;
@@ -132,6 +132,10 @@ export class PlainRenderer implements Renderer {
       case "compaction": {
         if (part.status === "error") {
           this.line(`✖ Compaction failed: ${part.error}`);
+          return;
+        }
+        if (part.status === "cancelled") {
+          this.line("⚠ Compaction (cancelled)");
           return;
         }
         const duration = formatDuration(part.timing);

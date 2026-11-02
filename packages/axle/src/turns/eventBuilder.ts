@@ -1,3 +1,4 @@
+import type { AxleProviderFailure } from "../execution/helpers.js";
 import type { StreamEvent } from "../execution/stream.js";
 import type { AxleUserMessage } from "../messages/message.js";
 import type { Stats } from "../types.js";
@@ -12,6 +13,7 @@ import type {
   TimingInfo,
   ToolAction,
   Turn,
+  TurnFailure,
   TurnPart,
 } from "./types.js";
 
@@ -27,6 +29,29 @@ function completeTiming(timing: TimingInfo | undefined, now = new Date()): Timin
     ...timing,
     end,
   };
+}
+
+function turnFailureOf(failure: AxleProviderFailure): TurnFailure {
+  switch (failure.kind) {
+    case "api":
+      return {
+        kind: "api",
+        type: failure.type,
+        message: failure.message,
+        ...(failure.status !== undefined ? { status: failure.status } : {}),
+      };
+    case "incomplete":
+      return { kind: "incomplete", type: failure.type, message: failure.message };
+    case "refusal":
+      return {
+        kind: "refusal",
+        message: failure.message,
+        ...(failure.text !== undefined ? { text: failure.text } : {}),
+        ...(failure.category !== undefined ? { category: failure.category } : {}),
+      };
+    case "parse":
+      return { kind: "parse", message: failure.message };
+  }
 }
 
 export function userTurnFromMessage(message: AxleUserMessage): Turn {
@@ -451,23 +476,17 @@ export class TurnEventBuilder {
 
       case "tool-results:start":
       case "tool-results:complete":
+      case "error":
         break;
-
-      case "error": {
-        const error = event.error;
-        events.push({
-          type: "error",
-          turnId,
-          error: { type: error.kind, message: error.message },
-        });
-        break;
-      }
     }
 
     return events;
   }
 
-  finalizeTurn(outcome: "complete" | "cancelled" | "error" = "complete"): TurnEvent[] {
+  finalizeTurn(
+    outcome: "complete" | "cancelled" | "error" = "complete",
+    failure?: AxleProviderFailure,
+  ): TurnEvent[] {
     const turnId = this.currentTurnId;
     if (!turnId) return [];
     const events: TurnEvent[] = [];
@@ -489,6 +508,7 @@ export class TurnEventBuilder {
       turnId,
       status: outcome,
       usage: { ...this.accumulatedUsage },
+      ...(failure ? { failure: turnFailureOf(failure) } : {}),
       timing,
     });
     this.currentTurnId = null;

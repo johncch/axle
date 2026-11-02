@@ -3,6 +3,7 @@ import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import { estimateContextUsage } from "../../execution/context.js";
+import type { AxleProviderFailure } from "../../execution/helpers.js";
 import { stream } from "../../execution/stream.js";
 import type { MCP } from "../../mcp/index.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
@@ -399,8 +400,11 @@ export class Agent {
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
     let agentTurnId: string | undefined;
-    const finalize = (outcome: "complete" | "cancelled" | "error"): void => {
-      for (const event of turnEventBuilder.finalizeTurn(outcome)) this.emitEvent(event);
+    const finalize = (
+      outcome: "complete" | "cancelled" | "error",
+      failure?: AxleProviderFailure,
+    ): void => {
+      for (const event of turnEventBuilder.finalizeTurn(outcome, failure)) this.emitEvent(event);
     };
 
     const root = (runtime.spanParent ?? this.spanParent)?.startSpan("agent.send", {
@@ -497,7 +501,7 @@ export class Agent {
 
       if (!streamResult.ok) {
         status = "error";
-        finalize("error");
+        finalize("error", streamResult.error);
         return {
           ok: false,
           error: streamResult.error,
@@ -527,7 +531,8 @@ export class Agent {
         });
       }
 
-      finalize("complete");
+      if (parseFailure) finalize("error", parseFailure);
+      else finalize("complete");
       const agentTurn = this.transcript.getTurn(startEvent.turnId);
 
       if (parseFailure) {
@@ -652,7 +657,7 @@ export class Agent {
         id,
         owner: "agent",
         status: "pending",
-        parts: [{ id, type: "compaction", status: "pending" }],
+        parts: [{ id, type: "compaction", trigger: "manual", status: "pending" }],
       },
     });
 
@@ -730,7 +735,7 @@ export class Agent {
       this.emitEvent({
         type: "part:start",
         turnId,
-        part: { id, type: "compaction", status: "running", timing: { start } },
+        part: { id, type: "compaction", trigger, status: "running", timing: { start } },
       });
 
       try {
@@ -788,7 +793,11 @@ export class Agent {
           signal.aborted || error instanceof AxleAbortError || error instanceof AxleAgentAbortError;
         const message = error instanceof Error ? error.message : String(error);
         const timing = { start, end: new Date().toISOString() };
-        this.emitEvent({ type: "compaction:error", turnId, partId: id, error: message, timing });
+        if (aborted) {
+          this.emitEvent({ type: "compaction:cancelled", turnId, partId: id, timing });
+        } else {
+          this.emitEvent({ type: "compaction:error", turnId, partId: id, error: message, timing });
+        }
         if (selfWrapped) {
           this.emitEvent({
             type: "turn:end",

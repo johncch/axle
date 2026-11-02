@@ -34,6 +34,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "turn:end": true,
   "compaction:update": true,
   "compaction:complete": true,
+  "compaction:cancelled": true,
   "compaction:error": true,
   "part:start": true,
   "text:delta": true,
@@ -53,7 +54,6 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "annotation:start": true,
   "annotation:update": true,
   "annotation:end": true,
-  error: true,
 };
 
 const TURN_EVENT_TYPE_SET = new Set<string>(Object.keys(TURN_EVENT_TYPES));
@@ -132,6 +132,12 @@ export class Transcript<
             ...(event.summary !== undefined ? { summary: event.summary } : {}),
             timing: event.timing ?? part.timing,
           };
+        });
+
+      case "compaction:cancelled":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "compaction") return part;
+          return { ...part, status: "cancelled", timing: event.timing ?? part.timing };
         });
 
       case "compaction:error":
@@ -305,6 +311,7 @@ export class Transcript<
           ...turn,
           status: event.status,
           usage: event.usage,
+          ...(event.failure ? { failure: event.failure } : {}),
           timing: event.timing ?? turn.timing,
         }));
 
@@ -316,11 +323,6 @@ export class Transcript<
 
       case "annotation:end":
         return this.replaceAnnotation(event, true);
-
-      case "error":
-        return event.turnId
-          ? this.updateTurn(event.turnId, event, (turn) => ({ ...turn, error: event.error }))
-          : this.handled(event);
 
       case "action:child-event":
         return this.updatePart(event.turnId, event.partId, event, (part) => {

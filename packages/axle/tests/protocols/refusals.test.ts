@@ -363,7 +363,10 @@ test("Agent reports a refusal on the result and the turn, and can send again", a
   expect(result).toMatchObject({
     ok: false,
     error: { kind: "refusal", category: "cyber", text: EXPLANATION },
-    turn: { status: "error", error: { type: "refusal", message: EXPLANATION } },
+    turn: {
+      status: "error",
+      failure: { kind: "refusal", category: "cyber", text: EXPLANATION, message: EXPLANATION },
+    },
   });
 
   await agent.send("second").final;

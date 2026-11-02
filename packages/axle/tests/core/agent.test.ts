@@ -2406,6 +2406,60 @@ describe("Agent", () => {
   });
 
   describe("agent events", () => {
+    test("turn:end carries an api failure without its raw payload", async () => {
+      const provider: AIProvider = {
+        protocol: "chatCompletions",
+        id: "rate-limited",
+        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "r1", data: { model: "mock", timestamp: 0 } };
+          yield {
+            type: "error",
+            data: {
+              type: "rate_limit_error",
+              message: "Rate limited",
+              status: 429,
+              raw: { error: { type: "rate_limit_error" } },
+            },
+          };
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const ends: TurnEvent[] = [];
+      agent.on((event) => {
+        if (event.type === "turn:end") ends.push(event);
+      });
+
+      const result = await agent.send("hello").final;
+
+      expect(result.ok).toBe(false);
+      expect(ends).toHaveLength(1);
+      expect(ends[0]).toMatchObject({ status: "error" });
+      expect(ends[0].type === "turn:end" && ends[0].failure).toEqual({
+        kind: "api",
+        type: "rate_limit_error",
+        message: "Rate limited",
+        status: 429,
+      });
+      expect(result.turn?.failure).toEqual(ends[0].type === "turn:end" && ends[0].failure);
+    });
+
+    test("a parse failure ends the turn error and carries the failure", async () => {
+      const agent = new Agent({ provider: createMockStreamProvider(["not json"]), model: "mock" });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const result = await agent.send(
+        new Instruct({ prompt: "give me json", schema: z.object({ value: z.number() }) }),
+      ).final;
+
+      expect(result.ok).toBe(false);
+      const turn = transcript.turns.at(-1);
+      expect(turn?.status).toBe("error");
+      expect(turn?.failure?.kind).toBe("parse");
+      expect(turn?.failure).not.toHaveProperty("cause");
+      expect(turn?.failure?.message).toBe(result.ok ? undefined : result.error.message);
+    });
+
     test("on() receives turn:user event when send(string) is called", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });

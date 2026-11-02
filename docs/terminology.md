@@ -142,6 +142,12 @@ turn skips `streaming`, and a `pending` turn lives only in
 `Transcript.pending`. "Turn" never refers to a single assistant message or
 to a provider request.
 
+**Turn failure** — how an agent turn failed, carried on `turn:end` and kept
+on the `Turn` as `failure`: the provider's answer from a send that resolved
+`ok: false`, minus what only the result needs (`usage`, `raw`, `cause`).
+Present only on a turn whose `status` is `error` and whose send resolved;
+a turn that ended because the call threw has none.
+
 **Send** — the Agent API verb: one scheduled conversation exchange
 (`agent.send(...)`), executed as a FIFO queue item. The consumer-facing unit of
 "the agent took its turn."

@@ -41,8 +41,8 @@ agent.on((event) => {
       process.stdout.write(event.delta);
       break;
 
-    case "error":
-      console.error(`\n[error] ${JSON.stringify(event.error, null, 2)}`);
+    case "turn:end":
+      if (event.failure) console.error(`\n[error] ${JSON.stringify(event.failure, null, 2)}`);
       break;
   }
 });

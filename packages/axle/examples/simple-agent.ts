@@ -47,8 +47,8 @@ agent.on((event) => {
     case "action:complete":
       console.log(`[Tool Complete] ${JSON.stringify(event.result)}`);
       break;
-    case "error":
-      console.error(`[Error] ${JSON.stringify(event.error, null, 2)}`);
+    case "turn:end":
+      if (event.failure) console.error(`[Error] ${JSON.stringify(event.failure, null, 2)}`);
       break;
   }
 });
