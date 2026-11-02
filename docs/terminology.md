@@ -142,6 +142,13 @@ turn skips `streaming`, and a `pending` turn lives only in
 `Transcript.pending`. "Turn" never refers to a single assistant message or
 to a provider request.
 
+**Turn reason** — how an agent turn's final answer ended, carried on
+`turn:end` and kept on the `Turn` as `reason`: `"stop"` when the model
+finished, `"length"` when it reached the output token limit. Absent when the
+turn ended before a final answer arrived. It is the last step's finish
+reason narrowed to the two values that can describe a turn; a step that
+asked for tools never ends one.
+
 **Turn failure** — how an agent turn failed, carried on `turn:end` and kept
 on the `Turn` as `failure`: the provider's answer from a send that resolved
 `ok: false`, minus what only the result needs (`usage`, `raw`, `cause`).

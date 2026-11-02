@@ -1,6 +1,7 @@
 import type { AxleProviderFailure } from "../execution/helpers.js";
 import type { StreamEvent } from "../execution/stream.js";
 import type { AxleUserMessage } from "../messages/message.js";
+import { AxleStopReason } from "../protocols/types.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats } from "../utils/stats.js";
 import type { TurnEvent } from "./events.js";
@@ -16,6 +17,19 @@ import type {
   TurnFailure,
   TurnPart,
 } from "./types.js";
+
+function finalAnswerReasonOf(
+  finishReason: AxleStopReason | undefined,
+): "stop" | "length" | undefined {
+  switch (finishReason) {
+    case AxleStopReason.Stop:
+      return "stop";
+    case AxleStopReason.Length:
+      return "length";
+    default:
+      return undefined;
+  }
+}
 
 function startTiming(now = new Date()): TimingInfo {
   return { start: now.toISOString() };
@@ -116,6 +130,7 @@ export class TurnEventBuilder {
     }
   >();
   private accumulatedUsage: Stats = createStats();
+  private finalAnswerReason: "stop" | "length" | undefined;
 
   createUserTurn(message: AxleUserMessage): TurnEvent[] {
     return [{ type: "turn:user", turn: userTurnFromMessage(message) }];
@@ -129,6 +144,7 @@ export class TurnEventBuilder {
     this.currentThinkingPart = null;
     this.openActions.clear();
     this.accumulatedUsage = createStats();
+    this.finalAnswerReason = undefined;
     return { type: "turn:start", turnId, timing: this.currentTurnTiming };
   }
 
@@ -471,6 +487,7 @@ export class TurnEventBuilder {
       case "step:complete": {
         this.closeOpenParts(events);
         addStats(this.accumulatedUsage, event.usage);
+        this.finalAnswerReason = finalAnswerReasonOf(event.message.finishReason);
         break;
       }
 
@@ -509,6 +526,7 @@ export class TurnEventBuilder {
       status: outcome,
       usage: { ...this.accumulatedUsage },
       ...(failure ? { failure: turnFailureOf(failure) } : {}),
+      ...(this.finalAnswerReason ? { reason: this.finalAnswerReason } : {}),
       timing,
     });
     this.currentTurnId = null;

@@ -3,6 +3,8 @@ import { capitalize, formatActionArgs, formatDuration, indentContinuation } from
 import { ReadlinePrompt } from "./prompt.js";
 import type { Renderer, SessionUsage } from "./renderer.js";
 
+const OUTPUT_LIMIT_LINE = "⚠ Stopped at the output token limit";
+
 /**
  * Line-oriented renderer speaking the same consola/task-runner dialect as
  * ink, minus color, animation, and the live region — a piped or CI log reads
@@ -30,6 +32,7 @@ export class PlainRenderer implements Renderer {
       for (const part of turn.parts) {
         this.renderStaticPart(turn.owner, part);
       }
+      if (turn.reason === "length") this.line(OUTPUT_LIMIT_LINE);
       if (turn.failure) this.line(`✖ ${turn.failure.message}`);
       if (turn.status === "cancelled") this.line("(interrupted)");
     }
@@ -68,6 +71,7 @@ export class PlainRenderer implements Renderer {
         break;
       }
       case "turn:end":
+        if (event.reason === "length") this.line(OUTPUT_LIMIT_LINE);
         if (event.failure) this.line(`✖ ${event.failure.message}`);
         if (event.status === "cancelled") this.line("(interrupted)");
         break;

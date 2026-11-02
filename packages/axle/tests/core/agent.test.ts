@@ -18,7 +18,10 @@ import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import type { Turn } from "../../src/turns/types.js";
 
-function createMockStreamProvider(responses: string[]): AIProvider {
+function createMockStreamProvider(
+  responses: string[],
+  finishReason: AxleStopReason = AxleStopReason.Stop,
+): AIProvider {
   let callIndex = 0;
   return {
     protocol: "chatCompletions",
@@ -35,7 +38,7 @@ function createMockStreamProvider(responses: string[]): AIProvider {
       yield { type: "text-complete", data: { index: 0 } };
       yield {
         type: "complete",
-        data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20 } },
+        data: { finishReason, usage: { in: 10, out: 20 } },
       };
     },
   };
@@ -2458,6 +2461,44 @@ describe("Agent", () => {
       expect(turn?.failure?.kind).toBe("parse");
       expect(turn?.failure).not.toHaveProperty("cause");
       expect(turn?.failure?.message).toBe(result.ok ? undefined : result.error.message);
+    });
+
+    test("a turn records how its final answer ended", async () => {
+      const finished = new Agent({ provider: createMockStreamProvider(["done"]), model: "mock" });
+      const cutOff = new Agent({
+        provider: createMockStreamProvider(["Here is the start of"], AxleStopReason.Length),
+        model: "mock",
+      });
+      const finishedTranscript = new Transcript();
+      const cutOffTranscript = new Transcript();
+      finished.on(finishedTranscript.apply);
+      cutOff.on(cutOffTranscript.apply);
+
+      await finished.send("go").final;
+      const result = await cutOff.send("go").final;
+
+      expect(result.ok).toBe(true);
+      expect(finishedTranscript.turns.at(-1)).toMatchObject({ status: "complete", reason: "stop" });
+      expect(cutOffTranscript.turns.at(-1)).toMatchObject({ status: "complete", reason: "length" });
+    });
+
+    test("a cut-off structured answer keeps its reason beside the parse failure", async () => {
+      const agent = new Agent({
+        provider: createMockStreamProvider(['{"value": 4'], AxleStopReason.Length),
+        model: "mock",
+      });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      await agent.send(
+        new Instruct({ prompt: "give me json", schema: z.object({ value: z.number() }) }),
+      ).final;
+
+      expect(transcript.turns.at(-1)).toMatchObject({
+        status: "error",
+        reason: "length",
+        failure: { kind: "parse" },
+      });
     });
 
     test("on() receives turn:user event when send(string) is called", async () => {

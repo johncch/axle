@@ -97,6 +97,12 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   usage?: Stats;
   /** How the turn failed, when its send resolved `ok: false`. */
   failure?: TurnFailure;
+  /**
+   * How the model's final answer ended: `"stop"` when it finished, `"length"`
+   * when it reached the output token limit. Absent when the turn ended
+   * before a final answer arrived.
+   */
+  reason?: "stop" | "length";
 }
 
 /**

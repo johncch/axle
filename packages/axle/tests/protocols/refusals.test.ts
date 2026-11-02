@@ -368,6 +368,7 @@ test("Agent reports a refusal on the result and the turn, and can send again", a
       failure: { kind: "refusal", category: "cyber", text: EXPLANATION, message: EXPLANATION },
     },
   });
+  expect(result.turn).not.toHaveProperty("reason");
 
   await agent.send("second").final;
   expect(roles(1)).toEqual(["user", "user"]);

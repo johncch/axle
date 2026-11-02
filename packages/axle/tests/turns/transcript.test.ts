@@ -89,6 +89,21 @@ describe("Transcript", () => {
     });
   });
 
+  test("records the reason turn:end carries on the turn", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+
+    transcript.apply({
+      type: "turn:end",
+      turnId: "t1",
+      status: "complete",
+      usage: { in: 0, out: 0 },
+      reason: "length",
+    });
+
+    expect(transcript.turns[0]).toMatchObject({ status: "complete", reason: "length" });
+  });
+
   test("accumulates action events", () => {
     const transcript = new Transcript();
 

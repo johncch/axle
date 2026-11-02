@@ -134,7 +134,10 @@ so it is `incomplete`. A stream that ends with no completion signal at all
 same.
 
 `Length` is not a failure. The model produced output and stopped at a limit
-the caller set; the result is `ok: true` with `finishReason: "length"`.
+the caller set; the result is `ok: true` with `finishReason: "length"`, and
+the agent turn ends `complete` with `reason: "length"`. A structured answer
+cut off this way usually fails to parse, and that turn ends `error` with
+both the `reason` and the parse `failure`.
 
 `api` carries `type`, `status`, and `raw` for what the transport or API
 said; `incomplete` carries `type` naming the stop reason; `refusal`

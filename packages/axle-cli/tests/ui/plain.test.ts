@@ -176,6 +176,22 @@ describe("PlainRenderer", () => {
     expect(text()).toBe("✖ boom\n");
   });
 
+  it("says when a turn stopped at the output limit, before its failure", () => {
+    const { feed, text } = createHarness();
+
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({
+      type: "turn:end",
+      turnId: "t1",
+      status: "error",
+      usage: { in: 0, out: 0 },
+      reason: "length",
+      failure: { kind: "parse", message: "Expected '}'" },
+    });
+
+    expect(text()).toBe("⚠ Stopped at the output token limit\n✖ Expected '}'\n");
+  });
+
   it("replays prior turns in the shared dialect", () => {
     const { renderer, text } = createHarness();
     const turns: Turn[] = [

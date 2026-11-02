@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A reply cut off at the output token limit shows
+  `⚠ Stopped at the output token limit`; it looked finished before.
 - A tool call interrupted by a cancel shows as `⚠ … (cancelled)` instead
   of `✖`, and a tool call the model was still writing when the run stopped
   no longer stays pending in the transcript. A cancelled compaction shows

@@ -1305,6 +1305,14 @@ provider's answer as a `TurnFailure` (`kind`, `message`, and `type`,
 has `usage`, and the other two stay on the result. A parse failure ends the
 turn `error` with `kind: "parse"`.
 
+`turn:end` carries `reason` when the model's final answer arrived:
+`"stop"` when it finished, `"length"` when it reached the output token
+limit (`maxOutputTokens`). A cut-off answer still ends the turn `complete`,
+so `reason` is the only thing that tells it apart; a cut-off structured
+answer that then fails to parse ends `error` with both. A turn that ended
+before a final answer (a fatal tool, a cancel, an API failure mid-loop, a
+refusal) has none. The `Transcript` keeps it as `turn.reason`.
+
 The `compaction:*` events mirror the action lifecycle: a compaction part
 arrives `running` via `part:start`, `compaction:update` replaces transient
 `summary` and `progress` fields, and exactly one of `compaction:complete`,

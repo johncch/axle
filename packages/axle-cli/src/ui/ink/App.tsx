@@ -221,6 +221,11 @@ function TurnView({
           spinner={index === turn.parts.length - 1 ? spinnerFrame : undefined}
         />
       ))}
+      {turn.reason === "length" && (
+        <Text>
+          <Text color="yellow">⚠</Text> Stopped at the output token limit
+        </Text>
+      )}
       {turn.failure && <Text color="red">✖ {turn.failure.message}</Text>}
       {turn.status === "cancelled" && <Text dimColor>(interrupted)</Text>}
     </Box>

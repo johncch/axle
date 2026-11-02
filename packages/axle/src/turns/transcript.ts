@@ -312,6 +312,7 @@ export class Transcript<
           status: event.status,
           usage: event.usage,
           ...(event.failure ? { failure: event.failure } : {}),
+          ...(event.reason ? { reason: event.reason } : {}),
           timing: event.timing ?? turn.timing,
         }));
 

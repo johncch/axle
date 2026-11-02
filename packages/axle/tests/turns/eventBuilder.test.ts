@@ -433,6 +433,66 @@ describe("TurnEventBuilder", () => {
     },
   );
 
+  describe("reason on turn:end", () => {
+    function step(finishReason: AxleStopReason) {
+      return {
+        type: "step:complete" as const,
+        message: {
+          role: "assistant" as const,
+          id: crypto.randomUUID(),
+          content: [],
+          finishReason,
+        },
+      };
+    }
+
+    test("is the final answer's finish: stop or length", () => {
+      for (const [finish, reason] of [
+        [AxleStopReason.Stop, "stop"],
+        [AxleStopReason.Length, "length"],
+      ] as const) {
+        const builder = new TurnEventBuilder();
+        builder.startAgentTurn();
+        builder.handleStreamEvent(step(AxleStopReason.FunctionCall));
+        builder.handleStreamEvent(step(finish));
+
+        expect(builder.finalizeTurn().at(-1)).toMatchObject({ type: "turn:end", reason });
+      }
+    });
+
+    test("stays on a turn that failed after its final answer arrived", () => {
+      const builder = new TurnEventBuilder();
+      builder.startAgentTurn();
+      builder.handleStreamEvent(step(AxleStopReason.Length));
+
+      const end = builder.finalizeTurn("error", {
+        kind: "parse",
+        message: "Expected '}'",
+        cause: new Error("Expected '}'"),
+      });
+
+      expect(end.at(-1)).toMatchObject({ status: "error", reason: "length" });
+    });
+
+    test("is absent when the turn ended before a final answer", () => {
+      const builder = new TurnEventBuilder();
+      builder.startAgentTurn();
+      builder.handleStreamEvent(step(AxleStopReason.FunctionCall));
+
+      expect(builder.finalizeTurn("error").at(-1)).not.toHaveProperty("reason");
+    });
+
+    test("does not carry over to the next turn", () => {
+      const builder = new TurnEventBuilder();
+      builder.startAgentTurn();
+      builder.handleStreamEvent(step(AxleStopReason.Stop));
+      builder.finalizeTurn();
+      builder.startAgentTurn();
+
+      expect(builder.finalizeTurn("cancelled").at(-1)).not.toHaveProperty("reason");
+    });
+  });
+
   test("finalizeTurn() on a complete turn leaves unsettled actions alone", () => {
     const builder = new TurnEventBuilder();
     builder.startAgentTurn();

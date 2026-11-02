@@ -34,6 +34,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       status: TurnStatus;
       usage: Stats;
       failure?: TurnFailure;
+      reason?: "stop" | "length";
       timing?: TimingInfo;
     }
   // Compaction part lifecycle (@experimental)
