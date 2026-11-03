@@ -120,7 +120,7 @@ describe("PlainRenderer", () => {
     feed({
       type: "part:start",
       turnId: "t1",
-      part: { id: "c1", type: "compaction", status: "running" },
+      part: { id: "c1", type: "compaction", trigger: "beforeTurn", status: "running" },
     });
     feed({ type: "compaction:update", turnId: "t1", partId: "c1", update: { progress: 0.5 } });
     feed({
@@ -140,19 +140,56 @@ describe("PlainRenderer", () => {
     feed({
       type: "part:start",
       turnId: "t1",
-      part: { id: "c1", type: "compaction", status: "running" },
+      part: { id: "c1", type: "compaction", trigger: "beforeTurn", status: "running" },
     });
     feed({ type: "compaction:error", turnId: "t1", partId: "c1", error: "summary was empty" });
 
     expect(text()).toBe("✖ Compaction failed: summary was empty\n");
   });
 
-  it("renders top-level error events", () => {
+  it("renders a cancelled compaction as cancelled, not failed", () => {
     const { feed, text } = createHarness();
 
-    feed({ type: "error", error: { type: "model", message: "boom" } });
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({
+      type: "part:start",
+      turnId: "t1",
+      part: { id: "c1", type: "compaction", trigger: "manual", status: "running" },
+    });
+    feed({ type: "compaction:cancelled", turnId: "t1", partId: "c1" });
+
+    expect(text()).toBe("⚠ Compaction (cancelled)\n");
+  });
+
+  it("renders the failure a turn ended with", () => {
+    const { feed, text } = createHarness();
+
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({
+      type: "turn:end",
+      turnId: "t1",
+      status: "error",
+      usage: { in: 0, out: 0 },
+      failure: { kind: "api", type: "overloaded_error", message: "boom", status: 529 },
+    });
 
     expect(text()).toBe("✖ boom\n");
+  });
+
+  it("says when a turn stopped at the output limit, before its failure", () => {
+    const { feed, text } = createHarness();
+
+    feed({ type: "turn:start", turnId: "t1" });
+    feed({
+      type: "turn:end",
+      turnId: "t1",
+      status: "error",
+      usage: { in: 0, out: 0 },
+      reason: "length",
+      failure: { kind: "parse", message: "Expected '}'" },
+    });
+
+    expect(text()).toBe("⚠ Stopped at the output token limit\n✖ Expected '}'\n");
   });
 
   it("replays prior turns in the shared dialect", () => {

@@ -1,3 +1,4 @@
+import type { CompactionTrigger } from "../core/agent/types.js";
 import type { Citation, ThinkingContinuity, ToolResultPart } from "../messages/message.js";
 import type { ConsoleOutput, ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
@@ -94,9 +95,25 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   timing?: TimingInfo;
   /** Token usage accumulated for this turn, when available. */
   usage?: Stats;
-  /** Terminal model or provider error associated with this turn. */
-  error?: { type: string; message: string };
+  /** How the turn failed, when its send resolved `ok: false`. */
+  failure?: TurnFailure;
+  /**
+   * How the model's final answer ended: `"stop"` when it finished, `"length"`
+   * when it reached the output token limit. Absent when the turn ended
+   * before a final answer arrived.
+   */
+  reason?: "stop" | "length";
 }
+
+/**
+ * The provider's answer that ended a turn `ok: false`: an `AxleProviderFailure`
+ * without `usage` (the turn carries it), `raw` and `cause`.
+ */
+export type TurnFailure =
+  | { kind: "api"; type: string; message: string; status?: number }
+  | { kind: "incomplete"; type: string; message: string }
+  | { kind: "refusal"; message: string; text?: string; category?: string }
+  | { kind: "parse"; message: string };
 
 /**
  * Any renderable part within a turn.
@@ -205,8 +222,10 @@ export interface CompactionPart<TAnnotation extends Annotation = Annotation> {
   id: string;
   /** Part discriminator. */
   type: "compaction";
+  /** What started it: `agent.compact()`, or an automatic trigger inside a send. */
+  trigger: CompactionTrigger;
   /** Lifecycle state. */
-  status: "pending" | "running" | "complete" | "error";
+  status: "pending" | "running" | "complete" | "cancelled" | "error";
   /**
    * Reader-facing text for the transcript. Replaced by `compaction:update`
    * while running; on `complete` the compactor's returned summary is

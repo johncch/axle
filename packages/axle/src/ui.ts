@@ -30,6 +30,7 @@ export type {
   TimingInfo,
   ToolAction,
   Turn,
+  TurnFailure,
   TurnMetadata,
   TurnPart,
   TurnStatus,

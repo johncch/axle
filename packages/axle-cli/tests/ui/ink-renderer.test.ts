@@ -132,6 +132,30 @@ describe("App", () => {
     expect(output).toContain("what next?\n(interrupted)");
   });
 
+  it("says when a turn stopped at the output limit", () => {
+    const store = new UiStore<UiState>({
+      staticItems: [
+        {
+          kind: "turn",
+          turn: {
+            id: "a1",
+            owner: "agent",
+            status: "complete",
+            reason: "length",
+            parts: [textPart("a1-p", "Here is the start of")],
+          },
+        },
+      ],
+      awaitingInput: false,
+      pending: [],
+      queuedInputs: [],
+    });
+
+    const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(output).toContain("Here is the start of\n⚠ Stopped at the output token limit");
+  });
+
   it("keeps the input line visible while the agent is busy and the chat is taking input", () => {
     const busy = (awaitingInput: boolean) =>
       new UiStore<UiState>({
@@ -160,7 +184,7 @@ describe("App", () => {
           id: "c1",
           owner: "agent",
           status: "pending",
-          parts: [{ id: "c1", type: "compaction", status: "pending" }],
+          parts: [{ id: "c1", type: "compaction", trigger: "manual", status: "pending" }],
         },
       ],
       queuedInputs: [],

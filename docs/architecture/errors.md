@@ -1,6 +1,6 @@
 # Errors
 
-**Status**: current · **Last design revision**: 2026-10-29 (0.35.0)
+**Status**: current · **Last design revision**: 2026-11-02 (0.35.0, AXL-91)
 
 This document is normative for how a failure reaches the caller of
 `generate()`, `stream()`, `agent.send()`, and the tool loop beneath them:
@@ -22,7 +22,11 @@ with the agent's queue and continuations is in
    complete the request (`api`), it completed and stopped for a reason that
    is not a usable end (`incomplete`), it completed by declining
    (`refusal`), or it completed and the model's answer is outside the
-   Instruct's shape (`parse`). Nothing else is a result.
+   Instruct's shape (`parse`). Nothing else is a result. The agent turn
+   records the same failure: `turn:end` carries it as `failure` and the
+   `Turn` keeps it, without `usage` (the turn has it), `raw` and `cause`,
+   so a sink or a saved transcript knows how a turn failed without the
+   result. A parse failure ends its turn `error`.
 2. **Everything that is not the provider's answer rejects.** A mistake in
    the caller's setup or in this message, a local file that could not be
    read, a tool that chose to end the run, a cancel, and a broken Axle
@@ -46,7 +50,8 @@ with the agent's queue and continuations is in
    `AxleToolFatalError`, `AxleInstructVariableError`). A consumer matches on
    `code`, or on `instanceof` for a payload class, never on message text.
 6. **Tool failures are the model's to handle.** A tool that throws, is not
-   found, is called with arguments that do not parse, or reports failure
+   found, is called with arguments that do not parse or fail its schema
+   (`validation`), or reports failure
    from the provider's side becomes a tool result part and the loop
    continues. The caller sees it in the transcript only. A tool reaches
    the caller by throwing `AxleToolFatalError`, which propagates through
@@ -91,16 +96,16 @@ try {
 Every failure Axle produces is one of eight types. The channel is fixed by
 the type.
 
-| Type                      | What it is                                                                                          | Channel                                        | Codes or kinds                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Configuration mistake     | Setup is wrong: an option value, a registry, a definition, a feature this provider has no shape for | rejects                                        | `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `TOOL_REGISTRY_DUPLICATE`, `SKILL_*`, `COMPACTION_INVALID_MESSAGES` |
-| Request content mistake   | This message is malformed: a missing template variable, a content source the adapter cannot map     | rejects                                        | `INSTRUCT_VARIABLE_ERROR`, `PROVIDER_UNSUPPORTED`                                                              |
-| Local environment failure | A local file could not be resolved: missing, too large, wrong category, no resolver                 | rejects                                        | `FILE_UNREADABLE`                                                                                              |
-| Provider or wire failure  | The request went out and the API did not complete it                                                | `ok: false`                                    | `kind: "api"`                                                                                                  |
-| Model output              | The API completed the request and the answer is the problem                                         | `ok: false`, or a tool error                   | `kind: "incomplete"`, `kind: "refusal"`, `kind: "parse"`; `not-found` and `invalid-arguments` tool errors      |
-| Tool execution failure    | A tool ran and failed                                                                               | tool error, or rejects when the tool escalates | `execution`, `exception`, `failed` tool errors; `TOOL_FATAL_ERROR`                                             |
-| User cancellation         | The signal fired                                                                                    | rejects                                        | `ABORTED`                                                                                                      |
-| Internal invariant        | Axle's own assumption broke                                                                         | rejects                                        | `AXLE_ERROR`                                                                                                   |
+| Type                      | What it is                                                                                          | Channel                                        | Codes or kinds                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Configuration mistake     | Setup is wrong: an option value, a registry, a definition, a feature this provider has no shape for | rejects                                        | `INVALID_OPTIONS`, `PROVIDER_UNSUPPORTED`, `TOOL_REGISTRY_DUPLICATE`, `SKILL_*`, `COMPACTION_INVALID_MESSAGES`          |
+| Request content mistake   | This message is malformed: a missing template variable, a content source the adapter cannot map     | rejects                                        | `INSTRUCT_VARIABLE_ERROR`, `PROVIDER_UNSUPPORTED`                                                                       |
+| Local environment failure | A local file could not be resolved: missing, too large, wrong category, no resolver                 | rejects                                        | `FILE_UNREADABLE`                                                                                                       |
+| Provider or wire failure  | The request went out and the API did not complete it                                                | `ok: false`                                    | `kind: "api"`                                                                                                           |
+| Model output              | The API completed the request and the answer is the problem                                         | `ok: false`, or a tool error                   | `kind: "incomplete"`, `kind: "refusal"`, `kind: "parse"`; `not-found`, `invalid-arguments` and `validation` tool errors |
+| Tool execution failure    | A tool ran and failed                                                                               | tool error, or rejects when the tool escalates | `execution`, `exception`, `failed` tool errors; `TOOL_FATAL_ERROR`                                                      |
+| User cancellation         | The signal fired                                                                                    | rejects                                        | `ABORTED`                                                                                                               |
+| Internal invariant        | Axle's own assumption broke                                                                         | rejects                                        | `AXLE_ERROR`                                                                                                            |
 
 The first two types share a channel and share codes. The difference between
 them is where the caller fixes the mistake, in the setup or in the call,
@@ -129,7 +134,10 @@ so it is `incomplete`. A stream that ends with no completion signal at all
 same.
 
 `Length` is not a failure. The model produced output and stopped at a limit
-the caller set; the result is `ok: true` with `finishReason: "length"`.
+the caller set; the result is `ok: true` with `finishReason: "length"`, and
+the agent turn ends `complete` with `reason: "length"`. A structured answer
+cut off this way usually fails to parse, and that turn ends `error` with
+both the `reason` and the parse `failure`.
 
 `api` carries `type`, `status`, and `raw` for what the transport or API
 said; `incomplete` carries `type` naming the stop reason; `refusal`

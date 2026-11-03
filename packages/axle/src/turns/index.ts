@@ -26,6 +26,7 @@ export type {
   ThinkingPart,
   ToolAction,
   Turn,
+  TurnFailure,
   TurnPart,
   TurnStatus,
 } from "./types.js";

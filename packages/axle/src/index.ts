@@ -222,6 +222,7 @@ export type {
   ThinkingPart,
   ToolAction,
   Turn,
+  TurnFailure,
   TurnMetadata,
   TurnPart,
   TurnStatus,

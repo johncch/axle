@@ -1,6 +1,6 @@
 # Compaction
 
-**Status**: current (@experimental API) · **Last design revision**: 2026-09-07 (0.31.0)
+**Status**: current (@experimental API) · **Last design revision**: 2026-11-02 (0.35.0, AXL-91)
 
 This document is normative for compaction's contract and lifecycle. Code and
 tests are built against it; divergence is a defect. State ownership is
@@ -23,16 +23,19 @@ defined in [agent-state.md](./agent-state.md).
    already open, the engine settles it before propagating the error.
 3. **Compaction is ordinary, fallible, streamed turn work** — the lifecycle
    mirrors tool calls. `part:start` delivers `CompactionPart { id, type,
-status: "running" | "complete" | "error", summary?, progress?, error?, timing? }`
-   into its turn; `compaction:update` applies `ctx.emit({ summary?, progress? })`
+trigger, status: "running" | "complete" | "cancelled" | "error", summary?, progress?, error?, timing? }`
+   into its turn; `trigger` is `"manual"` for `agent.compact()` and the
+   automatic trigger otherwise. `compaction:update` applies `ctx.emit({ summary?, progress? })`
    as replacement transient state;
-   exactly one of `compaction:complete` / `compaction:error` settles it.
+   exactly one of `compaction:complete` / `compaction:cancelled` /
+   `compaction:error` settles it: `cancelled` when the signal aborted,
+   `error` only when the compactor failed.
    `complete` sets progress to `1` and carries the compactor's returned
    summary, replacing any transient summary.
 4. **Settle ⇔ applied.** A part that settles `complete` means the message
    swap applied, atomically. A `running` part means nothing has been
-   committed yet. An `error` part records a failed attempt that changed
-   nothing. The engine finishes every conversation-state update — including
+   committed yet. A `cancelled` or `error` part records an attempt that
+   changed nothing. The engine finishes every conversation-state update — including
    the beforeTurn re-append of the committed user message — before emitting
    the settle event, so no event callback ever observes a half-updated
    conversation.
@@ -120,6 +123,18 @@ is the only size control. The
 requested words are clamped to roughly an eighth of the threshold (a word
 measures ~2 estimated tokens, so a clamped summary lands near a quarter of
 the threshold), keeping artificially small windows coherent.
+
+## Trigger and cancel on the part (2026-11-02, AXL-91)
+
+An `Incidents` sink counts failures a run continued past, and reads the
+event stream only. An automatic compaction that fails is one: the send goes
+on with the uncompacted messages. A manual `compact()` that fails is not,
+because its handle rejects; nor is a cancelled compaction. All three were
+the same `compaction:error` with a message string, so the stream could not
+say which, though the engine knew both facts. The part now carries
+`trigger`, and a cancel settles it with `compaction:cancelled`, matching
+`action:cancelled` for tool calls. A host that rendered every settled
+non-complete part as "failed" now shows a cancel as a cancel.
 
 ## Rejected alternatives
 

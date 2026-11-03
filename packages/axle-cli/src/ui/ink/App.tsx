@@ -221,7 +221,12 @@ function TurnView({
           spinner={index === turn.parts.length - 1 ? spinnerFrame : undefined}
         />
       ))}
-      {turn.error && <Text color="red">✖ {turn.error.message}</Text>}
+      {turn.reason === "length" && (
+        <Text>
+          <Text color="yellow">⚠</Text> Stopped at the output token limit
+        </Text>
+      )}
+      {turn.failure && <Text color="red">✖ {turn.failure.message}</Text>}
       {turn.status === "cancelled" && <Text dimColor>(interrupted)</Text>}
     </Box>
   );
@@ -301,6 +306,13 @@ function PartView({
     case "compaction": {
       if (part.status === "error") {
         return <Text color="red">✖ Compaction failed: {part.error}</Text>;
+      }
+      if (part.status === "cancelled") {
+        return (
+          <Text>
+            <Text color="yellow">⚠</Text> Compaction<Text dimColor> (cancelled)</Text>
+          </Text>
+        );
       }
       if (part.status === "running") {
         const percent = part.progress !== undefined ? ` ${Math.round(part.progress * 100)}%` : "";

@@ -1,5 +1,7 @@
+import type { AxleProviderFailure } from "../execution/helpers.js";
 import type { StreamEvent } from "../execution/stream.js";
 import type { AxleUserMessage } from "../messages/message.js";
+import { AxleStopReason } from "../protocols/types.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats } from "../utils/stats.js";
 import type { TurnEvent } from "./events.js";
@@ -12,8 +14,22 @@ import type {
   TimingInfo,
   ToolAction,
   Turn,
+  TurnFailure,
   TurnPart,
 } from "./types.js";
+
+function finalAnswerReasonOf(
+  finishReason: AxleStopReason | undefined,
+): "stop" | "length" | undefined {
+  switch (finishReason) {
+    case AxleStopReason.Stop:
+      return "stop";
+    case AxleStopReason.Length:
+      return "length";
+    default:
+      return undefined;
+  }
+}
 
 function startTiming(now = new Date()): TimingInfo {
   return { start: now.toISOString() };
@@ -27,6 +43,29 @@ function completeTiming(timing: TimingInfo | undefined, now = new Date()): Timin
     ...timing,
     end,
   };
+}
+
+function turnFailureOf(failure: AxleProviderFailure): TurnFailure {
+  switch (failure.kind) {
+    case "api":
+      return {
+        kind: "api",
+        type: failure.type,
+        message: failure.message,
+        ...(failure.status !== undefined ? { status: failure.status } : {}),
+      };
+    case "incomplete":
+      return { kind: "incomplete", type: failure.type, message: failure.message };
+    case "refusal":
+      return {
+        kind: "refusal",
+        message: failure.message,
+        ...(failure.text !== undefined ? { text: failure.text } : {}),
+        ...(failure.category !== undefined ? { category: failure.category } : {}),
+      };
+    case "parse":
+      return { kind: "parse", message: failure.message };
+  }
 }
 
 export function userTurnFromMessage(message: AxleUserMessage): Turn {
@@ -80,7 +119,7 @@ export class TurnEventBuilder {
   private currentTurnTiming: TimingInfo | undefined;
   private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
   private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
-  private toolIdMap = new Map<
+  private openActions = new Map<
     string,
     {
       partId: string;
@@ -91,6 +130,7 @@ export class TurnEventBuilder {
     }
   >();
   private accumulatedUsage: Stats = createStats();
+  private finalAnswerReason: "stop" | "length" | undefined;
 
   createUserTurn(message: AxleUserMessage): TurnEvent[] {
     return [{ type: "turn:user", turn: userTurnFromMessage(message) }];
@@ -102,8 +142,9 @@ export class TurnEventBuilder {
     this.currentTurnTiming = startTiming();
     this.currentTextPart = null;
     this.currentThinkingPart = null;
-    this.toolIdMap.clear();
+    this.openActions.clear();
     this.accumulatedUsage = createStats();
+    this.finalAnswerReason = undefined;
     return { type: "turn:start", turnId, timing: this.currentTurnTiming };
   }
 
@@ -269,7 +310,7 @@ export class TurnEventBuilder {
                 timing,
                 detail: { name: event.name, parameters: {} },
               };
-        this.toolIdMap.set(event.id, {
+        this.openActions.set(event.id, {
           partId,
           turnId,
           timing,
@@ -281,7 +322,7 @@ export class TurnEventBuilder {
       }
 
       case "tool:args-delta": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           events.push({
             type: "action:args-delta",
@@ -295,7 +336,7 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-start": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           events.push({
             type: "action:running",
@@ -308,7 +349,7 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-delta": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           if (typeof event.chunk === "string") {
             events.push({
@@ -330,11 +371,11 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-complete": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           addStats(this.accumulatedUsage, event.usage);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
           if (event.result.type === "success") {
             events.push({
               type: "action:complete",
@@ -357,18 +398,22 @@ export class TurnEventBuilder {
       }
 
       case "tool:exec-error": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           addStats(this.accumulatedUsage, event.usage);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
-          events.push({
-            type: "action:error",
-            turnId,
-            partId: mapping.partId,
-            error: event.error,
-            timing,
-          });
+          if (event.error.type === "aborted") {
+            events.push({ type: "action:cancelled", turnId, partId: mapping.partId, timing });
+          } else {
+            events.push({
+              type: "action:error",
+              turnId,
+              partId: mapping.partId,
+              error: event.error,
+              timing,
+            });
+          }
         }
         break;
       }
@@ -385,14 +430,14 @@ export class TurnEventBuilder {
           timing,
           detail: { name: event.name },
         };
-        this.toolIdMap.set(event.id, { partId, turnId, timing });
+        this.openActions.set(event.id, { partId, turnId, timing });
         events.push({ type: "part:start", turnId, part });
         events.push({ type: "action:running", turnId, partId });
         break;
       }
 
       case "provider-tool:input": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
           events.push({
             type: "action:input",
@@ -405,10 +450,10 @@ export class TurnEventBuilder {
       }
 
       case "provider-tool:complete": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
           events.push({
             type: "action:complete",
             turnId,
@@ -424,10 +469,10 @@ export class TurnEventBuilder {
       }
 
       case "provider-tool:error": {
-        const mapping = this.toolIdMap.get(event.id);
+        const mapping = this.openActions.get(event.id);
         if (mapping) {
+          this.openActions.delete(event.id);
           const timing = completeTiming(mapping.timing);
-          mapping.timing = timing;
           events.push({
             type: "action:error",
             turnId,
@@ -442,38 +487,46 @@ export class TurnEventBuilder {
       case "step:complete": {
         this.closeOpenParts(events);
         addStats(this.accumulatedUsage, event.usage);
+        this.finalAnswerReason = finalAnswerReasonOf(event.message.finishReason);
         break;
       }
 
       case "tool-results:start":
       case "tool-results:complete":
+      case "error":
         break;
-
-      case "error": {
-        const error = event.error;
-        events.push({
-          type: "error",
-          turnId,
-          error: { type: error.kind, message: error.message },
-        });
-        break;
-      }
     }
 
     return events;
   }
 
-  finalizeTurn(outcome: "complete" | "cancelled" | "error" = "complete"): TurnEvent[] {
+  finalizeTurn(
+    outcome: "complete" | "cancelled" | "error" = "complete",
+    failure?: AxleProviderFailure,
+  ): TurnEvent[] {
     const turnId = this.currentTurnId;
     if (!turnId) return [];
     const events: TurnEvent[] = [];
     this.closeOpenParts(events);
+    if (outcome !== "complete") {
+      for (const action of this.openActions.values()) {
+        events.push({
+          type: "action:cancelled",
+          turnId,
+          partId: action.partId,
+          timing: completeTiming(action.timing),
+        });
+      }
+    }
+    this.openActions.clear();
     const timing = completeTiming(this.currentTurnTiming);
     events.push({
       type: "turn:end",
       turnId,
       status: outcome,
       usage: { ...this.accumulatedUsage },
+      ...(failure ? { failure: turnFailureOf(failure) } : {}),
+      ...(this.finalAnswerReason ? { reason: this.finalAnswerReason } : {}),
       timing,
     });
     this.currentTurnId = null;

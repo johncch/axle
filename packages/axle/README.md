@@ -1266,9 +1266,7 @@ agent.on((event) => {
       break;
     case "turn:end":
       console.log(`Turn ${event.status} (in: ${event.usage.in})`);
-      break;
-    case "error":
-      console.error(event.error);
+      if (event.failure) console.error(event.failure);
       break;
   }
 });
@@ -1295,16 +1293,40 @@ try {
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
 `action:running`, `action:input`, `action:progress`, `action:complete`,
-`action:error`,
+`action:cancelled`, `action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
-`compaction:error`, `annotation:start`, `annotation:update`,
-`annotation:end`, `error`.
+`compaction:cancelled`, `compaction:error`, `annotation:start`,
+`annotation:update`, `annotation:end`.
+
+`turn:end` carries `failure` when the send resolved `ok: false`: the
+provider's answer as a `TurnFailure` (`kind`, `message`, and `type`,
+`status`, `text` or `category` where the kind has them). It is the result's
+`AxleProviderFailure` without `usage`, `raw` and `cause`; the turn already
+has `usage`, and the other two stay on the result. A parse failure ends the
+turn `error` with `kind: "parse"`.
+
+`turn:end` carries `reason` when the model's final answer arrived:
+`"stop"` when it finished, `"length"` when it reached the output token
+limit (`maxOutputTokens`). A cut-off answer still ends the turn `complete`,
+so `reason` is the only thing that tells it apart; a cut-off structured
+answer that then fails to parse ends `error` with both. A turn that ended
+before a final answer (a fatal tool, a cancel, an API failure mid-loop, a
+refusal) has none. The `Transcript` keeps it as `turn.reason`.
 
 The `compaction:*` events mirror the action lifecycle: a compaction part
 arrives `running` via `part:start`, `compaction:update` replaces transient
-`summary` and `progress` fields, and exactly one of `compaction:complete` /
-`compaction:error` settles it. Completion sets `progress` to `1` and its
+`summary` and `progress` fields, and exactly one of `compaction:complete`,
+`compaction:cancelled` or `compaction:error` settles it. The part's
+`trigger` says what started it: `"manual"` for `agent.compact()`, else
+`"beforeTurn"` or `"afterTurn"`. Completion sets `progress` to `1` and its
 returned summary replaces any transient summary.
+
+An action part settles with exactly one of `action:complete`,
+`action:error` or `action:cancelled`. A tool call the run cancelled ends
+`cancelled`, whether it was running or not yet started; when a turn ends
+`cancelled` or `error`, every action part still open is settled
+`cancelled` before `turn:end`. A tool that throws `AxleToolFatalError` ends
+`error`.
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"citation"`, `"action"`, `"compaction"`). Action parts
@@ -1321,8 +1343,8 @@ to `TurnEvent` streams: text deltas are folded into text parts, tool call
 lifecycles become stable action parts, and tool results are collapsed back into
 the action part that produced them. `AxleMessage[]` remains the canonical model
 conversation state; turns do not affect model input or tool routing.
-Model and provider failures are retained on the agent turn as `turn.error`, so
-accumulated and restored render state includes the terminal error message.
+A turn whose send resolved `ok: false` keeps how it failed as
+`turn.failure`, so accumulated and restored render state says why.
 
 The Agent holds no turns: it emits events, and whoever wants a transcript
 folds and stores them. Attach a `Transcript`, persist its `turns` alongside

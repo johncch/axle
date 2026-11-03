@@ -8,6 +8,7 @@ import type {
   PendingDropReason,
   TimingInfo,
   Turn,
+  TurnFailure,
   TurnPart,
   TurnStatus,
 } from "./types.js";
@@ -27,7 +28,15 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   // Turn lifecycle
   | { type: "turn:user"; turn: Turn<TAnnotation> }
   | { type: "turn:start"; turnId: string; timing?: TimingInfo }
-  | { type: "turn:end"; turnId: string; status: TurnStatus; usage: Stats; timing?: TimingInfo }
+  | {
+      type: "turn:end";
+      turnId: string;
+      status: TurnStatus;
+      usage: Stats;
+      failure?: TurnFailure;
+      reason?: "stop" | "length";
+      timing?: TimingInfo;
+    }
   // Compaction part lifecycle (@experimental)
   | { type: "compaction:update"; turnId: string; partId: string; update: CompactionUpdate }
   | {
@@ -37,6 +46,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       summary?: string;
       timing?: TimingInfo;
     }
+  | { type: "compaction:cancelled"; turnId: string; partId: string; timing?: TimingInfo }
   | { type: "compaction:error"; turnId: string; partId: string; error: string; timing?: TimingInfo }
   // Part streaming
   | { type: "part:start"; turnId: string; part: TurnPart<TAnnotation> }
@@ -70,6 +80,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       result: ActionResult;
       timing?: TimingInfo;
     }
+  | { type: "action:cancelled"; turnId: string; partId: string; timing?: TimingInfo }
   | {
       type: "action:error";
       turnId: string;
@@ -80,6 +91,4 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   // Nesting
   | { type: "action:child-event"; turnId: string; partId: string; event: TurnEvent<TAnnotation> }
   // Annotations
-  | AnnotationEvent<TAnnotation>
-  // Error
-  | { type: "error"; turnId?: string; error: { type: string; message: string } };
+  | AnnotationEvent<TAnnotation>;

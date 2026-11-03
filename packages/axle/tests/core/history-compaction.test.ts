@@ -205,7 +205,12 @@ describe("Agent.compact", () => {
     expect(entries[0].owner).toBe("agent");
     expect(entries[0].status).toBe("complete");
     const part = compactionPartOf(entries[0]);
-    expect(part).toMatchObject({ id: entries[0].id, type: "compaction", status: "complete" });
+    expect(part).toMatchObject({
+      id: entries[0].id,
+      type: "compaction",
+      trigger: "manual",
+      status: "complete",
+    });
     expect(part?.summary).toBeUndefined();
   });
 
@@ -427,7 +432,7 @@ describe("Agent.compact", () => {
     expect(agent.messages.at(-1)).toMatchObject({ role: "user" });
     expect(JSON.stringify(agent.messages.at(-1)?.content)).toContain("keep this message");
     expect(transcript.turns.map((turn) => turn.status)).toEqual(["complete", "cancelled"]);
-    expect(compactionPartOf(transcript.turns[1])?.status).toBe("error");
+    expect(compactionPartOf(transcript.turns[1])?.status).toBe("cancelled");
   });
 
   test("afterTurn embeds the compaction at the tail of the send's turn", async () => {
@@ -447,6 +452,7 @@ describe("Agent.compact", () => {
     expect(transcript.turns.map((turn) => turn.owner)).toEqual(["user", "agent"]);
     const agentTurn = transcript.turns[1];
     expect(agentTurn.parts.map((part) => part.type)).toEqual(["text", "compaction"]);
+    expect(compactionPartOf(agentTurn)?.trigger).toBe("afterTurn");
     expect(agentTurn.status).toBe("complete");
     expect(result.turn).toEqual(agentTurn);
   });
@@ -600,7 +606,7 @@ describe("Agent.compact", () => {
     expect(agent.messages).toEqual(FOUR_MESSAGES);
     const entry = transcript.turns.find(isCompactionTurn);
     expect(entry?.status).toBe("cancelled");
-    expect(compactionPartOf(entry)?.status).toBe("error");
+    expect(compactionPartOf(entry)?.status).toBe("cancelled");
   });
 
   test("a callback that throws on a forwarded abort rejects and cancels the turn", async () => {
@@ -623,7 +629,7 @@ describe("Agent.compact", () => {
     expect(agent.messages).toEqual(FOUR_MESSAGES);
     const entry = transcript.turns.find(isCompactionTurn);
     expect(entry?.status).toBe("cancelled");
-    expect(compactionPartOf(entry)?.status).toBe("error");
+    expect(compactionPartOf(entry)?.status).toBe("cancelled");
   });
 
   test("cancelling a compact queued behind a send rejects and leaves the send unaffected", async () => {
@@ -698,7 +704,7 @@ describe("Agent.compact", () => {
     expect(transcript.pending.map((turn) => turn.owner)).toEqual(["user", "agent"]);
     expect(transcript.pending[1]).toMatchObject({
       status: "pending",
-      parts: [{ type: "compaction", status: "pending" }],
+      parts: [{ type: "compaction", trigger: "manual", status: "pending" }],
     });
     const compactionId = transcript.pending[1]?.id;
 

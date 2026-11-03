@@ -18,7 +18,10 @@ import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import type { Turn } from "../../src/turns/types.js";
 
-function createMockStreamProvider(responses: string[]): AIProvider {
+function createMockStreamProvider(
+  responses: string[],
+  finishReason: AxleStopReason = AxleStopReason.Stop,
+): AIProvider {
   let callIndex = 0;
   return {
     protocol: "chatCompletions",
@@ -35,7 +38,7 @@ function createMockStreamProvider(responses: string[]): AIProvider {
       yield { type: "text-complete", data: { index: 0 } };
       yield {
         type: "complete",
-        data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20 } },
+        data: { finishReason, usage: { in: 10, out: 20 } },
       };
     },
   };
@@ -445,6 +448,64 @@ describe("Agent", () => {
       expect(error).toBeInstanceOf(AxleAgentAbortError);
       expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
       expect(transcript.turns.at(-1)?.status).toBe("cancelled");
+    });
+
+    test("a tool running when the turn is cancelled settles cancelled", async () => {
+      let toolStarted = false;
+      const slow = {
+        name: "slow",
+        description: "Waits until aborted",
+        schema: z.object({ input: z.string() }),
+        execute: (_input: { input: string }, ctx: { signal: AbortSignal }) => {
+          toolStarted = true;
+          return new Promise<string>((_resolve, reject) => {
+            ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
+          });
+        },
+      };
+      const { provider } = createToolThenTextProvider(["slow"]);
+      const agent = new Agent({ provider, model: "mock", tools: [slow] });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const final = agent.send("go").final.catch((error) => error);
+      await vi.waitFor(() => expect(toolStarted).toBe(true));
+      agent.cancel();
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      const turn = transcript.turns.at(-1);
+      expect(turn?.status).toBe("cancelled");
+      expect(turn?.parts.find((part) => part.type === "action")?.status).toBe("cancelled");
+    });
+
+    test("a tool call still streaming when the turn is cancelled settles cancelled", async () => {
+      const provider: AIProvider = {
+        protocol: "chatCompletions",
+        id: "tool-call-hangs",
+        async *createStreamingRequest(_model, { signal }): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "h1", data: { model: "mock", timestamp: 0 } };
+          yield { type: "tool-call-start", data: { index: 0, id: "tc1", name: "search" } };
+          await new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const transcript = new Transcript();
+      let actionOpened = false;
+      agent.on((event) => {
+        transcript.apply(event);
+        if (event.type === "part:start" && event.part.type === "action") actionOpened = true;
+      });
+
+      const final = agent.send("go").final.catch((error) => error);
+      await vi.waitFor(() => expect(actionOpened).toBe(true));
+      agent.cancel();
+
+      expect(await final).toBeInstanceOf(AxleAgentAbortError);
+      const turn = transcript.turns.at(-1);
+      expect(turn?.status).toBe("cancelled");
+      expect(turn?.parts.find((part) => part.type === "action")?.status).toBe("cancelled");
     });
 
     test("cancel() returns false when nothing is running", async () => {
@@ -2348,6 +2409,98 @@ describe("Agent", () => {
   });
 
   describe("agent events", () => {
+    test("turn:end carries an api failure without its raw payload", async () => {
+      const provider: AIProvider = {
+        protocol: "chatCompletions",
+        id: "rate-limited",
+        async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
+          yield { type: "start", id: "r1", data: { model: "mock", timestamp: 0 } };
+          yield {
+            type: "error",
+            data: {
+              type: "rate_limit_error",
+              message: "Rate limited",
+              status: 429,
+              raw: { error: { type: "rate_limit_error" } },
+            },
+          };
+        },
+      };
+      const agent = new Agent({ provider, model: "mock" });
+      const ends: TurnEvent[] = [];
+      agent.on((event) => {
+        if (event.type === "turn:end") ends.push(event);
+      });
+
+      const result = await agent.send("hello").final;
+
+      expect(result.ok).toBe(false);
+      expect(ends).toHaveLength(1);
+      expect(ends[0]).toMatchObject({ status: "error" });
+      expect(ends[0].type === "turn:end" && ends[0].failure).toEqual({
+        kind: "api",
+        type: "rate_limit_error",
+        message: "Rate limited",
+        status: 429,
+      });
+      expect(result.turn?.failure).toEqual(ends[0].type === "turn:end" && ends[0].failure);
+    });
+
+    test("a parse failure ends the turn error and carries the failure", async () => {
+      const agent = new Agent({ provider: createMockStreamProvider(["not json"]), model: "mock" });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const result = await agent.send(
+        new Instruct({ prompt: "give me json", schema: z.object({ value: z.number() }) }),
+      ).final;
+
+      expect(result.ok).toBe(false);
+      const turn = transcript.turns.at(-1);
+      expect(turn?.status).toBe("error");
+      expect(turn?.failure?.kind).toBe("parse");
+      expect(turn?.failure).not.toHaveProperty("cause");
+      expect(turn?.failure?.message).toBe(result.ok ? undefined : result.error.message);
+    });
+
+    test("a turn records how its final answer ended", async () => {
+      const finished = new Agent({ provider: createMockStreamProvider(["done"]), model: "mock" });
+      const cutOff = new Agent({
+        provider: createMockStreamProvider(["Here is the start of"], AxleStopReason.Length),
+        model: "mock",
+      });
+      const finishedTranscript = new Transcript();
+      const cutOffTranscript = new Transcript();
+      finished.on(finishedTranscript.apply);
+      cutOff.on(cutOffTranscript.apply);
+
+      await finished.send("go").final;
+      const result = await cutOff.send("go").final;
+
+      expect(result.ok).toBe(true);
+      expect(finishedTranscript.turns.at(-1)).toMatchObject({ status: "complete", reason: "stop" });
+      expect(cutOffTranscript.turns.at(-1)).toMatchObject({ status: "complete", reason: "length" });
+    });
+
+    test("a cut-off structured answer keeps its reason beside the parse failure", async () => {
+      const agent = new Agent({
+        provider: createMockStreamProvider(['{"value": 4'], AxleStopReason.Length),
+        model: "mock",
+      });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      await agent.send(
+        new Instruct({ prompt: "give me json", schema: z.object({ value: z.number() }) }),
+      ).final;
+
+      expect(transcript.turns.at(-1)).toMatchObject({
+        status: "error",
+        reason: "length",
+        failure: { kind: "parse" },
+      });
+    });
+
     test("on() receives turn:user event when send(string) is called", async () => {
       const provider = createMockStreamProvider(["ok"]);
       const agent = new Agent({ provider, model: "mock" });
