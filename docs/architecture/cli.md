@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-10-30 (AXL-93)
+**Status**: current · **Last design revision**: 2026-11-02
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -50,7 +50,7 @@ against it; divergence is a defect. State ownership is defined in
 3. **Every run is a session.** Chat, one-shot, recipe run, and every
    individual batch item persist the same shape — the recipe's agent keys
    as written (`AgentRecipe`) + `agent.snapshot()` + `Transcript.turns` +
-   `Meter.usage` (as `meter`) + cwd — to `~/.axle/sessions/cli/<id>.json`,
+   the session's lifetime `usage` + cwd — to `~/.axle/sessions/cli/<id>.json`,
    saved on every exit path. Anything
    that produced a session can be re-entered with `axle resume <id>`.
    Sessions accumulate; `axle cleanup` deletes by age window. There is no
@@ -73,11 +73,13 @@ against it; divergence is a defect. State ownership is defined in
    when the cache is stale. It prints each provider's window with its
    source and the matched catalog id, so a best-effort match is visible.
 
-   Usage and cost come from two `Meter`s on the same catalog: the session's,
-   owned by `SessionRuntime`, restored from the file's `meter` and saved
-   back; and the run's, created in `cli.ts` for the usage bar, the batch
-   footer and the exit summary, which therefore show what this invocation
-   spent and not a resumed session's history. Cost is `formatCost(cost)`:
+   Usage is two `Stats`, each fed by `addStats` on `turn:end`: the
+   session's, owned by `SessionRuntime`, restored from the file's `usage`
+   and saved back; and the run's, created in `cli.ts` for the usage bar,
+   the batch footer and the exit summary, which therefore show what this
+   invocation spent and not a resumed session's history. Each display
+   prices the run's `Stats` with core's `computeCost` on the run's
+   catalog. Cost is `formatCost(cost)`:
    `$0.42`, `<$0.01`, `$0.42 (2 unpriced)`, or nothing when no row was
    priced; the bar redraws on `turn:end`, `compaction:complete` and
    `catalog.onChange`, so a price that arrives after the turn is shown
@@ -367,6 +369,13 @@ against it; divergence is a defect. State ownership is defined in
 
 ## Decisions
 
+- **2026-11-02 — usage is two `Stats`, priced with `computeCost`.** Core
+  removed `Meter` for a function over `Stats` (agent-state.md, "Cost is a
+  function of Stats"). The two meters became two `Stats`, and the session
+  file's `meter` key is now `usage`; it shipped in no release, so no file
+  reader keeps the old key. The reason for keeping the session's total
+  apart from its turns stands: a compacted or trimmed transcript loses
+  rows.
 - **2026-10-30 — a profile's name decides whether it is a preset (AXL-94).**
   `type` and `vendor` are gone. Profiles mirror the library's two shapes, a
   preset call and a protocol constructor call, and the name picks which.

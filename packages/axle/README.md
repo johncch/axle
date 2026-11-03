@@ -942,34 +942,56 @@ not additional usage. A reader that wants per-model or per-agent totals groups
 the rows. An Anthropic step that paused (`pause_turn`) took several requests
 and yields one row each.
 
-### Meter
+### Cost
 
-`Meter` accumulates usage across turns and prices it. It is a sink over the
-turn event stream like `Transcript`: attach it with `agent.on(meter.apply)`,
-persist its `usage`, and pass that back to the constructor to restore it.
+> **Experimental** — `computeCost` may become synchronous in a minor release,
+> once `ModelCatalog` can be given its data directly.
+
+`computeCost(usage, catalog)` prices a `Stats` against a `ModelCatalog`. It
+is a function, not a running object: whatever `Stats` you hold is the
+record, and you price it when you need a number.
 
 ```typescript
-import { Meter, ModelCatalog } from "@fifthrevision/axle";
+import { computeCost, mergeStats, ModelCatalog } from "@fifthrevision/axle";
 
 const catalog = ModelCatalog.open({ cachePath });
-const meter = new Meter(catalog, savedUsage); // both arguments optional
-agent.on(meter.apply);
 
-meter.usage; // Stats: restored rows plus everything applied since
-meter.observedUsage; // Stats: only what this instance applied
-meter.cost; // Cost, computed now from the rows and the catalog's current state
-await meter.priced(); // Cost, after the catalog's `ready` has settled
+// The turns are the record: sum them, then price
+const usage = mergeStats(...transcript.turns.map((turn) => turn.usage));
+const cost = await computeCost(usage, catalog);
+await db.write({ in: usage.in, out: usage.out, usd: cost.usd, pricedWith: cost.pricedWith });
 ```
+
+When your usage has to outlive the turns (you keep only the last few, or
+start a fresh transcript on clear), keep a running `Stats` of your own and
+persist it:
+
+```typescript
+import { addStats, computeCost, createStats } from "@fifthrevision/axle";
+
+const usage = savedUsage ?? createStats();
+agent.on((event) => {
+  if (event.type === "turn:end") addStats(usage, event.usage);
+});
+
+const cost = await computeCost(usage, catalog);
+```
+
+Sum usage, never cost: a `Cost` reflects the catalog when it was computed,
+so price the summed `Stats` when you read it.
 
 A `Cost` is `{ usd, priced, unpriced, pricedWith? }`. `priced` holds each
 row with its `usd`; `unpriced` holds each row the catalog could not price,
-with a `reason`: `loading` and `unavailable` are the catalog's state and may
-resolve on a later read, while `no-catalog`, `no-provider`, `unlisted` and
-`no-price` are facts about the row. Nothing is stored: `cost` prices the rows
-against the catalog each time it is read, so a row that was `loading` a
-moment ago is priced the first time you read after the catalog arrives, in
-this process or the next. `pricedWith` is the `fetchedAt` of the catalog that
-priced the rows.
+with a `reason`. `unavailable` means the catalog could not be loaded, and a
+later call may price the row once it is; `no-catalog`, `no-provider`,
+`unlisted` and `no-price` are facts about the row. `usd` is the sum of the
+priced rows, so a host with its own price table can price `unpriced` row by
+row and add it. `pricedWith` is the `fetchedAt` of the catalog that priced
+the rows.
+
+`computeCost` waits for the catalog's first load (the cache read, or one
+fetch under `fetchTimeout`, 10 seconds by default) and never rejects. After
+the first run the catalog loads from its cache, so the wait is a file read.
 
 Each row is priced at the tier its own `in` selects, with cache reads, cache
 writes and reasoning tokens at their own rate where the provider lists one
@@ -977,23 +999,6 @@ and at the plain input or output rate otherwise. Only the provider layer
 prices a row (`lookup(model, { provider: row.provider })`); a row whose
 provider has no id is `no-provider`, and the row's `requestedModel` is tried
 when the reported `model` is not listed.
-
-If you care about pricing, await the catalog: `priced()` does that and
-returns `cost`. It is bounded by the catalog's `ready` and never rejects; a
-catalog that failed to load yields a `Cost` whose rows say `unavailable`.
-`cost` is a plain getter and cannot hang, so it is safe anywhere a value is
-needed now:
-
-```typescript
-agent.onSettled(async () => {
-  const cost = await meter.priced();
-  await db.write({ usage: meter.usage, usd: cost.usd, pricedWith: cost.pricedWith });
-});
-```
-
-`usage` and `cost` cover what the meter was restored with plus what it has
-applied; `observedUsage` and `observedCost` only what this instance applied.
-A resumed session that wants "this run" and "all time" keeps both.
 
 ### Provider Tools
 

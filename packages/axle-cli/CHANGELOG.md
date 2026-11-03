@@ -17,7 +17,7 @@
   went to a model the catalog has no price for, nothing when none could be
   priced. The figures are this invocation's, not a resumed session's
   history.
-- Session files carry the session's usage rows (`meter`), one per provider
+- Session files carry the session's usage rows (`usage`), one per provider
   request with its timestamp, so a resumed session keeps its record and can
   be priced later. Older files without it resume as before.
 - The first run on a machine waits once for the models.dev catalog to

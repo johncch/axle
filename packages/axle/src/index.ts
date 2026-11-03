@@ -198,11 +198,13 @@ export type {
 export { getCompactionStamp, validateCompactedMessages } from "./messages/compaction.js";
 export type { CompactionStamp } from "./messages/compaction.js";
 
+// Cost (@experimental)
+export { computeCost } from "./models/cost.js";
+export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
+
 // Turns (public format)
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
-export { Meter } from "./turns/meter.js";
-export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./turns/meter.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export type {

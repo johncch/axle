@@ -23,8 +23,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    read-back, no `session:restore` event. Restore means the consumer re-seeds
    its own transcript (`new Transcript(savedTurns)`) from its own copy,
    persisted next to the `AgentSession` in one atomic write. The transcript
-   is one _sink_ over that stream; `Meter` is another, and a consumer's own
-   folds are more. Every sink has the same contract: `apply(event)` is a
+   is one _sink_ over that stream, and a consumer's own folds are more. Every sink has the same contract: `apply(event)` is a
    bound property handed straight to `agent.on`, it folds what it needs
    from each event and ignores the rest, it exposes a readonly view, and
    the consumer persists that view and seeds the constructor with it on
@@ -43,9 +42,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `turn:user`, then the same `Instruct` parses the final assistant response.
 6. **Usage accounting belongs to the consumer.** Every `turn:end` carries
    `turn.usage`; consumers accumulate totals in their own storage. The Agent
-   exposes no usage meter, and `AgentSession` carries none; the shipped
-   `Meter` is a sink (invariant 3) the consumer attaches, reads and
-   persists, like `Transcript`. `usage.breakdown`
+   exposes no usage meter, and `AgentSession` carries none. A running total
+   is a `Stats` the consumer owns: `addStats` on each `turn:end`, or
+   `mergeStats` over the turns when it keeps them all, priced with
+   `computeCost`. `usage.breakdown`
    holds one `UsageEntry` per provider request, in request order, never a
    sum per model: a consumer prices each row at the tier its own `in` selects
    and groups rows when it wants per-model totals. Each row carries `at`,
@@ -450,6 +450,9 @@ Accepted consequences:
 
 ## Sinks and the Meter (2026-10-30)
 
+The `Meter` class this section describes was removed on 2026-11-02; see
+"Cost is a function of Stats" below.
+
 Invariant 3 said "transcript" where it meant "whoever folds the stream".
 AXL-93 names the plural: a _sink_ is any fold over `TurnEvent`s with the
 contract invariant 3 now states, `Transcript` is the first and `Meter` the
@@ -541,6 +544,50 @@ Rejected:
   accounts for: it reports the hole instead of closing it. A token without a
   model and a provider cannot be priced, so it should not be representable
   as usage.
+
+## Cost is a function of Stats (2026-11-02)
+
+`computeCost(usage, catalog): Promise<Cost>` replaces the `Meter` class. The
+pricing is the part worth sharing: tiers, cache and reasoning rates, the
+provider lookup and the unpriced reasons. What the Meter added around it was
+state: a restore seed, the `usage`/`observedUsage` split, wiring to
+`agent.on`, and a view to persist. Each of those is a policy about what a
+session is, and invariant 6 leaves that to the consumer. Sunnyday's
+assistant keeps a lifetime total through `clear()` and a transcript it
+windows to its last 20 turns; its runs keep every turn and sum them; the
+CLI keeps one total per session file and one per invocation. Each is a
+`Stats` with `addStats` or `mergeStats`.
+
+- **Sum usage, price on read.** A running total is usage, never cost. A
+  cost depends on the catalog's state when it was computed, so a turn priced
+  while the catalog was still loading would stay unpriced inside a summed
+  cost forever. Rows priced on read are priced once the catalog can.
+- **The function waits and never rejects.** It awaits the catalog's
+  `ready` (the cache read, or one fetch under `fetchTimeout`), so a consumer
+  that prices once and writes the number cannot freeze an undercount from a
+  catalog that was still loading. After `ready`, a retry in flight reads as
+  `unavailable`: the catalog has given its first answer, and `loading` never
+  reaches a `Cost`. Every row is in `priced`, or in `unpriced` with its
+  reason, so a consumer can fill the gap row by row with its own prices.
+
+Rejected:
+
+- **Keeping the `Meter` sink** beside the function: its only work beyond
+  pricing was `addStats` and a seed, and its `usage`/`observed` split
+  answered one consumer's idea of a session.
+- **A per-turn callback, `meter.onTurnEnd((turnId, cost) => …)`**: a turn
+  can end before the catalog loads, so the callback fires with `loading`
+  rows or fires late; and it repeats `turn:end`, which the consumer already
+  has. `computeCost(event.usage, catalog)` in a `turn:end` handler is the same
+  thing with the waiting visible.
+- **A synchronous `computeCost` that throws a not-ready error**: "not ready"
+  is all or nothing, so one error fits, but the `catch` runs only in the
+  first seconds of a cold start, which is the branch nobody tests, and
+  "retry later" is machinery for a wait that `await` already is.
+
+Decided not yet: `ModelCatalog` taking its JSON as input, with caching a
+consumer concern, so a host that stores the catalog itself never waits on
+a download and `computeCost` could be synchronous (0.36.0).
 
 ## Rejected alternatives
 

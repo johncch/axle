@@ -1,7 +1,5 @@
-import type { ModelCatalog, ModelCost } from "../models/catalog.js";
 import type { Stats, UsageEntry } from "../types.js";
-import { addStats, createStats, mergeStats } from "../utils/stats.js";
-import type { TurnEvent } from "./events.js";
+import type { ModelCatalog, ModelCost } from "./catalog.js";
 
 /** A usage row and what the catalog priced it at, in US dollars. */
 export interface PricedEntry extends UsageEntry {
@@ -9,19 +7,21 @@ export interface PricedEntry extends UsageEntry {
 }
 
 /**
- * Why a row has no price. `loading` and `unavailable` are the catalog's state and may
- * resolve on a later read; the rest are facts about the row and will not.
+ * Why a row has no price. `unavailable` is the catalog's state: it could not be
+ * loaded, and a later call may price the row once it is. The rest are facts
+ * about the row and will not change.
  */
-export type UnpricedReason =
-  "loading" | "unavailable" | "no-catalog" | "no-provider" | "unlisted" | "no-price";
+export type UnpricedReason = "unavailable" | "no-catalog" | "no-provider" | "unlisted" | "no-price";
 
 export interface UnpricedEntry extends UsageEntry {
   reason: UnpricedReason;
 }
 
 /**
- * Cost derived from usage rows at the moment it is read. `usd` sums `priced`;
- * `unpriced` holds every row the catalog could not price, each with its reason.
+ * What a `Stats` cost. `usd` sums `priced`; `unpriced` holds every row the
+ * catalog could not price, each with its reason.
+ *
+ * @experimental
  */
 export interface Cost {
   usd: number;
@@ -32,51 +32,17 @@ export interface Cost {
 }
 
 /**
- * A sink over the turn event stream that accumulates usage from `turn:end` and
- * prices it against a `ModelCatalog`. `usage` holds what the meter was restored
- * with plus what it has applied; `observedUsage` only what this instance applied.
- * `cost` and `observedCost` are computed from those rows and the catalog's
- * current state each time they are read, so a row the catalog could not price
- * yet is priced on the first read after the catalog arrives. `priced()` resolves
- * to `cost` once the catalog's `ready` has settled; it never rejects. Pass the
- * saved `usage` to the constructor to restore a meter.
+ * Price every `breakdown` row of `usage` against `catalog`. Waits for the
+ * catalog's first load to settle and never rejects: a row it cannot price is
+ * in `unpriced` with its reason. Each row is priced at the tier its own `in`
+ * selects.
+ *
+ * @experimental The signature may change in a minor release (a synchronous
+ * form once `ModelCatalog` can be given its data directly).
  */
-export class Meter {
-  private readonly catalog: ModelCatalog | undefined;
-  private readonly _usage: Stats;
-  private readonly _observedUsage: Stats = createStats();
-
-  constructor(catalog?: ModelCatalog, saved?: Stats) {
-    this.catalog = catalog;
-    this._usage = saved ? mergeStats(saved) : createStats();
-  }
-
-  get usage(): Stats {
-    return this._usage;
-  }
-
-  get observedUsage(): Stats {
-    return this._observedUsage;
-  }
-
-  get cost(): Cost {
-    return priceRows(this._usage.breakdown ?? [], this.catalog);
-  }
-
-  get observedCost(): Cost {
-    return priceRows(this._observedUsage.breakdown ?? [], this.catalog);
-  }
-
-  async priced(): Promise<Cost> {
-    await this.catalog?.ready;
-    return this.cost;
-  }
-
-  apply = (event: TurnEvent): void => {
-    if (event.type !== "turn:end") return;
-    addStats(this._usage, event.usage);
-    addStats(this._observedUsage, event.usage);
-  };
+export async function computeCost(usage: Stats, catalog?: ModelCatalog): Promise<Cost> {
+  await catalog?.ready;
+  return priceRows(usage.breakdown, catalog);
 }
 
 function priceRows(rows: readonly UsageEntry[], catalog: ModelCatalog | undefined): Cost {
@@ -98,8 +64,7 @@ function priceRows(rows: readonly UsageEntry[], catalog: ModelCatalog | undefine
 function priceRow(row: UsageEntry, catalog: ModelCatalog | undefined): number | UnpricedReason {
   if (!catalog) return "no-catalog";
   if (row.provider === undefined) return "no-provider";
-  const status = catalog.state.status;
-  if (status !== "loaded") return status;
+  if (catalog.state.status !== "loaded") return "unavailable";
 
   let reason: UnpricedReason = "unlisted";
   for (const model of [row.model, row.requestedModel]) {

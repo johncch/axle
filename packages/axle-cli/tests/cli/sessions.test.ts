@@ -1,5 +1,5 @@
 import type { AgentConfig, AIProvider } from "@fifthrevision/axle";
-import { AxleStopReason, Meter, Tracer } from "@fifthrevision/axle";
+import { AxleStopReason, createStats, Tracer } from "@fifthrevision/axle";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -402,7 +402,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       span,
       nullRenderer,
       store,
@@ -416,14 +416,14 @@ describe("runSingle session persistence", () => {
     expect(file.session.messages).toHaveLength(2);
     expect(file.session.messages[0].role).toBe("user");
     expect(file.turns.length).toBeGreaterThanOrEqual(2);
-    expect(file.meter).toMatchObject({ in: 10, out: 20 });
-    expect(file.meter?.breakdown).toHaveLength(1);
+    expect(file.usage).toMatchObject({ in: 10, out: 20 });
+    expect(file.usage?.breakdown).toHaveLength(1);
   });
 
-  it("the run meter sees what the session meter sees, and a resumed session restores its lifetime usage", async () => {
+  it("the run usage matches the session usage, and a resumed session restores its lifetime usage", async () => {
     const store = new SessionStore(recipe, { home: HOME });
     const tracer = new Tracer();
-    const runMeter = new Meter();
+    const runUsage = createStats();
 
     await runAgentSession(
       {
@@ -437,15 +437,15 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      runMeter,
+      runUsage,
       tracer.startSpan("first"),
       nullRenderer,
       store,
     );
     const saved = await loadSession("m-1", HOME);
-    expect(runMeter.observedUsage).toEqual(saved.meter);
+    expect(runUsage).toEqual(saved.usage);
 
-    const resumeMeter = new Meter();
+    const resumeUsage = createStats();
     await runAgentSession(
       {
         agentConfig: { provider: createMockProvider("second"), model: "test-model" },
@@ -453,20 +453,20 @@ describe("runSingle session persistence", () => {
         contextWindow: 200_000,
         session: saved.session,
         priorTurns: saved.turns,
-        priorUsage: saved.meter,
+        priorUsage: saved.usage,
         initial: "Say more",
         interactive: false,
       },
-      resumeMeter,
+      resumeUsage,
       tracer.startSpan("resume"),
       nullRenderer,
       new SessionStore(saved.recipe, { createdAt: saved.createdAt, home: HOME }),
     );
 
-    expect(resumeMeter.observedUsage).toMatchObject({ in: 10, out: 20 });
+    expect(resumeUsage).toMatchObject({ in: 10, out: 20 });
     const after = await readSessionFile("m-1");
-    expect(after.meter).toMatchObject({ in: 20, out: 40 });
-    expect(after.meter?.breakdown).toHaveLength(2);
+    expect(after.usage).toMatchObject({ in: 20, out: 40 });
+    expect(after.usage?.breakdown).toHaveLength(2);
   });
 
   it("resumes a saved session: prior messages reach the model and the file grows", async () => {
@@ -486,7 +486,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       tracer.startSpan("first"),
       nullRenderer,
       store,
@@ -515,7 +515,7 @@ describe("runSingle session persistence", () => {
         initial: "Say more",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       tracer.startSpan("resume"),
       nullRenderer,
       resumeStore,
@@ -550,7 +550,7 @@ describe("runSingle session persistence", () => {
 
     const succeeded = await runAgentSession(
       { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
-      new Meter(),
+      createStats(),
       tracer.startSpan("chat"),
       scriptedRenderer,
       store,
@@ -603,7 +603,7 @@ describe("runSingle session persistence", () => {
           contextWindow: 200_000,
           interactive: true,
         },
-        new Meter(),
+        createStats(),
         new Tracer().startSpan("chat"),
         renderer,
         new SessionStore(recipe, { home: HOME }),
@@ -729,7 +729,7 @@ describe("runSingle session persistence", () => {
 
       const succeeded = await runAgentSession(
         { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
-        new Meter(),
+        createStats(),
         tracer.startSpan("chat"),
         scriptedRenderer,
         store,
@@ -755,7 +755,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       new Tracer().startSpan("first"),
       nullRenderer,
       store,
@@ -773,7 +773,7 @@ describe("runSingle session persistence", () => {
         priorTurns: saved.turns,
         interactive: true,
       },
-      new Meter(),
+      createStats(),
       new Tracer().startSpan("resume"),
       quitRenderer,
       new SessionStore(saved.recipe, { createdAt: saved.createdAt, home: HOME }),
@@ -801,7 +801,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       tracer.startSpan("job"),
       renderer,
       store,
@@ -835,7 +835,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       new Tracer().startSpan("job"),
       renderer,
       new SessionStore(recipe, { home: blockedHome }),
@@ -858,7 +858,7 @@ describe("runSingle session persistence", () => {
 
     const succeeded = await runAgentSession(
       { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
-      new Meter(),
+      createStats(),
       tracer.startSpan("chat"),
       renderer,
       store,
@@ -885,7 +885,7 @@ describe("runSingle session persistence", () => {
         initial: "Say hi",
         interactive: false,
       },
-      new Meter(),
+      createStats(),
       span,
       nullRenderer,
     );

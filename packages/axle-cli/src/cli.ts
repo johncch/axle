@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command, Option } from "@commander-js/extra-typings";
-import { Meter, SimpleWriter, Tracer } from "@fifthrevision/axle";
+import { computeCost, createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { styleText } from "node:util";
@@ -571,7 +571,7 @@ for (const line of [
   rootSpan.warn(line);
 }
 const catalog = openModelCatalog();
-const meter = new Meter(catalog, savedSession?.meter);
+const runUsage = createStats();
 await catalog.ready;
 const contextWindow = resolveContextWindow(
   resolveEndpoint(pending.target.provider, cliConfig),
@@ -599,7 +599,7 @@ try {
           catalog,
         },
         variables,
-        meter,
+        runUsage,
         rootSpan,
         renderer,
         supportsBatchProgress(renderer) ? renderer : undefined,
@@ -613,7 +613,7 @@ try {
           catalog,
           providerName: pending.target.providerName,
         },
-        meter,
+        runUsage,
         rootSpan,
         renderer,
         pending.sessionStore,
@@ -644,8 +644,8 @@ try {
           .map((entry) => entry.sessionId);
   await recordScheduleRun(succeeded ? "succeeded" : "failed", sessionIds);
   rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
-  const usage = meter.observedUsage;
-  const cost = formatCost(meter.observedCost);
+  const usage = runUsage;
+  const cost = formatCost(await computeCost(runUsage, catalog));
   rootSpan.info(`Input tokens: ${usage.in}`);
   rootSpan.info(`Output tokens: ${usage.out}`);
   if (usage.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${usage.cachedIn}`);

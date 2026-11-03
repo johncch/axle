@@ -10,11 +10,13 @@ import type {
   TurnEvent,
 } from "@fifthrevision/axle";
 import {
+  addStats,
   Agent,
   AxleAgentAbortError,
+  computeCost,
   Instruct,
   loadFileContent,
-  Meter,
+  mergeStats,
   PromptCompactor,
   Transcript,
 } from "@fifthrevision/axle";
@@ -50,7 +52,7 @@ export interface AgentSessionSpec {
   session?: AgentSession;
   /** Saved turns to replay before the first send. */
   priorTurns?: readonly Turn[];
-  /** The session's lifetime usage as saved, restored into its meter. */
+  /** The session's lifetime usage as saved; this run adds to it. */
   priorUsage?: Stats;
   /** Prices requests; without it every request is unpriced. */
   catalog?: ModelCatalog;
@@ -98,7 +100,7 @@ class SessionRuntime {
   readonly agent: Agent;
   readonly transcript: Transcript;
   /** The session's own lifetime usage, what the session file persists. */
-  readonly meter: Meter;
+  readonly usage: Stats;
 
   private readonly sessionStore?: SessionStore;
   private readonly span: Span;
@@ -114,7 +116,6 @@ class SessionRuntime {
     session?: AgentSession;
     priorTurns?: readonly Turn[];
     priorUsage?: Stats;
-    catalog?: ModelCatalog;
     sessionStore?: SessionStore;
     onEvent: (event: TurnEvent, transcript: Transcript) => void;
   }) {
@@ -126,7 +127,7 @@ class SessionRuntime {
       this.agent.setCompaction(createSessionCompaction(this.agent, options.contextWindow));
     }
     this.transcript = new Transcript(options.priorTurns ?? []);
-    this.meter = new Meter(options.catalog, options.priorUsage);
+    this.usage = mergeStats(options.priorUsage);
     this.sessionStore = options.sessionStore;
     this.span = options.span;
     this.persisted = Boolean(options.session);
@@ -135,7 +136,7 @@ class SessionRuntime {
     this.unsaved = !options.session;
     this.agent.on((event) => {
       this.transcript.apply(event);
-      this.meter.apply(event);
+      if (event.type === "turn:end") addStats(this.usage, event.usage);
       options.onEvent(event, this.transcript);
     });
   }
@@ -164,7 +165,7 @@ class SessionRuntime {
   private async write(session: AgentSession, turns: readonly Turn[]): Promise<boolean> {
     if (!this.sessionStore) return false;
     try {
-      await this.sessionStore.save(session, turns, this.meter.usage);
+      await this.sessionStore.save(session, turns, this.usage);
       this.persisted = true;
       this.unsaved = false;
       return true;
@@ -189,7 +190,7 @@ type SendOutcome = "ok" | "failed" | "interrupted";
 
 export async function runAgentSession(
   spec: AgentSessionSpec,
-  meter: Meter,
+  runUsage: Stats,
   parentSpan: Span,
   renderer: Renderer,
   sessionStore?: SessionStore,
@@ -203,10 +204,9 @@ export async function runAgentSession(
     session: spec.session,
     priorTurns: spec.priorTurns,
     priorUsage: spec.priorUsage,
-    catalog: spec.catalog,
     sessionStore,
     onEvent: (event, transcript) => {
-      meter.apply(event);
+      if (event.type === "turn:end") addStats(runUsage, event.usage);
       renderer.onEvent(event, transcript);
     },
   });
@@ -264,12 +264,15 @@ export async function runAgentSession(
   }
 
   const reportUsage = () => {
-    renderer.updateUsage({
-      usage: meter.observedUsage,
-      cost: meter.observedCost,
-      contextTokens: agent.context().total,
-      contextLimit: spec.contextWindow,
-    });
+    const contextTokens = agent.context().total;
+    void computeCost(runUsage, spec.catalog).then((cost) =>
+      renderer.updateUsage({
+        usage: runUsage,
+        cost,
+        contextTokens,
+        contextLimit: spec.contextWindow,
+      }),
+    );
   };
   reportUsage();
   agent.on((event) => {
@@ -405,7 +408,7 @@ export interface BatchRunSpec {
 export async function runBatch(
   spec: BatchRunSpec,
   variables: Record<string, any>,
-  meter: Meter,
+  runUsage: Stats,
   parentSpan: Span,
   renderer: Renderer,
   progress?: BatchProgress,
@@ -433,15 +436,11 @@ export async function runBatch(
   let completed = 0;
   let skipped = 0;
   let failed = 0;
-  const totals = (): BatchTotals => ({
-    total: filePaths.length,
-    completed,
-    skipped,
-    failed,
-    usage: meter.observedUsage,
-    cost: meter.observedCost,
-  });
-  progress?.batchStarted(totals());
+  const totals = async (): Promise<BatchTotals> => {
+    const counts = { total: filePaths.length, completed, skipped, failed };
+    return { ...counts, usage: runUsage, cost: await computeCost(runUsage, spec.catalog) };
+  };
+  progress?.batchStarted(await totals());
 
   const controller = new AbortController();
   const onInterrupt = () => {
@@ -467,7 +466,7 @@ export async function runBatch(
         itemSpan.error(`Failed: ${msg}`);
         itemSpan.end("error");
         failed++;
-        progress?.itemFinished(batchFilePath, totals());
+        progress?.itemFinished(batchFilePath, await totals());
         return;
       }
 
@@ -477,7 +476,7 @@ export async function runBatch(
         itemSpan.info("Skipped (already completed)");
         itemSpan.end();
         skipped++;
-        progress?.itemFinished(batchFilePath, totals());
+        progress?.itemFinished(batchFilePath, await totals());
         return;
       }
 
@@ -489,10 +488,9 @@ export async function runBatch(
         span: itemSpan,
         compaction: spec.compaction,
         contextWindow: spec.contextWindow,
-        catalog: spec.catalog,
         sessionStore,
         onEvent: (event, transcript) => {
-          meter.apply(event);
+          if (event.type === "turn:end") addStats(runUsage, event.usage);
           if (spec.verbose) {
             renderer.onEvent(event, transcript);
           } else if (progress && event.type === "part:start") {
@@ -527,7 +525,7 @@ export async function runBatch(
         itemSpan.error(`Failed: ${message}`);
         itemSpan.end("error");
         failed++;
-        progress?.itemFinished(batchFilePath, totals());
+        progress?.itemFinished(batchFilePath, await totals());
       };
 
       try {
@@ -563,13 +561,13 @@ export async function runBatch(
         renderer.success(`${batchFilePath}: done${resumeCommand ? ` (${resumeCommand})` : ""}`);
         itemSpan.end();
         completed++;
-        progress?.itemFinished(batchFilePath, totals());
+        progress?.itemFinished(batchFilePath, await totals());
       } catch (e) {
         await runtime.save();
         if (e instanceof AxleAgentAbortError) {
           itemSpan.end("cancelled");
           failed++;
-          progress?.itemFinished(batchFilePath, totals());
+          progress?.itemFinished(batchFilePath, await totals());
           return;
         }
         await recordFailure(hash, e instanceof Error ? e.message : String(e));

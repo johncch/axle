@@ -16,7 +16,7 @@ export interface CliSessionFile {
   session: AgentSession;
   turns: Turn[];
   /** Lifetime usage of the session, every request row included; absent in files written before 0.35. */
-  meter?: Stats;
+  usage?: Stats;
 }
 
 // Files written before 2026-10-29 carried the recipe in core's AgentDefinition
@@ -235,7 +235,7 @@ export class SessionStore {
     this.createdAt = options?.createdAt;
   }
 
-  async save(session: AgentSession, turns: readonly Turn[], meter: Stats): Promise<string> {
+  async save(session: AgentSession, turns: readonly Turn[], usage: Stats): Promise<string> {
     this.createdAt ??= new Date().toISOString();
     const file: CliSessionFile = {
       version: 1,
@@ -245,7 +245,7 @@ export class SessionStore {
       recipe: this.recipe,
       session,
       turns: [...turns],
-      meter,
+      usage,
     };
 
     await mkdir(sessionsDir(this.home), { recursive: true });
