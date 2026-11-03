@@ -108,8 +108,8 @@ tool's `execute` concurrently, with one ordered result. It is one tool call,
 not a tool batch: its arguments are validated as a whole, so one invalid item
 rejects the call. Not "batch tool".
 
-**UsageEntry** — one row of `Stats.breakdown`: the usage of one provider
-request, tagged with the provider that served it (its `AIProvider.id`, absent
+**UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
+usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent
 when the provider has none), two models, and, when the `Agent` that made it
 has a `name`, with that name as `agent`. `model` is the model the response
 reported, or the requested one when it reported none; `requestedModel` is

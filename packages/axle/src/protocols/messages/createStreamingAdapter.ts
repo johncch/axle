@@ -10,8 +10,8 @@ import type {
   ProviderToolResult,
 } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import type { Stats } from "../../types.js";
-import { mergeStats, withUsageDetails } from "../../utils/stats.js";
+import type { TokenStats } from "../../types.js";
+import { sumTokens, withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
 import { convertStopReason, normalizeAnthropicCitation } from "./utils.js";
 
@@ -26,7 +26,7 @@ export function createAnthropicStreamingAdapter(
   let cacheReadInputTokens = 0;
   let cacheWriteInputTokens = 0;
   let model = "";
-  const requests: Stats[] = [];
+  const requests: TokenStats[] = [];
   let turn: "not-started" | "streaming" | "paused" = "not-started";
   const responseBlocks: Array<ContentBlock> = [];
   const pausedBlocks: Array<ContentBlock> = [];
@@ -87,7 +87,7 @@ export function createAnthropicStreamingAdapter(
           turn = "paused";
         } else if (event.delta.stop_reason) {
           requests.push(requestUsage());
-          const usage = mergeStats(...requests);
+          const usage = sumTokens(...requests);
           const perRequest = requests.length > 1 ? { requests } : {};
           if (event.delta.stop_reason === "refusal") {
             const details = event.delta.stop_details;
@@ -363,7 +363,7 @@ export function createAnthropicStreamingAdapter(
     return chunks;
   }
 
-  function requestUsage(): Stats {
+  function requestUsage(): TokenStats {
     return withUsageDetails(
       { in: inputTokens, out: outputTokens },
       { cachedIn: cacheReadInputTokens, cacheWriteIn: cacheWriteInputTokens },

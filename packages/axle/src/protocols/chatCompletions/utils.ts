@@ -1,7 +1,7 @@
 import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart, type Citation } from "../../messages/message.js";
 import type { ProviderTool, ToolDefinition } from "../../tools/types.js";
-import type { Stats } from "../../types.js";
+import type { TokenStats } from "../../types.js";
 import {
   resolveFileSource,
   type FileInfo,
@@ -59,7 +59,7 @@ export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
   return { reasoning_effort: request.effort };
 }
 
-export function chatUsageToStats(usage: ChatCompletionUsage | undefined): Stats {
+export function chatUsageToStats(usage: ChatCompletionUsage | undefined): TokenStats {
   return withUsageDetails(
     {
       in: usage?.prompt_tokens || 0,

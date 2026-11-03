@@ -1,22 +1,13 @@
 import type { Stats, TokenStats } from "../types.js";
 
 export function createStats(): Stats {
-  return { in: 0, out: 0 };
+  return { in: 0, out: 0, breakdown: [] };
 }
 
 export function addStats(total: Stats, usage?: Stats): void {
   if (!usage) return;
-  total.in += usage.in ?? 0;
-  total.out += usage.out ?? 0;
-  addOptionalStat(total, "cachedIn", usage.cachedIn);
-  addOptionalStat(total, "cacheWriteIn", usage.cacheWriteIn);
-  addOptionalStat(total, "reasoningOut", usage.reasoningOut);
-  if (usage.breakdown?.length) {
-    total.breakdown = [
-      ...(total.breakdown ?? []),
-      ...usage.breakdown.map((entry) => ({ ...entry })),
-    ];
-  }
+  addTokens(total, usage);
+  total.breakdown = [...total.breakdown, ...usage.breakdown.map((entry) => ({ ...entry }))];
 }
 
 export function mergeStats(...usages: Array<Stats | undefined>): Stats {
@@ -25,13 +16,27 @@ export function mergeStats(...usages: Array<Stats | undefined>): Stats {
   return total;
 }
 
+export function sumTokens(...usages: TokenStats[]): TokenStats {
+  const total: TokenStats = { in: 0, out: 0 };
+  for (const usage of usages) addTokens(total, usage);
+  return total;
+}
+
+function addTokens(total: TokenStats, usage: TokenStats): void {
+  total.in += usage.in;
+  total.out += usage.out;
+  addOptionalStat(total, "cachedIn", usage.cachedIn);
+  addOptionalStat(total, "cacheWriteIn", usage.cacheWriteIn);
+  addOptionalStat(total, "reasoningOut", usage.reasoningOut);
+}
+
 /**
  * Attribute a step's provider-reported usage to breakdown rows that survive
  * aggregation across turns and subagents: one row for the step, or one per
  * request when the step took more than one.
  */
 export function attributeStats(
-  usage: Stats,
+  usage: TokenStats,
   source: {
     provider?: string;
     model: string;
@@ -62,9 +67,9 @@ export function attributeStats(
 }
 
 export function withUsageDetails(
-  usage: Stats,
-  details: Pick<Stats, "cachedIn" | "cacheWriteIn" | "reasoningOut">,
-): Stats {
+  usage: TokenStats,
+  details: Pick<TokenStats, "cachedIn" | "cacheWriteIn" | "reasoningOut">,
+): TokenStats {
   return {
     ...usage,
     ...positiveDetail("cachedIn", details.cachedIn),
@@ -73,7 +78,7 @@ export function withUsageDetails(
   };
 }
 
-export function toTokenUsage(usage?: Stats) {
+export function toTokenUsage(usage?: TokenStats) {
   if (!usage) return undefined;
   return {
     inputTokens: usage.in,
@@ -85,8 +90,8 @@ export function toTokenUsage(usage?: Stats) {
 }
 
 function addOptionalStat(
-  total: Stats,
-  key: keyof Pick<Stats, "cachedIn" | "cacheWriteIn" | "reasoningOut">,
+  total: TokenStats,
+  key: keyof Pick<TokenStats, "cachedIn" | "cacheWriteIn" | "reasoningOut">,
   value: number | undefined,
 ): void {
   if (value === undefined) return;
@@ -94,9 +99,9 @@ function addOptionalStat(
 }
 
 function positiveDetail(
-  key: keyof Pick<Stats, "cachedIn" | "cacheWriteIn" | "reasoningOut">,
+  key: keyof Pick<TokenStats, "cachedIn" | "cacheWriteIn" | "reasoningOut">,
   value: number | null | undefined,
-): Partial<Stats> {
+): Partial<TokenStats> {
   if (typeof value !== "number") return {};
   return { [key]: value };
 }

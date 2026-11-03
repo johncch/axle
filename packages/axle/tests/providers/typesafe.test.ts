@@ -86,7 +86,19 @@ describe("typesafe", () => {
     expect(result).toEqual({
       model: "jev-1.13.0",
       answers: responseBody.answers,
-      usage: { in: 476, out: 70 },
+      usage: {
+        in: 476,
+        out: 70,
+        breakdown: [
+          {
+            model: "jev-1.13.0",
+            requestedModel: "jev-latest",
+            at: expect.any(String),
+            in: 476,
+            out: 70,
+          },
+        ],
+      },
     });
   });
 
@@ -116,7 +128,7 @@ describe("typesafe", () => {
       Authorization: "Bearer or-key",
       "X-Title": "axle-test",
     });
-    expect(result.usage).toEqual({ in: 476, out: 70 });
+    expect(result.usage).toMatchObject({ in: 476, out: 70 });
   });
 
   test("retries a rate-limited request", async () => {

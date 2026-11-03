@@ -703,7 +703,9 @@ gets an error tool result it can correct in the same turn:
 `execute` receives a `ToolContext` as its second argument. Long-running tools
 can stream progress with `ctx.emit(...)`, and tools that call models can report
 their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
-operation's totals.
+operation's totals. `usage` is a `Stats` with its `breakdown` rows: the
+`usage` of a `generate()` or `stream()` result as it is, or one row per
+request the tool made itself.
 
 When the model requests several tool calls in one message, Axle runs them
 concurrently and answers them in the order they were requested, whatever order
@@ -914,7 +916,8 @@ under its action (interleaved across items).
 > release.
 
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
-when reported). `usage.breakdown` holds one entry per provider request, in
+when reported). `usage.breakdown` is always present and holds one entry per
+provider request, in
 request order, tagged with the provider that served it (its `AIProvider.id`,
 omitted when the provider has none), the model the response reported
 (`model`), the model string the agent was given (`requestedModel`), when the

@@ -420,23 +420,21 @@ async function run(
     }
 
     if (outcome.kind === "failed") {
-      if (outcome.failure.usage) {
-        addStats(
-          usage,
-          attributeStats(outcome.failure.usage, {
+      const failureUsage = outcome.usage
+        ? attributeStats(outcome.usage, {
             provider: provider.id,
             model: outcome.model || model,
             requestedModel: model,
             agent: agentName,
             requests: outcome.requests,
-          }),
-        );
-      }
+          })
+        : undefined;
+      addStats(usage, failureUsage);
       stepSpan?.end("error");
       return endWithResult({
         ok: false,
         messages: newMessages,
-        error: outcome.failure,
+        error: { ...outcome.failure, ...(failureUsage ? { usage: failureUsage } : {}) },
         usage,
       });
     }

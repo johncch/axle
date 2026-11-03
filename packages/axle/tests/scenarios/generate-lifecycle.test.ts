@@ -110,7 +110,7 @@ describe("generate() wrapper lifecycle", () => {
     expect(error.name).toBe("AbortError");
     expect(error.reason).toBe(reason);
     expect(error.messages).toHaveLength(0);
-    expect(error.usage).toEqual({ in: 0, out: 0 });
+    expect(error.usage).toEqual({ in: 0, out: 0, breakdown: [] });
 
     const turn1Span = [...writer.spans.values()].find((s) => s.name === "step-1")!;
     const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;
@@ -201,7 +201,7 @@ describe("generate() wrapper lifecycle", () => {
 
     expect(error.reason).toBe("pre-aborted");
     expect(error.messages).toHaveLength(0);
-    expect(error.usage).toEqual({ in: 0, out: 0 });
+    expect(error.usage).toEqual({ in: 0, out: 0, breakdown: [] });
     expect(createStreamingRequest).not.toHaveBeenCalled();
 
     const rootSpanData = [...writer.spans.values()].find((s) => s.name === "generate")!;

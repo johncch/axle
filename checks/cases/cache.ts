@@ -1,4 +1,4 @@
-import { generate, type Stats } from "@fifthrevision/axle";
+import { generate, type Stats, type TokenStats } from "@fifthrevision/axle";
 import { GoogleGenAI } from "@google/genai";
 import type { ProviderId } from "../providers.js";
 import { fail } from "./helpers.js";
@@ -46,7 +46,9 @@ export const cacheCases: CheckCase[] = [
           sessionId: `axle-checks-cache-${runNonce}`,
           providerOptions,
         });
-        return result.ok ? (result.usage ?? { in: 0, out: 0 }) : { error: result.error };
+        return result.ok
+          ? (result.usage ?? { in: 0, out: 0, breakdown: [] })
+          : { error: result.error };
       };
 
       const first = await call();
@@ -116,7 +118,7 @@ export const cacheCases: CheckCase[] = [
   },
 ];
 
-function sumUsage(first: Stats, second: Stats): Stats {
+function sumUsage(first: Stats, second: Stats): TokenStats {
   return {
     in: first.in + second.in,
     out: first.out + second.out,

@@ -69,7 +69,7 @@ describe("App", () => {
       pending: [],
       queuedInputs: [],
       usage: {
-        usage: { in: 1_000, out: 200 },
+        usage: { in: 1_000, out: 200, breakdown: [] },
         cost: { usd: 0.4215, priced: [priced, priced, priced], unpriced: [unpriced] },
         contextTokens: 4_000,
         contextLimit: 10_000,
@@ -215,7 +215,7 @@ describe("partitionTurns", () => {
       type: "turn:end",
       turnId: "t1",
       status: "complete",
-      usage: { in: 10, out: 20 },
+      usage: { in: 10, out: 20, breakdown: [] },
     });
 
     expect(result.liveTurn).toBeUndefined();
@@ -223,7 +223,7 @@ describe("partitionTurns", () => {
     const item = result.newlyFinished[0];
     if (item.kind === "turn") {
       expect(item.turn.status).toBe("complete");
-      expect(item.turn.usage).toEqual({ in: 10, out: 20 });
+      expect(item.turn.usage).toEqual({ in: 10, out: 20, breakdown: [] });
       expect(item.turn.parts[0]).toMatchObject({ type: "text", text: "hello" });
     } else {
       expect.fail("expected a turn item");
@@ -249,7 +249,7 @@ describe("partitionTurns", () => {
       type: "turn:end",
       turnId: "t1",
       status: "cancelled",
-      usage: { in: 1, out: 2 },
+      usage: { in: 1, out: 2, breakdown: [] },
     });
 
     expect(result.liveTurn).toBeUndefined();
@@ -266,15 +266,25 @@ describe("partitionTurns", () => {
     const { feed } = createHarness();
 
     feed({ type: "turn:user", turn: userTurn("u1", "hi") });
-    feed({ type: "turn:end", turnId: "u1", status: "complete", usage: { in: 0, out: 0 } });
+    feed({
+      type: "turn:end",
+      turnId: "u1",
+      status: "complete",
+      usage: { in: 0, out: 0, breakdown: [] },
+    });
     feed({ type: "turn:start", turnId: "t1" });
-    feed({ type: "turn:end", turnId: "t1", status: "complete", usage: { in: 1, out: 1 } });
+    feed({
+      type: "turn:end",
+      turnId: "t1",
+      status: "complete",
+      usage: { in: 1, out: 1, breakdown: [] },
+    });
     feed({ type: "turn:start", turnId: "t2" });
     const result = feed({
       type: "turn:end",
       turnId: "t2",
       status: "complete",
-      usage: { in: 1, out: 1 },
+      usage: { in: 1, out: 1, breakdown: [] },
     });
 
     expect(result.newlyFinished.map((item) => (item.kind === "turn" ? item.turn.id : ""))).toEqual([

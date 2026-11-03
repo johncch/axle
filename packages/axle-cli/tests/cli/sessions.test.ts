@@ -75,7 +75,7 @@ function createFailingProvider(options: {
       yield { type: "text-complete" as const, data: { index: 0 } };
       yield {
         type: "complete" as const,
-        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1, breakdown: [] } },
       };
     },
   };
@@ -99,7 +99,7 @@ function createMockProvider(text: string, requestMessages?: unknown[][]): AIProv
       yield { type: "text-complete" as const, data: { index: 0 } };
       yield {
         type: "complete" as const,
-        data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20 } },
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 10, out: 20, breakdown: [] } },
       };
     },
   };
@@ -130,7 +130,7 @@ function createHangingFirstCallProvider(requestMessages: unknown[][]): AIProvide
       yield { type: "text-complete" as const, data: { index: 0 } };
       yield {
         type: "complete" as const,
-        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+        data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1, breakdown: [] } },
       };
     },
   };
@@ -160,7 +160,7 @@ describe("SessionStore", () => {
     const store = new SessionStore(recipe, { cwd: "/some/project", home: HOME });
     const session = { sessionId: "abc-123", messages: [] };
 
-    const path = await store.save(session, [], { in: 0, out: 0 });
+    const path = await store.save(session, [], { in: 0, out: 0, breakdown: [] });
 
     expect(path).toBe(sessionFilePath("abc-123", HOME));
     const file = await readSessionFile("abc-123");
@@ -177,6 +177,7 @@ describe("SessionStore", () => {
     await new SessionStore({}, { home: HOME }).save({ sessionId: "chat", messages: [] }, [], {
       in: 0,
       out: 0,
+      breakdown: [],
     });
 
     expect((await readSessionFile("chat")).recipe).toEqual({});
@@ -186,10 +187,10 @@ describe("SessionStore", () => {
     const store = new SessionStore(recipe, { home: HOME });
     const session = { sessionId: "abc-123", messages: [] };
 
-    await store.save(session, [], { in: 0, out: 0 });
+    await store.save(session, [], { in: 0, out: 0, breakdown: [] });
     const first = await readSessionFile("abc-123");
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await store.save(session, [], { in: 0, out: 0 });
+    await store.save(session, [], { in: 0, out: 0, breakdown: [] });
     const second = await readSessionFile("abc-123");
 
     expect(second.createdAt).toBe(first.createdAt);
@@ -199,7 +200,7 @@ describe("SessionStore", () => {
   it("leaves no temp files behind", async () => {
     const store = new SessionStore(recipe, { home: HOME });
 
-    await store.save({ sessionId: "abc-123", messages: [] }, [], { in: 0, out: 0 });
+    await store.save({ sessionId: "abc-123", messages: [] }, [], { in: 0, out: 0, breakdown: [] });
 
     const entries = await readdir(join(HOME, ".axle", "sessions", "cli"));
     expect(entries).toEqual(["abc-123.json"]);
@@ -213,11 +214,12 @@ describe("listSessionSummaries", () => {
 
   it("summarizes sessions newest-first, corrupt files aged by mtime", async () => {
     const store = new SessionStore(recipe, { cwd: "/proj", home: HOME });
-    await store.save({ sessionId: "older", messages: [] }, [], { in: 0, out: 0 });
+    await store.save({ sessionId: "older", messages: [] }, [], { in: 0, out: 0, breakdown: [] });
     await new Promise((resolve) => setTimeout(resolve, 5));
     await new SessionStore(recipe, { home: HOME }).save({ sessionId: "newer", messages: [] }, [], {
       in: 0,
       out: 0,
+      breakdown: [],
     });
     await new Promise((resolve) => setTimeout(resolve, 5));
     await writeFile(sessionFilePath("broken", HOME), "not json");
@@ -241,7 +243,11 @@ describe("loadSession", () => {
 
   it("resolves a unique session id prefix", async () => {
     const store = new SessionStore(recipe, { home: HOME });
-    await store.save({ sessionId: "abcdef12-3456", messages: [] }, [], { in: 0, out: 0 });
+    await store.save({ sessionId: "abcdef12-3456", messages: [] }, [], {
+      in: 0,
+      out: 0,
+      breakdown: [],
+    });
 
     const file = await loadSession("abcdef12", HOME);
 
@@ -250,8 +256,8 @@ describe("loadSession", () => {
 
   it("rejects an ambiguous session id prefix", async () => {
     const store = new SessionStore(recipe, { home: HOME });
-    await store.save({ sessionId: "abc-one", messages: [] }, [], { in: 0, out: 0 });
-    await store.save({ sessionId: "abc-two", messages: [] }, [], { in: 0, out: 0 });
+    await store.save({ sessionId: "abc-one", messages: [] }, [], { in: 0, out: 0, breakdown: [] });
+    await store.save({ sessionId: "abc-two", messages: [] }, [], { in: 0, out: 0, breakdown: [] });
 
     await expect(loadSession("abc", HOME)).rejects.toThrow(/ambiguous/);
   });
@@ -640,7 +646,7 @@ describe("runSingle session persistence", () => {
           yield { type: "text-complete" as const, data: { index: 0 } };
           yield {
             type: "complete" as const,
-            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+            data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1, breakdown: [] } },
           };
         },
       };

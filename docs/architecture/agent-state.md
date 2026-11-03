@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-10-30 (0.35.0, AXL-93)
+**Status**: current · **Last design revision**: 2026-11-02 (0.35.0)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -54,7 +54,11 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    for that date, without the turn that produced it. An Agent with a `name`
    stamps it on the rows of its own requests as `agent`, and leaves the
    rows a subagent tool reports under that subagent's name, so a consumer can
-   also group by who spent what.
+   also group by who spent what. `breakdown` is required: every token in a
+   `Stats` total is in exactly one row, so every total can be priced. A
+   provider's count for one request before anyone knows who made it is a
+   `TokenStats`, and it never leaves the adapters and the step reader;
+   `attributeStats` is the one place a count becomes a `Stats`.
 7. **Pending is live state, kept apart from turns, and shaped like them.**
    An operation — a send or a manual compaction — is announced with
    `pending:queued` when the Agent accepts it, carrying a preview `Turn`
@@ -514,6 +518,29 @@ Decided not yet, recorded so the next debate starts here:
 - **`meter.onChange`**: a Meter-side signal that a cost may have changed.
   Today a host redraws on `turn:end` and on `catalog.onChange`, which is
   the same information from its two sources.
+
+## Every Stats has rows (2026-11-02)
+
+`Stats.breakdown` was optional because `Stats` named two things: what a
+provider reported for one request, before attribution, and an attributed
+total. A `Stats` with tokens and no rows is a total nothing can price, and
+three paths produced one: `ctx.reportUsage` accepted a bare `{ in, out }`
+from any tool, `decide()` returned its provider's count as is, and a failed
+request's `usage` on `result.error` was the adapter's raw count. The two
+meanings are now two types. `TokenStats` is the unattributed count and stays
+inside the adapters and the step reader; `Stats` requires `breakdown`, so
+`reportUsage` can only be handed rows, and `decide()` and the failure
+attribute their counts like every step does.
+
+Rejected:
+
+- **Narrowing only `ctx.reportUsage`**: it closes the one public entry, but
+  leaves `Stats` typed as if rows may be missing when they never are, so a
+  reader that requires rows has to narrow every `result.usage` it holds.
+- **An `unexplained: { in, out }` field on `Cost`** for tokens no row
+  accounts for: it reports the hole instead of closing it. A token without a
+  model and a provider cannot be priced, so it should not be representable
+  as usage.
 
 ## Rejected alternatives
 

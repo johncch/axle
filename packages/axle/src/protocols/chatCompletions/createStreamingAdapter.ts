@@ -1,6 +1,6 @@
 import type { ThinkingContinuity } from "../../messages/message.js";
 import { AnyStreamChunk, StreamThinkingMetadataChunk } from "../../messages/stream.js";
-import type { Stats } from "../../types.js";
+import type { TokenStats } from "../../types.js";
 import { truncateMiddle } from "../../utils/truncate.js";
 import { AxleStopReason, type Refusal } from "../types.js";
 import type { ChatCompletionsDialect } from "./dialect.js";
@@ -41,7 +41,7 @@ export function createStreamingAdapter(dialect?: ChatCompletionsDialect) {
     | { type: "error"; message: string }
     | { type: "incomplete"; message: string }
     | undefined;
-  let pendingUsage: Stats | undefined;
+  let pendingUsage: TokenStats | undefined;
   let refusalText = "";
 
   function closeActivePart(chunks: Array<AnyStreamChunk>) {

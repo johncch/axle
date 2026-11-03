@@ -7,9 +7,8 @@ import type {
 import type { ProviderToolResult } from "../messages/providerTool.js";
 import type { AnyStreamChunk } from "../messages/stream.js";
 import { AxleStopReason, type Refusal } from "../protocols/types.js";
-import type { Stats, TokenStats } from "../types.js";
-import { createStats } from "../utils/stats.js";
-import type { AxleProviderFailure, ResolvedTools } from "./helpers.js";
+import type { TokenStats } from "../types.js";
+import type { ResolvedTools } from "./helpers.js";
 import type { StreamEvent } from "./stream.js";
 
 export type ToolCallArgumentError = {
@@ -36,7 +35,7 @@ export interface CompletedStep {
   model: string;
   parts: AssistantContentPart[];
   finishReason: AxleStopReason;
-  usage: Stats;
+  usage: TokenStats;
   requests?: TokenStats[];
   /** Tool call id → argument parse error, surfaced as synthetic tool errors. */
   toolCallArgumentErrors: Map<string, ToolCallArgumentError>;
@@ -45,13 +44,18 @@ export interface CompletedStep {
 export type StepReadOutcome =
   | CompletedStep
   | { kind: "aborted"; partial?: AxleAssistantMessage }
-  | { kind: "refused"; refusal: Refusal; usage: Stats; requests?: TokenStats[]; model: string }
+  | { kind: "refused"; refusal: Refusal; usage: TokenStats; requests?: TokenStats[]; model: string }
   | {
       kind: "failed";
-      failure: Extract<AxleProviderFailure, { kind: "api" | "incomplete" }>;
+      failure: StepFailure;
+      usage?: TokenStats;
       requests?: TokenStats[];
       model: string;
     };
+
+type StepFailure =
+  | { kind: "api"; type: string; message: string; status?: number; raw?: unknown }
+  | { kind: "incomplete"; type: string; message: string; raw?: unknown };
 
 /**
  * Consume one model step from a provider chunk stream, translating chunks
@@ -70,7 +74,7 @@ export async function readStep(
   let stepId = "";
   let stepModel = "";
   let finishReason: AxleStopReason | null = null;
-  let usage: Stats = createStats();
+  let usage: TokenStats = { in: 0, out: 0 };
   let requests: TokenStats[] | undefined;
 
   let openPartType: "text" | "thinking" | null = null;
@@ -401,9 +405,9 @@ export async function readStep(
             kind: "incomplete",
             type: chunk.data.type,
             message: chunk.data.message,
-            ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
             ...(chunk.data.raw === undefined ? {} : { raw: chunk.data.raw }),
           },
+          ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
           ...(chunk.data.requests ? { requests: chunk.data.requests } : {}),
           model: stepModel,
         };
@@ -418,9 +422,9 @@ export async function readStep(
             type: chunk.data.type,
             message: chunk.data.message,
             ...(chunk.data.status === undefined ? {} : { status: chunk.data.status }),
-            ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
             ...(chunk.data.raw === undefined ? {} : { raw: chunk.data.raw }),
           },
+          ...(chunk.data.usage ? { usage: chunk.data.usage } : {}),
           model: stepModel,
         };
       }

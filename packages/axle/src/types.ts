@@ -42,5 +42,5 @@ export interface UsageEntry extends TokenStats {
  */
 export interface Stats extends TokenStats {
   /** @experimental One row per request; the row shape may gain dimensions in a minor release. */
-  breakdown?: UsageEntry[];
+  breakdown: UsageEntry[];
 }

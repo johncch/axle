@@ -1,6 +1,7 @@
 import { AxleError } from "../errors/AxleError.js";
 import type { Span } from "../observability/types.js";
-import type { Stats } from "../types.js";
+import type { Stats, TokenStats } from "../types.js";
+import { attributeStats } from "../utils/stats.js";
 
 export type DecisionJson =
   string | number | boolean | null | DecisionJson[] | { [key: string]: DecisionJson };
@@ -78,7 +79,7 @@ export interface DecisionResponse {
   /** The model that served the request, as the provider reported it. */
   model: string;
   answers: Record<string, DecisionAnswer>;
-  usage: Stats;
+  usage: TokenStats;
 }
 
 /**
@@ -175,7 +176,11 @@ export async function decide(
       outputTokens: response.usage.out,
     });
     decideSpan?.end("ok");
-    return { model: response.model, answers: response.answers, usage: response.usage };
+    return {
+      model: response.model,
+      answers: response.answers,
+      usage: attributeStats(response.usage, { model: response.model, requestedModel: model }),
+    };
   } catch (error) {
     decideSpan?.end(signal?.aborted ? "cancelled" : "error");
     throw error;

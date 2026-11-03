@@ -23,7 +23,7 @@ describe("ui entrypoint", () => {
     const result: TranscriptApplyResult<AppAnnotation> = transcript.apply(event);
     const turns: readonly Turn<AppAnnotation>[] = transcript.turns;
     const metadata: TurnMetadata = { source: "example" };
-    const usage: Stats = { in: 1, out: 1 };
+    const usage: Stats = { in: 1, out: 1, breakdown: [] };
     const timing: TimingInfo = { start: "2026-01-01T00:00:00.000Z" };
     const file: FileInfo = {
       kind: "text",
