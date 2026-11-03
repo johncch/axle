@@ -704,8 +704,21 @@ gets an error tool result it can correct in the same turn:
 can stream progress with `ctx.emit(...)`, and tools that call models can report
 their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
 operation's totals. `usage` is a `Stats` with its `breakdown` rows: the
-`usage` of a `generate()` or `stream()` result as it is, or one row per
-request the tool made itself.
+`usage` of a `generate()` or `stream()` result as it is, or, for a model API
+the tool called itself, `attributeStats` over the raw count:
+
+```ts
+ctx.reportUsage?.(
+  attributeStats(
+    { in: 812, out: 0 },
+    {
+      provider: "openai",
+      model: "text-embedding-3-small",
+      requestedModel: "text-embedding-3-small",
+    },
+  ),
+);
+```
 
 When the model requests several tool calls in one message, Axle runs them
 concurrently and answers them in the order they were requested, whatever order

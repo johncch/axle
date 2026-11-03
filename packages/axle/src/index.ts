@@ -279,5 +279,5 @@ export type {
   FileResolver,
   ResolvedFileSource,
 } from "./utils/file.js";
-export { addStats, createStats, mergeStats } from "./utils/stats.js";
+export { addStats, attributeStats, createStats, mergeStats } from "./utils/stats.js";
 export type { Handle } from "./utils/utils.js";

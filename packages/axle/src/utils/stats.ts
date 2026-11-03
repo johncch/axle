@@ -31,9 +31,11 @@ function addTokens(total: TokenStats, usage: TokenStats): void {
 }
 
 /**
- * Attribute a step's provider-reported usage to breakdown rows that survive
- * aggregation across turns and subagents: one row for the step, or one per
- * request when the step took more than one.
+ * Attribute a raw token count to the model that produced it, as a `Stats`
+ * with its `breakdown` row: one row, or one per entry in `requests` when the
+ * count spans several requests. A tool that calls a model API directly uses
+ * it to build what `ctx.reportUsage` takes. `provider` is the models.dev
+ * provider id; without it the row cannot be priced.
  */
 export function attributeStats(
   usage: TokenStats,

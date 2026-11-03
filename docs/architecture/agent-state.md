@@ -549,7 +549,7 @@ Rejected:
 
 ## Cost is a function of Stats (2026-11-02)
 
-`computeCost(usage, catalog): Promise<Cost>` replaces the `Meter` class. The
+`computeCost(usage, catalog?): Cost` replaces the `Meter` class. The
 pricing is the part worth sharing: tiers, cache and reasoning rates, the
 provider lookup and the unpriced reasons. What the Meter added around it was
 state: a restore seed, the `usage`/`observedUsage` split, wiring to

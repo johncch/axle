@@ -84,7 +84,7 @@ describe("ModelCatalogStore", () => {
     expect(store.current?.contextWindow("acme/new")?.window).toBe(5678);
   });
 
-  it("keeps the current catalog and resolves false when the fetch fails", async () => {
+  it("keeps the current catalog and resolves undefined when the fetch fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const store = new ModelCatalogStore();
     store.load(savedJson(2 * DAY));
