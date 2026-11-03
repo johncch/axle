@@ -20,11 +20,15 @@
 - Session files carry the session's usage rows (`usage`), one per provider
   request with its timestamp, so a resumed session keeps its record and can
   be priced later. Older files without it resume as before.
-- The first run on a machine waits once for the models.dev catalog to
-  download (at most ten seconds) instead of running with an empty one;
-  later runs read the cache and refresh it in the background. `axle info`
-  reports "assumed (models.dev not loaded)" when the catalog could not be
-  loaded, in place of "not cached".
+- A run never waits for the models.dev catalog. It starts with the saved
+  copy, or with no copy (the first run on a machine) with the 200,000
+  default and no prices, and a download that finishes during the run is
+  saved for the next one. Exit never waits on the download. `axle info`
+  refreshes a catalog more than a day old before printing, and reports
+  "assumed (models.dev not loaded)" when there is still none, in place of
+  "not cached".
+- The saved catalog (`~/.axle/cache/models.json`) has a new format, so the
+  first run after upgrading downloads it again.
 
 - **Breaking: `cli.yaml` profiles and inline providers replace `type` and
   `vendor`.** A profile's name now decides what it is. A name matching a

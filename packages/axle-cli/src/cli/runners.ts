@@ -264,21 +264,17 @@ export async function runAgentSession(
   }
 
   const reportUsage = () => {
-    const contextTokens = agent.context().total;
-    void computeCost(runUsage, spec.catalog).then((cost) =>
-      renderer.updateUsage({
-        usage: runUsage,
-        cost,
-        contextTokens,
-        contextLimit: spec.contextWindow,
-      }),
-    );
+    renderer.updateUsage({
+      usage: runUsage,
+      cost: computeCost(runUsage, spec.catalog),
+      contextTokens: agent.context().total,
+      contextLimit: spec.contextWindow,
+    });
   };
   reportUsage();
   agent.on((event) => {
     if (event.type === "turn:end" || event.type === "compaction:complete") reportUsage();
   });
-  const unsubscribeCatalog = spec.catalog?.onChange(reportUsage);
 
   const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
     try {
@@ -370,7 +366,6 @@ export async function runAgentSession(
   } finally {
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
-    unsubscribeCatalog?.();
     await runtime.finishSaving();
     const resumeCommand = runtime.resumeCommand();
     if (sessionStore && resumeCommand) {
@@ -436,11 +431,15 @@ export async function runBatch(
   let completed = 0;
   let skipped = 0;
   let failed = 0;
-  const totals = async (): Promise<BatchTotals> => {
-    const counts = { total: filePaths.length, completed, skipped, failed };
-    return { ...counts, usage: runUsage, cost: await computeCost(runUsage, spec.catalog) };
-  };
-  progress?.batchStarted(await totals());
+  const totals = (): BatchTotals => ({
+    total: filePaths.length,
+    completed,
+    skipped,
+    failed,
+    usage: runUsage,
+    cost: computeCost(runUsage, spec.catalog),
+  });
+  progress?.batchStarted(totals());
 
   const controller = new AbortController();
   const onInterrupt = () => {
@@ -466,7 +465,7 @@ export async function runBatch(
         itemSpan.error(`Failed: ${msg}`);
         itemSpan.end("error");
         failed++;
-        progress?.itemFinished(batchFilePath, await totals());
+        progress?.itemFinished(batchFilePath, totals());
         return;
       }
 
@@ -476,7 +475,7 @@ export async function runBatch(
         itemSpan.info("Skipped (already completed)");
         itemSpan.end();
         skipped++;
-        progress?.itemFinished(batchFilePath, await totals());
+        progress?.itemFinished(batchFilePath, totals());
         return;
       }
 
@@ -525,7 +524,7 @@ export async function runBatch(
         itemSpan.error(`Failed: ${message}`);
         itemSpan.end("error");
         failed++;
-        progress?.itemFinished(batchFilePath, await totals());
+        progress?.itemFinished(batchFilePath, totals());
       };
 
       try {
@@ -561,13 +560,13 @@ export async function runBatch(
         renderer.success(`${batchFilePath}: done${resumeCommand ? ` (${resumeCommand})` : ""}`);
         itemSpan.end();
         completed++;
-        progress?.itemFinished(batchFilePath, await totals());
+        progress?.itemFinished(batchFilePath, totals());
       } catch (e) {
         await runtime.save();
         if (e instanceof AxleAgentAbortError) {
           itemSpan.end("cancelled");
           failed++;
-          progress?.itemFinished(batchFilePath, await totals());
+          progress?.itemFinished(batchFilePath, totals());
           return;
         }
         await recordFailure(hash, e instanceof Error ? e.message : String(e));

@@ -218,12 +218,20 @@ the Agent knows none of them.
 
 **Cost** — what `computeCost(usage, catalog)` returns for a `Stats`: `usd`,
 the sum of `priced` (rows with their `usd`), and `unpriced` (rows with a
-`reason`: `unavailable` is the catalog's state and may resolve on a later
-call; `no-catalog`, `no-provider`, `unlisted` and `no-price` are facts about
-the row). `pricedWith` is the `fetchedAt` of the catalog that priced the rows.
+`reason`: `no-catalog`, `no-provider`, `unlisted` or `no-price`).
+`pricedWith` is the `fetchedAt` of the catalog that priced the rows.
 Each row is priced by the catalog's provider layer at the tier its own
 `in` selects, cache and reasoning tokens at their own rate where the
 provider lists one.
+
+**Catalog data** — `CatalogData`, the plain JSON a `ModelCatalog` indexes:
+a canonical layer of models keyed `publisher/model`, a provider layer of
+each provider's own ids with its limits and prices, `fetchedAt`, `etags`,
+and `coverage` (the provider filter it was fetched with). `fetchModelsDev()`
+produces it; a consumer stores it as JSON, reads it back with
+`parseCatalogData()`, and may write or amend it. The catalog itself never
+fetches; `ModelCatalogStore` holds the current one and is what loads and
+refreshes it.
 
 **Pending turn** — a preview of a turn the Agent has accepted but not yet
 opened: the user turn a queued `send()` will commit, or an agent turn with

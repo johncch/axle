@@ -1,14 +1,9 @@
-import { ModelCatalog } from "@fifthrevision/axle";
+import { fetchModelsDev, ModelCatalog } from "@fifthrevision/axle";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InfoInput } from "../../src/cli/info.js";
 import { formatInfo } from "../../src/cli/info.js";
-
-vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
-const emptyCatalog = ModelCatalog.open({ retryDelays: [] });
-await emptyCatalog.ready;
-vi.unstubAllGlobals();
 
 const catalogEntry = {
   name: "Claude X",
@@ -34,9 +29,7 @@ async function catalogWith(models: Record<string, unknown>, hosts: Record<string
     ),
   );
   try {
-    const catalog = ModelCatalog.open();
-    await catalog.ready;
-    return catalog;
+    return new ModelCatalog(await fetchModelsDev());
   } finally {
     vi.unstubAllGlobals();
   }
@@ -66,7 +59,7 @@ function info(overrides: Partial<InfoInput>): string[] {
     credentialSources: {},
     skills: [],
     credentials: {},
-    catalog: emptyCatalog,
+    catalog: undefined,
     ...overrides,
   });
 }
@@ -247,7 +240,7 @@ describe("formatInfo", () => {
     ]);
   });
 
-  it("marks the window as assumed when the catalog has never been fetched", () => {
+  it("marks the window as assumed when there is no catalog", () => {
     const lines = info({
       cliConfig: { defaults: { provider: "anthropic", models: { anthropic: "claude-x" } } },
       serviceConfig: { anthropic: { apiKey: "sk-a" } },

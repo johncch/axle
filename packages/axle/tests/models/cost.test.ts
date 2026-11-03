@@ -1,12 +1,8 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import type { CatalogData } from "../../src/models/catalog.js";
 import { ModelCatalog } from "../../src/models/catalog.js";
 import { computeCost } from "../../src/models/cost.js";
 import type { Stats, UsageEntry } from "../../src/types.js";
-
-const TEST_DIR = join(import.meta.dirname, "__cost_tmp__");
-const CACHE_PATH = join(TEST_DIR, "models.json");
 
 const sonnet = {
   name: "Sonnet",
@@ -17,10 +13,11 @@ const sonnet = {
   modalities: { input: ["text"], output: ["text"] },
 };
 
-const cacheFile = {
-  version: 3,
-  fetchedAt: new Date().toISOString(),
+const data: CatalogData = {
+  version: 4,
+  fetchedAt: "2026-10-30T00:00:00.000Z",
   etags: {},
+  coverage: "all",
   models: { "acme/sonnet": sonnet, "acme/plain": sonnet },
   providers: {
     acme: {
@@ -41,12 +38,7 @@ const cacheFile = {
   },
 };
 
-async function openCatalog(): Promise<ModelCatalog> {
-  await writeFile(CACHE_PATH, JSON.stringify(cacheFile));
-  const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-  await catalog.ready;
-  return catalog;
-}
+const catalog = new ModelCatalog(data);
 
 const AT = "2026-10-30T12:00:00.000Z";
 
@@ -63,31 +55,19 @@ function stats(rows: UsageEntry[]): Stats {
   return usage;
 }
 
-beforeEach(async () => {
-  await mkdir(TEST_DIR, { recursive: true });
-});
-
-afterEach(async () => {
-  vi.unstubAllGlobals();
-  await rm(TEST_DIR, { recursive: true, force: true });
-});
-
 describe("computeCost", () => {
-  test("prices input and output per million at the base tier", async () => {
-    const cost = await computeCost(
-      stats([row({ in: 100_000, out: 100_000 })]),
-      await openCatalog(),
-    );
+  test("prices input and output per million at the base tier", () => {
+    const cost = computeCost(stats([row({ in: 100_000, out: 100_000 })]), catalog);
 
     expect(cost).toEqual({
       usd: 1.2,
       priced: [{ ...row({ in: 100_000, out: 100_000 }), usd: 1.2 }],
       unpriced: [],
-      pricedWith: cacheFile.fetchedAt,
+      pricedWith: data.fetchedAt,
     });
   });
 
-  test("prices cache reads, cache writes and reasoning at their own rates", async () => {
+  test("prices cache reads, cache writes and reasoning at their own rates", () => {
     const usage = stats([
       row({
         in: 100_000,
@@ -98,7 +78,7 @@ describe("computeCost", () => {
       }),
     ]);
 
-    const cost = await computeCost(usage, await openCatalog());
+    const cost = computeCost(usage, catalog);
 
     // 30k plain in at 2, 50k cache read at 0.2, 20k cache write at 2.5,
     // 6k plain out at 10, 4k reasoning at 20
@@ -106,33 +86,33 @@ describe("computeCost", () => {
     expect(cost.usd).toBeCloseTo(expected);
   });
 
-  test("prices cache and reasoning tokens as plain input and output when the host lists no rate", async () => {
+  test("prices cache and reasoning tokens as plain input and output when the host lists no rate", () => {
     const usage = stats([
       row({ model: "plain", in: 100_000, out: 10_000, cachedIn: 50_000, reasoningOut: 4_000 }),
     ]);
 
-    const cost = await computeCost(usage, await openCatalog());
+    const cost = computeCost(usage, catalog);
 
     expect(cost.usd).toBeCloseTo((100_000 * 1 + 10_000 * 1) / 1e6);
   });
 
-  test("selects the tier the request's prompt size exceeds", async () => {
+  test("selects the tier the request's prompt size exceeds", () => {
     const usage = stats([row({ in: 200_000, out: 0 }), row({ in: 200_001, out: 0, cachedIn: 1 })]);
 
-    const cost = await computeCost(usage, await openCatalog());
+    const cost = computeCost(usage, catalog);
 
     expect(cost.priced[0].usd).toBeCloseTo((200_000 * 2) / 1e6);
     // tiered: 200,000 plain at 4 plus one cached token at 0.4
     expect(cost.priced[1].usd).toBeCloseTo((200_000 * 4 + 1 * 0.4) / 1e6);
   });
 
-  test("falls back to the requested model when the reported one is not listed", async () => {
+  test("falls back to the requested model when the reported one is not listed", () => {
     const usage = stats([row({ model: "sonnet-2026-01-01", in: 100_000, out: 0 })]);
 
-    expect((await computeCost(usage, await openCatalog())).usd).toBeCloseTo(0.2);
+    expect(computeCost(usage, catalog).usd).toBeCloseTo(0.2);
   });
 
-  test("names why a row is unpriced: no provider, unlisted, or listed without a price", async () => {
+  test("names why a row is unpriced: no provider, unlisted, or listed without a price", () => {
     const noProvider: UsageEntry = {
       model: "sonnet",
       requestedModel: "sonnet",
@@ -143,9 +123,9 @@ describe("computeCost", () => {
     const unlisted = row({ model: "nope", requestedModel: "nope", in: 10, out: 1 });
     const noPrice = row({ model: "free", requestedModel: "free", in: 10, out: 1 });
 
-    const cost = await computeCost(
+    const cost = computeCost(
       stats([noProvider, unlisted, noPrice, row({ in: 100_000, out: 0 })]),
-      await openCatalog(),
+      catalog,
     );
 
     expect(cost.usd).toBeCloseTo(0.2);
@@ -157,73 +137,13 @@ describe("computeCost", () => {
     expect(cost.priced).toHaveLength(1);
   });
 
-  test("prices nothing without a catalog and says so", async () => {
-    const cost = await computeCost(stats([row({ in: 100_000, out: 0 })]));
+  test("prices nothing without a catalog and says so", () => {
+    const cost = computeCost(stats([row({ in: 100_000, out: 0 })]));
 
     expect(cost).toEqual({
       usd: 0,
       priced: [],
       unpriced: [{ ...row({ in: 100_000, out: 0 }), reason: "no-catalog" }],
     });
-  });
-
-  test("waits for the catalog's first load before pricing", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const body = JSON.stringify({
-      "acme/sonnet": { ...sonnet, tool_call: true, cost: { input: 2, output: 10 } },
-    });
-    const api = JSON.stringify({
-      acme: { models: { sonnet: { ...sonnet, tool_call: true, cost: { input: 2, output: 10 } } } },
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockImplementation((url: string) =>
-          gate.then(() => new Response(url.endsWith("/models.json") ? body : api, { status: 200 })),
-        ),
-    );
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-
-    const pending = computeCost(stats([row({ in: 100_000, out: 0 })]), catalog);
-    release();
-    const cost = await pending;
-
-    expect(cost.unpriced).toEqual([]);
-    expect(cost.usd).toBeCloseTo(0.2);
-  });
-
-  test("reports unavailable when the catalog has no cache and cannot fetch", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [] });
-
-    const cost = await computeCost(stats([row({ in: 100_000, out: 0 })]), catalog);
-
-    expect(cost.usd).toBe(0);
-    expect(cost.unpriced.map((entry) => entry.reason)).toEqual(["unavailable"]);
-  });
-
-  test("reports unavailable, not loading, while a retry is in flight after the first load failed", async () => {
-    let failing = true;
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockImplementation(() =>
-          failing ? Promise.reject(new Error("offline")) : new Promise<Response>(() => {}),
-        ),
-    );
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [1] });
-    await catalog.ready;
-    failing = false;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(catalog.state.status).toBe("loading");
-
-    const cost = await computeCost(stats([row({ in: 100_000, out: 0 })]), catalog);
-
-    expect(cost.unpriced.map((entry) => entry.reason)).toEqual(["unavailable"]);
   });
 });

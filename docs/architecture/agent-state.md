@@ -451,7 +451,9 @@ Accepted consequences:
 ## Sinks and the Meter (2026-10-30)
 
 The `Meter` class this section describes was removed on 2026-11-02; see
-"Cost is a function of Stats" below.
+"Cost is a function of Stats" below. The catalog's own loading (`state`,
+`ready`, `onChange`, retries) was removed the same day; see "The catalog is
+data" below.
 
 Invariant 3 said "transcript" where it meant "whoever folds the stream".
 AXL-93 names the plural: a _sink_ is any fold over `TurnEvent`s with the
@@ -562,13 +564,10 @@ CLI keeps one total per session file and one per invocation. Each is a
   cost depends on the catalog's state when it was computed, so a turn priced
   while the catalog was still loading would stay unpriced inside a summed
   cost forever. Rows priced on read are priced once the catalog can.
-- **The function waits and never rejects.** It awaits the catalog's
-  `ready` (the cache read, or one fetch under `fetchTimeout`), so a consumer
-  that prices once and writes the number cannot freeze an undercount from a
-  catalog that was still loading. After `ready`, a retry in flight reads as
-  `unavailable`: the catalog has given its first answer, and `loading` never
-  reaches a `Cost`. Every row is in `priced`, or in `unpriced` with its
-  reason, so a consumer can fill the gap row by row with its own prices.
+- **The function is synchronous and never throws.** The catalog it reads
+  is already loaded (see "The catalog is data" below), so there is nothing
+  to wait for. Every row is in `priced`, or in `unpriced` with its reason,
+  so a consumer can fill the gap row by row with its own prices.
 
 Rejected:
 
@@ -579,15 +578,100 @@ Rejected:
   can end before the catalog loads, so the callback fires with `loading`
   rows or fires late; and it repeats `turn:end`, which the consumer already
   has. `computeCost(event.usage, catalog)` in a `turn:end` handler is the same
-  thing with the waiting visible.
-- **A synchronous `computeCost` that throws a not-ready error**: "not ready"
-  is all or nothing, so one error fits, but the `catch` runs only in the
-  first seconds of a cold start, which is the branch nobody tests, and
-  "retry later" is machinery for a wait that `await` already is.
+  thing.
+- **A synchronous `computeCost` that throws a not-ready error** over a
+  catalog that loads itself: "not ready" is all or nothing, so one error
+  fits, but the `catch` runs only in the first seconds of a cold start,
+  which is the branch nobody tests. Taking loading out of the catalog
+  removed the not-ready state instead.
 
-Decided not yet: `ModelCatalog` taking its JSON as input, with caching a
-consumer concern, so a host that stores the catalog itself never waits on
-a download and `computeCost` could be synchronous (0.36.0).
+## The catalog is data; loading is a store you drive (2026-11-02)
+
+AXL-102. `ModelCatalog` fetched models.dev and answered lookups, so it
+carried a lifecycle (`state`, `ready`, `onChange`, `refresh()`, retries, a
+file cache), and everything that read it inherited one: `computeCost` was
+async only to await `ready`, `UnpricedReason` had `unavailable` to describe
+the network, and a host that keeps its state in a database could only
+persist the catalog to a file. The jobs are now split:
+
+- **`ModelCatalog` is a synchronous, immutable index over `CatalogData`.**
+  `new ModelCatalog(data)` cannot fail; it takes its data as given. Saved
+  data is checked where it enters, by `parseCatalogData(json)`, which
+  returns `undefined` for anything unusable (not JSON, another version,
+  another shape): every such case means "fetch".
+- **`fetchModelsDev(options)` is the only part that touches the network.**
+  It rejects with a `CatalogFetchError` when either layer cannot be fetched
+  or parsed, with no partial result: the caller still has its previous
+  data. Given `previous`, it sends that data's ETags, takes an unchanged
+  layer from it, and stamps a new `fetchedAt`, so "stale" means "not
+  checked recently". `previous` fetched for other providers is not reused
+  for the provider layer.
+- **The catalog's failures are not `AxleError`s.** `AxleErrorCode` is the
+  agent's failure vocabulary (errors.md is scoped to `generate()`,
+  `stream()`, `send()` and the tool loop), and consumers switch over it. A
+  catalog code in it would be a case every agent consumer's switch carries
+  and no send can produce. `CatalogFetchError` is a plain `Error` subclass
+  matched with `instanceof`; the two-copies hazard `isAxleError` exists for
+  does not reach a fetch caught one call up.
+- **`CatalogData` is public API.** Plain JSON, versioned (4), with
+  `coverage` recording the provider filter it was fetched with. Consumers
+  save it, load it, and may write or amend it: a price override, a
+  self-hosted model, an offline copy, a test literal. A shape change bumps
+  `version` and gets a migration entry.
+- **`ModelCatalogStore` holds the current catalog; each stage is a call the
+  host makes.** `load(json)` takes saved text, `refresh()` calls
+  `fetchModelsDev` with the current data as `previous` (`refreshIfStale()`
+  only past `maxAge`), `current` is the
+  `ModelCatalog` or `undefined`, `snapshot()` is the data as JSON to save.
+  The store never touches storage (`catalogFile(path)` is a separate
+  adapter), never refreshes on its own, and never waits unless the host
+  awaits `refresh`. `refresh` resolves the new snapshot to save, or
+  `undefined` rather than rejecting for the network, and concurrent calls
+  share one fetch. `current` changes when a
+  refresh lands, like a feature-flag client's flags: this is reference
+  data, and a newer price is correct, not a surprise. The runners and
+  `computeCost` still take a `ModelCatalog` value, never the store.
+- **Every reader has a default, so not waiting is safe.** No catalog means
+  the assumed context window (compaction early rather than overflow) and
+  unpriced rows (priced later from the rows). The CLI's use is in cli.md: a
+  run loads the saved copy and never waits; `axle info` awaits a stale
+  refresh. This settles two items the Meter section left open: how stale a
+  copy may get (the host decides), and price overrides (edits to the data,
+  not a lookup mode).
+
+Rejected:
+
+- **Snapshot import/export on a catalog that still fetches**
+  (`open({ snapshot })`, `catalog.snapshot()` with `onChange` to persist):
+  it solves persistence but keeps the lifecycle, the `unavailable` reason
+  and the async `computeCost`. Failure still lives inside the catalog.
+- **A snapshot checked into the repo as a fallback**: data we would have
+  to keep fresh. Download only.
+- **Keeping half a refresh when one layer fails** (the old catalog did,
+  and stayed stale so the failed layer was retried): with the previous data
+  in the caller's hands, all or nothing loses nothing and needs no
+  partial-state rules.
+- **`CATALOG_FETCH_FAILED` and `CATALOG_DATA_INVALID` in `AxleErrorCode`**,
+  under errors.md invariant 7 (a request Axle makes on its own behalf
+  rejects with a coded `AxleError`): that invariant is about requests the
+  agent makes, and it would have grown the agent's error union with codes
+  only a catalog caller sees.
+- **The constructor validating its data**: a `CatalogData` is already
+  typed, the only untyped entry is loading saved JSON, and a throwing
+  constructor needs a try/catch where `parseCatalogData` needs an `if`. It
+  also re-checked 1.8 MB on every build.
+- **No loader, only the pieces** (`parseCatalogData`, `fetchModelsDev`,
+  `new ModelCatalog`): every host rewrote the same read, check age, fetch,
+  save, and the CLI's version grew an abort controller and a deadline
+  around it.
+- **`loadModelCatalog({ storage, wait })`**, one call doing both stages:
+  it hid that a run gets the saved copy now and the refresh later, and left
+  `fetchModelsDev` as a second way to do the same thing.
+- **A bounded wait at the point of need** (`settled(ms)`): every reader has
+  a safe default, so the wait bought one first-run context window.
+- **A detached child process for the refresh**: it finishes downloads a
+  short run would kill, at the price of a hidden command; the CLI exits
+  explicitly instead, and a slow download is retried next run.
 
 ## Rejected alternatives
 

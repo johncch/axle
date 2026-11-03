@@ -254,16 +254,19 @@ export type {
 } from "./observability/index.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
 
-// Models
-export { ModelCatalog } from "./models/catalog.js";
+// Models (@experimental)
+export { ModelCatalog, parseCatalogData } from "./models/catalog.js";
 export type {
+  CatalogData,
   CatalogMatch,
   CatalogModel,
-  CatalogState,
   ContextWindowMatch,
-  ModelCatalogOptions,
   ModelCost,
 } from "./models/catalog.js";
+export { CatalogFetchError, fetchModelsDev } from "./models/modelsDev.js";
+export type { FetchModelsDevOptions } from "./models/modelsDev.js";
+export { ModelCatalogStore, catalogFile } from "./models/store.js";
+export type { CatalogStorage, ModelCatalogStoreOptions } from "./models/store.js";
 
 // Utils
 export { loadFileContent } from "./utils/file.js";

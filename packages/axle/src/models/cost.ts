@@ -6,12 +6,8 @@ export interface PricedEntry extends UsageEntry {
   usd: number;
 }
 
-/**
- * Why a row has no price. `unavailable` is the catalog's state: it could not be
- * loaded, and a later call may price the row once it is. The rest are facts
- * about the row and will not change.
- */
-export type UnpricedReason = "unavailable" | "no-catalog" | "no-provider" | "unlisted" | "no-price";
+/** Why a row has no price. */
+export type UnpricedReason = "no-catalog" | "no-provider" | "unlisted" | "no-price";
 
 export interface UnpricedEntry extends UsageEntry {
   reason: UnpricedReason;
@@ -20,8 +16,6 @@ export interface UnpricedEntry extends UsageEntry {
 /**
  * What a `Stats` cost. `usd` sums `priced`; `unpriced` holds every row the
  * catalog could not price, each with its reason.
- *
- * @experimental
  */
 export interface Cost {
   usd: number;
@@ -32,16 +26,13 @@ export interface Cost {
 }
 
 /**
- * Price every `breakdown` row of `usage` against `catalog`. Waits for the
- * catalog's first load to settle and never rejects: a row it cannot price is
- * in `unpriced` with its reason. Each row is priced at the tier its own `in`
- * selects.
+ * Price every `breakdown` row of `usage` against `catalog`. Never throws: a
+ * row it cannot price is in `unpriced` with its reason. Each row is priced at
+ * the tier its own `in` selects.
  *
- * @experimental The signature may change in a minor release (a synchronous
- * form once `ModelCatalog` can be given its data directly).
+ * @experimental The cost and catalog API is new in 0.35 and may change in a minor release.
  */
-export async function computeCost(usage: Stats, catalog?: ModelCatalog): Promise<Cost> {
-  await catalog?.ready;
+export function computeCost(usage: Stats, catalog?: ModelCatalog): Cost {
   return priceRows(usage.breakdown, catalog);
 }
 
@@ -56,15 +47,13 @@ function priceRows(rows: readonly UsageEntry[], catalog: ModelCatalog | undefine
       cost.unpriced.push({ ...row, reason: outcome });
     }
   }
-  const state = catalog?.state;
-  if (cost.priced.length > 0 && state?.status === "loaded") cost.pricedWith = state.fetchedAt;
+  if (catalog && cost.priced.length > 0) cost.pricedWith = catalog.fetchedAt;
   return cost;
 }
 
 function priceRow(row: UsageEntry, catalog: ModelCatalog | undefined): number | UnpricedReason {
   if (!catalog) return "no-catalog";
   if (row.provider === undefined) return "no-provider";
-  if (catalog.state.status !== "loaded") return "unavailable";
 
   let reason: UnpricedReason = "unlisted";
   for (const model of [row.model, row.requestedModel]) {

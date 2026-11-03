@@ -112,11 +112,12 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
     await writeFile(
       join(HOME, ".axle", "cache", "models.json"),
       JSON.stringify({
-        version: 2,
+        version: 4,
         fetchedAt: new Date().toISOString(),
         etags: {},
+        coverage: "all",
         models: {},
-        hosts: {},
+        providers: {},
       }),
     );
     // Every test's cwd starts trusted; the trust test revokes it.

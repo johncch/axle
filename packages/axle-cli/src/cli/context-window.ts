@@ -1,5 +1,4 @@
-import type { ContextWindowMatch } from "@fifthrevision/axle";
-import { ModelCatalog } from "@fifthrevision/axle";
+import type { ContextWindowMatch, ModelCatalog } from "@fifthrevision/axle";
 import { join } from "node:path";
 import type { Endpoint } from "./agent-config.js";
 import { createProvider } from "./agent-config.js";
@@ -21,10 +20,6 @@ export function modelCatalogPath(home?: string): string {
   return join(resolveConfigDirs({ home }).user, "cache", "models.json");
 }
 
-export function openModelCatalog(home?: string): ModelCatalog {
-  return ModelCatalog.open({ cachePath: modelCatalogPath(home) });
-}
-
 const FIRST_PARTY_PUBLISHERS: Partial<Record<string, string>> = {
   anthropic: "anthropic",
   openai: "openai",
@@ -42,11 +37,11 @@ const CATALOG_LOOKUP_KEY = "catalog-lookup";
 export function resolveContextWindow(
   endpoint: Endpoint,
   model: string,
-  catalog: ModelCatalog,
+  catalog: ModelCatalog | undefined,
 ): ResolvedContextWindow {
   const configured = endpoint.config.contextWindow;
   if (configured !== undefined) return { window: configured, source: { kind: "provider" } };
-  const found = catalog.contextWindow(model, {
+  const found = catalog?.contextWindow(model, {
     provider: createProvider(endpoint, CATALOG_LOOKUP_KEY).id,
     publisher: endpoint.kind === "preset" ? FIRST_PARTY_PUBLISHERS[endpoint.preset] : undefined,
   });

@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
 import { Command, Option } from "@commander-js/extra-typings";
-import { computeCost, createStats, SimpleWriter, Tracer } from "@fifthrevision/axle";
+import {
+  catalogFile,
+  computeCost,
+  createStats,
+  ModelCatalogStore,
+  SimpleWriter,
+  Tracer,
+} from "@fifthrevision/axle";
 import { mkdirSync, openSync, writeSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { styleText } from "node:util";
@@ -20,7 +27,7 @@ import { listProjectInputs, resolveConfigDirs } from "./cli/configs/paths.js";
 import {
   describeContextWindowSource,
   formatTokens,
-  openModelCatalog,
+  modelCatalogPath,
   resolveContextWindow,
 } from "./cli/context-window.js";
 import { formatExplain } from "./cli/explain.js";
@@ -279,9 +286,12 @@ program
   .description("Print version, config file locations, and resolved configuration")
   .action(async () => {
     await manage(async () => {
-      const catalog = openModelCatalog();
-      await catalog.ready;
-      if (catalog.state.status === "loaded" && catalog.state.stale) await catalog.refresh();
+      const file = catalogFile(modelCatalogPath());
+      const catalogs = new ModelCatalogStore();
+      catalogs.load(await file.read());
+      const snapshot = await catalogs.refreshIfStale();
+      if (snapshot) await file.write(snapshot).catch(() => {});
+      const catalog = catalogs.current;
       const trusted = await isFolderTrusted(process.cwd());
       const lines = formatInfo({
         version: build.version,
@@ -570,9 +580,14 @@ for (const line of [
   renderer.warn(line);
   rootSpan.warn(line);
 }
-const catalog = openModelCatalog();
+const catalogStorage = catalogFile(modelCatalogPath());
+const catalogs = new ModelCatalogStore();
+catalogs.load(await catalogStorage.read());
+void catalogs.refreshIfStale().then(async (snapshot) => {
+  if (snapshot) await catalogStorage.write(snapshot).catch(() => {});
+});
+const catalog = catalogs.current;
 const runUsage = createStats();
-await catalog.ready;
 const contextWindow = resolveContextWindow(
   resolveEndpoint(pending.target.provider, cliConfig),
   agentConfig.model,
@@ -645,7 +660,7 @@ try {
   await recordScheduleRun(succeeded ? "succeeded" : "failed", sessionIds);
   rootSpan.info(`Total run time: ${Math.round(duration)}ms`);
   const usage = runUsage;
-  const cost = formatCost(await computeCost(runUsage, catalog));
+  const cost = formatCost(computeCost(runUsage, catalogs.current));
   rootSpan.info(`Input tokens: ${usage.in}`);
   rootSpan.info(`Output tokens: ${usage.out}`);
   if (usage.cachedIn !== undefined) rootSpan.info(`Cached input tokens: ${usage.cachedIn}`);
@@ -669,3 +684,6 @@ try {
 } finally {
   await shutdown();
 }
+
+// A catalog refresh still downloading would otherwise hold the process open.
+process.stdout.write("", () => process.exit());

@@ -27,7 +27,7 @@ export interface InfoInput {
   credentialSources: Record<string, string>;
   skills: SkillEntry[];
   credentials: Credentials;
-  catalog: ModelCatalog;
+  catalog: ModelCatalog | undefined;
 }
 
 interface Row {
@@ -245,9 +245,7 @@ function describeWindowSource(
     case "catalog":
       return `models.dev (${source.id})`;
     case "assumed":
-      return input.catalog.state.status === "loaded"
-        ? "assumed"
-        : "assumed (models.dev not loaded)";
+      return input.catalog ? "assumed" : "assumed (models.dev not loaded)";
   }
 }
 
