@@ -1,12 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { z } from "zod";
 import { splitModelId } from "../protocols/model.js";
-
-const MODELS_DEV_URL = "https://models.dev";
-const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
-const DEFAULT_RETRY_DELAYS_MS = [10_000, 30_000, 90_000];
 
 const CatalogModelSchema = z.object({
   name: z.string(),
@@ -43,62 +36,43 @@ const ProviderEntrySchema = z.object({
   cost: ModelCostSchema.optional(),
 });
 
-const CacheFileSchema = z.object({
-  version: z.literal(3),
+const CatalogDataSchema = z.object({
+  version: z.literal(4),
   fetchedAt: z.string(),
   etags: z.object({ models: z.string().optional(), api: z.string().optional() }),
+  coverage: z.union([z.literal("all"), z.array(z.string())]),
   models: z.record(z.string(), CatalogModelSchema),
   providers: z.record(z.string(), z.record(z.string(), ProviderEntrySchema)),
 });
 
-type CacheFile = z.infer<typeof CacheFileSchema>;
-type ProviderEntry = z.infer<typeof ProviderEntrySchema>;
+/**
+ * The data a `ModelCatalog` indexes, as plain JSON: a canonical layer
+ * (`models`, keyed `publisher/model`) and a per-provider layer (`providers`,
+ * each provider's own ids with its limits and prices). `fetchedAt` is ISO
+ * 8601; `etags` let `fetchModelsDev` skip unchanged layers; `coverage` is the
+ * provider filter the data was fetched with (`"all"`, or the provider ids
+ * kept). Save it, load it, or write your own; a change to the shape bumps
+ * `version`.
+ */
+export type CatalogData = z.infer<typeof CatalogDataSchema>;
 
-const ModelsDevPriceSchema = z.looseObject({
-  input: z.number(),
-  output: z.number(),
-  cache_read: z.number().optional(),
-  cache_write: z.number().optional(),
-  reasoning: z.number().optional(),
-});
+/**
+ * Read saved `CatalogData` from its JSON text. `undefined` when the text is
+ * not JSON, or is data of another `version` or shape: either way there is
+ * no usable copy, and the answer is to fetch.
+ */
+export function parseCatalogData(json: string): CatalogData | undefined {
+  let value: CatalogData;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  const parsed = CatalogDataSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
 
-// models.dev writes 0 for an unknown limit; `.catch(null)` drops a malformed
-// entry instead of failing the whole file.
-const ModelsDevEntrySchema = z.looseObject({
-  name: z.string(),
-  limit: z
-    .looseObject({
-      context: z.number().int().nonnegative().optional(),
-      output: z.number().int().nonnegative().optional(),
-      input: z.number().int().nonnegative().optional(),
-    })
-    .optional(),
-  reasoning: z.boolean(),
-  tool_call: z.boolean(),
-  structured_output: z.boolean().optional(),
-  attachment: z.boolean(),
-  modalities: z.looseObject({ input: z.array(z.string()), output: z.array(z.string()) }),
-  knowledge: z.string().optional(),
-  cost: ModelsDevPriceSchema.extend({
-    tiers: z
-      .array(
-        ModelsDevPriceSchema.extend({
-          tier: z.looseObject({ size: z.number().int().nonnegative() }),
-        }),
-      )
-      .optional(),
-  }).optional(),
-  canonical_model_id: z.string().optional(),
-});
-
-type ModelsDevEntry = z.infer<typeof ModelsDevEntrySchema>;
-
-const LenientEntrySchema = ModelsDevEntrySchema.nullable().catch(null);
-const ModelsDevModelsSchema = z.record(z.string(), LenientEntrySchema);
-const ModelsDevApiSchema = z.record(
-  z.string(),
-  z.looseObject({ models: z.record(z.string(), LenientEntrySchema) }),
-);
+export type ProviderEntry = z.infer<typeof ProviderEntrySchema>;
 
 /** What the catalog records about a model, independent of who serves it. */
 export type CatalogModel = z.infer<typeof CatalogModelSchema>;
@@ -122,51 +96,13 @@ export interface ContextWindowMatch {
   match: CatalogMatch["match"];
 }
 
-export interface ModelCatalogOptions {
-  /** Where the slimmed catalog is kept between runs; omit to hold it in memory only. */
-  cachePath?: string;
-  /** Age in milliseconds past which the catalog reports itself `stale`. Defaults to one day. */
-  maxAge?: number;
-  /**
-   * models.dev provider ids whose own model ids to keep (`anthropic`, `openrouter`,
-   * `togetherai`, …). Omit for every provider; `[]` skips the per-provider catalog entirely.
-   */
-  providers?: string[];
-  /** Catalog origin; defaults to models.dev. */
-  baseUrl?: string;
-  /** Milliseconds a fetch of one layer may take before it is abandoned. Defaults to ten seconds. */
-  fetchTimeout?: number;
-  /**
-   * Delays in milliseconds between retries while the catalog is `unavailable`, in order;
-   * `[]` never retries. Defaults to 10 s, 30 s, 90 s.
-   */
-  retryDelays?: number[];
-}
-
 /**
- * Where the catalog stands: `loading` until the cache has been read or, with no cache,
- * until the first fetch has ended; `loaded` once it holds a catalog (`stale` when older
- * than `maxAge`, `fetchedAt` ISO 8601); `unavailable` when there is no cache and the
- * fetch failed.
- */
-export type CatalogState =
-  | { status: "loading" }
-  | { status: "loaded"; fetchedAt: string; stale: boolean }
-  | { status: "unavailable" };
-
-/**
- * Model metadata looked up from the models.dev catalog: a canonical layer
- * (`publisher/model`, provider-independent) and a per-provider layer (each provider's
- * own ids with its limits and prices, linked to the canonical entry).
+ * Model metadata looked up from `CatalogData`. Synchronous and immutable: it
+ * never fetches; to refresh, build a new catalog from new data
+ * (`fetchModelsDev`). The data is taken as given; read saved data with
+ * `parseCatalogData`.
  *
- * `open()` returns at once and loads in the background: it reads the cache,
- * fetches when there is none, and refreshes a cache older than `maxAge` while
- * serving it. `state` says where the catalog stands, `ready` resolves when it
- * first leaves `loading`, and `onChange` fires when the state or the contents
- * change. A consumer that cares about the answer awaits `ready`; one that does
- * not gets `undefined` from `lookup` until the catalog is there. `refresh()`
- * always fetches, sending ETags so an unchanged catalog downloads nothing, and
- * never throws — a failed fetch keeps the cached copy.
+ * @experimental The catalog API is new in 0.35 and may change in a minor release.
  *
  * `lookup()` tries the provider's own id first when a provider is given, then the
  * canonical key, then a best-effort match for local runtimes' names
@@ -175,200 +111,42 @@ export type CatalogState =
  * prefix.
  */
 export class ModelCatalog {
-  private readonly cachePath: string | undefined;
-  private readonly maxAge: number;
-  private readonly providers: string[] | undefined;
-  private readonly baseUrl: string;
-  private readonly fetchTimeout: number;
-  private readonly retryDelays: number[];
-  private cache: CacheFile | undefined;
-  private normalized: { id: string; key: string }[] = [];
-  private opening = true;
-  private inflight = 0;
-  private readonly listeners: Array<() => void> = [];
-  private readonly _ready: Promise<void>;
+  private readonly data: CatalogData;
+  private readonly normalized: { id: string; key: string }[];
 
-  private constructor(options: ModelCatalogOptions) {
-    this.cachePath = options.cachePath;
-    this.maxAge = options.maxAge ?? DEFAULT_MAX_AGE_MS;
-    this.providers = options.providers;
-    this.baseUrl = options.baseUrl ?? MODELS_DEV_URL;
-    this.fetchTimeout = options.fetchTimeout ?? DEFAULT_FETCH_TIMEOUT_MS;
-    this.retryDelays = options.retryDelays ?? DEFAULT_RETRY_DELAYS_MS;
-    this._ready = this.load();
+  constructor(data: CatalogData) {
+    this.data = data;
+    this.normalized = Object.keys(data.models).map((id) => ({
+      id,
+      key: normalizeModelName(splitModelId(id).name),
+    }));
   }
 
-  static open(options: ModelCatalogOptions = {}): ModelCatalog {
-    return new ModelCatalog(options);
+  /** When the data was fetched, ISO 8601. */
+  get fetchedAt(): string {
+    return this.data.fetchedAt;
   }
 
-  get state(): CatalogState {
-    if (this.cache) {
-      return { status: "loaded", fetchedAt: this.cache.fetchedAt, stale: this.isStale() };
-    }
-    return this.opening || this.inflight > 0 ? { status: "loading" } : { status: "unavailable" };
-  }
-
-  /** Resolves when `state` first leaves `loading`; never rejects. */
-  get ready(): Promise<void> {
-    return this._ready;
-  }
-
-  get size(): number {
-    return this.normalized.length;
-  }
-
-  onChange(listener: () => void): () => void {
-    this.listeners.push(listener);
-    return () => {
-      const index = this.listeners.indexOf(listener);
-      if (index >= 0) this.listeners.splice(index, 1);
-    };
-  }
-
-  async refresh(): Promise<void> {
-    const idle = this.snapshot();
-    this.inflight += 1;
-    this.notifyIfChanged(idle);
-    const fetching = this.snapshot();
-    try {
-      await this.fetchAndStore();
-    } finally {
-      this.inflight -= 1;
-      this.notifyIfChanged(fetching);
-    }
-  }
-
-  private async load(): Promise<void> {
-    const cached = await this.readCacheFile();
-    if (cached) {
-      const before = this.snapshot();
-      this.setCache(cached);
-      this.opening = false;
-      this.notifyIfChanged(before);
-      if (this.isStale()) void this.refresh();
-      return;
-    }
-    await this.refresh();
-    const before = this.snapshot();
-    this.opening = false;
-    this.notifyIfChanged(before);
-    if (!this.cache) this.scheduleRetry(0);
-  }
-
-  private async readCacheFile(): Promise<CacheFile | undefined> {
-    if (!this.cachePath) return undefined;
-    try {
-      const parsed = CacheFileSchema.safeParse(JSON.parse(await readFile(this.cachePath, "utf-8")));
-      return parsed.success ? parsed.data : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private scheduleRetry(index: number): void {
-    const delay = this.retryDelays[index];
-    if (delay === undefined) return;
-    const timer = setTimeout(() => void this.retry(index), delay);
-    timer.unref?.();
-  }
-
-  private async retry(index: number): Promise<void> {
-    await this.refresh();
-    if (!this.cache) this.scheduleRetry(index + 1);
-  }
-
-  private isStale(): boolean {
-    return !this.cache || Date.now() - Date.parse(this.cache.fetchedAt) >= this.maxAge;
-  }
-
-  private snapshot(): { cache: CacheFile | undefined; status: CatalogState["status"] } {
-    return { cache: this.cache, status: this.state.status };
-  }
-
-  private notifyIfChanged(before: ReturnType<ModelCatalog["snapshot"]>): void {
-    if (this.cache === before.cache && this.state.status === before.status) return;
-    for (const listener of [...this.listeners]) {
-      try {
-        listener();
-      } catch {
-        // A listener's failure is its own; it must not break the catalog or the other listeners.
-      }
-    }
-  }
-
-  private async fetchAndStore(): Promise<void> {
-    const wantProviders = this.providers === undefined || this.providers.length > 0;
-    const [modelsResult, apiResult] = await Promise.all([
-      this.fetchLayer("/models.json", this.cache?.etags.models),
-      wantProviders
-        ? this.fetchLayer("/api.json", this.cache?.etags.api)
-        : Promise.resolve(undefined),
-    ]);
-    if (modelsResult === undefined && apiResult === undefined) return;
-    const complete = modelsResult !== undefined && (!wantProviders || apiResult !== undefined);
-
-    let models = this.cache?.models ?? {};
-    let etagModels = this.cache?.etags.models;
-    if (modelsResult && modelsResult.body !== undefined) {
-      const parsed = ModelsDevModelsSchema.safeParse(modelsResult.body);
-      if (!parsed.success) return;
-      models = {};
-      for (const [id, entry] of Object.entries(parsed.data)) {
-        const model = entry ? toCatalogModel(entry) : undefined;
-        if (model) models[id] = model;
-      }
-      etagModels = modelsResult.etag;
-    }
-
-    let providers = this.cache?.providers ?? {};
-    let etagApi = this.cache?.etags.api;
-    if (!wantProviders) {
-      providers = {};
-      etagApi = undefined;
-    } else if (apiResult && apiResult.body !== undefined) {
-      const parsed = ModelsDevApiSchema.safeParse(apiResult.body);
-      if (!parsed.success) return;
-      providers = {};
-      for (const [provider, listing] of Object.entries(parsed.data)) {
-        if (this.providers && !this.providers.includes(provider)) continue;
-        providers[provider] = {};
-        for (const [id, entry] of Object.entries(listing.models)) {
-          if (entry) providers[provider][id] = toProviderEntry(provider, id, entry, models);
-        }
-      }
-      etagApi = apiResult.etag;
-    }
-
-    const cache: CacheFile = {
-      version: 3,
-      fetchedAt: complete
-        ? new Date().toISOString()
-        : (this.cache?.fetchedAt ?? new Date(0).toISOString()),
-      etags: { models: etagModels, api: etagApi },
-      models,
-      providers,
-    };
-    this.setCache(cache);
-    await this.writeCache(cache).catch(() => {});
+  /** The provider filter the data was fetched with: `"all"`, or the provider ids kept. */
+  get coverage(): CatalogData["coverage"] {
+    return this.data.coverage;
   }
 
   lookup(
     model: string,
     options?: { provider?: string; publisher?: string },
   ): CatalogMatch | undefined {
-    if (!this.cache) return undefined;
     const { publisher, name } = splitModelId(model);
 
     if (options?.provider) {
-      const entries = this.cache.providers[options.provider];
+      const entries = this.data.providers[options.provider];
       const publisherIsProvider = publisher === options.provider.toLowerCase();
       const providerModelId = entries
         ? (findKey(entries, model) ?? (publisherIsProvider ? findKey(entries, name) : undefined))
         : undefined;
       if (entries && providerModelId !== undefined) {
         const entry = entries[providerModelId];
-        const base = entry.canonical ? this.cache.models[entry.canonical] : entry.model;
+        const base = entry.canonical ? this.data.models[entry.canonical] : entry.model;
         if (base) {
           return {
             id: entry.canonical ?? `${options.provider}/${providerModelId}`,
@@ -387,20 +165,20 @@ export class ModelCatalog {
           : undefined
         : model;
     if (qualified) {
-      const id = findKey(this.cache.models, qualified);
-      if (id !== undefined) return { id, match: "exact", model: this.cache.models[id] };
+      const id = findKey(this.data.models, qualified);
+      if (id !== undefined) return { id, match: "exact", model: this.data.models[id] };
     }
 
     const key = normalizeModelName(name);
     if (key.length === 0) return undefined;
     const exact = this.normalized.filter((entry) => entry.key === key);
     if (exact.length === 1) {
-      return { id: exact[0].id, match: "exact", model: this.cache.models[exact[0].id] };
+      return { id: exact[0].id, match: "exact", model: this.data.models[exact[0].id] };
     }
     if (exact.length > 1) return undefined;
     const prefixed = this.normalized.filter((entry) => entry.key.startsWith(key));
     if (prefixed.length === 1) {
-      return { id: prefixed[0].id, match: "prefix", model: this.cache.models[prefixed[0].id] };
+      return { id: prefixed[0].id, match: "prefix", model: this.data.models[prefixed[0].id] };
     }
     return undefined;
   }
@@ -414,103 +192,6 @@ export class ModelCatalog {
       ? { window: found.model.limit.context, id: found.id, match: found.match }
       : undefined;
   }
-
-  private async fetchLayer(
-    path: string,
-    etag: string | undefined,
-  ): Promise<{ body?: unknown; etag?: string } | undefined> {
-    try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
-        headers: etag ? { "If-None-Match": etag } : {},
-        signal: AbortSignal.timeout(this.fetchTimeout),
-      });
-      if (response.status === 304) return { etag };
-      if (!response.ok) return undefined;
-      return { body: await response.json(), etag: response.headers.get("etag") ?? undefined };
-    } catch {
-      return undefined;
-    }
-  }
-
-  private setCache(cache: CacheFile | undefined): void {
-    this.cache = cache;
-    this.normalized = Object.keys(cache?.models ?? {}).map((id) => ({
-      id,
-      key: normalizeModelName(splitModelId(id).name),
-    }));
-  }
-
-  private async writeCache(cache: CacheFile): Promise<void> {
-    if (!this.cachePath) return;
-    const tmpPath = `${this.cachePath}.tmp`;
-    await mkdir(dirname(this.cachePath), { recursive: true });
-    try {
-      await writeFile(tmpPath, JSON.stringify(cache));
-      await rename(tmpPath, this.cachePath);
-    } catch (e) {
-      await rm(tmpPath, { force: true }).catch(() => {});
-      throw e;
-    }
-  }
-}
-
-function toPrice(price: z.infer<typeof ModelsDevPriceSchema>): z.infer<typeof PriceSchema> {
-  return {
-    input: price.input,
-    output: price.output,
-    cacheRead: price.cache_read,
-    cacheWrite: price.cache_write,
-    reasoning: price.reasoning,
-  };
-}
-
-function knownLimit(value: number | undefined): number | undefined {
-  return value === undefined || value === 0 ? undefined : value;
-}
-
-function toCatalogModel(entry: ModelsDevEntry): CatalogModel | undefined {
-  const context = knownLimit(entry.limit?.context);
-  if (context === undefined) return undefined;
-  return {
-    name: entry.name,
-    limit: {
-      context,
-      output: knownLimit(entry.limit?.output),
-      input: knownLimit(entry.limit?.input),
-    },
-    reasoning: entry.reasoning,
-    toolCall: entry.tool_call,
-    structuredOutput: entry.structured_output,
-    attachment: entry.attachment,
-    modalities: { input: entry.modalities.input, output: entry.modalities.output },
-    knowledge: entry.knowledge,
-  };
-}
-
-function toProviderEntry(
-  provider: string,
-  id: string,
-  entry: ModelsDevEntry,
-  models: Record<string, CatalogModel>,
-): ProviderEntry {
-  const canonical = entry.canonical_model_id ?? `${provider}/${id}`;
-  const cost = entry.cost
-    ? {
-        ...toPrice(entry.cost),
-        tiers: entry.cost.tiers
-          ?.map((tier) => ({ ...toPrice(tier), size: tier.tier.size }))
-          .sort((a, b) => a.size - b.size),
-      }
-    : undefined;
-  const limit = entry.limit
-    ? {
-        context: knownLimit(entry.limit.context),
-        output: knownLimit(entry.limit.output),
-        input: knownLimit(entry.limit.input),
-      }
-    : undefined;
-  if (canonical in models) return { canonical, limit, cost };
-  return { model: toCatalogModel(entry), limit, cost };
 }
 
 function findKey<T>(record: Record<string, T>, id: string): string | undefined {

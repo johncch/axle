@@ -703,7 +703,22 @@ gets an error tool result it can correct in the same turn:
 `execute` receives a `ToolContext` as its second argument. Long-running tools
 can stream progress with `ctx.emit(...)`, and tools that call models can report
 their token usage with `ctx.reportUsage(usage)` so it is rolled into the parent
-operation's totals.
+operation's totals. `usage` is a `Stats` with its `breakdown` rows: the
+`usage` of a `generate()` or `stream()` result as it is, or, for a model API
+the tool called itself, `attributeStats` over the raw count:
+
+```ts
+ctx.reportUsage?.(
+  attributeStats(
+    { in: 812, out: 0 },
+    {
+      provider: "openai",
+      model: "text-embedding-3-small",
+      requestedModel: "text-embedding-3-small",
+    },
+  ),
+);
+```
 
 When the model requests several tool calls in one message, Axle runs them
 concurrently and answers them in the order they were requested, whatever order
@@ -914,7 +929,8 @@ under its action (interleaved across items).
 > release.
 
 Every result exposes `usage` totals (`in`, `out`, plus cache/reasoning detail
-when reported). `usage.breakdown` holds one entry per provider request, in
+when reported). `usage.breakdown` is always present and holds one entry per
+provider request, in
 request order, tagged with the provider that served it (its `AIProvider.id`,
 omitted when the provider has none), the model the response reported
 (`model`), the model string the agent was given (`requestedModel`), when the
@@ -939,34 +955,51 @@ not additional usage. A reader that wants per-model or per-agent totals groups
 the rows. An Anthropic step that paused (`pause_turn`) took several requests
 and yields one row each.
 
-### Meter
+### Cost
 
-`Meter` accumulates usage across turns and prices it. It is a sink over the
-turn event stream like `Transcript`: attach it with `agent.on(meter.apply)`,
-persist its `usage`, and pass that back to the constructor to restore it.
+> **Experimental** — `computeCost` and `Cost` are new in 0.35, along with
+> the model catalog they price against, and may change in a minor release.
+
+`computeCost(usage, catalog)` prices a `Stats` against a `ModelCatalog`. It
+is a function, not a running object: whatever `Stats` you hold is the
+record, and you price it when you need a number.
 
 ```typescript
-import { Meter, ModelCatalog } from "@fifthrevision/axle";
+import { computeCost, mergeStats, ModelCatalog } from "@fifthrevision/axle";
 
-const catalog = ModelCatalog.open({ cachePath });
-const meter = new Meter(catalog, savedUsage); // both arguments optional
-agent.on(meter.apply);
+const catalog = new ModelCatalog(savedCatalogData); // see Model Catalog
 
-meter.usage; // Stats: restored rows plus everything applied since
-meter.observedUsage; // Stats: only what this instance applied
-meter.cost; // Cost, computed now from the rows and the catalog's current state
-await meter.priced(); // Cost, after the catalog's `ready` has settled
+// The turns are the record: sum them, then price
+const usage = mergeStats(...transcript.turns.map((turn) => turn.usage));
+const cost = computeCost(usage, catalog);
+await db.write({ in: usage.in, out: usage.out, usd: cost.usd, pricedWith: cost.pricedWith });
 ```
+
+When your usage has to outlive the turns (you keep only the last few, or
+start a fresh transcript on clear), keep a running `Stats` of your own and
+persist it:
+
+```typescript
+import { addStats, computeCost, createStats } from "@fifthrevision/axle";
+
+const usage = savedUsage ?? createStats();
+agent.on((event) => {
+  if (event.type === "turn:end") addStats(usage, event.usage);
+});
+
+const cost = computeCost(usage, catalog);
+```
+
+Sum usage, never cost: a `Cost` reflects the catalog it was computed with,
+so price the summed `Stats` when you read it.
 
 A `Cost` is `{ usd, priced, unpriced, pricedWith? }`. `priced` holds each
 row with its `usd`; `unpriced` holds each row the catalog could not price,
-with a `reason`: `loading` and `unavailable` are the catalog's state and may
-resolve on a later read, while `no-catalog`, `no-provider`, `unlisted` and
-`no-price` are facts about the row. Nothing is stored: `cost` prices the rows
-against the catalog each time it is read, so a row that was `loading` a
-moment ago is priced the first time you read after the catalog arrives, in
-this process or the next. `pricedWith` is the `fetchedAt` of the catalog that
-priced the rows.
+with a `reason`: `no-catalog`, `no-provider`, `unlisted` or `no-price`.
+`usd` is the sum of the priced rows, so a host with its own price table can
+price `unpriced` row by row and add it. `pricedWith` is the `fetchedAt` of
+the catalog that priced the rows. `computeCost` is synchronous and never
+throws.
 
 Each row is priced at the tier its own `in` selects, with cache reads, cache
 writes and reasoning tokens at their own rate where the provider lists one
@@ -974,23 +1007,6 @@ and at the plain input or output rate otherwise. Only the provider layer
 prices a row (`lookup(model, { provider: row.provider })`); a row whose
 provider has no id is `no-provider`, and the row's `requestedModel` is tried
 when the reported `model` is not listed.
-
-If you care about pricing, await the catalog: `priced()` does that and
-returns `cost`. It is bounded by the catalog's `ready` and never rejects; a
-catalog that failed to load yields a `Cost` whose rows say `unavailable`.
-`cost` is a plain getter and cannot hang, so it is safe anywhere a value is
-needed now:
-
-```typescript
-agent.onSettled(async () => {
-  const cost = await meter.priced();
-  await db.write({ usage: meter.usage, usd: cost.usd, pricedWith: cost.pricedWith });
-});
-```
-
-`usage` and `cost` cover what the meter was restored with plus what it has
-applied; `observedUsage` and `observedCost` only what this instance applied.
-A resumed session that wants "this run" and "all time" keeps both.
 
 ### Provider Tools
 
@@ -1760,20 +1776,27 @@ The normative design lives in
 
 ### Model Catalog
 
+> **Experimental** — `ModelCatalog`, `ModelCatalogStore` and the catalog
+> functions are new in 0.35 and may change in a minor release.
+
 Axle ships no table of models. A consumer that needs a model's context window,
 output ceiling, capabilities, or price can look them up in the
-[models.dev](https://models.dev) catalog through `ModelCatalog`, which keeps
-a slimmed copy at a path you choose, or in memory:
+[models.dev](https://models.dev) catalog. A `ModelCatalogStore` holds the
+current `ModelCatalog` and takes it through its stages, each a call you
+make: load what you saved, refresh from models.dev, read `current`, and
+save a snapshot. The store never touches storage, so the copy can live in a
+file, a database row or an object store.
 
 ```ts
-import { ModelCatalog } from "@fifthrevision/axle";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { catalogFile, ModelCatalogStore } from "@fifthrevision/axle";
 
-const catalog = ModelCatalog.open({
-  cachePath: join(homedir(), ".myapp", "models.json"),
-});
-await catalog.ready; // if you care about the answer; see below
+const file = catalogFile(join(homedir(), ".myapp", "models.json"));
+const catalogs = new ModelCatalogStore();
+catalogs.load(await file.read()); // the saved copy, if any: no network
+const snapshot = await catalogs.refreshIfStale(); // new data to save, or undefined
+if (snapshot) await file.write(snapshot);
+
+const catalog = catalogs.current; // ModelCatalog | undefined
 
 catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
 // → { id: "zhipuai/glm-5.3-flash", match: "provider", model: {…}, cost: { input: 0.15, output: 0.5, cacheRead: 0.03 } }
@@ -1808,37 +1831,58 @@ match first, else a unique prefix. The result's `match` and `id` say how it
 was found, so a best-effort guess is visible. No match returns `undefined`;
 what to assume then is yours.
 
-`open()` returns at once and loads in the background: it reads the cache,
-fetches both layers when there is none, and when the cache is older than
-`maxAge` (default one day) serves it while refreshing it. Where the
-catalog stands is `state`:
+`current` is `undefined` until a load or a refresh gives it data, and every
+reader has a fallback for that: no catalog means an unknown window and
+unpriced rows. Nothing waits unless you await a refresh, so a host that
+must not block leaves it running and reads `current` later:
 
 ```ts
-type CatalogState =
-  | { status: "loading" } // reading the cache, or fetching with none
-  | { status: "loaded"; fetchedAt: string; stale: boolean } // fetchedAt ISO 8601
-  | { status: "unavailable" }; // no cache and the fetch failed
+catalogs.load(await file.read());
+void catalogs.refreshIfStale().then(async (snapshot) => {
+  if (snapshot) await file.write(snapshot);
+});
+// use catalogs.current now; a refresh that lands replaces it
 ```
 
-`lookup` and `contextWindow` return `undefined` while `loading` or
-`unavailable`, so check `state` when the difference from an unlisted model
-matters. `ready` resolves when `state` first leaves `loading` and never
-rejects: with a cache that is the file read; without one it is a single
-fetch bounded by `fetchTimeout` (default ten seconds). A catalog whose
-first fetch failed is `unavailable` and retries on its own at `retryDelays`
-(default 10 s, 30 s, 90 s; `[]` never retries); `ready` does not wait for
-those. `onChange(listener)` fires when `state` or the contents change and
-returns an unsubscribe; a listener that throws stops neither the catalog
-nor the other listeners. If you care about the answer, await `ready`; if
-you want a number now, read what is there and redraw on `onChange`.
+- `load(json)` takes the saved JSON text and ignores anything that is not
+  usable `CatalogData` (missing, corrupt, or saved by an older Axle).
+- `refresh()` fetches models.dev with the current data's ETags and makes the
+  result current. It resolves the new snapshot to save, or `undefined` when
+  the fetch failed; it never rejects for the network. `refreshIfStale()`
+  does the same only when there is no data or it is older than `maxAge`
+  (one day by default), and otherwise resolves `undefined`. Calls while a
+  refresh is in flight share it, so ten requests that notice a stale
+  catalog make one fetch.
+- `snapshot()` is the current data as JSON, to save and `load` later.
+- `new ModelCatalogStore({ maxAge, providers, timeout, baseUrl })` passes
+  the fetch options through to `fetchModelsDev`.
+- `catalogFile(path)` is a `{ read, write }` for a file, written atomically.
+  For a database or object store, call it directly with your own reads and
+  writes. A serverless host refreshes on a schedule (a cron job calling
+  `refresh()` and writing the snapshot) and only loads in requests.
 
-`refresh()` fetches both layers (about 0.4 MB and 0.5 MB compressed), sends
-each layer's ETag so an unchanged file downloads nothing, keeps the current
-copy on any failure, and never throws; the fetched catalog is held in
-memory even when the cache file cannot be written. Without `cachePath` the
-catalog lives in memory for the process. `providers: ["anthropic",
-"openrouter"]` keeps only those providers (the full provider layer is about
-1.9 MB on disk); `providers: []` skips it.
+The store is built from three functions you can use on their own.
+`fetchModelsDev({ providers, previous, timeout, baseUrl, signal })` fetches
+both layers (about 0.4 MB and 0.5 MB compressed) and rejects with a
+`CatalogFetchError` (the underlying error in `cause`) when either cannot be
+fetched or parsed, after ten seconds by default; there is no partial
+result, so keep the data you had. With `previous` it sends that data's ETags, so a layer
+models.dev reports unchanged downloads nothing; `fetchedAt` is always the
+time of this fetch. `providers: ["anthropic", "openrouter"]` keeps only
+those providers (the full provider layer is about 1.9 MB as JSON);
+`providers: []` skips it. The filter is recorded as `coverage`, and a
+`previous` fetched for other providers is not reused for the provider
+layer.
+
+`CatalogData` is `{ version: 4, fetchedAt, etags, coverage, models,
+providers }`. It is yours to edit before building a catalog: a negotiated
+price, a self-hosted model, or a test fixture with no network.
+Read saved data with `parseCatalogData(json)`: it returns `undefined` for
+text that is not JSON or is another version or shape, such as a file saved
+by an older Axle, which means you have no usable copy and should fetch.
+`new ModelCatalog(data)` takes its data as given, so do not hand it
+`JSON.parse` output directly. `catalog.fetchedAt` and `catalog.coverage`
+read back the data's own fields.
 
 ### Sessions and persistence
 

@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-10-30 (0.35.0, AXL-93)
+**Status**: current · **Last design revision**: 2026-11-02 (0.35.0)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -23,8 +23,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    read-back, no `session:restore` event. Restore means the consumer re-seeds
    its own transcript (`new Transcript(savedTurns)`) from its own copy,
    persisted next to the `AgentSession` in one atomic write. The transcript
-   is one _sink_ over that stream; `Meter` is another, and a consumer's own
-   folds are more. Every sink has the same contract: `apply(event)` is a
+   is one _sink_ over that stream, and a consumer's own folds are more. Every sink has the same contract: `apply(event)` is a
    bound property handed straight to `agent.on`, it folds what it needs
    from each event and ignores the rest, it exposes a readonly view, and
    the consumer persists that view and seeds the constructor with it on
@@ -43,9 +42,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `turn:user`, then the same `Instruct` parses the final assistant response.
 6. **Usage accounting belongs to the consumer.** Every `turn:end` carries
    `turn.usage`; consumers accumulate totals in their own storage. The Agent
-   exposes no usage meter, and `AgentSession` carries none; the shipped
-   `Meter` is a sink (invariant 3) the consumer attaches, reads and
-   persists, like `Transcript`. `usage.breakdown`
+   exposes no usage meter, and `AgentSession` carries none. A running total
+   is a `Stats` the consumer owns: `addStats` on each `turn:end`, or
+   `mergeStats` over the turns when it keeps them all, priced with
+   `computeCost`. `usage.breakdown`
    holds one `UsageEntry` per provider request, in request order, never a
    sum per model: a consumer prices each row at the tier its own `in` selects
    and groups rows when it wants per-model totals. Each row carries `at`,
@@ -54,7 +54,11 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    for that date, without the turn that produced it. An Agent with a `name`
    stamps it on the rows of its own requests as `agent`, and leaves the
    rows a subagent tool reports under that subagent's name, so a consumer can
-   also group by who spent what.
+   also group by who spent what. `breakdown` is required: every token in a
+   `Stats` total is in exactly one row, so every total can be priced. A
+   provider's count for one request before anyone knows who made it is a
+   `TokenStats`, and it never leaves the adapters and the step reader;
+   `attributeStats` is the one place a count becomes a `Stats`.
 7. **Pending is live state, kept apart from turns, and shaped like them.**
    An operation — a send or a manual compaction — is announced with
    `pending:queued` when the Agent accepts it, carrying a preview `Turn`
@@ -446,6 +450,11 @@ Accepted consequences:
 
 ## Sinks and the Meter (2026-10-30)
 
+The `Meter` class this section describes was removed on 2026-11-02; see
+"Cost is a function of Stats" below. The catalog's own loading (`state`,
+`ready`, `onChange`, retries) was removed the same day; see "The catalog is
+data" below.
+
 Invariant 3 said "transcript" where it meant "whoever folds the stream".
 AXL-93 names the plural: a _sink_ is any fold over `TurnEvent`s with the
 contract invariant 3 now states, `Transcript` is the first and `Meter` the
@@ -514,6 +523,155 @@ Decided not yet, recorded so the next debate starts here:
 - **`meter.onChange`**: a Meter-side signal that a cost may have changed.
   Today a host redraws on `turn:end` and on `catalog.onChange`, which is
   the same information from its two sources.
+
+## Every Stats has rows (2026-11-02)
+
+`Stats.breakdown` was optional because `Stats` named two things: what a
+provider reported for one request, before attribution, and an attributed
+total. A `Stats` with tokens and no rows is a total nothing can price, and
+three paths produced one: `ctx.reportUsage` accepted a bare `{ in, out }`
+from any tool, `decide()` returned its provider's count as is, and a failed
+request's `usage` on `result.error` was the adapter's raw count. The two
+meanings are now two types. `TokenStats` is the unattributed count and stays
+inside the adapters and the step reader; `Stats` requires `breakdown`, so
+`reportUsage` can only be handed rows, and `decide()` and the failure
+attribute their counts like every step does.
+
+Rejected:
+
+- **Narrowing only `ctx.reportUsage`**: it closes the one public entry, but
+  leaves `Stats` typed as if rows may be missing when they never are, so a
+  reader that requires rows has to narrow every `result.usage` it holds.
+- **An `unexplained: { in, out }` field on `Cost`** for tokens no row
+  accounts for: it reports the hole instead of closing it. A token without a
+  model and a provider cannot be priced, so it should not be representable
+  as usage.
+
+## Cost is a function of Stats (2026-11-02)
+
+`computeCost(usage, catalog?): Cost` replaces the `Meter` class. The
+pricing is the part worth sharing: tiers, cache and reasoning rates, the
+provider lookup and the unpriced reasons. What the Meter added around it was
+state: a restore seed, the `usage`/`observedUsage` split, wiring to
+`agent.on`, and a view to persist. Each of those is a policy about what a
+session is, and invariant 6 leaves that to the consumer. Sunnyday's
+assistant keeps a lifetime total through `clear()` and a transcript it
+windows to its last 20 turns; its runs keep every turn and sum them; the
+CLI keeps one total per session file and one per invocation. Each is a
+`Stats` with `addStats` or `mergeStats`.
+
+- **Sum usage, price on read.** A running total is usage, never cost. A
+  cost depends on the catalog's state when it was computed, so a turn priced
+  while the catalog was still loading would stay unpriced inside a summed
+  cost forever. Rows priced on read are priced once the catalog can.
+- **The function is synchronous and never throws.** The catalog it reads
+  is already loaded (see "The catalog is data" below), so there is nothing
+  to wait for. Every row is in `priced`, or in `unpriced` with its reason,
+  so a consumer can fill the gap row by row with its own prices.
+
+Rejected:
+
+- **Keeping the `Meter` sink** beside the function: its only work beyond
+  pricing was `addStats` and a seed, and its `usage`/`observed` split
+  answered one consumer's idea of a session.
+- **A per-turn callback, `meter.onTurnEnd((turnId, cost) => …)`**: a turn
+  can end before the catalog loads, so the callback fires with `loading`
+  rows or fires late; and it repeats `turn:end`, which the consumer already
+  has. `computeCost(event.usage, catalog)` in a `turn:end` handler is the same
+  thing.
+- **A synchronous `computeCost` that throws a not-ready error** over a
+  catalog that loads itself: "not ready" is all or nothing, so one error
+  fits, but the `catch` runs only in the first seconds of a cold start,
+  which is the branch nobody tests. Taking loading out of the catalog
+  removed the not-ready state instead.
+
+## The catalog is data; loading is a store you drive (2026-11-02)
+
+AXL-102. `ModelCatalog` fetched models.dev and answered lookups, so it
+carried a lifecycle (`state`, `ready`, `onChange`, `refresh()`, retries, a
+file cache), and everything that read it inherited one: `computeCost` was
+async only to await `ready`, `UnpricedReason` had `unavailable` to describe
+the network, and a host that keeps its state in a database could only
+persist the catalog to a file. The jobs are now split:
+
+- **`ModelCatalog` is a synchronous, immutable index over `CatalogData`.**
+  `new ModelCatalog(data)` cannot fail; it takes its data as given. Saved
+  data is checked where it enters, by `parseCatalogData(json)`, which
+  returns `undefined` for anything unusable (not JSON, another version,
+  another shape): every such case means "fetch".
+- **`fetchModelsDev(options)` is the only part that touches the network.**
+  It rejects with a `CatalogFetchError` when either layer cannot be fetched
+  or parsed, with no partial result: the caller still has its previous
+  data. Given `previous`, it sends that data's ETags, takes an unchanged
+  layer from it, and stamps a new `fetchedAt`, so "stale" means "not
+  checked recently". `previous` fetched for other providers is not reused
+  for the provider layer.
+- **The catalog's failures are not `AxleError`s.** `AxleErrorCode` is the
+  agent's failure vocabulary (errors.md is scoped to `generate()`,
+  `stream()`, `send()` and the tool loop), and consumers switch over it. A
+  catalog code in it would be a case every agent consumer's switch carries
+  and no send can produce. `CatalogFetchError` is a plain `Error` subclass
+  matched with `instanceof`; the two-copies hazard `isAxleError` exists for
+  does not reach a fetch caught one call up.
+- **`CatalogData` is public API.** Plain JSON, versioned (4), with
+  `coverage` recording the provider filter it was fetched with. Consumers
+  save it, load it, and may write or amend it: a price override, a
+  self-hosted model, an offline copy, a test literal. A shape change bumps
+  `version` and gets a migration entry.
+- **`ModelCatalogStore` holds the current catalog; each stage is a call the
+  host makes.** `load(json)` takes saved text, `refresh()` calls
+  `fetchModelsDev` with the current data as `previous` (`refreshIfStale()`
+  only past `maxAge`), `current` is the
+  `ModelCatalog` or `undefined`, `snapshot()` is the data as JSON to save.
+  The store never touches storage (`catalogFile(path)` is a separate
+  adapter), never refreshes on its own, and never waits unless the host
+  awaits `refresh`. `refresh` resolves the new snapshot to save, or
+  `undefined` rather than rejecting for the network, and concurrent calls
+  share one fetch. `current` changes when a
+  refresh lands, like a feature-flag client's flags: this is reference
+  data, and a newer price is correct, not a surprise. The runners and
+  `computeCost` still take a `ModelCatalog` value, never the store.
+- **Every reader has a default, so not waiting is safe.** No catalog means
+  the assumed context window (compaction early rather than overflow) and
+  unpriced rows (priced later from the rows). The CLI's use is in cli.md: a
+  run loads the saved copy and never waits; `axle info` awaits a stale
+  refresh. This settles two items the Meter section left open: how stale a
+  copy may get (the host decides), and price overrides (edits to the data,
+  not a lookup mode).
+
+Rejected:
+
+- **Snapshot import/export on a catalog that still fetches**
+  (`open({ snapshot })`, `catalog.snapshot()` with `onChange` to persist):
+  it solves persistence but keeps the lifecycle, the `unavailable` reason
+  and the async `computeCost`. Failure still lives inside the catalog.
+- **A snapshot checked into the repo as a fallback**: data we would have
+  to keep fresh. Download only.
+- **Keeping half a refresh when one layer fails** (the old catalog did,
+  and stayed stale so the failed layer was retried): with the previous data
+  in the caller's hands, all or nothing loses nothing and needs no
+  partial-state rules.
+- **`CATALOG_FETCH_FAILED` and `CATALOG_DATA_INVALID` in `AxleErrorCode`**,
+  under errors.md invariant 7 (a request Axle makes on its own behalf
+  rejects with a coded `AxleError`): that invariant is about requests the
+  agent makes, and it would have grown the agent's error union with codes
+  only a catalog caller sees.
+- **The constructor validating its data**: a `CatalogData` is already
+  typed, the only untyped entry is loading saved JSON, and a throwing
+  constructor needs a try/catch where `parseCatalogData` needs an `if`. It
+  also re-checked 1.8 MB on every build.
+- **No loader, only the pieces** (`parseCatalogData`, `fetchModelsDev`,
+  `new ModelCatalog`): every host rewrote the same read, check age, fetch,
+  save, and the CLI's version grew an abort controller and a deadline
+  around it.
+- **`loadModelCatalog({ storage, wait })`**, one call doing both stages:
+  it hid that a run gets the saved copy now and the refresh later, and left
+  `fetchModelsDev` as a second way to do the same thing.
+- **A bounded wait at the point of need** (`settled(ms)`): every reader has
+  a safe default, so the wait bought one first-run context window.
+- **A detached child process for the refresh**: it finishes downloads a
+  short run would kill, at the price of a hidden command; the CLI exits
+  explicitly instead, and a slow download is retried next run.
 
 ## Rejected alternatives
 

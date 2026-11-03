@@ -90,7 +90,19 @@ describe("decide", () => {
     expect(result).toEqual({
       model: "jev-latest-snapshot",
       answers,
-      usage: { in: 12, out: 3 },
+      usage: {
+        in: 12,
+        out: 3,
+        breakdown: [
+          {
+            model: "jev-latest-snapshot",
+            requestedModel: "jev-latest",
+            at: expect.any(String),
+            in: 12,
+            out: 3,
+          },
+        ],
+      },
     });
   });
 

@@ -1,6 +1,6 @@
 # Axle CLI: invocation grammar and sessions
 
-**Status**: current · **Last design revision**: 2026-10-30 (AXL-93)
+**Status**: current · **Last design revision**: 2026-11-02
 
 This document is normative for the CLI's invocation grammar, session model,
 renderer boundary, and configuration layering. Code and tests are built
@@ -50,7 +50,7 @@ against it; divergence is a defect. State ownership is defined in
 3. **Every run is a session.** Chat, one-shot, recipe run, and every
    individual batch item persist the same shape — the recipe's agent keys
    as written (`AgentRecipe`) + `agent.snapshot()` + `Transcript.turns` +
-   `Meter.usage` (as `meter`) + cwd — to `~/.axle/sessions/cli/<id>.json`,
+   the session's lifetime `usage` + cwd — to `~/.axle/sessions/cli/<id>.json`,
    saved on every exit path. Anything
    that produced a session can be re-entered with `axle resume <id>`.
    Sessions accumulate; `axle cleanup` deletes by age window. There is no
@@ -63,25 +63,37 @@ against it; divergence is a defect. State ownership is defined in
    `contextWindow` if set (profile or inline — an endpoint fact, since a
    local server loads models below their maximum), else core's
    `ModelCatalog` (models.dev, keyed by the `id` of the provider the endpoint
-   builds), else an assumed 200,000. The catalog is cached at
-   `~/.axle/cache/models.json`. A run opens the catalog and awaits its
-   `ready` once at startup: with a cache that is the file read, and a stale
-   cache is served while the catalog refreshes it in the background; the
-   first run on a machine waits for one fetch, bounded by the catalog's
-   `fetchTimeout`, and proceeds without a catalog if it fails. No run ever
-   fails for the network. `axle info` awaits `ready` and then a refresh
-   when the cache is stale. It prints each provider's window with its
-   source and the matched catalog id, so a best-effort match is visible.
+   builds), else an assumed 200,000. The catalog's copy is
+   `~/.axle/cache/models.json`, held in core's `ModelCatalogStore` through
+   `catalogFile`. No run waits on the network:
+   - A run loads the saved copy, starts `refreshIfStale()`
+     without awaiting it, and writes the snapshot if the refresh lands. A
+     missing, corrupt or older-version copy loads as none.
+   - The context window and the runners take `current` when the agent is
+     created: the saved copy, or none, in which case the window is the
+     assumed 200,000 and every row is unpriced. The exit summary reads
+     `current` again, so a refresh that landed mid-run prices it.
+   - The run ends with an explicit `process.exit()` after shutdown, so a
+     download still in flight never holds the process open; it is retried
+     next run.
+   - `axle info` awaits the stale refresh, since showing the real window is
+     its job, and saves what it fetched.
 
-   Usage and cost come from two `Meter`s on the same catalog: the session's,
-   owned by `SessionRuntime`, restored from the file's `meter` and saved
-   back; and the run's, created in `cli.ts` for the usage bar, the batch
-   footer and the exit summary, which therefore show what this invocation
-   spent and not a resumed session's history. Cost is `formatCost(cost)`:
+   No run ever fails for the network. `axle info` prints each provider's
+   window with its source and the matched catalog id, so a best-effort match
+   is visible.
+
+   Usage is two `Stats`, each fed by `addStats` on `turn:end`: the
+   session's, owned by `SessionRuntime`, restored from the file's `usage`
+   and saved back; and the run's, created in `cli.ts` for the usage bar,
+   the batch footer and the exit summary, which therefore show what this
+   invocation spent and not a resumed session's history. Each display
+   prices the run's `Stats` with core's `computeCost` on the run's
+   catalog. Cost is `formatCost(cost)`:
    `$0.42`, `<$0.01`, `$0.42 (2 unpriced)`, or nothing when no row was
-   priced; the bar redraws on `turn:end`, `compaction:complete` and
-   `catalog.onChange`, so a price that arrives after the turn is shown
-   without another turn.
+   priced; the bar redraws on `turn:end` and `compaction:complete`. The
+   bar and the batch footer price with the catalog the run started with;
+   the exit summary with whatever had arrived by the end.
 
 4. **Batch is map(recipe, inputs), composed on the kernel.** One isolated
    session per input, run mechanically — no orchestrator model in the loop,
@@ -367,6 +379,38 @@ against it; divergence is a defect. State ownership is defined in
 
 ## Decisions
 
+- **2026-11-02 — the CLI owns the model catalog's copy, and no run waits
+  on models.dev (AXL-102).** Core's `ModelCatalog` stopped
+  fetching and caching (agent-state.md, "The catalog is data"), so the
+  policy is now the CLI's. The first version kept the old one (a machine
+  with no copy waits for one fetch under a ten-second timeout), and on a
+  slow link that is the failure: a download that outlasts the timeout saves
+  nothing, so every run waits the full ten seconds again, and an
+  unawaited background refresh held the process open at exit. The rule
+  now: load the saved copy, refresh in the background, take what has
+  arrived where it is read, and exit without waiting for the rest. Every reader has a safe default: the
+  assumed window compacts early rather than overflowing, and an unpriced
+  row says it is unpriced and can be priced later from the rows. A network
+  bad enough to stall the catalog stalls the model calls too. A run with no
+  saved copy uses the defaults, and a download that finishes during it is
+  saved for the next. Rejected: waiting up to 1.5 seconds for the catalog
+  before resolving the context window, so a fast link gets the window on
+  the first run — the defaults are safe, and the wait was the last
+  machinery the policy carried. Rejected: a detached
+  child process that refreshes after the run exits — it completes slow
+  downloads that outlast a short run, at the price of a hidden command and
+  a process the user never started. Rejected: never fetching during a run
+  (an explicit `axle refresh`) — nobody runs it, and the data goes stale.
+  Rejected: swapping the runners' catalog when a refresh lands mid-run — it
+  would hand them a value that changes underneath; only the exit summary,
+  which runs in `cli.ts`, reads the latest.
+- **2026-11-02 — usage is two `Stats`, priced with `computeCost`.** Core
+  removed `Meter` for a function over `Stats` (agent-state.md, "Cost is a
+  function of Stats"). The two meters became two `Stats`, and the session
+  file's `meter` key is now `usage`; it shipped in no release, so no file
+  reader keeps the old key. The reason for keeping the session's total
+  apart from its turns stands: a compacted or trimmed transcript loses
+  rows.
 - **2026-10-30 — a profile's name decides whether it is a preset (AXL-94).**
   `type` and `vendor` are gone. Profiles mirror the library's two shapes, a
   preset call and a protocol constructor call, and the name picks which.

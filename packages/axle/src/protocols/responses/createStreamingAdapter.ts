@@ -10,7 +10,7 @@ import type {
   ProviderToolResult,
 } from "../../messages/providerTool.js";
 import { AnyStreamChunk } from "../../messages/stream.js";
-import type { Stats } from "../../types.js";
+import type { TokenStats } from "../../types.js";
 import { withUsageDetails } from "../../utils/stats.js";
 import { truncateMiddle } from "../../utils/truncate.js";
 import { AxleStopReason } from "../types.js";
@@ -420,7 +420,7 @@ export function createStreamingAdapter() {
   return { handleEvent };
 }
 
-function toStats(usage: ResponseUsage | undefined): Stats {
+function toStats(usage: ResponseUsage | undefined): TokenStats {
   return withUsageDetails(
     { in: usage?.input_tokens || 0, out: usage?.output_tokens || 0 },
     {

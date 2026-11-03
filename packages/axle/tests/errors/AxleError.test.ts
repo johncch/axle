@@ -53,7 +53,7 @@ describe("AxleToolFatalError", () => {
         { role: "assistant", id: "a1", content: [], finishReason: "function_call" as any },
       ],
       partial: { role: "assistant", id: "a1", content: [], finishReason: "function_call" as any },
-      usage: { in: 10, out: 2 },
+      usage: { in: 10, out: 2, breakdown: [] },
       cause,
     });
 
@@ -64,7 +64,7 @@ describe("AxleToolFatalError", () => {
     expect(parsed.toolName).toBe("exec");
     expect(parsed.messages).toHaveLength(1);
     expect(parsed.partial.id).toBe("a1");
-    expect(parsed.usage).toEqual({ in: 10, out: 2 });
+    expect(parsed.usage).toEqual({ in: 10, out: 2, breakdown: [] });
     expect(parsed.cause).toEqual(cause);
   });
 });

@@ -7,6 +7,7 @@ import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import type { ExecutableTool, ToolContext } from "../../src/tools/types.js";
+import { attributeStats } from "../../src/utils/stats.js";
 
 const testSignal = new AbortController().signal;
 const testRegistry = new ToolRegistry();
@@ -489,7 +490,9 @@ describe("executeToolCalls", () => {
         description: "Reports usage",
         schema,
         async execute(input, ctx) {
-          ctx.reportUsage?.({ in: 10, out: 5 });
+          ctx.reportUsage?.(
+            attributeStats({ in: 10, out: 5 }, { model: "m", requestedModel: "m" }),
+          );
           return input.input;
         },
       };
@@ -498,7 +501,9 @@ describe("executeToolCalls", () => {
         description: "Reports usage then waits on its signal",
         schema,
         execute(_input, ctx) {
-          ctx.reportUsage?.({ in: 100, out: 50 });
+          ctx.reportUsage?.(
+            attributeStats({ in: 100, out: 50 }, { model: "m", requestedModel: "m" }),
+          );
           return new Promise((_resolve, reject) => {
             ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
           });
@@ -509,7 +514,7 @@ describe("executeToolCalls", () => {
         description: "Fails fatally",
         schema,
         async execute(_input, ctx) {
-          ctx.reportUsage?.({ in: 1, out: 1 });
+          ctx.reportUsage?.(attributeStats({ in: 1, out: 1 }, { model: "m", requestedModel: "m" }));
           await delay(5);
           throw new AxleToolFatalError("boom", { toolName: "fatal" });
         },

@@ -10,11 +10,13 @@ import type {
   TurnEvent,
 } from "@fifthrevision/axle";
 import {
+  addStats,
   Agent,
   AxleAgentAbortError,
+  computeCost,
   Instruct,
   loadFileContent,
-  Meter,
+  mergeStats,
   PromptCompactor,
   Transcript,
 } from "@fifthrevision/axle";
@@ -50,7 +52,7 @@ export interface AgentSessionSpec {
   session?: AgentSession;
   /** Saved turns to replay before the first send. */
   priorTurns?: readonly Turn[];
-  /** The session's lifetime usage as saved, restored into its meter. */
+  /** The session's lifetime usage as saved; this run adds to it. */
   priorUsage?: Stats;
   /** Prices requests; without it every request is unpriced. */
   catalog?: ModelCatalog;
@@ -98,7 +100,7 @@ class SessionRuntime {
   readonly agent: Agent;
   readonly transcript: Transcript;
   /** The session's own lifetime usage, what the session file persists. */
-  readonly meter: Meter;
+  readonly usage: Stats;
 
   private readonly sessionStore?: SessionStore;
   private readonly span: Span;
@@ -114,7 +116,6 @@ class SessionRuntime {
     session?: AgentSession;
     priorTurns?: readonly Turn[];
     priorUsage?: Stats;
-    catalog?: ModelCatalog;
     sessionStore?: SessionStore;
     onEvent: (event: TurnEvent, transcript: Transcript) => void;
   }) {
@@ -126,7 +127,7 @@ class SessionRuntime {
       this.agent.setCompaction(createSessionCompaction(this.agent, options.contextWindow));
     }
     this.transcript = new Transcript(options.priorTurns ?? []);
-    this.meter = new Meter(options.catalog, options.priorUsage);
+    this.usage = mergeStats(options.priorUsage);
     this.sessionStore = options.sessionStore;
     this.span = options.span;
     this.persisted = Boolean(options.session);
@@ -135,7 +136,7 @@ class SessionRuntime {
     this.unsaved = !options.session;
     this.agent.on((event) => {
       this.transcript.apply(event);
-      this.meter.apply(event);
+      if (event.type === "turn:end") addStats(this.usage, event.usage);
       options.onEvent(event, this.transcript);
     });
   }
@@ -164,7 +165,7 @@ class SessionRuntime {
   private async write(session: AgentSession, turns: readonly Turn[]): Promise<boolean> {
     if (!this.sessionStore) return false;
     try {
-      await this.sessionStore.save(session, turns, this.meter.usage);
+      await this.sessionStore.save(session, turns, this.usage);
       this.persisted = true;
       this.unsaved = false;
       return true;
@@ -189,7 +190,7 @@ type SendOutcome = "ok" | "failed" | "interrupted";
 
 export async function runAgentSession(
   spec: AgentSessionSpec,
-  meter: Meter,
+  runUsage: Stats,
   parentSpan: Span,
   renderer: Renderer,
   sessionStore?: SessionStore,
@@ -203,10 +204,9 @@ export async function runAgentSession(
     session: spec.session,
     priorTurns: spec.priorTurns,
     priorUsage: spec.priorUsage,
-    catalog: spec.catalog,
     sessionStore,
     onEvent: (event, transcript) => {
-      meter.apply(event);
+      if (event.type === "turn:end") addStats(runUsage, event.usage);
       renderer.onEvent(event, transcript);
     },
   });
@@ -265,8 +265,8 @@ export async function runAgentSession(
 
   const reportUsage = () => {
     renderer.updateUsage({
-      usage: meter.observedUsage,
-      cost: meter.observedCost,
+      usage: runUsage,
+      cost: computeCost(runUsage, spec.catalog),
       contextTokens: agent.context().total,
       contextLimit: spec.contextWindow,
     });
@@ -275,7 +275,6 @@ export async function runAgentSession(
   agent.on((event) => {
     if (event.type === "turn:end" || event.type === "compaction:complete") reportUsage();
   });
-  const unsubscribeCatalog = spec.catalog?.onChange(reportUsage);
 
   const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
     try {
@@ -367,7 +366,6 @@ export async function runAgentSession(
   } finally {
     process.removeListener("SIGINT", onInterrupt);
     renderer.setInterruptHandler(undefined);
-    unsubscribeCatalog?.();
     await runtime.finishSaving();
     const resumeCommand = runtime.resumeCommand();
     if (sessionStore && resumeCommand) {
@@ -405,7 +403,7 @@ export interface BatchRunSpec {
 export async function runBatch(
   spec: BatchRunSpec,
   variables: Record<string, any>,
-  meter: Meter,
+  runUsage: Stats,
   parentSpan: Span,
   renderer: Renderer,
   progress?: BatchProgress,
@@ -438,8 +436,8 @@ export async function runBatch(
     completed,
     skipped,
     failed,
-    usage: meter.observedUsage,
-    cost: meter.observedCost,
+    usage: runUsage,
+    cost: computeCost(runUsage, spec.catalog),
   });
   progress?.batchStarted(totals());
 
@@ -489,10 +487,9 @@ export async function runBatch(
         span: itemSpan,
         compaction: spec.compaction,
         contextWindow: spec.contextWindow,
-        catalog: spec.catalog,
         sessionStore,
         onEvent: (event, transcript) => {
-          meter.apply(event);
+          if (event.type === "turn:end") addStats(runUsage, event.usage);
           if (spec.verbose) {
             renderer.onEvent(event, transcript);
           } else if (progress && event.type === "part:start") {

@@ -108,8 +108,8 @@ tool's `execute` concurrently, with one ordered result. It is one tool call,
 not a tool batch: its arguments are validated as a whole, so one invalid item
 rejects the call. Not "batch tool".
 
-**UsageEntry** — one row of `Stats.breakdown`: the usage of one provider
-request, tagged with the provider that served it (its `AIProvider.id`, absent
+**UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
+usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent
 when the provider has none), two models, and, when the `Agent` that made it
 has a `name`, with that name as `agent`. `model` is the model the response
 reported, or the requested one when it reported none; `requestedModel` is
@@ -213,24 +213,25 @@ working memory, bounded by compaction). Lose the turns, lose the transcript.
 **Sink** — a consumer-owned fold over the `TurnEvent` stream, attached
 with `agent.on(sink.apply)`. A sink folds what it needs from each event
 and ignores the rest, exposes a readonly view, and is restored by seeding
-its constructor with the persisted view. `Transcript` and `Meter` are the
-shipped sinks; the Agent knows none of them.
+its constructor with the persisted view. `Transcript` is the shipped sink;
+the Agent knows none of them.
 
-**Meter** — the shipped sink that accumulates usage from `turn:end` and
-prices it against a `ModelCatalog`. `usage` is what it was restored with
-plus what it applied; `observedUsage` only what this instance applied.
-`cost` and `observedCost` are views computed on read from those rows and
-the catalog's current state, never stored; `priced()` is `cost` after the
-catalog's `ready`. The consumer persists `usage`; the rows are in it.
-
-**Cost** — a Meter's view of its rows against the catalog: `usd`, the sum of
-`priced` (rows with their `usd`), and `unpriced` (rows with a `reason`:
-`loading` and `unavailable` are the catalog's state and may resolve later;
-`no-catalog`, `no-provider`, `unlisted` and `no-price` are facts about the
-row). `pricedWith` is the `fetchedAt` of the catalog that priced the rows.
+**Cost** — what `computeCost(usage, catalog)` returns for a `Stats`: `usd`,
+the sum of `priced` (rows with their `usd`), and `unpriced` (rows with a
+`reason`: `no-catalog`, `no-provider`, `unlisted` or `no-price`).
+`pricedWith` is the `fetchedAt` of the catalog that priced the rows.
 Each row is priced by the catalog's provider layer at the tier its own
 `in` selects, cache and reasoning tokens at their own rate where the
 provider lists one.
+
+**Catalog data** — `CatalogData`, the plain JSON a `ModelCatalog` indexes:
+a canonical layer of models keyed `publisher/model`, a provider layer of
+each provider's own ids with its limits and prices, `fetchedAt`, `etags`,
+and `coverage` (the provider filter it was fetched with). `fetchModelsDev()`
+produces it; a consumer stores it as JSON, reads it back with
+`parseCatalogData()`, and may write or amend it. The catalog itself never
+fetches; `ModelCatalogStore` holds the current one and is what loads and
+refreshes it.
 
 **Pending turn** — a preview of a turn the Agent has accepted but not yet
 opened: the user turn a queued `send()` will commit, or an agent turn with
@@ -353,7 +354,7 @@ never a flag.
 
 **Session (CLI sense)** — the persisted continuation of one run: the
 recipe's agent keys as written (`AgentRecipe`) + core `AgentSession` +
-`Transcript.turns` + `Meter.usage` + cwd, at `~/.axle/sessions/cli/<id>.json`. Everything
+`Transcript.turns` + the session's lifetime `usage` + cwd, at `~/.axle/sessions/cli/<id>.json`. Everything
 in the recipe file is written into the session; everything that is not is
 resolved at runtime. Every run is a session, including each
 batch item; `axle resume <id>` re-enters any of them.

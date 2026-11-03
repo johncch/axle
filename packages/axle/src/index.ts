@@ -198,11 +198,13 @@ export type {
 export { getCompactionStamp, validateCompactedMessages } from "./messages/compaction.js";
 export type { CompactionStamp } from "./messages/compaction.js";
 
+// Cost (@experimental)
+export { computeCost } from "./models/cost.js";
+export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
+
 // Turns (public format)
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
-export { Meter } from "./turns/meter.js";
-export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./turns/meter.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export type {
@@ -252,16 +254,19 @@ export type {
 } from "./observability/index.js";
 export type { Stats, TokenStats, UsageEntry } from "./types.js";
 
-// Models
-export { ModelCatalog } from "./models/catalog.js";
+// Models (@experimental)
+export { ModelCatalog, parseCatalogData } from "./models/catalog.js";
 export type {
+  CatalogData,
   CatalogMatch,
   CatalogModel,
-  CatalogState,
   ContextWindowMatch,
-  ModelCatalogOptions,
   ModelCost,
 } from "./models/catalog.js";
+export { CatalogFetchError, fetchModelsDev } from "./models/modelsDev.js";
+export type { FetchModelsDevOptions } from "./models/modelsDev.js";
+export { ModelCatalogStore, catalogFile } from "./models/store.js";
+export type { CatalogStorage, ModelCatalogStoreOptions } from "./models/store.js";
 
 // Utils
 export { loadFileContent } from "./utils/file.js";
@@ -274,5 +279,5 @@ export type {
   FileResolver,
   ResolvedFileSource,
 } from "./utils/file.js";
-export { addStats, createStats, mergeStats } from "./utils/stats.js";
+export { addStats, attributeStats, createStats, mergeStats } from "./utils/stats.js";
 export type { Handle } from "./utils/utils.js";

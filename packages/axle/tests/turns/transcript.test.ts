@@ -50,12 +50,12 @@ describe("Transcript", () => {
       type: "turn:end",
       turnId: "t1",
       status: "complete",
-      usage: { in: 1, out: 2 },
+      usage: { in: 1, out: 2, breakdown: [] },
       timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:01.000Z" },
     });
     expect(transcript.turns[0]).toMatchObject({
       status: "complete",
-      usage: { in: 1, out: 2 },
+      usage: { in: 1, out: 2, breakdown: [] },
       timing: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:00:01.000Z" },
     });
   });
@@ -68,7 +68,7 @@ describe("Transcript", () => {
       type: "turn:end",
       turnId: "t1",
       status: "error",
-      usage: { in: 0, out: 0 },
+      usage: { in: 0, out: 0, breakdown: [] },
       failure: {
         kind: "api",
         type: "rate_limit_error",
@@ -97,7 +97,7 @@ describe("Transcript", () => {
       type: "turn:end",
       turnId: "t1",
       status: "complete",
-      usage: { in: 0, out: 0 },
+      usage: { in: 0, out: 0, breakdown: [] },
       reason: "length",
     });
 

@@ -355,7 +355,7 @@ describe("TurnEventBuilder", () => {
         content: [{ type: "text", text: "Hi" }],
         finishReason: AxleStopReason.FunctionCall,
       },
-      usage: { in: 10, out: 20 },
+      usage: { in: 10, out: 20, breakdown: [] },
     });
     builder.handleStreamEvent({
       type: "step:complete",
@@ -366,7 +366,7 @@ describe("TurnEventBuilder", () => {
         content: [{ type: "text", text: "Done" }],
         finishReason: AxleStopReason.Stop,
       },
-      usage: { in: 15, out: 25 },
+      usage: { in: 15, out: 25, breakdown: [] },
     });
 
     const events = builder.finalizeTurn();
@@ -376,7 +376,7 @@ describe("TurnEventBuilder", () => {
       type: "turn:end",
       turnId: start.turnId,
       status: "complete",
-      usage: { in: 25, out: 45 },
+      usage: { in: 25, out: 45, breakdown: [] },
     });
   });
 

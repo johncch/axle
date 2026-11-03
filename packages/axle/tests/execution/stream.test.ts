@@ -1083,6 +1083,29 @@ describe("stream()", () => {
       expect(final.error.kind).toBe("api");
       expect(final.error.message).toBe("Too many requests");
     });
+
+    test("attributes the failed request's usage on the error", async () => {
+      const failed: StreamErrorChunk = {
+        type: "error",
+        data: { type: "server_error", message: "Upstream failed", usage: { in: 40, out: 7 } },
+      };
+      const provider = makeProvider({ streamChunks: [[startChunk(), failed]] });
+
+      const final = await stream({ provider, model: "test-model", messages: [] }).final;
+
+      expect(final.ok).toBe(false);
+      if (final.ok || final.error.kind !== "api") throw new Error("expected an api failure");
+      const row = {
+        provider: "test",
+        model: "test-model",
+        requestedModel: "test-model",
+        at: expect.any(String),
+        in: 40,
+        out: 7,
+      };
+      expect(final.error.usage).toEqual({ in: 40, out: 7, breakdown: [row] });
+      expect(final.usage).toEqual({ in: 40, out: 7, breakdown: [row] });
+    });
   });
 
   describe("callback ordering", () => {

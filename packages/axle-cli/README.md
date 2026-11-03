@@ -198,10 +198,11 @@ The window is looked up in the [models.dev](https://models.dev) catalog by
 the model id — through the provider's own ids for first-party providers,
 OpenRouter and Together, with a best-effort match for local runtimes' names
 (`gemma4:26b-mlx`) — and falls back to 200,000 for a model the catalog
-lacks. The catalog is cached at `~/.axle/cache/models.json` and refreshed in
-the background once a day. The first run on a machine waits once for the
-download (at most ten seconds, then proceeds without it); every later run
-reads the cache. `axle info`
+lacks. The catalog is cached at `~/.axle/cache/models.json` and refreshed
+once a day while a run gets going. A run never waits for it: it starts with
+the saved copy, or with no copy (the first run on a machine) with the
+200,000 default and no prices, and a download that finishes during the run
+is saved for the next one. `axle info`
 shows each provider's window and where it came from, including the matched
 catalog id.
 

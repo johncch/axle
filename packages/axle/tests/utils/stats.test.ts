@@ -9,12 +9,12 @@ import {
 
 describe("stats utilities", () => {
   test("sums token detail fields", () => {
-    const total = { in: 10, out: 2, cachedIn: 1 };
+    const total = { in: 10, out: 2, cachedIn: 1, breakdown: [] };
 
-    addStats(total, { in: 5, out: 3, cachedIn: 2 });
-    addStats(total, { in: 1, out: 1 });
+    addStats(total, { in: 5, out: 3, cachedIn: 2, breakdown: [] });
+    addStats(total, { in: 1, out: 1, breakdown: [] });
 
-    expect(total).toEqual({ in: 16, out: 6, cachedIn: 3 });
+    expect(total).toEqual({ in: 16, out: 6, cachedIn: 3, breakdown: [] });
   });
 
   test("preserves token details in tracing usage", () => {
@@ -35,7 +35,7 @@ describe("stats utilities", () => {
   });
 
   test("attributes usage to a provider+model entry without double counting", () => {
-    const total = { in: 2, out: 1 };
+    const total = { in: 2, out: 1, breakdown: [] };
     const child = attributeStats(
       { in: 3, out: 4, cachedIn: 1 },
       { provider: "child-provider", model: "child-model", requestedModel: "child-model" },
@@ -62,7 +62,7 @@ describe("stats utilities", () => {
   });
 
   test("keeps one breakdown row per request for the same provider and model", () => {
-    const total = { in: 0, out: 0 };
+    const total = { in: 0, out: 0, breakdown: [] };
 
     addStats(
       total,

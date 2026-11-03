@@ -1,12 +1,11 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ModelCatalog } from "../../src/models/catalog.js";
+import type { CatalogData } from "../../src/models/catalog.js";
+import { ModelCatalog, parseCatalogData } from "../../src/models/catalog.js";
+import { CatalogFetchError, fetchModelsDev } from "../../src/models/modelsDev.js";
 
-const TEST_DIR = join(import.meta.dirname, "__catalog_tmp__");
-const CACHE_PATH = join(TEST_DIR, "cache", "models.json");
 const FIXTURES = join(import.meta.dirname, "..", "fixtures");
-const DAY = 24 * 60 * 60 * 1000;
 
 type Outcome = Response | Error;
 
@@ -36,20 +35,6 @@ async function stubBoth() {
   });
 }
 
-async function writeCache(ageMs: number, models: Record<string, unknown>, etags = {}) {
-  await mkdir(join(TEST_DIR, "cache"), { recursive: true });
-  await writeFile(
-    CACHE_PATH,
-    JSON.stringify({
-      version: 3,
-      fetchedAt: new Date(Date.now() - ageMs).toISOString(),
-      etags,
-      models,
-      providers: {},
-    }),
-  );
-}
-
 const acmeModel = {
   name: "Acme",
   limit: { context: 1234 },
@@ -59,22 +44,34 @@ const acmeModel = {
   modalities: { input: ["text"], output: ["text"] },
 };
 
-beforeEach(async () => {
-  await mkdir(TEST_DIR, { recursive: true });
-});
+function previousData(overrides: Partial<CatalogData> = {}): CatalogData {
+  return {
+    version: 4,
+    fetchedAt: "2026-10-01T00:00:00.000Z",
+    etags: { models: '"m0"', api: '"a0"' },
+    coverage: "all",
+    models: { "acme/old": acmeModel },
+    providers: { acme: { old: { canonical: "acme/old", cost: { input: 1, output: 1 } } } },
+    ...overrides,
+  };
+}
 
-afterEach(async () => {
+function notModified(): Response {
+  return new Response(null, { status: 304 });
+}
+
+afterEach(() => {
   vi.unstubAllGlobals();
-  await rm(TEST_DIR, { recursive: true, force: true });
 });
 
 describe("ModelCatalog.lookup", () => {
   let catalog: ModelCatalog;
+  let data: CatalogData;
 
   beforeEach(async () => {
     await stubBoth();
-    catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-    await catalog.ready;
+    data = await fetchModelsDev();
+    catalog = new ModelCatalog(data);
   });
 
   it("matches a provider's own id and returns the provider's limits and prices", () => {
@@ -186,7 +183,7 @@ describe("ModelCatalog.lookup", () => {
   });
 
   it("treats a zero limit as unknown and drops a malformed entry without failing the file", () => {
-    expect(catalog.size).toBe(14);
+    expect(Object.keys(data.models)).toHaveLength(14);
     expect(catalog.lookup("bytedance-seed/seedance-2.0")).toBeUndefined();
     expect(catalog.lookup("acme/broken")).toBeUndefined();
     expect(catalog.lookup("acme/zero-output", { provider: "openrouter" })?.model.limit).toEqual({
@@ -202,261 +199,143 @@ describe("ModelCatalog.lookup", () => {
   });
 });
 
-describe("ModelCatalog cache", () => {
-  it("is unavailable when there is no cache and the fetch fails", async () => {
-    stubFetch({ models: () => new Error("offline"), api: () => new Error("offline") });
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH, retryDelays: [] });
-    await catalog.ready;
+describe("ModelCatalog", () => {
+  it("reports when its data was fetched and which providers it covers", () => {
+    const catalog = new ModelCatalog(previousData({ coverage: ["acme"] }));
 
-    expect(catalog.state).toEqual({ status: "unavailable" });
-    expect(catalog.size).toBe(0);
-    expect(catalog.contextWindow("anthropic/claude-sonnet-5")).toBeUndefined();
+    expect(catalog.fetchedAt).toBe("2026-10-01T00:00:00.000Z");
+    expect(catalog.coverage).toEqual(["acme"]);
+  });
+});
+
+describe("parseCatalogData", () => {
+  it("reads saved data back", () => {
+    const data = previousData();
+
+    expect(parseCatalogData(JSON.stringify(data))).toEqual(data);
   });
 
-  it("is loading without a cache until the fetch lands, and tells listeners", async () => {
-    const models = await fixture("models-dev.json");
-    const api = await fixture("models-dev-api.json");
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockImplementation((url: string) =>
-          gate.then(() => (url.endsWith("/models.json") ? models() : api())),
-        ),
-    );
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-    const changes: string[] = [];
-    catalog.onChange(() => changes.push(catalog.state.status));
+  it("has no data for text that is not JSON, another version, or another shape", () => {
+    const version3 = JSON.stringify({ ...previousData(), version: 3 });
+    const shapeless = JSON.stringify({ version: 4, models: [] });
 
-    expect(catalog.state).toEqual({ status: "loading" });
-    expect(catalog.lookup("claude-sonnet-5", { provider: "anthropic" })).toBeUndefined();
-
-    release();
-    await catalog.ready;
-
-    expect(catalog.state).toMatchObject({ status: "loaded", stale: false });
-    expect(catalog.lookup("claude-sonnet-5", { provider: "anthropic" })?.match).toBe("provider");
-    expect(changes).toEqual(["loaded"]);
+    for (const text of ["{", version3, shapeless]) {
+      expect(parseCatalogData(text)).toBeUndefined();
+    }
   });
+});
 
-  it("retries an unavailable catalog after each delay", async () => {
-    stubFetch({ models: () => new Error("offline"), api: () => new Error("offline") });
-    const catalog = ModelCatalog.open({
-      cachePath: CACHE_PATH,
-      retryDelays: Array<number>(50).fill(10),
-    });
-    await catalog.ready;
-    expect(catalog.state).toEqual({ status: "unavailable" });
-    const changes: string[] = [];
-    const untilStatus = (status: string) =>
-      new Promise<void>((resolve) => {
-        const off = catalog.onChange(() => {
-          changes.push(catalog.state.status);
-          if (catalog.state.status === status) {
-            off();
-            resolve();
-          }
-        });
-      });
-
-    await untilStatus("unavailable");
-    expect(changes.slice(0, 2)).toEqual(["loading", "unavailable"]);
-
-    await stubBoth();
-    await untilStatus("loaded");
-
-    expect(catalog.size).toBe(14);
-    expect(changes.slice(-2)).toEqual(["loading", "loaded"]);
-  });
-
-  it("keeps a fetched catalog in memory when the cache cannot be written", async () => {
-    await stubBoth();
-    await writeFile(join(TEST_DIR, "not-a-dir"), "");
-    const catalog = ModelCatalog.open({
-      cachePath: join(TEST_DIR, "not-a-dir", "models.json"),
-    });
-    await catalog.ready;
-
-    expect(catalog.state).toMatchObject({ status: "loaded" });
-    expect(catalog.size).toBe(14);
-  });
-
-  it("open fetches a missing cache and writes a slimmed two-layer file that a later open reads without fetching", async () => {
+describe("fetchModelsDev", () => {
+  it("returns slimmed two-layer data with each layer's ETag", async () => {
     const fetched = await stubBoth();
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-    await catalog.ready;
-    expect(fetched).toHaveBeenCalledTimes(2);
 
-    const file = JSON.parse(await readFile(CACHE_PATH, "utf-8"));
-    expect(file.version).toBe(3);
-    expect(file.etags).toEqual({ models: '"m1"', api: '"a1"' });
-    expect(file.models["anthropic/claude-sonnet-5"].limit.context).toBe(1_000_000);
-    expect(file.models["anthropic/claude-sonnet-5"]).not.toHaveProperty("benchmarks");
-    expect(file.providers.openrouter["z-ai/glm-5.3-flash"]).toMatchObject({
+    const data = await fetchModelsDev();
+
+    expect(fetched).toHaveBeenCalledTimes(2);
+    expect(data.version).toBe(4);
+    expect(data.coverage).toBe("all");
+    expect(data.etags).toEqual({ models: '"m1"', api: '"a1"' });
+    expect(data.models["anthropic/claude-sonnet-5"].limit.context).toBe(1_000_000);
+    expect(data.models["anthropic/claude-sonnet-5"]).not.toHaveProperty("benchmarks");
+    expect(data.providers.openrouter["z-ai/glm-5.3-flash"]).toMatchObject({
       canonical: "zhipuai/glm-5.3-flash",
     });
-    expect(file.providers.openrouter["z-ai/glm-5.3-flash"]).not.toHaveProperty("model");
-    expect(file.providers.togetherai["zai-org/GLM-5.1"]).not.toHaveProperty("canonical");
-    expect(file.providers.togetherai["zai-org/GLM-5.1"].model.name).toBe("GLM-5.1");
-    expect(catalog.size).toBe(14);
-
-    fetched.mockClear();
-    const reopened = ModelCatalog.open({ cachePath: CACHE_PATH });
-    expect(reopened.state).toEqual({ status: "loading" });
-    await reopened.ready;
-    expect(fetched).not.toHaveBeenCalled();
-    expect(reopened.state).toMatchObject({ status: "loaded", stale: false });
-    expect(reopened.contextWindow("openai/gpt-5")?.window).toBe(400_000);
-    expect(reopened.lookup("claude-sonnet-5", { provider: "anthropic" })?.cost?.input).toBe(2);
-  });
-
-  it("holds the catalog in memory when no cachePath is given", async () => {
-    await stubBoth();
-    const catalog = ModelCatalog.open();
-    await catalog.ready;
-
-    expect(catalog.size).toBe(14);
-    expect(catalog.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" })?.match).toBe(
-      "provider",
-    );
-    await expect(stat(CACHE_PATH)).rejects.toThrow();
+    expect(data.providers.openrouter["z-ai/glm-5.3-flash"]).not.toHaveProperty("model");
+    expect(data.providers.togetherai["zai-org/GLM-5.1"]).not.toHaveProperty("canonical");
+    expect(data.providers.togetherai["zai-org/GLM-5.1"].model?.name).toBe("GLM-5.1");
+    expect(
+      new ModelCatalog(JSON.parse(JSON.stringify(data))).contextWindow("openai/gpt-5")?.window,
+    ).toBe(400_000);
   });
 
   it("providers: [] skips api.json; providers: [...] keeps only those", async () => {
     const fetched = await stubBoth();
-    const none = ModelCatalog.open({ providers: [] });
-    await none.ready;
+
+    const none = await fetchModelsDev({ providers: [] });
     expect(fetched.mock.calls.map(([url]) => String(url))).toEqual([
       "https://models.dev/models.json",
     ]);
-    const viaName = none.lookup("claude-sonnet-5", { provider: "anthropic" });
+    expect(none.providers).toEqual({});
+    expect(none.coverage).toEqual([]);
+    const viaName = new ModelCatalog(none).lookup("claude-sonnet-5", { provider: "anthropic" });
     expect(viaName?.match).toBe("exact");
     expect(viaName?.cost).toBeUndefined();
 
-    const some = ModelCatalog.open({ providers: ["anthropic"] });
-    await some.ready;
-    expect(some.lookup("claude-sonnet-5", { provider: "anthropic" })?.match).toBe("provider");
-    const unkeptProvider = some.lookup("z-ai/glm-5.3-flash", { provider: "openrouter" });
-    expect(unkeptProvider?.match).toBe("exact");
-    expect(unkeptProvider?.cost).toBeUndefined();
+    const some = await fetchModelsDev({ providers: ["anthropic"] });
+    expect(Object.keys(some.providers)).toEqual(["anthropic"]);
+    expect(some.coverage).toEqual(["anthropic"]);
   });
 
-  it("refreshes a stale cache on open, sending each layer's ETag and keeping the layer on 304", async () => {
-    await writeCache(2 * DAY, { "acme/old": acmeModel }, { models: '"m0"', api: '"a0"' });
-    const fetched = stubFetch({
-      models: () => new Response(null, { status: 304 }),
-      api: () => new Response(null, { status: 304 }),
-    });
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-    await catalog.ready;
-    const before = catalog.state;
-    expect(before).toMatchObject({ status: "loaded", stale: true });
-    expect(fetched).toHaveBeenCalledTimes(2);
+  it("sends the previous ETags, keeps a layer models.dev reports unchanged, and stamps a new fetchedAt", async () => {
+    const fetched = stubFetch({ models: notModified, api: notModified });
+    const previous = previousData();
 
-    await catalog.refresh();
+    const data = await fetchModelsDev({ previous });
 
-    const headers = fetched.mock.calls.slice(0, 2).map(([, init]) => init.headers);
+    const headers = fetched.mock.calls.map(([, init]) => init.headers);
     expect(headers).toEqual([{ "If-None-Match": '"m0"' }, { "If-None-Match": '"a0"' }]);
-    expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
-    const after = catalog.state;
-    if (before.status !== "loaded" || after.status !== "loaded") throw new Error("not loaded");
-    expect(Date.parse(after.fetchedAt)).toBeGreaterThan(Date.parse(before.fetchedAt));
-    expect(after.stale).toBe(false);
+    expect(data.models).toEqual(previous.models);
+    expect(data.providers).toEqual(previous.providers);
+    expect(data.etags).toEqual(previous.etags);
+    expect(Date.parse(data.fetchedAt)).toBeGreaterThan(Date.parse(previous.fetchedAt));
   });
 
   it("updates one layer while the other is unchanged", async () => {
-    await writeCache(2 * DAY, { "acme/old": acmeModel }, { models: '"m0"' });
     stubFetch({
-      models: () => new Response(null, { status: 304 }),
+      models: notModified,
       api: await fixture("models-dev-api.json", { etag: '"a1"' }),
     });
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
 
-    await catalog.ready;
-    await catalog.refresh();
+    const data = await fetchModelsDev({ previous: previousData() });
 
-    expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
-    expect(catalog.lookup("claude-sonnet-5", { provider: "anthropic" })?.id).toBe(
-      "anthropic/claude-sonnet-5",
-    );
-    expect(JSON.parse(await readFile(CACHE_PATH, "utf-8")).etags).toEqual({
-      models: '"m0"',
-      api: '"a1"',
-    });
+    expect(data.models).toEqual({ "acme/old": acmeModel });
+    expect(data.providers.anthropic).toBeDefined();
+    expect(data.providers.acme).toBeUndefined();
+    expect(data.etags).toEqual({ models: '"m0"', api: '"a1"' });
   });
 
-  it("stays stale after a partial refresh so the failed layer is retried", async () => {
-    await writeCache(2 * DAY, { "acme/old": acmeModel }, { models: '"m0"' });
-    stubFetch({
-      models: () => new Response(null, { status: 304 }),
-      api: () => new Error("offline"),
-    });
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-    await catalog.ready;
-    const before = catalog.state;
-
-    await catalog.refresh();
-
-    expect(catalog.state).toEqual(before);
-    expect(catalog.state).toMatchObject({ status: "loaded", stale: true });
-    expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
-
-    stubFetch({ models: await fixture("models-dev.json"), api: () => new Error("offline") });
-    const fresh = ModelCatalog.open();
-    await fresh.ready;
-    expect(fresh.size).toBe(14);
-    expect(fresh.state).toMatchObject({ status: "loaded", stale: true });
-  });
-
-  it("keeps the cache when the network fails or the server errors", async () => {
-    await writeCache(2 * DAY, { "acme/old": acmeModel });
-    for (const outcome of [
-      () => new Error("offline"),
-      () => new Response("nope", { status: 500 }),
-    ]) {
-      stubFetch({ models: outcome, api: outcome });
-      const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-      await catalog.ready;
-      await expect(catalog.refresh()).resolves.toBeUndefined();
-      expect(catalog.contextWindow("acme/old")?.window).toBe(1234);
-    }
-  });
-
-  it("treats a corrupt or outdated cache file as empty and overwrites it on refresh", async () => {
-    await mkdir(join(TEST_DIR, "cache"), { recursive: true });
-    await writeFile(CACHE_PATH, JSON.stringify({ version: 1, contexts: { "acme/old": 1 } }));
-    const fetched = await stubBoth();
-    const catalog = ModelCatalog.open({ cachePath: CACHE_PATH });
-
-    await catalog.ready;
-
-    expect(fetched).toHaveBeenCalledTimes(2);
-    expect(catalog.size).toBe(14);
-    expect(JSON.parse(await readFile(CACHE_PATH, "utf-8")).version).toBe(3);
-  });
-
-  it("reports stale by maxAge; refresh itself is unconditional", async () => {
-    await writeCache(60_000, { "acme/old": acmeModel });
+  it("refetches the provider layer when the previous data covers other providers", async () => {
     const fetched = stubFetch({
-      models: () => new Response(null, { status: 304 }),
-      api: () => new Response(null, { status: 304 }),
+      models: notModified,
+      api: await fixture("models-dev-api.json", { etag: '"a1"' }),
     });
 
-    const stale = ModelCatalog.open({ cachePath: CACHE_PATH, maxAge: 30_000 });
-    await stale.ready;
-    expect(stale.state).toMatchObject({ status: "loaded", stale: true });
-    expect(fetched).toHaveBeenCalledTimes(2);
+    const data = await fetchModelsDev({
+      providers: ["anthropic"],
+      previous: previousData({ coverage: ["acme"] }),
+    });
 
-    fetched.mockClear();
-    const fresh = ModelCatalog.open({ cachePath: CACHE_PATH, maxAge: 120_000 });
-    await fresh.ready;
-    expect(fresh.state).toMatchObject({ status: "loaded", stale: false });
-    expect(fetched).not.toHaveBeenCalled();
-    await fresh.refresh();
-    expect(fetched).toHaveBeenCalledTimes(2);
+    expect(fetched.mock.calls.map(([, init]) => init.headers)).toEqual([
+      { "If-None-Match": '"m0"' },
+      {},
+    ]);
+    expect(Object.keys(data.providers)).toEqual(["anthropic"]);
+  });
+
+  it.each([
+    ["a network failure", () => new Error("offline")],
+    ["a server error", () => new Response("nope", { status: 500 })],
+    ["a body that is not JSON", () => new Response("<html>", { status: 200 })],
+    ["a body of the wrong shape", () => new Response('"nope"', { status: 200 })],
+  ])("rejects with a CatalogFetchError on %s, with no partial result", async (_, outcome) => {
+    stubFetch({ models: await fixture("models-dev.json"), api: outcome });
+
+    await expect(fetchModelsDev()).rejects.toBeInstanceOf(CatalogFetchError);
+  });
+
+  it("rejects when the fetch outlasts the timeout", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(
+          (_url: string, init: RequestInit) =>
+            new Promise((_, reject) =>
+              init.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+            ),
+        ),
+    );
+
+    await expect(fetchModelsDev({ timeout: 10 })).rejects.toBeInstanceOf(CatalogFetchError);
   });
 });

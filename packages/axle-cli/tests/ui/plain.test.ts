@@ -38,7 +38,12 @@ describe("PlainRenderer", () => {
   it("marks a cancelled turn as interrupted, live and on replay", () => {
     const live = createHarness();
     live.feed({ type: "turn:start", turnId: "t1" });
-    live.feed({ type: "turn:end", turnId: "t1", status: "cancelled", usage: { in: 0, out: 0 } });
+    live.feed({
+      type: "turn:end",
+      turnId: "t1",
+      status: "cancelled",
+      usage: { in: 0, out: 0, breakdown: [] },
+    });
     expect(live.text()).toBe("(interrupted)\n");
 
     const writes: string[] = [];
@@ -169,7 +174,7 @@ describe("PlainRenderer", () => {
       type: "turn:end",
       turnId: "t1",
       status: "error",
-      usage: { in: 0, out: 0 },
+      usage: { in: 0, out: 0, breakdown: [] },
       failure: { kind: "api", type: "overloaded_error", message: "boom", status: 529 },
     });
 
@@ -184,7 +189,7 @@ describe("PlainRenderer", () => {
       type: "turn:end",
       turnId: "t1",
       status: "error",
-      usage: { in: 0, out: 0 },
+      usage: { in: 0, out: 0, breakdown: [] },
       reason: "length",
       failure: { kind: "parse", message: "Expected '}'" },
     });
