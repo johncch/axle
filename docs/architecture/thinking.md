@@ -115,17 +115,17 @@ continuity-only part, on the open thinking part if one is open.
 
 ## What each provider echoes back
 
-| Provider          | Block sent on the next turn                                   | Built from                                                |
-| ----------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
-| Anthropic         | `thinking: { thinking, signature }`                           | message `summary ?? text` + `continuity.signature`        |
-| Anthropic         | `redacted_thinking: { data }`                                 | `redacted` + `continuity.redactedData`                    |
-| OpenAI            | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`         |
-| Gemini            | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`   |
-| Gemini            | `thoughtSignature` on a function-call part                    | `providerMetadata.thoughtSignature`                       |
-| Gemini            | `thoughtSignature` on a text part                             | text part `providerMetadata.thoughtSignature`             |
-| Gemini            | `thoughtSignature` on an `executableCode` part                | the part itself, in the `provider-tool` part's continuity |
-| OpenRouter        | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data`  |
-| Generic, Together | nothing                                                       | —                                                         |
+| Provider             | Block sent on the next turn                                   | Built from                                                |
+| -------------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
+| Anthropic            | `thinking: { thinking, signature }`                           | message `summary ?? text` + `continuity.signature`        |
+| Anthropic            | `redacted_thinking: { data }`                                 | `redacted` + `continuity.redactedData`                    |
+| OpenAI               | `reasoning: { id, summary[], content?[], encrypted_content }` | message `summary`, `text`, `continuity.encrypted`         |
+| Gemini               | `{ thought: true, text, thoughtSignature }` in source order   | thinking part `summary` + `continuity.thoughtSignature`   |
+| Gemini               | `thoughtSignature` on a function-call part                    | `providerMetadata.thoughtSignature`                       |
+| Gemini               | `thoughtSignature` on a text part                             | text part `providerMetadata.thoughtSignature`             |
+| Gemini               | `thoughtSignature` on an `executableCode` part                | the part itself, in the `provider-tool` part's continuity |
+| OpenRouter           | `reasoning_details[]` on the assistant message                | continuity identity + message `summary ?? text` / `data`  |
+| Generic, Together AI | nothing                                                       | —                                                         |
 
 Anthropic signs whatever it put in the block's `thinking` field. Under
 `summarized` that is the summary, so the echo sends the summary; under
@@ -170,7 +170,7 @@ Not planned work; recorded so the option is on file.
 OpenRouter forwards the echoed entries to the upstream as signed blocks, and
 Anthropic rejects a signature whose text was altered, so the echo sends the
 message's content field verbatim. The echo is gated on the `openrouter`
-provider, as Together's request shape is; a strict generic endpoint may reject
+provider, as Together AI's request shape is; a strict generic endpoint may reject
 an unknown field. Under `display: "hidden"` OpenRouter still returns
 `reasoning_details` with text for Claude (`exclude` strips only the
 convenience `reasoning` string there), while for Gemini it also drops the

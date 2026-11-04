@@ -216,7 +216,7 @@ against it; divergence is a defect. State ownership is defined in
    `defaults.models[name]` → `*_MODEL` credential → interactive prompt
    (TTY) or error. The name alone decides what a `providers` entry is. A
    name that matches a preset (`anthropic`, `openai`, `gemini`, `openrouter`,
-   `together`, `bedrock`) configures that preset and takes only that
+   `togetherai`, `bedrock`) configures that preset and takes only that
    preset's options: a key and client options, plus `baseUrl` on
    `openrouter`, and a required `protocol` and `region` on `bedrock`, which
    for that reason cannot run without a profile. Each preset has a key

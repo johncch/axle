@@ -219,12 +219,12 @@ const proxied = messages({
 });
 ```
 
-| Protocol constructor | Base URL                                                          | Presets                      |
-| -------------------- | ----------------------------------------------------------------- | ---------------------------- |
-| `messages()`         | origin; requests go to `/v1/messages` under it                    | `anthropic()`                |
-| `responses()`        | includes the version; requests go to `/responses` under it        | `openai()`                   |
-| `generateContent()`  | origin; requests go to `/v1beta/models/...` under it              | `gemini()`                   |
-| `chatCompletions()`  | includes the version; requests go to `/chat/completions` under it | `openrouter()`, `together()` |
+| Protocol constructor | Base URL                                                          | Presets                        |
+| -------------------- | ----------------------------------------------------------------- | ------------------------------ |
+| `messages()`         | origin; requests go to `/v1/messages` under it                    | `anthropic()`                  |
+| `responses()`        | includes the version; requests go to `/responses` under it        | `openai()`                     |
+| `generateContent()`  | origin; requests go to `/v1beta/models/...` under it              | `gemini()`                     |
+| `chatCompletions()`  | includes the version; requests go to `/chat/completions` under it | `openrouter()`, `togetherai()` |
 
 A protocol constructor takes one options object: `baseUrl`, `apiKey`, the
 client options below, `id`, `resolveModel`, and for Chat Completions
@@ -403,7 +403,7 @@ required. Anthropic requests, and chat-completions requests to OpenRouter,
 carry a top-level `cache_control: { type: "ephemeral" }`. The provider puts
 one cache breakpoint on the last cacheable block and moves it forward as the
 conversation grows, so in a tool loop each step reads everything so far and
-writes only what the previous step added. OpenAI, Gemini and Together cache
+writes only what the previous step added. OpenAI, Gemini and Together AI cache
 automatically and get no field.
 
 `cache: false` omits the field. It is accepted by `Agent`, `generate()`, and
@@ -1139,7 +1139,7 @@ reports the usage of every request it took, summed in the totals and one
 
 Each provider owns the provider tools it can serve. Anthropic, OpenAI, Gemini
 and OpenRouter host their own `web_search`. A Chat Completions endpoint that
-hosts none (Together, a local server) gets one attached when you create the
+hosts none (Together AI, a local server) gets one attached when you create the
 provider:
 
 ```typescript
@@ -1189,9 +1189,9 @@ Requesting a provider tool from a Chat Completions provider that has nothing
 to serve it fails before the request is sent: the result has `ok: false`
 and `error.message` names the tool.
 
-OpenRouter and Together differ from plain Chat Completions in their request
+OpenRouter and Together AI differ from plain Chat Completions in their request
 fields; a `ChatCompletionsDialect` carries those differences.
-`openrouter()` and `together()` apply theirs, and so does `chatCompletions()`
+`openrouter()` and `togetherai()` apply theirs, and so does `chatCompletions()`
 at their official hostnames. Behind a proxy or gateway with another hostname,
 pass the dialect and id yourself:
 

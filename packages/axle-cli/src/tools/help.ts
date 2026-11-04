@@ -105,7 +105,7 @@ A recipe is a YAML file run with \`axle -j path/to/job.yaml\`.
     compaction: false                   # optional, default on
 
 \`provider\` is a string (a preset: anthropic, openai, gemini, openrouter,
-together, bedrock; or a profile name from cli.yaml) or an inline generic
+togetherai, bedrock; or a profile name from cli.yaml) or an inline generic
 profile, which always needs \`protocol\` and \`baseUrl\`:
 
     provider:

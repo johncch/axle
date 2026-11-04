@@ -89,7 +89,7 @@ describe("formatExplain", () => {
 
   it("walks through maps", () => {
     expect(formatExplain("config.providers.<name>.dialect", WIDE)[0]).toBe(
-      "config.providers.<name>.dialect  openrouter | together",
+      "config.providers.<name>.dialect  openrouter | togetherai",
     );
   });
 

@@ -97,7 +97,7 @@ export const API_KEY_VARIABLES = {
   anthropic: "ANTHROPIC_API_KEY",
   gemini: "GEMINI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
-  together: "TOGETHER_API_KEY",
+  togetherai: "TOGETHER_API_KEY",
   bedrock: "AWS_BEARER_TOKEN_BEDROCK",
 } as const;
 

@@ -43,9 +43,9 @@ interface LegacySessionFile {
   turns: Turn[];
 }
 
-const VENDOR_DIALECTS: Record<string, "openrouter" | "together"> = {
+const VENDOR_DIALECTS: Record<string, "openrouter" | "togetherai"> = {
   openrouter: "openrouter",
-  togetherai: "together",
+  togetherai: "togetherai",
 };
 
 class SessionProviderError extends Error {}

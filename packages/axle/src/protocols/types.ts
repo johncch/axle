@@ -58,7 +58,7 @@ export interface AxleModelRequestOptions {
   /**
    * Whether Axle asks the provider to cache the prompt prefix where asking is
    * required (Anthropic, OpenRouter). Defaults to `true`. Providers that cache
-   * on their own (OpenAI, Gemini, Together) are unaffected by either value.
+   * on their own (OpenAI, Gemini, Together AI) are unaffected by either value.
    */
   cache?: boolean;
   /** Raw provider-specific request fields applied after normalized mappings. */

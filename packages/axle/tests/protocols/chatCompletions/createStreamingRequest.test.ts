@@ -7,7 +7,7 @@ import { chatCompletions } from "../../../src/protocols/chatCompletions/chatComp
 import { createStreamingRequest } from "../../../src/protocols/chatCompletions/createStreamingRequest.js";
 import type { ChatCompletionsDialect } from "../../../src/protocols/chatCompletions/dialect.js";
 import { openrouterDialect } from "../../../src/protocols/chatCompletions/dialects/openrouter.js";
-import { togetherDialect } from "../../../src/protocols/chatCompletions/dialects/together.js";
+import { togetheraiDialect } from "../../../src/protocols/chatCompletions/dialects/togetherai.js";
 import type { AIProvider } from "../../../src/protocols/types.js";
 import { AxleStopReason } from "../../../src/protocols/types.js";
 
@@ -146,7 +146,7 @@ describe("createStreamingRequest", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("maps normalized reasoning to Together's streaming request shape", async () => {
+  test("maps normalized reasoning to Together AI's streaming request shape", async () => {
     (fetch as any).mockResolvedValue(makeSSEResponse("data: [DONE]\n\n"));
 
     await collectChunks(
@@ -155,7 +155,7 @@ describe("createStreamingRequest", () => {
         model: MODEL,
         messages: [{ role: "user", content: "Hi" }],
         runtime: {},
-        dialect: togetherDialect,
+        dialect: togetheraiDialect,
         reasoning: { effort: "high" },
       }),
     );
@@ -791,7 +791,7 @@ describe("createStreamingRequest", () => {
       expect(JSON.parse((fetch as any).mock.calls[0][1].body).session_id).toBe("conversation-1");
 
       (fetch as any).mockResolvedValue(okStream());
-      await request(togetherDialect);
+      await request(togetheraiDialect);
       expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("session_id");
 
       (fetch as any).mockResolvedValue(okStream());
@@ -823,7 +823,7 @@ describe("createStreamingRequest", () => {
       expect(JSON.parse((fetch as any).mock.calls[1][1].body)).not.toHaveProperty("cache_control");
 
       (fetch as any).mockResolvedValue(okStream());
-      await request(togetherDialect);
+      await request(togetheraiDialect);
       expect(JSON.parse((fetch as any).mock.calls[2][1].body)).not.toHaveProperty("cache_control");
 
       (fetch as any).mockResolvedValue(okStream());

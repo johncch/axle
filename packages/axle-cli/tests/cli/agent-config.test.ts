@@ -163,7 +163,7 @@ describe("createCliAgentConfig", () => {
         {},
       ),
     ).rejects.toThrow(
-      'Provider "chatcompletions" is not a preset (anthropic, openai, gemini, openrouter, together, bedrock) or a provider profile in cli.yaml.',
+      'Provider "chatcompletions" is not a preset (anthropic, openai, gemini, openrouter, togetherai, bedrock) or a provider profile in cli.yaml.',
     );
   });
 
@@ -216,11 +216,11 @@ describe("createCliAgentConfig", () => {
     expect(agentConfig.provider).toMatchObject({ protocol: "responses", id: "amazon-bedrock" });
   });
 
-  test("openrouter and together are presets with no profile", async () => {
+  test("openrouter and togetherai are presets with no profile", async () => {
     const { agentConfig } = await fromRecipe(
-      { provider: { name: "together" }, model: "m", task: "Run" },
+      { provider: { name: "togetherai" }, model: "m", task: "Run" },
       {},
-      { together: { apiKey: "key" } },
+      { togetherai: { apiKey: "key" } },
       {},
     );
 

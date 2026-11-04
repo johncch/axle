@@ -30,7 +30,7 @@ pnpm exec tsx checks/run.ts --extended
 pnpm run checks:extended
 ```
 
-The default set is OpenAI, Anthropic, Gemini, Together, and TypeSafe.
+The default set is OpenAI, Anthropic, Gemini, Together AI, and TypeSafe.
 OpenRouter is available as an explicit alternative Chat Completions provider.
 
 Providers and cases each have a kind. Chat providers run the chat cases
@@ -107,8 +107,8 @@ BRAVE_API_KEY=...
 
 `BRAVE_API_KEY` is required for the `togetherai` and `ollama` targets, which
 have no web search of their own and get Brave attached as their `web_search`.
-The PDF attachment case is excluded because Together's Chat Completions API
-does not accept PDF file parts. Override Together's default smoke model with
+The PDF attachment case is excluded because Together AI's Chat Completions API
+does not accept PDF file parts. Override Together AI's default smoke model with
 `TOGETHER_MODEL`.
 
 Run the native OpenRouter search path:
@@ -119,7 +119,7 @@ pnpm exec tsx checks/run.ts \
   --case stream-web-search
 ```
 
-Run the Together + Brave fallback path:
+Run the Together AI + Brave fallback path:
 
 ```bash
 pnpm exec tsx checks/run.ts \
@@ -265,7 +265,7 @@ rest.
   signature, Gemini summary, OpenRouter reasoning entries)
 - `format-thinking-hidden` (Anthropic hidden thinking: continuity only, not redacted)
 - `format-thinking-stream` (a raw or summary delta required for Anthropic,
-  OpenRouter, and Together, which stream thinking text)
+  OpenRouter, and Together AI, which stream thinking text)
 
 Provider tool outcomes:
 
@@ -292,7 +292,7 @@ Cache telemetry (`cache-*`): provider cache counters surface on `usage`.
 
 - `cache-prompt-reuse` (OpenAI `prompt_cache_key`; Anthropic through Axle's
   default top-level `cache_control`, with `cacheWriteIn` on the first call;
-  OpenRouter and Together report only `cachedIn` on the second. The case
+  OpenRouter and Together AI report only `cachedIn` on the second. The case
   sends a `sessionId`, which OpenRouter needs to route both calls to the
   same upstream host; without it a Claude model there writes twice and
   reads nothing)
