@@ -50,7 +50,7 @@ export type {
   ChatCompletionsReasoningDetails,
 } from "./protocols/chatCompletions/dialect.js";
 export { openrouterDialect } from "./protocols/chatCompletions/dialects/openrouter.js";
-export { togetherDialect } from "./protocols/chatCompletions/dialects/together.js";
+export { togetheraiDialect } from "./protocols/chatCompletions/dialects/togetherai.js";
 export { generateContent } from "./protocols/generateContent/generateContent.js";
 export { messages } from "./protocols/messages/messages.js";
 export { responses } from "./protocols/responses/responses.js";
@@ -60,7 +60,7 @@ export { anthropic } from "./providers/anthropic.js";
 export { bedrock } from "./providers/bedrock.js";
 export type { BedrockOptions } from "./providers/bedrock.js";
 export { openrouter } from "./providers/openrouter.js";
-export { together } from "./providers/together.js";
+export { togetherai } from "./providers/togetherai.js";
 
 export { estimateContextUsage } from "./execution/context.js";
 

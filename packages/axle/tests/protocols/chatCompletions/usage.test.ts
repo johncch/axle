@@ -11,7 +11,7 @@ describe("chatUsageToStats", () => {
     expect(stats).toMatchObject({ in: 10, out: 2, cachedIn: 7, cacheWriteIn: 3 });
   });
 
-  test("reads top-level cached_tokens, as Together reports on some models", () => {
+  test("reads top-level cached_tokens, as Together AI reports on some models", () => {
     const stats = chatUsageToStats({ prompt_tokens: 10, completion_tokens: 2, cached_tokens: 7 });
     expect(stats).toMatchObject({ in: 10, out: 2, cachedIn: 7 });
   });

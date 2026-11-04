@@ -32,7 +32,7 @@
 
 - **Breaking: `cli.yaml` profiles and inline providers replace `type` and
   `vendor`.** A profile's name now decides what it is. A name matching a
-  preset (`anthropic`, `openai`, `gemini`, `openrouter`, `together`,
+  preset (`anthropic`, `openai`, `gemini`, `openrouter`, `togetherai`,
   `bedrock`) configures that preset and needs no `type`. Any other name is a
   generic profile, which spells out `protocol` and `baseUrl`. A file using
   the old keys fails at load and says what to change.
@@ -78,12 +78,12 @@
   of letting the SDK send `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
   `GEMINI_API_KEY` to that URL. `chatCompletions` endpoints can still run
   keyless.
-- **OpenRouter, Together and Amazon Bedrock work by name.** `provider:
-openrouter` and `provider: together` need no profile: set
-  `OPENROUTER_API_KEY` or `TOGETHER_API_KEY`, and `<NAME>_MODEL` if you want
-  a default model. Bedrock reads `AWS_BEARER_TOKEN_BEDROCK` and needs a
-  `providers.bedrock` profile with `protocol` and `region`. `axle setup`
-  offers OpenRouter and Together.
+- **OpenRouter, Together AI and Amazon Bedrock work by name.** `provider:
+openrouter` and `provider: togetherai` (the models.dev id) need no
+  profile: set `OPENROUTER_API_KEY` or `TOGETHER_API_KEY`, and
+  `OPENROUTER_MODEL` or `TOGETHERAI_MODEL` if you want a default model.
+  Bedrock reads `AWS_BEARER_TOKEN_BEDROCK` and needs a `providers.bedrock` profile with `protocol` and `region`. `axle setup`
+  offers OpenRouter and Together AI.
 - **A profile can name any protocol.** `protocol` takes `messages`,
   `responses`, `generateContent` or `chatCompletions`, so a proxy in front
   of Anthropic or OpenAI is a generic profile. `openrouter` takes a `baseUrl`
@@ -123,7 +123,7 @@ openrouter` and `provider: together` need no profile: set
   provider stopping for a reason Axle cannot use. `Refused` and
   `Parse error` are unchanged.
 - **A recipe the provider cannot serve fails before any request.** A
-  non-PDF document on Anthropic, a PDF on Together, a tool choice naming a
+  non-PDF document on Anthropic, a PDF on Together AI, a tool choice naming a
   tool the recipe does not have, or a bad `reasoning` value used to be
   reported as `Model error: ...` after a request was attempted. It now
   prints `✖` with the reason and exits 1 without sending anything, the

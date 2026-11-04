@@ -163,13 +163,13 @@ adapters, not re-checked against provider documentation on this date.
 | `openai()`                      | A content source with no part type                                                                                                                            | Any provider tool name; any file or image source it has a part for        |
 | `gemini()`                      | Non-PDF document files; `parallelToolCalls: false`; provider tool choice; `toolChoice: "required"` with no function tools; a content source with no part type | Any provider tool name; any file source it has a part for                 |
 | `openrouter()`                  | Provider tool choice; a content source with no part type                                                                                                      | `web_search` (hosted or attached); PDFs and images as OpenAI-shaped parts |
-| `together()`                    | PDF file parts (provider fact); any provider tool with nothing attached; provider tool choice                                                                 | Images as OpenAI-shaped parts                                             |
+| `togetherai()`                  | PDF file parts (provider fact); any provider tool with nothing attached; provider tool choice                                                                 | Images as OpenAI-shaped parts                                             |
 | `chatCompletions()`, no dialect | Any provider tool with nothing attached; provider tool choice; a content source with no part type                                                             | PDFs and images as OpenAI-shaped parts; the provider decides              |
 
-The Together PDF row is the only pre-emption that is a fact about a provider
+The Together AI PDF row is the only pre-emption that is a fact about a provider
 rather than about the protocol. It stays because the message it produces
 is readable and the provider's own 400 is not; it is the dialect's job
-to retire it when Together changes.
+to retire it when Together AI changes.
 
 A tool choice that names a tool not in the request is `INVALID_OPTIONS` on
 every provider, not `PROVIDER_UNSUPPORTED`: it is malformed regardless of
@@ -206,7 +206,7 @@ Chat Completions (`finish_reason`, five declared values plus provider extras):
 
 | Finish reason                                | Axle                                           |
 | -------------------------------------------- | ---------------------------------------------- |
-| `stop`; `eos` (Together)                     | `ok: true`, `Stop`                             |
+| `stop`; `eos` (Together AI)                  | `ok: true`, `Stop`                             |
 | `length`                                     | `ok: true`, `Length`                           |
 | `tool_calls`, `function_call`                | `ok: true`, `FunctionCall`                     |
 | `content_filter`                             | `refusal`, category `content_filter`           |

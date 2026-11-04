@@ -5,7 +5,7 @@ import { lookupHost, requireInteger } from "../utils.js";
 import { createStreamingRequest } from "./createStreamingRequest.js";
 import type { ChatCompletionsDialect } from "./dialect.js";
 import { openrouterDialect } from "./dialects/openrouter.js";
-import { togetherDialect } from "./dialects/together.js";
+import { togetheraiDialect } from "./dialects/togetherai.js";
 
 export interface ChatCompletionsOptions extends ProtocolOptions {
   /** Inferred from the base URL's hostname when omitted. */
@@ -15,8 +15,8 @@ export interface ChatCompletionsOptions extends ProtocolOptions {
 
 const KNOWN_HOSTS: Readonly<Record<string, { id: string; dialect?: ChatCompletionsDialect }>> = {
   "openrouter.ai": { id: "openrouter", dialect: openrouterDialect },
-  "api.together.xyz": { id: "togetherai", dialect: togetherDialect },
-  "api.together.ai": { id: "togetherai", dialect: togetherDialect },
+  "api.together.xyz": { id: "togetherai", dialect: togetheraiDialect },
+  "api.together.ai": { id: "togetherai", dialect: togetheraiDialect },
 };
 
 /**

@@ -1,6 +1,7 @@
 import type { ModelCatalog } from "@fifthrevision/axle";
 import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { styleText } from "node:util";
 import { resolveEndpoint, resolveTarget } from "./agent-config.js";
 import type { CliConfigSources, Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
@@ -120,7 +121,9 @@ export function formatInfo(input: InfoInput): string[] {
     "",
     "Defaults",
     ...formatRows("  ", defaults),
-    ...defaultProviderProblem(cliConfig, serviceConfig).map((problem) => `  ✖ ${problem}`),
+    ...defaultProviderProblem(cliConfig, serviceConfig).map(
+      (problem) => `  ${styleText("red", `✖ ${problem}`, { stream: process.stdout })}`,
+    ),
     "",
     "Providers",
     ...providerBlocks.flatMap((block) => [

@@ -134,8 +134,8 @@ properties:
             type: string
             minLength: 1
         additionalProperties: false
-      together:
-        description: The together preset.
+      togetherai:
+        description: The togetherai preset.
         type: object
         properties:
           apiKey:
@@ -235,7 +235,7 @@ properties:
           type: string
           enum:
             - openrouter
-            - together
+            - togetherai
         apiKey:
           description: API key, inline. Prefer apiKeyEnv or a credentials file.
           type: string

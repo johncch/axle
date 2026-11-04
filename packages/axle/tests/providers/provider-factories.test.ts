@@ -331,13 +331,13 @@ describe("provider client factory options", () => {
     const { openai } = await import("../../src/providers/openai.js");
     const { gemini } = await import("../../src/providers/gemini.js");
     const { openrouter } = await import("../../src/providers/openrouter.js");
-    const { together } = await import("../../src/providers/together.js");
+    const { togetherai } = await import("../../src/providers/togetherai.js");
 
     expect(anthropic("k")).toMatchObject({ protocol: "messages", id: "anthropic" });
     expect(openai("k")).toMatchObject({ protocol: "responses", id: "openai" });
     expect(gemini("k")).toMatchObject({ protocol: "generateContent", id: "google" });
     expect(openrouter("k")).toMatchObject({ protocol: "chatCompletions", id: "openrouter" });
-    expect(together("k")).toMatchObject({ protocol: "chatCompletions", id: "togetherai" });
+    expect(togetherai("k")).toMatchObject({ protocol: "chatCompletions", id: "togetherai" });
   });
 
   test("infers the provider id from a known hostname, exactly", async () => {
@@ -466,7 +466,7 @@ describe("provider client factory options", () => {
     );
   });
 
-  test("detects Together from its official endpoint hostname", async () => {
+  test("detects Together AI from its official endpoint hostname", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(

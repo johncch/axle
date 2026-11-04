@@ -14,8 +14,8 @@ properties:
     anyOf:
       - type: string
         minLength: 1
-        description: A preset (anthropic, openai, gemini, openrouter, together, bedrock)
-          or a cli.yaml provider profile.
+        description: A preset (anthropic, openai, gemini, openrouter, togetherai,
+          bedrock) or a cli.yaml provider profile.
       - type: object
         properties:
           protocol:
@@ -42,7 +42,7 @@ properties:
             type: string
             enum:
               - openrouter
-              - together
+              - togetherai
           apiKeyEnv:
             description: Name of the environment variable or credentials entry that holds
               the API key.

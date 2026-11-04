@@ -2,10 +2,10 @@ import {
   chatCompletions,
   type ChatCompletionsOptions,
 } from "../protocols/chatCompletions/chatCompletions.js";
-import { togetherDialect } from "../protocols/chatCompletions/dialects/together.js";
+import { togetheraiDialect } from "../protocols/chatCompletions/dialects/togetherai.js";
 import type { AIProvider } from "../protocols/types.js";
 
-export function together(
+export function togetherai(
   apiKey: string,
   options: Omit<ChatCompletionsOptions, "baseUrl" | "apiKey" | "id" | "dialect"> = {},
 ): AIProvider {
@@ -14,6 +14,6 @@ export function together(
     baseUrl: "https://api.together.xyz/v1",
     apiKey,
     id: "togetherai",
-    dialect: togetherDialect,
+    dialect: togetheraiDialect,
   });
 }

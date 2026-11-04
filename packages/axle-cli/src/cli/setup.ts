@@ -8,7 +8,7 @@ import { updateCliDefaults, upsertCliProvider, upsertCredentials } from "./confi
 import { isFolderTrusted, trustFolder } from "./trust.js";
 
 interface BuiltInChoice {
-  value: "anthropic" | "openai" | "gemini" | "openrouter" | "together";
+  value: "anthropic" | "openai" | "gemini" | "openrouter" | "togetherai";
   label: string;
   keyName: string;
   publisher?: string;
@@ -19,7 +19,7 @@ const BUILT_IN_CHOICES: BuiltInChoice[] = [
   { value: "openai", label: "OpenAI", keyName: "OPENAI_API_KEY", publisher: "openai/" },
   { value: "gemini", label: "Google Gemini", keyName: "GEMINI_API_KEY", publisher: "google/" },
   { value: "openrouter", label: "OpenRouter", keyName: "OPENROUTER_API_KEY" },
-  { value: "together", label: "Together", keyName: "TOGETHER_API_KEY" },
+  { value: "togetherai", label: "Together AI", keyName: "TOGETHER_API_KEY" },
 ];
 
 const ENDPOINT_CHOICE = "endpoint";

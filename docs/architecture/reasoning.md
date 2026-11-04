@@ -54,7 +54,7 @@ can be re-checked when they change.
     OpenAI `reasoning.summary: auto`. `"hidden"` sends the explicit hide
     value on the same routes (`omitted`, `false`, no summary field) and
     `reasoning: { exclude: true }` on OpenRouter. Generic Chat Completions
-    endpoints and Together have no field and send nothing either way. On
+    endpoints and Together AI have no field and send nothing either way. On
     every route the step reader also withholds thinking content from the
     turn under `"hidden"` while the message keeps what the wire carried
     (thinking.md invariant 9); this is how `"hidden"` holds on OpenRouter,
@@ -150,7 +150,7 @@ requires `store: false` and `include: ["reasoning.encrypted_content"]` via
   convenience `reasoning` string from the response and nothing else:
   `reasoning_details` still arrive with text and signature (verified
   2026-09-11), since they exist for the round trip.
-- **Together**: hybrid models (GLM, Qwen, Kimi, MiniMax, DeepSeek V3.1) toggle
+- **Together AI**: hybrid models (GLM, Qwen, Kimi, MiniMax, DeepSeek V3.1) toggle
   with `reasoning: { enabled }`; GPT-OSS and DeepSeek V4 accept
   `reasoning_effort` with `low | medium | high`. Neither family documents
   accepting both, and GLM-5.3-Flash accepted both in the harness.
@@ -169,18 +169,18 @@ requires `store: false` and `include: ["reasoning.encrypted_content"]` via
 | Gemini legacy budget                                 | `{thinkingBudget: 0}`                 | `{thinkingBudget: 2048, includeThoughts: true}`               | 8192              | 16384           |
 | OpenAI Responses                                     | `reasoning: {effort: none}`           | `{effort: low}`                                               | medium            | high            |
 | Chat Completions, OpenRouter                         | `reasoning_effort: none`              | low                                                           | medium            | high            |
-| Together                                             | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: low`           | medium            | high            |
+| Together AI                                          | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: low`           | medium            | high            |
 
 Default sends no fields on every route. Every enabled cell above also
 carries the route's display field:
 
-| Route                       | `display: "visible"` (default) | `display: "hidden"`            |
-| --------------------------- | ------------------------------ | ------------------------------ |
-| Anthropic, both routes      | `thinking.display: summarized` | `thinking.display: omitted`    |
-| Gemini, both routes         | `includeThoughts: true`        | `includeThoughts: false`       |
-| OpenAI Responses            | `reasoning.summary: auto`      | no summary field               |
-| OpenRouter                  | nothing                        | `reasoning: { exclude: true }` |
-| Generic endpoints, Together | nothing                        | nothing                        |
+| Route                          | `display: "visible"` (default) | `display: "hidden"`            |
+| ------------------------------ | ------------------------------ | ------------------------------ |
+| Anthropic, both routes         | `thinking.display: summarized` | `thinking.display: omitted`    |
+| Gemini, both routes            | `includeThoughts: true`        | `includeThoughts: false`       |
+| OpenAI Responses               | `reasoning.summary: auto`      | no summary field               |
+| OpenRouter                     | nothing                        | `reasoning: { exclude: true }` |
+| Generic endpoints, Together AI | nothing                        | nothing                        |
 
 Under `"hidden"` the turn receives no thinking content on any route; the
 step reader withholds it (thinking.md invariant 9).
@@ -249,7 +249,7 @@ and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
   `updates` mode is a third disclosure state a boolean cannot hold.
 - **Summary levels (`"concise" | "detailed"`)** (2026-09-10): only OpenAI
   has levels. Anthropic and Gemini would silently collapse them, the same
-  silent drop that rejected Together `enabled`-only. The intersection every
+  silent drop that rejected Together AI `enabled`-only. The intersection every
   provider shares is binary.
 - **Values named for the part field (`"summary" | "none"`)** (2026-09-10):
   no provider lets the caller choose the form. An open-weight model answers
@@ -288,7 +288,7 @@ and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
   21,000)** (2026-09-07): three constants to express what one does. The
   historical 16,000 protected nothing, since a ceiling only matters when the
   model actually runs that long.
-- **Together `enabled` only** (2026-09-07): drops an explicit effort
+- **Together AI `enabled` only** (2026-09-07): drops an explicit effort
   silently, which invariant 8 forbids.
 - **Two transports behind two public functions** (2026-09-12, AXL-55): the
   buffered `generate()` loop and the four `createGenerationRequest` builders

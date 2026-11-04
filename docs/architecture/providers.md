@@ -76,12 +76,12 @@ what content it returns is in [provider-content.md](./provider-content.md).
 
 ## Protocols
 
-| Constructor         | SDK                 | Base URL convention                           | Presets                                   |
-| ------------------- | ------------------- | --------------------------------------------- | ----------------------------------------- |
-| `messages()`        | `@anthropic-ai/sdk` | origin; SDK appends `/v1/messages`            | `anthropic()`, `bedrock()`                |
-| `responses()`       | `openai`            | includes version; SDK appends `/responses`    | `openai()`, `bedrock()`                   |
-| `generateContent()` | `@google/genai`     | origin; SDK appends `/v1beta/models/…`        | `gemini()`                                |
-| `chatCompletions()` | Axle's own `fetch`  | includes version; appends `/chat/completions` | `openrouter()`, `together()`, `bedrock()` |
+| Constructor         | SDK                 | Base URL convention                           | Presets                                     |
+| ------------------- | ------------------- | --------------------------------------------- | ------------------------------------------- |
+| `messages()`        | `@anthropic-ai/sdk` | origin; SDK appends `/v1/messages`            | `anthropic()`, `bedrock()`                  |
+| `responses()`       | `openai`            | includes version; SDK appends `/responses`    | `openai()`, `bedrock()`                     |
+| `generateContent()` | `@google/genai`     | origin; SDK appends `/v1beta/models/…`        | `gemini()`                                  |
+| `chatCompletions()` | Axle's own `fetch`  | includes version; appends `/chat/completions` | `openrouter()`, `togetherai()`, `bedrock()` |
 
 `typesafe()` is a `DecisionProvider` on its own wire format (System One), not
 one of these protocols. It carries an `id` and is otherwise out of scope.
@@ -94,7 +94,7 @@ one of these protocols. It carries an `id` and is otherwise out of scope.
 | `openai()`     | responses       | `https://api.openai.com/v1`                                | `openai`         | strips `openai/`              | none       |
 | `gemini()`     | generateContent | `https://generativelanguage.googleapis.com`                | `google`         | strips `gemini/` or `google/` | none       |
 | `openrouter()` | chatCompletions | `https://openrouter.ai/api/v1`                             | `openrouter`     | none                          | openrouter |
-| `together()`   | chatCompletions | `https://api.together.xyz/v1`                              | `togetherai`     | none                          | together   |
+| `togetherai()` | chatCompletions | `https://api.together.xyz/v1`                              | `togetherai`     | none                          | togetherai |
 | `bedrock()`    | messages        | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` | `amazon-bedrock` | none                          | none       |
 | `bedrock()`    | responses       | `https://bedrock-mantle.{region}.api.aws/v1`               | `amazon-bedrock` | none                          | none       |
 | `bedrock()`    | chatCompletions | `https://bedrock-mantle.{region}.api.aws/v1`               | `amazon-bedrock` | none                          | none       |
@@ -115,7 +115,7 @@ provider. Any other destination is a protocol constructor call.
 | responses       | `api.openai.com`                      | `openai`     | none       |
 | generateContent | `generativelanguage.googleapis.com`   | `google`     | none       |
 | chatCompletions | `openrouter.ai`                       | `openrouter` | openrouter |
-| chatCompletions | `api.together.xyz`, `api.together.ai` | `togetherai` | together   |
+| chatCompletions | `api.together.xyz`, `api.together.ai` | `togetherai` | togetherai |
 
 A row matches its hostname and every subdomain of it, on a dot boundary:
 `openrouter.ai` covers `eu.openrouter.ai` and not `notopenrouter.ai`. A row
@@ -174,7 +174,7 @@ the model catalog's concern, not the provider's.
 - **Encoding the provider in the model id (`publisher/model`)**
   (2026-10-29): the publisher names who made the model, not who billed the
   request. `deepseek/deepseek-chat` is served by DeepSeek, OpenRouter and
-  Together at three prices; only the provider knows which.
+  Together AI at three prices; only the provider knows which.
 - **One `vendor` option for label and behavior** (2026-10-29): the pre-0.35
   shape. Most Chat Completions providers need a label and no dialect
   (Groq, Fireworks); one field forced a vendor value that changed nothing.

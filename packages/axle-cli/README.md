@@ -116,7 +116,7 @@ key a recipe accepts, with its type and what it does, and
 `axle explain recipe.request`).
 
 `provider` says where requests go. A string names a provider — a preset
-(`anthropic`, `openai`, `gemini`, `openrouter`, `together`, `bedrock`) or a
+(`anthropic`, `openai`, `gemini`, `openrouter`, `togetherai`, `bedrock`) or a
 provider profile from `cli.yaml` — and an object is a generic profile
 written inline: a `protocol` and a `baseUrl`, plus any of the keys below.
 `bedrock` needs a profile for its protocol and region.
@@ -162,7 +162,7 @@ request:
 `cache` defaults to `true` and asks the provider to cache the prompt prefix
 where asking is required (Anthropic, OpenRouter); `cache: false` omits the
 request, for a recipe that never repeats a prompt and would rather not pay
-the cache write premium. OpenAI, Gemini and Together cache on their own either way.
+the cache write premium. OpenAI, Gemini and Together AI cache on their own either way.
 
 `reasoning` takes `default`, `off`, `on`, or
 `{ effort: low | medium | high, display?: visible | hidden }`. `display`
@@ -196,7 +196,7 @@ compaction: false
 
 The window is looked up in the [models.dev](https://models.dev) catalog by
 the model id — through the provider's own ids for first-party providers,
-OpenRouter and Together, with a best-effort match for local runtimes' names
+OpenRouter and Together AI, with a best-effort match for local runtimes' names
 (`gemma4:26b-mlx`) — and falls back to 200,000 for a model the catalog
 lacks. The catalog is cached at `~/.axle/cache/models.json` and refreshed
 once a day while a run gets going. A run never waits for it: it starts with
@@ -573,12 +573,12 @@ defaults:
 
 A profile's name decides what it is. A name that matches a preset configures
 that preset, so it takes the preset's options and no others: `anthropic`,
-`openai`, `gemini` and `together` take a key and client options, `openrouter`
+`openai`, `gemini` and `togetherai` take a key and client options, `openrouter`
 also takes a `baseUrl` for its regional hosts, and `bedrock` needs `protocol`
 and `region`. Any other name is a generic profile, which needs `protocol`
 (`messages`, `responses`, `generateContent` or `chatCompletions`) and
 `baseUrl`. `id` is the [models.dev](https://models.dev) provider id, used to
-look up the context window, and `dialect` (`openrouter` or `together`)
+look up the context window, and `dialect` (`openrouter` or `togetherai`)
 turns on that service's own request fields. Both are inferred from a known
 hostname, so they are only needed behind a proxy. To point a preset's
 service at your own URL, give the profile another name. Run `axle explain

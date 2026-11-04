@@ -51,7 +51,7 @@ export const PRESET_NAMES = [
   "openai",
   "gemini",
   "openrouter",
-  "together",
+  "togetherai",
   "bedrock",
 ] as const;
 
@@ -130,7 +130,7 @@ const GenericProfileFields = {
       "models.dev provider id of the service behind the endpoint; inferred from a known hostname.",
     ),
   dialect: z
-    .enum(["openrouter", "together"])
+    .enum(["openrouter", "togetherai"])
     .optional()
     .describe(
       "Chat Completions dialect of the service behind the endpoint; inferred from a known hostname.",
@@ -170,7 +170,7 @@ export const ProviderProfilesSchema = z
     openai: presetProfile("openai", {}).optional().describe("The openai preset."),
     gemini: presetProfile("gemini", {}).optional().describe("The gemini preset."),
     openrouter: OpenRouterProfileSchema.optional().describe("The openrouter preset."),
-    together: presetProfile("together", {}).optional().describe("The together preset."),
+    togetherai: presetProfile("togetherai", {}).optional().describe("The togetherai preset."),
     bedrock: BedrockProfileSchema.optional().describe(
       "The bedrock preset; needs protocol and region.",
     ),
@@ -245,7 +245,7 @@ export interface ProviderProfiles {
   openai?: PresetProfile;
   gemini?: PresetProfile;
   openrouter?: OpenRouterProfile;
-  together?: PresetProfile;
+  togetherai?: PresetProfile;
   bedrock?: BedrockProfile;
 }
 

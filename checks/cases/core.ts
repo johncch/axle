@@ -1341,7 +1341,7 @@ export const coreCases: CheckCase[] = [
       {
         provider: "togetherai",
         model: /^deepseek-ai\/DeepSeek-V4-Pro$/i,
-        reason: "Together reports that DeepSeek V4 Pro does not support multimodal input.",
+        reason: "Together AI reports that DeepSeek V4 Pro does not support multimodal input.",
       },
     ],
     async run({ provider, model, requestOptions }) {

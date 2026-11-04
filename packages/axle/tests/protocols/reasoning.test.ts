@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { AxleErrorCode } from "../../src/errors/AxleError.js";
 import { toOpenRouterReasoning } from "../../src/protocols/chatCompletions/dialects/openrouter.js";
-import { toTogetherReasoning } from "../../src/protocols/chatCompletions/dialects/together.js";
+import { toTogetherReasoning } from "../../src/protocols/chatCompletions/dialects/togetherai.js";
 import { toReasoningEffort } from "../../src/protocols/chatCompletions/utils.js";
 import { toGeminiThinkingConfig } from "../../src/protocols/generateContent/utils.js";
 import {
@@ -267,7 +267,7 @@ describe("reasoning translation", () => {
     test.each(["low", "medium", "high"] as const)("effort %s passes through", (effort) => {
       expect(toReasoningEffort({ effort })).toEqual({ reasoning_effort: effort });
     });
-    test("display has no field on generic endpoints and Together and is dropped", () => {
+    test("display has no field on generic endpoints and Together AI and is dropped", () => {
       expect(toReasoningEffort({ effort: "low", display: "hidden" })).toEqual({
         reasoning_effort: "low",
       });
@@ -287,13 +287,13 @@ describe("reasoning translation", () => {
       });
     });
 
-    test("Together default → no field", () => {
+    test("Together AI default → no field", () => {
       expect(toTogetherReasoning(undefined)).toEqual({});
     });
-    test("Together off → reasoning disabled", () => {
+    test("Together AI off → reasoning disabled", () => {
       expect(toTogetherReasoning("off")).toEqual({ reasoning: { enabled: false } });
     });
-    test("Together on and efforts → enabled plus reasoning_effort", () => {
+    test("Together AI on and efforts → enabled plus reasoning_effort", () => {
       expect(toTogetherReasoning("on")).toEqual({
         reasoning: { enabled: true },
         reasoning_effort: "medium",

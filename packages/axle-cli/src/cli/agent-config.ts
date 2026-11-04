@@ -10,8 +10,8 @@ import {
   openrouter,
   openrouterDialect,
   responses,
-  together,
-  togetherDialect,
+  togetherai,
+  togetheraiDialect,
 } from "@fifthrevision/axle";
 import type { Credentials } from "./configs/loaders.js";
 import { API_KEY_VARIABLES } from "./configs/loaders.js";
@@ -53,7 +53,7 @@ export interface RunTarget {
 export type Endpoint =
   | {
       kind: "preset";
-      preset: "anthropic" | "openai" | "gemini" | "together";
+      preset: "anthropic" | "openai" | "gemini" | "togetherai";
       config: PresetProfile;
     }
   | { kind: "preset"; preset: "openrouter"; config: OpenRouterProfile }
@@ -127,7 +127,7 @@ export function resolveEndpoint(provider: ProviderUse, cliConfig: CliConfig): En
     case "anthropic":
     case "openai":
     case "gemini":
-    case "together":
+    case "togetherai":
       return { kind: "preset", preset: name, config: profiles?.[name] ?? {} };
     case "openrouter":
       return { kind: "preset", preset: name, config: profiles?.openrouter ?? {} };
@@ -161,8 +161,8 @@ export function createProvider(endpoint: Endpoint, apiKey: string): AIProvider {
         return openai(apiKey, client);
       case "gemini":
         return gemini(apiKey, client);
-      case "together":
-        return together(apiKey, client);
+      case "togetherai":
+        return togetherai(apiKey, client);
       case "openrouter":
         return openrouter(apiKey, { ...client, baseUrl: endpoint.config.baseUrl });
       case "bedrock": {
@@ -188,8 +188,8 @@ export function createProvider(endpoint: Endpoint, apiKey: string): AIProvider {
         dialect:
           dialect === "openrouter"
             ? openrouterDialect
-            : dialect === "together"
-              ? togetherDialect
+            : dialect === "togetherai"
+              ? togetheraiDialect
               : undefined,
       });
   }

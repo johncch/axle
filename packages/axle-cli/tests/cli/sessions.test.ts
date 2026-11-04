@@ -299,7 +299,7 @@ describe("loadSession", () => {
         protocol: "chatCompletions",
         baseUrl: "https://gw.test/v1",
         id: "togetherai",
-        dialect: "together",
+        dialect: "togetherai",
       },
     });
   });

@@ -61,7 +61,7 @@ the adapters, not re-checked against provider documentation on this date.
 | `openai()`                      | Hosted: `type: "web_search"`, config                                         | Hosted: `code_interpreter`        | Sent as `type: <name>`; the API decides     |
 | `gemini()`                      | Hosted: `googleSearch: <config>`                                             | Hosted: `codeExecution: <config>` | Sent as `<name>: <config>`; the API decides |
 | `openrouter()`                  | Attached tool if one is attached, else hosted: `openrouter:web_search`       | Warned and skipped                | Warned and skipped                          |
-| `together()`                    | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
+| `togetherai()`                  | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
 | `chatCompletions()`, no dialect | Attached tool if one is attached, else fails                                 | Fails                             | Fails                                       |
 
 `openrouter()`'s warn-and-skip for names it does not map predates
@@ -85,7 +85,7 @@ The global was the only field `AxleConfiguration` ever had.
 
 The goal of the feature is narrow: a caller who requests `web_search` and
 then switches provider should not hit an error. Everything else was
-machinery. The person who constructs a Together provider knows it has no
+machinery. The person who constructs a Together AI provider knows it has no
 search, so that is where the search is attached, and the provider is the
 only code that needs to know.
 
@@ -106,7 +106,7 @@ mentions search.
   stored and kept the web-search branch in the loop.
 - **The provider runs the search itself and reports `provider-tool`
   parts** (2026-10-09): `chatCompletions()` would call the model, run the
-  search and call again inside one step, so a Together transcript matched
+  search and call again inside one step, so a Together AI transcript matched
   an Anthropic one. It needs a request loop in the adapter and a converter
   that replays stored `provider-tool` parts as tool calls. Rejected because
   parity is not the goal: the transcript should show that the search ran

@@ -3,7 +3,7 @@ import * as z from "zod";
 import { Agent } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
-import { togetherDialect } from "../../src/protocols/chatCompletions/dialects/together.js";
+import { togetheraiDialect } from "../../src/protocols/chatCompletions/dialects/togetherai.js";
 import { convertAxleMessages } from "../../src/protocols/chatCompletions/utils.js";
 import { convertAxleMessagesToGemini } from "../../src/protocols/generateContent/utils.js";
 import { convertAxleMessageToResponseInput } from "../../src/protocols/responses/utils.js";
@@ -307,7 +307,7 @@ describe("deferred file resolution", () => {
     expect(part).not.toHaveProperty("filename");
   });
 
-  test("rejects PDF file parts before sending them to Together", async () => {
+  test("rejects PDF file parts before sending them to Together AI", async () => {
     const file: FileInfo = {
       kind: "document",
       mimeType: "application/pdf",
@@ -324,8 +324,8 @@ describe("deferred file resolution", () => {
           },
         ],
         undefined,
-        { model: "test-model", dialect: togetherDialect },
+        { model: "test-model", dialect: togetheraiDialect },
       ),
-    ).rejects.toThrow("Together Chat Completions does not support PDF file parts");
+    ).rejects.toThrow("Together AI Chat Completions does not support PDF file parts");
   });
 });
