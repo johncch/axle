@@ -125,12 +125,14 @@ export { typesafe } from "./providers/typesafe/index.js";
 export type { TypesafeOptions } from "./providers/typesafe/index.js";
 
 // Tools
-export { braveWebSearch, createAgentTool, parallelize } from "./tools/index.js";
+export { braveWebSearch, createAgentTool, isActionOf, isCall, parallelize } from "./tools/index.js";
 export type {
   AnyTool,
   BraveWebSearchOptions,
   CreateAgentToolOptions,
+  DeferredActionOf,
   DeferredCall,
+  DeferredCallOf,
   DeferredTool,
   ExecutableTool,
   ParallelToolResult,

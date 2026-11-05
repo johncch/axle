@@ -16,7 +16,7 @@ import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../pr
 import { renderSkillsCatalog } from "../../skills/prompt.js";
 import { SkillRegistry } from "../../skills/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
-import type { ExecutableTool, ToolDefinition } from "../../tools/types.js";
+import type { AnyTool, ToolCallCallback, ToolDefinition } from "../../tools/types.js";
 import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
@@ -87,6 +87,8 @@ export class Agent {
   private ownedTracer?: Tracer;
 
   private eventCallbacks: TurnEventCallback[] = [];
+
+  private toolCallHandler: ToolCallCallback | undefined;
   private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
   private idleCallbacks: IdleCallback[] = [];
@@ -162,6 +164,21 @@ export class Agent {
   }
 
   /**
+   * Answer the agent's deferred tool calls. One handler per agent, the
+   * dispatcher over every deferred tool: registering another replaces it,
+   * and the returned function removes it if it is still the one in place.
+   * The handler in place when a turn opens is the one that turn uses. The
+   * contract is `execute`'s: return the result, throw to give the model an
+   * error, and return nothing for a call no branch answers.
+   */
+  onToolCall(handler: ToolCallCallback): () => void {
+    this.toolCallHandler = handler;
+    return () => {
+      if (this.toolCallHandler === handler) this.toolCallHandler = undefined;
+    };
+  }
+
+  /**
    * Receive the session each time a turn settles.
    *
    * Fires after every turn that commits, however it ended, and once for an
@@ -230,7 +247,7 @@ export class Agent {
     return estimateContextUsage({
       system: this.system,
       messages,
-      tools: this.toToolDefinitions(this.registry.local()),
+      tools: this.toToolDefinitions([...this.registry.local(), ...this.registry.deferred()]),
       providerTools: this.registry.provider(),
       mcpTools: this.toToolDefinitions(this.registry.mcp()),
     });
@@ -461,8 +478,9 @@ export class Agent {
         model: this.model,
         messages: [...this.messagesInternal],
         system: this.system,
-        tools: this.registry.executable(),
+        tools: this.callableTools(),
         providerTools: this.registry.provider(),
+        onToolCall: this.toolCallHandler,
         sessionId: this.sessionId,
         agentName: this.name,
         span: streamSpan,
@@ -480,7 +498,7 @@ export class Agent {
           ? "finish"
           : {
               system: this.system,
-              tools: this.registry.executable(),
+              tools: this.callableTools(),
               providerTools: this.registry.provider(),
             },
       );
@@ -917,7 +935,11 @@ export class Agent {
     for (const cb of this.eventCallbacks) cb(event);
   }
 
-  private toToolDefinitions(tools: ExecutableTool[]): ToolDefinition[] {
+  private callableTools(): AnyTool[] {
+    return [...this.registry.executable(), ...this.registry.deferred()];
+  }
+
+  private toToolDefinitions(tools: AnyTool[]): ToolDefinition[] {
     return tools.map((tool) => ({
       name: tool.name,
       description: tool.description,

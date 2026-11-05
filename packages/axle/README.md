@@ -737,29 +737,26 @@ call goes to `onToolCall`, which returns what an `execute` would return, and
 the loop waits for the answer as it waits for a running tool.
 
 ```typescript
-import type { DeferredTool } from "@fifthrevision/axle";
+import { isCall, type DeferredTool } from "@fifthrevision/axle";
 
-const askUser: DeferredTool = {
+const askUser = {
   type: "deferred",
   name: "ask-user",
   description: "Ask the person a question and wait for the answer",
   schema: z.object({ question: z.string() }),
   timeout: 10 * 60_000,
-};
+} satisfies DeferredTool;
 
-const handle = stream({
-  provider,
-  model,
-  messages,
-  tools: [weatherTool, askUser],
-  onToolCall(call, ctx) {
-    switch (call.name) {
-      case "ask-user":
-        return prompt(call.input.question, { signal: ctx.signal });
-    }
-  },
+const agent = new Agent({ provider, model, tools: [weatherTool, askUser] });
+
+agent.onToolCall((call, ctx) => {
+  if (isCall(askUser, call)) {
+    return prompt(call.input.question, { signal: ctx.signal }); // input typed by the schema
+  }
 });
 ```
+
+`stream()` and `generate()` take the same `onToolCall` as a parameter.
 
 `call` is `{ id, name, input }`, with `input` already validated against the
 tool's schema, and `ctx` is the `ToolContext` an `execute` receives. The
@@ -769,6 +766,15 @@ deferred tool, so a branch may not match; returning nothing is an error result
 of type `unanswered`, as is a call made with no `onToolCall` set. The step
 continues either way. `onToolCall` is consulted for deferred tools only;
 executable tools run through their own `execute`.
+
+An Agent has one handler. Registering another replaces it, and the function
+`agent.onToolCall` returns removes the handler if it is still the one in
+place. The handler in place when a turn opens is the one that turn uses. `isCall(tool, call)`
+narrows `call.input` to the tool's schema inside the handler; it needs the
+definition to keep its schema type, so declare a tool with `satisfies
+DeferredTool` rather than a `: DeferredTool` annotation, which widens the
+schema. The matching guard for renderers is `isActionOf(tool, part)`, under
+Turn events below.
 
 The answer can arrive later. A handler that returns a pending promise holds the
 call open, so a UI can resolve it from a button or reject it from a dismiss.
@@ -1401,7 +1407,9 @@ on `action:waiting`, which carries the validated `input` the handler received,
 and settles with the same three events as any action. `detail.callId` is the
 `id` of the `DeferredCall` the handler received, so a renderer that shows a
 prompt for a waiting part can find the promise its handler holds for it; the
-question itself is in `detail.input`.
+question itself is in `detail.input`. `isActionOf(tool, part)` narrows a part
+to one tool's action with `detail.input` typed by its schema; a `pending` part
+has no input yet and is excluded.
 
 Callbacks are registered once and fire on every subsequent `send()`, and also
 receive the events of a manual `agent.compact()` (an engine-opened turn

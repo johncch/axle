@@ -6,7 +6,7 @@ import type { Tracer } from "../../observability/tracer.js";
 import type { EventLevel, Span } from "../../observability/types.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
 import type { Skill } from "../../skills/types.js";
-import type { ExecutableTool, ProviderTool } from "../../tools/types.js";
+import type { AnyTool, ProviderTool } from "../../tools/types.js";
 import type { TurnEvent } from "../../turns/events.js";
 import type { CompactionUpdate, Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
@@ -33,8 +33,8 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   system?: string;
   /** Optional agent name. */
   name?: string;
-  /** Executable tools available to the agent. */
-  tools?: ExecutableTool[];
+  /** Tools the model may call: executable ones the agent runs, deferred ones `onToolCall` answers. */
+  tools?: AnyTool[];
   /** Provider-managed tools such as hosted search or code execution. */
   providerTools?: ProviderTool[];
   /** MCP clients whose tools should be lazily resolved. */

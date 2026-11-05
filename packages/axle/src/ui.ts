@@ -9,6 +9,8 @@ export type {
 export type { ConsoleOutput, ProviderToolInput } from "./messages/providerTool.js";
 export { computeCost } from "./models/cost.js";
 export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
+export { isActionOf, isCall } from "./tools/deferred.js";
+export type { DeferredActionOf, DeferredCallOf } from "./tools/deferred.js";
 export type { DeferredCall, DeferredTool } from "./tools/types.js";
 export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
