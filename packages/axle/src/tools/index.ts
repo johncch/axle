@@ -4,6 +4,8 @@ export { parallelize } from "./parallelize.js";
 export type { ParallelToolResult, ParallelizeOptions } from "./parallelize.js";
 export { ToolRegistry } from "./registry.js";
 export type {
+  AnyTool,
+  DeferredTool,
   ExecutableTool,
   ProviderTool,
   ToolContext,

@@ -44,3 +44,20 @@ export interface ProviderTool {
 }
 
 export type ToolDefinition = Pick<ExecutableTool, "name" | "description" | "schema">;
+
+/**
+ * A tool the model can call but the loop cannot run: a definition with no
+ * `execute`. The caller's `onToolCall` callback answers it with the same
+ * result an `execute` would return. Zod only, so the same definition is
+ * importable on both sides of a network boundary.
+ */
+export interface DeferredTool<TSchema extends ZodObject<any> = ZodObject<any>> {
+  type: "deferred";
+  name: string;
+  description: string;
+  schema: TSchema;
+  summarize?(input: z.infer<TSchema>): string;
+}
+
+/** A tool the model can call: run by the loop, or deferred to the caller. */
+export type AnyTool = ExecutableTool | DeferredTool;
