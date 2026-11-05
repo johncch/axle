@@ -1354,8 +1354,8 @@ try {
 `turn:start`, `turn:end`, `part:start`,
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
-`action:running`, `action:input`, `action:progress`, `action:complete`,
-`action:cancelled`, `action:error`,
+`action:running`, `action:waiting`, `action:input`, `action:progress`,
+`action:complete`, `action:cancelled`, `action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:cancelled`, `compaction:error`, `annotation:start`,
 `annotation:update`, `annotation:end`.
@@ -1392,7 +1392,16 @@ An action part settles with exactly one of `action:complete`,
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"citation"`, `"action"`, `"compaction"`). Action parts
-further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool"`).
+further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool" |
+"deferred"`).
+
+A deferred tool call is a `DeferredAction`. It never runs here, so it has no
+`running` state: it is `pending` while its arguments stream, becomes `waiting`
+on `action:waiting`, which carries the validated `input` the handler received,
+and settles with the same three events as any action. `detail.callId` is the
+`id` of the `DeferredCall` the handler received, so a renderer that shows a
+prompt for a waiting part can find the promise its handler holds for it; the
+question itself is in `detail.input`.
 
 Callbacks are registered once and fire on every subsequent `send()`, and also
 receive the events of a manual `agent.compact()` (an engine-opened turn

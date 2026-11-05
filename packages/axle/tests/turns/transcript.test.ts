@@ -153,6 +153,82 @@ describe("Transcript", () => {
     });
   });
 
+  test("folds a deferred action: args, waiting with input, then the answer", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: {
+        id: "p1",
+        type: "action",
+        kind: "deferred",
+        status: "pending",
+        detail: { name: "ask-user", callId: "call_1", input: {} },
+      },
+    });
+    transcript.apply({
+      type: "action:args-delta",
+      turnId: "t1",
+      partId: "p1",
+      delta: '{"question":',
+      accumulated: '{"question":',
+    });
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
+      status: "pending",
+      detail: { pendingArgs: '{"question":' },
+    });
+
+    transcript.apply({ type: "action:running", turnId: "t1", partId: "p1", parameters: { x: 1 } });
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({ status: "pending" });
+
+    transcript.apply({
+      type: "action:waiting",
+      turnId: "t1",
+      partId: "p1",
+      input: { question: "Colour?" },
+    });
+    expect((transcript.turns[0] as Turn).parts[0]).toEqual({
+      id: "p1",
+      type: "action",
+      kind: "deferred",
+      status: "waiting",
+      detail: { name: "ask-user", callId: "call_1", input: { question: "Colour?" } },
+    });
+
+    transcript.apply({
+      type: "action:complete",
+      turnId: "t1",
+      partId: "p1",
+      result: { type: "success", content: "blue" },
+    });
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
+      status: "complete",
+      detail: { input: { question: "Colour?" }, result: { type: "success", content: "blue" } },
+    });
+  });
+
+  test("action:waiting leaves a non-deferred part alone", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
+      type: "part:start",
+      turnId: "t1",
+      part: {
+        id: "p1",
+        type: "action",
+        kind: "tool",
+        status: "running",
+        detail: { name: "search", parameters: { q: "axle" } },
+      },
+    });
+    transcript.apply({ type: "action:waiting", turnId: "t1", partId: "p1", input: { q: "no" } });
+    expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
+      status: "running",
+      detail: { parameters: { q: "axle" } },
+    });
+  });
+
   test("action:cancelled settles the part cancelled and keeps what it had", () => {
     const transcript = new Transcript();
     transcript.apply({ type: "turn:start", turnId: "t1" });

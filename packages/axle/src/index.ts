@@ -220,6 +220,7 @@ export type {
   CitationPart,
   CompactionPart,
   CompactionUpdate,
+  DeferredAction,
   FilePart,
   PendingDropReason,
   ProviderToolAction,

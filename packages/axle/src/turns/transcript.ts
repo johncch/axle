@@ -45,6 +45,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
   "part:end": true,
   "action:args-delta": true,
   "action:running": true,
+  "action:waiting": true,
   "action:input": true,
   "action:progress": true,
   "action:complete": true,
@@ -218,19 +219,28 @@ export class Transcript<
 
       case "action:args-delta":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
-          if (part.type !== "action" || part.kind !== "tool") return part;
+          if (part.type !== "action" || (part.kind !== "tool" && part.kind !== "deferred")) {
+            return part;
+          }
           return {
             ...part,
             detail: {
               ...part.detail,
               pendingArgs: event.accumulated,
             },
-          };
+          } as TurnPart<TAnnotation>;
+        });
+
+      case "action:waiting":
+        return this.updatePart(event.turnId, event.partId, event, (part) => {
+          if (part.type !== "action" || part.kind !== "deferred") return part;
+          const { pendingArgs: _pendingArgs, ...detail } = part.detail;
+          return { ...part, status: "waiting", detail: { ...detail, input: event.input } };
         });
 
       case "action:running":
         return this.updatePart(event.turnId, event.partId, event, (part) => {
-          if (part.type !== "action") return part;
+          if (part.type !== "action" || part.kind === "deferred") return part;
           if (part.kind === "tool") {
             const { pendingArgs: _pendingArgs, ...detail } = part.detail;
             return {

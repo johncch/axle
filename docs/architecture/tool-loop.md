@@ -84,7 +84,11 @@ side is in [provider-tools.md](./provider-tools.md).
     rejects with is dropped, which is the one place a call does not wait
     for the code answering it: the handler runs outside the loop and may
     be a person. `onToolCall` is never consulted for an executable call.
-    (2026-11-05, AXL-103)
+    On the turn event stream the call is a `DeferredAction`: `pending`
+    while its arguments stream, `waiting` from `action:waiting` (which
+    carries the validated input) until it settles, never `running`, and
+    settled by invariant 9 like every other action part. (2026-11-05,
+    AXL-103)
 
 ## What the model sees
 

@@ -7,6 +7,7 @@ import { addStats, createStats } from "../utils/stats.js";
 import type { TurnEvent } from "./events.js";
 import type {
   CitationPart,
+  DeferredAction,
   ProviderToolAction,
   SubagentAction,
   TextPart,
@@ -126,7 +127,7 @@ export class TurnEventBuilder {
       turnId: string;
       timing?: TimingInfo;
       name?: string;
-      kind?: "tool" | "agent";
+      kind?: "tool" | "agent" | "deferred";
     }
   >();
   private accumulatedUsage: Stats = createStats();
@@ -292,7 +293,7 @@ export class TurnEventBuilder {
         this.closeOpenParts(events);
         const partId = crypto.randomUUID();
         const timing = startTiming();
-        const part: ToolAction | SubagentAction =
+        const part: ToolAction | SubagentAction | DeferredAction =
           event.kind === "agent"
             ? {
                 id: partId,
@@ -302,20 +303,29 @@ export class TurnEventBuilder {
                 timing,
                 detail: { name: event.name, children: [] },
               }
-            : {
-                id: partId,
-                type: "action",
-                kind: "tool",
-                status: "pending",
-                timing,
-                detail: { name: event.name, parameters: {} },
-              };
+            : event.kind === "deferred"
+              ? {
+                  id: partId,
+                  type: "action",
+                  kind: "deferred",
+                  status: "pending",
+                  timing,
+                  detail: { name: event.name, callId: event.id, input: {} },
+                }
+              : {
+                  id: partId,
+                  type: "action",
+                  kind: "tool",
+                  status: "pending",
+                  timing,
+                  detail: { name: event.name, parameters: {} },
+                };
         this.openActions.set(event.id, {
           partId,
           turnId,
           timing,
           name: event.name,
-          kind: event.kind === "agent" ? "agent" : "tool",
+          kind: event.kind ?? "tool",
         });
         events.push({ type: "part:start", turnId, part });
         break;
@@ -337,12 +347,25 @@ export class TurnEventBuilder {
 
       case "tool:exec-start": {
         const mapping = this.openActions.get(event.id);
-        if (mapping) {
+        if (mapping && mapping.kind !== "deferred") {
           events.push({
             type: "action:running",
             turnId,
             partId: mapping.partId,
             parameters: event.parameters,
+          });
+        }
+        break;
+      }
+
+      case "tool:waiting": {
+        const mapping = this.openActions.get(event.id);
+        if (mapping) {
+          events.push({
+            type: "action:waiting",
+            turnId,
+            partId: mapping.partId,
+            input: event.input,
           });
         }
         break;
