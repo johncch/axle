@@ -108,6 +108,33 @@ tool's `execute` concurrently, with one ordered result. It is one tool call,
 not a tool batch: its arguments are validated as a whole, so one invalid item
 rejects the call. Not "batch tool".
 
+**Deferred tool** — a tool definition with no `execute`: `{ type: "deferred",
+name, description, schema, timeout? }`. The model calls it like any other
+tool; the loop validates the arguments and hands the call to the consumer's
+`onToolCall` handler, which returns what an `execute` would. The call is one
+entry in its tool batch and the batch waits for its answer as it waits for a
+running tool. "Deferred" has the same sense as in a deferred file reference:
+resolved by the consumer when the loop needs it. Not "async tool" (every tool
+is), not "client tool" (every executable tool is client-side from the
+provider's view).
+
+**Deferred call** — one call to a deferred tool as the handler receives it:
+`{ id, name, input }`, with `input` already validated. `id` is the tool call
+id, carried on the `DeferredAction` part as `detail.callId` so a renderer can
+find the handler's promise for a part.
+
+**Waiting** — the status of a `DeferredAction` from the moment its validated
+call has been handed to `onToolCall` (`tool:waiting`, `action:waiting`) until
+the answer, the tool's `timeout` or a cancellation settles it. A deferred
+action is never `running`: it is `pending` while its arguments stream, then
+`waiting`. "Open" was tried and dropped because it reads as something the
+consumer does.
+
+**Unanswered** — the error result a deferred call gets when the handler's
+branch for it returned nothing, or when no handler is set. A handler that
+throws gives an `execution` error, as `execute` does; a call that outlives
+its tool's `timeout` gets a `timeout` error.
+
 **UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
 usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent
 when the provider has none), two models, and, when the `Agent` that made it

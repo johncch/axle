@@ -4,8 +4,17 @@ import {
   generate,
   stream,
   type AIProvider,
+  type DeferredTool,
 } from "@fifthrevision/axle";
+import { z } from "zod";
 import type { CheckCase } from "./types.js";
+
+const lookup: DeferredTool = {
+  type: "deferred",
+  name: "lookup",
+  description: "fixture",
+  schema: z.object({}),
+};
 
 export const streamErrorCases: CheckCase[] = [
   {
@@ -77,7 +86,8 @@ export const streamErrorCases: CheckCase[] = [
             provider,
             model: "fixture",
             messages: [],
-            onToolCall: async () => ({ type: "success", content: "done" }),
+            tools: [lookup],
+            onToolCall: () => "done",
           });
           return { ok: false, failureReasons: ["Expected AxleAbortError"] };
         } catch (error) {

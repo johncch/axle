@@ -94,7 +94,7 @@ export async function readStep(
       type: "tool:request",
       id,
       name,
-      kind: ctx.tools.get(name)?.kind ?? "tool",
+      kind: ctx.tools.getDeferred(name) ? "deferred" : (ctx.tools.get(name)?.kind ?? "tool"),
     });
   };
 

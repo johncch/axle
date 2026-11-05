@@ -4,6 +4,7 @@ import { compactionCases } from "./compaction.js";
 import { continuationCases } from "./continuation.js";
 import { coreCases } from "./core.js";
 import { decideCases } from "./decide.js";
+import { deferredToolCases } from "./deferred-tools.js";
 import { geminiCitationCases } from "./gemini-citations.js";
 import { instructJsonCases } from "./instruct-json.js";
 import { messageFormatCases } from "./message-format.js";
@@ -17,6 +18,7 @@ export type * from "./types.js";
 export const checkCases: AnyCheckCase[] = [
   ...coreCases,
   ...continuationCases,
+  ...deferredToolCases,
   ...streamErrorCases,
   ...codeExecutionCases,
   ...toolSchemaCases,

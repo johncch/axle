@@ -11,7 +11,8 @@ const callNameTool: ExecutableTool<z.ZodObject<{ name: z.ZodString }>> = {
   schema: z.object({
     name: z.string().describe("The name to call yourself"),
   }),
-  async execute() {
+  async execute(input) {
+    console.log(`[Tool] Calling setName with parameters ${JSON.stringify(input)}`);
     return "success";
   },
 };
@@ -38,13 +39,6 @@ try {
       },
     ],
     tools: [callNameTool],
-    onToolCall: async (name, parameters, _ctx) => {
-      console.log(`[Tool] Calling ${name} with parameters ${JSON.stringify(parameters)}`);
-      return {
-        type: "success",
-        content: "success",
-      };
-    },
     span: tracer.startSpan("stream"),
   });
 

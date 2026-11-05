@@ -180,6 +180,19 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     awaited from inside a continuation deadlock, as they do from inside
     `onSettled`; an unawaited `agent.send()` queues at the back.
 
+12. **The Agent answers deferred calls through one handler, inside the
+    turn.** `agent.onToolCall(handler)` is the dispatcher over every
+    deferred tool the Agent offers; it is a slot, so a second registration
+    replaces the first. The handler the Agent holds when a turn opens is the
+    one it hands to `stream()` for that turn. A waiting call is an active
+    turn: `send()` queues behind it, `cancel()` cancels it and aborts the
+    handler's signal, `stop()` waits for the answer and commits it before
+    settling, and `onSettled` fires once, when the turn ends. Nothing about
+    the wait is persisted: a waiting call lives as long as the Agent
+    instance, as a running `execute` does, and a process that dies loses the
+    turn the same way ([tool-loop.md](./tool-loop.md) invariant 10).
+    (2026-11-05, AXL-103)
+
 ## Design rationale (2026-08-12)
 
 The Agent's two data structures have different mutation semantics and
@@ -673,7 +686,39 @@ Rejected:
   short run would kill, at the price of a hidden command; the CLI exits
   explicitly instead, and a slow download is retried next run.
 
+## Deferred calls stay inside the turn (2026-11-05)
+
+The first prototype of deferred tools ended the turn when the model called
+one, recorded the open batch in `AgentSession`, refused `send()` while
+waiting, and opened a second turn on `resume(answers)`. Every one of those
+was a consequence of the first choice. Treating the wait as a long tool
+call instead, which is what it is from the loop's side, removed the batch
+record, the refusal, the resume operation, the third result arm on
+`send().final`, and the cross-turn settle event, and left cancel, stop and
+queueing with their existing meanings. The cost is that a waiting call does
+not survive the process, which is the rule every executable tool already
+lives under; the host that needs a prompt to outlive a restart answers it
+with a timeout and a decline the model can read.
+
+Who answers is the consumer's choice and lives on the Agent, not on the
+tool. The same `read-config` definition is answered by a middle tier in one
+deployment and passed on to a browser in another, so a handler on the
+definition would bind one answer site to a module every process imports.
+One handler per Agent, a dispatcher with a switch, keeps that choice in one
+place and makes forwarding explicit; a per-tool registration was rejected
+because it needs a claim rule the moment two parties want the same name.
+
 ## Rejected alternatives
+
+- **Deferral as a result arm** (2026-11-05): `send().final` resolving
+  `{ ok: true, deferred }` with a `resume()` to continue. Rejected: it made
+  every consumer narrow three ways for a state they could read from events,
+  and leaked where a tool runs into the result type.
+- **A per-tool handler registry** (2026-11-05): `onDeferred(tool, handler)`.
+  Rejected in favour of one dispatcher per Agent; see above.
+- **Persisting the open batch** (2026-11-05): `AgentSession.deferred` and
+  restore-into-waiting. Rejected: a running `execute` is not persisted, and a
+  deferred call is a tool call whose executor is elsewhere.
 
 - **A serializable `AgentDefinition` in core** (2026-05-24, removed
   2026-10-29, AXL-88): the 0.20 core/CLI split gave core a portable

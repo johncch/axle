@@ -15,8 +15,9 @@ import { resolveReasoningDisplay } from "../protocols/reasoning.js";
 import type { AIProvider, AxleModelRequestOptions } from "../protocols/types.js";
 import { AxleStopReason } from "../protocols/types.js";
 import type {
-  ExecutableTool,
+  AnyTool,
   ProviderTool,
+  ToolCallCallback,
   ToolDefinition,
   ToolProgressChunk,
 } from "../tools/types.js";
@@ -30,7 +31,6 @@ import {
   validateLoopLimits,
   type AxleProviderFailure,
   type StreamResult,
-  type ToolCallCallback,
   type ToolCallResult,
 } from "./helpers.js";
 import { readStep, type StepReadOutcome } from "./stepReader.js";
@@ -70,7 +70,7 @@ export type StreamEvent =
     }
   | { type: "thinking:end"; summary?: string; raw?: string }
   // Tool calls (correlated by `id`)
-  | { type: "tool:request"; id: string; name: string; kind?: "tool" | "agent" }
+  | { type: "tool:request"; id: string; name: string; kind?: "tool" | "agent" | "deferred" }
   | {
       type: "tool:args-delta";
       id: string;
@@ -83,6 +83,12 @@ export type StreamEvent =
       id: string;
       name: string;
       parameters: Record<string, unknown>;
+    }
+  | {
+      type: "tool:waiting";
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
     }
   | {
       type: "tool:exec-delta";
@@ -137,8 +143,9 @@ export interface StreamParams extends AxleModelRequestOptions {
   model: string;
   messages: Array<AxleMessage>;
   system?: string;
-  tools?: ExecutableTool[];
+  tools?: AnyTool[];
   providerTools?: ProviderTool[];
+  /** Answers calls to the deferred tools in `tools`. Executable tools never reach it. */
   onToolCall?: ToolCallCallback;
   /**
    * Identity of the conversation this stream continues. Forwarded to the
@@ -199,7 +206,7 @@ function emit(callbacks: StreamEventCallback[], event: StreamEvent) {
   for (const cb of callbacks) cb(event);
 }
 
-function toToolDefinition(tool: ExecutableTool): ToolDefinition {
+function toToolDefinition(tool: AnyTool): ToolDefinition {
   return { name: tool.name, description: tool.description, schema: tool.schema };
 }
 
@@ -363,8 +370,8 @@ async function run(
     steps += 1;
     const stepSpan = span?.startSpan(`step-${steps}`, { type: "llm" });
 
-    const executable = resolvedTools.executable();
-    const tools = executable.length > 0 ? executable.map(toToolDefinition) : undefined;
+    const callable = [...resolvedTools.executable(), ...resolvedTools.deferred()];
+    const tools = callable.length > 0 ? callable.map(toToolDefinition) : undefined;
     const providerTools = resolvedTools.provider();
 
     let outcome: StepReadOutcome;

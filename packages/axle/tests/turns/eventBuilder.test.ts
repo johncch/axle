@@ -227,6 +227,128 @@ describe("TurnEventBuilder", () => {
     ]);
   });
 
+  test("deferred tool lifecycle: pending, waiting with the validated input, complete", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-05T12:00:00.000Z"));
+
+    const builder = new TurnEventBuilder();
+    const start = builder.startAgentTurn();
+
+    const events: TurnEvent[] = [];
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "tool:request",
+        id: "tc1",
+        name: "ask-user",
+        kind: "deferred",
+      }),
+    );
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "tool:args-delta",
+        id: "tc1",
+        name: "ask-user",
+        delta: '{"question":',
+        accumulated: '{"question":',
+      }),
+    );
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "tool:exec-start",
+        id: "tc1",
+        name: "ask-user",
+        parameters: { question: "Colour?" },
+      }),
+    );
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "tool:waiting",
+        id: "tc1",
+        name: "ask-user",
+        input: { question: "Colour?" },
+      }),
+    );
+    vi.advanceTimersByTime(1500);
+    events.push(
+      ...builder.handleStreamEvent({
+        type: "tool:exec-complete",
+        id: "tc1",
+        name: "ask-user",
+        result: { type: "success", content: "blue" },
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "part:start",
+      "action:args-delta",
+      "action:waiting",
+      "action:complete",
+    ]);
+    expect(events[0]).toMatchObject({
+      type: "part:start",
+      turnId: start.turnId,
+      part: {
+        type: "action",
+        kind: "deferred",
+        status: "pending",
+        detail: { name: "ask-user", callId: "tc1", input: {} },
+      },
+    });
+    expect(events[2]).toMatchObject({ type: "action:waiting", input: { question: "Colour?" } });
+    expect(events[3]).toMatchObject({
+      type: "action:complete",
+      result: { type: "success", content: "blue" },
+      timing: { start: "2026-11-05T12:00:00.000Z", end: "2026-11-05T12:00:01.500Z" },
+    });
+  });
+
+  test("a deferred call that fails validation settles error without waiting", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+    builder.handleStreamEvent({
+      type: "tool:request",
+      id: "tc1",
+      name: "ask-user",
+      kind: "deferred",
+    });
+    const started = builder.handleStreamEvent({
+      type: "tool:exec-start",
+      id: "tc1",
+      name: "ask-user",
+      parameters: { question: 3 },
+    });
+    const settled = builder.handleStreamEvent({
+      type: "tool:exec-complete",
+      id: "tc1",
+      name: "ask-user",
+      result: { type: "error", error: { type: "validation", message: "bad" } },
+    });
+
+    expect(started).toEqual([]);
+    expect(settled).toEqual([
+      expect.objectContaining({
+        type: "action:error",
+        error: { type: "validation", message: "bad" },
+      }),
+    ]);
+  });
+
+  test("finalizeTurn cancels a waiting deferred call on a cancelled turn", () => {
+    const builder = new TurnEventBuilder();
+    builder.startAgentTurn();
+    builder.handleStreamEvent({
+      type: "tool:request",
+      id: "tc1",
+      name: "ask-user",
+      kind: "deferred",
+    });
+    builder.handleStreamEvent({ type: "tool:waiting", id: "tc1", name: "ask-user", input: {} });
+
+    const events = builder.finalizeTurn("cancelled");
+
+    expect(events.map((event) => event.type)).toEqual(["action:cancelled", "turn:end"]);
+  });
+
   test("provider tool lifecycle emits action events", () => {
     const builder = new TurnEventBuilder();
     builder.startAgentTurn();

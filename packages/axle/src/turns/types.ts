@@ -330,10 +330,40 @@ export interface ProviderToolAction<
 }
 
 /**
+ * Action part for a deferred tool call: one the consumer answers through
+ * `onToolCall`. It is `waiting` from the moment the validated call is handed
+ * to the handler until the answer, a timeout or a cancellation settles it.
+ */
+export interface DeferredAction<TAnnotation extends Annotation = Annotation> {
+  id: string;
+  type: "action";
+  /** Action discriminator. */
+  kind: "deferred";
+  status: "pending" | "waiting" | "complete" | "cancelled" | "error";
+  annotations?: TAnnotation[];
+  timing?: TimingInfo;
+  detail: {
+    /** Tool name. */
+    name: string;
+    /** The tool call id, the `id` the handler's `DeferredCall` carries. */
+    callId: string;
+    /** The validated call input once the call is waiting; empty before. */
+    input: Record<string, unknown>;
+    /** Accumulated JSON argument text before the input is validated. */
+    pendingArgs?: string;
+    /** The answer, or the error that settled the call. */
+    result?: ActionResult;
+  };
+}
+
+/**
  * Any action part in a turn.
  */
 export type ActionPart<TAnnotation extends Annotation = Annotation> =
-  ToolAction<TAnnotation> | SubagentAction<TAnnotation> | ProviderToolAction<TAnnotation>;
+  | ToolAction<TAnnotation>
+  | SubagentAction<TAnnotation>
+  | ProviderToolAction<TAnnotation>
+  | DeferredAction<TAnnotation>;
 
 /**
  * Renderable result for an action.

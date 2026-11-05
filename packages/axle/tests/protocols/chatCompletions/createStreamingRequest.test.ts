@@ -10,6 +10,7 @@ import { openrouterDialect } from "../../../src/protocols/chatCompletions/dialec
 import { togetheraiDialect } from "../../../src/protocols/chatCompletions/dialects/togetherai.js";
 import type { AIProvider } from "../../../src/protocols/types.js";
 import { AxleStopReason } from "../../../src/protocols/types.js";
+import { deferredTool } from "../../scenarios/helpers/tools.js";
 
 const BASE_URL = "http://localhost:11434/v1";
 const MODEL = "gemma3";
@@ -470,21 +471,19 @@ describe("createStreamingRequest", () => {
       provider: makeProvider(),
       model: MODEL,
       messages: [{ role: "user", content: "Capture an image." }],
-      onToolCall: async () => ({
-        type: "success",
-        content: [
-          { type: "text", text: "Captured image:" },
-          {
-            type: "file",
-            file: {
-              kind: "image",
-              mimeType: "image/png",
-              name: "capture.png",
-              source: { type: "base64", data: "iVBORw0KGgo=" },
-            },
+      tools: [deferredTool("capture_image")],
+      onToolCall: () => [
+        { type: "text", text: "Captured image:" },
+        {
+          type: "file",
+          file: {
+            kind: "image",
+            mimeType: "image/png",
+            name: "capture.png",
+            source: { type: "base64", data: "iVBORw0KGgo=" },
           },
-        ],
-      }),
+        },
+      ],
     });
 
     const result = await handle.final;

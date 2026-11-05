@@ -314,7 +314,6 @@ const handle = stream({
   model,
   messages: [{ role: "user", content: "Hello" }],
   tools: [myTool],
-  onToolCall: async (name, params) => ({ type: "success", content: "result" }),
 });
 
 handle.on((event) => {
@@ -338,7 +337,6 @@ const result = await generate({
   model,
   messages: [{ role: "user", content: "Hello" }],
   tools: [myTool],
-  onToolCall: async (name, params) => ({ type: "success", content: "result" }),
 });
 
 if (!result.ok) throw new Error(result.error.kind);
@@ -728,8 +726,62 @@ arguments, an unknown tool) is a result for that call only. A tool that throws
 `AxleToolFatalError` ends the run: the other calls in the batch are aborted
 through `ctx.signal`, with the fatal error as the signal's reason, and the send
 rejects once every call has settled with the usage all of them reported.
-`ctx.signal` also aborts when the run is cancelled. `onToolCall` and `execute`
+`ctx.signal` also aborts when the run is cancelled. `execute` and `onToolCall`
 may run concurrently across the calls of one batch.
+
+#### Deferred tools
+
+A deferred tool is a tool the loop cannot run: a definition with no `execute`,
+answered by whoever holds the loop. The model calls it like any other tool. The
+call goes to `onToolCall`, which returns what an `execute` would return, and
+the loop waits for the answer as it waits for a running tool.
+
+```typescript
+import { isCall, type DeferredTool } from "@fifthrevision/axle";
+
+const askUser = {
+  type: "deferred",
+  name: "ask-user",
+  description: "Ask the person a question and wait for the answer",
+  schema: z.object({ question: z.string() }),
+  timeout: 10 * 60_000,
+} satisfies DeferredTool;
+
+const agent = new Agent({ provider, model, tools: [weatherTool, askUser] });
+
+agent.onToolCall((call, ctx) => {
+  if (isCall(askUser, call)) {
+    return prompt(call.input.question, { signal: ctx.signal }); // input typed by the schema
+  }
+});
+```
+
+`stream()` and `generate()` take the same `onToolCall` as a parameter.
+
+`call` is `{ id, name, input }`, with `input` already validated against the
+tool's schema, and `ctx` is the `ToolContext` an `execute` receives. The
+contract is `execute`'s: return the result, or throw to give the model an
+error with a reason. The one difference is that the handler answers every
+deferred tool, so a branch may not match; returning nothing is an error result
+of type `unanswered`, as is a call made with no `onToolCall` set. The step
+continues either way. `onToolCall` is consulted for deferred tools only;
+executable tools run through their own `execute`.
+
+An Agent has one handler. Registering another replaces it, and the function
+`agent.onToolCall` returns removes the handler if it is still the one in
+place. The handler in place when a turn opens is the one that turn uses. `isCall(tool, call)`
+narrows `call.input` to the tool's schema inside the handler; it needs the
+definition to keep its schema type, so declare a tool with `satisfies
+DeferredTool` rather than a `: DeferredTool` annotation, which widens the
+schema. The matching guard for renderers is `isActionOf(tool, part)`, under
+Turn events below.
+
+The answer can arrive later. A handler that returns a pending promise holds the
+call open, so a UI can resolve it from a button or reject it from a dismiss.
+Two things settle a waiting call without the handler: the tool's `timeout`,
+an error result of type `timeout`, and the run's cancellation, which settles
+the call at once rather than waiting on the handler. In both cases
+`ctx.signal` aborts and whatever the promise later resolves to is dropped.
 
 #### File results and deferred references
 
@@ -1308,8 +1360,8 @@ try {
 `turn:start`, `turn:end`, `part:start`,
 `part:end`, `text:delta`, `text:citation`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `action:args-delta`,
-`action:running`, `action:input`, `action:progress`, `action:complete`,
-`action:cancelled`, `action:error`,
+`action:running`, `action:waiting`, `action:input`, `action:progress`,
+`action:complete`, `action:cancelled`, `action:error`,
 `action:child-event`, `compaction:update`, `compaction:complete`,
 `compaction:cancelled`, `compaction:error`, `annotation:start`,
 `annotation:update`, `annotation:end`.
@@ -1346,7 +1398,18 @@ An action part settles with exactly one of `action:complete`,
 
 `part:start` carries a `TurnPart`, discriminated by `part.type` (`"text"`,
 `"thinking"`, `"file"`, `"citation"`, `"action"`, `"compaction"`). Action parts
-further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool"`).
+further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool" |
+"deferred"`).
+
+A deferred tool call is a `DeferredAction`. It never runs here, so it has no
+`running` state: it is `pending` while its arguments stream, becomes `waiting`
+on `action:waiting`, which carries the validated `input` the handler received,
+and settles with the same three events as any action. `detail.callId` is the
+`id` of the `DeferredCall` the handler received, so a renderer that shows a
+prompt for a waiting part can find the promise its handler holds for it; the
+question itself is in `detail.input`. `isActionOf(tool, part)` narrows a part
+to one tool's action with `detail.input` typed by its schema; a `pending` part
+has no input yet and is excluded.
 
 Callbacks are registered once and fire on every subsequent `send()`, and also
 receive the events of a manual `agent.compact()` (an engine-opened turn
@@ -1514,13 +1577,16 @@ and completion.
 `tool-results:complete`, `text:start`, `text:delta`, `text:citation`,
 `text:end`, `citation`, `thinking:start`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
-`tool:args-delta`, `tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
-`tool:exec-error`, `provider-tool:start`, `provider-tool:input`,
-`provider-tool:complete`, `provider-tool:error`, `error`.
+`tool:args-delta`, `tool:exec-start`, `tool:waiting`, `tool:exec-delta`,
+`tool:exec-complete`, `tool:exec-error`, `provider-tool:start`,
+`provider-tool:input`, `provider-tool:complete`, `provider-tool:error`,
+`error`.
 
 Tool and provider-tool events correlate by `id`. The calls in one tool batch
 run concurrently, so `tool:exec-start` fires for every call before any
 completes and their delta, complete and error events interleave; key on `id`.
+`tool:request` carries `kind: "deferred"` for a deferred tool, and
+`tool:waiting` fires when its validated call has been handed to `onToolCall`.
 Text and thinking parts stream sequentially within a step, so their deltas
 belong to the most recently opened part.
 

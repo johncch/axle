@@ -1,6 +1,6 @@
 # Tool loop
 
-**Status**: current · **Last design revision**: 2026-11-02 (0.35.0, AXL-91)
+**Status**: current · **Last design revision**: 2026-11-05 (0.36.0, AXL-103)
 
 This document is normative for how a step's tool batch is executed: when
 the calls start, the order their results answer in, what one call's failure
@@ -49,9 +49,10 @@ side is in [provider-tools.md](./provider-tools.md).
    what it reported before the abort. `executeStepTools` then merges the
    loop's accumulated usage on top, as [errors.md](./errors.md) records for
    a rejected handle.
-7. **`onToolCall` and `execute` may run concurrently.** A consumer callback is
-   called once per call with no ordering between calls in a batch. State a
-   consumer shares between calls is the consumer's to guard.
+7. **`execute` and `onToolCall` may run concurrently.** `onToolCall` is
+   called once per deferred call with no ordering between calls in a batch,
+   and executable calls run beside it. State a consumer shares between
+   calls is the consumer's to guard.
 8. **Events and spans are per call, correlated by id.** `tool:exec-start`
    fires for every call before any completes; `tool:exec-delta`,
    `tool:exec-complete` and `tool:exec-error` arrive in finish order and
@@ -70,6 +71,24 @@ side is in [provider-tools.md](./provider-tools.md).
    before `turn:end`. A `complete` turn closes nothing: every call there
    was answered, and an open provider tool is an adapter defect left
    visible rather than relabelled. (2026-11-02, AXL-91)
+10. **A deferred call is a call in the batch like any other.** A deferred
+    tool has no `execute`; its validated call goes to `onToolCall` and the
+    batch waits for the answer as it waits for a running tool, so
+    invariants 1 to 9 hold for it unchanged, with two additions. The call
+    settles by whichever comes first: the handler's return or throw, the
+    tool's `timeout`, or the run's abort. A throw is an `execution` result
+    as for `execute`; a handler that returns nothing, or no handler at all,
+    is an `unanswered` result; a timeout is a `timeout` result; the abort
+    is terminal as in invariant 4. Once anything but the handler settles the call, the
+    handler's signal aborts and what its promise later resolves to or
+    rejects with is dropped, which is the one place a call does not wait
+    for the code answering it: the handler runs outside the loop and may
+    be a person. `onToolCall` is never consulted for an executable call.
+    On the turn event stream the call is a `DeferredAction`: `pending`
+    while its arguments stream, `waiting` from `action:waiting` (which
+    carries the validated input) until it settles, never `running`, and
+    settled by invariant 9 like every other action part. (2026-11-05,
+    AXL-103)
 
 ## What the model sees
 
@@ -119,6 +138,20 @@ is the error that caused the cancellation; any later terminal error from a
 sibling is either the abort it was given or a failure that raced it, and
 neither explains why the batch ended.
 
+## Design rationale (2026-11-05): deferred calls through `onToolCall`
+
+`onToolCall` predates `execute`: the first tool loop delegated every call to
+the caller and `null` meant "not found". Once tools carried `execute`, the
+callback survived as an interception step in front of it that nothing in
+the repository used. A deferred tool needs exactly a call the caller
+answers, so the callback is retyped for that and the interception is
+removed rather than given a second meaning for `null`. The alternative,
+ending the step when a deferred call appears and restarting it once the
+answer arrives, was prototyped and dropped: it made the turn end early,
+pushed a batch record into the session, and required a second turn and
+cross-turn settle events, all to express what the loop already expresses
+by awaiting a promise.
+
 ## Rejected alternatives
 
 - **A serial loop** (2026-10-29): the design before 0.35.0, described
@@ -142,6 +175,17 @@ neither explains why the batch ended.
   rejected because the error that settled first is the one that aborted
   the others; a request-order pick could surface a sibling's abort as the
   cause of its own cancellation.
+- **Suspending the step at a deferred call** (2026-11-05): return from
+  `stream()` with the batch held, resume with a second call. Rejected as
+  above; a deferred call that outlives the process is lost with the turn,
+  as a running `execute` is.
+- **Keeping `onToolCall` as an interception hook for executable tools**
+  (2026-11-05): rejected because `null` would mean fall-through for one
+  kind of tool and unanswered for the other, and no consumer used it.
+- **A `decline()` on the handler's context** (2026-11-05): rejected for
+  parity with `execute`, which has no such thing. A refusal with a reason
+  is a throw, a refusal after a pending promise is its rejection, and a
+  branch that does not match returns nothing.
 - **Aborting siblings with a synthetic reason** (2026-10-29): a marker
   object in place of the failing call's error. Rejected because the
   sibling's abort would no longer say why it was cut short; the classifier

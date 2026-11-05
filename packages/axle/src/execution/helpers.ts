@@ -17,8 +17,12 @@ import { logContent } from "../observability/log.js";
 import type { Span } from "../observability/types.js";
 import type { AIProvider } from "../protocols/types.js";
 import type {
+  AnyTool,
+  DeferredCall,
+  DeferredTool,
   ExecutableTool,
   ProviderTool,
+  ToolCallCallback,
   ToolContext,
   ToolProgressChunk,
 } from "../tools/types.js";
@@ -32,14 +36,9 @@ export type ToolCallResult =
       error: { type: string; message: string; fatal?: boolean; retryable?: boolean };
     };
 
-export type ToolCallCallback = (
-  name: string,
-  parameters: Record<string, unknown>,
-  ctx: ToolContext,
-) => Promise<ToolCallResult | null | undefined>;
-
 export interface ToolExecutionObserver {
   onStart?(call: ContentPartToolCall): void;
+  onWaiting?(call: DeferredCall): void;
   onDelta?(call: ContentPartToolCall, chunk: ToolProgressChunk): void;
   onComplete?(call: ContentPartToolCall, outcome: ToolExecutionOutcome): void;
   onError?(call: ContentPartToolCall, error: AxleAbortError | AxleToolFatalError): void;
@@ -224,39 +223,51 @@ export function serializeToolError(error: { type: string; message: string }): st
 
 export interface ResolvedTools {
   executable(): ExecutableTool[];
+  deferred(): DeferredTool[];
   provider(): ProviderTool[];
   get(name: string): ExecutableTool | undefined;
+  getDeferred(name: string): DeferredTool | undefined;
 }
 
 export function resolveTools(
-  toolSet: { tools?: ExecutableTool[]; providerTools?: ProviderTool[] },
+  toolSet: { tools?: AnyTool[]; providerTools?: ProviderTool[] },
   provider: AIProvider,
 ): ResolvedTools {
-  const tools = toolSet.tools ?? [];
   const providerTools = toolSet.providerTools ?? [];
+  const executable: ExecutableTool[] = [];
+  const deferred: DeferredTool[] = [];
   const byName = new Map<string, ExecutableTool>();
-  for (const tool of tools) {
-    if (byName.has(tool.name)) {
+  const deferredByName = new Map<string, DeferredTool>();
+  for (const tool of toolSet.tools ?? []) {
+    if (byName.has(tool.name) || deferredByName.has(tool.name)) {
       throw new AxleError(`Tool already registered: ${tool.name}`, {
         code: "TOOL_REGISTRY_DUPLICATE",
         details: { name: tool.name },
       });
     }
-    byName.set(tool.name, tool);
+    if (tool.type === "deferred") {
+      deferred.push(tool);
+      deferredByName.set(tool.name, tool);
+    } else {
+      executable.push(tool);
+      byName.set(tool.name, tool);
+    }
   }
 
   return {
-    executable: () => tools,
+    executable: () => executable,
+    deferred: () => deferred,
     provider: () => providerTools,
     get: (name) => byName.get(name) ?? provider.tools?.find((tool) => tool.name === name),
+    getDeferred: (name) => deferredByName.get(name),
   };
 }
 
-type ToolExecutionSource = Pick<ResolvedTools, "get">;
+type ToolExecutionSource = Pick<ResolvedTools, "get" | "getDeferred">;
 
 export async function executeToolCalls(
   toolCalls: ContentPartToolCall[],
-  onToolCall: ToolCallCallback = async () => null,
+  onToolCall: ToolCallCallback | undefined,
   signal: AbortSignal,
   source: ToolExecutionSource,
   span?: Span,
@@ -344,7 +355,7 @@ interface ExecutedToolCall {
 
 async function executeOneToolCall(
   call: ContentPartToolCall,
-  onToolCall: ToolCallCallback,
+  onToolCall: ToolCallCallback | undefined,
   signal: AbortSignal,
   source: ToolExecutionSource,
   span?: Span,
@@ -353,6 +364,7 @@ async function executeOneToolCall(
   if (signal.aborted) throw new AxleAbortError("Operation aborted", { reason: signal.reason });
 
   const tool = source.get(call.name);
+  const deferred = source.getDeferred(call.name);
   const toolSpan = span?.startSpan(call.name, { type: "tool" });
   let usage: Stats | undefined;
   const ctx: ToolContext = {
@@ -366,17 +378,29 @@ async function executeOneToolCall(
   };
   observer?.onStart?.(call);
 
-  let resolved: ToolCallResult | null | undefined;
+  let resolved: ToolCallResult | undefined;
   let errorType = "exception";
 
   try {
-    resolved = await onToolCall(call.name, call.parameters, ctx);
-    if (resolved == null && tool) {
+    if (tool) {
       const parsed = tool.schema.safeParse(call.parameters);
       if (parsed.success) {
         errorType = "execution";
         const content = await tool.execute(parsed.data, ctx);
         resolved = { type: "success", content };
+      } else {
+        resolved = {
+          type: "error",
+          error: { type: "validation", message: formatValidationError(call.name, parsed.error) },
+        };
+      }
+    } else if (deferred) {
+      const parsed = deferred.schema.safeParse(call.parameters);
+      if (parsed.success) {
+        errorType = "execution";
+        const deferredCall: DeferredCall = { id: call.id, name: call.name, input: parsed.data };
+        if (onToolCall) observer?.onWaiting?.(deferredCall);
+        resolved = await answerDeferredCall(deferredCall, deferred, onToolCall, ctx);
       } else {
         resolved = {
           type: "error",
@@ -416,7 +440,7 @@ async function executeOneToolCall(
     };
   }
 
-  if (resolved == null) {
+  if (resolved === undefined) {
     const message = `Tool not found: ${call.name}`;
     resolved = { type: "error", error: { type: "not-found", message } };
   }
@@ -446,6 +470,78 @@ async function executeOneToolCall(
     },
     ...(usage ? { usage } : {}),
   };
+}
+
+/**
+ * Wait for the handler's answer, the tool's timeout or the batch's abort,
+ * whichever settles the call first. Once anything but the handler settles
+ * it, the handler's signal aborts and what its promise later resolves to or
+ * rejects with is dropped.
+ */
+async function answerDeferredCall(
+  call: DeferredCall,
+  tool: DeferredTool,
+  onToolCall: ToolCallCallback | undefined,
+  ctx: ToolContext,
+): Promise<ToolCallResult> {
+  if (!onToolCall) {
+    return {
+      type: "error",
+      error: { type: "unanswered", message: `No onToolCall handler for ${call.name}` },
+    };
+  }
+
+  const callController = new AbortController();
+  const forwardAbort = (): void => callController.abort(ctx.signal.reason);
+  if (ctx.signal.aborted) forwardAbort();
+  else ctx.signal.addEventListener("abort", forwardAbort, { once: true });
+
+  let settledElsewhere: ToolCallResult | undefined;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const timer =
+    tool.timeout === undefined
+      ? undefined
+      : setTimeout(() => {
+          settledElsewhere = {
+            type: "error",
+            error: {
+              type: "timeout",
+              message: `No answer for ${call.name} within ${tool.timeout}ms`,
+            },
+          };
+          callController.abort(settledElsewhere);
+          release();
+        }, tool.timeout);
+  ctx.signal.addEventListener("abort", release, { once: true });
+
+  try {
+    const answer = Promise.resolve().then(() =>
+      onToolCall(call, { ...ctx, signal: callController.signal }),
+    );
+    const outcome = await Promise.race([
+      answer.then((content) => ({ content })),
+      released.then(() => undefined),
+    ]);
+    if (outcome === undefined) answer.catch(() => {});
+    if (settledElsewhere) return settledElsewhere;
+    if (outcome === undefined || outcome.content === undefined) {
+      return {
+        type: "error",
+        error: { type: "unanswered", message: `No handler answered ${call.name}` },
+      };
+    }
+    return { type: "success", content: outcome.content };
+  } catch (error) {
+    if (settledElsewhere) return settledElsewhere;
+    throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    ctx.signal.removeEventListener("abort", forwardAbort);
+    ctx.signal.removeEventListener("abort", release);
+  }
 }
 
 function formatValidationError(toolName: string, error: z.ZodError): string {

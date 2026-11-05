@@ -22,6 +22,7 @@ import type {
 } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
+import { deferredTool } from "../scenarios/helpers/tools.js";
 
 // --- Helpers ---
 
@@ -456,10 +457,11 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async (name, parameters) => {
-          expect(name).toBe("web_search");
-          expect(parameters).toEqual({ q: "test" });
-          return { type: "success", content: "search results here" };
+        tools: [deferredTool("web_search")],
+        onToolCall: (call) => {
+          expect(call.name).toBe("web_search");
+          expect(call.input).toEqual({ q: "test" });
+          return "search results here";
         },
       });
       result.on(callback);
@@ -509,7 +511,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("web_search")],
+        onToolCall: () => "ok",
       });
       handle.onToolBatchComplete(async (message) => {
         expect(message.role).toBe("tool");
@@ -551,7 +554,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("web_search")],
+        onToolCall: () => "ok",
       });
       result.on(callback);
 
@@ -699,9 +703,10 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async (name, parameters) => {
-          received[name] = parameters;
-          return { type: "success", content: "ok" };
+        tools: [deferredTool("view-skill"), deferredTool("exec")],
+        onToolCall: (call) => {
+          received[call.name] = call.input;
+          return "ok";
         },
       });
 
@@ -818,7 +823,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
       result.on(callback);
 
@@ -860,7 +866,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
       result.on(callback);
 
@@ -900,7 +907,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
       result.on(callback);
 
@@ -941,7 +949,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
       result.on((event) => {
         if (
@@ -991,7 +1000,6 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => null,
       });
 
       const events: Array<{ type: string; [key: string]: unknown }> = [];
@@ -1054,7 +1062,8 @@ describe("stream()", () => {
         model: "test-model",
         instruct: new Instruct({ prompt: "answer", schema: z.object({ answer: z.string() }) }),
         maxSteps: 1,
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
 
       const final = await result.final;
@@ -1163,7 +1172,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
       result.on((event) => {
         if (event.type === "step:start") order.push(`turn:start:${event.id}`);
@@ -1209,7 +1219,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
 
       const final = await result.final;
@@ -1245,7 +1256,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       }).final;
 
       expect(final.usage).toEqual({
@@ -1304,7 +1316,8 @@ describe("stream()", () => {
         model: "test-model",
         messages: [],
         agentName: "researcher",
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       }).final;
 
       expect(final.usage?.breakdown).toEqual([
@@ -1432,12 +1445,13 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => {
+        tools: [deferredTool("search")],
+        onToolCall: () => {
           // Cancel after tool execution completes but before turn 2 starts
           setTimeout(() => {
             cancelHandle();
           }, 5);
-          return { type: "success", content: "results" };
+          return "results";
         },
       });
       cancelHandle = () => handle.cancel();
@@ -1479,10 +1493,11 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
+        tools: [deferredTool("search")],
         onToolCall: async () => {
           markToolStarted();
           await toolGate;
-          return { type: "success", content: "results" };
+          return "results";
         },
       });
 
@@ -1589,7 +1604,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("search")],
+        onToolCall: () => "ok",
       });
 
       // Wait for turn 2 to start streaming
@@ -1733,7 +1749,8 @@ describe("stream()", () => {
         provider,
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "ok" }),
+        tools: [deferredTool("make-it")],
+        onToolCall: () => "ok",
       });
       handle.on(callback);
       await handle.final;
@@ -1787,10 +1804,6 @@ describe("stream()", () => {
         model: "test-model",
         messages: [],
         tools: [tool],
-        onToolCall: async (_name, _params, ctx) => {
-          const result = await tool.execute(_params, ctx);
-          return { type: "success", content: result };
-        },
       });
       handle.on(callback);
       await handle.final;
@@ -1833,7 +1846,8 @@ describe("stream()", () => {
         provider: sessionCapturingProvider(ids),
         model: "test-model",
         messages: [],
-        onToolCall: async () => ({ type: "success", content: "result" }),
+        tools: [deferredTool("lookup")],
+        onToolCall: () => "result",
       }).final;
 
       expect(result.ok).toBe(true);
@@ -1849,7 +1863,8 @@ describe("stream()", () => {
         model: "test-model",
         messages: [],
         sessionId: "conversation-1",
-        onToolCall: async () => ({ type: "success", content: "result" }),
+        tools: [deferredTool("lookup")],
+        onToolCall: () => "result",
       }).final;
 
       expect(ids).toEqual(["conversation-1", "conversation-1"]);

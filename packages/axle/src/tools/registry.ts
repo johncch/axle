@@ -1,19 +1,20 @@
 import { AxleError } from "../errors/AxleError.js";
-import type { ExecutableTool, ProviderTool } from "./types.js";
+import type { AnyTool, DeferredTool, ExecutableTool, ProviderTool } from "./types.js";
 
 export class ToolRegistry {
   private tools = new Map<string, ExecutableTool>();
   private mcpTools = new Map<string, ExecutableTool>();
   private providerTools = new Map<string, ProviderTool>();
+  private deferredTools = new Map<string, DeferredTool>();
 
-  constructor(init?: { tools?: ExecutableTool[]; providerTools?: ProviderTool[] }) {
+  constructor(init?: { tools?: AnyTool[]; providerTools?: ProviderTool[] }) {
     if (init?.tools) this.add(init.tools);
     if (init?.providerTools) this.addProvider(init.providerTools);
   }
 
-  add(tool: ExecutableTool): void;
-  add(tools: ExecutableTool[]): void;
-  add(toolOrTools: ExecutableTool | ExecutableTool[]): void {
+  add(tool: AnyTool): void;
+  add(tools: AnyTool[]): void;
+  add(toolOrTools: AnyTool | AnyTool[]): void {
     const tools = Array.isArray(toolOrTools) ? toolOrTools : [toolOrTools];
     for (const tool of tools) {
       if (this.has(tool.name)) {
@@ -22,7 +23,8 @@ export class ToolRegistry {
           details: { name: tool.name },
         });
       }
-      this.tools.set(tool.name, tool);
+      if (tool.type === "deferred") this.deferredTools.set(tool.name, tool);
+      else this.tools.set(tool.name, tool);
     }
   }
 
@@ -60,11 +62,25 @@ export class ToolRegistry {
     const removedTool = this.tools.delete(name);
     const removedMcp = this.mcpTools.delete(name);
     const removedProvider = this.providerTools.delete(name);
-    return removedTool || removedMcp || removedProvider;
+    const removedDeferred = this.deferredTools.delete(name);
+    return removedTool || removedMcp || removedProvider || removedDeferred;
   }
 
   has(name: string): boolean {
-    return this.tools.has(name) || this.mcpTools.has(name) || this.providerTools.has(name);
+    return (
+      this.tools.has(name) ||
+      this.mcpTools.has(name) ||
+      this.providerTools.has(name) ||
+      this.deferredTools.has(name)
+    );
+  }
+
+  getDeferred(name: string): DeferredTool | undefined {
+    return this.deferredTools.get(name);
+  }
+
+  deferred(): DeferredTool[] {
+    return [...this.deferredTools.values()];
   }
 
   get(name: string): ExecutableTool | undefined {
@@ -92,6 +108,6 @@ export class ToolRegistry {
   }
 
   get size(): number {
-    return this.tools.size + this.mcpTools.size + this.providerTools.size;
+    return this.tools.size + this.mcpTools.size + this.providerTools.size + this.deferredTools.size;
   }
 }

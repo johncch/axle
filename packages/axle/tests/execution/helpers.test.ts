@@ -6,7 +6,12 @@ import { executeToolCalls, type ToolExecutionObserver } from "../../src/executio
 import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
-import type { ExecutableTool, ToolContext } from "../../src/tools/types.js";
+import type {
+  DeferredTool,
+  ExecutableTool,
+  ToolCallCallback,
+  ToolContext,
+} from "../../src/tools/types.js";
 import { attributeStats } from "../../src/utils/stats.js";
 
 const testSignal = new AbortController().signal;
@@ -18,6 +23,16 @@ function makeToolCall(name: string, id?: string): ContentPartToolCall {
     id: id ?? `call-${name}`,
     name,
     parameters: { input: "test" },
+  };
+}
+
+function deferred(name: string, schema = z.looseObject({}), timeout?: number): DeferredTool {
+  return {
+    type: "deferred",
+    name,
+    description: `deferred ${name}`,
+    schema,
+    ...(timeout === undefined ? {} : { timeout }),
   };
 }
 
@@ -35,117 +50,212 @@ function makeToolCallWithParams(
 }
 
 describe("executeToolCalls", () => {
-  describe("with onToolCall", () => {
-    test("calls onToolCall and returns success result", async () => {
-      const onToolCall = vi.fn().mockResolvedValue({
-        type: "success",
-        content: "result",
-      });
+  describe("deferred tools", () => {
+    const deferredRegistry = new ToolRegistry({
+      tools: [
+        deferred("my-tool"),
+        deferred("bad-tool"),
+        deferred("crasher"),
+        deferred("fatal-tool"),
+        deferred("t"),
+        deferred("strict", z.object({ count: z.number() })),
+        deferred("slow", z.looseObject({}), 20),
+        {
+          name: "runs-itself",
+          description: "executable",
+          schema: z.object({ input: z.string() }),
+          async execute() {
+            return "ran";
+          },
+        },
+      ],
+    });
+
+    test("hands a deferred call to onToolCall and returns its answer", async () => {
+      const onToolCall = vi.fn(() => "result");
 
       const { results } = await executeToolCalls(
         [makeToolCall("my-tool")],
         onToolCall,
         testSignal,
-        testRegistry,
+        deferredRegistry,
       );
 
-      expect(onToolCall).toHaveBeenCalledWith("my-tool", { input: "test" }, expect.anything());
-      expect(results).toHaveLength(1);
-      expect(results[0].content).toBe("result");
-      expect(results[0].isError).toBeUndefined();
+      expect(onToolCall).toHaveBeenCalledWith(
+        { id: "call-my-tool", name: "my-tool", input: { input: "test" } },
+        expect.objectContaining({ signal: expect.any(AbortSignal), emit: expect.any(Function) }),
+      );
+      expect(results).toEqual([{ id: "call-my-tool", name: "my-tool", content: "result" }]);
     });
 
-    test("returns error result when tool execution fails", async () => {
-      const onToolCall = vi.fn().mockResolvedValue({
-        type: "error",
-        error: { type: "execution", message: "something broke" },
-      });
+    test("never consults onToolCall for an executable tool", async () => {
+      const onToolCall = vi.fn(() => "intercepted");
 
+      const { results } = await executeToolCalls(
+        [makeToolCall("runs-itself")],
+        onToolCall,
+        testSignal,
+        deferredRegistry,
+      );
+
+      expect(onToolCall).not.toHaveBeenCalled();
+      expect(results[0].content).toBe("ran");
+    });
+
+    test("a thrown error is an execution error carrying the reason", async () => {
       const { results } = await executeToolCalls(
         [makeToolCall("bad-tool")],
-        onToolCall,
+        () => {
+          throw new Error("not here");
+        },
         testSignal,
-        testRegistry,
+        deferredRegistry,
       );
 
-      expect(results).toHaveLength(1);
+      expect(results[0].isError).toBe(true);
+      expect(JSON.parse(String(results[0].content))).toEqual({
+        error: { type: "execution", message: "not here" },
+      });
+    });
+
+    test("returning nothing is an unanswered error", async () => {
+      const { results } = await executeToolCalls(
+        [makeToolCall("my-tool")],
+        () => undefined,
+        testSignal,
+        deferredRegistry,
+      );
+
+      expect(JSON.parse(String(results[0].content))).toEqual({
+        error: { type: "unanswered", message: "No handler answered my-tool" },
+      });
       expect(results[0].isError).toBe(true);
     });
 
-    test("returns not-found error when onToolCall returns null", async () => {
-      const onToolCall = vi.fn().mockResolvedValue(null);
-
+    test("a deferred call with no onToolCall is unanswered without waiting", async () => {
+      const onWaiting = vi.fn();
       const { results } = await executeToolCalls(
-        [makeToolCall("unknown")],
-        onToolCall,
+        [makeToolCall("my-tool")],
+        undefined,
         testSignal,
-        testRegistry,
+        deferredRegistry,
+        undefined,
+        { onWaiting },
       );
 
-      expect(results).toHaveLength(1);
+      expect(onWaiting).not.toHaveBeenCalled();
       expect(results[0].isError).toBe(true);
-      expect(results[0].content).toContain("not-found");
+      expect(results[0].content).toContain("unanswered");
     });
 
-    test("continues processing after a missing tool", async () => {
-      const onToolCall = vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ type: "success", content: "ok" });
+    test("validates the arguments before the handler sees them", async () => {
+      const onToolCall = vi.fn(() => "never");
 
       const { results } = await executeToolCalls(
-        [makeToolCall("missing"), makeToolCall("found")],
+        [makeToolCallWithParams("strict", "c1", { count: "three" })],
         onToolCall,
         testSignal,
-        testRegistry,
+        deferredRegistry,
       );
 
-      expect(results).toHaveLength(2);
+      expect(onToolCall).not.toHaveBeenCalled();
       expect(results[0].isError).toBe(true);
-      expect(results[1].content).toBe("ok");
-    });
-
-    test("catches exceptions from onToolCall", async () => {
-      const onToolCall = vi.fn().mockRejectedValue(new Error("crash"));
-
-      const { results } = await executeToolCalls(
-        [makeToolCall("crasher")],
-        onToolCall,
-        testSignal,
-        testRegistry,
-      );
-
-      expect(results).toHaveLength(1);
-      expect(results[0].isError).toBe(true);
-      expect(results[0].content).toContain("crash");
+      expect(results[0].content).toContain("validation");
     });
 
     test("rethrows AxleToolFatalError from onToolCall", async () => {
       const fatal = new AxleToolFatalError("sandbox terminated", { toolName: "fatal-tool" });
-      const onToolCall = vi.fn().mockRejectedValue(fatal);
 
       await expect(
-        executeToolCalls([makeToolCall("fatal-tool")], onToolCall, testSignal, testRegistry),
+        executeToolCalls(
+          [makeToolCall("fatal-tool")],
+          () => {
+            throw fatal;
+          },
+          testSignal,
+          deferredRegistry,
+        ),
       ).rejects.toBe(fatal);
     });
 
-    test("passes a ToolContext whose signal follows the run signal", async () => {
+    test("passes a context whose signal follows the run signal", async () => {
       const controller = new AbortController();
       let seen: ToolContext | undefined;
-      const onToolCall = vi.fn(async (_name: string, _params: unknown, ctx: ToolContext) => {
+      const onToolCall: ToolCallCallback = (_call, ctx) => {
         seen = ctx;
         expect(ctx.signal.aborted).toBe(false);
         controller.abort("done");
-        return { type: "success" as const, content: "ok" };
-      });
+        return "ok";
+      };
 
       await expect(
-        executeToolCalls([makeToolCall("t")], onToolCall, controller.signal, testRegistry),
+        executeToolCalls([makeToolCall("t")], onToolCall, controller.signal, deferredRegistry),
       ).rejects.toBeInstanceOf(AxleAbortError);
 
-      expect(seen).not.toHaveProperty("registry");
       expect(seen?.signal.aborted).toBe(true);
       expect(seen?.signal.reason).toBe("done");
+    });
+
+    test("a rejection after a pending promise is the call's error result", async () => {
+      let reject!: (error: Error) => void;
+      const answered = new Promise<string>((_resolve, rejectAnswer) => {
+        reject = rejectAnswer;
+      });
+      const pending = executeToolCalls(
+        [makeToolCall("my-tool")],
+        () => answered,
+        testSignal,
+        deferredRegistry,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      reject(new Error("user dismissed"));
+
+      const { results } = await pending;
+      expect(JSON.parse(String(results[0].content))).toEqual({
+        error: { type: "execution", message: "user dismissed" },
+      });
+    });
+
+    test("the tool's timeout settles the call and aborts the handler's signal", async () => {
+      let seen: ToolContext | undefined;
+      const { results } = await executeToolCalls(
+        [makeToolCall("slow")],
+        (_call, ctx) => {
+          seen = ctx;
+          return new Promise<string>(() => {});
+        },
+        testSignal,
+        deferredRegistry,
+      );
+
+      expect(results[0].isError).toBe(true);
+      expect(JSON.parse(String(results[0].content))).toEqual({
+        error: { type: "timeout", message: "No answer for slow within 20ms" },
+      });
+      expect(seen?.signal.aborted).toBe(true);
+    });
+
+    test("aborting the run settles a waiting call without the handler's answer", async () => {
+      const controller = new AbortController();
+      let seen: ToolContext | undefined;
+      const pending = executeToolCalls(
+        [makeToolCall("my-tool")],
+        (_call, ctx) => {
+          seen = ctx;
+          return new Promise<string>(() => {});
+        },
+        controller.signal,
+        deferredRegistry,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      controller.abort("cancelled");
+
+      const error = await pending.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(AxleAbortError);
+      expect(seen?.signal.aborted).toBe(true);
+      expect(seen?.signal.reason).toBe("cancelled");
     });
   });
 

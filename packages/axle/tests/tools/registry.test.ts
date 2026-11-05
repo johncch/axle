@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { ToolRegistry } from "../../src/tools/registry.js";
-import type { ExecutableTool, ProviderTool } from "../../src/tools/types.js";
+import type { DeferredTool, ExecutableTool, ProviderTool } from "../../src/tools/types.js";
 
 function makeExec(name: string): ExecutableTool {
   return {
@@ -16,6 +16,15 @@ function makeExec(name: string): ExecutableTool {
 
 function makeProvider(name: string): ProviderTool {
   return { type: "provider", name };
+}
+
+function makeDeferred(name: string): DeferredTool {
+  return {
+    type: "deferred",
+    name,
+    description: `deferred ${name}`,
+    schema: z.object({ question: z.string() }),
+  };
 }
 
 describe("ToolRegistry", () => {
@@ -177,6 +186,34 @@ describe("ToolRegistry", () => {
       expect(r.local()).toEqual([local]);
       expect(r.mcp()).toEqual([mcp]);
       expect(r.executable()).toEqual([local, mcp]);
+    });
+  });
+
+  describe("deferred tools", () => {
+    it("add() routes a deferred tool to its own bucket", () => {
+      const d = makeDeferred("ask");
+      const r = new ToolRegistry({ tools: [makeExec("e"), d] });
+      expect(r.size).toBe(2);
+      expect(r.deferred()).toEqual([d]);
+      expect(r.getDeferred("ask")).toBe(d);
+      expect(r.get("ask")).toBeUndefined();
+      expect(r.executable().map((t) => t.name)).toEqual(["e"]);
+    });
+
+    it("has() and remove() cover deferred tools", () => {
+      const r = new ToolRegistry();
+      r.add(makeDeferred("ask"));
+      expect(r.has("ask")).toBe(true);
+      expect(r.remove("ask")).toBe(true);
+      expect(r.has("ask")).toBe(false);
+      expect(r.size).toBe(0);
+    });
+
+    it("throws on a name shared between an executable and a deferred tool", () => {
+      const r = new ToolRegistry({ tools: [makeExec("dup")] });
+      expect(() => r.add(makeDeferred("dup"))).toThrow(/dup/);
+      const r2 = new ToolRegistry({ tools: [makeDeferred("dup")] });
+      expect(() => r2.add(makeExec("dup"))).toThrow(/dup/);
     });
   });
 });

@@ -7,15 +7,10 @@ import type {
   ContentPartToolCall,
 } from "../messages/message.js";
 import type { Span } from "../observability/types.js";
-import type { ToolProgressChunk } from "../tools/types.js";
+import type { DeferredCall, ToolCallCallback, ToolProgressChunk } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import { addStats, mergeStats } from "../utils/stats.js";
-import type {
-  ResolvedTools,
-  ToolCallCallback,
-  ToolCallResult,
-  ToolExecutionOutcome,
-} from "./helpers.js";
+import type { ResolvedTools, ToolCallResult, ToolExecutionOutcome } from "./helpers.js";
 import { executeToolCalls, serializeToolError } from "./helpers.js";
 import type { CompletedStep, ToolCallArgumentError } from "./stepReader.js";
 import type { StreamEvent } from "./stream.js";
@@ -98,6 +93,9 @@ export async function executeStepTools(
         name: call.name,
         parameters: call.parameters,
       });
+    },
+    onWaiting(call: DeferredCall) {
+      emit({ type: "tool:waiting", id: call.id, name: call.name, input: call.input });
     },
     onDelta(call: ContentPartToolCall, chunk: ToolProgressChunk) {
       emit({
