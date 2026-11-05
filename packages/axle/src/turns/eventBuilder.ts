@@ -315,7 +315,7 @@ export class TurnEventBuilder {
           turnId,
           timing,
           name: event.name,
-          kind: event.kind,
+          kind: event.kind === "agent" ? "agent" : "tool",
         });
         events.push({ type: "part:start", turnId, part });
         break;

@@ -314,7 +314,6 @@ const handle = stream({
   model,
   messages: [{ role: "user", content: "Hello" }],
   tools: [myTool],
-  onToolCall: async (name, params) => ({ type: "success", content: "result" }),
 });
 
 handle.on((event) => {
@@ -338,7 +337,6 @@ const result = await generate({
   model,
   messages: [{ role: "user", content: "Hello" }],
   tools: [myTool],
-  onToolCall: async (name, params) => ({ type: "success", content: "result" }),
 });
 
 if (!result.ok) throw new Error(result.error.kind);
@@ -728,8 +726,56 @@ arguments, an unknown tool) is a result for that call only. A tool that throws
 `AxleToolFatalError` ends the run: the other calls in the batch are aborted
 through `ctx.signal`, with the fatal error as the signal's reason, and the send
 rejects once every call has settled with the usage all of them reported.
-`ctx.signal` also aborts when the run is cancelled. `onToolCall` and `execute`
+`ctx.signal` also aborts when the run is cancelled. `execute` and `onToolCall`
 may run concurrently across the calls of one batch.
+
+#### Deferred tools
+
+A deferred tool is a tool the loop cannot run: a definition with no `execute`,
+answered by whoever holds the loop. The model calls it like any other tool. The
+call goes to `onToolCall`, which returns what an `execute` would return, and
+the loop waits for the answer as it waits for a running tool.
+
+```typescript
+import type { DeferredTool } from "@fifthrevision/axle";
+
+const askUser: DeferredTool = {
+  type: "deferred",
+  name: "ask-user",
+  description: "Ask the person a question and wait for the answer",
+  schema: z.object({ question: z.string() }),
+  timeout: 10 * 60_000,
+};
+
+const handle = stream({
+  provider,
+  model,
+  messages,
+  tools: [weatherTool, askUser],
+  onToolCall(call, ctx) {
+    switch (call.name) {
+      case "ask-user":
+        return prompt(call.input.question, { signal: ctx.signal });
+    }
+  },
+});
+```
+
+`call` is `{ id, name, input }`, with `input` already validated against the
+tool's schema, and `ctx` is the `ToolContext` an `execute` receives. The
+contract is `execute`'s: return the result, or throw to give the model an
+error with a reason. The one difference is that the handler answers every
+deferred tool, so a branch may not match; returning nothing is an error result
+of type `unanswered`, as is a call made with no `onToolCall` set. The step
+continues either way. `onToolCall` is consulted for deferred tools only;
+executable tools run through their own `execute`.
+
+The answer can arrive later. A handler that returns a pending promise holds the
+call open, so a UI can resolve it from a button or reject it from a dismiss.
+Two things settle a waiting call without the handler: the tool's `timeout`,
+an error result of type `timeout`, and the run's cancellation, which settles
+the call at once rather than waiting on the handler. In both cases
+`ctx.signal` aborts and whatever the promise later resolves to is dropped.
 
 #### File results and deferred references
 
@@ -1514,13 +1560,16 @@ and completion.
 `tool-results:complete`, `text:start`, `text:delta`, `text:citation`,
 `text:end`, `citation`, `thinking:start`, `thinking:raw-delta`,
 `thinking:summary-delta`, `thinking:update`, `thinking:end`, `tool:request`,
-`tool:args-delta`, `tool:exec-start`, `tool:exec-delta`, `tool:exec-complete`,
-`tool:exec-error`, `provider-tool:start`, `provider-tool:input`,
-`provider-tool:complete`, `provider-tool:error`, `error`.
+`tool:args-delta`, `tool:exec-start`, `tool:waiting`, `tool:exec-delta`,
+`tool:exec-complete`, `tool:exec-error`, `provider-tool:start`,
+`provider-tool:input`, `provider-tool:complete`, `provider-tool:error`,
+`error`.
 
 Tool and provider-tool events correlate by `id`. The calls in one tool batch
 run concurrently, so `tool:exec-start` fires for every call before any
 completes and their delta, complete and error events interleave; key on `id`.
+`tool:request` carries `kind: "deferred"` for a deferred tool, and
+`tool:waiting` fires when its validated call has been handed to `onToolCall`.
 Text and thinking parts stream sequentially within a step, so their deltas
 belong to the most recently opened part.
 

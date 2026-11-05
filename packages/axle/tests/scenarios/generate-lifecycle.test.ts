@@ -6,6 +6,7 @@ import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
 import { makeStreamingProvider } from "./helpers/providers.js";
 import { createTracerAndWriter } from "./helpers/recording-writer.js";
+import { deferredTool } from "./helpers/tools.js";
 
 async function expectAbortError(promise: Promise<unknown>): Promise<AxleAbortError> {
   try {
@@ -29,7 +30,7 @@ import {
 } from "./helpers/chunks.js";
 
 describe("generate() wrapper lifecycle", () => {
-  test("5.3 executes a local tool without onToolCall", async () => {
+  test("5.3 executes a local tool", async () => {
     const toolResponse = [
       startChunk("msg_1"),
       toolCallStartChunk(0, "call_1", "lookup"),
@@ -146,7 +147,8 @@ describe("generate() wrapper lifecycle", () => {
       messages: [{ role: "user", content: "Look up item 42" }],
       span: rootSpan,
       signal: controller.signal,
-      onToolCall: async (_name, _params, ctx) => {
+      tools: [deferredTool("lookup")],
+      onToolCall: async (_call, ctx) => {
         markToolStarted();
         await gate;
         if (ctx.signal.aborted) {
@@ -154,7 +156,7 @@ describe("generate() wrapper lifecycle", () => {
           error.name = "AbortError";
           throw error;
         }
-        return { type: "success", content: "Found item 42" };
+        return "Found item 42";
       },
     });
 

@@ -19,6 +19,7 @@ import {
 } from "./helpers/chunks.js";
 import { makeAsyncStreamingProvider, makeStreamingProvider } from "./helpers/providers.js";
 import { createTracerAndWriter, eventIndex } from "./helpers/recording-writer.js";
+import { deferredTool } from "./helpers/tools.js";
 
 // ─── 1. Happy paths ─────────────────────────────────────────────────────────
 
@@ -120,7 +121,8 @@ describe("stream() happy paths", () => {
       model: "test-model",
       messages: [],
       span: rootSpan,
-      onToolCall: async () => ({ type: "success", content: "search results" }),
+      tools: [deferredTool("web_search")],
+      onToolCall: () => "search results",
     });
 
     const result = await handle.final;
@@ -219,7 +221,8 @@ describe("stream() happy paths", () => {
       model: "test-model",
       messages: [],
       span: rootSpan,
-      onToolCall: async () => ({ type: "success", content: "ok" }),
+      tools: [deferredTool("search"), deferredTool("calculator")],
+      onToolCall: () => "ok",
     });
 
     const result = await handle.final;
@@ -432,7 +435,8 @@ describe("stream() error paths", () => {
       messages: [],
       span: rootSpan,
       maxSteps: 1,
-      onToolCall: async () => ({ type: "success", content: "result" }),
+      tools: [deferredTool("search")],
+      onToolCall: () => "result",
     });
 
     const result = await handle.final;
@@ -469,7 +473,8 @@ describe("stream() error paths", () => {
       messages: [],
       span: rootSpan,
       maxContextTokens: 500,
-      onToolCall: async () => ({ type: "success", content: "result" }),
+      tools: [deferredTool("search")],
+      onToolCall: () => "result",
     });
 
     const result = await handle.final;
@@ -584,7 +589,7 @@ describe("stream() cancellation paths", () => {
 // ─── 7. Tool span details ───────────────────────────────────────────────────
 
 describe("stream() tool span details", () => {
-  test("7.2 tool not found (onToolCall returns null)", async () => {
+  test("7.2 tool not found", async () => {
     const { writer, tracer } = createTracerAndWriter();
     const rootSpan = tracer.startSpan("stream", { type: "workflow" });
 
@@ -609,8 +614,6 @@ describe("stream() tool span details", () => {
       model: "test-model",
       messages: [],
       span: rootSpan,
-      // Return null → tool not found
-      onToolCall: async () => null,
     });
 
     const result = await handle.final;
@@ -656,10 +659,10 @@ describe("stream() tool span details", () => {
       model: "test-model",
       messages: [],
       span: rootSpan,
-      onToolCall: async () => ({
-        type: "error",
-        error: { type: "validation", message: "Invalid input" },
-      }),
+      tools: [deferredTool("failing_tool")],
+      onToolCall: () => {
+        throw new Error("Invalid input");
+      },
     });
 
     const result = await handle.final;
@@ -699,7 +702,8 @@ describe("stream() tool span details", () => {
       model: "test-model",
       messages: [],
       span: rootSpan,
-      onToolCall: async () => {
+      tools: [deferredTool("crashing_tool")],
+      onToolCall: () => {
         throw new Error("Unexpected crash");
       },
     });

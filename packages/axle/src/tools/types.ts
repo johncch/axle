@@ -57,7 +57,29 @@ export interface DeferredTool<TSchema extends ZodObject<any> = ZodObject<any>> {
   description: string;
   schema: TSchema;
   summarize?(input: z.infer<TSchema>): string;
+  /** Milliseconds a call may wait for its answer before it fails with `timeout`. Unbounded when absent. */
+  timeout?: number;
 }
+
+/** One call to a deferred tool, with its arguments already validated against the tool's schema. */
+export interface DeferredCall<TInput = Record<string, unknown>> {
+  id: string;
+  name: string;
+  input: TInput;
+}
+
+/**
+ * Answers deferred calls. The contract is `execute`'s: return the result, or
+ * throw to give the model an error with a reason. Returning nothing means no
+ * branch answered this call, which the model sees as an `unanswered` error.
+ * `ctx.signal` also aborts when the call settles without this handler's
+ * answer, on the tool's timeout or the run's cancellation; what the handler
+ * resolves to after that is dropped.
+ */
+export type ToolCallCallback = (
+  call: DeferredCall,
+  ctx: ToolContext,
+) => string | ToolResultPart[] | void | Promise<string | ToolResultPart[] | void>;
 
 /** A tool the model can call: run by the loop, or deferred to the caller. */
 export type AnyTool = ExecutableTool | DeferredTool;

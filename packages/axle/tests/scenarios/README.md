@@ -22,9 +22,9 @@ span:start → span:update (setResult) → span:end
 
 **Tool spans** are created by `executeToolCalls()` and have three outcomes:
 
-- `onToolCall` returns success → span ends with status `"ok"`
-- `onToolCall` returns null (not found) or error → span ends with status `"error"`
-- `onToolCall` throws → caught, span ends with status `"error"`
+- the tool (or the `onToolCall` answer for a deferred tool) succeeds → span ends with status `"ok"`
+- the tool is not found, or a deferred call goes unanswered → span ends with status `"error"`
+- `execute` or `onToolCall` throws → caught, span ends with status `"error"`
 
 **Root span** gets `setResult` with the final LLM result, then `end()`. On error, both the turn span and root span end with `"error"` status.
 
@@ -59,17 +59,17 @@ span:start → span:update (setResult) → span:end
 
 ### stream() — Tool Spans
 
-| Test | Scenario                   | Key assertions                                              |
-| ---- | -------------------------- | ----------------------------------------------------------- |
-| 7.2  | `onToolCall` returns null  | Tool span status `"error"`, result output is `null`         |
-| 7.3  | `onToolCall` returns error | Tool span status `"error"`, result kind is `"tool"`         |
-| 7.4  | `onToolCall` throws        | Exception caught by `executeToolCalls`, same outcome as 7.3 |
+| Test | Scenario             | Key assertions                                              |
+| ---- | -------------------- | ----------------------------------------------------------- |
+| 7.2  | tool not found       | Tool span status `"error"`, result output is `null`         |
+| 7.3  | `onToolCall` throws  | Tool span status `"error"`, result kind is `"tool"`         |
+| 7.4  | `onToolCall` crashes | Exception caught by `executeToolCalls`, same outcome as 7.3 |
 
 ### generate() — Wrapper Coverage
 
 | ID  | Scenario                                                            |
 | --- | ------------------------------------------------------------------- |
-| 5.3 | Executes a local tool without onToolCall                            |
+| 5.3 | Executes a local tool                                               |
 | 6.4 | Escaped provider AbortError becomes AxleAbortError and closes spans |
 | 6.5 | Abort during tool execution preserves prior state                   |
 | 6.6 | Pre-aborted signal prevents provider work                           |
