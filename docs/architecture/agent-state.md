@@ -191,7 +191,13 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     the wait is persisted: a waiting call lives as long as the Agent
     instance, as a running `execute` does, and a process that dies loses the
     turn the same way ([tool-loop.md](./tool-loop.md) invariant 10).
-    (2026-11-05, AXL-103)
+    `agent.toolCall(id)` is the waiting call with that tool call id, with
+    `answer` and `fail`, or `undefined` once it has settled; it forwards to
+    the active turn's stream handle, so the Agent holds no map of its own.
+    A handler that returns nothing leaves the call for `toolCall(id)`, the
+    tool's `timeout` or `cancel()`; the first to settle it wins and the
+    handler's signal aborts. (2026-11-05, AXL-103; `toolCall(id)`
+    2026-11-05, AXL-44)
 
 ## Design rationale (2026-08-12)
 
@@ -708,8 +714,38 @@ One handler per Agent, a dispatcher with a switch, keeps that choice in one
 place and makes forwarding explicit; a per-tool registration was rejected
 because it needs a claim rule the moment two parties want the same name.
 
+## Answering from outside the handler (2026-11-05)
+
+A remote consumer answers a deferred call by posting a command, and the
+served agent has to turn that command into the settlement of a promise the
+loop is awaiting. Something must file that promise under the call id. A
+forwarder object the host keeps beside the Agent was the first shape; it
+was a second map keyed by call id, in front of the one the loop already
+holds for the timeout and the abort, and the host had to carry it to every
+place that answers. So the verb went where the state already was.
+`agent.toolCall(id)` is the primitive; `agent.onToolCall(handler)` is a
+convenience over it, one body for the local Agent and the remote: run the
+handler on each waiting call and feed a defined return to `answer`, a throw
+to `fail`. That reading forced one change to the day's earlier decision: a
+handler that returns nothing can no longer fail the call at once, because
+someone else can now answer, so "nothing" means "not from me" at every
+layer and the call waits for the timeout or a cancel. `action:waiting`
+carries the call id and the tool name so a handler can be built from the
+event alone, and a send takes an `id` for its user turn so an operation
+started elsewhere can be matched to its events.
+
 ## Rejected alternatives
 
+- **A forwarder beside the Agent** (2026-11-05, AXL-44): a
+  `forwardToolCalls(agent)` object holding resolvers that a command
+  processor took as a second argument. Rejected: a second map keyed by
+  call id in front of the loop's own, and one more object per agent for
+  every host registry to carry.
+- **The waiting map in the Agent** (2026-11-05, AXL-44): the Agent
+  wrapping the handler in one that never returns nothing, with `stream()`
+  untouched. Rejected: `unanswered` would survive at the stream level with
+  a meaning the Agent never produces, and the Agent's map and the loop's
+  timeout would have to be kept in step across a layer.
 - **Deferral as a result arm** (2026-11-05): `send().final` resolving
   `{ ok: true, deferred }` with a `resume()` to continue. Rejected: it made
   every consumer narrow three ways for a state they could read from events,

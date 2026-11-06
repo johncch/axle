@@ -20,6 +20,7 @@ import type {
   ToolCallCallback,
   ToolDefinition,
   ToolProgressChunk,
+  WaitingToolCall,
 } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import type { FileResolver } from "../utils/file.js";
@@ -29,9 +30,11 @@ import {
   logStepContent,
   resolveTools,
   validateLoopLimits,
+  waitingToolCall,
   type AxleProviderFailure,
   type StreamResult,
   type ToolCallResult,
+  type WaitingCalls,
 } from "./helpers.js";
 import { readStep, type StepReadOutcome } from "./stepReader.js";
 import { executeStepTools, type LoopContext } from "./stepTools.js";
@@ -178,6 +181,8 @@ export interface StreamHandle {
   on(callback: StreamEventCallback): void;
   onToolBatchComplete(callback: ToolBatchCompleteCallback): void;
   cancel(reason?: unknown): void;
+  /** The deferred call with this id while the run is waiting on it; `undefined` once it has settled. */
+  toolCall(id: string): WaitingToolCall | undefined;
   readonly final: Promise<StreamResult>;
 }
 
@@ -242,9 +247,11 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
 
   const { promise: finalPromise, resolve, reject } = Promise.withResolvers<any>();
   const control: { onToolBatchComplete?: ToolBatchCompleteCallback } = {};
+  const waiting: WaitingCalls = new Map();
 
   // Kick off processing on next microtask so callers can register callbacks first
-  const runStream = () => run(streamOptions, effectiveSignal, callbacks, control, discloseThinking);
+  const runStream = () =>
+    run(streamOptions, effectiveSignal, callbacks, control, waiting, discloseThinking);
   Promise.resolve().then(() =>
     runStream().then((result) => {
       if (parse && result.ok) {
@@ -283,6 +290,9 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
     cancel(reason?: unknown) {
       controller.abort(reason);
     },
+    toolCall(id: string) {
+      return waitingToolCall(waiting, id);
+    },
     get final() {
       return finalPromise;
     },
@@ -296,6 +306,7 @@ async function run(
   signal: AbortSignal,
   cbs: StreamEventCallback[],
   control: { onToolBatchComplete?: ToolBatchCompleteCallback },
+  waiting: WaitingCalls,
   discloseThinking: boolean,
 ): Promise<StreamResult> {
   const {
@@ -334,6 +345,7 @@ async function run(
     resolvedTools,
     span,
     onToolCall,
+    waiting,
     newMessages,
     usage,
     addMessage,

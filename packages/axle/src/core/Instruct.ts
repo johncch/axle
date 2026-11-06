@@ -107,11 +107,11 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     return this.files.length > 0;
   }
 
-  toMessage(options: { metadata?: MessageMetadata } = {}): AxleUserMessage {
+  toMessage(options: { metadata?: MessageMetadata; id?: string } = {}): AxleUserMessage {
     const metadata = options.metadata ?? this.metadata;
     return {
       role: "user",
-      id: crypto.randomUUID(),
+      id: options.id ?? crypto.randomUUID(),
       content: toContentParts({ text: this.render(), files: this.files }),
       ...(metadata ? { metadata } : {}),
     };

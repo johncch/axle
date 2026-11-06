@@ -365,6 +365,8 @@ export class TurnEventBuilder {
             type: "action:waiting",
             turnId,
             partId: mapping.partId,
+            callId: event.id,
+            name: event.name,
             input: event.input,
           });
         }

@@ -10,7 +10,12 @@ import type { Span } from "../observability/types.js";
 import type { DeferredCall, ToolCallCallback, ToolProgressChunk } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import { addStats, mergeStats } from "../utils/stats.js";
-import type { ResolvedTools, ToolCallResult, ToolExecutionOutcome } from "./helpers.js";
+import type {
+  ResolvedTools,
+  ToolCallResult,
+  ToolExecutionOutcome,
+  WaitingCalls,
+} from "./helpers.js";
 import { executeToolCalls, serializeToolError } from "./helpers.js";
 import type { CompletedStep, ToolCallArgumentError } from "./stepReader.js";
 import type { StreamEvent } from "./stream.js";
@@ -25,6 +30,7 @@ export interface LoopContext {
   resolvedTools: ResolvedTools;
   span?: Span;
   onToolCall?: ToolCallCallback;
+  waiting: WaitingCalls;
   newMessages: AxleMessage[];
   usage: Stats;
   addMessage: (message: AxleMessage) => void;
@@ -57,7 +63,8 @@ export async function executeStepTools(
   loop: LoopContext,
 ): Promise<AxleToolCallMessage | undefined> {
   const { toolCallArgumentErrors } = step;
-  const { emit, signal, resolvedTools, span, onToolCall, newMessages, usage, addMessage } = loop;
+  const { emit, signal, resolvedTools, span, onToolCall, waiting, newMessages, usage, addMessage } =
+    loop;
 
   const toolResultsId = crypto.randomUUID();
   emit({ type: "tool-results:start", id: toolResultsId });
@@ -139,6 +146,7 @@ export async function executeStepTools(
         resolvedTools,
         span,
         executionObserver,
+        waiting,
       ));
     }
   } catch (error) {

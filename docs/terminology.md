@@ -125,15 +125,18 @@ find the handler's promise for a part.
 
 **Waiting** — the status of a `DeferredAction` from the moment its validated
 call has been handed to `onToolCall` (`tool:waiting`, `action:waiting`) until
-the answer, the tool's `timeout` or a cancellation settles it. A deferred
-action is never `running`: it is `pending` while its arguments stream, then
-`waiting`. "Open" was tried and dropped because it reads as something the
-consumer does.
+something settles it: the handler's return or throw, `toolCall(id)`, the
+tool's `timeout` or a cancellation. A deferred action is never `running`: it
+is `pending` while its arguments stream, then `waiting`. "Open" was tried
+and dropped because it reads as something the consumer does.
 
-**Unanswered** — the error result a deferred call gets when the handler's
-branch for it returned nothing, or when no handler is set. A handler that
-throws gives an `execution` error, as `execute` does; a call that outlives
-its tool's `timeout` gets a `timeout` error.
+**Waiting tool call** — the handle `toolCall(id)` returns on a stream handle
+or an `Agent` while the call with that tool call id is waiting:
+`{ answer, fail }`. `answer` settles it with a result, `fail` with an
+`execution` error, the same two outcomes a handler has. The first settle
+wins; the lookup returns `undefined` once the call has settled. A handler
+that returns nothing has not answered; the call stays waiting for whoever
+holds this handle, which is what "not from me" means at every layer.
 
 **UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
 usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent

@@ -186,6 +186,8 @@ describe("Transcript", () => {
       type: "action:waiting",
       turnId: "t1",
       partId: "p1",
+      callId: "call_1",
+      name: "ask-user",
       input: { question: "Colour?" },
     });
     expect((transcript.turns[0] as Turn).parts[0]).toEqual({
@@ -222,7 +224,14 @@ describe("Transcript", () => {
         detail: { name: "search", parameters: { q: "axle" } },
       },
     });
-    transcript.apply({ type: "action:waiting", turnId: "t1", partId: "p1", input: { q: "no" } });
+    transcript.apply({
+      type: "action:waiting",
+      turnId: "t1",
+      partId: "p1",
+      callId: "call_1",
+      name: "search",
+      input: { q: "no" },
+    });
     expect((transcript.turns[0] as Turn).parts[0]).toMatchObject({
       status: "running",
       detail: { parameters: { q: "axle" } },

@@ -762,10 +762,9 @@ agent.onToolCall((call, ctx) => {
 tool's schema, and `ctx` is the `ToolContext` an `execute` receives. The
 contract is `execute`'s: return the result, or throw to give the model an
 error with a reason. The one difference is that the handler answers every
-deferred tool, so a branch may not match; returning nothing is an error result
-of type `unanswered`, as is a call made with no `onToolCall` set. The step
-continues either way. `onToolCall` is consulted for deferred tools only;
-executable tools run through their own `execute`.
+deferred tool, so a branch may not match; returning nothing means the handler
+has not answered, and the call keeps waiting. `onToolCall` is consulted for
+deferred tools only; executable tools run through their own `execute`.
 
 An Agent has one handler. Registering another replaces it, and the function
 `agent.onToolCall` returns removes the handler if it is still the one in
@@ -778,10 +777,32 @@ Turn events below.
 
 The answer can arrive later. A handler that returns a pending promise holds the
 call open, so a UI can resolve it from a button or reject it from a dismiss.
-Two things settle a waiting call without the handler: the tool's `timeout`,
-an error result of type `timeout`, and the run's cancellation, which settles
-the call at once rather than waiting on the handler. In both cases
-`ctx.signal` aborts and whatever the promise later resolves to is dropped.
+
+The answer can also come from outside the handler. `agent.toolCall(id)`
+returns the waiting call with that tool call id, `{ answer, fail }`, or
+`undefined` once it has settled; `stream()`'s handle has the same method.
+`answer(content)` gives the model the result and `fail(message)` an error,
+the two outcomes a handler has. This is how a second tab, a server route or
+a scheduled job answers a prompt the handler is still showing:
+
+```ts
+agent.on((event) => {
+  if (event.type === "action:waiting") prompts.set(event.callId, event.input);
+});
+// later, from wherever the person answered
+agent.toolCall(callId)?.answer("teal");
+```
+
+A waiting call settles by whichever comes first: the handler's return or
+throw, `toolCall(id)`, the tool's `timeout` (an error result of type
+`timeout`), or the run's cancellation. A handler that returns nothing, or no
+handler at all, leaves the call waiting for the others, so a deferred tool
+with no `timeout` and nobody to answer waits until the turn is cancelled.
+Once anything but the handler settles the call, `ctx.signal` aborts and
+whatever the handler's promise later resolves to is dropped. `generate()`
+returns no handle, so nothing outside its handler can answer; a call the
+handler does not answer, or any call when there is no handler, is an error
+result at once rather than a wait.
 
 #### File results and deferred references
 
@@ -1403,11 +1424,12 @@ further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool" |
 
 A deferred tool call is a `DeferredAction`. It never runs here, so it has no
 `running` state: it is `pending` while its arguments stream, becomes `waiting`
-on `action:waiting`, which carries the validated `input` the handler received,
-and settles with the same three events as any action. `detail.callId` is the
-`id` of the `DeferredCall` the handler received, so a renderer that shows a
-prompt for a waiting part can find the promise its handler holds for it; the
-question itself is in `detail.input`. `isActionOf(tool, part)` narrows a part
+on `action:waiting`, which carries the `callId`, the tool `name` and the
+validated `input` the handler received, and settles with the same three
+events as any action. `detail.callId` is the `id` of the `DeferredCall` the
+handler received and the id `agent.toolCall(id)` takes, so a renderer that
+shows a prompt for a waiting part can answer it; the question itself is in
+`detail.input`. `isActionOf(tool, part)` narrows a part
 to one tool's action with `detail.input` typed by its schema; a `pending` part
 has no input yet and is excluded.
 

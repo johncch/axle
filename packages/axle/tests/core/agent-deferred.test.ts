@@ -159,18 +159,88 @@ describe("Agent deferred tools", () => {
     );
   });
 
-  test("with no handler the model sees an unanswered error and the turn completes", async () => {
+  test("with no handler the call waits, and agent.toolCall(id).answer settles it", async () => {
+    const script = scriptedProvider([
+      { id: "c1", name: "ask-user", args: { question: "Colour?" } },
+    ]);
+    const agent = new Agent({ provider: script.provider, model: "mock", tools: [askUser] });
+    const transcript = new Transcript();
+    agent.on(transcript.apply);
+
+    const handle = agent.send("go");
+    expect(agent.toolCall("c1")).toBeUndefined();
+    await vi.waitFor(() => expect(deferredParts(transcript)[0]?.status).toBe("waiting"));
+    expect(script.requestCount).toBe(1);
+    agent.toolCall("c1")?.answer("teal");
+
+    const result = await handle.final;
+    expect(result.ok && result.response).toBe("saw ask-user=teal");
+    expect(agent.toolCall("c1")).toBeUndefined();
+    expect(deferredParts(transcript)[0]).toMatchObject({
+      status: "complete",
+      detail: { result: { type: "success", content: "teal" } },
+    });
+  });
+
+  test("agent.toolCall(id).fail gives the model an execution error with the message", async () => {
     const { provider } = scriptedProvider([
       { id: "c1", name: "ask-user", args: { question: "Colour?" } },
     ]);
     const agent = new Agent({ provider, model: "mock", tools: [askUser] });
+    const transcript = new Transcript();
+    agent.on(transcript.apply);
 
-    const result = await agent.send("go").final;
+    const handle = agent.send("go");
+    await vi.waitFor(() => expect(deferredParts(transcript)[0]?.status).toBe("waiting"));
+    agent.toolCall("c1")?.fail("nobody is here");
 
-    expect(result.ok && result.response).toContain("ask-user=");
-    expect(result.ok && result.response).toContain('"type":"unanswered"');
-    expect(result.ok && result.response?.endsWith("!")).toBe(true);
-    expect(result.ok && result.turn?.status).toBe("complete");
+    const result = await handle.final;
+    expect(result.ok && result.response).toBe(
+      'saw ask-user={"error":{"type":"execution","message":"nobody is here"}}!',
+    );
+  });
+
+  test("an outside answer wins over a pending handler, which sees its signal abort", async () => {
+    const { provider } = scriptedProvider([
+      { id: "c1", name: "ask-user", args: { question: "Colour?" } },
+    ]);
+    const agent = new Agent({ provider, model: "mock", tools: [askUser] });
+    const transcript = new Transcript();
+    agent.on(transcript.apply);
+    let handlerContext: ToolContext | undefined;
+    let late!: (value: string) => void;
+    agent.onToolCall((_call, ctx) => {
+      handlerContext = ctx;
+      return new Promise<string>((resolve) => (late = resolve));
+    });
+
+    const handle = agent.send("go");
+    await vi.waitFor(() => expect(handlerContext).toBeDefined());
+    const waiting = agent.toolCall("c1");
+    waiting?.answer("from the other tab");
+    expect(handlerContext?.signal.aborted).toBe(true);
+    late("from the prompt");
+    waiting?.answer("again");
+
+    const result = await handle.final;
+    expect(result.ok && result.response).toBe("saw ask-user=from the other tab");
+    expect(agent.messages.filter((message) => message.role === "tool")).toHaveLength(1);
+  });
+
+  test("action:waiting carries the call id and name", async () => {
+    const { provider } = scriptedProvider([
+      { id: "c1", name: "ask-user", args: { question: "Colour?" } },
+    ]);
+    const agent = new Agent({ provider, model: "mock", tools: [askUser] });
+    const waiting: Array<{ callId: string; name: string }> = [];
+    agent.on((event) => {
+      if (event.type === "action:waiting") waiting.push({ callId: event.callId, name: event.name });
+    });
+    agent.onToolCall(() => "x");
+
+    await agent.send("go").final;
+
+    expect(waiting).toEqual([{ callId: "c1", name: "ask-user" }]);
   });
 
   test("a thrown error reaches the model as an execution error with its message", async () => {

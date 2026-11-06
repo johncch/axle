@@ -25,6 +25,7 @@ import type {
   ToolCallCallback,
   ToolContext,
   ToolProgressChunk,
+  WaitingToolCall,
 } from "../tools/types.js";
 import type { Stats } from "../types.js";
 import { addStats, createStats, mergeStats } from "../utils/stats.js";
@@ -47,6 +48,20 @@ export interface ToolExecutionObserver {
 export interface ToolExecutionOutcome {
   result: ToolCallResult;
   usage?: Stats;
+}
+
+type DeferredOutcome = { content: string | ToolResultPart[] } | { error: Error };
+
+/** The deferred calls a run is waiting on, keyed by tool call id. */
+export type WaitingCalls = Map<string, (outcome: DeferredOutcome) => void>;
+
+export function waitingToolCall(waiting: WaitingCalls, id: string): WaitingToolCall | undefined {
+  const settle = waiting.get(id);
+  if (!settle) return undefined;
+  return {
+    answer: (content) => settle({ content }),
+    fail: (message) => settle({ error: new Error(message) }),
+  };
 }
 
 /**
@@ -272,6 +287,7 @@ export async function executeToolCalls(
   source: ToolExecutionSource,
   span?: Span,
   observer?: ToolExecutionObserver,
+  waiting?: WaitingCalls,
 ): Promise<{ results: AxleToolCallResult[]; usage?: Stats }> {
   const batch = new AbortController();
   const forwardAbort = (): void => batch.abort(signal.reason);
@@ -283,7 +299,15 @@ export async function executeToolCalls(
   const settled = await Promise.allSettled(
     toolCalls.map(async (call) => {
       try {
-        return await executeOneToolCall(call, onToolCall, batch.signal, source, span, observer);
+        return await executeOneToolCall(
+          call,
+          onToolCall,
+          batch.signal,
+          source,
+          span,
+          observer,
+          waiting,
+        );
       } catch (error) {
         if (!failed) {
           failed = true;
@@ -360,6 +384,7 @@ async function executeOneToolCall(
   source: ToolExecutionSource,
   span?: Span,
   observer?: ToolExecutionObserver,
+  waiting?: WaitingCalls,
 ): Promise<ExecutedToolCall> {
   if (signal.aborted) throw new AxleAbortError("Operation aborted", { reason: signal.reason });
 
@@ -399,8 +424,8 @@ async function executeOneToolCall(
       if (parsed.success) {
         errorType = "execution";
         const deferredCall: DeferredCall = { id: call.id, name: call.name, input: parsed.data };
-        if (onToolCall) observer?.onWaiting?.(deferredCall);
-        resolved = await answerDeferredCall(deferredCall, deferred, onToolCall, ctx);
+        observer?.onWaiting?.(deferredCall);
+        resolved = await answerDeferredCall(deferredCall, deferred, onToolCall, ctx, waiting);
       } else {
         resolved = {
           type: "error",
@@ -473,9 +498,11 @@ async function executeOneToolCall(
 }
 
 /**
- * Wait for the handler's answer, the tool's timeout or the batch's abort,
- * whichever settles the call first. Once anything but the handler settles
- * it, the handler's signal aborts and what its promise later resolves to or
+ * Settle a deferred call by whichever comes first: the handler's return or
+ * throw, an answer or failure through `toolCall(id)`, the tool's timeout, or
+ * the batch's abort. A handler that returns nothing, or no handler, leaves
+ * the call waiting for the others. Once anything but the handler settles it,
+ * the handler's signal aborts and what its promise later resolves to or
  * rejects with is dropped.
  */
 async function answerDeferredCall(
@@ -483,23 +510,20 @@ async function answerDeferredCall(
   tool: DeferredTool,
   onToolCall: ToolCallCallback | undefined,
   ctx: ToolContext,
+  waiting: WaitingCalls | undefined,
 ): Promise<ToolCallResult> {
-  if (!onToolCall) {
-    return {
-      type: "error",
-      error: { type: "unanswered", message: `No onToolCall handler for ${call.name}` },
-    };
-  }
-
   const callController = new AbortController();
   const forwardAbort = (): void => callController.abort(ctx.signal.reason);
   if (ctx.signal.aborted) forwardAbort();
   else ctx.signal.addEventListener("abort", forwardAbort, { once: true });
 
   let settledElsewhere: ToolCallResult | undefined;
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
+  const { promise: released, resolve: release } = Promise.withResolvers<void>();
+  const releaseOnAbort = (): void => release();
+  const { promise: outside, resolve: settleOutside } = Promise.withResolvers<DeferredOutcome>();
+  waiting?.set(call.id, (outcome) => {
+    callController.abort(new Error(`${call.name} was settled outside its handler`));
+    settleOutside(outcome);
   });
   const timer =
     tool.timeout === undefined
@@ -515,32 +539,36 @@ async function answerDeferredCall(
           callController.abort(settledElsewhere);
           release();
         }, tool.timeout);
-  ctx.signal.addEventListener("abort", release, { once: true });
+  ctx.signal.addEventListener("abort", releaseOnAbort, { once: true });
+
+  const never = new Promise<never>(() => {});
+  const fromHandler: Promise<DeferredOutcome> = onToolCall
+    ? Promise.resolve()
+        .then(() => onToolCall(call, { ...ctx, signal: callController.signal }))
+        .then((content) => (content === undefined ? never : { content }))
+    : never;
+  fromHandler.catch(() => {});
 
   try {
-    const answer = Promise.resolve().then(() =>
-      onToolCall(call, { ...ctx, signal: callController.signal }),
-    );
     const outcome = await Promise.race([
-      answer.then((content) => ({ content })),
+      fromHandler,
+      outside,
       released.then(() => undefined),
     ]);
-    if (outcome === undefined) answer.catch(() => {});
     if (settledElsewhere) return settledElsewhere;
-    if (outcome === undefined || outcome.content === undefined) {
-      return {
-        type: "error",
-        error: { type: "unanswered", message: `No handler answered ${call.name}` },
-      };
+    if (outcome === undefined) {
+      throw new AxleAbortError("Operation aborted", { reason: ctx.signal.reason });
     }
+    if ("error" in outcome) throw outcome.error;
     return { type: "success", content: outcome.content };
   } catch (error) {
     if (settledElsewhere) return settledElsewhere;
     throw error;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    waiting?.delete(call.id);
     ctx.signal.removeEventListener("abort", forwardAbort);
-    ctx.signal.removeEventListener("abort", release);
+    ctx.signal.removeEventListener("abort", releaseOnAbort);
   }
 }
 

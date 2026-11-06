@@ -142,6 +142,7 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolProgressChunk,
+  WaitingToolCall,
   WebSearchResult,
 } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";

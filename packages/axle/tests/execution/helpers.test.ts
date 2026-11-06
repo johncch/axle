@@ -2,7 +2,12 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
-import { executeToolCalls, type ToolExecutionObserver } from "../../src/execution/helpers.js";
+import {
+  executeToolCalls,
+  waitingToolCall,
+  type ToolExecutionObserver,
+  type WaitingCalls,
+} from "../../src/execution/helpers.js";
 import type { ContentPartToolCall } from "../../src/messages/message.js";
 import { parallelize } from "../../src/tools/parallelize.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
@@ -118,34 +123,77 @@ describe("executeToolCalls", () => {
       });
     });
 
-    test("returning nothing is an unanswered error", async () => {
-      const { results } = await executeToolCalls(
+    test("returning nothing leaves the call waiting until toolCall(id).answer settles it", async () => {
+      const waiting: WaitingCalls = new Map();
+      const pending = executeToolCalls(
         [makeToolCall("my-tool")],
         () => undefined,
         testSignal,
         deferredRegistry,
+        undefined,
+        undefined,
+        waiting,
       );
 
-      expect(JSON.parse(String(results[0].content))).toEqual({
-        error: { type: "unanswered", message: "No handler answered my-tool" },
-      });
-      expect(results[0].isError).toBe(true);
+      await vi.waitFor(() => expect(waitingToolCall(waiting, "call-my-tool")).toBeDefined());
+      waitingToolCall(waiting, "call-my-tool")?.answer("from outside");
+
+      const { results } = await pending;
+      expect(results[0]).toMatchObject({ content: "from outside" });
+      expect(results[0].isError).toBeUndefined();
+      expect(waitingToolCall(waiting, "call-my-tool")).toBeUndefined();
     });
 
-    test("a deferred call with no onToolCall is unanswered without waiting", async () => {
+    test("with no onToolCall the call waits, onWaiting fires, and fail() is an execution error", async () => {
       const onWaiting = vi.fn();
-      const { results } = await executeToolCalls(
+      const waiting: WaitingCalls = new Map();
+      const pending = executeToolCalls(
         [makeToolCall("my-tool")],
         undefined,
         testSignal,
         deferredRegistry,
         undefined,
         { onWaiting },
+        waiting,
       );
 
-      expect(onWaiting).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(onWaiting).toHaveBeenCalledOnce());
+      waitingToolCall(waiting, "call-my-tool")?.fail("nobody home");
+
+      const { results } = await pending;
+      expect(JSON.parse(String(results[0].content))).toEqual({
+        error: { type: "execution", message: "nobody home" },
+      });
       expect(results[0].isError).toBe(true);
-      expect(results[0].content).toContain("unanswered");
+    });
+
+    test("an answer from outside aborts the handler's signal and drops its late return", async () => {
+      const waiting: WaitingCalls = new Map();
+      let seen: ToolContext | undefined;
+      let late!: (value: string) => void;
+      const pending = executeToolCalls(
+        [makeToolCall("my-tool")],
+        (_call, ctx) => {
+          seen = ctx;
+          return new Promise<string>((resolve) => (late = resolve));
+        },
+        testSignal,
+        deferredRegistry,
+        undefined,
+        undefined,
+        waiting,
+      );
+
+      await vi.waitFor(() => expect(seen).toBeDefined());
+      const handle = waitingToolCall(waiting, "call-my-tool");
+      handle?.answer("outside");
+      late("late");
+      handle?.answer("again");
+
+      const { results } = await pending;
+      expect(results[0]).toMatchObject({ content: "outside" });
+      expect(seen?.signal.aborted).toBe(true);
+      expect(waiting.size).toBe(0);
     });
 
     test("validates the arguments before the handler sees them", async () => {
