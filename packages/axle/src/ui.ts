@@ -9,6 +9,16 @@ export type {
 export type { ConsoleOutput, ProviderToolInput } from "./messages/providerTool.js";
 export { computeCost } from "./models/cost.js";
 export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
+export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
+export type { HttpTransportOptions } from "./remote/httpTransport.js";
+export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/protocol.js";
+export { RemoteAgent } from "./remote/RemoteAgent.js";
+export type {
+  RemoteAgentState,
+  RemoteSendOptions,
+  RemoteWaitingToolCall,
+} from "./remote/RemoteAgent.js";
+export type { LoggedEvent } from "./remote/eventLog.js";
 export { isActionOf, isCall } from "./tools/deferred.js";
 export type { DeferredActionOf, DeferredCallOf } from "./tools/deferred.js";
 export type { DeferredCall, DeferredTool, WaitingToolCall } from "./tools/types.js";
