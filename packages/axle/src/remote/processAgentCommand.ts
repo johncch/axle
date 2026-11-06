@@ -9,8 +9,8 @@ import { RemoteAgent } from "./RemoteAgent.js";
  * took it. What happens next, the queued turn, the settled call, the
  * cancelled handle, arrives on `agent.on` like everything else.
  */
-export async function processAgentCommand(
-  agent: Agent | RemoteAgent,
+export async function processAgentCommand<THostEvent extends { type: string }>(
+  agent: Agent | RemoteAgent<THostEvent>,
   command: AgentCommand,
 ): Promise<CommandOutcome> {
   switch (command.type) {

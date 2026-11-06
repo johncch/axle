@@ -199,17 +199,6 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     handler's signal aborts. (2026-11-05, AXL-103; `toolCall(id)`
     2026-11-05, AXL-44)
 
-13. **Every emitted event carries a cursor, and the cursor names the
-    instance.** `agent.on` delivers `TurnEvent & { cursor: string }`:
-    `instanceId`, a dash, and a count that rises by one per event across
-    the whole instance, pending and compaction events included. The stamp
-    is added in the one place every event passes through, after the event
-    is built, so `TurnEvent` itself has no cursor and the builder and the
-    `Transcript` never see one. The count is per instance, not per session:
-    a session restored into a new `Agent` gets a new `instanceId`, so a
-    cursor taken before a restart can never be read as a position after
-    it. What the cursor is for is the host's: an SSE `id:`, a key in an
-    event log, or nothing.
 
 ## Design rationale (2026-08-12)
 
@@ -746,23 +735,31 @@ carries the call id and the tool name so a handler can be built from the
 event alone, and a send takes an `id` for its user turn so an operation
 started elsewhere can be matched to its events.
 
-## The event cursor (2026-11-05)
+## The stream numbers, not the Agent (2026-11-05)
 
-A consumer that reconnects needs to say where it stopped, and the Agent is
-the only party that sees every event in order, so it numbers them. The
-first shape was a seed: the host folding its transcript and sending the
-turns as the stream's first frame. That put a second representation of the
-conversation on the wire, next to the out-of-band history load every host
-already has, and bought nothing a numbered stream did not. The second
-shape was a counter persisted with the session, so a restored Agent would
-continue the count; it is unsafe unless the counter is saved on every
-event, and a host that does that has an event log that knows the position
-already. So the count is per instance and the instance id is the prefix:
-a stale cursor is unmistakable, and a host with a log can still replay
-across restarts because its log kept the order. The cursor rides inside
-the event rather than beside it so a transport serialises one value; it is
-required on what `agent.on` delivers and absent from `TurnEvent`, because
-the builder has no counter and should not be lent one.
+A consumer that reconnects, or joins a conversation already running, has to
+say where it stopped, and the fold cannot absorb a repeat: `turn:user`
+appends, `text:delta` concatenates. So delivery has to be exactly once and
+in order, and something has to number the events. The first answer was the
+Agent: an instance id and a count stamped on every event in `emitEvent`.
+It was reversed the same day, because the stream a host serves carries
+more than the Agent's events. Sunnyday pushes `run:start`, `session:error`
+and its own reset onto the same stream as the turn events, and the client's
+`Transcript<Annotation, SessionEvent>` is typed for that mix. An Agent
+cannot number events it never sees. So the number belongs to the stream:
+an `EventLog` beside the served agent stamps every entry, agent or host,
+with `<id>-<seq>`, keeps them, and replays after a cursor it owns. The
+Agent emits plain events and knows nothing of it.
+
+The fold records the cursor of the event that closed each turn, as
+`Turn.cursor`, when the event carried one. That is the one transport fact
+the fold learns, and it is there so stored turns carry their own resume
+point: a page can render from the database and subscribe after the last
+turn it holds, instead of replaying a long agent's whole history on every
+open. A cursor from a log that no longer exists is the hard cut; the
+server cannot honour it, replays from what it holds, and the host sends
+its own baseline event first if it keeps one. Whatever was in flight when
+the old log died is gone for every consumer alike.
 
 ## A send crosses as an Instruct (2026-11-05)
 
@@ -783,18 +780,15 @@ does the parse that matters.
 
 ## Rejected alternatives
 
-- **A seed frame** (2026-11-05, AXL-44): the host's folded turns as the
-  first message on an event stream, so a late or reconnecting consumer
-  starts from a snapshot. Rejected: a second format for the conversation
-  on the wire when the host already loads history out of band; events with
-  a cursor cover reconnect, and history stays the host's.
-- **A session-persistent event counter** (2026-11-05, AXL-44): `seq` in
-  `AgentSession` so a restore continues the count. Rejected: a snapshot is
-  taken at a settle, events after it are already with the client, and the
-  restored count collides with them. Per-instance prefix instead.
-- **The cursor beside the event** (2026-11-05, AXL-44): a second callback
-  argument. Rejected: two values to keep together at every boundary where
-  one serialised event does.
+- **A cursor stamped by the Agent** (2026-11-05, AXL-44, reversed the
+  same day): `instanceId` and a count on every event out of `emitEvent`.
+  Rejected: host events share the stream and the Agent never sees them, so
+  the stream numbers; see above.
+- **A seed frame in the protocol** (2026-11-05, AXL-44): the host's folded
+  turns as the first message on every connection. Rejected: a second
+  representation of the conversation on the wire; a numbered log with
+  replay covers reconnect, and a baseline for a cold open is the host's own
+  event, as Sunnyday's `stream:reset` already is.
 - **A forwarder beside the Agent** (2026-11-05, AXL-44): a
   `forwardToolCalls(agent)` object holding resolvers that a command
   processor took as a second argument. Rejected: a second map keyed by

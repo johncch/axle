@@ -1205,7 +1205,6 @@ describe("Agent", () => {
       expect(events.at(-1)).toEqual({
         type: "pending:dropped",
         id: expect.any(String),
-        cursor: expect.any(String),
         reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
       });
     });
@@ -2430,27 +2429,6 @@ describe("Agent", () => {
   });
 
   describe("agent events", () => {
-    test("every event carries a cursor: this instance's prefix and a rising count", async () => {
-      const agent = new Agent({ provider: createMockStreamProvider(["ok"]), model: "mock" });
-      const cursors: string[] = [];
-      agent.on((event) => {
-        cursors.push(event.cursor);
-      });
-
-      await agent.send("one").final;
-      await agent.send("two").final;
-
-      expect(cursors.length).toBeGreaterThan(4);
-      expect(cursors).toEqual(cursors.map((_, i) => `${agent.instanceId}-${i + 1}`));
-
-      const restored = new Agent(
-        { provider: createMockStreamProvider(["ok"]), model: "mock" },
-        await agent.snapshot(),
-      );
-      expect(restored.sessionId).toBe(agent.sessionId);
-      expect(restored.instanceId).not.toBe(agent.instanceId);
-    });
-
     test("turn:end carries an api failure without its raw payload", async () => {
       const provider: AIProvider = {
         protocol: "chatCompletions",

@@ -72,3 +72,38 @@ export async function* parseSse(
     reader.releaseLock();
   }
 }
+
+/**
+ * Answer an HTTP request with entries as Server-Sent Events: each entry as
+ * JSON in `data:` with its cursor in `id:`, so `Last-Event-ID` on the next
+ * request names where the client stopped. Ends the iterable when the
+ * request aborts or the client cancels the body; holds nothing else.
+ */
+export function toEventStreamResponse(
+  entries: AsyncIterable<{ cursor: string }>,
+  request?: Request,
+): Response {
+  const iterator = entries[Symbol.asyncIterator]();
+  const stop = (): void => void iterator.return?.().catch(() => {});
+  request?.signal.addEventListener("abort", stop, { once: true });
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(stream) {
+      const next = await iterator.next();
+      if (next.done) {
+        stream.close();
+        return;
+      }
+      const message = encodeSse({ id: next.value.cursor, data: JSON.stringify(next.value) });
+      stream.enqueue(encoder.encode(message));
+    },
+    cancel: stop,
+  });
+  return new Response(body, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
+  });
+}

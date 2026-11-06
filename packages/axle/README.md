@@ -1343,12 +1343,10 @@ Axle has two event models, used at different levels:
 `Agent` uses `stream()` internally and translates each `StreamEvent` into
 one or more `TurnEvent`s.
 
-Every event `agent.on` delivers also carries a `cursor`: the agent's
-`instanceId`, a dash, and a count that rises by one per event. A consumer
-that streams events elsewhere sends it along (an SSE `id:`, say) so the
-other end can say where it stopped. A cursor with a different prefix comes
-from an earlier instance of the same session and cannot be continued from.
-`Transcript` ignores it.
+A `Turn` folded from events that carry a `cursor` records the cursor of the
+event that closed it, as `turn.cursor`. Events straight from `agent.on`
+have none; events served through an `EventLog` do. A consumer that stores
+turns can subscribe again after the last cursor it holds.
 
 #### Turn events
 

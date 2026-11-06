@@ -1,9 +1,4 @@
-import type {
-  AgentErrorResult,
-  AgentHandle,
-  AgentResult,
-  TurnEventCallback,
-} from "../core/agent/types.js";
+import type { AgentErrorResult, AgentHandle, AgentResult } from "../core/agent/types.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../core/parse.js";
 import { parseResponse } from "../core/parse.js";
@@ -13,9 +8,10 @@ import type { AxleProviderFailure } from "../execution/helpers.js";
 import type { MessageMetadata, ToolResultPart } from "../messages/message.js";
 import type { DeferredCall, ToolCallCallback } from "../tools/types.js";
 import type { TurnEvent } from "../turns/events.js";
-import { Transcript } from "../turns/transcript.js";
-import type { Turn, TurnFailure } from "../turns/types.js";
+import { isTurnEvent, Transcript } from "../turns/transcript.js";
+import type { Annotation, Turn, TurnFailure } from "../turns/types.js";
 import { createStats } from "../utils/stats.js";
+import type { LoggedEvent } from "./eventLog.js";
 import type { AgentTransport, CommandOutcome } from "./protocol.js";
 
 export type RemoteAgentState =
@@ -75,6 +71,12 @@ function failureOf(failure: TurnFailure): AxleProviderFailure {
   }
 }
 
+function isLoggedTurnEvent<THostEvent extends { type: string }>(
+  event: LoggedEvent<THostEvent>,
+): event is TurnEvent & { cursor: string } {
+  return isTurnEvent(event);
+}
+
 function textOf(turn: Turn): string {
   return turn.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
 }
@@ -89,11 +91,11 @@ function textOf(turn: Turn): string {
  * otherwise, so a connection made in the middle of a turn reads `idle`
  * until that turn's next event arrives.
  */
-export class RemoteAgent {
-  private eventCallbacks: TurnEventCallback[] = [];
+export class RemoteAgent<THostEvent extends { type: string } = never> {
+  private eventCallbacks: Array<(event: LoggedEvent<THostEvent>) => void> = [];
   private stateCallbacks: Array<(state: RemoteAgentState) => void> = [];
   private stateInternal: RemoteAgentState = { phase: "connecting" };
-  private fold = new Transcript();
+  private fold = new Transcript<Annotation, THostEvent>();
   private operations = new Map<string, OpenOperation>();
   private pendingIds = new Set<string>();
   private openTurn: { turnId: string; operationId: string } | undefined;
@@ -102,7 +104,7 @@ export class RemoteAgent {
   private toolCallHandler: ToolCallCallback | undefined;
   private readonly controller = new AbortController();
 
-  constructor(private readonly transport: AgentTransport) {
+  constructor(private readonly transport: AgentTransport<THostEvent>) {
     void this.consume();
   }
 
@@ -110,7 +112,8 @@ export class RemoteAgent {
     return this.stateInternal;
   }
 
-  on(callback: TurnEventCallback): () => void {
+  /** Every entry the served side logged: the agent's turn events and the host's own, each with its cursor. */
+  on(callback: (event: LoggedEvent<THostEvent>) => void): () => void {
     this.eventCallbacks.push(callback);
     return () => {
       const index = this.eventCallbacks.indexOf(callback);
@@ -224,7 +227,12 @@ export class RemoteAgent {
     }
   }
 
-  private apply(event: TurnEvent & { cursor: string }): void {
+  private apply(event: LoggedEvent<THostEvent>): void {
+    if (isLoggedTurnEvent(event)) this.applyTurnEvent(event);
+    for (const callback of [...this.eventCallbacks]) callback(event);
+  }
+
+  private applyTurnEvent(event: TurnEvent & { cursor: string }): void {
     this.fold.apply(event);
     switch (event.type) {
       case "pending:queued":
@@ -265,7 +273,6 @@ export class RemoteAgent {
         this.endTurn(event.turnId);
         break;
     }
-    for (const callback of [...this.eventCallbacks]) callback(event);
   }
 
   private startWaiting(event: Extract<TurnEvent, { type: "action:waiting" }>): void {
@@ -340,7 +347,7 @@ export class RemoteAgent {
 
   private settleIdle(): void {
     if (this.openTurn === undefined && this.pendingIds.size === 0) {
-      this.fold = new Transcript();
+      this.fold = new Transcript<Annotation, THostEvent>();
       this.setState({ phase: "idle" });
     }
   }

@@ -84,8 +84,6 @@ export class Agent {
   readonly skills: SkillRegistry;
 
   sessionId: string;
-  /** Prefix of every event cursor this instance emits; new per instance, not per session. */
-  readonly instanceId: string = crypto.randomUUID().slice(0, 8);
   private readonly baseSystem: string | undefined;
 
   private mcps: MCP[] = [];
@@ -103,7 +101,6 @@ export class Agent {
   private scheduler = new AgentScheduler(() => this.notifyIdle());
   private turnActive = false;
   private stopRequested = false;
-  private seq = 0;
   private transcript = new Transcript();
   private pendingTurns: Turn[] = [];
   private messagesInternal: AxleMessage[];
@@ -936,26 +933,25 @@ export class Agent {
   }
 
   private emitEvent(event: TurnEvent): void {
-    const stamped = { ...event, cursor: `${this.instanceId}-${++this.seq}` };
-    this.transcript.apply(stamped);
-    switch (stamped.type) {
+    this.transcript.apply(event);
+    switch (event.type) {
       case "pending:queued":
-        this.pendingTurns = [...this.pendingTurns, stamped.turn];
+        this.pendingTurns = [...this.pendingTurns, event.turn];
         break;
       case "pending:dropped":
       case "turn:user":
       case "turn:start": {
         const id =
-          stamped.type === "pending:dropped"
-            ? stamped.id
-            : stamped.type === "turn:user"
-              ? stamped.turn.id
-              : stamped.turnId;
+          event.type === "pending:dropped"
+            ? event.id
+            : event.type === "turn:user"
+              ? event.turn.id
+              : event.turnId;
         this.pendingTurns = this.pendingTurns.filter((turn) => turn.id !== id);
         break;
       }
     }
-    for (const cb of this.eventCallbacks) cb(stamped);
+    for (const cb of this.eventCallbacks) cb(event);
   }
 
   private callableTools(): AnyTool[] {

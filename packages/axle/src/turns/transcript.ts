@@ -6,7 +6,7 @@ export type UnknownEvent = { type: string };
 export type TranscriptInput<
   TAnnotation extends Annotation = Annotation,
   TConsumerEvent extends UnknownEvent = UnknownEvent,
-> = TurnEvent<TAnnotation> | TConsumerEvent;
+> = (TurnEvent<TAnnotation> & { cursor?: string }) | TConsumerEvent;
 
 export type TranscriptApplyResult<
   TAnnotation extends Annotation = Annotation,
@@ -59,7 +59,7 @@ const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
 
 const TURN_EVENT_TYPE_SET = new Set<string>(Object.keys(TURN_EVENT_TYPES));
 
-function isTurnEvent<TAnnotation extends Annotation>(
+export function isTurnEvent<TAnnotation extends Annotation>(
   event: UnknownEvent,
 ): event is TurnEvent<TAnnotation> {
   return TURN_EVENT_TYPE_SET.has(event.type);
@@ -102,7 +102,7 @@ export class Transcript<
   };
 
   private applyTurnEvent(
-    event: TurnEvent<TAnnotation>,
+    event: TurnEvent<TAnnotation> & { cursor?: string },
   ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     switch (event.type) {
       case "pending:queued":
@@ -154,7 +154,10 @@ export class Transcript<
 
       case "turn:user":
         this.removePending(event.turn.id);
-        return this.replaceTurns([...this._turns, event.turn], event);
+        return this.replaceTurns(
+          [...this._turns, event.cursor ? { ...event.turn, cursor: event.cursor } : event.turn],
+          event,
+        );
 
       case "turn:start": {
         this.removePending(event.turnId);
@@ -323,6 +326,7 @@ export class Transcript<
           usage: event.usage,
           ...(event.failure ? { failure: event.failure } : {}),
           ...(event.reason ? { reason: event.reason } : {}),
+          ...(event.cursor ? { cursor: event.cursor } : {}),
           timing: event.timing ?? turn.timing,
         }));
 

@@ -279,16 +279,16 @@ mirror a live transcript.
 constructor restores. The transcript is not part of it; consumers persist its
 state alongside.
 
-**Instance id** — the identity of one `Agent` object (`instanceId`), new
-on every construction, restore included. It prefixes every event cursor
-the instance emits. Not the session: one session is run by many instances
-over its life.
+**Event log** — the numbered stream of one served agent (`EventLog`):
+every agent event and every host event pushed onto it, stamped with a
+cursor in the order it happened, kept for replay by the host's retention
+choice. The one piece of state a served agent has beside the Agent itself.
 
-**Event cursor** — the string on every event `agent.on` delivers:
-`instanceId`, a dash, and a count rising by one per event. It says where a
-consumer stopped. A cursor with another instance's prefix is stale: that
-instance's events are gone, and what the consumer holds has to be reloaded
-out of band. `TurnEvent` itself has no cursor; it is stamped on emit.
+**Event cursor** — the string an event log stamps on each entry,
+`<log id>-<seq>`. It names a position in one log; a cursor from another log
+is stale and cannot be continued from. A transport sends the last one it
+delivered to resume, and the fold records the cursor of the event that
+closed a turn as `Turn.cursor` so stored turns carry their resume point.
 
 **Compaction** — replacing the active conversation with a condensed
 rewrite, recorded on the transcript as a `compaction` turn part carrying the

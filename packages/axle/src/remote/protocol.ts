@@ -1,6 +1,6 @@
 import type { InstructJSON } from "../core/Instruct.js";
 import type { ToolResultPart } from "../messages/message.js";
-import type { TurnEvent } from "../turns/events.js";
+import type { LoggedEvent } from "./eventLog.js";
 
 /**
  * What a consumer asks of a served agent. Each is one Agent method: `send`
@@ -29,13 +29,13 @@ export type CommandOutcome =
 
 /**
  * How events and commands move between a consumer and a served agent. The
- * events are the Agent's own, cursor included; a transport that puts them
- * on a wire carries the cursor so the consumer can say where it stopped.
- * `events` resolves once the stream is open, which is what a `RemoteAgent`
- * means by connected; the iterable then runs until `signal` aborts or the
- * served agent is gone.
+ * events are the served side's log entries, agent and host events alike,
+ * each with its cursor; a transport that reconnects resumes from the last
+ * cursor it delivered. `events` resolves once the stream is open, which is
+ * what a `RemoteAgent` means by connected; the iterable then runs until
+ * `signal` aborts or the served agent is gone.
  */
-export interface AgentTransport {
-  events(signal: AbortSignal): Promise<AsyncIterable<TurnEvent & { cursor: string }>>;
+export interface AgentTransport<THostEvent extends { type: string } = never> {
+  events(signal: AbortSignal): Promise<AsyncIterable<LoggedEvent<THostEvent>>>;
   command(command: AgentCommand, signal?: AbortSignal): Promise<CommandOutcome>;
 }
