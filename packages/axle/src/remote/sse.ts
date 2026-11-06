@@ -14,7 +14,8 @@ export function encodeSse(message: SseMessage): string {
 
 /**
  * Parse a byte stream as Server-Sent Events. Field lines may be split
- * across chunks; `id` persists across messages as the protocol says.
+ * across chunks; `id` persists across messages, and a message the stream
+ * ended inside is not delivered, as the protocol says.
  */
 export async function* parseSse(
   body: ReadableStream<Uint8Array>,
@@ -62,11 +63,6 @@ export async function* parseSse(
       takeLines();
       yield* messagesFrom();
     }
-    buffer += decoder.decode();
-    if (buffer !== "") buffer += "\n";
-    takeLines();
-    yield* messagesFrom();
-    if (data.length > 0) yield { id, event, data: data.join("\n") };
   } finally {
     signal?.removeEventListener("abort", onAbort);
     reader.releaseLock();

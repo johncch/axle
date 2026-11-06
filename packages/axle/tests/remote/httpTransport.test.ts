@@ -23,6 +23,19 @@ function cutAfter(count: number): TransformStream<Uint8Array, Uint8Array> {
   });
 }
 
+/** Closes the stream part way through a message, as a connection cut mid-packet would. */
+function cutInsideMessage(count: number): TransformStream<Uint8Array, Uint8Array> {
+  let seen = 0;
+  return new TransformStream({
+    transform(chunk, controller) {
+      seen += 1;
+      if (seen < count) return controller.enqueue(chunk);
+      controller.enqueue(chunk.slice(0, Math.floor(chunk.length / 2)));
+      controller.terminate();
+    },
+  });
+}
+
 async function handle(agent: Agent, log: EventLog, request: Request): Promise<Response> {
   if (request.method === "POST") {
     const command: AgentCommand = await request.json();
@@ -35,6 +48,7 @@ async function handle(agent: Agent, log: EventLog, request: Request): Promise<Re
 function fakeHost(agent: Agent, log: EventLog) {
   const streamRequests: Array<string | null> = [];
   let dropNextAfter: number | undefined;
+  let cutNextInside: number | undefined;
   let goneAfterFirst = false;
   const failNext: number[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -45,6 +59,11 @@ function fakeHost(agent: Agent, log: EventLog) {
     const status = failNext.shift();
     if (status !== undefined) return new Response(null, { status });
     const response = await handle(agent, log, request);
+    if (cutNextInside !== undefined) {
+      const cut = cutNextInside;
+      cutNextInside = undefined;
+      return new Response(response.body!.pipeThrough(cutInsideMessage(cut)), response);
+    }
     if (dropNextAfter === undefined) return response;
     const cut = dropNextAfter;
     dropNextAfter = undefined;
@@ -55,6 +74,9 @@ function fakeHost(agent: Agent, log: EventLog) {
     streamRequests,
     dropNextAfter: (count: number) => {
       dropNextAfter = count;
+    },
+    cutNextInside: (count: number) => {
+      cutNextInside = count;
     },
     goneAfterFirst: () => {
       goneAfterFirst = true;
@@ -94,6 +116,28 @@ describe("httpTransport", () => {
     expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(transcript.turns.at(-1)?.status).toBe("complete");
+  });
+
+  test("a stream cut inside a message drops the partial message and replays it whole", async () => {
+    const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
+    const log = new EventLog(agent);
+    const host = fakeHost(agent, log);
+    host.cutNextInside(3);
+    const remote = new RemoteAgent(
+      httpTransport("http://agent/42", { fetch: host.fetch, reconnectDelayMs: 0 }),
+    );
+    const seen: { cursor: string }[] = [];
+    remote.on((event) => {
+      seen.push(event);
+    });
+    remote.onToolCall(() => "teal");
+
+    const result = await remote.send("ask").final;
+    remote.close();
+
+    expect(result.response).toBe("saw ask-user=teal");
+    expect(host.streamRequests).toEqual([null, `${log.id}-2`]);
+    expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
   });
 
   test("after resumes the first connection from a stored cursor", async () => {

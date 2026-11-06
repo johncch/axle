@@ -44,9 +44,9 @@ describe("sse codec", () => {
     ]);
   });
 
-  test("yields a trailing message that the stream closed without a blank line", async () => {
-    expect(await collect(bytes(["data: last"]))).toEqual([
-      { id: undefined, event: undefined, data: "last" },
+  test("drops a message the stream ended inside", async () => {
+    expect(await collect(bytes(["data: whole\n\nid: 2\ndata: {\"cut"]))).toEqual([
+      { id: undefined, event: undefined, data: "whole" },
     ]);
   });
 });
