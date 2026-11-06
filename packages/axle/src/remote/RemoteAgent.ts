@@ -1,4 +1,4 @@
-import type { AgentErrorResult, AgentHandle, AgentResult } from "../core/agent/types.js";
+import type { AgentErrorResult, AgentResult } from "../core/agent/types.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../core/parse.js";
 import { parseResponse } from "../core/parse.js";
@@ -28,6 +28,16 @@ export interface RemoteSendOptions {
 }
 
 /** The waiting call on a remote agent: `answer` and `fail` each post one command. */
+/**
+ * What a remote `send` returns: the result, once the events say the turn
+ * settled. There is no `cancel`: a queued send cannot be cancelled from
+ * here, and `cancel()` on the `RemoteAgent` is the Agent's, for the active
+ * turn.
+ */
+export interface RemoteHandle<T> {
+  readonly final: Promise<AgentResult<T> | AgentErrorResult>;
+}
+
 export interface RemoteWaitingToolCall {
   answer(content: string | ToolResultPart[]): Promise<CommandOutcome>;
   fail(message: string): Promise<CommandOutcome>;
@@ -151,15 +161,15 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     };
   }
 
-  send(message: string | Instruct<undefined>, options?: RemoteSendOptions): AgentHandle<string>;
+  send(message: string | Instruct<undefined>, options?: RemoteSendOptions): RemoteHandle<string>;
   send<TSchema extends OutputSchema>(
     instruct: Instruct<TSchema>,
     options?: RemoteSendOptions,
-  ): AgentHandle<ParsedSchema<TSchema>>;
+  ): RemoteHandle<ParsedSchema<TSchema>>;
   send(
     messageOrInstruct: string | Instruct<OutputSchema | undefined>,
     options: RemoteSendOptions = {},
-  ): AgentHandle<RemoteResponse> {
+  ): RemoteHandle<RemoteResponse> {
     const id = options.id ?? crypto.randomUUID();
     const instruct =
       typeof messageOrInstruct === "string"
@@ -183,12 +193,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
         this.settleOperation(id, (op) => op.reject(wrapped));
       },
     );
-    return {
-      final,
-      cancel: () => {
-        if (this.openTurn?.operationId === id) void this.cancel();
-      },
-    };
+    return { final };
   }
 
   async cancel(): Promise<boolean> {

@@ -1987,10 +1987,10 @@ read back the data's own fields.
 
 ### Sessions and persistence
 
-Axle stops at the agent runtime boundary. If you need long-lived sessions,
-SSE transport, resumable cursors, or React client hooks, build those concerns
-in your application on top of `Agent`, `agent.on(...)`, and the streamed
-turn events that Axle emits.
+Axle stops at the agent runtime boundary. Serving an agent to another
+process is covered under [Remote agents](#remote-agents-experimental);
+long-lived sessions and client hooks are your application's, built on
+`Agent`, `agent.on(...)` and the streamed turn events.
 
 `agent.messages` exposes the active, model-facing conversation as a copy —
 requests are built from it, and compaction replaces it. Read it for inspection
@@ -2090,6 +2090,98 @@ The callback takes no arguments and is not awaited. The agent is already
 free, so a `send()` from inside it starts at once. A callback that throws
 is recorded on the trace as a warning and the others still run. It returns
 a function that unregisters it.
+
+### Remote agents (experimental)
+
+An `Agent` runs where its provider key, tools and files are. A browser, or
+another process, drives it through a `RemoteAgent`, which has the Agent's
+own surface minus configuration: `on`, `onToolCall`, `toolCall(id)`,
+`send`, `cancel`, `stop`, `clear`. Events flow out through an `EventLog`
+beside the served agent; commands flow in through `processAgentCommand`.
+Axle ships both halves and an HTTP transport; routing, authentication and
+agent lifecycle are yours.
+
+The served side, in whatever framework answers HTTP with `Request` and
+`Response`:
+
+```typescript
+import { Agent, EventLog, processAgentCommand, toEventStreamResponse } from "@fifthrevision/axle";
+
+const agent = new Agent({ provider, model, tools: [askUser] });
+const log = new EventLog(agent);
+
+// GET /agents/:id — the event stream, resumed from Last-Event-ID when sent
+toEventStreamResponse(log.subscribe(request.signal, request.headers.get("last-event-id")), request);
+
+// POST /agents/:id — one command; the body is JSON, so is the reply
+Response.json(await processAgentCommand(agent, await request.json()));
+```
+
+The consumer side, from the browser-safe entry:
+
+```typescript
+import { RemoteAgent, httpTransport, Transcript, isCall } from "@fifthrevision/axle/ui";
+
+const remote = new RemoteAgent(httpTransport("/agents/42"));
+const transcript = new Transcript();
+remote.on(transcript.apply);
+remote.onToolCall((call) => {
+  if (isCall(askUser, call)) return askThePerson(call.input.question);
+});
+
+const result = await remote.send("hello").final;
+result.response; // as locally; an Instruct with a schema parses here
+```
+
+`send` takes a string or an `Instruct`, which crosses as `toJSON()`:
+files by `ref` resolve on the served side, and the schema goes as JSON
+Schema and parses the response on this side. The handle has `final` only;
+`remote.cancel()` cancels the active turn as `agent.cancel()` does.
+`remote.state` is `connecting`, `idle`, `busy` with the open turn's id,
+`ended` or `error`; `onState` reports changes.
+
+Every entry the log stamps carries a `cursor`. The transport resumes a
+dropped stream from the last one it delivered, so the served side replays
+the gap and nothing is folded twice. A page that renders from stored turns
+subscribes after the last turn it holds instead of replaying everything:
+
+```typescript
+const transcript = new Transcript(storedTurns);
+const remote = new RemoteAgent(httpTransport(url, { after: storedTurns.at(-1)?.cursor }));
+remote.on(transcript.apply);
+```
+
+A cursor from a log that no longer exists replays from the start of the
+one that does. A new conversation is a new `Agent` and a new `EventLog`;
+nothing on the client needs resetting.
+
+The log takes your own events beside the agent's, typed once:
+
+```typescript
+type HostEvent = { type: "run:start"; id: string } | { type: "session:error"; message: string };
+const log = new EventLog<HostEvent>(agent);
+log.push({ type: "run:start", id: cycleId });
+
+const remote = new RemoteAgent<HostEvent>(httpTransport(url));
+remote.on((event) => {
+  // TurnEvent | HostEvent, each with its cursor; host events leave remote.state alone
+});
+```
+
+`new EventLog(agent, { retain: "none" })` keeps nothing, for a host that
+forwards entries to its own store and serves replay from there. A
+`RemoteAgent` can itself be served, so a middle tier that answers some
+deferred calls and forwards the rest is `processAgentCommand(remote, …)`
+over `new EventLog(remote)`.
+
+`httpTransport(url, options)` reconnects a dropped stream after
+`reconnectDelayMs` (1000), doubling up to `maxReconnectDelayMs` (30000),
+and keeps trying through network failures and `5xx` until `close()`. A
+reconnect answered `404` or `410` ends the agent. `headers` is a value or
+a function called per request, for a token; `fetch` can be supplied.
+
+The invariants, what is deferred and why, and the rejected alternatives
+are in [docs/architecture/remote-agent.md](../../docs/architecture/remote-agent.md).
 
 ## Known Limitations
 

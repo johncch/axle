@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-11-02 (0.35.0)
+**Status**: current · **Last design revision**: 2026-11-05 (0.36.0, AXL-44, AXL-103)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -198,7 +198,6 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     tool's `timeout` or `cancel()`; the first to settle it wins and the
     handler's signal aborts. (2026-11-05, AXL-103; `toolCall(id)`
     2026-11-05, AXL-44)
-
 
 ## Design rationale (2026-08-12)
 

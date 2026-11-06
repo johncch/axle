@@ -290,6 +290,29 @@ is stale and cannot be continued from. A transport sends the last one it
 delivered to resume, and the fold records the cursor of the event that
 closed a turn as `Turn.cursor` so stored turns carry their resume point.
 
+**Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
+exposes to consumers elsewhere: the Agent, its event log, and the host's
+routing to them. Agent lifecycle is the host's; the protocol begins once a
+served agent exists.
+
+**Remote agent** — the consumer-side object (`RemoteAgent`) that drives a
+served agent through a transport: events in, commands out, and the Agent's
+own surface minus configuration. It holds no transcript.
+
+**Command** — what a consumer asks of a served agent, one per Agent verb:
+`send`, `answer`, `fail`, `cancel`, `stop`, `clear`. A command's response
+is only whether the Agent took it; everything after acceptance arrives as
+events.
+
+**Transport** — what carries log entries one way and commands the other
+(`AgentTransport`): `httpTransport` over SSE and `POST`, `loopbackTransport`
+with no wire. A transport that reconnects resumes from the last cursor it
+delivered.
+
+**Hop** — a process that is a remote agent facing upstream and a served
+agent facing downstream. A deferred call is answered at whichever hop has
+the handler for it.
+
 **Compaction** — replacing the active conversation with a condensed
 rewrite, recorded on the transcript as a `compaction` turn part carrying the
 summary. Old messages cease to exist; lookback is served by the transcript.
@@ -448,6 +471,10 @@ transcript channel renders the model's conversation; runner lines frame it.
 - **run** — consumer vocabulary: Sunnyday's durable conversation, one level
   above send. A run starts and stops per incoming message (state
   transitions, not sub-entities). Core never uses it as a unit name.
+- **seed**, **frame** — the 2026-11-04 remote-agent prototype's first
+  message carrying folded turns, and the envelope around every event.
+  Rejected 2026-11-05: a numbered _event log_ replays, and a baseline for
+  a cold open is the host's own event.
 - **tape** — the pre-0.30 design term for the event fold. Rejected for the
   public object because it materializes reader-facing state rather than
   retaining a raw event log.

@@ -249,6 +249,7 @@ export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/prot
 export { RemoteAgent } from "./remote/RemoteAgent.js";
 export type {
   RemoteAgentState,
+  RemoteHandle,
   RemoteSendOptions,
   RemoteWaitingToolCall,
 } from "./remote/RemoteAgent.js";
