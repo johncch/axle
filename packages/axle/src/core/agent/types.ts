@@ -174,7 +174,12 @@ export type SettledCallback = (
 
 export type IdleCallback = () => void;
 
-export type TurnEventCallback = (event: TurnEvent) => void;
+/**
+ * Every event the Agent emits carries a `cursor`: the Agent's `instanceId`,
+ * a dash, and a count that rises by one per event. Transports put it on the
+ * wire so a consumer can say where it stopped; `Transcript` ignores it.
+ */
+export type TurnEventCallback = (event: TurnEvent & { cursor: string }) => void;
 
 /**
  * Compaction is split into three layers, each with one job: `triggers` say

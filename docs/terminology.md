@@ -279,6 +279,17 @@ mirror a live transcript.
 constructor restores. The transcript is not part of it; consumers persist its
 state alongside.
 
+**Instance id** — the identity of one `Agent` object (`instanceId`), new
+on every construction, restore included. It prefixes every event cursor
+the instance emits. Not the session: one session is run by many instances
+over its life.
+
+**Event cursor** — the string on every event `agent.on` delivers:
+`instanceId`, a dash, and a count rising by one per event. It says where a
+consumer stopped. A cursor with another instance's prefix is stale: that
+instance's events are gone, and what the consumer holds has to be reloaded
+out of band. `TurnEvent` itself has no cursor; it is stamped on emit.
+
 **Compaction** — replacing the active conversation with a condensed
 rewrite, recorded on the transcript as a `compaction` turn part carrying the
 summary. Old messages cease to exist; lookback is served by the transcript.
