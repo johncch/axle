@@ -124,7 +124,8 @@ An inline turn is an ordinary turn: it emits `turn:user` and the agent turn
 events, commits to messages, settles through `onSettled` under its own id,
 and resolves with its result once that settle has resolved. It starts at
 once, so it has no pending phase and emits no `pending:queued`. Inline sends
-take the same arguments as `send()` without `after`, run one at a time in
+take the same arguments as `send()` without `after` or `signal`, run under
+`ctx.signal`, run one at a time in
 call order, and return a promise rather than a handle. The handle keeps its
 type: it resolves when the continuation returns, with the inline turns
 listed in order under `result.after` (each with its own `ok`, `response`,

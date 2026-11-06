@@ -1645,6 +1645,20 @@ describe("Agent", () => {
       expect(result.after?.map((turn) => turn.response)).toEqual(["recover"]);
     });
 
+    test("an inline send takes no signal of its own", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const controller = new AbortController();
+
+      const result = await agent.send("draft", {
+        after: async (_result, ctx) => {
+          // @ts-expect-error inline turns run under ctx.signal only
+          await ctx.send("review", { signal: controller.signal });
+        },
+      }).final;
+
+      expect(result.after?.map((turn) => turn.response)).toEqual(["review"]);
+    });
+
     test("is skipped when the turn was cancelled, and the handle rejects", async () => {
       const agent = new Agent({ provider: hangingProvider(), model: "mock" });
       let ran = false;

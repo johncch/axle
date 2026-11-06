@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-11-05 (0.36.0, AXL-44, AXL-103)
+**Status**: current · **Last design revision**: 2026-11-06 (0.36.0, AXL-44, AXL-103)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -152,7 +152,8 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     resolved, `ok: true` or `ok: false`; a turn whose handle rejects
     (cancelled, a fatal tool error, a setup failure) has no result to hand
     over, skips it, and rejects the handle. `ctx.send()` runs an
-    inline turn: the same arguments as `agent.send()` without `after`, the
+    inline turn: the same arguments as `agent.send()` without `after` or
+    `signal` (every inline turn runs under `ctx.signal`), the
     same turn as any send (`turn:user`, the agent turn, commit to messages,
     automatic compaction as part of it, `onSettled` when it ends), started
     at once with no `pending:queued`, and resolved with the turn's result
@@ -466,6 +467,14 @@ Accepted consequences:
   flight, so it returns `false`. `ctx.pending` is how a loop notices that
   the user already typed a correction.
 - **A continuation must bound itself.** Attempt limits are the consumer's.
+
+An inline send takes no `signal` (2026-11-06). Every inline turn runs
+under `ctx.signal`, and cancelling the operation is the only way to abort
+one. Rejected: combining a per-send signal with `ctx.signal` through
+`AbortSignal.any`, so one inline turn could be aborted on its own. A
+per-turn abort mid-continuation leaves the continuation with no defined
+outcome: whether it goes on sending or the operation counts as cancelled.
+Until 0.36.0 the type accepted `signal` and the Agent dropped it silently.
 
 ## Sinks and the Meter (2026-10-30)
 

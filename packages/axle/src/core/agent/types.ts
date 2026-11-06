@@ -117,8 +117,8 @@ export type InlineTurn = { userTurn: Turn } & (
 
 export type AgentHandle<T = string> = Handle<AgentResult<T> | AgentErrorResult>;
 
-/** Options an inline send accepts: everything a send does, except a continuation. */
-export type InlineSendOptions = Omit<SendMessageOptions, "after">;
+/** Options an inline send accepts: everything a send does, except a continuation and a signal; inline turns run under `ctx.signal`. */
+export type InlineSendOptions = Omit<SendMessageOptions, "after" | "signal">;
 
 /**
  * The inside of a continuation: inline sends in the held slot, the
