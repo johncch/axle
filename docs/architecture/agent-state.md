@@ -764,6 +764,23 @@ the event rather than beside it so a transport serialises one value; it is
 required on what `agent.on` delivers and absent from `TurnEvent`, because
 the builder has no counter and should not be lent one.
 
+## A send crosses as an Instruct (2026-11-05)
+
+A remote send has to carry what a local one does, and the first draft
+carried a string. Sunnyday's send is already an `Instruct`: the prompt, a
+context section with the files manifest, and one file per attachment with
+a `ref` source its `FileResolver` turns into bytes at provider call time.
+The browser never sends bytes with a message; files go up separately and
+the message names them. So the unit on the wire is the `Instruct` itself,
+as `toJSON()` and `fromJSON()` on the class rather than a second shape in
+the protocol: prompt, inputs, files, references, context sections, vars
+mode and metadata as they are, and the schema as JSON Schema. A `ref` stays
+opaque and resolves where the agent runs, which is where the storage is.
+The schema round trip keeps structure and descriptions and drops
+refinements; for every construct the prompt renderer accepts the rebuilt
+schema renders the identical prompt, and the side holding the Zod schema
+does the parse that matters.
+
 ## Rejected alternatives
 
 - **A seed frame** (2026-11-05, AXL-44): the host's folded turns as the

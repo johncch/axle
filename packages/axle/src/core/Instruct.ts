@@ -1,3 +1,4 @@
+import * as z from "zod";
 import { AxleInstructVariableError } from "../errors/AxleInstructVariableError.js";
 import type {
   AxleAssistantMessage,
@@ -21,6 +22,23 @@ export type InstructResponse<TSchema extends OutputSchema | undefined> =
 export interface InstructContextSection {
   content: string;
   title?: string;
+}
+
+/**
+ * An Instruct as plain data, what `toJSON()` gives and `fromJSON()` takes.
+ * The schema travels as JSON Schema: structure and descriptions cross,
+ * refinements and transforms do not, so the side that holds the Zod schema
+ * does the real parse.
+ */
+export interface InstructJSON {
+  prompt: string;
+  inputs: InstructInputs;
+  files: FileInfo[];
+  textReferences: Array<{ content: string; name?: string }>;
+  contextSections: InstructContextSection[];
+  vars: InstructVarsMode;
+  metadata?: MessageMetadata;
+  schema?: z.core.JSONSchema.BaseSchema;
 }
 
 export interface InstructOptions<
@@ -48,6 +66,38 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     this.schema = options.schema as TSchema;
     this.vars = options.vars ?? "required";
     this.metadata = options.metadata;
+  }
+
+  static fromJSON(json: InstructJSON & { schema: z.core.JSONSchema.BaseSchema }): Instruct<OutputSchema>;
+  static fromJSON(json: InstructJSON & { schema?: undefined }): Instruct<undefined>;
+  static fromJSON(json: InstructJSON): Instruct<OutputSchema> | Instruct<undefined>;
+  static fromJSON(json: InstructJSON): Instruct<OutputSchema> | Instruct<undefined> {
+    const options = { prompt: json.prompt, vars: json.vars, metadata: json.metadata };
+    const instruct = json.schema
+      ? new Instruct({ ...options, schema: z.fromJSONSchema(json.schema) })
+      : new Instruct(options);
+    instruct.inputs = { ...json.inputs };
+    instruct.files = [...json.files];
+    instruct.textReferences = json.textReferences.map((reference) => ({ ...reference }));
+    instruct.contextSections = json.contextSections.map((section) => ({ ...section }));
+    return instruct;
+  }
+
+  toJSON(): InstructJSON {
+    const json: InstructJSON = {
+      prompt: this.prompt,
+      inputs: { ...this.inputs },
+      files: [...this.files],
+      textReferences: this.textReferences.map((reference) => ({ ...reference })),
+      contextSections: this.contextSections.map((section) => ({ ...section })),
+      vars: this.vars,
+    };
+    if (this.metadata) json.metadata = { ...this.metadata };
+    if (this.schema) {
+      const { "~standard": _standard, ...schema } = z.toJSONSchema(this.schema);
+      json.schema = schema;
+    }
+    return json;
   }
 
   clone(): Instruct<TSchema> {

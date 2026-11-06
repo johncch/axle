@@ -192,6 +192,14 @@ if (!result.ok) throw new Error(result.error.kind);
 
 For plain text interactions, pass a string directly to `send()` instead.
 
+An Instruct serializes. `instruct.toJSON()` (which `JSON.stringify` calls
+by itself) gives its prompt, inputs, files, references, context sections,
+vars mode and metadata as plain data, and `Instruct.fromJSON(json)` rebuilds
+one. A schema crosses as JSON Schema: structure and descriptions survive,
+refinements and transforms do not, so keep the original Instruct where the
+result is parsed. A file with a `ref` source crosses as is and is resolved
+by the receiving agent's `fileResolver`.
+
 ### Providers
 
 A provider is a protocol (the wire format) configured with a base URL, a
