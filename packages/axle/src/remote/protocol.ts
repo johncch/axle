@@ -31,8 +31,11 @@ export type CommandOutcome =
  * How events and commands move between a consumer and a served agent. The
  * events are the Agent's own, cursor included; a transport that puts them
  * on a wire carries the cursor so the consumer can say where it stopped.
+ * `events` resolves once the stream is open, which is what a `RemoteAgent`
+ * means by connected; the iterable then runs until `signal` aborts or the
+ * served agent is gone.
  */
 export interface AgentTransport {
-  events(signal: AbortSignal): AsyncIterable<TurnEvent & { cursor: string }>;
+  events(signal: AbortSignal): Promise<AsyncIterable<TurnEvent & { cursor: string }>>;
   command(command: AgentCommand, signal?: AbortSignal): Promise<CommandOutcome>;
 }
