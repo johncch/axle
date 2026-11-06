@@ -178,6 +178,47 @@ describe("generate() wrapper lifecycle", () => {
     expect(rootSpanData.status).toBe("ok");
   });
 
+  test("6.7 a deferred call no handler answers fails at once instead of waiting", async () => {
+    const toolResponse = [
+      startChunk("msg_1"),
+      toolCallStartChunk(0, "call_1", "lookup"),
+      toolCallCompleteChunk(0, "call_1", "lookup", { id: 42 }),
+      completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 15 }),
+    ];
+    const reply = [
+      startChunk("msg_2"),
+      textStartChunk(0),
+      textChunk(0, "done"),
+      textCompleteChunk(0),
+      completeChunk(),
+    ];
+
+    const silent = await generate({
+      provider: makeStreamingProvider([toolResponse, reply]),
+      model: "test-model",
+      messages: [{ role: "user", content: "Look up item 42" }],
+      tools: [deferredTool("lookup")],
+      onToolCall: () => undefined,
+    });
+    const unhandled = await generate({
+      provider: makeStreamingProvider([toolResponse, reply]),
+      model: "test-model",
+      messages: [{ role: "user", content: "Look up item 42" }],
+      tools: [deferredTool("lookup")],
+    });
+
+    for (const result of [silent, unhandled]) {
+      expect(result.ok).toBe(true);
+      const toolMessage = result.messages.find((message) => message.role === "tool");
+      expect(toolMessage?.role === "tool" && toolMessage.content[0]).toMatchObject({
+        isError: true,
+        content: JSON.stringify({
+          error: { type: "execution", message: "No onToolCall answer for lookup" },
+        }),
+      });
+    }
+  });
+
   test("6.6 pre-aborted signal rejects before provider work starts", async () => {
     const { writer, tracer } = createTracerAndWriter();
     const rootSpan = tracer.startSpan("generate", { type: "workflow" });

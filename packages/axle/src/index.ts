@@ -142,6 +142,7 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolProgressChunk,
+  WaitingToolCall,
   WebSearchResult,
 } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
@@ -236,6 +237,23 @@ export type {
   TurnPart,
   TurnStatus,
 } from "./turns/types.js";
+
+// Remote (@experimental)
+export { EventLog } from "./remote/eventLog.js";
+export type { EventLogOptions, LoggedEvent } from "./remote/eventLog.js";
+export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
+export type { HttpTransportOptions } from "./remote/httpTransport.js";
+export { loopbackTransport } from "./remote/loopback.js";
+export { processAgentCommand } from "./remote/processAgentCommand.js";
+export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/protocol.js";
+export { RemoteAgent } from "./remote/RemoteAgent.js";
+export type {
+  RemoteAgentState,
+  RemoteHandle,
+  RemoteSendOptions,
+  RemoteWaitingToolCall,
+} from "./remote/RemoteAgent.js";
+export { toEventStreamResponse } from "./remote/sse.js";
 
 // Tracer
 export { LogWriter, SimpleWriter, Tracer } from "./observability/index.js";

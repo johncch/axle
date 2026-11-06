@@ -125,15 +125,18 @@ find the handler's promise for a part.
 
 **Waiting** — the status of a `DeferredAction` from the moment its validated
 call has been handed to `onToolCall` (`tool:waiting`, `action:waiting`) until
-the answer, the tool's `timeout` or a cancellation settles it. A deferred
-action is never `running`: it is `pending` while its arguments stream, then
-`waiting`. "Open" was tried and dropped because it reads as something the
-consumer does.
+something settles it: the handler's return or throw, `toolCall(id)`, the
+tool's `timeout` or a cancellation. A deferred action is never `running`: it
+is `pending` while its arguments stream, then `waiting`. "Open" was tried
+and dropped because it reads as something the consumer does.
 
-**Unanswered** — the error result a deferred call gets when the handler's
-branch for it returned nothing, or when no handler is set. A handler that
-throws gives an `execution` error, as `execute` does; a call that outlives
-its tool's `timeout` gets a `timeout` error.
+**Waiting tool call** — the handle `toolCall(id)` returns on a stream handle
+or an `Agent` while the call with that tool call id is waiting:
+`{ answer, fail }`. `answer` settles it with a result, `fail` with an
+`execution` error, the same two outcomes a handler has. The first settle
+wins; the lookup returns `undefined` once the call has settled. A handler
+that returns nothing has not answered; the call stays waiting for whoever
+holds this handle, which is what "not from me" means at every layer.
 
 **UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
 usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent
@@ -275,6 +278,40 @@ mirror a live transcript.
 `{ sessionId, messages }` that `agent.snapshot()` captures and the `Agent`
 constructor restores. The transcript is not part of it; consumers persist its
 state alongside.
+
+**Event log** — the numbered stream of one served agent (`EventLog`):
+every agent event and every host event pushed onto it, stamped with a
+cursor in the order it happened, kept for replay by the host's retention
+choice. The one piece of state a served agent has beside the Agent itself.
+
+**Event cursor** — the string an event log stamps on each entry,
+`<log id>-<seq>`. It names a position in one log; a cursor from another log
+is stale and cannot be continued from. A transport sends the last one it
+delivered to resume, and the fold records the cursor of the event that
+closed a turn as `Turn.cursor` so stored turns carry their resume point.
+
+**Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
+exposes to consumers elsewhere: the Agent, its event log, and the host's
+routing to them. Agent lifecycle is the host's; the protocol begins once a
+served agent exists.
+
+**Remote agent** — the consumer-side object (`RemoteAgent`) that drives a
+served agent through a transport: events in, commands out, and the Agent's
+own surface minus configuration. It holds no transcript.
+
+**Command** — what a consumer asks of a served agent, one per Agent verb:
+`send`, `answer`, `fail`, `cancel`, `stop`, `clear`. A command's response
+is only whether the Agent took it; everything after acceptance arrives as
+events.
+
+**Transport** — what carries log entries one way and commands the other
+(`AgentTransport`): `httpTransport` over SSE and `POST`, `loopbackTransport`
+with no wire. A transport that reconnects resumes from the last cursor it
+delivered.
+
+**Hop** — a process that is a remote agent facing upstream and a served
+agent facing downstream. A deferred call is answered at whichever hop has
+the handler for it.
 
 **Compaction** — replacing the active conversation with a condensed
 rewrite, recorded on the transcript as a `compaction` turn part carrying the
@@ -434,6 +471,10 @@ transcript channel renders the model's conversation; runner lines frame it.
 - **run** — consumer vocabulary: Sunnyday's durable conversation, one level
   above send. A run starts and stops per incoming message (state
   transitions, not sub-entities). Core never uses it as a unit name.
+- **seed**, **frame** — the 2026-11-04 remote-agent prototype's first
+  message carrying folded turns, and the envelope around every event.
+  Rejected 2026-11-05: a numbered _event log_ replays, and a baseline for
+  a cold open is the host's own event.
 - **tape** — the pre-0.30 design term for the event fold. Rejected for the
   public object because it materializes reader-facing state rather than
   retaining a raw event log.

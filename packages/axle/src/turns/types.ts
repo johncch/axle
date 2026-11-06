@@ -98,6 +98,12 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   /** How the turn failed, when its send resolved `ok: false`. */
   failure?: TurnFailure;
   /**
+   * Where this turn closed on the event stream it was folded from: the
+   * `cursor` of its `turn:user` or `turn:end`, when that event carried one.
+   * A consumer resuming from stored turns subscribes after the last one.
+   */
+  cursor?: string;
+  /**
    * How the model's final answer ended: `"stop"` when it finished, `"length"`
    * when it reached the output token limit. Absent when the turn ended
    * before a final answer arrived.

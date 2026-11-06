@@ -3,7 +3,7 @@ import * as z from "zod";
 import { fail } from "./helpers.js";
 import type { CheckCase } from "./types.js";
 
-const askUser = {
+export const askUser = {
   type: "deferred",
   name: "ask_user",
   description:
@@ -14,7 +14,7 @@ const askUser = {
   }),
 } satisfies DeferredTool;
 
-const system =
+export const system =
   "You can ask the person questions with the ask_user tool. When told to ask them something, call the tool and wait for the answer before replying.";
 
 export const deferredToolCases: CheckCase[] = [

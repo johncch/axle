@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-11-02 (0.35.0)
+**Status**: current · **Last design revision**: 2026-11-05 (0.36.0, AXL-44, AXL-103)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -191,7 +191,13 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     the wait is persisted: a waiting call lives as long as the Agent
     instance, as a running `execute` does, and a process that dies loses the
     turn the same way ([tool-loop.md](./tool-loop.md) invariant 10).
-    (2026-11-05, AXL-103)
+    `agent.toolCall(id)` is the waiting call with that tool call id, with
+    `answer` and `fail`, or `undefined` once it has settled; it forwards to
+    the active turn's stream handle, so the Agent holds no map of its own.
+    A handler that returns nothing leaves the call for `toolCall(id)`, the
+    tool's `timeout` or `cancel()`; the first to settle it wins and the
+    handler's signal aborts. (2026-11-05, AXL-103; `toolCall(id)`
+    2026-11-05, AXL-44)
 
 ## Design rationale (2026-08-12)
 
@@ -708,8 +714,90 @@ One handler per Agent, a dispatcher with a switch, keeps that choice in one
 place and makes forwarding explicit; a per-tool registration was rejected
 because it needs a claim rule the moment two parties want the same name.
 
+## Answering from outside the handler (2026-11-05)
+
+A remote consumer answers a deferred call by posting a command, and the
+served agent has to turn that command into the settlement of a promise the
+loop is awaiting. Something must file that promise under the call id. A
+forwarder object the host keeps beside the Agent was the first shape; it
+was a second map keyed by call id, in front of the one the loop already
+holds for the timeout and the abort, and the host had to carry it to every
+place that answers. So the verb went where the state already was.
+`agent.toolCall(id)` is the primitive; `agent.onToolCall(handler)` is a
+convenience over it, one body for the local Agent and the remote: run the
+handler on each waiting call and feed a defined return to `answer`, a throw
+to `fail`. That reading forced one change to the day's earlier decision: a
+handler that returns nothing can no longer fail the call at once, because
+someone else can now answer, so "nothing" means "not from me" at every
+layer and the call waits for the timeout or a cancel. `action:waiting`
+carries the call id and the tool name so a handler can be built from the
+event alone, and a send takes an `id` for its user turn so an operation
+started elsewhere can be matched to its events.
+
+## The stream numbers, not the Agent (2026-11-05)
+
+A consumer that reconnects, or joins a conversation already running, has to
+say where it stopped, and the fold cannot absorb a repeat: `turn:user`
+appends, `text:delta` concatenates. So delivery has to be exactly once and
+in order, and something has to number the events. The first answer was the
+Agent: an instance id and a count stamped on every event in `emitEvent`.
+It was reversed the same day, because the stream a host serves carries
+more than the Agent's events. Sunnyday pushes `run:start`, `session:error`
+and its own reset onto the same stream as the turn events, and the client's
+`Transcript<Annotation, SessionEvent>` is typed for that mix. An Agent
+cannot number events it never sees. So the number belongs to the stream:
+an `EventLog` beside the served agent stamps every entry, agent or host,
+with `<id>-<seq>`, keeps them, and replays after a cursor it owns. The
+Agent emits plain events and knows nothing of it.
+
+The fold records the cursor of the event that closed each turn, as
+`Turn.cursor`, when the event carried one. That is the one transport fact
+the fold learns, and it is there so stored turns carry their own resume
+point: a page can render from the database and subscribe after the last
+turn it holds, instead of replaying a long agent's whole history on every
+open. A cursor from a log that no longer exists is the hard cut; the
+server cannot honour it, replays from what it holds, and the host sends
+its own baseline event first if it keeps one. Whatever was in flight when
+the old log died is gone for every consumer alike.
+
+## A send crosses as an Instruct (2026-11-05)
+
+A remote send has to carry what a local one does, and the first draft
+carried a string. Sunnyday's send is already an `Instruct`: the prompt, a
+context section with the files manifest, and one file per attachment with
+a `ref` source its `FileResolver` turns into bytes at provider call time.
+The browser never sends bytes with a message; files go up separately and
+the message names them. So the unit on the wire is the `Instruct` itself,
+as `toJSON()` and `fromJSON()` on the class rather than a second shape in
+the protocol: prompt, inputs, files, references, context sections, vars
+mode and metadata as they are, and the schema as JSON Schema. A `ref` stays
+opaque and resolves where the agent runs, which is where the storage is.
+The schema round trip keeps structure and descriptions and drops
+refinements; for every construct the prompt renderer accepts the rebuilt
+schema renders the identical prompt, and the side holding the Zod schema
+does the parse that matters.
+
 ## Rejected alternatives
 
+- **A cursor stamped by the Agent** (2026-11-05, AXL-44, reversed the
+  same day): `instanceId` and a count on every event out of `emitEvent`.
+  Rejected: host events share the stream and the Agent never sees them, so
+  the stream numbers; see above.
+- **A seed frame in the protocol** (2026-11-05, AXL-44): the host's folded
+  turns as the first message on every connection. Rejected: a second
+  representation of the conversation on the wire; a numbered log with
+  replay covers reconnect, and a baseline for a cold open is the host's own
+  event, as Sunnyday's `stream:reset` already is.
+- **A forwarder beside the Agent** (2026-11-05, AXL-44): a
+  `forwardToolCalls(agent)` object holding resolvers that a command
+  processor took as a second argument. Rejected: a second map keyed by
+  call id in front of the loop's own, and one more object per agent for
+  every host registry to carry.
+- **The waiting map in the Agent** (2026-11-05, AXL-44): the Agent
+  wrapping the handler in one that never returns nothing, with `stream()`
+  untouched. Rejected: `unanswered` would survive at the stream level with
+  a meaning the Agent never produces, and the Agent's map and the loop's
+  timeout would have to be kept in step across a layer.
 - **Deferral as a result arm** (2026-11-05): `send().final` resolving
   `{ ok: true, deferred }` with a `resume()` to continue. Rejected: it made
   every consumer narrow three ways for a state they could read from events,

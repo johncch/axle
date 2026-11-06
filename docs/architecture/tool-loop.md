@@ -75,20 +75,24 @@ side is in [provider-tools.md](./provider-tools.md).
     tool has no `execute`; its validated call goes to `onToolCall` and the
     batch waits for the answer as it waits for a running tool, so
     invariants 1 to 9 hold for it unchanged, with two additions. The call
-    settles by whichever comes first: the handler's return or throw, the
-    tool's `timeout`, or the run's abort. A throw is an `execution` result
-    as for `execute`; a handler that returns nothing, or no handler at all,
-    is an `unanswered` result; a timeout is a `timeout` result; the abort
-    is terminal as in invariant 4. Once anything but the handler settles the call, the
-    handler's signal aborts and what its promise later resolves to or
-    rejects with is dropped, which is the one place a call does not wait
-    for the code answering it: the handler runs outside the loop and may
-    be a person. `onToolCall` is never consulted for an executable call.
-    On the turn event stream the call is a `DeferredAction`: `pending`
-    while its arguments stream, `waiting` from `action:waiting` (which
-    carries the validated input) until it settles, never `running`, and
+    settles by whichever comes first: the handler's return or throw, an
+    `answer` or `fail` through the handle's `toolCall(id)`, the tool's
+    `timeout`, or the run's abort. A throw or a `fail` is an `execution`
+    result as for `execute`; a timeout is a `timeout` result; the abort is
+    terminal as in invariant 4. A handler that returns nothing, or no
+    handler at all, does not settle the call: it stays waiting for the
+    others, so the loop holds one map of waiting calls, keyed by tool call
+    id, beside the timeout and the abort that already settle them. Once
+    anything but the handler settles the call, the handler's signal aborts
+    and what its promise later resolves to or rejects with is dropped,
+    which is the one place a call does not wait for the code answering it:
+    the handler runs outside the loop and may be a person. `onToolCall` is
+    never consulted for an executable call. On the turn event stream the
+    call is a `DeferredAction`: `pending` while its arguments stream,
+    `waiting` from `action:waiting` (which carries the call id, the tool
+    name and the validated input) until it settles, never `running`, and
     settled by invariant 9 like every other action part. (2026-11-05,
-    AXL-103)
+    AXL-103; `toolCall(id)` and the wait rule 2026-11-05, AXL-44)
 
 ## What the model sees
 
@@ -186,6 +190,18 @@ by awaiting a promise.
   parity with `execute`, which has no such thing. A refusal with a reason
   is a throw, a refusal after a pending promise is its rejection, and a
   branch that does not match returns nothing.
+- **Failing a silent handler at once** (2026-11-05, AXL-44): the first
+  version of invariant 10 made a handler that returned nothing, or no
+  handler, an `unanswered` error result, on the grounds that nobody else
+  could answer. `toolCall(id)` made that untrue: an answer can come from a
+  second consumer, another process or a hop further down. Two rules for
+  one gap, fail at the loop and wait at the Agent, were rejected with it;
+  "nothing" means "not from me" at every layer, and a call nobody answers
+  ends by its tool's `timeout` or by cancellation, as a running `execute`
+  that never returns does. `generate()` is the one layer with nobody else:
+  it returns no handle, so it supplies the last handler itself and fails
+  what the caller's handler leaves, which is the general rule applied,
+  not an exception to it.
 - **Aborting siblings with a synthetic reason** (2026-10-29): a marker
   object in place of the failing call's error. Rejected because the
   sibling's abort would no longer say why it was cut short; the classifier

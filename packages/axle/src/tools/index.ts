@@ -15,6 +15,7 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolProgressChunk,
+  WaitingToolCall,
 } from "./types.js";
 export { braveWebSearch } from "./webSearch.js";
 export type { BraveWebSearchOptions, WebSearchResult } from "./webSearch.js";

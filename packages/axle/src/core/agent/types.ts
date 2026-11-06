@@ -248,6 +248,11 @@ export interface CompactionConfig {
 export interface SendMessageOptions<T = any> extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
   /**
+   * Id for the send's user turn, the one `pending:queued`, `turn:user` and
+   * `onSettled` carry. Generated when omitted.
+   */
+  id?: string;
+  /**
    * Stable consumer-owned metadata attached to the user message and copied to the
    * renderable user turn. Providers ignore this data.
    */

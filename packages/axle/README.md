@@ -192,6 +192,14 @@ if (!result.ok) throw new Error(result.error.kind);
 
 For plain text interactions, pass a string directly to `send()` instead.
 
+An Instruct serializes. `instruct.toJSON()` (which `JSON.stringify` calls
+by itself) gives its prompt, inputs, files, references, context sections,
+vars mode and metadata as plain data, and `Instruct.fromJSON(json)` rebuilds
+one. A schema crosses as JSON Schema: structure and descriptions survive,
+refinements and transforms do not, so keep the original Instruct where the
+result is parsed. A file with a `ref` source crosses as is and is resolved
+by the receiving agent's `fileResolver`.
+
 ### Providers
 
 A provider is a protocol (the wire format) configured with a base URL, a
@@ -762,10 +770,9 @@ agent.onToolCall((call, ctx) => {
 tool's schema, and `ctx` is the `ToolContext` an `execute` receives. The
 contract is `execute`'s: return the result, or throw to give the model an
 error with a reason. The one difference is that the handler answers every
-deferred tool, so a branch may not match; returning nothing is an error result
-of type `unanswered`, as is a call made with no `onToolCall` set. The step
-continues either way. `onToolCall` is consulted for deferred tools only;
-executable tools run through their own `execute`.
+deferred tool, so a branch may not match; returning nothing means the handler
+has not answered, and the call keeps waiting. `onToolCall` is consulted for
+deferred tools only; executable tools run through their own `execute`.
 
 An Agent has one handler. Registering another replaces it, and the function
 `agent.onToolCall` returns removes the handler if it is still the one in
@@ -778,10 +785,32 @@ Turn events below.
 
 The answer can arrive later. A handler that returns a pending promise holds the
 call open, so a UI can resolve it from a button or reject it from a dismiss.
-Two things settle a waiting call without the handler: the tool's `timeout`,
-an error result of type `timeout`, and the run's cancellation, which settles
-the call at once rather than waiting on the handler. In both cases
-`ctx.signal` aborts and whatever the promise later resolves to is dropped.
+
+The answer can also come from outside the handler. `agent.toolCall(id)`
+returns the waiting call with that tool call id, `{ answer, fail }`, or
+`undefined` once it has settled; `stream()`'s handle has the same method.
+`answer(content)` gives the model the result and `fail(message)` an error,
+the two outcomes a handler has. This is how a second tab, a server route or
+a scheduled job answers a prompt the handler is still showing:
+
+```ts
+agent.on((event) => {
+  if (event.type === "action:waiting") prompts.set(event.callId, event.input);
+});
+// later, from wherever the person answered
+agent.toolCall(callId)?.answer("teal");
+```
+
+A waiting call settles by whichever comes first: the handler's return or
+throw, `toolCall(id)`, the tool's `timeout` (an error result of type
+`timeout`), or the run's cancellation. A handler that returns nothing, or no
+handler at all, leaves the call waiting for the others, so a deferred tool
+with no `timeout` and nobody to answer waits until the turn is cancelled.
+Once anything but the handler settles the call, `ctx.signal` aborts and
+whatever the handler's promise later resolves to is dropped. `generate()`
+returns no handle, so nothing outside its handler can answer; a call the
+handler does not answer, or any call when there is no handler, is an error
+result at once rather than a wait.
 
 #### File results and deferred references
 
@@ -1314,6 +1343,11 @@ Axle has two event models, used at different levels:
 `Agent` uses `stream()` internally and translates each `StreamEvent` into
 one or more `TurnEvent`s.
 
+A `Turn` folded from events that carry a `cursor` records the cursor of the
+event that closed it, as `turn.cursor`. Events straight from `agent.on`
+have none; events served through an `EventLog` do. A consumer that stores
+turns can subscribe again after the last cursor it holds.
+
 #### Turn events
 
 ```typescript
@@ -1403,11 +1437,12 @@ further discriminate on `part.kind` (`"tool" | "agent" | "provider-tool" |
 
 A deferred tool call is a `DeferredAction`. It never runs here, so it has no
 `running` state: it is `pending` while its arguments stream, becomes `waiting`
-on `action:waiting`, which carries the validated `input` the handler received,
-and settles with the same three events as any action. `detail.callId` is the
-`id` of the `DeferredCall` the handler received, so a renderer that shows a
-prompt for a waiting part can find the promise its handler holds for it; the
-question itself is in `detail.input`. `isActionOf(tool, part)` narrows a part
+on `action:waiting`, which carries the `callId`, the tool `name` and the
+validated `input` the handler received, and settles with the same three
+events as any action. `detail.callId` is the `id` of the `DeferredCall` the
+handler received and the id `agent.toolCall(id)` takes, so a renderer that
+shows a prompt for a waiting part can answer it; the question itself is in
+`detail.input`. `isActionOf(tool, part)` narrows a part
 to one tool's action with `detail.input` typed by its schema; a `pending` part
 has no input yet and is excluded.
 
@@ -1952,10 +1987,10 @@ read back the data's own fields.
 
 ### Sessions and persistence
 
-Axle stops at the agent runtime boundary. If you need long-lived sessions,
-SSE transport, resumable cursors, or React client hooks, build those concerns
-in your application on top of `Agent`, `agent.on(...)`, and the streamed
-turn events that Axle emits.
+Axle stops at the agent runtime boundary. Serving an agent to another
+process is covered under [Remote agents](#remote-agents-experimental);
+long-lived sessions and client hooks are your application's, built on
+`Agent`, `agent.on(...)` and the streamed turn events.
 
 `agent.messages` exposes the active, model-facing conversation as a copy —
 requests are built from it, and compaction replaces it. Read it for inspection
@@ -2055,6 +2090,98 @@ The callback takes no arguments and is not awaited. The agent is already
 free, so a `send()` from inside it starts at once. A callback that throws
 is recorded on the trace as a warning and the others still run. It returns
 a function that unregisters it.
+
+### Remote agents (experimental)
+
+An `Agent` runs where its provider key, tools and files are. A browser, or
+another process, drives it through a `RemoteAgent`, which has the Agent's
+own surface minus configuration: `on`, `onToolCall`, `toolCall(id)`,
+`send`, `cancel`, `stop`, `clear`. Events flow out through an `EventLog`
+beside the served agent; commands flow in through `processAgentCommand`.
+Axle ships both halves and an HTTP transport; routing, authentication and
+agent lifecycle are yours.
+
+The served side, in whatever framework answers HTTP with `Request` and
+`Response`:
+
+```typescript
+import { Agent, EventLog, processAgentCommand, toEventStreamResponse } from "@fifthrevision/axle";
+
+const agent = new Agent({ provider, model, tools: [askUser] });
+const log = new EventLog(agent);
+
+// GET /agents/:id — the event stream, resumed from Last-Event-ID when sent
+toEventStreamResponse(log.subscribe(request.signal, request.headers.get("last-event-id")), request);
+
+// POST /agents/:id — one command; the body is JSON, so is the reply
+Response.json(await processAgentCommand(agent, await request.json()));
+```
+
+The consumer side, from the browser-safe entry:
+
+```typescript
+import { RemoteAgent, httpTransport, Transcript, isCall } from "@fifthrevision/axle/ui";
+
+const remote = new RemoteAgent(httpTransport("/agents/42"));
+const transcript = new Transcript();
+remote.on(transcript.apply);
+remote.onToolCall((call) => {
+  if (isCall(askUser, call)) return askThePerson(call.input.question);
+});
+
+const result = await remote.send("hello").final;
+result.response; // as locally; an Instruct with a schema parses here
+```
+
+`send` takes a string or an `Instruct`, which crosses as `toJSON()`:
+files by `ref` resolve on the served side, and the schema goes as JSON
+Schema and parses the response on this side. The handle has `final` only;
+`remote.cancel()` cancels the active turn as `agent.cancel()` does.
+`remote.state` is `connecting`, `idle`, `busy` with the open turn's id,
+`ended` or `error`; `onState` reports changes.
+
+Every entry the log stamps carries a `cursor`. The transport resumes a
+dropped stream from the last one it delivered, so the served side replays
+the gap and nothing is folded twice. A page that renders from stored turns
+subscribes after the last turn it holds instead of replaying everything:
+
+```typescript
+const transcript = new Transcript(storedTurns);
+const remote = new RemoteAgent(httpTransport(url, { after: storedTurns.at(-1)?.cursor }));
+remote.on(transcript.apply);
+```
+
+A cursor from a log that no longer exists replays from the start of the
+one that does. A new conversation is a new `Agent` and a new `EventLog`;
+nothing on the client needs resetting.
+
+The log takes your own events beside the agent's, typed once:
+
+```typescript
+type HostEvent = { type: "run:start"; id: string } | { type: "session:error"; message: string };
+const log = new EventLog<HostEvent>(agent);
+log.push({ type: "run:start", id: cycleId });
+
+const remote = new RemoteAgent<HostEvent>(httpTransport(url));
+remote.on((event) => {
+  // TurnEvent | HostEvent, each with its cursor; host events leave remote.state alone
+});
+```
+
+`new EventLog(agent, { retain: "none" })` keeps nothing, for a host that
+forwards entries to its own store and serves replay from there. A
+`RemoteAgent` can itself be served, so a middle tier that answers some
+deferred calls and forwards the rest is `processAgentCommand(remote, …)`
+over `new EventLog(remote)`.
+
+`httpTransport(url, options)` reconnects a dropped stream after
+`reconnectDelayMs` (1000), doubling up to `maxReconnectDelayMs` (30000),
+and keeps trying through network failures and `5xx` until `close()`. A
+reconnect answered `404` or `410` ends the agent. `headers` is a value or
+a function called per request, for a token; `fetch` can be supplied.
+
+The invariants, what is deferred and why, and the rejected alternatives
+are in [docs/architecture/remote-agent.md](../../docs/architecture/remote-agent.md).
 
 ## Known Limitations
 

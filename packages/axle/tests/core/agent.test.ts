@@ -1261,6 +1261,26 @@ describe("Agent", () => {
       return ids;
     }
 
+    test("a send's id option names its user turn on pending:queued, turn:user and onSettled", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const queued = queuedIdsOf(agent);
+      const userTurnIds: string[] = [];
+      agent.on((event) => {
+        if (event.type === "turn:user") userTurnIds.push(event.turn.id);
+      });
+      const settledIds: string[] = [];
+      agent.onSettled((_session, operation) => {
+        settledIds.push(operation.id);
+      });
+
+      await agent.send("hello", { id: "op-1" }).final;
+
+      expect(queued).toEqual(["op-1"]);
+      expect(userTurnIds).toEqual(["op-1"]);
+      expect(settledIds).toEqual(["op-1"]);
+      expect(agent.messages[0]).toMatchObject({ role: "user", id: "op-1" });
+    });
+
     test("fires once per send, before its handle settles, without waiting for the queue", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const transcript = new Transcript();

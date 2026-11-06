@@ -294,7 +294,12 @@ describe("TurnEventBuilder", () => {
         detail: { name: "ask-user", callId: "tc1", input: {} },
       },
     });
-    expect(events[2]).toMatchObject({ type: "action:waiting", input: { question: "Colour?" } });
+    expect(events[2]).toMatchObject({
+      type: "action:waiting",
+      callId: "tc1",
+      name: "ask-user",
+      input: { question: "Colour?" },
+    });
     expect(events[3]).toMatchObject({
       type: "action:complete",
       result: { type: "success", content: "blue" },

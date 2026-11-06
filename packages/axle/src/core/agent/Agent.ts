@@ -4,7 +4,7 @@ import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import { estimateContextUsage } from "../../execution/context.js";
 import type { AxleProviderFailure } from "../../execution/helpers.js";
-import { stream } from "../../execution/stream.js";
+import { stream, type StreamHandle } from "../../execution/stream.js";
 import type { MCP } from "../../mcp/index.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
 import type { AxleMessage, AxleUserMessage } from "../../messages/message.js";
@@ -16,7 +16,12 @@ import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../pr
 import { renderSkillsCatalog } from "../../skills/prompt.js";
 import { SkillRegistry } from "../../skills/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
-import type { AnyTool, ToolCallCallback, ToolDefinition } from "../../tools/types.js";
+import type {
+  AnyTool,
+  ToolCallCallback,
+  ToolDefinition,
+  WaitingToolCall,
+} from "../../tools/types.js";
 import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
@@ -89,6 +94,7 @@ export class Agent {
   private eventCallbacks: TurnEventCallback[] = [];
 
   private toolCallHandler: ToolCallCallback | undefined;
+  private activeStream: StreamHandle | undefined;
   private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
   private idleCallbacks: IdleCallback[] = [];
@@ -176,6 +182,17 @@ export class Agent {
     return () => {
       if (this.toolCallHandler === handler) this.toolCallHandler = undefined;
     };
+  }
+
+  /**
+   * The deferred call with this tool call id while the active turn is
+   * waiting on it; `undefined` once it has settled or when no turn is
+   * running. `answer` gives the model the result and `fail` an `execution`
+   * error, the two outcomes `onToolCall` has. Whichever of the handler, this,
+   * the tool's `timeout` and `cancel()` comes first settles the call.
+   */
+  toolCall(id: string): WaitingToolCall | undefined {
+    return this.activeStream?.toolCall(id);
   }
 
   /**
@@ -296,14 +313,14 @@ export class Agent {
     messageOrInstruct: string | Instruct<any>,
     options: InlineSendOptions,
   ): PreparedSend {
-    const { fileResolver, metadata, ...modelOptions } = options;
+    const { fileResolver, metadata, id, ...modelOptions } = options;
     const instruct =
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
     instruct.validate();
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
-    const message = instruct.toMessage({ metadata });
+    const message = instruct.toMessage({ metadata, id });
     return {
       instruct,
       fileResolver,
@@ -489,6 +506,7 @@ export class Agent {
         signal,
       });
 
+      this.activeStream = streamHandle;
       streamHandle.on((streamEvent) => {
         const turnEvents = turnEventBuilder.handleStreamEvent(streamEvent);
         for (const evt of turnEvents) this.emitEvent(evt);
@@ -622,6 +640,7 @@ export class Agent {
     } finally {
       // Lifecycle: release per-turn state and observability
       streamSpan?.end(status);
+      this.activeStream = undefined;
       this.turnActive = false;
       this.stopRequested = false;
       this.transcript = new Transcript();

@@ -70,16 +70,27 @@ export interface DeferredCall<TInput = Record<string, unknown>> {
 
 /**
  * Answers deferred calls. The contract is `execute`'s: return the result, or
- * throw to give the model an error with a reason. Returning nothing means no
- * branch answered this call, which the model sees as an `unanswered` error.
- * `ctx.signal` also aborts when the call settles without this handler's
- * answer, on the tool's timeout or the run's cancellation; what the handler
- * resolves to after that is dropped.
+ * throw to give the model an error with a reason. Returning nothing means
+ * this handler does not answer the call: it stays waiting for `toolCall(id)`,
+ * the tool's `timeout` or the run's cancellation. `ctx.signal` aborts when the
+ * call settles without this handler's answer; what the handler resolves to
+ * after that is dropped.
  */
 export type ToolCallCallback = (
   call: DeferredCall,
   ctx: ToolContext,
 ) => string | ToolResultPart[] | void | Promise<string | ToolResultPart[] | void>;
+
+/**
+ * A deferred call the loop is waiting on, reached through `toolCall(id)` on
+ * a stream handle or an `Agent`. `answer` settles it with a result and `fail`
+ * with an `execution` error carrying the message, the two outcomes a handler
+ * has. The first settle wins; a later one does nothing.
+ */
+export interface WaitingToolCall {
+  answer(content: string | ToolResultPart[]): void;
+  fail(message: string): void;
+}
 
 /** A tool the model can call: run by the loop, or deferred to the caller. */
 export type AnyTool = ExecutableTool | DeferredTool;

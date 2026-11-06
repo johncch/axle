@@ -23,7 +23,7 @@ span:start → span:update (setResult) → span:end
 **Tool spans** are created by `executeToolCalls()` and have three outcomes:
 
 - the tool (or the `onToolCall` answer for a deferred tool) succeeds → span ends with status `"ok"`
-- the tool is not found, or a deferred call goes unanswered → span ends with status `"error"`
+- the tool is not found, or a deferred call fails or times out → span ends with status `"error"`
 - `execute` or `onToolCall` throws → caught, span ends with status `"error"`
 
 **Root span** gets `setResult` with the final LLM result, then `end()`. On error, both the turn span and root span end with `"error"` status.
@@ -73,6 +73,7 @@ span:start → span:update (setResult) → span:end
 | 6.4 | Escaped provider AbortError becomes AxleAbortError and closes spans |
 | 6.5 | Abort during tool execution preserves prior state                   |
 | 6.6 | Pre-aborted signal prevents provider work                           |
+| 6.7 | A deferred call no handler answers fails at once                    |
 
 Shared lifecycle behavior is covered by `stream-lifecycle.test.ts`. Instruct
 history and parsing contracts are covered by `execution/instruct-options.test.ts`.
