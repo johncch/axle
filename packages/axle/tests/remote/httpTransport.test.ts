@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, test } from "vitest";
-import { Agent } from "../../src/core/agent/index.js";
+import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { EventLog } from "../../src/remote/eventLog.js";
 import { HttpTransportError, httpTransport } from "../../src/remote/httpTransport.js";
 import { processAgentCommand } from "../../src/remote/processAgentCommand.js";
@@ -96,14 +96,15 @@ describe("httpTransport", () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const log = new EventLog(agent);
     const host = fakeHost(agent, log);
-    host.dropNextAfter(3);
+    // The opening status and the busy change are two of the five messages before the cut.
+    host.dropNextAfter(5);
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, reconnectDelayMs: 0 }),
     );
     const seen: { cursor: string }[] = [];
     const transcript = new Transcript();
     remote.on((event) => {
-      seen.push(event);
+      if (event.type !== "state") seen.push(event);
       transcript.apply(event);
     });
     remote.onToolCall(() => "teal");
@@ -122,13 +123,13 @@ describe("httpTransport", () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const log = new EventLog(agent);
     const host = fakeHost(agent, log);
-    host.cutNextInside(3);
+    host.cutNextInside(5);
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, reconnectDelayMs: 0 }),
     );
     const seen: { cursor: string }[] = [];
     remote.on((event) => {
-      seen.push(event);
+      if (event.type !== "state") seen.push(event);
     });
     remote.onToolCall(() => "teal");
 
@@ -150,7 +151,7 @@ describe("httpTransport", () => {
     const remote = new RemoteAgent(httpTransport("http://agent/42", { fetch: host.fetch, after }));
     const seen: { cursor: string }[] = [];
     remote.on((event) => {
-      seen.push(event);
+      if (event.type !== "state") seen.push(event);
     });
     await remote.send("second").final;
     remote.close();
@@ -159,19 +160,76 @@ describe("httpTransport", () => {
     expect(seqs(seen)[0]).toBe(Number(after.split("-")[1]) + 1);
   });
 
+  test("a state message after an entry is state, though the parser hands it that entry's id", async () => {
+    const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
+    const log = new EventLog(agent);
+    const host = fakeHost(agent, log);
+    const remote = new RemoteAgent(httpTransport("http://agent/42", { fetch: host.fetch }));
+    const seen: { cursor: string }[] = [];
+    const statuses: AgentStatus[] = [];
+    remote.on((event) => {
+      if (event.type !== "state") seen.push(event);
+    });
+    remote.on((event) => {
+      if (event.type === "state") statuses.push(event.status);
+    });
+
+    await remote.send("hello", { id: "op-1" }).final;
+    await waitFor(() => remote.status.phase === "idle" && statuses.length === 3);
+    remote.close();
+
+    expect(statuses).toEqual([{ phase: "idle" }, { phase: "busy", id: "op-1" }, { phase: "idle" }]);
+    expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
+  });
+
+  test("a page resuming from its stored turn during a continuation opens busy, then goes idle", async () => {
+    const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
+    const log = new EventLog(agent);
+    const host = fakeHost(agent, log);
+    const { promise: judging, resolve: judgeStarted } = Promise.withResolvers<void>();
+    const { promise: verdict, resolve: pass } = Promise.withResolvers<void>();
+    const final = agent.send("write", {
+      id: "a",
+      after: async () => {
+        judgeStarted();
+        await verdict;
+      },
+    }).final;
+    await judging;
+    const storedCursor = log.lastCursor;
+
+    const remote = new RemoteAgent(
+      httpTransport("http://agent/42", { fetch: host.fetch, after: storedCursor }),
+    );
+    const seen: { cursor: string }[] = [];
+    remote.on((event) => {
+      if (event.type !== "state") seen.push(event);
+    });
+    await waitFor(() => remote.connection.phase === "open");
+    expect(remote.status).toEqual({ phase: "busy", id: "a" });
+
+    pass();
+    await final;
+    await waitFor(() => remote.status.phase === "idle");
+    remote.close();
+
+    expect(host.streamRequests).toEqual([storedCursor]);
+    expect(seen).toEqual([]);
+  });
+
   test("a reconnect answered 410 ends the agent", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
     const log = new EventLog(agent);
     const host = fakeHost(agent, log);
-    host.dropNextAfter(2);
+    host.dropNextAfter(4);
     host.goneAfterFirst();
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, reconnectDelayMs: 0 }),
     );
-    await waitFor(() => remote.state.phase === "idle");
+    await waitFor(() => remote.connection.phase === "open");
 
     agent.send("hello");
-    await waitFor(() => remote.state.phase === "ended");
+    await waitFor(() => remote.connection.phase === "ended");
 
     expect(host.streamRequests).toEqual([null, `${log.id}-2`]);
   });
@@ -180,7 +238,7 @@ describe("httpTransport", () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const log = new EventLog(agent);
     const host = fakeHost(agent, log);
-    host.dropNextAfter(3);
+    host.dropNextAfter(5);
     const attempts: number[] = [];
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", {
@@ -193,7 +251,7 @@ describe("httpTransport", () => {
       }),
     );
     remote.onToolCall(() => "teal");
-    await waitFor(() => remote.state.phase === "idle");
+    await waitFor(() => remote.connection.phase === "open");
     host.failNext(503, 503);
 
     const result = await remote.send("ask").final;
@@ -211,9 +269,12 @@ describe("httpTransport", () => {
       fetch: async () => new Response("nope", { status: 503 }),
     });
     const remote = new RemoteAgent(transport);
-    await waitFor(() => remote.state.phase === "error");
+    await waitFor(() => remote.connection.phase === "error");
 
-    expect(remote.state).toEqual({ phase: "error", message: "Event stream request failed: 503" });
+    expect(remote.connection).toEqual({
+      phase: "error",
+      message: "Event stream request failed: 503",
+    });
     await expect(transport.command({ type: "cancel" })).rejects.toBeInstanceOf(HttpTransportError);
   });
 
@@ -293,7 +354,7 @@ describe("httpTransport over node:http", () => {
     );
     const seen: { cursor: string }[] = [];
     remote.on((event) => {
-      seen.push(event);
+      if (event.type !== "state") seen.push(event);
     });
     remote.onToolCall(() => "teal");
     const result = await remote.send("ask").final;

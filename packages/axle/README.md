@@ -2092,12 +2092,30 @@ free, so a `send()` from inside it starts at once. A callback that throws
 is recorded on the trace as a warning and the others still run. It returns
 a function that unregisters it.
 
+To read whether the agent is busy at any moment, use `agent.status`:
+`{ phase: "idle" }`, or `{ phase: "busy", id }` with the id of the
+operation holding the queue (the send's user turn id, or the compaction's).
+Busy lasts through `onSettled` and the send's continuation, so a send whose
+judge is still running is busy although its turn has ended. Each change is
+also delivered on `agent.on` as a `state` event, after the handle settles
+and before `onIdle` fires:
+
+```typescript
+agent.on((event) => {
+  if (event.type === "state") showBusy(event.status.phase === "busy");
+});
+```
+
+`agent.on` delivers turn events and state events together, in order.
+`Transcript.apply` accepts both and returns a state event unhandled, so
+`agent.on(transcript.apply)` needs no filter.
+
 ### Remote agents (experimental)
 
 An `Agent` runs where its provider key, tools and files are. A browser, or
 another process, drives it through a `RemoteAgent`, which has the Agent's
-own surface minus configuration: `on`, `onToolCall`, `toolCall(id)`,
-`send`, `cancel`, `stop`, `clear`. Events flow out through an `EventLog`
+own surface minus configuration: `on`, `status`, `onToolCall`,
+`toolCall(id)`, `send`, `cancel`, `stop`, `clear`. Events flow out through an `EventLog`
 beside the served agent; commands flow in through `processAgentCommand`.
 Axle ships both halves and an HTTP transport; routing, authentication and
 agent lifecycle are yours.
@@ -2111,7 +2129,7 @@ import { Agent, EventLog, processAgentCommand, toEventStreamResponse } from "@fi
 const agent = new Agent({ provider, model, tools: [askUser] });
 const log = new EventLog(agent);
 
-// GET /agents/:id — the event stream, resumed from Last-Event-ID when sent
+// GET /agents/:id — the agent's state, then the events after Last-Event-ID when sent
 toEventStreamResponse(log.subscribe(request.signal, request.headers.get("last-event-id")), request);
 
 // POST /agents/:id — one command; the body is JSON, so is the reply
@@ -2136,10 +2154,18 @@ result.response; // as locally; an Instruct with a schema parses here
 
 `send` takes a string or an `Instruct`, which crosses as `toJSON()`:
 files by `ref` resolve on the served side, and the schema goes as JSON
-Schema and parses the response on this side. The handle has `final` only;
-`remote.cancel()` cancels the active turn as `agent.cancel()` does.
-`remote.state` is `connecting`, `idle`, `busy` with the open turn's id,
-`ended` or `error`; `onState` reports changes.
+Schema and parses the response on this side. The handle has `final` only,
+and it resolves with the reply, as a local send without a continuation
+does; `remote.cancel()` cancels the active turn as `agent.cancel()` does.
+
+Two things are tracked separately. `remote.connection` is the link to the
+served side: `connecting`, `open`, `ended` or `error`, with
+`onConnection` reporting changes. `remote.status` is the served agent's
+own `idle` or `busy` with an id, exactly as `agent.status` reads there.
+Every stream opens with the agent's current state, so a page that
+reconnects while a continuation is still running reads `busy`, and
+`remote.on` delivers that state and every later change as `state` events
+beside the turn events. `status` reads `idle` until the stream opens.
 
 Every entry the log stamps carries a `cursor`. The transport resumes a
 dropped stream from the last one it delivered, so the served side replays
@@ -2165,12 +2191,29 @@ log.push({ type: "run:start", id: cycleId });
 
 const remote = new RemoteAgent<HostEvent>(httpTransport(url));
 remote.on((event) => {
-  // TurnEvent | HostEvent, each with its cursor; host events leave remote.state alone
+  // TurnEvent | HostEvent with its cursor, or a state event; host events leave remote.status alone
 });
 ```
 
+A host event never uses `type: "state"`; that type is the agent's.
+
 `new EventLog(agent, { retain: "none" })` keeps nothing, for a host that
-forwards entries to its own store and serves replay from there. A
+forwards entries to its own store and serves replay from there. Such a
+host also keeps the agent's latest state, which is never numbered or
+stored as an entry, and opens each stream with it:
+
+```typescript
+agent.on((event) => {
+  if (event.type === "state") void redis.set(`agent:${id}:state`, JSON.stringify(event));
+});
+
+// GET: the subscription is { state, items }
+const state = JSON.parse(await redis.get(`agent:${id}:state`));
+return toEventStreamResponse({ state, items: entriesAfter(id, lastEventId) }, request);
+```
+
+`items` yields the stored entries, each with its `cursor`, then live
+entries and state changes. A
 `RemoteAgent` can itself be served, so a middle tier that answers some
 deferred calls and forwards the rest is `processAgentCommand(remote, …)`
 over `new EventLog(remote)`.

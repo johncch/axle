@@ -36,9 +36,11 @@ import { AgentScheduler, type InlineRunner } from "./scheduler.js";
 import type {
   AgentConfig,
   AgentErrorResult,
+  AgentEventCallback,
   AgentHandle,
   AgentResult,
   AgentSession,
+  AgentStatus,
   CompactionConfig,
   CompactionTrigger,
   Continuation,
@@ -49,7 +51,6 @@ import type {
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
-  TurnEventCallback,
 } from "./types.js";
 
 interface PreparedSend {
@@ -91,14 +92,14 @@ export class Agent {
   private spanParent?: Tracer | Span;
   private ownedTracer?: Tracer;
 
-  private eventCallbacks: TurnEventCallback[] = [];
+  private eventCallbacks: AgentEventCallback[] = [];
 
   private toolCallHandler: ToolCallCallback | undefined;
   private activeStream: StreamHandle | undefined;
   private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
   private idleCallbacks: IdleCallback[] = [];
-  private scheduler = new AgentScheduler(() => this.notifyIdle());
+  private scheduler = new AgentScheduler((status) => this.statusChanged(status));
   private turnActive = false;
   private stopRequested = false;
   private transcript = new Transcript();
@@ -161,7 +162,7 @@ export class Agent {
     return this.registry.size > 0 || this.mcps.length > 0;
   }
 
-  on(callback: TurnEventCallback) {
+  on(callback: AgentEventCallback) {
     this.eventCallbacks.push(callback);
     return () => {
       const index = this.eventCallbacks.indexOf(callback);
@@ -251,6 +252,16 @@ export class Agent {
     };
   }
 
+  /**
+   * `busy` with the running operation's id from the moment it starts until
+   * it finishes, its continuation included; `idle` when a `send()` would
+   * start at once. `on` delivers every change as a `state` event, before
+   * `onIdle` fires.
+   */
+  get status(): AgentStatus {
+    return this.scheduler.status;
+  }
+
   /** The active, model-facing conversation. Requests are built from it; compaction replaces it. */
   get messages(): AxleMessage[] {
     return [...this.messagesInternal];
@@ -294,6 +305,7 @@ export class Agent {
     this.emitEvent({ type: "pending:queued", turn: { ...userTurn, status: "pending" } });
 
     return this.scheduler.schedule(
+      userTurn.id,
       ({ signal }) => this.executeTurn(prepared, { signal, announced: true }),
       {
         signal: prepared.requestOptions.signal,
@@ -699,6 +711,7 @@ export class Agent {
     });
 
     return this.scheduler.schedule(
+      id,
       async ({ signal }) => {
         if (signal.aborted) dropCancelled();
         try {
@@ -879,7 +892,7 @@ export class Agent {
    * agent cannot go idle until they return, so the nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    if (this.scheduler.idle) return Promise.resolve(this.currentSession());
+    if (this.scheduler.status.phase === "idle") return Promise.resolve(this.currentSession());
     const { promise, resolve } = Promise.withResolvers<AgentSession>();
     const unsubscribe = this.onIdle(() => {
       unsubscribe();
@@ -890,6 +903,11 @@ export class Agent {
 
   private currentSession(): AgentSession {
     return { sessionId: this.sessionId, messages: this.messages };
+  }
+
+  private statusChanged(status: AgentStatus): void {
+    for (const cb of this.eventCallbacks) cb({ type: "state", status });
+    if (status.phase === "idle") this.notifyIdle();
   }
 
   private notifyIdle(): void {

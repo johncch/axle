@@ -10,13 +10,13 @@ import { convertAxleMessageToResponseInput } from "../../src/protocols/responses
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
 import type { ExecutableTool } from "../../src/tools/types.js";
-import type { TurnEvent } from "../../src/turns/events.js";
+import type { AgentEvent } from "../../src/turns/events.js";
 import type { FileInfo, FileResolver } from "../../src/utils/file.js";
 
 describe("deferred file resolution", () => {
   test("resolves refs only during provider conversion and does not leak into history or events", async () => {
     const resolvedUrl = "https://signed.example/private-image.png?token=secret";
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     let providerInput: unknown;
 
     const fileResolver: FileResolver = async ({ accepted }) => {

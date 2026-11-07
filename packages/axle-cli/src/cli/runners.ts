@@ -135,6 +135,7 @@ class SessionRuntime {
     // chat leaves a file behind (the resume hint printed on exit must be true).
     this.unsaved = !options.session;
     this.agent.on((event) => {
+      if (event.type === "state") return;
       this.transcript.apply(event);
       if (event.type === "turn:end") addStats(this.usage, event.usage);
       options.onEvent(event, this.transcript);

@@ -403,10 +403,19 @@ describe("Transcript", () => {
 
     expect(result.handled).toBe(false);
     expect(transcript.turns).toBe(turns);
-    if (result.handled === false) {
+    if (result.handled === false && result.event.type !== "state") {
       const hostEvent: HostEvent = result.event;
       expect(hostEvent).toEqual({ type: "run:terminal", status: "completed" });
     }
+  });
+
+  test("returns a state event unhandled and leaves the turns alone", () => {
+    const transcript = new Transcript();
+    const turns = transcript.turns;
+    const event = { type: "state", status: { phase: "busy", id: "u1" } } as const;
+
+    expect(transcript.apply(event)).toEqual({ handled: false, event });
+    expect(transcript.turns).toBe(turns);
   });
 
   test("replaces the turn snapshot for handled mutations", () => {

@@ -1,5 +1,6 @@
 import type { InstructJSON } from "../core/Instruct.js";
 import type { ToolResultPart } from "../messages/message.js";
+import type { AgentStateEvent } from "../turns/events.js";
 import type { LoggedEvent } from "./eventLog.js";
 
 /**
@@ -28,14 +29,38 @@ export type CommandOutcome =
   | { accepted: false; reason: { type: "not-waiting" | "idle"; message: string } };
 
 /**
+ * One item on a served agent's stream: an event, logged with its cursor, or
+ * the agent's state, which has no cursor and is never replayed.
+ */
+export type StreamItem<THostEvent extends { type: string } = never> =
+  LoggedEvent<THostEvent> | AgentStateEvent;
+
+/** `type: "state"` is the agent's; a host event never uses it. */
+export function isStateEvent<THostEvent extends { type: string }>(
+  item: StreamItem<THostEvent>,
+): item is AgentStateEvent {
+  return item.type === "state";
+}
+
+/**
+ * An open stream: the agent's state as it opened, then events and state
+ * changes in the order they happened.
+ */
+export interface AgentSubscription<THostEvent extends { type: string } = never> {
+  state: AgentStateEvent;
+  items: AsyncIterable<StreamItem<THostEvent>>;
+}
+
+/**
  * How events and commands move between a consumer and a served agent. The
- * events are the served side's log entries, agent and host events alike,
- * each with its cursor; a transport that reconnects resumes from the last
- * cursor it delivered. `events` resolves once the stream is open, which is
- * what a `RemoteAgent` means by connected; the iterable then runs until
- * `signal` aborts or the served agent is gone.
+ * entries are the served side's log, agent and host events alike, each with
+ * its cursor; a transport that reconnects resumes from the last cursor it
+ * delivered, and the state it reopens with arrives as a state item.
+ * `events` resolves once the stream is open, which is what a `RemoteAgent`
+ * means by connected; the items then run until `signal` aborts or the
+ * served agent is gone.
  */
 export interface AgentTransport<THostEvent extends { type: string } = never> {
-  events(signal: AbortSignal): Promise<AsyncIterable<LoggedEvent<THostEvent>>>;
+  events(signal: AbortSignal): Promise<AgentSubscription<THostEvent>>;
   command(command: AgentCommand, signal?: AbortSignal): Promise<CommandOutcome>;
 }

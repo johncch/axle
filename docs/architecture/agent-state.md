@@ -108,9 +108,11 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    error: the scheduler marks every `final` as handled, so a rejection the
    consumer took from the hook or from `pending:dropped` raises no unhandled
    rejection. `final` still rejects for whoever awaits or chains from it.
-9. **Events carry the transcript; hooks carry lifecycle.** Turn events
-   (`agent.on`) are synchronous fan-out and each one changes what a
-   `Transcript` holds: consumers forward them to clients, and nothing listening
+9. **Events carry the transcript; hooks carry lifecycle.** `agent.on` is
+   synchronous fan-out of turn events, each of which changes what a
+   `Transcript` holds, and of `state` events, which carry the Agent's
+   status (invariant 13) and change nothing there: consumers forward both
+   to clients, a sink ignores what it does not fold, and nothing listening
    can hold the engine. Lifecycle goes through hooks, and whether a hook is
    awaited is a property of that hook. `onSettled` is awaited: it is the
    consumer's save channel at each rest point, able to hold the queue,
@@ -135,7 +137,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     the last `onSettled` keeps the Agent busy and defers the firing. The
     callback takes no arguments and is not awaited: the Agent is already
     free, so a `send()` from inside it starts at once. A callback that
-    throws is caught and recorded on the trace. Only operations make the Agent
+    throws is caught and recorded on the trace. The idle `state` event
+    (invariant 13) is delivered on `agent.on` before the callbacks fire, so
+    a consumer that reads status from the stream already reads idle inside
+    `onIdle`. Only operations make the Agent
     busy, so every firing follows at least one `pending:queued` and every
     `pending:queued` is followed by a firing: a consumer that opens something
     opens it there, not before the call, since `compact()` with no
@@ -176,7 +181,8 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     is in flight. `clear()` never touches a continuation. A continuation
     that throws rejects the handle; the queue continues. Committed inline
     turns stay committed. A continuation has no pending entry, leaves
-    nothing on the event stream of its own, and bounds itself: the Agent
+    no turn event of its own, keeps the Agent busy under its send's id
+    (invariant 13), and bounds itself: the Agent
     does not time it out. `agent.send()`, `compact()` and `snapshot()`
     awaited from inside a continuation deadlock, as they do from inside
     `onSettled`; an unawaited `agent.send()` queues at the back.
@@ -199,6 +205,26 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     tool's `timeout` or `cancel()`; the first to settle it wins and the
     handler's signal aborts. (2026-11-05, AXL-103; `toolCall(id)`
     2026-11-05, AXL-44)
+
+13. **The Agent's status is state, read from `agent.status` and
+    delivered on `agent.on` at each change.** `agent.status` is
+    `{ phase: "idle" }` or `{ phase: "busy", id }`. Busy means an operation
+    holds the queue, so a `send()` now would wait; idle means it would start
+    at once. The id is the operation's: a send's user turn id, the one
+    `pending:queued` announced, or a manual compaction's id. Busy runs from
+    the moment the scheduler starts the operation through its turn, its
+    `onSettled` callbacks and its continuation, so a send whose judge is
+    still running is busy although its turn has ended. One operation
+    handing the queue to the next is a single change to the next id, with no
+    idle between. A send cancelled before it starts still goes busy and
+    then idle. Each change is delivered on `agent.on` as
+    `{ type: "state", status }`, and at the end of an operation the order is
+    fixed: the handle's `final` settles, then the `state` event, then
+    `onIdle`. A state event is last-wins: it carries no cursor, an
+    `EventLog` neither numbers nor keeps it, and a served stream opens with
+    the current one ([remote-agent.md](./remote-agent.md) invariant 8).
+    `Transcript.apply` accepts it and returns it unhandled. The scheduler
+    owns the value; the Agent adds no flag of its own. (2026-11-06)
 
 ## Design rationale (2026-08-12)
 
@@ -786,8 +812,70 @@ refinements; for every construct the prompt renderer accepts the rebuilt
 schema renders the identical prompt, and the side holding the Zod schema
 does the parse that matters.
 
+## Status is state (2026-11-06)
+
+A consumer has to know whether the Agent is busy, and the case that forced
+it is a reload during a continuation. The page stores its turns with their
+cursors and resumes after the last one. The send's turn has ended, so that
+cursor is the turn's `turn:end`, but the judge is still running and the
+Agent is still busy. Nothing after the cursor says so, because a
+continuation leaves no turn event, and nothing before it can: the page
+skipped it. Deriving busy from turn events gives idle, and the page stays
+wrong until the next turn opens or never.
+
+The answer splits what the stream carries in two. Events are what
+happened: ordered, numbered by the stream, kept, replayed, folded exactly
+once. State is what is true now: last value wins, never numbered, kept or
+replayed, and a consumer that connects is told the current value before
+anything else. The Agent's status is the one state. It is decided by the
+scheduler, which is the only thing that knows when the slot is held, and
+it travels on `agent.on` with the events so a consumer has one channel and
+one order: a sink that does not fold state ignores it, as it ignores any
+event it does not fold.
+
+The rule that keeps state from growing is that something becomes state
+only when the events cannot rebuild it for a consumer that resumes. The
+pending queue fails that test. A send queued before the stored cursor is
+missing from `Transcript.pending` after a reload, but it is not lost: its
+turn opens after the cursor and arrives as an ordinary turn, and no command
+acts on one queued entry. The gap is cosmetic and closes on the next turn.
+
+This amends _An idle turn event_ (2026-10-09). That entry is still right
+that going idle is not a turn event: it changes nothing a `Transcript`
+holds, and it is not one now. It is a state event, which a `Transcript`
+returns unhandled.
+
 ## Rejected alternatives
 
+- **Status as a numbered entry** (2026-11-06): stamping busy and idle into
+  the log like any event. Rejected: a consumer resuming after a cursor
+  skips the busy entry that came before it, which is the bug.
+- **Re-sending the current status on connect as an entry** (2026-11-06):
+  with a new seq, it inserts an entry into every other consumer's
+  sequence; with the old cursor, it moves the resuming consumer's position
+  backwards. Either way sequencing gains logic it should not have.
+- **A rule that the host must re-send status** (2026-11-06): a convention
+  in the docs with nothing to enforce it. Rejected for a contract the
+  types carry: `AgentSubscription` has a required `state`, and
+  `toEventStreamResponse` will not open without one.
+- **Inferring status on the remote** (2026-11-06): from `turn:user`,
+  `turn:end` and `pending:*`. Rejected: a continuation emits nothing, so
+  inference reads idle while a judge runs.
+- **`operation:start` and `operation:end` events** (2026-11-06): explicit
+  lifecycle events in the log. Rejected: still numbered, so a resume after
+  `turn:end` and before `operation:end` has the same gap.
+- **A status command** (2026-11-06): the consumer asks the served side.
+  Rejected: a poll beside a stream, and the answer is stale by the time it
+  arrives unless changes also stream.
+- **A separate `onStatus` callback** (2026-11-06): the first build had one
+  on both `Agent` and `RemoteAgent`. Rejected for one `on` that delivers
+  everything in order: two callbacks have no order between them, and a
+  consumer that forwards the stream would merge them again.
+- **Host state keys** (2026-11-06): a `setState` so a host could put its
+  own last-wins values on the stream. Rejected: every candidate the host
+  had is derivable by the host, and it can echo its own on connect.
+- **The pending queue as state** (2026-11-06): see _Status is state_; it
+  fails the rebuild test and would make state a home for everything.
 - **A cursor stamped by the Agent** (2026-11-05, AXL-44, reversed the
   same day): `instanceId` and a count on every event out of `emitEvent`.
   Rejected: host events share the stream and the Agent never sees them, so
@@ -934,7 +1022,8 @@ does the parse that matters.
   handle.
 - **An idle turn event** (2026-10-09): every turn event changes what a
   `Transcript` holds, and going idle changes nothing there. It is lifecycle,
-  so it is a hook.
+  so it is a hook. Amended 2026-11-06: status is delivered on `agent.on`
+  as a `state` event, not a turn event; see _Status is state_.
 - **Awaiting `onIdle`** (2026-10-09): the Agent is already free when it
   fires, so holding it would mean deciding what a `send()` during the
   callback does and whether the Agent is still idle afterwards. Work that

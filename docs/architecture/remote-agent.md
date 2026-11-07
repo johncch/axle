@@ -54,6 +54,8 @@ agent runs in.
    resumes with the last cursor it delivered; and the SSE `id:` is that
    cursor, so `Last-Event-ID` is the resume point with no second field.
    The Agent itself emits plain events and knows nothing of numbering.
+   The Agent's `state` events are not entries: the log never stamps or
+   keeps them (invariant 8).
 4. **A cursor is owned by one log.** A log replays after a cursor it owns
    and from the start for any other, including one from a log that no
    longer exists. That fall-through is the restart: a new conversation is
@@ -65,7 +67,8 @@ agent runs in.
 5. **Host events share the log and never touch the remote's state.** The
    log is generic over the host's event type; `push` stamps a host event
    in sequence with the agent's; `RemoteAgent.on` delivers both with their
-   cursors; `RemoteAgent.state` is derived from turn events alone.
+   cursors; `RemoteAgent.status` comes from state items alone. A host
+   event never uses `type: "state"`, which is the agent's.
 6. **A send crosses as an `Instruct`.** The `send` command carries the
    user turn's `id` and `instruct.toJSON()`: prompt, inputs, files,
    references, context sections, vars mode, metadata, and the schema as
@@ -76,8 +79,11 @@ agent runs in.
    `maxOutputTokens`, `toolChoice`, `providerOptions`) do not cross; the
    served agent's configuration applies.
 7. **The remote reads like the local, minus what cannot cross.**
-   `RemoteAgent` has `on`, `onState`, `onToolCall`, `toolCall(id)`,
-   `send`, `cancel`, `stop`, `clear`, `close`. `cancel`, `stop` and
+   `RemoteAgent` has `on`, `status`, `onToolCall`, `toolCall(id)`,
+   `send`, `cancel`, `stop`, `clear`, and adds `connection`,
+   `onConnection` and `close`. `on` delivers everything the stream
+   carries, in order: turn events, host events and state items, beginning
+   with the state the stream opened with. `cancel`, `stop` and
    `clear` have the Agent's meaning: the active turn, the active turn at
    its batch boundary, the queue. A remote `send` returns a `RemoteHandle`
    with `final` only; it has no `cancel`, because a queued remote send
@@ -87,12 +93,26 @@ agent runs in.
    visible from the events. A `RemoteAgent` holds no transcript; it folds
    each turn only to produce `turn` and `response` on `final`, as the
    Agent does.
-8. **Transport facts and conversation facts are separate states.**
-   `connecting` until the transport's `events` resolves, then `idle` or
-   `busy` from the events, `ended` when the iterable ends, `error` when it
-   throws. A consumer that connects in the middle of a turn reads the
-   replay and is `busy` before its first live event; over a log with
-   `retain: "none"` it reads `idle` until that turn's next event arrives.
+8. **A stream opens with the agent's state, and state is never
+   sequenced.** `AgentTransport.events` resolves to an
+   `AgentSubscription`: `state`, the served agent's status when the stream
+   opened, and `items`, the entries after the cursor followed by live
+   entries and state changes in the order they happened. A state item is
+   `{ type: "state", status }`: last value wins, it has no cursor, and it
+   is never replayed, so a consumer that resumes after its stored cursor
+   while a continuation runs still opens `busy` and is told `idle` when the
+   continuation returns. Over SSE the state is a message with
+   `event: state` and no `id`, written first on every response; entries
+   carry `id` and no `event`. A message without `id` keeps the last event
+   id, so a parser hands the state message the previous entry's id, and
+   `httpTransport` routes on `event`, never on whether an id is present. An
+   empty `id:` would reset the resume point, so a state message never
+   carries one. `toEventStreamResponse` takes the subscription and cannot
+   open without a state. On the consumer, the connection and the status
+   are separate: `connection` is `connecting` until `events` resolves,
+   then `open`, `ended` when the items end, `error` when they throw;
+   `status` is `idle` until the opening state arrives and then follows the
+   state items.
 9. **A `RemoteAgent` can be served.** `processAgentCommand` and
    `EventLog` take an `Agent` or a `RemoteAgent`, so a hop is a consumer
    facing upstream and a server facing downstream, and a call is answered
@@ -114,7 +134,10 @@ agent runs in.
     stores entries itself and serves replay from there). A host store that
     evicts must never trim behind a cursor a client may still hold, or
     must notice the hole and send its own baseline event; the library
-    cannot see a host store's eviction.
+    cannot see a host store's eviction. A host that serves from its own
+    store also keeps the agent's latest state, updated from `agent.on`,
+    and opens each subscription with it; state never goes into the store's
+    sequence.
 
 ## Design rationale (2026-11-05, 2026-11-06)
 
@@ -132,9 +155,12 @@ and the Agent's own verbs as commands.
 
 **The log is the one piece of state beside the Agent.** Everything the
 remote re-derives, it re-derives from events: the waiting call from
-`action:waiting`, the open turn from `turn:user` and `turn:end`, its state
-from those. The served side therefore has nothing to hand over on connect
-but the entries, and a late joiner is the same code path as a reconnect.
+`action:waiting`, the open turn from `turn:user` and `turn:end`. The one
+exception is the agent's status (2026-11-06): a continuation emits
+nothing, so a consumer that resumes after the turn's `turn:end` cannot
+derive that the agent is still busy. The served side therefore hands over
+the current state and then the entries, and a late joiner is still the
+same code path as a reconnect.
 
 **`Turn.cursor` is the one transport fact the fold learns.** Without it, a
 client that renders from the database must still replay the whole log to
@@ -147,6 +173,23 @@ take anyway.
 `GET` and `POST` on that name are the two directions. Two endpoints would
 give a host one more thing to route and the transport one more thing to
 configure for no case anyone has.
+
+## State beside the events (2026-11-06)
+
+Status first came from turn events on the remote, which was right until a
+page reloaded during a continuation: it resumed after the stored turn's
+cursor, nothing followed, and it read idle while the judge ran. Every way
+of fixing that inside the sequence broke the sequence. A numbered status
+entry is skipped by a resume after it; re-sending it on connect either
+takes a new seq, which every other consumer then sees, or reuses an old
+cursor, which moves the resuming consumer backwards. So the stream carries
+two kinds of item. Entries are sequenced. State is not: it is echoed on
+connect and sent at each change, with no position. The full reasoning and
+the rejected alternatives are in agent-state.md, _Status is state_.
+
+The same split answers the SSE question. A state message is still a
+spec-compliant SSE message; it simply has no `id`, which the protocol
+allows and which leaves `Last-Event-ID` where the last entry put it.
 
 ## Deferred (2026-11-06)
 

@@ -2,9 +2,11 @@ export { Agent } from "./Agent.js";
 export type {
   AgentConfig,
   AgentErrorResult,
+  AgentEventCallback,
   AgentHandle,
   AgentResult,
   AgentSession,
+  AgentStatus,
   AutomaticCompactionTrigger,
   CompactionCallback,
   CompactionConfig,
@@ -20,5 +22,4 @@ export type {
   SettledCallback,
   SettledOperation,
   ShouldCompactOnTriggerCallback,
-  TurnEventCallback,
 } from "./types.js";

@@ -6,12 +6,12 @@ import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
 import { processAgentCommand } from "../../src/remote/processAgentCommand.js";
-import type { TurnEvent } from "../../src/turns/events.js";
+import type { AgentEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import { askUser, askUserProvider, sendCommand, textProvider, waitFor } from "./helpers.js";
 
 function observe(agent: Agent) {
-  const events: TurnEvent[] = [];
+  const events: AgentEvent[] = [];
   const transcript = new Transcript();
   agent.on((event) => {
     events.push(event);
@@ -20,7 +20,7 @@ function observe(agent: Agent) {
   return { events, transcript };
 }
 
-function waitingCallIds(events: TurnEvent[]): string[] {
+function waitingCallIds(events: AgentEvent[]): string[] {
   return events.flatMap((event) => (event.type === "action:waiting" ? [event.callId] : []));
 }
 
@@ -109,7 +109,9 @@ describe("processAgentCommand", () => {
     expect(await processAgentCommand(agent, { type: "stop" })).toEqual({ accepted: true });
     expect(await processAgentCommand(agent, { type: "cancel" })).toEqual({ accepted: true });
     await waitFor(() => events.some((event) => event.type === "turn:end"));
-    expect(events.at(-1)).toMatchObject({ type: "turn:end", status: "cancelled" });
+    expect(events.findLast((event) => event.type === "turn:end")).toMatchObject({
+      status: "cancelled",
+    });
   });
 
   test("clear drops queued sends and is always accepted", async () => {

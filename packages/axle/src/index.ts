@@ -5,9 +5,11 @@ export { Agent } from "./core/agent/index.js";
 export type {
   AgentConfig,
   AgentErrorResult,
+  AgentEventCallback,
   AgentHandle,
   AgentResult,
   AgentSession,
+  AgentStatus,
   Continuation,
   ContinuationContext,
   IdleCallback,
@@ -18,7 +20,6 @@ export type {
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
-  TurnEventCallback,
 } from "./core/agent/index.js";
 export { Instruct } from "./core/index.js";
 export type {
@@ -211,7 +212,13 @@ export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/
 
 // Turns (public format)
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
-export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export type {
+  AgentEvent,
+  AgentStateEvent,
+  AnnotationEvent,
+  AnnotationTarget,
+  TurnEvent,
+} from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export type {
@@ -245,10 +252,16 @@ export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
 export { loopbackTransport } from "./remote/loopback.js";
 export { processAgentCommand } from "./remote/processAgentCommand.js";
-export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/protocol.js";
+export type {
+  AgentCommand,
+  AgentSubscription,
+  AgentTransport,
+  CommandOutcome,
+  StreamItem,
+} from "./remote/protocol.js";
 export { RemoteAgent } from "./remote/RemoteAgent.js";
 export type {
-  RemoteAgentState,
+  RemoteConnection,
   RemoteHandle,
   RemoteSendOptions,
   RemoteWaitingToolCall,

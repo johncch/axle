@@ -1,3 +1,4 @@
+import type { AgentStatus } from "../core/agent/types.js";
 import type { Citation, ThinkingContinuity } from "../messages/message.js";
 import type { ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
@@ -20,6 +21,17 @@ export type AnnotationEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "annotation:start"; target: AnnotationTarget; annotation: TAnnotation }
   | { type: "annotation:update"; target: AnnotationTarget; annotation: TAnnotation }
   | { type: "annotation:end"; target: AnnotationTarget; annotation: TAnnotation };
+
+/**
+ * The Agent's state: last value wins, it carries no cursor, and a served
+ * stream sends the current one first on every connection instead of
+ * replaying the old ones.
+ */
+export type AgentStateEvent = { type: "state"; status: AgentStatus };
+
+/** Everything `agent.on` delivers: the turn events and the Agent's state. */
+export type AgentEvent<TAnnotation extends Annotation = Annotation> =
+  TurnEvent<TAnnotation> | AgentStateEvent;
 
 export type TurnEvent<TAnnotation extends Annotation = Annotation> =
   // Pending lifecycle

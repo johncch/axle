@@ -2,6 +2,7 @@ import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { AxleError } from "../../errors/AxleError.js";
 import { createStats } from "../../utils/stats.js";
 import type { Handle } from "../../utils/utils.js";
+import type { AgentStatus } from "./types.js";
 
 type TaskState = "queued" | "running" | "settling" | "continuing" | "settled";
 
@@ -32,6 +33,7 @@ class ScheduledTask<T> {
 
   constructor(
     private readonly scheduler: AgentScheduler,
+    readonly id: string,
     private readonly work: Work<T>,
     private readonly operation: string,
     private readonly externalSignal: AbortSignal | undefined,
@@ -167,9 +169,10 @@ export class AgentScheduler {
   private current?: ScheduledTask<any>;
   private queue: ScheduledTask<any>[] = [];
 
-  constructor(private readonly onIdle?: () => void) {}
+  constructor(private readonly onStatus?: (status: AgentStatus) => void) {}
 
   schedule<T>(
+    id: string,
     work: Work<T>,
     options?: {
       signal?: AbortSignal;
@@ -181,6 +184,7 @@ export class AgentScheduler {
   ): Handle<T> {
     const task = new ScheduledTask(
       this,
+      id,
       work,
       options?.operation ?? "send",
       options?.signal,
@@ -199,8 +203,8 @@ export class AgentScheduler {
     return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
   }
 
-  get idle(): boolean {
-    return !this.current;
+  get status(): AgentStatus {
+    return this.current ? { phase: "busy", id: this.current.id } : { phase: "idle" };
   }
 
   cancelCurrent(reason?: unknown): boolean {
@@ -224,6 +228,7 @@ export class AgentScheduler {
 
   private activate(task: ScheduledTask<any>): void {
     this.current = task;
+    this.onStatus?.(this.status);
     queueMicrotask(() => void this.run(task));
   }
 
@@ -234,7 +239,7 @@ export class AgentScheduler {
       this.current = undefined;
       const next = this.queue.shift();
       if (next) this.activate(next);
-      else this.onIdle?.();
+      else this.onStatus?.(this.status);
     }
   }
 }

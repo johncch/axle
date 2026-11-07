@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import * as z from "zod";
-import { Agent } from "../../src/core/agent/index.js";
+import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { EventLog } from "../../src/remote/eventLog.js";
 import { loopbackTransport } from "../../src/remote/loopback.js";
-import { RemoteAgent, type RemoteAgentState } from "../../src/remote/RemoteAgent.js";
+import { RemoteAgent, type RemoteConnection } from "../../src/remote/RemoteAgent.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import { askUser, askUserProvider, textProvider, waitFor } from "./helpers.js";
@@ -16,16 +16,18 @@ function served(agent: Agent) {
 
 function observe(remote: RemoteAgent) {
   const events: (TurnEvent & { cursor: string })[] = [];
-  const states: RemoteAgentState["phase"][] = [remote.state.phase];
+  const connections: RemoteConnection["phase"][] = [remote.connection.phase];
+  const statuses: AgentStatus[] = [];
   const transcript = new Transcript();
   remote.on((event) => {
-    events.push(event);
+    if (event.type === "state") statuses.push(event.status);
+    else events.push(event);
     transcript.apply(event);
   });
-  remote.onState((state) => {
-    states.push(state.phase);
+  remote.onConnection((connection) => {
+    connections.push(connection.phase);
   });
-  return { events, states, transcript };
+  return { events, connections, statuses, transcript };
 }
 
 function lastText(transcript: Transcript): string | undefined {
@@ -34,13 +36,14 @@ function lastText(transcript: Transcript): string | undefined {
 }
 
 describe("RemoteAgent", () => {
-  test("send resolves from the events with the turn and response, and state follows", async () => {
+  test("send resolves from the events with the turn and response, and status follows the served agent", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
     const remote = new RemoteAgent(served(agent));
-    const { events, states, transcript } = observe(remote);
-    await waitFor(() => remote.state.phase === "idle");
+    const { events, connections, statuses, transcript } = observe(remote);
+    await waitFor(() => remote.connection.phase === "open");
 
     const result = await remote.send("hello", { id: "op-1" }).final;
+    await waitFor(() => remote.status.phase === "idle");
     remote.close();
 
     expect(result.ok).toBe(true);
@@ -51,7 +54,8 @@ describe("RemoteAgent", () => {
     expect(result.usage).toEqual(expect.objectContaining({ in: 1, out: 1 }));
     expect(events[0]).toMatchObject({ type: "pending:queued", turn: { id: "op-1" } });
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
-    expect(states).toEqual(["connecting", "idle", "busy", "busy", "idle", "ended"]);
+    expect(connections).toEqual(["connecting", "open", "ended"]);
+    expect(statuses).toEqual([{ phase: "idle" }, { phase: "busy", id: "op-1" }, { phase: "idle" }]);
   });
 
   test("an Instruct with a schema parses the response with the schema this side holds", async () => {
@@ -105,7 +109,7 @@ describe("RemoteAgent", () => {
     const sender = new RemoteAgent(served(agent));
     const answerer = new RemoteAgent(served(agent));
     const { events } = observe(answerer);
-    await waitFor(() => answerer.state.phase === "idle");
+    await waitFor(() => answerer.connection.phase === "open");
 
     const handle = sender.send("ask");
     await waitFor(() => answerer.toolCall("c1") !== undefined);
@@ -122,7 +126,7 @@ describe("RemoteAgent", () => {
       callId: "c1",
       name: "ask-user",
     });
-    expect(answerer.state.phase).toBe("ended");
+    expect(answerer.connection.phase).toBe("ended");
   });
 
   test("a RemoteAgent can itself be served: two hops, answered at the far end", async () => {
@@ -145,19 +149,19 @@ describe("RemoteAgent", () => {
   test("cancel aborts the active turn and the send rejects as it does locally", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const remote = new RemoteAgent(served(agent));
-    await waitFor(() => remote.state.phase === "idle");
+    await waitFor(() => remote.connection.phase === "open");
 
     const handle = remote.send("ask");
     await waitFor(() => remote.toolCall("c1") !== undefined);
     expect(await remote.cancel()).toBe(true);
 
     await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
-    await waitFor(() => remote.state.phase === "idle");
+    await waitFor(() => remote.status.phase === "idle");
     expect(await remote.cancel()).toBe(false);
     remote.close();
   });
 
-  test("close rejects open sends and ends the state", async () => {
+  test("close rejects open sends and ends the connection", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const remote = new RemoteAgent(served(agent));
     const handle = remote.send("ask");
@@ -166,7 +170,7 @@ describe("RemoteAgent", () => {
     remote.close();
 
     await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
-    expect(remote.state).toEqual({ phase: "ended" });
+    expect(remote.connection).toEqual({ phase: "ended" });
     agent.cancel();
   });
 });
@@ -180,39 +184,67 @@ describe("RemoteAgent over a log", () => {
     await waitFor(() => first.toolCall("c1") !== undefined);
 
     const late = new RemoteAgent(loopbackTransport(agent, log));
-    const { transcript, states } = observe(late);
+    const { transcript, statuses } = observe(late);
     await waitFor(() => late.toolCall("c1") !== undefined);
-    expect(late.state).toEqual({ phase: "busy", id: "op-1" });
+    expect(late.status).toEqual({ phase: "busy", id: "op-1" });
     await late.toolCall("c1")?.answer("teal");
     const result = await handle.final;
-    await waitFor(() => late.state.phase === "idle");
+    await waitFor(() => late.status.phase === "idle");
     first.close();
     late.close();
 
     expect(result.response).toBe("saw ask-user=teal");
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(lastText(transcript)).toBe("saw ask-user=teal");
-    expect(states.slice(0, 3)).toEqual(["connecting", "idle", "busy"]);
+    expect(statuses).toEqual([{ phase: "busy", id: "op-1" }, { phase: "idle" }]);
   });
 
-  test("host events reach on() with their cursor and leave the state alone", async () => {
+  test("host events reach on() with their cursor and leave the status alone", async () => {
     type HostEvent = { type: "run:start"; id: string };
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
     const log = new EventLog<HostEvent>(agent);
     const remote = new RemoteAgent<HostEvent>(loopbackTransport(agent, log));
     const seen: string[] = [];
     remote.on((event) => {
-      seen.push(`${event.type}@${event.cursor}`);
+      if (event.type !== "state") seen.push(`${event.type}@${event.cursor}`);
     });
-    await waitFor(() => remote.state.phase === "idle");
+    await waitFor(() => remote.connection.phase === "open");
 
     log.push({ type: "run:start", id: "cycle-1" });
     await waitFor(() => seen.length === 1);
-    expect(remote.state).toEqual({ phase: "idle" });
+    expect(remote.status).toEqual({ phase: "idle" });
     await remote.send("hello").final;
     remote.close();
 
     expect(seen[0]).toBe(`run:start@${log.id}-1`);
     expect(seen.at(-1)).toMatch(/^turn:end@/);
+  });
+
+  test("a consumer joining while a continuation runs reads busy until it returns", async () => {
+    const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
+    const log = new EventLog(agent);
+    const { promise: judging, resolve: judgeStarted } = Promise.withResolvers<void>();
+    const { promise: verdict, resolve: pass } = Promise.withResolvers<void>();
+    const final = agent.send("write", {
+      id: "a",
+      after: async () => {
+        judgeStarted();
+        await verdict;
+      },
+    }).final;
+    await judging;
+
+    const late = new RemoteAgent(loopbackTransport(agent, log));
+    const { statuses, transcript } = observe(late);
+    await waitFor(() => late.connection.phase === "open");
+    await waitFor(() => transcript.turns.at(-1)?.status === "complete");
+    expect(late.status).toEqual({ phase: "busy", id: "a" });
+
+    pass();
+    await final;
+    await waitFor(() => late.status.phase === "idle");
+    late.close();
+
+    expect(statuses).toEqual([{ phase: "busy", id: "a" }, { phase: "idle" }]);
   });
 });

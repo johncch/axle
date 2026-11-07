@@ -220,6 +220,15 @@ _busy_ from the first call that schedules an operation until the last
 queued one has settled; `agent.onIdle(...)` fires at each change from busy
 to idle, and `agent.snapshot()` resolves there.
 
+**Agent status** — `agent.status`: `{ phase: "idle" }`, or
+`{ phase: "busy", id }` with the id of the operation holding the queue
+(the send's user turn id, or the compaction's id). Busy covers the
+operation's `onSettled` callbacks and its continuation, so a send whose
+judge is still running is busy although its turn has ended. One operation
+handing the queue to the next is a single change to the next id, with no
+idle between. Not to be confused with `Turn.status`, which describes one
+turn. A `RemoteAgent` reads the same value from its stream's _state_.
+
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
 optional bundled files. In core a `Skill` is plain data — name, description,
@@ -289,6 +298,20 @@ choice. The one piece of state a served agent has beside the Agent itself.
 is stale and cannot be continued from. A transport sends the last one it
 delivered to resume, and the fold records the cursor of the event that
 closed a turn as `Turn.cursor` so stored turns carry their resume point.
+
+**Event (stream)** — something that happened, in the order it happened:
+a turn event, or a host event on a served stream. A served stream numbers
+each one with an _event cursor_, keeps it, and replays it to a consumer that
+resumes. A consumer folds events, so each must arrive exactly once.
+
+**State (stream)** — the Agent's status as a last-wins value,
+`{ type: "state", status }`, delivered on `agent.on` beside the events at
+each change. It is never numbered, kept or replayed: a served stream opens
+with the current state and then sends each change in its place among the
+events, and a consumer keeps only the latest. Something is state only when
+the events cannot rebuild it for a consumer that resumes after a cursor;
+the status qualifies because nothing in the log marks the end of a
+continuation. `type: "state"` is reserved, and a host event never uses it.
 
 **Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
 exposes to consumers elsewhere: the Agent, its event log, and the host's

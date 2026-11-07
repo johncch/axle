@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import * as z from "zod";
 import type { AgentSession } from "../../src/core/agent/index.js";
-import { Agent } from "../../src/core/agent/index.js";
+import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
@@ -14,7 +14,7 @@ import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
 import { createAgentTool } from "../../src/tools/agentTool.js";
-import type { TurnEvent } from "../../src/turns/events.js";
+import type { AgentEvent, TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import type { Turn } from "../../src/turns/types.js";
 
@@ -310,9 +310,11 @@ describe("Agent", () => {
       ).rejects.toMatchObject({ name: "AbortError", reason: "stop", turn: undefined });
 
       expect(agent.messages).toEqual([]);
-      expect(events.map((event) => (event as TurnEvent).type)).toEqual([
-        "pending:queued",
-        "pending:dropped",
+      expect(events).toEqual([
+        { type: "pending:queued", turn: expect.objectContaining({ status: "pending" }) },
+        { type: "state", status: { phase: "busy", id: expect.any(String) } },
+        { type: "pending:dropped", id: expect.any(String), reason: { type: "cancelled" } },
+        { type: "state", status: { phase: "idle" } },
       ]);
       expect(requests).toEqual([]);
     });
@@ -949,7 +951,7 @@ describe("Agent", () => {
     const provider = createMockStreamProvider(["unreachable"]);
     const instruct = new Instruct({ prompt: "Say hello to {{name}}" });
     const agent = new Agent({ provider, model: "mock" });
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     expect(() => agent.send(instruct)).toThrow(AxleInstructVariableError);
@@ -1057,7 +1059,7 @@ describe("Agent", () => {
 
   describe("pending events", () => {
     function observe(agent: Agent) {
-      const events: TurnEvent[] = [];
+      const events: AgentEvent[] = [];
       const transcript = new Transcript();
       agent.on((event) => {
         events.push(event);
@@ -1186,10 +1188,10 @@ describe("Agent", () => {
       expect(await final).toBeInstanceOf(AxleAgentAbortError);
       expect(transcript.pending).toEqual([]);
       expect(transcript.turns).toEqual([]);
-      expect(events.at(-1)).toMatchObject({
-        type: "pending:dropped",
-        reason: { type: "cancelled" },
-      });
+      expect(events.slice(-2)).toMatchObject([
+        { type: "pending:dropped", reason: { type: "cancelled" } },
+        { type: "state", status: { phase: "idle" } },
+      ]);
     });
 
     test("a send whose setup fails is dropped with the error", async () => {
@@ -1202,11 +1204,14 @@ describe("Agent", () => {
 
       expect(transcript.pending).toEqual([]);
       expect(transcript.turns).toEqual([]);
-      expect(events.at(-1)).toEqual({
-        type: "pending:dropped",
-        id: expect.any(String),
-        reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
-      });
+      expect(events.slice(-2)).toEqual([
+        {
+          type: "pending:dropped",
+          id: expect.any(String),
+          reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
+        },
+        { type: "state", status: { phase: "idle" } },
+      ]);
     });
 
     test("stop() + clear() + send() drops the stale send and commits the interjection", async () => {
@@ -1783,6 +1788,102 @@ describe("Agent", () => {
       await vi.waitFor(() => expect(order).toContain("idle"));
 
       expect(order).toEqual(["settled", "settled", "resolved", "idle"]);
+    });
+  });
+
+  describe("status", () => {
+    function observeStatus(agent: Agent) {
+      const statuses: AgentStatus[] = [];
+      agent.on((event) => {
+        if (event.type === "state") statuses.push(event.status);
+      });
+      return statuses;
+    }
+
+    test("is idle before anything runs", () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      expect(agent.status).toEqual({ phase: "idle" });
+    });
+
+    test("stays busy under the send's id through its continuation, then moves to the next operation", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const statuses = observeStatus(agent);
+      const seenInside: AgentStatus[] = [];
+      let queued: Promise<unknown> | undefined;
+
+      await agent.send("draft", {
+        id: "a",
+        after: async (_result, ctx) => {
+          seenInside.push(agent.status);
+          queued = agent.send("next", { id: "b" }).final;
+          await ctx.send("fix", { id: "fix" });
+          seenInside.push(agent.status);
+        },
+      }).final;
+      await queued;
+      await vi.waitFor(() => expect(agent.status).toEqual({ phase: "idle" }));
+
+      expect(seenInside).toEqual([
+        { phase: "busy", id: "a" },
+        { phase: "busy", id: "a" },
+      ]);
+      expect(statuses).toEqual([
+        { phase: "busy", id: "a" },
+        { phase: "busy", id: "b" },
+        { phase: "idle" },
+      ]);
+    });
+
+    test("stays busy while onSettled runs", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { promise: release, resolve: releaseSettle } = Promise.withResolvers<void>();
+      let settling = false;
+      agent.onSettled(async () => {
+        settling = true;
+        await release;
+      });
+
+      const final = agent.send("hello", { id: "a" }).final;
+      await vi.waitFor(() => expect(settling).toBe(true));
+      expect(agent.status).toEqual({ phase: "busy", id: "a" });
+
+      releaseSettle();
+      await final;
+      await vi.waitFor(() => expect(agent.status).toEqual({ phase: "idle" }));
+    });
+
+    test("goes idle when a continuation is cancelled", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const statuses = observeStatus(agent);
+      let continuing = false;
+
+      const handle = agent.send("draft", {
+        id: "a",
+        after: async (_result, ctx) => {
+          continuing = true;
+          await new Promise((resolve) => ctx.signal.addEventListener("abort", resolve));
+        },
+      });
+      await vi.waitFor(() => expect(continuing).toBe(true));
+      expect(agent.status).toEqual({ phase: "busy", id: "a" });
+      agent.cancel();
+
+      await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      expect(statuses).toEqual([{ phase: "busy", id: "a" }, { phase: "idle" }]);
+    });
+
+    test("the idle state event is delivered before onIdle fires", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      agent.on((event) => {
+        if (event.type === "state") order.push(event.status.phase);
+      });
+      agent.onIdle(() => order.push("onIdle"));
+
+      await agent.send("hello").final;
+      await vi.waitFor(() => expect(order).toContain("onIdle"));
+
+      expect(order).toEqual(["busy", "idle", "onIdle"]);
     });
   });
 

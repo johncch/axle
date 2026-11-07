@@ -12,9 +12,11 @@ function consume(transport: AgentTransport) {
   const events: (TurnEvent & { cursor: string })[] = [];
   const transcript = new Transcript();
   const done = (async () => {
-    for await (const event of await transport.events(controller.signal)) {
-      events.push(event);
-      transcript.apply(event);
+    const { items } = await transport.events(controller.signal);
+    for await (const item of items) {
+      if (item.type === "state") continue;
+      events.push(item);
+      transcript.apply(item);
     }
   })();
   return { events, transcript, stop: () => controller.abort(), done };

@@ -7,7 +7,7 @@ import type { EventLevel, Span } from "../../observability/types.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
 import type { Skill } from "../../skills/types.js";
 import type { AnyTool, ProviderTool } from "../../tools/types.js";
-import type { TurnEvent } from "../../turns/events.js";
+import type { AgentEvent } from "../../turns/events.js";
 import type { CompactionUpdate, Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
@@ -174,7 +174,15 @@ export type SettledCallback = (
 
 export type IdleCallback = () => void;
 
-export type TurnEventCallback = (event: TurnEvent) => void;
+/**
+ * What the Agent is doing: `busy` from the moment an operation starts until
+ * it finishes, its `onSettled` callbacks and continuation included, with `id`
+ * the operation's (the send's user turn id, or the compaction's); `idle`
+ * when a `send()` would start at once.
+ */
+export type AgentStatus = { phase: "idle" } | { phase: "busy"; id: string };
+
+export type AgentEventCallback = (event: AgentEvent) => void;
 
 /**
  * Compaction is split into three layers, each with one job: `triggers` say

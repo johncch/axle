@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { Agent } from "../../src/core/agent/index.js";
+import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { EventLog, type LoggedEvent } from "../../src/remote/eventLog.js";
+import { isStateEvent } from "../../src/remote/protocol.js";
 import { parseSse, toEventStreamResponse, type SseMessage } from "../../src/remote/sse.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
@@ -10,11 +11,16 @@ type HostEvent = { type: "run:start"; id: string };
 
 function collect<T extends { type: string }>(log: EventLog<T>, after?: string) {
   const controller = new AbortController();
+  const { state, items } = log.subscribe(controller.signal, after);
   const seen: LoggedEvent<T>[] = [];
+  const statuses: AgentStatus[] = [];
   const done = (async () => {
-    for await (const entry of log.subscribe(controller.signal, after)) seen.push(entry);
+    for await (const item of items) {
+      if (isStateEvent(item)) statuses.push(item.status);
+      else seen.push(item);
+    }
   })();
-  return { seen, stop: () => controller.abort(), done };
+  return { opened: state.status, seen, statuses, stop: () => controller.abort(), done };
 }
 
 function seqs(entries: { cursor: string }[]): number[] {
@@ -109,6 +115,52 @@ describe("EventLog", () => {
   });
 });
 
+describe("EventLog status", () => {
+  test("a subscriber resuming after the stored turn during a continuation opens busy, then hears idle", async () => {
+    const agent = new Agent({ provider: textProvider(["draft", "fix"]), model: "mock" });
+    const log = new EventLog(agent);
+    const { promise: judging, resolve: judgeStarted } = Promise.withResolvers<void>();
+    const { promise: verdict, resolve: pass } = Promise.withResolvers<void>();
+    const final = agent.send("write", {
+      id: "a",
+      after: async () => {
+        judgeStarted();
+        await verdict;
+      },
+    }).final;
+    await judging;
+    const storedCursor = log.lastCursor;
+
+    const reloaded = collect(log, storedCursor);
+    pass();
+    await final;
+    await waitFor(() => reloaded.statuses.length === 1);
+    reloaded.stop();
+    await reloaded.done;
+
+    expect(reloaded.opened).toEqual({ phase: "busy", id: "a" });
+    expect(reloaded.seen).toEqual([]);
+    expect(reloaded.statuses).toEqual([{ phase: "idle" }]);
+    expect(log.lastCursor).toBe(storedCursor);
+  });
+
+  test("status is neither stamped nor kept: a later subscriber opens with the current one only", async () => {
+    const agent = new Agent({ provider: textProvider(["one"]), model: "mock" });
+    const log = new EventLog(agent);
+    await agent.send("first").final;
+    await waitFor(() => agent.status.phase === "idle");
+
+    const late = collect(log);
+    await waitFor(() => late.seen.some((entry) => entry.type === "turn:end"));
+    late.stop();
+    await late.done;
+
+    expect(late.opened).toEqual({ phase: "idle" });
+    expect(late.statuses).toEqual([]);
+    expect(seqs(late.seen)).toEqual(late.seen.map((_, i) => i + 1));
+  });
+});
+
 describe("toEventStreamResponse", () => {
   async function readUntilTurnEnd(
     body: ReadableStream<Uint8Array>,
@@ -117,13 +169,14 @@ describe("toEventStreamResponse", () => {
     const messages: SseMessage[] = [];
     for await (const message of parseSse(body, signal)) {
       messages.push(message);
+      if (message.event === "state") continue;
       const event: TurnEvent = JSON.parse(message.data);
       if (event.type === "turn:end") break;
     }
     return messages;
   }
 
-  test("writes each entry with its cursor as the SSE id", async () => {
+  test("writes the status first, each entry with its cursor as the SSE id, and status changes with none", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
     const log = new EventLog(agent);
     const controller = new AbortController();
@@ -136,15 +189,29 @@ describe("toEventStreamResponse", () => {
     const messages = await reading;
     controller.abort();
 
+    const [opening, firstEntry, busy] = messages;
+    expect(opening).toEqual({
+      id: undefined,
+      event: "state",
+      data: '{"type":"state","status":{"phase":"idle"}}',
+    });
+    expect(firstEntry.id).toBe(`${log.id}-1`);
+    // The parser carries the previous message's id onto a message without one.
+    expect(busy).toEqual({
+      id: firstEntry.id,
+      event: "state",
+      data: '{"type":"state","status":{"phase":"busy","id":"op-1"}}',
+    });
+
+    const entries = messages.filter((message) => message.event !== "state");
     const transcript = new Transcript();
-    for (const message of messages) {
+    for (const message of entries) {
       const entry: LoggedEvent = JSON.parse(message.data);
       expect(message.id).toBe(entry.cursor);
       transcript.apply(entry);
     }
-    expect(messages[0].id).toBe(`${log.id}-1`);
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
-    expect(transcript.turns.at(-1)?.cursor).toBe(messages.at(-1)?.id);
+    expect(transcript.turns.at(-1)?.cursor).toBe(entries.at(-1)?.id);
   });
 
   test("cancelling the body ends the subscription", async () => {

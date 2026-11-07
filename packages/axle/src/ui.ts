@@ -1,3 +1,4 @@
+export type { AgentStatus } from "./core/agent/types.js";
 export type { CompactionStamp } from "./messages/compaction.js";
 export type {
   Citation,
@@ -9,21 +10,33 @@ export type {
 export type { ConsoleOutput, ProviderToolInput } from "./messages/providerTool.js";
 export { computeCost } from "./models/cost.js";
 export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
+export type { LoggedEvent } from "./remote/eventLog.js";
 export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
-export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/protocol.js";
+export type {
+  AgentCommand,
+  AgentSubscription,
+  AgentTransport,
+  CommandOutcome,
+  StreamItem,
+} from "./remote/protocol.js";
 export { RemoteAgent } from "./remote/RemoteAgent.js";
 export type {
-  RemoteAgentState,
+  RemoteConnection,
   RemoteHandle,
   RemoteSendOptions,
   RemoteWaitingToolCall,
 } from "./remote/RemoteAgent.js";
-export type { LoggedEvent } from "./remote/eventLog.js";
 export { isActionOf, isCall } from "./tools/deferred.js";
 export type { DeferredActionOf, DeferredCallOf } from "./tools/deferred.js";
 export type { DeferredCall, DeferredTool, WaitingToolCall } from "./tools/types.js";
-export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export type {
+  AgentEvent,
+  AgentStateEvent,
+  AnnotationEvent,
+  AnnotationTarget,
+  TurnEvent,
+} from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput, UnknownEvent } from "./turns/transcript.js";
 export type {
