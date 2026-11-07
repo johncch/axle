@@ -2140,12 +2140,9 @@ if (!command) return new Response(null, { status: 400 });
 return Response.json(await handleCommand(agent, command)); // your switch on command.type
 ```
 
-`parseAgentCommand` returns the typed `AgentCommand` or `null`. The switch
-is yours because your send is rarely a bare `agent.send`: it may carry a
-`signal`, an `after` continuation or a `fileResolver`. Each case is one
-agent call (`send`, `toolCall(callId).answer` or `.fail`, `cancel`, `stop`,
-`clear`) and answers with a `CommandOutcome`; `agentCommandSchema` and
-`commandOutcomeSchema` are exported for a host that composes its own.
+`parseAgentCommand` returns the typed `AgentCommand` or `null`;
+`handleCommand` is yours, and _Serving commands_ below shows the whole of
+it.
 
 The consumer side, from the browser-safe entry:
 
@@ -2256,6 +2253,63 @@ and keeps trying through network failures and `5xx` until `close()`. A
 `404` or `410` ends the agent, on the first connection or any later one.
 Any other failure on the first connection is an `error` at once. `headers` is a value or
 a function called per request, for a token; `fetch` can be supplied.
+
+#### Serving commands
+
+The remote agent is RPC: Axle owns the commands (`agentCommandSchema`), the
+client (`RemoteAgent`) and the decoding (`parseAgentCommand`); you own the
+handler, a switch where each command becomes one agent call. The switch is
+yours because your send is rarely a bare `agent.send`: it may carry a
+`signal`, an `after` continuation, a `fileResolver`, or bookkeeping of your
+own around the handle.
+
+| Command                                           | The call                                  | Outcome                                     |
+| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |
+| `{ type: "send", id, prompt, files?, metadata? }` | `agent.send(instruct, { id, metadata })`  | `{ accepted: true }`                        |
+| `{ type: "answer", callId, content }`             | `agent.toolCall(callId)?.answer(content)` | `accepted`, or `not-waiting` with no call   |
+| `{ type: "fail", callId, message }`               | `agent.toolCall(callId)?.fail(message)`   | `accepted`, or `not-waiting` with no call   |
+| `{ type: "cancel" }`                              | `agent.cancel()`                          | `accepted`, or `idle` when it returns false |
+| `{ type: "stop" }`                                | `agent.stop()`                            | `accepted`, or `idle` when it returns false |
+| `{ type: "clear" }`                               | `agent.clear()`                           | `{ accepted: true }`                        |
+
+The outcome says only whether the agent took the command. What happens
+next, the reply, a failure, the waiting call, reaches every consumer as
+events, so the `POST` never carries a result. The send case is where hosts
+go wrong, three ways:
+
+```typescript
+case "send": {
+  // 1. Only a send revives a released agent; a GET or a cancel never does.
+  const agent = live.get(id) ?? (await resume(id));
+  if (!agent) return notFound();
+
+  // 2. Build the message from the prompt. It is already rendered: the
+  //    client's inputs, references and output-format instructions are in it.
+  const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
+  for (const file of command.files ?? []) instruct.addFile(file);
+
+  // 3. Answer before the turn settles. Awaiting final holds the POST open
+  //    for the whole turn; the client reads the result from the events.
+  const handle = agent.send(instruct, { id: command.id, metadata: command.metadata });
+  handle.final.then(recordResult, reportFailure);
+  return Response.json({ accepted: true });
+}
+```
+
+`vars: "optional"` matters: a prompt that contains `{{` as text would
+otherwise fail as a missing variable. A file crosses with its source as it
+is, so a `ref` reaches the `fileResolver` you give the agent or the send.
+The client chose that `ref`, so the resolver checks the caller may read it
+before it reads anything.
+
+`examples/remote/server.ts` is the whole host in one file: creating agents,
+releasing idle ones, the switch above, and the stream route, with
+`examples/remote/client.ts` driving it from a `RemoteAgent`:
+
+```bash
+pnpm tsx packages/axle/examples/remote/server.ts -p anthropic
+pnpm tsx packages/axle/examples/remote/client.ts
+```
 
 The invariants, what is deferred and why, and the rejected alternatives
 are in [docs/architecture/remote-agent.md](../../docs/architecture/remote-agent.md).
