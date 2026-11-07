@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { Agent } from "../../src/core/agent/index.js";
 import { InMemoryEventStore } from "../../src/remote/eventStore.js";
-import { loopbackTransport } from "../../src/remote/loopback.js";
 import type { AgentTransport } from "../../src/remote/protocol.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
-import { askUser, askUserProvider, sendCommand, textProvider, waitFor } from "./helpers.js";
+import { askUser, askUserProvider, sendCommand, served, textProvider, waitFor } from "./helpers.js";
 
 function consume(transport: AgentTransport) {
   const controller = new AbortController();
@@ -26,7 +25,7 @@ describe("loopbackTransport", () => {
   test("a consumer sends through the transport and folds the events it hears back", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
     const store = new InMemoryEventStore(agent);
-    const transport = loopbackTransport(agent, store);
+    const transport = served(agent, store);
     const consumer = consume(transport);
 
     const outcome = await transport.command(sendCommand("op-1", "hello"));
@@ -49,7 +48,7 @@ describe("loopbackTransport", () => {
   test("a second consumer answers the waiting call it saw on its own stream", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const store = new InMemoryEventStore(agent);
-    const transport = loopbackTransport(agent, store);
+    const transport = served(agent, store);
     const sender = consume(transport);
     const answerer = consume(transport);
 

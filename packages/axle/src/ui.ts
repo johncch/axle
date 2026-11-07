@@ -3,7 +3,6 @@ export { Instruct } from "./core/Instruct.js";
 export type {
   InstructContextSection,
   InstructInputs,
-  InstructJSON,
   InstructOptions,
   InstructRenderOptions,
   InstructResponse,

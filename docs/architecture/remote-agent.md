@@ -1,6 +1,6 @@
 # Remote agent: a served Agent, an event store, and a consumer elsewhere
 
-**Status**: current · **Last design revision**: 2026-11-06 (0.36.0, AXL-44)
+**Status**: current · **Last design revision**: 2026-11-07 (0.36.0, AXL-44)
 
 This document is normative for how an `Agent` is driven from another
 process: what crosses the wire in each direction, what the consumer side
@@ -8,8 +8,8 @@ may rely on, and where the library stops and the host begins. Code and
 tests are built against it; divergence is a defect. Vocabulary is defined
 in [terminology.md](../terminology.md). How the Agent itself owns state is
 in [agent-state.md](./agent-state.md), whose sections _The stream numbers,
-not the Agent_ and _A send crosses as an Instruct_ record the two decisions
-this document builds on; deferred tools, which a remote consumer answers,
+not the Agent_ and _A send crosses as a rendered prompt_ record the two
+decisions this document builds on; deferred tools, which a remote consumer answers,
 are in [tool-loop.md](./tool-loop.md).
 
 ## The pieces
@@ -17,17 +17,22 @@ are in [tool-loop.md](./tool-loop.md).
 ```
 browser ──http──▶ front door ◀──▶ (host's forwarding) ◀──▶ served agent
 RemoteAgent       toEventStreamResponse                     Agent
-httpTransport     processAgentCommand                       InMemoryEventStore
+httpTransport     parseAgentCommand                         InMemoryEventStore
+                  (host's command switch)
 ```
 
-Axle supplies the `Agent`, the `InMemoryEventStore` beside it,
-`processAgentCommand` to turn a command into an Agent call,
-`toEventStreamResponse` to write a subscription as Server-Sent Events, `httpTransport` to read them back and post
-commands, and `RemoteAgent` over any `AgentTransport`. `loopbackTransport`
-is the same contract with no wire, for tests and for a hop that serves an
-agent in its own process. The host supplies routing, authentication, agent
-lifecycle, and any forwarding between the front door and the process the
-agent runs in.
+The remote agent is RPC. Axle owns the spec, `AgentCommand` in and
+`CommandOutcome` back as Zod schemas with the types inferred from them; the
+one shipped client, `RemoteAgent` over any `AgentTransport`, with
+`httpTransport` to read Server-Sent Events and post commands; and the
+decoding, `parseAgentCommand`, which checks an untrusted body against the
+spec. It also supplies the `Agent`, the `InMemoryEventStore` beside it, and
+`toEventStreamResponse` to write a subscription as Server-Sent Events.
+`loopbackTransport` is the same contract with no wire, for tests and for a
+hop that serves an agent in its own process. The host supplies the
+dispatch, a switch that turns each command into an Agent call, along with
+routing, authentication, agent lifecycle, and any forwarding between the
+front door and the process the agent runs in.
 
 ## Invariants
 
@@ -69,13 +74,19 @@ agent runs in.
    in sequence with the agent's; `RemoteAgent.on` delivers both with their
    cursors; `RemoteAgent.status` comes from state events alone. A host
    event never uses `type: "state"`, which is the agent's.
-6. **A send crosses as an `Instruct`.** The `send` command carries the
-   user turn's `id` and `instruct.toJSON()`: prompt, inputs, files,
-   references, context sections, vars mode, metadata, and the schema as
-   JSON Schema. A `ref` file resolves where the agent runs. The side that
-   holds the Zod schema parses: the remote's `send(instruct).final` gives
-   `response` as the parsed object, and a parse failure is the `parse`
-   failure kind as it is locally. Per-send request options (`reasoning`,
+6. **A send crosses as a rendered prompt.** The `send` command is
+   `{ type: "send", id, prompt, files?, metadata? }`: the user turn's `id`,
+   `instruct.render()` with the inputs, references, context sections and
+   output-format instructions already in it, the Instruct's files, and the
+   metadata the send or the Instruct carries. The schema never crosses;
+   the client that holds it parses, so the remote's `send(instruct).final`
+   gives `response` as the parsed object, and a parse failure is the
+   `parse` failure kind as it is locally. A file crosses with its source
+   as it is. A `ref` means whatever the `fileResolver` the host passes to
+   `agent.send` makes of it, so a client and server that share storage
+   name a file by its key without minting a URL; the client chose the
+   `ref`, so the resolver authorizes the caller before reading it. Whether
+   to accept files at all is the host's policy. Per-send request options (`reasoning`,
    `maxOutputTokens`, `toolChoice`, `providerOptions`) do not cross; the
    served agent's configuration applies.
 7. **The remote reads like the local, minus what cannot cross.**
@@ -116,10 +127,11 @@ agent runs in.
    detail, such as `HttpTransportError.status`, from it;
    `status` is `idle` until the opening state arrives and then follows the
    state events.
-9. **A `RemoteAgent` can be served.** `processAgentCommand` and
-   `InMemoryEventStore` take an `Agent` or a `RemoteAgent`, so a hop is a consumer
-   facing upstream and a server facing downstream, and a call is answered
-   at whichever hop has the handler for it.
+9. **A `RemoteAgent` can be served.** `InMemoryEventStore` takes an
+   `Agent` or a `RemoteAgent`, and a host's command switch makes the same
+   calls on either, so a hop is a consumer facing upstream and a server
+   facing downstream, and a call is answered at whichever hop has the
+   handler for it.
 10. **The HTTP transport reconnects on drops and on the served side being
     away, and stops on being told the agent is gone.** One URL: `GET` for
     the stream, `POST` for a command. A closed socket, a network failure
@@ -145,6 +157,15 @@ agent runs in.
     evicts must never trim behind a cursor a client may still hold, or must
     notice the hole and send its own baseline event; the library cannot see
     a host store's eviction.
+12. **The spec and its decoding are Axle's; the dispatch is the host's.**
+    A host reads a `POST` body with `parseAgentCommand`, which returns the
+    typed command or `null` for anything the spec does not describe, and
+    switches on `type` to call the agent itself. The switch is the host's
+    because a real send is never a bare `agent.send`: it carries the
+    host's `signal`, its `after` continuation, its `fileResolver`, its
+    bookkeeping around the handle. Axle ships no dispatcher; the README's
+    _Serving commands_ section and the reference server in `examples/`
+    show the whole switch.
 
 ## Design rationale (2026-11-05, 2026-11-06)
 
@@ -157,8 +178,8 @@ piece was cut to the smallest thing that served a use Sunnyday has: a
 browser that reconnects, a second tab joining a running agent, a page
 rendered from the database that subscribes after the last turn it holds, a
 person answering a question the model asked, a file attached by reference.
-What survives is a numbered event store with replay, an `Instruct` on the wire,
-and the Agent's own verbs as commands.
+What survives is a numbered event store with replay, a rendered prompt on
+the wire, and the Agent's own verbs as commands.
 
 **The event store is the one piece of state beside the Agent.** Everything the
 remote re-derives, it re-derives from events: the waiting call from
@@ -215,8 +236,7 @@ is recorded so the wait is cheap:
 
 - **Cancel by id.** A `cancel` with an optional `id` naming a queued send,
   so a remote handle could cancel. It needs the served side to keep the
-  handles its sends created, so `processAgentCommand` would hold state or
-  the host would keep a map. Sunnyday sends one at a time.
+  handles its sends created, which the host's switch would keep in a map. Sunnyday sends one at a time.
 - **Per-send request options.** A plain `options` field on `send` carrying
   the scalar members of `AxleModelRequestOptions`. Needed the day a UI
   gains a per-message reasoning toggle.
@@ -228,6 +248,21 @@ is recorded so the wait is cheap:
   long-running tool.
 
 ## Rejected alternatives
+
+- **An `Instruct` on the wire** (2026-11-05, reversed 2026-11-07): the
+  `send` command carried `instruct.toJSON()`, every field plus the schema
+  as JSON Schema, and the served side rebuilt it with `fromJSON`. Rejected:
+  an `Instruct` is a description, which is data, plus a schema, which is
+  behavior, and the round trip moved behavior across the wire only for the
+  served side to re-render a prompt the client could render itself, while
+  the parse that mattered stayed on the client. The client now renders and
+  parses; data crosses.
+- **`processAgentCommand`** (removed 2026-11-07): one exported
+  function that decoded a command and made the agent call. Rejected when
+  Sunnyday could not use it: its send needs a `signal`, an `after` judge
+  and the handle, which a bare dispatcher cannot take without growing an
+  option for every host need. Its two jobs split: the decoding became
+  `parseAgentCommand`, the dispatch the host's switch (invariant 12).
 
 - **A cursor stamped by the Agent** (2026-11-05, reversed the same day):
   recorded in agent-state.md; host events share the stream and the Agent

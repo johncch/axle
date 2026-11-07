@@ -4,14 +4,13 @@ import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { InMemoryEventStore } from "../../src/remote/eventStore.js";
-import { loopbackTransport } from "../../src/remote/loopback.js";
 import { RemoteAgent, type RemoteConnection } from "../../src/remote/RemoteAgent.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
-import { askUser, askUserProvider, textProvider, waitFor } from "./helpers.js";
+import { askUser, askUserProvider, served, textProvider, waitFor } from "./helpers.js";
 
-function served(agent: Agent) {
-  return loopbackTransport(agent, new InMemoryEventStore(agent));
+function servedFresh(agent: Agent) {
+  return served(agent, new InMemoryEventStore(agent));
 }
 
 function observe(remote: RemoteAgent) {
@@ -38,7 +37,7 @@ function lastText(transcript: Transcript): string | undefined {
 describe("RemoteAgent", () => {
   test("send resolves from the events with the turn and response, and status follows the served agent", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
-    const remote = new RemoteAgent(served(agent));
+    const remote = new RemoteAgent(servedFresh(agent));
     const { events, connections, statuses, transcript } = observe(remote);
     await waitFor(() => remote.connection.phase === "open");
 
@@ -60,7 +59,7 @@ describe("RemoteAgent", () => {
 
   test("an Instruct with a schema parses the response with the schema this side holds", async () => {
     const agent = new Agent({ provider: textProvider(['{"title":"Teal"}']), model: "mock" });
-    const remote = new RemoteAgent(served(agent));
+    const remote = new RemoteAgent(servedFresh(agent));
     const instruct = new Instruct({ prompt: "Name it", schema: z.object({ title: z.string() }) });
 
     const result = await remote.send(instruct).final;
@@ -72,7 +71,7 @@ describe("RemoteAgent", () => {
 
   test("onToolCall answers the served agent's deferred call from here", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const remote = new RemoteAgent(served(agent));
+    const remote = new RemoteAgent(servedFresh(agent));
     const { transcript } = observe(remote);
     const seen: string[] = [];
     remote.onToolCall((call) => {
@@ -91,7 +90,7 @@ describe("RemoteAgent", () => {
 
   test("a throw in the handler fails the call; nothing returned leaves it waiting", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const remote = new RemoteAgent(served(agent));
+    const remote = new RemoteAgent(servedFresh(agent));
     remote.onToolCall(() => {
       throw new Error("nobody is here");
     });
@@ -106,8 +105,8 @@ describe("RemoteAgent", () => {
 
   test("a second consumer sees the waiting call and answers it with toolCall(id)", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const sender = new RemoteAgent(served(agent));
-    const answerer = new RemoteAgent(served(agent));
+    const sender = new RemoteAgent(servedFresh(agent));
+    const answerer = new RemoteAgent(servedFresh(agent));
     const { events } = observe(answerer);
     await waitFor(() => answerer.connection.phase === "open");
 
@@ -131,8 +130,8 @@ describe("RemoteAgent", () => {
 
   test("a RemoteAgent can itself be served: two hops, answered at the far end", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const hop = new RemoteAgent(served(agent));
-    const far = new RemoteAgent(loopbackTransport(hop, new InMemoryEventStore(hop)));
+    const hop = new RemoteAgent(servedFresh(agent));
+    const far = new RemoteAgent(served(hop, new InMemoryEventStore(hop)));
     const { transcript } = observe(far);
     far.onToolCall(() => "teal");
 
@@ -148,7 +147,7 @@ describe("RemoteAgent", () => {
 
   test("cancel aborts the active turn and the send rejects as it does locally", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const remote = new RemoteAgent(served(agent));
+    const remote = new RemoteAgent(servedFresh(agent));
     await waitFor(() => remote.connection.phase === "open");
 
     const handle = remote.send("ask");
@@ -163,7 +162,7 @@ describe("RemoteAgent", () => {
 
   test("close rejects open sends and ends the connection", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const remote = new RemoteAgent(served(agent));
+    const remote = new RemoteAgent(servedFresh(agent));
     const handle = remote.send("ask");
     await waitFor(() => remote.toolCall("c1") !== undefined);
 
@@ -179,11 +178,11 @@ describe("RemoteAgent over a store", () => {
   test("a consumer joining mid-turn gets the replay and can answer the waiting call", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const store = new InMemoryEventStore(agent);
-    const first = new RemoteAgent(loopbackTransport(agent, store));
+    const first = new RemoteAgent(served(agent, store));
     const handle = first.send("ask", { id: "op-1" });
     await waitFor(() => first.toolCall("c1") !== undefined);
 
-    const late = new RemoteAgent(loopbackTransport(agent, store));
+    const late = new RemoteAgent(served(agent, store));
     const { transcript, statuses } = observe(late);
     await waitFor(() => late.toolCall("c1") !== undefined);
     expect(late.status).toEqual({ phase: "busy", id: "op-1" });
@@ -203,7 +202,7 @@ describe("RemoteAgent over a store", () => {
     type HostEvent = { type: "run:start"; id: string };
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
     const store = new InMemoryEventStore<HostEvent>(agent);
-    const remote = new RemoteAgent<HostEvent>(loopbackTransport(agent, store));
+    const remote = new RemoteAgent<HostEvent>(served(agent, store));
     const seen: string[] = [];
     remote.on((event) => {
       if (event.type !== "state") seen.push(`${event.type}@${event.cursor}`);
@@ -234,7 +233,7 @@ describe("RemoteAgent over a store", () => {
     }).final;
     await judging;
 
-    const late = new RemoteAgent(loopbackTransport(agent, store));
+    const late = new RemoteAgent(served(agent, store));
     const { statuses, transcript } = observe(late);
     await waitFor(() => late.connection.phase === "open");
     await waitFor(() => transcript.turns.at(-1)?.status === "complete");

@@ -193,14 +193,6 @@ if (!result.ok) throw new Error(result.error.kind);
 
 For plain text interactions, pass a string directly to `send()` instead.
 
-An Instruct serializes. `instruct.toJSON()` (which `JSON.stringify` calls
-by itself) gives its prompt, inputs, files, references, context sections,
-vars mode and metadata as plain data, and `Instruct.fromJSON(json)` rebuilds
-one. A schema crosses as JSON Schema: structure and descriptions survive,
-refinements and transforms do not, so keep the original Instruct where the
-result is parsed. A file with a `ref` source crosses as is and is resolved
-by the receiving agent's `fileResolver`.
-
 ### Providers
 
 A provider is a protocol (the wire format) configured with a base URL, a
@@ -2116,9 +2108,11 @@ An `Agent` runs where its provider key, tools and files are. A browser, or
 another process, drives it through a `RemoteAgent`, which has the Agent's
 own surface minus configuration: `on`, `status`, `onToolCall`,
 `toolCall(id)`, `send`, `cancel`, `stop`, `clear`. Events flow out through an
-`InMemoryEventStore` beside the served agent; commands flow in through `processAgentCommand`.
-Axle ships both halves and an HTTP transport; routing, authentication and
-agent lifecycle are yours.
+`InMemoryEventStore` beside the served agent; commands flow in as JSON,
+which `parseAgentCommand` checks against the spec, and your code turns each
+into an agent call. Axle ships the spec, the client, the decoding and an
+HTTP transport; dispatch, routing, authentication and agent lifecycle are
+yours.
 
 The served side, in whatever framework answers HTTP with `Request` and
 `Response`:
@@ -2127,7 +2121,7 @@ The served side, in whatever framework answers HTTP with `Request` and
 import {
   Agent,
   InMemoryEventStore,
-  processAgentCommand,
+  parseAgentCommand,
   toEventStreamResponse,
 } from "@fifthrevision/axle";
 
@@ -2141,8 +2135,17 @@ toEventStreamResponse(
 );
 
 // POST /agents/:id — one command; the body is JSON, so is the reply
-Response.json(await processAgentCommand(agent, await request.json()));
+const command = parseAgentCommand(await request.json());
+if (!command) return new Response(null, { status: 400 });
+return Response.json(await handleCommand(agent, command)); // your switch on command.type
 ```
+
+`parseAgentCommand` returns the typed `AgentCommand` or `null`. The switch
+is yours because your send is rarely a bare `agent.send`: it may carry a
+`signal`, an `after` continuation or a `fileResolver`. Each case is one
+agent call (`send`, `toolCall(callId).answer` or `.fail`, `cancel`, `stop`,
+`clear`) and answers with a `CommandOutcome`; `agentCommandSchema` and
+`commandOutcomeSchema` are exported for a host that composes its own.
 
 The consumer side, from the browser-safe entry:
 
@@ -2160,10 +2163,13 @@ const result = await remote.send("hello").final;
 result.response; // as locally; an Instruct with a schema parses here
 ```
 
-`send` takes a string or an `Instruct`, which `/ui` exports as well and
-which crosses as `toJSON()`:
-files by `ref` resolve on the served side, and the schema goes as JSON
-Schema and parses the response on this side. The handle has `final` only,
+`send` takes a string or an `Instruct`, which `/ui` exports as well. The
+Instruct is rendered on this side and crosses as
+`{ type: "send", id, prompt, files?, metadata? }`; its schema stays here
+and parses the response here. Files cross with their sources as they are,
+so a file the client uploaded can cross as a `ref` (a storage key, say)
+that the served agent's `fileResolver` reads. That `ref` came from the
+client, so the resolver must check the caller may read it. The handle has `final` only,
 and it resolves with the reply, as a local send without a continuation
 does; `remote.cancel()` cancels the active turn as `agent.cancel()` does.
 
@@ -2241,8 +2247,8 @@ return toEventStreamResponse({ state, items: readAfter(id, lastEventId, request.
 `items` yields the stored events after the cursor, each with its `cursor`
 set to the database's id, then live events and state changes. A
 `RemoteAgent` can itself be served, so a middle tier that answers some
-deferred calls and forwards the rest is `processAgentCommand(remote, …)`
-over `new InMemoryEventStore(remote)`.
+deferred calls and forwards the rest is the same command switch over
+`remote`, with `new InMemoryEventStore(remote)`.
 
 `httpTransport(url, options)` reconnects a dropped stream after
 `reconnectDelayMs` (1000), doubling up to `maxReconnectDelayMs` (30000),

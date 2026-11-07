@@ -334,7 +334,8 @@ own surface minus configuration. It holds no transcript.
 **Command** — what a consumer asks of a served agent, one per Agent verb:
 `send`, `answer`, `fail`, `cancel`, `stop`, `clear`. A command's response
 is only whether the Agent took it; everything after acceptance arrives as
-events.
+events. Axle defines commands as a spec (`agentCommandSchema`) and decodes
+them (`parseAgentCommand`); the host dispatches them to the agent.
 
 **Transport** — what carries stored events one way and commands the other
 (`AgentTransport`): `httpTransport` over SSE and `POST`, `loopbackTransport`

@@ -45,7 +45,7 @@ describe("sse codec", () => {
   });
 
   test("drops a message the stream ended inside", async () => {
-    expect(await collect(bytes(["data: whole\n\nid: 2\ndata: {\"cut"]))).toEqual([
+    expect(await collect(bytes(['data: whole\n\nid: 2\ndata: {"cut']))).toEqual([
       { id: undefined, event: undefined, data: "whole" },
     ]);
   });

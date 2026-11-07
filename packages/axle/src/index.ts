@@ -25,7 +25,6 @@ export { Instruct } from "./core/index.js";
 export type {
   InstructContextSection,
   InstructInputs,
-  InstructJSON,
   InstructOptions,
   InstructRenderOptions,
   InstructResponse,
@@ -252,7 +251,7 @@ export type { StoredEvent } from "./remote/eventStore.js";
 export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
 export { loopbackTransport } from "./remote/loopback.js";
-export { processAgentCommand } from "./remote/processAgentCommand.js";
+export { agentCommandSchema, commandOutcomeSchema, parseAgentCommand } from "./remote/protocol.js";
 export type {
   AgentCommand,
   AgentSubscription,

@@ -1,9 +1,9 @@
 import type { AgentStateEvent } from "../turns/events.js";
 import type { StoredEvent } from "./eventStore.js";
 import {
+  commandOutcomeSchema,
   isStateEvent,
   type AgentTransport,
-  type CommandOutcome,
   type StreamItem,
 } from "./protocol.js";
 import { parseSse, type SseMessage } from "./sse.js";
@@ -166,8 +166,7 @@ export function httpTransport<THostEvent extends { type: string } = never>(
           `Command ${command.type} failed: ${response.status}`,
         );
       }
-      const outcome: CommandOutcome = await response.json();
-      return outcome;
+      return commandOutcomeSchema.parse(await response.json());
     },
   };
 }

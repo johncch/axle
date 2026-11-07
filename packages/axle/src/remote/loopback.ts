@@ -1,16 +1,17 @@
-import type { Agent } from "../core/agent/Agent.js";
 import type { InMemoryEventStore } from "./eventStore.js";
-import { processAgentCommand } from "./processAgentCommand.js";
-import type { AgentTransport } from "./protocol.js";
-import type { RemoteAgent } from "./RemoteAgent.js";
+import type { AgentCommand, AgentTransport, CommandOutcome } from "./protocol.js";
 
-/** The transport with no wire: the store's events straight out, commands straight in. */
+/**
+ * The transport with no wire: the store's events straight out, each command
+ * straight to `handle`, which plays the host's part of turning it into an
+ * agent call.
+ */
 export function loopbackTransport<THostEvent extends { type: string } = never>(
-  agent: Agent | RemoteAgent<THostEvent>,
   store: InMemoryEventStore<THostEvent>,
+  handle: (command: AgentCommand) => Promise<CommandOutcome>,
 ): AgentTransport<THostEvent> {
   return {
     events: async (signal) => store.subscribe(signal),
-    command: (command) => processAgentCommand(agent, command),
+    command: (command) => handle(command),
   };
 }

@@ -4,12 +4,11 @@ import { describe, expect, test } from "vitest";
 import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { InMemoryEventStore } from "../../src/remote/eventStore.js";
 import { HttpTransportError, httpTransport } from "../../src/remote/httpTransport.js";
-import { processAgentCommand } from "../../src/remote/processAgentCommand.js";
-import type { AgentCommand } from "../../src/remote/protocol.js";
+import { parseAgentCommand } from "../../src/remote/protocol.js";
 import { RemoteAgent } from "../../src/remote/RemoteAgent.js";
 import { toEventStreamResponse } from "../../src/remote/sse.js";
 import { Transcript } from "../../src/turns/transcript.js";
-import { askUser, askUserProvider, textProvider, waitFor } from "./helpers.js";
+import { applyCommand, askUser, askUserProvider, textProvider, waitFor } from "./helpers.js";
 
 /** Closes the stream after `count` messages, as a dropped connection would. */
 function cutAfter(count: number): TransformStream<Uint8Array, Uint8Array> {
@@ -42,8 +41,9 @@ async function handle(
   request: Request,
 ): Promise<Response> {
   if (request.method === "POST") {
-    const command: AgentCommand = await request.json();
-    return Response.json(await processAgentCommand(agent, command));
+    const command = parseAgentCommand(await request.json());
+    if (!command) return new Response(null, { status: 400 });
+    return Response.json(await applyCommand(agent, command));
   }
   const after = request.headers.get("last-event-id");
   return toEventStreamResponse(store.subscribe(request.signal, after), request);

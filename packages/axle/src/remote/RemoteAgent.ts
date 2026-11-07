@@ -14,6 +14,7 @@ import { createStats } from "../utils/stats.js";
 import type { StoredEvent } from "./eventStore.js";
 import {
   isStateEvent,
+  type AgentCommand,
   type AgentTransport,
   type CommandOutcome,
   type StreamItem,
@@ -187,7 +188,8 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
-    if (options.metadata) instruct.metadata = options.metadata;
+    const prompt = instruct.render();
+    const metadata = options.metadata ?? instruct.metadata;
     const {
       promise: final,
       resolve,
@@ -195,7 +197,10 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     } = Promise.withResolvers<AgentResult<RemoteResponse> | AgentErrorResult>();
     final.catch(() => {});
     this.operations.set(id, { schema: instruct.schema, resolve, reject });
-    this.transport.command({ type: "send", id, instruct: instruct.toJSON() }).then(
+    const command: AgentCommand = { type: "send", id, prompt };
+    if (instruct.files.length > 0) command.files = instruct.files;
+    if (metadata) command.metadata = metadata;
+    this.transport.command(command).then(
       (outcome) => {
         if (outcome.accepted) return;
         this.settleOperation(id, (op) => op.reject(new AxleError(outcome.reason.message)));

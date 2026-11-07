@@ -799,22 +799,24 @@ server cannot honour it, replays from what it holds, and the host sends
 its own baseline event first if it keeps one. Whatever was in flight when
 the old log died is gone for every consumer alike.
 
-## A send crosses as an Instruct (2026-11-05)
+## A send crosses as a rendered prompt (2026-11-05, revised 2026-11-07)
 
 A remote send has to carry what a local one does, and the first draft
 carried a string. Sunnyday's send is already an `Instruct`: the prompt, a
 context section with the files manifest, and one file per attachment with
 a `ref` source its `FileResolver` turns into bytes at provider call time.
 The browser never sends bytes with a message; files go up separately and
-the message names them. So the unit on the wire is the `Instruct` itself,
-as `toJSON()` and `fromJSON()` on the class rather than a second shape in
-the protocol: prompt, inputs, files, references, context sections, vars
-mode and metadata as they are, and the schema as JSON Schema. A `ref` stays
-opaque and resolves where the agent runs, which is where the storage is.
-The schema round trip keeps structure and descriptions and drops
-refinements; for every construct the prompt renderer accepts the rebuilt
-schema renders the identical prompt, and the side holding the Zod schema
-does the parse that matters.
+the message names them.
+
+The 2026-11-05 answer put the `Instruct` itself on the wire, as `toJSON()`
+and `fromJSON()` with the schema as JSON Schema. The 2026-11-07 revision
+takes it off. An `Instruct` is a description, which is data, plus a schema,
+which is behavior. Rendering needs only the description and the schema's
+shape, and parsing needs the schema, so both happen where the schema is:
+the client renders the prompt, attaches the files and sends `{ id, prompt,
+files?, metadata? }`, and parses the reply itself. A `ref` stays opaque and
+resolves where the agent runs, which is where the storage is; a client and
+server that share storage both know what the key means.
 
 ## Status is state (2026-11-06)
 
