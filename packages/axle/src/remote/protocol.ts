@@ -58,10 +58,11 @@ export interface AgentSubscription<THostEvent extends { type: string } = never> 
  * last cursor it delivered, and the state it reopens with arrives as a state
  * event.
  * `events` resolves once the stream is open, which is what a `RemoteAgent`
- * means by connected; the items then run until `signal` aborts or the
- * served agent is gone.
+ * means by connected, or with `undefined` when there is no agent to
+ * subscribe to; the items then run until `signal` aborts or the served
+ * agent is gone.
  */
 export interface AgentTransport<THostEvent extends { type: string } = never> {
-  events(signal: AbortSignal): Promise<AgentSubscription<THostEvent>>;
+  events(signal: AbortSignal): Promise<AgentSubscription<THostEvent> | undefined>;
   command(command: AgentCommand, signal?: AbortSignal): Promise<CommandOutcome>;
 }

@@ -2160,7 +2160,8 @@ const result = await remote.send("hello").final;
 result.response; // as locally; an Instruct with a schema parses here
 ```
 
-`send` takes a string or an `Instruct`, which crosses as `toJSON()`:
+`send` takes a string or an `Instruct`, which `/ui` exports as well and
+which crosses as `toJSON()`:
 files by `ref` resolve on the served side, and the schema goes as JSON
 Schema and parses the response on this side. The handle has `final` only,
 and it resolves with the reply, as a local send without a continuation
@@ -2168,8 +2169,20 @@ does; `remote.cancel()` cancels the active turn as `agent.cancel()` does.
 
 Two things are tracked separately. `remote.connection` is the link to the
 served side: `connecting`, `open`, `ended` or `error`, with
-`onConnection` reporting changes. `remote.status` is the served agent's
-own `idle` or `busy` with an id, exactly as `agent.status` reads there.
+`onConnection` reporting changes. `ended` means there is no agent: it
+ended, or the URL names none. `error` carries the error, so an HTTP
+failure's status is there:
+
+```typescript
+remote.onConnection((connection) => {
+  if (connection.phase === "error" && connection.error instanceof HttpTransportError) {
+    if (connection.error.status === 401) signIn();
+  }
+});
+```
+
+`remote.status` is the served agent's own `idle` or `busy` with an id,
+exactly as `agent.status` reads there.
 Every stream opens with the agent's current state, so a page that
 reconnects while a continuation is still running reads `busy`, and
 `remote.on` delivers that state and every later change as `state` events
@@ -2234,7 +2247,8 @@ over `new InMemoryEventStore(remote)`.
 `httpTransport(url, options)` reconnects a dropped stream after
 `reconnectDelayMs` (1000), doubling up to `maxReconnectDelayMs` (30000),
 and keeps trying through network failures and `5xx` until `close()`. A
-reconnect answered `404` or `410` ends the agent. `headers` is a value or
+`404` or `410` ends the agent, on the first connection or any later one.
+Any other failure on the first connection is an `error` at once. `headers` is a value or
 a function called per request, for a token; `fetch` can be supplied.
 
 The invariants, what is deferred and why, and the rejected alternatives

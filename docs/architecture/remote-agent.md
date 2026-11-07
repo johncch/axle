@@ -110,7 +110,10 @@ agent runs in.
    carries one. `toEventStreamResponse` takes the subscription and cannot
    open without a state. On the consumer, the connection and the status
    are separate: `connection` is `connecting` until `events` resolves,
-   then `open`, `ended` when the items end, `error` when they throw;
+   then `open`; `ended` when the items end or `events` resolves with no
+   subscription because there is no agent to subscribe to; `error` with
+   the error that was thrown, so a consumer reads a transport's own
+   detail, such as `HttpTransportError.status`, from it;
    `status` is `idle` until the opening state arrives and then follows the
    state events.
 9. **A `RemoteAgent` can be served.** `processAgentCommand` and
@@ -122,10 +125,12 @@ agent runs in.
     the stream, `POST` for a command. A closed socket, a network failure
     or a `5xx` on reconnect is retried after `reconnectDelayMs`, doubling
     to `maxReconnectDelayMs`, with no cap on attempts, until `close()`; a
-    stream that opens resets the wait. A reconnect answered `404` or `410`
-    ends the agent. Any other failed response is the `error` state, since
-    retrying a `401` changes nothing. The first connection does not retry:
-    a wrong URL fails at once. A message the stream ended inside is not
+    stream that opens resets the wait. A `404` or `410` ends the agent, on
+    the first connection as on a reconnect: either says there is no agent
+    at that URL, and a wrong URL and an ended agent cannot be told apart.
+    Any other failed response is the `error` state, since retrying a `401`
+    changes nothing. The first connection does not retry, so a server that
+    is down fails at once. A message the stream ended inside is not
     delivered, as the SSE protocol says, so a cut mid-packet replays that
     message whole from its cursor rather than parsing its prefix. A
     command does not retry; a failed `POST` rejects once.
@@ -246,6 +251,12 @@ is recorded so the wait is cheap:
   first draft threw on any failed reconnect but `404` and `410`. Rejected:
   a front door mid-deploy answered `503` and every open tab was dead until
   a reload.
+- **A first connection answered `404` as an error** (2026-11-06): the
+  first rule, on the grounds that a wrong URL should fail loudly. Rejected
+  when Sunnyday met it: the same `404` on a reconnect meant `ended`, so one
+  fact had two outcomes depending on when it arrived, and the `error`
+  carried only a message, so the status was lost. A wrong URL and an ended
+  agent both answer `404`; both are `ended`.
 - **A shape check on each event from the wire** (2026-11-06): validating
   the parsed JSON before folding it. Rejected: the one real source of
   malformed data was a message the stream ended inside, which the SSE

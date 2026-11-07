@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import * as z from "zod";
 import type {
   Annotation,
   FileInfo,
@@ -9,7 +10,7 @@ import type {
   Turn,
   TurnMetadata,
 } from "../src/ui.js";
-import { Transcript } from "../src/ui.js";
+import { Instruct, Transcript } from "../src/ui.js";
 
 describe("ui entrypoint", () => {
   test("exports browser-safe turn presentation primitives", () => {
@@ -38,5 +39,11 @@ describe("ui entrypoint", () => {
     expect(usage.in).toBe(1);
     expect(timing.start).toBe("2026-01-01T00:00:00.000Z");
     expect(file.name).toBe("note.txt");
+  });
+
+  test("exports Instruct, so a browser can build what a remote send takes", () => {
+    const instruct = new Instruct({ prompt: "Name it", schema: z.object({ title: z.string() }) });
+
+    expect(Instruct.fromJSON(instruct.toJSON()).toJSON()).toEqual(instruct.toJSON());
   });
 });

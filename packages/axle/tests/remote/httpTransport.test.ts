@@ -268,19 +268,36 @@ describe("httpTransport", () => {
     expect(gets[3] - gets[2]).toBeGreaterThanOrEqual(15);
   });
 
-  test("a failed first connection is an error, and a failed command rejects", async () => {
+  test("a failed first connection is an error carrying the status, and a failed command rejects", async () => {
     const transport = httpTransport("http://agent/42", {
       fetch: async () => new Response("nope", { status: 503 }),
     });
     const remote = new RemoteAgent(transport);
     await waitFor(() => remote.connection.phase === "error");
 
-    expect(remote.connection).toEqual({
+    expect(remote.connection).toEqual({ phase: "error", error: expect.any(HttpTransportError) });
+    expect(remote.connection).toMatchObject({
       phase: "error",
-      message: "Event stream request failed: 503",
+      error: { status: 503, message: "Event stream request failed: 503" },
     });
     await expect(transport.command({ type: "cancel" })).rejects.toBeInstanceOf(HttpTransportError);
   });
+
+  test.each([404, 410])(
+    "a first connection answered %s ends the agent, as a reconnect does",
+    async (status) => {
+      const remote = new RemoteAgent(
+        httpTransport("http://agent/42", {
+          fetch: async () => new Response("gone", { status }),
+        }),
+      );
+      const connections: string[] = [];
+      remote.onConnection((connection) => connections.push(connection.phase));
+      await waitFor(() => remote.connection.phase === "ended");
+
+      expect(connections).toEqual(["ended"]);
+    },
+  );
 
   test("headers are sent with the stream and each command", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });

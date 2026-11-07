@@ -25,6 +25,7 @@ export { Instruct } from "./core/index.js";
 export type {
   InstructContextSection,
   InstructInputs,
+  InstructJSON,
   InstructOptions,
   InstructRenderOptions,
   InstructResponse,

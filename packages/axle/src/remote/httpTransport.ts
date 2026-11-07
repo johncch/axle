@@ -143,6 +143,7 @@ export function httpTransport<THostEvent extends { type: string } = never>(
   return {
     async events(signal) {
       const response = await open(options.after, signal);
+      if (response.status === 404 || response.status === 410) return undefined;
       const items = itemsFrom(bodyOf(response), signal);
       const first = await items.next();
       if (first.done || !isStateEvent(first.value)) {

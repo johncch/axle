@@ -23,7 +23,7 @@ export type RemoteConnection =
   | { phase: "connecting" }
   | { phase: "open" }
   | { phase: "ended" }
-  | { phase: "error"; message: string };
+  | { phase: "error"; error: Error };
 
 export interface RemoteSendOptions {
   /** Id for the send's user turn, as `SendMessageOptions.id`. Generated when omitted. */
@@ -229,10 +229,12 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
 
   private async consume(): Promise<void> {
     try {
-      const { state, items } = await this.transport.events(this.controller.signal);
-      this.setConnection({ phase: "open" });
-      this.apply(state);
-      for await (const item of items) this.apply(item);
+      const subscription = await this.transport.events(this.controller.signal);
+      if (subscription) {
+        this.setConnection({ phase: "open" });
+        this.apply(subscription.state);
+        for await (const item of subscription.items) this.apply(item);
+      }
       if (!this.controller.signal.aborted) {
         this.rejectAll(new AxleAgentAbortError("The served agent ended"));
         this.setConnection({ phase: "ended" });
@@ -241,7 +243,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       if (this.controller.signal.aborted) return;
       const wrapped = error instanceof Error ? error : new Error(String(error));
       this.rejectAll(wrapped);
-      this.setConnection({ phase: "error", message: wrapped.message });
+      this.setConnection({ phase: "error", error: wrapped });
     }
   }
 
