@@ -42,9 +42,7 @@ export function createAgentTool<TSchema extends ZodObject<any>>(
     async execute(input, ctx) {
       const agent = await options.createAgent(input, ctx);
       const prompt = resolvePrompt(options.prompt, input);
-      const unsubscribe = agent.on((event) => {
-        if (event.type !== "state") ctx.emit({ type: "turn-event", event });
-      });
+      const unsubscribe = agent.on((event) => ctx.emit({ type: "turn-event", event }));
       let result;
       try {
         result = await agent.send(prompt, {

@@ -5,7 +5,7 @@ import { isStateEvent } from "../../src/remote/protocol.js";
 import { parseSse, toEventStreamResponse, type SseMessage } from "../../src/remote/sse.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
-import { textProvider, waitFor } from "./helpers.js";
+import { askUser, askUserProvider, textProvider, waitFor } from "./helpers.js";
 
 type HostEvent = { type: "run:start"; id: string };
 
@@ -100,7 +100,7 @@ describe("InMemoryEventStore", () => {
     const [user, assistant] = transcript.turns;
     expect(user.id).toBe("op-1");
     expect(user.cursor).toBe(consumer.seen.find((entry) => entry.type === "turn:user")?.cursor);
-    expect(assistant.cursor).toBe(store.lastCursor);
+    expect(assistant.cursor).toBe(consumer.seen.find((entry) => entry.type === "turn:end")?.cursor);
   });
 });
 
@@ -123,30 +123,49 @@ describe("InMemoryEventStore status", () => {
     const reloaded = collect(store, storedCursor);
     pass();
     await final;
-    await waitFor(() => reloaded.statuses.length === 1);
+    await waitFor(() => reloaded.seen.some((entry) => entry.type === "agent:idle"));
     reloaded.stop();
     await reloaded.done;
 
     expect(reloaded.opened).toEqual({ phase: "busy", id: "a" });
-    expect(reloaded.seen).toEqual([]);
-    expect(reloaded.statuses).toEqual([{ phase: "idle" }]);
-    expect(store.lastCursor).toBe(storedCursor);
+    expect(reloaded.seen.map((entry) => entry.type)).toEqual([
+      "after:end",
+      "operation:end",
+      "agent:idle",
+    ]);
+    expect(reloaded.statuses).toEqual([]);
   });
 
-  test("status is neither stamped nor kept: a later subscriber opens with the current one only", async () => {
+  test("a later subscriber opens with the status folded from the log", async () => {
     const agent = new Agent({ provider: textProvider(["one"]), model: "mock" });
     const store = new InMemoryEventStore(agent);
     await agent.send("first").final;
     await waitFor(() => agent.status.phase === "idle");
 
     const late = collect(store);
-    await waitFor(() => late.seen.some((entry) => entry.type === "turn:end"));
+    await waitFor(() => late.seen.some((entry) => entry.type === "agent:idle"));
     late.stop();
     await late.done;
 
     expect(late.opened).toEqual({ phase: "idle" });
-    expect(late.statuses).toEqual([]);
     expect(seqs(late.seen)).toEqual(late.seen.map((_, i) => i + 1));
+  });
+
+  test("a store built while its agent is busy is seeded from agent.status", async () => {
+    const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
+    const final = agent.send("ask", { id: "op-1" }).final;
+    await waitFor(() => agent.toolCall("c1") !== undefined);
+
+    const store = new InMemoryEventStore(agent);
+    const joined = collect(store);
+    expect(joined.opened).toEqual({ phase: "busy", id: "op-1" });
+
+    await agent.toolCall("c1")?.answer("teal");
+    await final;
+    await waitFor(() => joined.seen.some((entry) => entry.type === "agent:idle"));
+    joined.stop();
+    await joined.done;
+    expect(store.subscribe(new AbortController().signal).state.status).toEqual({ phase: "idle" });
   });
 });
 
@@ -165,7 +184,7 @@ describe("toEventStreamResponse", () => {
     return messages;
   }
 
-  test("writes the status first, each entry with its cursor as the SSE id, and status changes with none", async () => {
+  test("writes the status first, then each entry with its cursor as the SSE id", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
     const store = new InMemoryEventStore(agent);
     const controller = new AbortController();
@@ -178,21 +197,15 @@ describe("toEventStreamResponse", () => {
     const messages = await reading;
     controller.abort();
 
-    const [opening, firstEntry, busy] = messages;
+    const [opening, ...entries] = messages;
     expect(opening).toEqual({
       id: undefined,
       event: "state",
       data: '{"type":"state","status":{"phase":"idle"}}',
     });
-    expect(firstEntry.id).toBe(`${store.id}-1`);
-    // The parser carries the previous message's id onto a message without one.
-    expect(busy).toEqual({
-      id: firstEntry.id,
-      event: "state",
-      data: '{"type":"state","status":{"phase":"busy","id":"op-1"}}',
-    });
+    expect(entries[0].id).toBe(`${store.id}-1`);
+    expect(entries.every((message) => message.event === undefined)).toBe(true);
 
-    const entries = messages.filter((message) => message.event !== "state");
     const transcript = new Transcript();
     for (const message of entries) {
       const entry: StoredEvent = JSON.parse(message.data);

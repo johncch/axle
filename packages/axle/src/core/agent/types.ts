@@ -155,9 +155,22 @@ export type Continuation<T = string> = (
 ) => void | Promise<void>;
 
 /**
- * What a turn settled with, handed to `onSettled` first. `id` is the turn's
- * user turn id: for an operation's own turn, the one its `pending:queued`
- * turn carried; for an inline turn, one no `pending:queued` announced.
+ * The operation that just took the queue, handed to `onStart`. `id` is the
+ * one its `pending:queued` turn carried; `signal` aborts when it is
+ * cancelled.
+ */
+export interface StartedOperation {
+  kind: "send" | "compaction";
+  id: string;
+  signal: AbortSignal;
+}
+
+export type StartCallback = (operation: StartedOperation) => void | Promise<void>;
+
+/**
+ * What an operation ended with, handed to `onSettled`. `id` is the one its
+ * `pending:queued` turn carried. `result` is what its handle settles with:
+ * for a send, the result once its continuation returned, or the rejection.
  */
 export type SettledOperation =
   | {
@@ -176,9 +189,9 @@ export type IdleCallback = () => void;
 
 /**
  * What the Agent is doing: `busy` from the moment an operation starts until
- * it finishes, its `onSettled` callbacks and continuation included, with `id`
- * the operation's (the send's user turn id, or the compaction's); `idle`
- * when a `send()` would start at once.
+ * it finishes, its `onStart` callbacks, continuation and `onSettled`
+ * callbacks included, with `id` the operation's (the send's user turn id, or
+ * the compaction's); `idle` when a `send()` would start at once.
  */
 export type AgentStatus = { phase: "idle" } | { phase: "busy"; id: string };
 

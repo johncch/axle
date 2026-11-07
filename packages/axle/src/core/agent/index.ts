@@ -22,4 +22,6 @@ export type {
   SettledCallback,
   SettledOperation,
   ShouldCompactOnTriggerCallback,
+  StartCallback,
+  StartedOperation,
 } from "./types.js";

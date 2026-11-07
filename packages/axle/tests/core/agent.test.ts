@@ -312,9 +312,10 @@ describe("Agent", () => {
       expect(agent.messages).toEqual([]);
       expect(events).toEqual([
         { type: "pending:queued", turn: expect.objectContaining({ status: "pending" }) },
-        { type: "state", status: { phase: "busy", id: expect.any(String) } },
+        { type: "operation:start", id: expect.any(String), kind: "send" },
         { type: "pending:dropped", id: expect.any(String), reason: { type: "cancelled" } },
-        { type: "state", status: { phase: "idle" } },
+        { type: "operation:end", id: expect.any(String), outcome: { type: "cancelled" } },
+        { type: "agent:idle" },
       ]);
       expect(requests).toEqual([]);
     });
@@ -1188,9 +1189,10 @@ describe("Agent", () => {
       expect(await final).toBeInstanceOf(AxleAgentAbortError);
       expect(transcript.pending).toEqual([]);
       expect(transcript.turns).toEqual([]);
-      expect(events.slice(-2)).toMatchObject([
+      expect(events.slice(-3)).toMatchObject([
         { type: "pending:dropped", reason: { type: "cancelled" } },
-        { type: "state", status: { phase: "idle" } },
+        { type: "operation:end", outcome: { type: "cancelled" } },
+        { type: "agent:idle" },
       ]);
     });
 
@@ -1204,13 +1206,18 @@ describe("Agent", () => {
 
       expect(transcript.pending).toEqual([]);
       expect(transcript.turns).toEqual([]);
-      expect(events.slice(-2)).toEqual([
+      expect(events.slice(-3)).toEqual([
         {
           type: "pending:dropped",
           id: expect.any(String),
           reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
         },
-        { type: "state", status: { phase: "idle" } },
+        {
+          type: "operation:end",
+          id: expect.any(String),
+          outcome: { type: "error", error: { message: "mcp unreachable" } },
+        },
+        { type: "agent:idle" },
       ]);
     });
 
@@ -1566,6 +1573,7 @@ describe("Agent", () => {
           order.push(`queued:${getTextContent(event.turn.parts as never)}`);
         if (event.type === "turn:user")
           order.push(`user:${getTextContent(event.turn.parts as never)}`);
+        if (event.type === "after:start" || event.type === "after:end") order.push(event.type);
       });
       agent.onSettled((_session, operation) => {
         settledIds.push(operation.id);
@@ -1598,23 +1606,26 @@ describe("Agent", () => {
       expect(userTurnIds).toHaveLength(4);
       const [idA, idF1, idF2, idB] = userTurnIds;
       expect(ctxId).toBe(idA);
-      expect(settledIds).toEqual([idA, idF1, idF2, idB]);
+      expect(settledIds).toEqual([idA, idB]);
       expect(order).toEqual([
         "queued:do something",
         "queued:another",
         "user:do something",
-        `settled:${idA}`,
+        "after:start",
         "after:do something",
         "user:fix 1",
-        `settled:${idF1}`,
         "inline:fix 1",
         "user:fix 2",
-        `settled:${idF2}`,
         "inline:fix 2",
+        "after:end",
+        `settled:${idA}`,
         "resolved",
         "user:another",
         `settled:${idB}`,
       ]);
+      expect(
+        transcript.turns.filter((turn) => turn.owner === "user").map((turn) => turn.threadId),
+      ).toEqual([undefined, idA, idA, undefined]);
       expect(result.ok).toBe(true);
       expect(result.response).toBe("do something");
       expect(result.after?.map((turn) => [turn.userTurn.id, turn.ok, turn.response])).toEqual([
@@ -1787,7 +1798,7 @@ describe("Agent", () => {
       order.push("resolved");
       await vi.waitFor(() => expect(order).toContain("idle"));
 
-      expect(order).toEqual(["settled", "settled", "resolved", "idle"]);
+      expect(order).toEqual(["settled", "resolved", "idle"]);
     });
   });
 
@@ -1795,7 +1806,9 @@ describe("Agent", () => {
     function observeStatus(agent: Agent) {
       const statuses: AgentStatus[] = [];
       agent.on((event) => {
-        if (event.type === "state") statuses.push(event.status);
+        if (event.type === "operation:start" || event.type === "agent:idle") {
+          statuses.push(agent.status);
+        }
       });
       return statuses;
     }
@@ -1888,11 +1901,12 @@ describe("Agent", () => {
       expect(statuses).toEqual([{ phase: "busy", id: "a" }, { phase: "idle" }]);
     });
 
-    test("the idle state event is delivered before onIdle fires", async () => {
+    test("operation:start and agent:idle bracket the work, and agent:idle comes before onIdle", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const order: string[] = [];
       agent.on((event) => {
-        if (event.type === "state") order.push(event.status.phase);
+        if (event.type === "operation:start") order.push("busy");
+        if (event.type === "agent:idle") order.push("idle");
       });
       agent.onIdle(() => order.push("onIdle"));
 
@@ -1900,6 +1914,88 @@ describe("Agent", () => {
       await vi.waitFor(() => expect(order).toContain("onIdle"));
 
       expect(order).toEqual(["busy", "idle", "onIdle"]);
+    });
+  });
+
+  describe("onStart", () => {
+    test("runs once the send takes the queue, before its turn, with status busy under its id", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const order: string[] = [];
+      agent.on((event) => {
+        if (event.type === "operation:start" || event.type === "turn:user") order.push(event.type);
+      });
+      agent.onStart(async ({ kind, id, signal }) => {
+        order.push(`start:${kind}:${id}:${agent.status.phase}:${signal.aborted}`);
+      });
+
+      const handle = agent.send("hello", { id: "op-1" });
+      expect(order).toEqual(["operation:start"]);
+      await handle.final;
+
+      expect(order).toEqual(["operation:start", "start:send:op-1:busy:false", "turn:user"]);
+    });
+
+    test("a throw skips the turn and the continuation, drops the pending turn, and onSettled still runs", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const transcript = new Transcript();
+      const events: string[] = [];
+      agent.on((event) => {
+        transcript.apply(event);
+        events.push(event.type);
+      });
+      const failure = new Error("db unavailable");
+      agent.onStart(() => {
+        throw failure;
+      });
+      const settled: unknown[] = [];
+      agent.onSettled((_session, operation) => void settled.push(operation.result));
+      let continued = false;
+
+      await expect(
+        agent.send("hello", {
+          after: async () => {
+            continued = true;
+          },
+        }).final,
+      ).rejects.toBe(failure);
+
+      expect(continued).toBe(false);
+      expect(agent.messages).toEqual([]);
+      expect(transcript.pending).toEqual([]);
+      expect(transcript.turns).toEqual([]);
+      expect(settled).toEqual([{ status: "rejected", reason: failure }]);
+      await vi.waitFor(() => expect(events).toContain("agent:idle"));
+      expect(events).toEqual([
+        "pending:queued",
+        "operation:start",
+        "pending:dropped",
+        "operation:end",
+        "agent:idle",
+      ]);
+    });
+
+    test("cancel() during onStart aborts its signal and drops the send as cancelled", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+      let startSignal: AbortSignal | undefined;
+      agent.onStart(async ({ signal }) => {
+        startSignal = signal;
+        await gate;
+      });
+      const events: TurnEvent[] = [];
+      agent.on((event) => events.push(event));
+
+      const handle = agent.send("hello");
+      await vi.waitFor(() => expect(startSignal).toBeDefined());
+      expect(agent.cancel("quota")).toBe(true);
+      release();
+
+      await expect(handle.final).rejects.toMatchObject({ name: "AbortError", reason: "quota" });
+      expect(startSignal?.aborted).toBe(true);
+      expect(agent.messages).toEqual([]);
+      expect(events.find((event) => event.type === "operation:end")).toMatchObject({
+        outcome: { type: "cancelled" },
+      });
     });
   });
 

@@ -25,6 +25,7 @@ export type {
   CompactionPart,
   CompactionUpdate,
   FilePart,
+  OperationOutcome,
   PendingDropReason,
   ProviderToolAction,
   SubagentAction,

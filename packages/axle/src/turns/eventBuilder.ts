@@ -112,6 +112,7 @@ export function userTurnFromMessage(message: AxleUserMessage): Turn {
     status: "complete",
     timing,
     ...(message.metadata ? { metadata: message.metadata } : {}),
+    ...(message.threadId ? { threadId: message.threadId } : {}),
   };
 }
 

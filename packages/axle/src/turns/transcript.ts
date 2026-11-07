@@ -27,6 +27,11 @@ export type TranscriptApplyResult<
  * key is a type error, so the runtime guard cannot drift from the union.
  */
 const TURN_EVENT_TYPES: Record<TurnEvent["type"], true> = {
+  "operation:start": true,
+  "after:start": true,
+  "after:end": true,
+  "operation:end": true,
+  "agent:idle": true,
   "pending:queued": true,
   "pending:dropped": true,
   "turn:user": true,
@@ -105,6 +110,13 @@ export class Transcript<
     event: TurnEvent<TAnnotation> & { cursor?: string },
   ): TranscriptApplyResult<TAnnotation, TConsumerEvent> {
     switch (event.type) {
+      case "operation:start":
+      case "after:start":
+      case "after:end":
+      case "operation:end":
+      case "agent:idle":
+        return this.handled(event);
+
       case "pending:queued":
         this._pending = [...this._pending, event.turn];
         return this.handled(event);

@@ -19,8 +19,10 @@ function observe(remote: RemoteAgent) {
   const statuses: AgentStatus[] = [];
   const transcript = new Transcript();
   remote.on((event) => {
-    if (event.type === "state") statuses.push(event.status);
-    else events.push(event);
+    if (event.type === "operation:start" || event.type === "agent:idle") {
+      statuses.push(remote.status);
+    }
+    events.push(event);
     transcript.apply(event);
   });
   remote.onConnection((connection) => {
@@ -54,7 +56,7 @@ describe("RemoteAgent", () => {
     expect(events[0]).toMatchObject({ type: "pending:queued", turn: { id: "op-1" } });
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(connections).toEqual(["connecting", "open", "ended"]);
-    expect(statuses).toEqual([{ phase: "idle" }, { phase: "busy", id: "op-1" }, { phase: "idle" }]);
+    expect(statuses).toEqual([{ phase: "busy", id: "op-1" }, { phase: "idle" }]);
   });
 
   test("an Instruct with a schema parses the response with the schema this side holds", async () => {
@@ -219,7 +221,7 @@ describe("RemoteAgent over a store", () => {
     const remote = new RemoteAgent<HostEvent>(served(agent, store));
     const seen: string[] = [];
     remote.on((event) => {
-      if (event.type !== "state") seen.push(`${event.type}@${event.cursor}`);
+      seen.push(`${event.type}@${event.cursor}`);
     });
     await waitFor(() => remote.connection.phase === "open");
 

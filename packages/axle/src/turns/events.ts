@@ -6,6 +6,7 @@ import type {
   ActionResult,
   Annotation,
   CompactionUpdate,
+  OperationOutcome,
   PendingDropReason,
   TimingInfo,
   Turn,
@@ -23,17 +24,23 @@ export type AnnotationEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "annotation:end"; target: AnnotationTarget; annotation: TAnnotation };
 
 /**
- * The Agent's state: last value wins, it carries no cursor, and a served
- * stream sends the current one first on every connection instead of
- * replaying the old ones.
+ * A served agent's status as the protocol carries it: last value wins, it
+ * carries no cursor, and a served stream sends the current one first on
+ * every connection instead of replaying the old ones. The Agent itself
+ * never emits it.
  */
 export type AgentStateEvent = { type: "state"; status: AgentStatus };
 
-/** Everything `agent.on` delivers: the turn events and the Agent's state. */
-export type AgentEvent<TAnnotation extends Annotation = Annotation> =
-  TurnEvent<TAnnotation> | AgentStateEvent;
+/** Everything `agent.on` delivers. */
+export type AgentEvent<TAnnotation extends Annotation = Annotation> = TurnEvent<TAnnotation>;
 
 export type TurnEvent<TAnnotation extends Annotation = Annotation> =
+  // Operation lifecycle
+  | { type: "operation:start"; id: string; kind: "send" | "compaction" }
+  | { type: "after:start"; id: string }
+  | { type: "after:end"; id: string }
+  | { type: "operation:end"; id: string; outcome: OperationOutcome }
+  | { type: "agent:idle" }
   // Pending lifecycle
   | { type: "pending:queued"; turn: Turn<TAnnotation> }
   | { type: "pending:dropped"; id: string; reason: PendingDropReason }

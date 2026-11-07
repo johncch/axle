@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-11-06 (0.36.0, AXL-44, AXL-103)
+**Status**: current · **Last design revision**: 2026-11-07 (0.36.0, AXL-44, AXL-103)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -77,56 +77,72 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `pending` only to mirror a live transcript, and discards any entry whose
    id is already in `turns`. `snapshot()` opens no turn and is neither
    queued nor pending (invariant 10).
-8. **The Agent hands over the session and the outcome after every turn
-   that commits, and waits for the consumer.** `agent.onSettled(...)` fires
-   after each turn an operation commits, however it ended, and once for an
-   operation that ran without opening a turn: after the `turn:end`, and
-   before the handle settles or the next turn opens, with the value
-   `snapshot()` returns and a `SettledOperation` carrying that turn's
-   outcome (`fulfilled` with the result, `rejected` with the reason) and
-   its `id`. For an operation's own turn the id is the one its
-   `pending:queued` turn carried, so a consumer follows one operation from
-   queued to settled without counting; an inline turn (invariant 11)
-   settles under its own id, which no `pending:queued` announced, and a consumer
-   that keys rows by id ignores it by construction. An operation without a
-   continuation therefore fires exactly once. An operation cancelled while
-   still queued never ran and does not fire. Callbacks run together and are
-   awaited: the handle does not settle, the continuation does not resume,
-   and the next queued operation does not start until every callback has
-   settled, so a consumer that reads its `Transcript.turns` inside the callback
-   holds turns and messages that match exactly, and nothing from the next
-   turn is observable before the callback resolves. The callback receives
-   no signal — the work inside it is the consumer's to cancel — and the turn is
-   already done while callbacks run: `stop()` returns `false` in that
-   window, and so does `cancel()` unless a continuation remains to run
-   (invariant 11). The callback is its own channel: the session
-   never rides the turn event stream, which consumers forward to clients. A
-   callback reports an outcome and cannot change it: one that throws or
-   rejects is caught, recorded on the trace, and does not stop the other
-   callbacks or alter the handle's result. `snapshot()` remains the pull
-   form and waits for the Agent to go idle. A handle nobody reads is not an
-   error: the scheduler marks every `final` as handled, so a rejection the
-   consumer took from the hook or from `pending:dropped` raises no unhandled
-   rejection. `final` still rejects for whoever awaits or chains from it.
-9. **Events carry the transcript; hooks carry lifecycle.** `agent.on` is
-   synchronous fan-out of turn events, each of which changes what a
-   `Transcript` holds, and of `state` events, which carry the Agent's
-   status (invariant 13) and change nothing there: consumers forward both
-   to clients, a sink ignores what it does not fold, and nothing listening
-   can hold the engine. Lifecycle goes through hooks, and whether a hook is
-   awaited is a property of that hook. `onSettled` is awaited: it is the
-   consumer's save channel at each rest point, able to hold the queue,
-   carrying what must not ride the event stream. Work that has to finish
-   before the next turn starts goes there. A continuation (invariant 11) is
-   the consumer's steering channel, attached to one send: it holds the queue
-   too, and it is where turns are run and per-operation work is done.
-   `onIdle` is not awaited: it reports that the Agent went from busy to
-   idle. The scheduler owns the rest point as a task state (`queued`,
-   `running`, `settling`, `continuing`, `settled`); the Agent adds no flag
-   of its own. The Agent's tool and skill registries
-   are live state the consumer changes at any time; the Agent hands their
-   current values to `stream()` when a turn opens and at every tool-batch
-   boundary, and `stream()` holds no registry ([skills.md](./skills.md)).
+8. **The Agent hands over each operation at its start and its end, and
+   waits for the consumer.** Two agent-wide hooks bracket every operation
+   that starts, a send or a manual compaction. `agent.onStart(...)` fires
+   once the operation holds the queue, after `operation:start` and before
+   its turn opens, never inside `send()` itself, with
+   `{ kind, id, signal }`: `signal` aborts if the operation is cancelled
+   while the callbacks run. `agent.onSettled(...)` fires once the operation
+   is done, after its turn and its continuation, before `operation:end`, the
+   handle settles or the next operation starts, with the value `snapshot()`
+   returns and a `SettledOperation` carrying what the handle settles with
+   (`fulfilled` with the result, its `after` list included, or `rejected`
+   with the reason, the same `AxleAgentAbortError` a cancelled handle
+   rejects with) and its `id`. The id is the one the operation's
+   `pending:queued` turn carried, so a consumer keys per-operation state by
+   it from queued to settled. Inline turns (invariant 11) fire neither hook
+   on their own. Both hooks are awaited and their callbacks run together:
+   the turn does not open until every `onStart` callback has settled, and
+   the handle does not settle and the next operation does not start until
+   every `onSettled` callback has. The two differ on failure. An `onStart`
+   callback that throws is a refused start: the turn and the continuation
+   are skipped, the pending turn is dropped with `{ type: "error", error: {
+type: "start", message } }` and no user message committed, as for a
+   setup failure, `onSettled` runs with the error, and the handle rejects
+   with it; a refusal that should read as a cancel calls `agent.cancel()`
+   inside the callback instead. An `onSettled` callback reports an outcome
+   and cannot change it: one that throws or rejects is recorded on the
+   trace, does not stop the other callbacks, and does not alter the
+   handle's result, so `final` stays what the agent did. Nothing cancels
+   `onSettled`: `cancel()` and `stop()` return `false` while it runs. An
+   operation withdrawn while still queued never started and fires neither.
+   A consumer that reads its `Transcript.turns` inside `onSettled` holds
+   turns and messages that match exactly. The session is its own channel:
+   it never rides the event stream, which consumers forward to clients.
+   `snapshot()` remains the pull form and waits for the Agent to go idle. A
+   handle nobody reads is not an error: the scheduler marks every `final`
+   as handled, so a rejection the consumer took from a hook or from
+   `pending:dropped` raises no unhandled rejection. `final` still rejects
+   for whoever awaits or chains from it. (Per operation 2026-11-07; see
+   _Lifecycle is history_.)
+9. **Events carry history; hooks are where the consumer acts.** `agent.on`
+   is synchronous fan-out of everything that happened, in order: the turn
+   events, each of which changes what a `Transcript` holds, and the
+   lifecycle events, which change nothing there and which `Transcript`
+   reports handled: `operation:start { id, kind }`, `after:start { id }` and
+   `after:end { id }` around a continuation, `operation:end { id, outcome }`
+   with `complete`, `cancelled` or `error` and a message, and `agent:idle`.
+   Consumers forward all of it to clients, a sink ignores what it does not
+   fold, and nothing listening can hold the engine. The lifecycle events
+   bracket by position, because operations and inline turns run one at a
+   time: a turn between `after:start` and `after:end` is the
+   continuation's. `pending:queued` is the one event outside the brackets,
+   since a send can be queued while another runs; it is addressed by id.
+   An operation that started ends with `operation:end`; `pending:dropped`
+   ends only the preview, so a send dropped before its turn opened, by a
+   setup failure, a throwing `onStart` or a cancel during it, carries both,
+   and one withdrawn while queued carries `pending:dropped` alone. Hooks
+   are where the consumer acts, and whether a hook is awaited is a property
+   of that hook: `onStart` and `onSettled` are awaited (invariant 8), a
+   continuation (invariant 11) is the consumer's steering channel attached
+   to one send, and `onIdle` is not awaited. The scheduler owns the rest
+   point as a task state (`queued`, `starting`, `running`, `continuing`,
+   `settling`, `settled`); the Agent adds no flag of its own. The Agent's
+   tool and skill registries are live state the consumer changes at any
+   time; the Agent hands their current values to `stream()` when a turn
+   opens and at every tool-batch boundary, and `stream()` holds no registry
+   ([skills.md](./skills.md)). (Lifecycle events 2026-11-07.)
 10. **The Agent says when it goes idle.** `agent.onIdle(...)` fires each
     time the scheduler finishes a task and nothing is queued behind it: after
     that task's `onSettled` callbacks have settled and its handle has been
@@ -137,10 +153,9 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     the last `onSettled` keeps the Agent busy and defers the firing. The
     callback takes no arguments and is not awaited: the Agent is already
     free, so a `send()` from inside it starts at once. A callback that
-    throws is caught and recorded on the trace. The idle `state` event
-    (invariant 13) is delivered on `agent.on` before the callbacks fire, so
-    a consumer that reads status from the stream already reads idle inside
-    `onIdle`. Only operations make the Agent
+    throws is caught and recorded on the trace. `agent:idle` (invariant 9)
+    is delivered on `agent.on` just before the callbacks fire, and
+    `agent.status` already reads idle when it is. Only operations make the Agent
     busy, so every firing follows at least one `pending:queued` and every
     `pending:queued` is followed by a firing: a consumer that opens something
     opens it there, not before the call, since `compact()` with no
@@ -156,13 +171,16 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     until the continuation returns. The continuation runs for a turn that
     resolved, `ok: true` or `ok: false`; a turn whose handle rejects
     (cancelled, a fatal tool error, a setup failure) has no result to hand
-    over, skips it, and rejects the handle. `ctx.send()` runs an
+    over, skips it, and rejects the handle. `after:start` and `after:end`
+    bracket it on `agent.on`. `ctx.send()` runs an
     inline turn: the same arguments as `agent.send()` without `after` or
     `signal` (every inline turn runs under `ctx.signal`), the
     same turn as any send (`turn:user`, the agent turn, commit to messages,
-    automatic compaction as part of it, `onSettled` when it ends), started
-    at once with no `pending:queued`, and resolved with the turn's result
-    after that turn's `onSettled` callbacks resolve. Inline turns run one at
+    automatic compaction as part of it), started at once with no
+    `pending:queued`, fires no hook of its own, and resolves with the
+    turn's result. Its user message and user turn carry `threadId`, the
+    send's id: the turn belongs to the thread its operation started, and a
+    renderer draws it as a reply. Inline turns run one at
     a time in call order; one still in flight when the continuation returns
     is awaited before the handle settles, and a `ctx.send()` made after the
     continuation returned rejects. `ctx` also carries `signal`, `id` (the send's user
@@ -180,11 +198,12 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     meaning for an inline turn in flight and returns `false` while no turn
     is in flight. `clear()` never touches a continuation. A continuation
     that throws rejects the handle; the queue continues. Committed inline
-    turns stay committed. A continuation has no pending entry, leaves
-    no turn event of its own, keeps the Agent busy under its send's id
-    (invariant 13), and bounds itself: the Agent
-    does not time it out. `agent.send()`, `compact()` and `snapshot()`
-    awaited from inside a continuation deadlock, as they do from inside
+    turns stay committed. A continuation has no pending entry, keeps the
+    Agent busy under its send's id (invariant 13), and bounds itself: the
+    Agent does not time it out. Saving per turn inside a continuation is
+    the continuation's job: `onSettled` fires once, when the operation
+    ends. `agent.send()`, `compact()` and `snapshot()` awaited from inside a
+    continuation deadlock, as they do from inside `onStart` and
     `onSettled`; an unawaited `agent.send()` queues at the back.
 
 12. **The Agent answers deferred calls through one handler, inside the
@@ -194,7 +213,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     one it hands to `stream()` for that turn. A waiting call is an active
     turn: `send()` queues behind it, `cancel()` cancels it and aborts the
     handler's signal, `stop()` waits for the answer and commits it before
-    settling, and `onSettled` fires once, when the turn ends. Nothing about
+    settling, and `onSettled` fires once, when the operation ends. Nothing about
     the wait is persisted: a waiting call lives as long as the Agent
     instance, as a running `execute` does, and a process that dies loses the
     turn the same way ([tool-loop.md](./tool-loop.md) invariant 10).
@@ -206,28 +225,29 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     handler's signal aborts. (2026-11-05, AXL-103; `toolCall(id)`
     2026-11-05, AXL-44)
 
-13. **The Agent's status is state, read from `agent.status` and
-    delivered on `agent.on` at each change.** `agent.status` is
-    `{ phase: "idle" }` or `{ phase: "busy", id }`. Busy means an operation
-    holds the queue, so a `send()` now would wait; idle means it would start
-    at once. The id is the operation's: a send's user turn id, the one
-    `pending:queued` announced, or a manual compaction's id. Busy runs from
-    the moment the scheduler starts the operation through its turn, its
-    `onSettled` callbacks and its continuation, so a send whose judge is
-    still running is busy although its turn has ended. One operation
-    handing the queue to the next is a single change to the next id, with no
-    idle between. A send that reaches the front of the queue goes busy even
-    if it is cancelled before its turn opens, during setup or because its
-    signal had already aborted, and then idle. A queued send withdrawn by
-    `cancel()` or `clear()` never reaches the front and changes nothing.
-    Each change is delivered on `agent.on` as
-    `{ type: "state", status }`, and at the end of an operation the order is
-    fixed: the handle's `final` settles, then the `state` event, then
-    `onIdle`. A state event is last-wins: it carries no cursor, an
-    event store neither numbers nor keeps it, and a served stream opens with
-    the current one ([remote-agent.md](./remote-agent.md) invariant 8).
-    `Transcript.apply` accepts it and returns it unhandled. The scheduler
-    owns the value; the Agent adds no flag of its own. (2026-11-06)
+13. **The Agent owns its status and anyone can ask it.**
+    `agent.status` is `{ phase: "idle" }` or `{ phase: "busy", id }`. Busy
+    means an operation holds the queue, so a `send()` now would wait; idle
+    means it would start at once. The id is the operation's: a send's user
+    turn id, the one `pending:queued` announced, or a manual compaction's
+    id. Busy runs from the moment the scheduler starts the operation
+    through its `onStart` callbacks, its turn, its continuation and its
+    `onSettled` callbacks, so a send whose judge is still running is busy
+    although its turn has ended. It changes in exactly two places, each
+    marked by an event: `operation:start` (to busy with that id) and
+    `agent:idle`. `operation:end` changes nothing, so one operation handing
+    the queue to the next is a single change to the next id, with no idle
+    between. `agent.status` already reads the new value when `agent.on`
+    delivers the event that changed it. At the end of an operation the
+    order is fixed: `onSettled`, `operation:end`, the handle's `final`
+    settles, then `operation:start` of the next or `agent:idle`, then
+    `onIdle`. A send that reaches the front of the queue goes busy even if
+    it is dropped before its turn opens, and then idle; a queued send
+    withdrawn by `cancel()` or `clear()` never reaches the front and changes
+    nothing. The Agent emits no status event: syncing status to another
+    machine is the protocol's job ([remote-agent.md](./remote-agent.md)
+    invariant 8). The scheduler owns the value; the Agent adds no flag of
+    its own. (2026-11-06; events 2026-11-07)
 
 ## Design rationale (2026-08-12)
 
@@ -480,7 +500,9 @@ exceptions is fixed by [errors.md](./errors.md).
 
 Accepted consequences:
 
-- **`onSettled` fires more than once for a send with a continuation.** A
+- **`onSettled` fires more than once for a send with a continuation**
+  (revised 2026-11-07: it fires once per operation; see _Lifecycle is
+  history_). A
   send without one fires exactly once, as before. Per-turn work in the hook
   that is slow (a sandbox snapshot) runs after every inline turn and
   delays the loop; it belongs at the end of the continuation.
@@ -853,7 +875,84 @@ that going idle is not a turn event: it changes nothing a `Transcript`
 holds, and it is not one now. It is a state event, which a `Transcript`
 returns unhandled.
 
+Revised 2026-11-07: the Agent no longer emits the state event; see
+_Lifecycle is history_. The reload case it answered is answered by the
+protocol's opening status instead.
+
+## Lifecycle is history (2026-11-07)
+
+Two needs arrived together. A remote `final` resolved at the turn's
+`turn:end` while a local one waited for the continuation, so the noun meant
+something different across the boundary; and Sunnyday's run had work to do
+when a queued send started and when it ended, cancel included, that had no
+place inside the hold: the opening turn cancelled or timed out skipped
+`after`, and its bookkeeping ran after the next send had started. Both
+wanted the operation's start and end to be visible.
+
+The rule that settles it is that `agent.on` carries everything that
+happened, whether or not `Transcript` folds it. The operation's lifecycle
+is history like its turns: `operation:start`, `after:start` and `after:end`,
+`operation:end` with the outcome, and `agent:idle`, bracketing by position
+because nothing runs concurrently inside an operation. Status is not
+history. It is what the Agent is now, which `agent.status` answers, and the
+events mark the two places it changes, so a connected consumer follows it
+exactly; one that resumes partway through is told it by the protocol on
+connect ([remote-agent.md](./remote-agent.md) invariant 8), because history
+and the live server can disagree: a crash, a released agent, a page loaded
+from a database. So the Agent emits no status event, and the stream has one
+kind of event.
+
+The hooks moved with it. The start and end of an operation are where a host
+acts, so they are agent-wide and awaited: `onStart` before the turn opens,
+`onSettled` after the continuation. Per-send `before` and `finally` options
+were weighed first; they give a closure where an agent-wide hook needs a map
+keyed by id, which is a style choice, and every existing `onSettled` user
+already wanted once per operation (the CLI never continues; Sunnyday's
+assistant never saw an inline settle). `onStart` failing refuses the start;
+`onSettled` failing cannot change the result, because several unrelated
+callbacks share it and `final` reports what the agent did.
+
+Inline turns gained `threadId`: a turn a continuation sends belongs to the
+thread its operation started, rooted at the send's id, as a chat app roots a
+thread at its first message (Slack's `thread_ts`, iMessage's
+`thread_originator_guid`). The transcript stays a flat list of the turns
+people see; judging belongs in annotations, and a reply in a thread is drawn
+from the field.
+
+This reverses three earlier decisions, each for a stated reason:
+
+- _`onSettled` once per operation_ (2026-10-14) was rejected because a crash
+  mid-continuation would lose committed inline turns from storage. That loss
+  is real and accepted: no consumer relied on the save point, and saving per
+  turn inside a continuation is the continuation's job, with `ctx.messages`
+  and each `ctx.send()` result in hand.
+- _An idle turn event_ (2026-10-09) was rejected because going idle changes
+  nothing a `Transcript` holds. Events now carry history, not only what the
+  transcript folds, so `agent:idle` is one.
+- _A parent operation id on an inline turn_ (2026-10-14) was rejected as a
+  field on `SettledOperation` with no reader. `threadId` is on the turn and
+  its message, and its reader is the renderer.
+
 ## Rejected alternatives
+
+- **Per-send `before` and `finally` options** (2026-11-07): the first shape
+  of the start and end hooks. Rejected for agent-wide `onStart` and a
+  per-operation `onSettled`: one end hook instead of two that did the same
+  job at slightly different moments.
+- **`onSettled` failures rejecting `final`** (2026-11-07): proposed so a
+  persistence failure would surface. Rejected: the hook is shared, so one
+  broken callback would fail every send, and a host reports its own
+  bookkeeping failures on its own channel.
+- **`return false` from `onStart` to skip the turn** (2026-11-07): a second
+  way to refuse with no reason attached. A throw carries the reason;
+  `agent.cancel()` inside the callback refuses as a cancel.
+- **Inline sends as their own operations** (2026-11-07): either queued
+  behind later sends, so a judge runs after the next message, or nested
+  inside the first, so status and cancel must choose between them.
+- **Status derived from history alone** (2026-11-07): a fold of
+  `operation:start` and `agent:idle` with no sync. Right while connected,
+  wrong for a consumer that resumes after the operation started and for a
+  server that restarted.
 
 - **Status as a numbered entry** (2026-11-06): stamping busy and idle into
   the log like any event. Rejected: a consumer resuming after a cursor
@@ -944,7 +1043,8 @@ returns unhandled.
 - **A continuation on inline turns** (2026-10-14): the continuation is
   imperative code and judging the correction is the next line of the loop.
   Nesting would re-raise which judge judges what.
-- **`onSettled` once per operation** (2026-10-14): the inside of the
+- **`onSettled` once per operation** (2026-10-14, reversed 2026-11-07; see
+  _Lifecycle is history_): the inside of the
   continuation would get no save point, so a crash during the second judge
   loses a committed, already-streamed turn from storage. A per-operation
   hook beside the per-turn one was rejected with it: the handle and the
@@ -972,7 +1072,8 @@ returns unhandled.
   inline turns live in the continuation. A field with no reader. Naming it
   `after` was rejected on its own: the word already means the inline-turn
   list on a result, and `after: undefined` on the first turn's settle would
-  read as "no continuation" when there was one.
+  read as "no continuation" when there was one. Revisited 2026-11-07: `threadId` on the inline
+  turn and its message, read by the renderer; see _Lifecycle is history_.
 - **`then` as the option name** (2026-10-09): a function-valued `then`
   makes the options object a thenable, and `Promise.resolve` would call it.
 - **Observer-style names (`onFinish`, `onEnd`, "hook")** (2026-10-14): those
@@ -1028,7 +1129,8 @@ returns unhandled.
 - **Putting the id on the handle instead** (2026-10-09): `compact()`
   returns a bare promise, and the hook exists so a consumer does not need the
   handle.
-- **An idle turn event** (2026-10-09): every turn event changes what a
+- **An idle turn event** (2026-10-09, reversed 2026-11-07; see _Lifecycle
+  is history_): every turn event changes what a
   `Transcript` holds, and going idle changes nothing there. It is lifecycle,
   so it is a hook. Amended 2026-11-06: status is delivered on `agent.on`
   as a `state` event, not a turn event; see _Status is state_.

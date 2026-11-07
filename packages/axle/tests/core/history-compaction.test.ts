@@ -194,11 +194,12 @@ describe("Agent.compact", () => {
     expect(agent.messages).toEqual(summary);
     expect(events.map((e) => e.type)).toEqual([
       "pending:queued",
-      "state",
+      "operation:start",
       "turn:start",
       "part:start",
       "compaction:complete",
       "turn:end",
+      "operation:end",
     ]);
 
     const entries = transcript.turns.filter(isCompactionTurn);
@@ -247,7 +248,9 @@ describe("Agent.compact", () => {
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const statuses: AgentStatus[] = [];
     agent.on((event) => {
-      if (event.type === "state") statuses.push(event.status);
+      if (event.type === "operation:start" || event.type === "agent:idle") {
+        statuses.push(agent.status);
+      }
     });
     let compactionId = "";
     agent.setCompaction({
@@ -606,9 +609,10 @@ describe("Agent.compact", () => {
     expect(called).toBe(false);
     expect(events.map((event) => event.type)).toEqual([
       "pending:queued",
-      "state",
+      "operation:start",
       "pending:dropped",
-      "state",
+      "operation:end",
+      "agent:idle",
     ]);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
   });

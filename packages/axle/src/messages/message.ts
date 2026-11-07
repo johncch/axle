@@ -47,6 +47,8 @@ export interface AxleUserMessage {
   content: string | Array<ContentPart>;
   /** Stable consumer-owned render metadata copied to the corresponding user turn. */
   metadata?: MessageMetadata;
+  /** The operation that sent this message inline, copied to the user turn as `threadId`. */
+  threadId?: string;
 }
 
 /**

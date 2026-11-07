@@ -105,7 +105,7 @@ function textOf(turn: Turn): string {
  * served agent's, as it last said; `connection` is the transport's.
  */
 export class RemoteAgent<THostEvent extends { type: string } = never> {
-  private eventCallbacks: Array<(event: StreamItem<THostEvent>) => void> = [];
+  private eventCallbacks: Array<(event: StoredEvent<THostEvent>) => void> = [];
   private connectionCallbacks: Array<(connection: RemoteConnection) => void> = [];
   private connectionInternal: RemoteConnection = { phase: "connecting" };
   private statusInternal: AgentStatus = { phase: "idle" };
@@ -126,17 +126,20 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     return this.connectionInternal;
   }
 
-  /** The served agent's status, from its last `state` event; `idle` until the stream opens. */
+  /**
+   * The served agent's status: what the stream opened with, then moved by
+   * `operation:start` (busy with its id) and `agent:idle`, already updated
+   * when `on` delivers either. `idle` until the stream opens.
+   */
   get status(): AgentStatus {
     return this.statusInternal;
   }
 
   /**
-   * Everything on the served side's stream, in order: the agent's turn
-   * events and the host's own, each with its cursor, and the agent's
-   * `state` events, which have none.
+   * Every event on the served side's stream, in order: what the agent's `on`
+   * delivers and the host's own events, each with its cursor.
    */
-  on(callback: (event: StreamItem<THostEvent>) => void): () => void {
+  on(callback: (event: StoredEvent<THostEvent>) => void): () => void {
     this.eventCallbacks.push(callback);
     return () => {
       const index = this.eventCallbacks.indexOf(callback);
@@ -254,17 +257,22 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
 
   private apply(item: StreamItem<THostEvent>): void {
     if (isStateEvent(item)) {
-      this.statusInternal = item.status;
-      if (item.status.phase === "idle") this.fold = new Transcript<Annotation, THostEvent>();
-    } else if (isStoredTurnEvent(item)) {
-      this.applyTurnEvent(item);
+      this.setStatus(item.status);
+      return;
     }
+    if (isStoredTurnEvent(item)) this.applyTurnEvent(item);
     for (const callback of [...this.eventCallbacks]) callback(item);
   }
 
   private applyTurnEvent(event: TurnEvent & { cursor: string }): void {
     this.fold.apply(event);
     switch (event.type) {
+      case "operation:start":
+        this.setStatus({ phase: "busy", id: event.id });
+        break;
+      case "agent:idle":
+        this.setStatus({ phase: "idle" });
+        break;
       case "pending:dropped":
         this.settleOperation(event.id, (op) =>
           op.reject(
@@ -364,6 +372,11 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       const message = error instanceof Error ? error.message : String(error);
       op.resolve({ ok: false, error: { kind: "parse", message, cause: error }, turn, usage });
     }
+  }
+
+  private setStatus(status: AgentStatus): void {
+    this.statusInternal = status;
+    if (status.phase === "idle") this.fold = new Transcript<Annotation, THostEvent>();
   }
 
   private settleOperation(id: string, settle: (op: OpenOperation) => void): void {

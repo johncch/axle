@@ -1,14 +1,12 @@
 import type { AgentStatus } from "../core/agent/types.js";
-import type { AgentEvent, AgentStateEvent, TurnEvent } from "../turns/events.js";
+import type { AgentEvent, TurnEvent } from "../turns/events.js";
 import type { AgentSubscription, StreamItem } from "./protocol.js";
 
 export type StoredEvent<THostEvent extends { type: string } = never> = (TurnEvent | THostEvent) & {
   cursor: string;
 };
 
-type Queued<THostEvent extends { type: string }> =
-  | { kind: "event"; seq: number; event: StoredEvent<THostEvent> }
-  | { kind: "state"; state: AgentStateEvent };
+type Held<THostEvent extends { type: string }> = { seq: number; event: StoredEvent<THostEvent> };
 
 interface ServedAgent {
   readonly status: AgentStatus;
@@ -50,27 +48,28 @@ class EventQueue<T> {
 /**
  * One served agent's events, kept in memory. Every agent event, and every
  * host event given to `push`, is stamped with a cursor `<id>-<seq>` in the
- * order it happened and kept. The agent's `state` events are neither: last
- * value wins. `subscribe` opens with the current state, replays what a
- * consumer has not seen and continues live with no gap and no repeat, state
- * changes in their place among the events. A host that keeps events in its
- * own store serves subscriptions from there instead.
+ * order it happened and kept. The store keeps the agent's status too,
+ * folded from its own log: read from the agent once, at construction, then
+ * moved by `operation:start` and `agent:idle`. `subscribe` opens with that
+ * status, replays what a consumer has not seen and continues live with no
+ * gap and no repeat. A host that keeps events in its own store serves
+ * subscriptions from there instead.
  */
 export class InMemoryEventStore<THostEvent extends { type: string } = never> {
   readonly id: string = crypto.randomUUID().slice(0, 8);
   private seq = 0;
-  private events: Array<{ seq: number; event: StoredEvent<THostEvent> }> = [];
-  private queues = new Set<EventQueue<Queued<THostEvent>>>();
+  private events: Held<THostEvent>[] = [];
+  private queues = new Set<EventQueue<Held<THostEvent>>>();
   private closed = false;
+  private status: AgentStatus;
   private readonly unsubscribe: () => void;
 
-  constructor(private readonly agent: ServedAgent) {
+  constructor(agent: ServedAgent) {
+    this.status = agent.status;
     this.unsubscribe = agent.on((event) => {
-      if (event.type === "state") {
-        for (const queue of this.queues) queue.push({ kind: "state", state: event });
-      } else {
-        this.append(event);
-      }
+      if (event.type === "operation:start") this.status = { phase: "busy", id: event.id };
+      if (event.type === "agent:idle") this.status = { phase: "idle" };
+      this.append(event);
     });
   }
 
@@ -103,13 +102,13 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
   }
 
   /**
-   * The agent's state now, then events after `after` when this store owns
-   * it, else every event held, then live events and state changes until
-   * `signal` aborts. Registered before the replay starts, so an event
+   * The store's status now, then events after `after` when this store
+   * owns it, else every event held, then live events until `signal`
+   * aborts. Registered before the replay starts, so an event
    * appended during it is delivered once, in order.
    */
   subscribe(signal: AbortSignal, after?: string | null): AgentSubscription<THostEvent> {
-    const queue = new EventQueue<Queued<THostEvent>>();
+    const queue = new EventQueue<Held<THostEvent>>();
     if (this.closed) queue.close();
     else this.queues.add(queue);
     const close = (): void => {
@@ -129,10 +128,6 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
             yield held.event;
           }
           for await (const queued of queue.drain()) {
-            if (queued.kind === "state") {
-              yield queued.state;
-              continue;
-            }
             if (queued.seq <= last) continue;
             last = queued.seq;
             yield queued.event;
@@ -143,14 +138,14 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
         }
       },
     };
-    return { state: { type: "state", status: this.agent.status }, items };
+    return { state: { type: "state", status: this.status }, items };
   }
 
   private append(event: TurnEvent | THostEvent): void {
     const seq = ++this.seq;
     const held = { seq, event: { ...event, cursor: `${this.id}-${seq}` } };
     this.events.push(held);
-    for (const queue of this.queues) queue.push({ kind: "event", ...held });
+    for (const queue of this.queues) queue.push(held);
   }
 
   private seqOf(cursor: string | undefined): number | undefined {

@@ -91,6 +91,11 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   annotations?: TAnnotation[];
   /** Stable consumer-owned render metadata copied from the source message. */
   metadata?: TurnMetadata;
+  /**
+   * On a user turn sent inline by a continuation, the id of the operation
+   * that sent it: the send's own user turn id, which roots the thread.
+   */
+  threadId?: string;
   /** Optional timing metadata. */
   timing?: TimingInfo;
   /** Token usage accumulated for this turn, when available. */
@@ -382,5 +387,13 @@ export type ActionResult =
 /**
  * Why a pending entry ended without opening its turn.
  */
+/**
+ * How an operation that ran ended, as `operation:end` carries it: `complete`
+ * when its handle resolved, `cancelled` when it was aborted, `error` when
+ * its work, its continuation or an `onStart` callback threw.
+ */
+export type OperationOutcome =
+  { type: "complete" } | { type: "cancelled" } | { type: "error"; error: { message: string } };
+
 export type PendingDropReason =
   { type: "cancelled" } | { type: "error"; error: { type: string; message: string } };

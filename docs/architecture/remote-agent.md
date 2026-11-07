@@ -59,8 +59,8 @@ front door and the process the agent runs in.
    resumes with the last cursor it delivered; and the SSE `id:` is that
    cursor, so `Last-Event-ID` is the resume point with no second field.
    The Agent itself emits plain events and knows nothing of numbering.
-   The Agent's state events are not sequenced: the store never stamps or
-   keeps them (invariant 8).
+   Every event is sequenced; the agent's status is not an event, and the
+   store keeps it beside the log (invariant 8).
 4. **A cursor is owned by one store.** A store replays after a cursor it owns
    and from the start for any other, including one from a store that no
    longer exists. That fall-through is the restart: a new conversation is
@@ -72,8 +72,9 @@ front door and the process the agent runs in.
 5. **Host events share the store and never touch the remote's status.** The
    store is generic over the host's event type; `push` stamps a host event
    in sequence with the agent's; `RemoteAgent.on` delivers both with their
-   cursors; `RemoteAgent.status` comes from state events alone. A host
-   event never uses `type: "state"`, which is the agent's.
+   cursors; `RemoteAgent.status` comes from the opening status and the
+   agent's `operation:start` and `agent:idle` alone. A host event never
+   uses those types, nor `type: "state"`, which the protocol uses.
 6. **A send crosses as a rendered prompt.** The `send` command is
    `{ type: "send", id, prompt, files?, metadata? }`: the user turn's `id`,
    `instruct.render()` with the inputs, references, context sections and
@@ -92,9 +93,9 @@ front door and the process the agent runs in.
 7. **The remote reads like the local, minus what cannot cross.**
    `RemoteAgent` has `on`, `status`, `onToolCall`, `toolCall(id)`,
    `send`, `cancel`, `stop`, `clear`, and adds `connection`,
-   `onConnection` and `close`. `on` delivers everything the stream
-   carries, in order: turn events, host events and state events, beginning
-   with the state the stream opened with. `cancel`, `stop` and
+   `onConnection` and `close`. `on` delivers the same events `agent.on`
+   does, and the host's, in order, each with its cursor; the opening
+   status is the protocol's and is not delivered. `cancel`, `stop` and
    `clear` have the Agent's meaning: the active turn, the active turn at
    its batch boundary, the queue. A remote `send` returns a `RemoteHandle`
    with `final` only; it has no `cancel`, because a queued remote send
@@ -104,29 +105,35 @@ front door and the process the agent runs in.
    visible from the events. A `RemoteAgent` holds no transcript; it folds
    each turn only to produce `turn` and `response` on `final`, as the
    Agent does.
-8. **A stream opens with the agent's state, and state is never
-   sequenced.** `AgentTransport.events` resolves to an
-   `AgentSubscription`: `state`, the served agent's status when the stream
-   opened, and `items`, the events after the cursor followed by live
-   events and state changes in the order they happened. A state event is
-   `{ type: "state", status }`: last value wins, it has no cursor, and it
-   is never replayed, so a consumer that resumes after its stored cursor
-   while a continuation runs still opens `busy` and is told `idle` when the
-   continuation returns. Over SSE the state is a message with
-   `event: state` and no `id`, written first on every response; sequenced events
-   carry `id` and no `event`. A message without `id` keeps the last event
-   id, so a parser hands the state message the previous event's id, and
-   `httpTransport` routes on `event`, never on whether an id is present. An
-   empty `id:` would reset the resume point, so a state message never
-   carries one. `toEventStreamResponse` takes the subscription and cannot
-   open without a state. On the consumer, the connection and the status
-   are separate: `connection` is `connecting` until `events` resolves,
-   then `open`; `ended` when the items end or `events` resolves with no
-   subscription because there is no agent to subscribe to; `error` with
-   the error that was thrown, so a consumer reads a transport's own
-   detail, such as `HttpTransportError.status`, from it;
-   `status` is `idle` until the opening state arrives and then follows the
-   state events.
+8. **Status is synced, not streamed.** The agent owns its status and
+   emits no status event (agent-state.md invariant 13). What crosses is the
+   served side's status at the moment a consumer subscribes, because
+   history and the live server can disagree: a consumer that resumes after
+   an operation started has skipped its `operation:start`, and a server
+   that restarted has a history that says nothing of what it is doing now.
+   `AgentTransport.events` resolves to an `AgentSubscription`: `state`, the
+   status when the stream opened, and `items`, the events after the cursor
+   followed by live events. The store keeps that status by folding its own
+   log, `operation:start` to busy with that id and `agent:idle` to idle,
+   seeded once from `agent.status` when it is built, so a store built while
+   its agent is busy opens busy and the opening status always describes the
+   log the store is about to replay, however it is fed. After the opening
+   status, a consumer applies the same two rules to the events in order,
+   replay and live alike, and updates `status` before `on` delivers the
+   event that moved it. A replay can move status briefly; it ends at the
+   opening value, because the replay is the store's log up to that moment.
+   Over SSE the opening status is a message with `event: state` and no
+   `id`, written first on every response, so every reconnect brings a fresh
+   one; every later message is an event with its cursor as `id` and no
+   `event`. A state message never carries an empty `id:`, which would reset
+   the resume point. `toEventStreamResponse` takes the subscription and
+   cannot open without a status. On the consumer, the connection and the
+   status are separate: `connection` is `connecting` until `events`
+   resolves, then `open`; `ended` when the items end or `events` resolves
+   with no subscription because there is no agent to subscribe to; `error`
+   with the error that was thrown, so a consumer reads a transport's own
+   detail, such as `HttpTransportError.status`, from it; `status` is `idle`
+   until the stream opens.
 9. **A `RemoteAgent` stands in for an `Agent` wherever an agent is
    served.** `InMemoryEventStore` takes either, and a host's command switch
    makes the same calls on either, so a hop is a consumer facing upstream
@@ -159,9 +166,9 @@ front door and the process the agent runs in.
     so a consumer reads `ended` rather than a stream gone quiet. A
     host that keeps events elsewhere does not use it: it stamps events
     with its store's own ids, which become the cursors, keeps the agent's
-    latest state from `agent.on`, and answers a subscription with
-    `{ state, items }`, the replay after the cursor followed by live
-    events and state changes. The cursor's format is the store's; the
+    status by the same fold, seeded from `agent.status`, and answers a
+    subscription with `{ state, items }`, that status followed by the replay
+    after the cursor and live events. The cursor's format is the store's; the
     transport and `Turn.cursor` treat it as an opaque string. A store that
     evicts must never trim behind a cursor a client may still hold, or must
     notice the hole and send its own baseline event; the library cannot see
@@ -197,7 +204,8 @@ exception is the agent's status (2026-11-06): a continuation emits
 nothing, so a consumer that resumes after the turn's `turn:end` cannot
 derive that the agent is still busy. The served side therefore hands over
 the current state and then the sequenced events, and a late joiner is still the
-same code path as a reconnect.
+same code path as a reconnect. (Revised 2026-11-07: the status is synced on
+connect and moved by lifecycle events; see _Status is synced_.)
 
 **`Turn.cursor` is the one transport fact the fold learns.** Without it, a
 client that renders from the database must still replay the whole store to
@@ -228,6 +236,19 @@ the rejected alternatives are in agent-state.md, _Status is state_.
 The same split answers the SSE question. A state message is still a
 spec-compliant SSE message; it simply has no `id`, which the protocol
 allows and which leaves `Last-Event-ID` where the last sequenced event put it.
+
+## Status is synced (2026-11-07)
+
+The state event did its job, a reload during a continuation reads busy, but
+it made the stream two kinds of event and the Agent the emitter of a fact
+about itself. The Agent now emits only history, its operation's lifecycle
+included (agent-state.md, _Lifecycle is history_), and status is a property
+anyone can read. Between two machines the protocol syncs it, once per
+connection, and the lifecycle events move it from there, which is exact
+because status changes only where an operation starts and where the queue
+empties. The store folds its own log rather than reading `agent.status` on
+each subscribe, so a store fed late through a host's channel still opens
+with a status that matches what it replays.
 
 ## Deferred (2026-11-06)
 

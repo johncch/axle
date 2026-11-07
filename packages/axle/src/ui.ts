@@ -60,6 +60,7 @@ export type {
   CompactionUpdate,
   DeferredAction,
   FilePart,
+  OperationOutcome,
   PendingDropReason,
   ProviderToolAction,
   SubagentAction,

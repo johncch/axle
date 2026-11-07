@@ -210,10 +210,16 @@ the Agent's resumable state is the _session_.
 
 **Inline turn** — a turn a continuation runs through `ctx.send()`. It is an
 ordinary send turn in every way but one: it starts at once in the held
-slot, so it has no pending phase and announces no `pending:queued`. It
-commits to messages, settles through `onSettled` under its own id, and is
-recorded on its operation's result under `after`. Inline turns run one at a
-time, FIFO, like operations.
+slot, so it has no pending phase and announces no `pending:queued`, and it
+fires no hook of its own. It commits to messages, carries its operation's
+id as `threadId`, and is recorded on its operation's result under `after`.
+Inline turns run one at a time, FIFO, like operations.
+
+**Thread** — the turns an operation produced: its own user turn, which
+roots the thread, and the inline turns its continuation sent, whose user
+turns carry the root's id as `threadId`. One level deep, as in a chat app's
+thread. A renderer draws an inline turn as a reply; the transcript stays a
+flat list.
 
 **Idle** — the Agent has no operation running and none queued. It is
 _busy_ from the first call that schedules an operation until the last
@@ -223,11 +229,21 @@ to idle, and `agent.snapshot()` resolves there.
 **Agent status** — `agent.status`: `{ phase: "idle" }`, or
 `{ phase: "busy", id }` with the id of the operation holding the queue
 (the send's user turn id, or the compaction's id). Busy covers the
-operation's `onSettled` callbacks and its continuation, so a send whose
-judge is still running is busy although its turn has ended. One operation
-handing the queue to the next is a single change to the next id, with no
-idle between. Not to be confused with `Turn.status`, which describes one
-turn. A `RemoteAgent` reads the same value from its stream's _state events_.
+operation's `onStart` callbacks, its continuation and its `onSettled`
+callbacks, so a send whose judge is still running is busy although its turn
+has ended. It changes only at `operation:start` and `agent:idle`; one
+operation handing the queue to the next is a single change to the next id,
+with no idle between. Not to be confused with `Turn.status`, which describes
+one turn. The Agent emits no status event; a `RemoteAgent` is told the
+served agent's status when its stream opens (the _status sync_) and moves it
+by the same two events.
+
+**Lifecycle event** — an event marking an operation's lifecycle rather than
+a turn's content: `operation:start`, `after:start`, `after:end`,
+`operation:end` with the operation's outcome, and `agent:idle`. Delivered on
+`agent.on` with the turn events and sequenced like them; `Transcript`
+reports them handled and folds nothing from them. They nest by position: a
+turn between `after:start` and `after:end` is the continuation's.
 
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
@@ -304,23 +320,19 @@ delivered to resume, and the fold records the cursor of the event that
 closed a turn as `Turn.cursor` so stored turns carry their resume point.
 
 **Event (stream)** — anything `agent.on` delivers, and anything a served
-stream carries. There are two kinds, sequenced events and state events.
+stream carries besides its status sync: turn events, lifecycle events, and
+host events on a served stream. Something that happened, in the order it
+happened. An event store numbers each one with an _event cursor_, keeps it,
+and replays it to a consumer that resumes. A consumer folds events, so each
+must arrive exactly once. "Sequenced event" is the same thing, named where
+the contrast with the status sync matters.
 
-**Sequenced event** — something that happened, in the order it happened: a
-turn event, or a host event on a served stream. An event store numbers
-each one with an _event cursor_, keeps it, and replays it to a consumer
-that resumes. A consumer folds sequenced events, so each must arrive
-exactly once.
-
-**State event** — the Agent's status as a last-wins value,
-`{ type: "state", status }`, delivered on `agent.on` beside the sequenced
-events at each change. It is never numbered, kept or replayed: a served
-stream opens with the current one and then sends each change in its place
-among the sequenced events, and a consumer keeps only the latest.
-Something is carried as a state event only when sequenced events cannot
-rebuild it for a consumer that resumes after a cursor; the status
-qualifies because no sequenced event marks the end of a continuation.
-`type: "state"` is reserved, and a host event never uses it.
+**Status sync** — the served agent's status, sent once when a consumer's
+stream opens and on every reconnect: what the agent is now, which history
+cannot say for a consumer that resumed partway through or a server that
+restarted. It is not an event: never numbered, kept or replayed, and the
+Agent never emits it. On SSE it is the first message, `event: state` with
+no `id`; `type: "state"` is reserved, and a host event never uses it.
 
 **Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
 exposes to consumers elsewhere: the Agent, its event store, and the host's

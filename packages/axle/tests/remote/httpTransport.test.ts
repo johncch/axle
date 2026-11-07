@@ -100,7 +100,7 @@ describe("httpTransport", () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const store = new InMemoryEventStore(agent);
     const host = fakeHost(agent, store);
-    // The opening status and the busy change are two of the five messages before the cut.
+    // The opening status is one of the five messages before the cut.
     host.dropNextAfter(5);
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, reconnectDelayMs: 0 }),
@@ -108,7 +108,7 @@ describe("httpTransport", () => {
     const seen: { cursor: string }[] = [];
     const transcript = new Transcript();
     remote.on((event) => {
-      if (event.type !== "state") seen.push(event);
+      seen.push(event);
       transcript.apply(event);
     });
     remote.onToolCall(() => "teal");
@@ -117,7 +117,7 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(result.response).toBe("saw ask-user=teal");
-    expect(host.streamRequests).toEqual([null, `${store.id}-3`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-4`]);
     expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(transcript.turns.at(-1)?.status).toBe("complete");
@@ -133,7 +133,7 @@ describe("httpTransport", () => {
     );
     const seen: { cursor: string }[] = [];
     remote.on((event) => {
-      if (event.type !== "state") seen.push(event);
+      seen.push(event);
     });
     remote.onToolCall(() => "teal");
 
@@ -141,7 +141,7 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(result.response).toBe("saw ask-user=teal");
-    expect(host.streamRequests).toEqual([null, `${store.id}-2`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-3`]);
     expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
   });
 
@@ -155,7 +155,7 @@ describe("httpTransport", () => {
     const remote = new RemoteAgent(httpTransport("http://agent/42", { fetch: host.fetch, after }));
     const seen: { cursor: string }[] = [];
     remote.on((event) => {
-      if (event.type !== "state") seen.push(event);
+      seen.push(event);
     });
     await remote.send("second").final;
     remote.close();
@@ -164,26 +164,25 @@ describe("httpTransport", () => {
     expect(seqs(seen)[0]).toBe(Number(after.split("-")[1]) + 1);
   });
 
-  test("a state message after an entry is state, though the parser hands it that entry's id", async () => {
+  test("status opens with the store's, then follows operation:start and agent:idle as they are delivered", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
     const store = new InMemoryEventStore(agent);
     const host = fakeHost(agent, store);
     const remote = new RemoteAgent(httpTransport("http://agent/42", { fetch: host.fetch }));
-    const seen: { cursor: string }[] = [];
     const statuses: AgentStatus[] = [];
     remote.on((event) => {
-      if (event.type !== "state") seen.push(event);
+      if (event.type === "operation:start" || event.type === "agent:idle") {
+        statuses.push(remote.status);
+      }
     });
-    remote.on((event) => {
-      if (event.type === "state") statuses.push(event.status);
-    });
+    await waitFor(() => remote.connection.phase === "open");
+    expect(remote.status).toEqual({ phase: "idle" });
 
     await remote.send("hello", { id: "op-1" }).final;
-    await waitFor(() => remote.status.phase === "idle" && statuses.length === 3);
+    await waitFor(() => statuses.length === 2);
     remote.close();
 
-    expect(statuses).toEqual([{ phase: "idle" }, { phase: "busy", id: "op-1" }, { phase: "idle" }]);
-    expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
+    expect(statuses).toEqual([{ phase: "busy", id: "op-1" }, { phase: "idle" }]);
   });
 
   test("a page resuming from its stored turn during a continuation opens busy, then goes idle", async () => {
@@ -205,9 +204,9 @@ describe("httpTransport", () => {
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, after: storedCursor }),
     );
-    const seen: { cursor: string }[] = [];
+    const seen: { type: string; cursor: string }[] = [];
     remote.on((event) => {
-      if (event.type !== "state") seen.push(event);
+      seen.push(event);
     });
     await waitFor(() => remote.connection.phase === "open");
     expect(remote.status).toEqual({ phase: "busy", id: "a" });
@@ -218,7 +217,7 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(host.streamRequests).toEqual([storedCursor]);
-    expect(seen).toEqual([]);
+    expect(seen.map((event) => event.type)).toEqual(["after:end", "operation:end", "agent:idle"]);
   });
 
   test("a reconnect answered 410 ends the agent", async () => {
@@ -235,7 +234,7 @@ describe("httpTransport", () => {
     agent.send("hello");
     await waitFor(() => remote.connection.phase === "ended");
 
-    expect(host.streamRequests).toEqual([null, `${store.id}-2`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-3`]);
   });
 
   test("a 5xx on reconnect is retried with a doubling wait, so a deploy in progress does not end the client", async () => {
@@ -262,7 +261,7 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(result.response).toBe("saw ask-user=teal");
-    expect(host.streamRequests).toEqual([null, `${store.id}-3`, `${store.id}-3`, `${store.id}-3`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-4`, `${store.id}-4`, `${store.id}-4`]);
     const gets = attempts.slice(0, 4);
     expect(gets[2] - gets[1]).toBeGreaterThanOrEqual(10);
     expect(gets[3] - gets[2]).toBeGreaterThanOrEqual(15);
@@ -375,7 +374,7 @@ describe("httpTransport over node:http", () => {
     );
     const seen: { cursor: string }[] = [];
     remote.on((event) => {
-      if (event.type !== "state") seen.push(event);
+      seen.push(event);
     });
     remote.onToolCall(() => "teal");
     const result = await remote.send("ask").final;

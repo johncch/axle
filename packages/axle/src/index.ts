@@ -20,6 +20,8 @@ export type {
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
+  StartCallback,
+  StartedOperation,
 } from "./core/agent/index.js";
 export { Instruct } from "./core/index.js";
 export type {
@@ -232,6 +234,7 @@ export type {
   CompactionUpdate,
   DeferredAction,
   FilePart,
+  OperationOutcome,
   PendingDropReason,
   ProviderToolAction,
   SubagentAction,
