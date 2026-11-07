@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { describe, expect, test } from "vitest";
 import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
-import { EventLog } from "../../src/remote/eventLog.js";
+import { InMemoryEventStore } from "../../src/remote/eventStore.js";
 import { HttpTransportError, httpTransport } from "../../src/remote/httpTransport.js";
 import { processAgentCommand } from "../../src/remote/processAgentCommand.js";
 import type { AgentCommand } from "../../src/remote/protocol.js";
@@ -36,16 +36,20 @@ function cutInsideMessage(count: number): TransformStream<Uint8Array, Uint8Array
   });
 }
 
-async function handle(agent: Agent, log: EventLog, request: Request): Promise<Response> {
+async function handle(
+  agent: Agent,
+  store: InMemoryEventStore,
+  request: Request,
+): Promise<Response> {
   if (request.method === "POST") {
     const command: AgentCommand = await request.json();
     return Response.json(await processAgentCommand(agent, command));
   }
   const after = request.headers.get("last-event-id");
-  return toEventStreamResponse(log.subscribe(request.signal, after), request);
+  return toEventStreamResponse(store.subscribe(request.signal, after), request);
 }
 
-function fakeHost(agent: Agent, log: EventLog) {
+function fakeHost(agent: Agent, store: InMemoryEventStore) {
   const streamRequests: Array<string | null> = [];
   let dropNextAfter: number | undefined;
   let cutNextInside: number | undefined;
@@ -53,12 +57,12 @@ function fakeHost(agent: Agent, log: EventLog) {
   const failNext: number[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
-    if (request.method !== "GET") return handle(agent, log, request);
+    if (request.method !== "GET") return handle(agent, store, request);
     streamRequests.push(request.headers.get("last-event-id"));
     if (goneAfterFirst && streamRequests.length > 1) return new Response(null, { status: 410 });
     const status = failNext.shift();
     if (status !== undefined) return new Response(null, { status });
-    const response = await handle(agent, log, request);
+    const response = await handle(agent, store, request);
     if (cutNextInside !== undefined) {
       const cut = cutNextInside;
       cutNextInside = undefined;
@@ -94,8 +98,8 @@ function seqs(entries: { cursor: string }[]): number[] {
 describe("httpTransport", () => {
   test("a dropped stream reconnects with Last-Event-ID and the replay fills the gap once", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     // The opening status and the busy change are two of the five messages before the cut.
     host.dropNextAfter(5);
     const remote = new RemoteAgent(
@@ -113,7 +117,7 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(result.response).toBe("saw ask-user=teal");
-    expect(host.streamRequests).toEqual([null, `${log.id}-3`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-3`]);
     expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(transcript.turns.at(-1)?.status).toBe("complete");
@@ -121,8 +125,8 @@ describe("httpTransport", () => {
 
   test("a stream cut inside a message drops the partial message and replays it whole", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     host.cutNextInside(5);
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, reconnectDelayMs: 0 }),
@@ -137,16 +141,16 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(result.response).toBe("saw ask-user=teal");
-    expect(host.streamRequests).toEqual([null, `${log.id}-2`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-2`]);
     expect(seqs(seen)).toEqual(seen.map((_, i) => i + 1));
   });
 
   test("after resumes the first connection from a stored cursor", async () => {
     const agent = new Agent({ provider: textProvider(["one", "two"]), model: "mock" });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     await agent.send("first").final;
-    const after = log.lastCursor;
+    const after = store.lastCursor;
 
     const remote = new RemoteAgent(httpTransport("http://agent/42", { fetch: host.fetch, after }));
     const seen: { cursor: string }[] = [];
@@ -162,8 +166,8 @@ describe("httpTransport", () => {
 
   test("a state message after an entry is state, though the parser hands it that entry's id", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     const remote = new RemoteAgent(httpTransport("http://agent/42", { fetch: host.fetch }));
     const seen: { cursor: string }[] = [];
     const statuses: AgentStatus[] = [];
@@ -184,8 +188,8 @@ describe("httpTransport", () => {
 
   test("a page resuming from its stored turn during a continuation opens busy, then goes idle", async () => {
     const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     const { promise: judging, resolve: judgeStarted } = Promise.withResolvers<void>();
     const { promise: verdict, resolve: pass } = Promise.withResolvers<void>();
     const final = agent.send("write", {
@@ -196,7 +200,7 @@ describe("httpTransport", () => {
       },
     }).final;
     await judging;
-    const storedCursor = log.lastCursor;
+    const storedCursor = store.lastCursor;
 
     const remote = new RemoteAgent(
       httpTransport("http://agent/42", { fetch: host.fetch, after: storedCursor }),
@@ -219,8 +223,8 @@ describe("httpTransport", () => {
 
   test("a reconnect answered 410 ends the agent", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     host.dropNextAfter(4);
     host.goneAfterFirst();
     const remote = new RemoteAgent(
@@ -231,13 +235,13 @@ describe("httpTransport", () => {
     agent.send("hello");
     await waitFor(() => remote.connection.phase === "ended");
 
-    expect(host.streamRequests).toEqual([null, `${log.id}-2`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-2`]);
   });
 
   test("a 5xx on reconnect is retried with a doubling wait, so a deploy in progress does not end the client", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     host.dropNextAfter(5);
     const attempts: number[] = [];
     const remote = new RemoteAgent(
@@ -258,7 +262,7 @@ describe("httpTransport", () => {
     remote.close();
 
     expect(result.response).toBe("saw ask-user=teal");
-    expect(host.streamRequests).toEqual([null, `${log.id}-3`, `${log.id}-3`, `${log.id}-3`]);
+    expect(host.streamRequests).toEqual([null, `${store.id}-3`, `${store.id}-3`, `${store.id}-3`]);
     const gets = attempts.slice(0, 4);
     expect(gets[2] - gets[1]).toBeGreaterThanOrEqual(10);
     expect(gets[3] - gets[2]).toBeGreaterThanOrEqual(15);
@@ -280,8 +284,8 @@ describe("httpTransport", () => {
 
   test("headers are sent with the stream and each command", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
-    const log = new EventLog(agent);
-    const host = fakeHost(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const host = fakeHost(agent, store);
     const authorizations: Array<string | null> = [];
     let token = 0;
     const transport = httpTransport("http://agent/42", {
@@ -332,13 +336,13 @@ describe("httpTransport over node:http", () => {
 
   test("sends over a real server, answers the waiting call, and resumes after the server drops it", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     let dropAt: number | undefined = 3;
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk);
       const request = requestFrom(req, "http://localhost", Buffer.concat(chunks).toString());
-      const response = await handle(agent, log, request);
+      const response = await handle(agent, store, request);
       if (req.method === "GET" && dropAt !== undefined) {
         const cut = dropAt;
         dropAt = undefined;

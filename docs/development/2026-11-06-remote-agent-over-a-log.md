@@ -113,3 +113,19 @@ and the pending queue stays out of state, because a queued send missed by a
 resume still arrives as its turn and no command acts on one queued entry.
 The rule that came out of it is that something is state only when the
 events cannot rebuild it for a consumer that resumes.
+
+## `EventLog` became `InMemoryEventStore` (later on 2026-11-06)
+
+`retain: "none"` was dropped first. A host replaying from its own database
+already has numbering, replay and a live read there, so an `EventLog` that
+kept nothing handed it only a counter to throw away. That host is its own
+event store, and what is left of `EventLog` is the in-memory one. The name
+followed: "log" sat beside the tracer's `LogWriter` and `LogEntry`, and
+"event store" is the event-sourcing term for append, read from a position
+and catch-up subscribe. `LoggedEvent` became `StoredEvent`. Stream, feed,
+bus, pipe, queue, topic and sequencer were each considered and rejected;
+terminology.md records why. An `EventStore` interface was considered for
+`loopbackTransport` and deferred, with one caller.
+
+The vocabulary was tightened in the same pass: everything `agent.on`
+delivers is an event, of two kinds, sequenced events and state events.

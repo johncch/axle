@@ -227,7 +227,7 @@ operation's `onSettled` callbacks and its continuation, so a send whose
 judge is still running is busy although its turn has ended. One operation
 handing the queue to the next is a single change to the next id, with no
 idle between. Not to be confused with `Turn.status`, which describes one
-turn. A `RemoteAgent` reads the same value from its stream's _state_.
+turn. A `RemoteAgent` reads the same value from its stream's _state events_.
 
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
@@ -288,33 +288,42 @@ mirror a live transcript.
 constructor restores. The transcript is not part of it; consumers persist its
 state alongside.
 
-**Event log** — the numbered stream of one served agent (`EventLog`):
-every agent event and every host event pushed onto it, stamped with a
-cursor in the order it happened, kept for replay by the host's retention
-choice. The one piece of state a served agent has beside the Agent itself.
+**Event store** — where a served agent's sequenced events are kept and
+served from: every agent event and every host event, stamped with a cursor
+in the order it happened, replayed after a cursor and then continued live.
+`InMemoryEventStore` is the shipped one, kept beside the agent in memory; a
+host with its own database is its own event store and serves subscriptions
+from there. The one piece of state a served agent has beside the Agent
+itself.
 
-**Event cursor** — the string an event log stamps on each entry,
-`<log id>-<seq>`. It names a position in one log; a cursor from another log
-is stale and cannot be continued from. A transport sends the last one it
+**Event cursor** — the string an event store stamps on each sequenced event; the
+in-memory store's is `<store id>-<seq>`, and a host's own store may use its
+own ids. It names a position in one store; a cursor from another store is
+stale and cannot be continued from. A transport sends the last one it
 delivered to resume, and the fold records the cursor of the event that
 closed a turn as `Turn.cursor` so stored turns carry their resume point.
 
-**Event (stream)** — something that happened, in the order it happened:
-a turn event, or a host event on a served stream. A served stream numbers
-each one with an _event cursor_, keeps it, and replays it to a consumer that
-resumes. A consumer folds events, so each must arrive exactly once.
+**Event (stream)** — anything `agent.on` delivers, and anything a served
+stream carries. There are two kinds, sequenced events and state events.
 
-**State (stream)** — the Agent's status as a last-wins value,
-`{ type: "state", status }`, delivered on `agent.on` beside the events at
-each change. It is never numbered, kept or replayed: a served stream opens
-with the current state and then sends each change in its place among the
-events, and a consumer keeps only the latest. Something is state only when
-the events cannot rebuild it for a consumer that resumes after a cursor;
-the status qualifies because nothing in the log marks the end of a
-continuation. `type: "state"` is reserved, and a host event never uses it.
+**Sequenced event** — something that happened, in the order it happened: a
+turn event, or a host event on a served stream. An event store numbers
+each one with an _event cursor_, keeps it, and replays it to a consumer
+that resumes. A consumer folds sequenced events, so each must arrive
+exactly once.
+
+**State event** — the Agent's status as a last-wins value,
+`{ type: "state", status }`, delivered on `agent.on` beside the sequenced
+events at each change. It is never numbered, kept or replayed: a served
+stream opens with the current one and then sends each change in its place
+among the sequenced events, and a consumer keeps only the latest.
+Something is carried as a state event only when sequenced events cannot
+rebuild it for a consumer that resumes after a cursor; the status
+qualifies because no sequenced event marks the end of a continuation.
+`type: "state"` is reserved, and a host event never uses it.
 
 **Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
-exposes to consumers elsewhere: the Agent, its event log, and the host's
+exposes to consumers elsewhere: the Agent, its event store, and the host's
 routing to them. Agent lifecycle is the host's; the protocol begins once a
 served agent exists.
 
@@ -327,7 +336,7 @@ own surface minus configuration. It holds no transcript.
 is only whether the Agent took it; everything after acceptance arrives as
 events.
 
-**Transport** — what carries log entries one way and commands the other
+**Transport** — what carries stored events one way and commands the other
 (`AgentTransport`): `httpTransport` over SSE and `POST`, `loopbackTransport`
 with no wire. A transport that reconnects resumes from the last cursor it
 delivered.
@@ -496,8 +505,15 @@ transcript channel renders the model's conversation; runner lines frame it.
   transitions, not sub-entities). Core never uses it as a unit name.
 - **seed**, **frame** — the 2026-11-04 remote-agent prototype's first
   message carrying folded turns, and the envelope around every event.
-  Rejected 2026-11-05: a numbered _event log_ replays, and a baseline for
+  Rejected 2026-11-05: a numbered _event store_ replays, and a baseline for
   a cold open is the host's own event.
+- **event log** — the name of the event store until 2026-11-06
+  (`EventLog`, `LoggedEvent`). Renamed beside the tracer's `LogWriter` and
+  `LogEntry`, which made it read as logging. Also considered and rejected
+  for the object: _stream_ (taken by `stream()` and `ReadableStream`),
+  _feed_ (reads as a news feed), _bus_ and _pipe_ (fan-out with no
+  positions or replay), _queue_ (consumed once, and the Agent's operation
+  queue), _topic_ (Kafka jargon) and _sequencer_.
 - **tape** — the pre-0.30 design term for the event fold. Rejected for the
   public object because it materializes reader-facing state rather than
   retaining a raw event log.

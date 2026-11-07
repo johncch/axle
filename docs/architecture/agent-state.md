@@ -216,12 +216,15 @@ Vocabulary is defined in [terminology.md](../terminology.md).
     `onSettled` callbacks and its continuation, so a send whose judge is
     still running is busy although its turn has ended. One operation
     handing the queue to the next is a single change to the next id, with no
-    idle between. A send cancelled before it starts still goes busy and
-    then idle. Each change is delivered on `agent.on` as
+    idle between. A send that reaches the front of the queue goes busy even
+    if it is cancelled before its turn opens, during setup or because its
+    signal had already aborted, and then idle. A queued send withdrawn by
+    `cancel()` or `clear()` never reaches the front and changes nothing.
+    Each change is delivered on `agent.on` as
     `{ type: "state", status }`, and at the end of an operation the order is
     fixed: the handle's `final` settles, then the `state` event, then
     `onIdle`. A state event is last-wins: it carries no cursor, an
-    `EventLog` neither numbers nor keeps it, and a served stream opens with
+    event store neither numbers nor keeps it, and a served stream opens with
     the current one ([remote-agent.md](./remote-agent.md) invariant 8).
     `Transcript.apply` accepts it and returns it unhandled. The scheduler
     owns the value; the Agent adds no flag of its own. (2026-11-06)
@@ -781,7 +784,8 @@ more than the Agent's events. Sunnyday pushes `run:start`, `session:error`
 and its own reset onto the same stream as the turn events, and the client's
 `Transcript<Annotation, SessionEvent>` is typed for that mix. An Agent
 cannot number events it never sees. So the number belongs to the stream:
-an `EventLog` beside the served agent stamps every entry, agent or host,
+an event store beside the served agent (`EventLog` then, `InMemoryEventStore`
+since 2026-11-06) stamps every entry, agent or host,
 with `<id>-<seq>`, keeps them, and replays after a cursor it owns. The
 Agent emits plain events and knows nothing of it.
 
@@ -823,22 +827,24 @@ continuation leaves no turn event, and nothing before it can: the page
 skipped it. Deriving busy from turn events gives idle, and the page stays
 wrong until the next turn opens or never.
 
-The answer splits what the stream carries in two. Events are what
-happened: ordered, numbered by the stream, kept, replayed, folded exactly
-once. State is what is true now: last value wins, never numbered, kept or
-replayed, and a consumer that connects is told the current value before
-anything else. The Agent's status is the one state. It is decided by the
-scheduler, which is the only thing that knows when the slot is held, and
-it travels on `agent.on` with the events so a consumer has one channel and
-one order: a sink that does not fold state ignores it, as it ignores any
-event it does not fold.
+The answer splits the events the stream carries into two kinds.
+Sequenced events are what happened: ordered, numbered by the event store,
+kept, replayed, folded exactly once. State events are what is true now:
+last value wins, never numbered, kept or replayed, and a consumer that
+connects is told the current one before anything else. The Agent's status
+is the one state event. It is decided by the scheduler, which is the only
+thing that knows when the slot is held, and it travels on `agent.on` with
+the sequenced events so a consumer has one channel and one order: a sink
+that does not fold state events ignores them, as it ignores any event it
+does not fold.
 
-The rule that keeps state from growing is that something becomes state
-only when the events cannot rebuild it for a consumer that resumes. The
-pending queue fails that test. A send queued before the stored cursor is
-missing from `Transcript.pending` after a reload, but it is not lost: its
-turn opens after the cursor and arrives as an ordinary turn, and no command
-acts on one queued entry. The gap is cosmetic and closes on the next turn.
+The rule that keeps state events from growing is that something becomes
+one only when sequenced events cannot rebuild it for a consumer that
+resumes. The pending queue fails that test. A send queued before the
+stored cursor is missing from `Transcript.pending` after a reload, but it
+is not lost: its turn opens after the cursor and arrives as an ordinary
+turn, and no command acts on one queued entry. The gap is cosmetic and
+closes on the next turn.
 
 This amends _An idle turn event_ (2026-10-09). That entry is still right
 that going idle is not a turn event: it changes nothing a `Transcript`

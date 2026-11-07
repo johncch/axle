@@ -3,7 +3,7 @@ import * as z from "zod";
 import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
-import { EventLog } from "../../src/remote/eventLog.js";
+import { InMemoryEventStore } from "../../src/remote/eventStore.js";
 import { loopbackTransport } from "../../src/remote/loopback.js";
 import { RemoteAgent, type RemoteConnection } from "../../src/remote/RemoteAgent.js";
 import type { TurnEvent } from "../../src/turns/events.js";
@@ -11,7 +11,7 @@ import { Transcript } from "../../src/turns/transcript.js";
 import { askUser, askUserProvider, textProvider, waitFor } from "./helpers.js";
 
 function served(agent: Agent) {
-  return loopbackTransport(agent, new EventLog(agent));
+  return loopbackTransport(agent, new InMemoryEventStore(agent));
 }
 
 function observe(remote: RemoteAgent) {
@@ -132,7 +132,7 @@ describe("RemoteAgent", () => {
   test("a RemoteAgent can itself be served: two hops, answered at the far end", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const hop = new RemoteAgent(served(agent));
-    const far = new RemoteAgent(loopbackTransport(hop, new EventLog(hop)));
+    const far = new RemoteAgent(loopbackTransport(hop, new InMemoryEventStore(hop)));
     const { transcript } = observe(far);
     far.onToolCall(() => "teal");
 
@@ -175,15 +175,15 @@ describe("RemoteAgent", () => {
   });
 });
 
-describe("RemoteAgent over a log", () => {
+describe("RemoteAgent over a store", () => {
   test("a consumer joining mid-turn gets the replay and can answer the waiting call", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const log = new EventLog(agent);
-    const first = new RemoteAgent(loopbackTransport(agent, log));
+    const store = new InMemoryEventStore(agent);
+    const first = new RemoteAgent(loopbackTransport(agent, store));
     const handle = first.send("ask", { id: "op-1" });
     await waitFor(() => first.toolCall("c1") !== undefined);
 
-    const late = new RemoteAgent(loopbackTransport(agent, log));
+    const late = new RemoteAgent(loopbackTransport(agent, store));
     const { transcript, statuses } = observe(late);
     await waitFor(() => late.toolCall("c1") !== undefined);
     expect(late.status).toEqual({ phase: "busy", id: "op-1" });
@@ -202,27 +202,27 @@ describe("RemoteAgent over a log", () => {
   test("host events reach on() with their cursor and leave the status alone", async () => {
     type HostEvent = { type: "run:start"; id: string };
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
-    const log = new EventLog<HostEvent>(agent);
-    const remote = new RemoteAgent<HostEvent>(loopbackTransport(agent, log));
+    const store = new InMemoryEventStore<HostEvent>(agent);
+    const remote = new RemoteAgent<HostEvent>(loopbackTransport(agent, store));
     const seen: string[] = [];
     remote.on((event) => {
       if (event.type !== "state") seen.push(`${event.type}@${event.cursor}`);
     });
     await waitFor(() => remote.connection.phase === "open");
 
-    log.push({ type: "run:start", id: "cycle-1" });
+    store.push({ type: "run:start", id: "cycle-1" });
     await waitFor(() => seen.length === 1);
     expect(remote.status).toEqual({ phase: "idle" });
     await remote.send("hello").final;
     remote.close();
 
-    expect(seen[0]).toBe(`run:start@${log.id}-1`);
+    expect(seen[0]).toBe(`run:start@${store.id}-1`);
     expect(seen.at(-1)).toMatch(/^turn:end@/);
   });
 
   test("a consumer joining while a continuation runs reads busy until it returns", async () => {
     const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     const { promise: judging, resolve: judgeStarted } = Promise.withResolvers<void>();
     const { promise: verdict, resolve: pass } = Promise.withResolvers<void>();
     const final = agent.send("write", {
@@ -234,7 +234,7 @@ describe("RemoteAgent over a log", () => {
     }).final;
     await judging;
 
-    const late = new RemoteAgent(loopbackTransport(agent, log));
+    const late = new RemoteAgent(loopbackTransport(agent, store));
     const { statuses, transcript } = observe(late);
     await waitFor(() => late.connection.phase === "open");
     await waitFor(() => transcript.turns.at(-1)?.status === "complete");

@@ -10,7 +10,7 @@ export type {
 export type { ConsoleOutput, ProviderToolInput } from "./messages/providerTool.js";
 export { computeCost } from "./models/cost.js";
 export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
-export type { LoggedEvent } from "./remote/eventLog.js";
+export type { StoredEvent } from "./remote/eventStore.js";
 export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
 export type {

@@ -1,6 +1,6 @@
 import {
   Agent,
-  EventLog,
+  InMemoryEventStore,
   Instruct,
   isActionOf,
   isCall,
@@ -21,7 +21,7 @@ export const remoteAgentCases: CheckCase[] = [
       "An Instruct with a schema crosses as JSON Schema, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, system, tools: [askUser] });
-      const remote = new RemoteAgent(loopbackTransport(agent, new EventLog(agent)));
+      const remote = new RemoteAgent(loopbackTransport(agent, new InMemoryEventStore(agent)));
       const transcript = new Transcript();
       remote.on(transcript.apply);
       const calls: Array<{ id: string; question: string }> = [];

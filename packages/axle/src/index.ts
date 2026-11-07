@@ -246,8 +246,8 @@ export type {
 } from "./turns/types.js";
 
 // Remote (@experimental)
-export { EventLog } from "./remote/eventLog.js";
-export type { EventLogOptions, LoggedEvent } from "./remote/eventLog.js";
+export { InMemoryEventStore } from "./remote/eventStore.js";
+export type { StoredEvent } from "./remote/eventStore.js";
 export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
 export { loopbackTransport } from "./remote/loopback.js";

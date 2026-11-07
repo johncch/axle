@@ -11,7 +11,7 @@ import type { TurnEvent } from "../turns/events.js";
 import { isTurnEvent, Transcript } from "../turns/transcript.js";
 import type { Annotation, Turn, TurnFailure } from "../turns/types.js";
 import { createStats } from "../utils/stats.js";
-import type { LoggedEvent } from "./eventLog.js";
+import type { StoredEvent } from "./eventStore.js";
 import {
   isStateEvent,
   type AgentTransport,
@@ -85,8 +85,8 @@ function failureOf(failure: TurnFailure): AxleProviderFailure {
   }
 }
 
-function isLoggedTurnEvent<THostEvent extends { type: string }>(
-  event: LoggedEvent<THostEvent>,
+function isStoredTurnEvent<THostEvent extends { type: string }>(
+  event: StoredEvent<THostEvent>,
 ): event is TurnEvent & { cursor: string } {
   return isTurnEvent(event);
 }
@@ -249,7 +249,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     if (isStateEvent(item)) {
       this.statusInternal = item.status;
       if (item.status.phase === "idle") this.fold = new Transcript<Annotation, THostEvent>();
-    } else if (isLoggedTurnEvent(item)) {
+    } else if (isStoredTurnEvent(item)) {
       this.applyTurnEvent(item);
     }
     for (const callback of [...this.eventCallbacks]) callback(item);

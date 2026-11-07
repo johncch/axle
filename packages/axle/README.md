@@ -1346,7 +1346,7 @@ one or more `TurnEvent`s.
 
 A `Turn` folded from events that carry a `cursor` records the cursor of the
 event that closed it, as `turn.cursor`. Events straight from `agent.on`
-have none; events served through an `EventLog` do. A consumer that stores
+have none; events served through an event store do. A consumer that stores
 turns can subscribe again after the last cursor it holds.
 
 #### Turn events
@@ -2115,8 +2115,8 @@ agent.on((event) => {
 An `Agent` runs where its provider key, tools and files are. A browser, or
 another process, drives it through a `RemoteAgent`, which has the Agent's
 own surface minus configuration: `on`, `status`, `onToolCall`,
-`toolCall(id)`, `send`, `cancel`, `stop`, `clear`. Events flow out through an `EventLog`
-beside the served agent; commands flow in through `processAgentCommand`.
+`toolCall(id)`, `send`, `cancel`, `stop`, `clear`. Events flow out through an
+`InMemoryEventStore` beside the served agent; commands flow in through `processAgentCommand`.
 Axle ships both halves and an HTTP transport; routing, authentication and
 agent lifecycle are yours.
 
@@ -2124,13 +2124,21 @@ The served side, in whatever framework answers HTTP with `Request` and
 `Response`:
 
 ```typescript
-import { Agent, EventLog, processAgentCommand, toEventStreamResponse } from "@fifthrevision/axle";
+import {
+  Agent,
+  InMemoryEventStore,
+  processAgentCommand,
+  toEventStreamResponse,
+} from "@fifthrevision/axle";
 
 const agent = new Agent({ provider, model, tools: [askUser] });
-const log = new EventLog(agent);
+const store = new InMemoryEventStore(agent);
 
 // GET /agents/:id — the agent's state, then the events after Last-Event-ID when sent
-toEventStreamResponse(log.subscribe(request.signal, request.headers.get("last-event-id")), request);
+toEventStreamResponse(
+  store.subscribe(request.signal, request.headers.get("last-event-id")),
+  request,
+);
 
 // POST /agents/:id — one command; the body is JSON, so is the reply
 Response.json(await processAgentCommand(agent, await request.json()));
@@ -2167,7 +2175,7 @@ reconnects while a continuation is still running reads `busy`, and
 `remote.on` delivers that state and every later change as `state` events
 beside the turn events. `status` reads `idle` until the stream opens.
 
-Every entry the log stamps carries a `cursor`. The transport resumes a
+Every event the store stamps carries a `cursor`. The transport resumes a
 dropped stream from the last one it delivered, so the served side replays
 the gap and nothing is folded twice. A page that renders from stored turns
 subscribes after the last turn it holds instead of replaying everything:
@@ -2178,16 +2186,17 @@ const remote = new RemoteAgent(httpTransport(url, { after: storedTurns.at(-1)?.c
 remote.on(transcript.apply);
 ```
 
-A cursor from a log that no longer exists replays from the start of the
-one that does. A new conversation is a new `Agent` and a new `EventLog`;
+A cursor from a store that no longer exists replays from the start of the
+one that does. A new conversation is a new `Agent` and a new
+`InMemoryEventStore`;
 nothing on the client needs resetting.
 
-The log takes your own events beside the agent's, typed once:
+The store takes your own events beside the agent's, typed once:
 
 ```typescript
 type HostEvent = { type: "run:start"; id: string } | { type: "session:error"; message: string };
-const log = new EventLog<HostEvent>(agent);
-log.push({ type: "run:start", id: cycleId });
+const store = new InMemoryEventStore<HostEvent>(agent);
+store.push({ type: "run:start", id: cycleId });
 
 const remote = new RemoteAgent<HostEvent>(httpTransport(url));
 remote.on((event) => {
@@ -2197,26 +2206,30 @@ remote.on((event) => {
 
 A host event never uses `type: "state"`; that type is the agent's.
 
-`new EventLog(agent, { retain: "none" })` keeps nothing, for a host that
-forwards entries to its own store and serves replay from there. Such a
-host also keeps the agent's latest state, which is never numbered or
-stored as an entry, and opens each stream with it:
+`InMemoryEventStore` keeps every event for the life of the process. A host
+that keeps events in its own database is its own event store and skips it:
+the database numbers the events, its ids are the cursors, and the host
+keeps the agent's latest state beside them to open each stream with:
 
 ```typescript
 agent.on((event) => {
-  if (event.type === "state") void redis.set(`agent:${id}:state`, JSON.stringify(event));
+  const write =
+    event.type === "state"
+      ? redis.set(`agent:${id}:state`, JSON.stringify(event))
+      : redis.xadd(`agent:${id}:events`, "*", "data", JSON.stringify(event));
+  write.catch(reportStoreError); // on is not awaited; handle failures here
 });
 
-// GET: the subscription is { state, items }
+// GET: a subscription is { state, items }
 const state = JSON.parse(await redis.get(`agent:${id}:state`));
-return toEventStreamResponse({ state, items: entriesAfter(id, lastEventId) }, request);
+return toEventStreamResponse({ state, items: readAfter(id, lastEventId, request.signal) }, request);
 ```
 
-`items` yields the stored entries, each with its `cursor`, then live
-entries and state changes. A
+`items` yields the stored events after the cursor, each with its `cursor`
+set to the database's id, then live events and state changes. A
 `RemoteAgent` can itself be served, so a middle tier that answers some
 deferred calls and forwards the rest is `processAgentCommand(remote, …)`
-over `new EventLog(remote)`.
+over `new InMemoryEventStore(remote)`.
 
 `httpTransport(url, options)` reconnects a dropped stream after
 `reconnectDelayMs` (1000), doubling up to `maxReconnectDelayMs` (30000),

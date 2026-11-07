@@ -1805,6 +1805,22 @@ describe("Agent", () => {
       expect(agent.status).toEqual({ phase: "idle" });
     });
 
+    test("a queued send withdrawn by cancel or clear never goes busy", async () => {
+      const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
+      const statuses = observeStatus(agent);
+
+      const first = agent.send("first", { id: "a" });
+      const cancelled = agent.send("second", { id: "b" });
+      agent.send("third", { id: "c" }).final.catch(() => {});
+      cancelled.cancel();
+      agent.clear();
+      await expect(cancelled.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      await first.final;
+      await vi.waitFor(() => expect(agent.status).toEqual({ phase: "idle" }));
+
+      expect(statuses).toEqual([{ phase: "busy", id: "a" }, { phase: "idle" }]);
+    });
+
     test("stays busy under the send's id through its continuation, then moves to the next operation", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const statuses = observeStatus(agent);

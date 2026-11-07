@@ -1,7 +1,7 @@
 import type { InstructJSON } from "../core/Instruct.js";
 import type { ToolResultPart } from "../messages/message.js";
 import type { AgentStateEvent } from "../turns/events.js";
-import type { LoggedEvent } from "./eventLog.js";
+import type { StoredEvent } from "./eventStore.js";
 
 /**
  * What a consumer asks of a served agent. Each is one Agent method: `send`
@@ -33,7 +33,7 @@ export type CommandOutcome =
  * the agent's state, which has no cursor and is never replayed.
  */
 export type StreamItem<THostEvent extends { type: string } = never> =
-  LoggedEvent<THostEvent> | AgentStateEvent;
+  StoredEvent<THostEvent> | AgentStateEvent;
 
 /** `type: "state"` is the agent's; a host event never uses it. */
 export function isStateEvent<THostEvent extends { type: string }>(
@@ -53,9 +53,10 @@ export interface AgentSubscription<THostEvent extends { type: string } = never> 
 
 /**
  * How events and commands move between a consumer and a served agent. The
- * entries are the served side's log, agent and host events alike, each with
- * its cursor; a transport that reconnects resumes from the last cursor it
- * delivered, and the state it reopens with arrives as a state item.
+ * sequenced events come from the served side's store, agent and host events
+ * alike, each with its cursor; a transport that reconnects resumes from the
+ * last cursor it delivered, and the state it reopens with arrives as a state
+ * event.
  * `events` resolves once the stream is open, which is what a `RemoteAgent`
  * means by connected; the items then run until `signal` aborts or the
  * served agent is gone.

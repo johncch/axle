@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
-import { EventLog, type LoggedEvent } from "../../src/remote/eventLog.js";
+import { InMemoryEventStore, type StoredEvent } from "../../src/remote/eventStore.js";
 import { isStateEvent } from "../../src/remote/protocol.js";
 import { parseSse, toEventStreamResponse, type SseMessage } from "../../src/remote/sse.js";
 import type { TurnEvent } from "../../src/turns/events.js";
@@ -9,10 +9,10 @@ import { textProvider, waitFor } from "./helpers.js";
 
 type HostEvent = { type: "run:start"; id: string };
 
-function collect<T extends { type: string }>(log: EventLog<T>, after?: string) {
+function collect<T extends { type: string }>(store: InMemoryEventStore<T>, after?: string) {
   const controller = new AbortController();
-  const { state, items } = log.subscribe(controller.signal, after);
-  const seen: LoggedEvent<T>[] = [];
+  const { state, items } = store.subscribe(controller.signal, after);
+  const seen: StoredEvent<T>[] = [];
   const statuses: AgentStatus[] = [];
   const done = (async () => {
     for await (const item of items) {
@@ -27,34 +27,38 @@ function seqs(entries: { cursor: string }[]): number[] {
   return entries.map((entry) => Number(entry.cursor.split("-")[1]));
 }
 
-describe("EventLog", () => {
+describe("InMemoryEventStore", () => {
   test("stamps agent and host events in order and replays everything to a late subscriber", async () => {
     const agent = new Agent({ provider: textProvider(["one", "two"]), model: "mock" });
-    const log = new EventLog<HostEvent>(agent);
-    log.push({ type: "run:start", id: "cycle-1" });
+    const store = new InMemoryEventStore<HostEvent>(agent);
+    store.push({ type: "run:start", id: "cycle-1" });
     await agent.send("first").final;
-    const countBefore = Number(log.lastCursor.split("-")[1]);
+    const countBefore = Number(store.lastCursor.split("-")[1]);
 
-    const late = collect(log);
+    const late = collect(store);
     await agent.send("second").final;
-    await waitFor(() => seqs(late.seen).at(-1) === Number(log.lastCursor.split("-")[1]));
+    await waitFor(() => seqs(late.seen).at(-1) === Number(store.lastCursor.split("-")[1]));
     late.stop();
     await late.done;
 
     expect(countBefore).toBeGreaterThan(1);
-    expect(late.seen[0]).toMatchObject({ type: "run:start", id: "cycle-1", cursor: `${log.id}-1` });
+    expect(late.seen[0]).toMatchObject({
+      type: "run:start",
+      id: "cycle-1",
+      cursor: `${store.id}-1`,
+    });
     expect(seqs(late.seen)).toEqual(late.seen.map((_, i) => i + 1));
     expect(late.seen.filter((entry) => entry.type === "turn:end")).toHaveLength(2);
   });
 
   test("a subscriber with an owned cursor gets only what came after, once, across the live boundary", async () => {
     const agent = new Agent({ provider: textProvider(["one", "two", "three"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     await agent.send("first").final;
-    const cursor = log.lastCursor;
+    const cursor = store.lastCursor;
 
-    expect(log.owns(cursor)).toBe(true);
-    const resumed = collect(log, cursor);
+    expect(store.owns(cursor)).toBe(true);
+    const resumed = collect(store, cursor);
     agent.send("second");
     await agent.send("third").final;
     await waitFor(() => resumed.seen.filter((entry) => entry.type === "turn:end").length === 2);
@@ -66,14 +70,14 @@ describe("EventLog", () => {
     expect(seqs(resumed.seen)).toEqual(resumed.seen.map((_, i) => after + 1 + i));
   });
 
-  test("a cursor from another log is not owned and replays from the start", async () => {
+  test("a cursor from another store is not owned and replays from the start", async () => {
     const agent = new Agent({ provider: textProvider(["one"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     await agent.send("first").final;
 
-    expect(log.owns("deadbeef-3")).toBe(false);
-    expect(log.owns(null)).toBe(false);
-    const stale = collect(log, "deadbeef-3");
+    expect(store.owns("deadbeef-3")).toBe(false);
+    expect(store.owns(null)).toBe(false);
+    const stale = collect(store, "deadbeef-3");
     await waitFor(() => stale.seen.some((entry) => entry.type === "turn:end"));
     stale.stop();
     await stale.done;
@@ -81,25 +85,10 @@ describe("EventLog", () => {
     expect(seqs(stale.seen)[0]).toBe(1);
   });
 
-  test("retain none keeps nothing: a late subscriber starts live", async () => {
-    const agent = new Agent({ provider: textProvider(["one", "two"]), model: "mock" });
-    const log = new EventLog(agent, { retain: "none" });
-    await agent.send("first").final;
-
-    const late = collect(log);
-    await agent.send("second").final;
-    await waitFor(() => late.seen.some((entry) => entry.type === "turn:end"));
-    late.stop();
-    await late.done;
-
-    expect(seqs(late.seen)[0]).toBeGreaterThan(1);
-    expect(late.seen.filter((entry) => entry.type === "turn:end")).toHaveLength(1);
-  });
-
   test("a consumer folding the entries records each turn's closing cursor", async () => {
     const agent = new Agent({ provider: textProvider(["one"]), model: "mock" });
-    const log = new EventLog(agent);
-    const consumer = collect(log);
+    const store = new InMemoryEventStore(agent);
+    const consumer = collect(store);
     const transcript = new Transcript();
 
     await agent.send("first", { id: "op-1" }).final;
@@ -111,14 +100,14 @@ describe("EventLog", () => {
     const [user, assistant] = transcript.turns;
     expect(user.id).toBe("op-1");
     expect(user.cursor).toBe(consumer.seen.find((entry) => entry.type === "turn:user")?.cursor);
-    expect(assistant.cursor).toBe(log.lastCursor);
+    expect(assistant.cursor).toBe(store.lastCursor);
   });
 });
 
-describe("EventLog status", () => {
+describe("InMemoryEventStore status", () => {
   test("a subscriber resuming after the stored turn during a continuation opens busy, then hears idle", async () => {
     const agent = new Agent({ provider: textProvider(["draft", "fix"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     const { promise: judging, resolve: judgeStarted } = Promise.withResolvers<void>();
     const { promise: verdict, resolve: pass } = Promise.withResolvers<void>();
     const final = agent.send("write", {
@@ -129,9 +118,9 @@ describe("EventLog status", () => {
       },
     }).final;
     await judging;
-    const storedCursor = log.lastCursor;
+    const storedCursor = store.lastCursor;
 
-    const reloaded = collect(log, storedCursor);
+    const reloaded = collect(store, storedCursor);
     pass();
     await final;
     await waitFor(() => reloaded.statuses.length === 1);
@@ -141,16 +130,16 @@ describe("EventLog status", () => {
     expect(reloaded.opened).toEqual({ phase: "busy", id: "a" });
     expect(reloaded.seen).toEqual([]);
     expect(reloaded.statuses).toEqual([{ phase: "idle" }]);
-    expect(log.lastCursor).toBe(storedCursor);
+    expect(store.lastCursor).toBe(storedCursor);
   });
 
   test("status is neither stamped nor kept: a later subscriber opens with the current one only", async () => {
     const agent = new Agent({ provider: textProvider(["one"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     await agent.send("first").final;
     await waitFor(() => agent.status.phase === "idle");
 
-    const late = collect(log);
+    const late = collect(store);
     await waitFor(() => late.seen.some((entry) => entry.type === "turn:end"));
     late.stop();
     await late.done;
@@ -178,10 +167,10 @@ describe("toEventStreamResponse", () => {
 
   test("writes the status first, each entry with its cursor as the SSE id, and status changes with none", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     const controller = new AbortController();
     const request = new Request("http://x/events", { signal: controller.signal });
-    const response = toEventStreamResponse(log.subscribe(request.signal), request);
+    const response = toEventStreamResponse(store.subscribe(request.signal), request);
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     const reading = readUntilTurnEnd(response.body!, controller.signal);
 
@@ -195,7 +184,7 @@ describe("toEventStreamResponse", () => {
       event: "state",
       data: '{"type":"state","status":{"phase":"idle"}}',
     });
-    expect(firstEntry.id).toBe(`${log.id}-1`);
+    expect(firstEntry.id).toBe(`${store.id}-1`);
     // The parser carries the previous message's id onto a message without one.
     expect(busy).toEqual({
       id: firstEntry.id,
@@ -206,7 +195,7 @@ describe("toEventStreamResponse", () => {
     const entries = messages.filter((message) => message.event !== "state");
     const transcript = new Transcript();
     for (const message of entries) {
-      const entry: LoggedEvent = JSON.parse(message.data);
+      const entry: StoredEvent = JSON.parse(message.data);
       expect(message.id).toBe(entry.cursor);
       transcript.apply(entry);
     }
@@ -216,9 +205,9 @@ describe("toEventStreamResponse", () => {
 
   test("cancelling the body ends the subscription", async () => {
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });
-    const log = new EventLog(agent);
+    const store = new InMemoryEventStore(agent);
     const controller = new AbortController();
-    const response = toEventStreamResponse(log.subscribe(controller.signal));
+    const response = toEventStreamResponse(store.subscribe(controller.signal));
     const reader = response.body!.getReader();
     agent.send("first");
     await reader.read();

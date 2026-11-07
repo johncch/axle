@@ -1,5 +1,5 @@
 import type { AgentStateEvent } from "../turns/events.js";
-import type { LoggedEvent } from "./eventLog.js";
+import type { StoredEvent } from "./eventStore.js";
 import {
   isStateEvent,
   type AgentTransport,
@@ -46,7 +46,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
  * An `AgentTransport` over HTTP to one URL: `GET` opens the event stream as
  * Server-Sent Events, `POST` sends a command as JSON and reads the outcome
  * back. A dropped stream is reopened with `Last-Event-ID` set to the last
- * cursor delivered, so the served side's log fills the gap. Reconnecting
+ * cursor delivered, so the served side's store fills the gap. Reconnecting
  * retries a network failure or a `5xx` until the signal aborts, since the
  * served side may be mid-deploy, waiting `reconnectDelayMs` and doubling up
  * to `maxReconnectDelayMs`; a `404` or `410` ends the events, as the agent
@@ -128,9 +128,9 @@ export function httpTransport<THostEvent extends { type: string } = never>(
             yield state;
             continue;
           }
-          const entry: LoggedEvent<THostEvent> = JSON.parse(next.value.data);
-          last = entry.cursor;
-          yield entry;
+          const event: StoredEvent<THostEvent> = JSON.parse(next.value.data);
+          last = event.cursor;
+          yield event;
         }
       } finally {
         await messages.return();
