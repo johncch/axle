@@ -61,9 +61,11 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
   private seq = 0;
   private events: Array<{ seq: number; event: StoredEvent<THostEvent> }> = [];
   private queues = new Set<EventQueue<Queued<THostEvent>>>();
+  private closed = false;
+  private readonly unsubscribe: () => void;
 
   constructor(private readonly agent: ServedAgent) {
-    agent.on((event) => {
+    this.unsubscribe = agent.on((event) => {
       if (event.type === "state") {
         for (const queue of this.queues) queue.push({ kind: "state", state: event });
       } else {
@@ -83,7 +85,21 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
   }
 
   push(event: THostEvent): void {
+    if (this.closed) return;
     this.append(event);
+  }
+
+  /**
+   * Stop listening to the agent and end every open subscription once it
+   * has delivered what it holds. A later `subscribe` replays and ends; a
+   * later `push` is dropped.
+   */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.unsubscribe();
+    for (const queue of this.queues) queue.close();
+    this.queues.clear();
   }
 
   /**
@@ -94,7 +110,8 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
    */
   subscribe(signal: AbortSignal, after?: string | null): AgentSubscription<THostEvent> {
     const queue = new EventQueue<Queued<THostEvent>>();
-    this.queues.add(queue);
+    if (this.closed) queue.close();
+    else this.queues.add(queue);
     const close = (): void => {
       this.queues.delete(queue);
       queue.close();

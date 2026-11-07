@@ -2222,7 +2222,9 @@ remote.on((event) => {
 
 A host event never uses `type: "state"`; that type is the agent's.
 
-`InMemoryEventStore` keeps every event for the life of the process. A host
+`InMemoryEventStore` keeps every event until `store.close()`, which
+stops it listening to the agent and ends open streams; call it when you
+release the agent, so connected clients read `ended`. A host
 that keeps events in its own database is its own event store and skips it:
 the database numbers the events, its ids are the cursors, and the host
 keeps the agent's latest state beside them to open each stream with:

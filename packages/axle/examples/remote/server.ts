@@ -28,7 +28,9 @@ function start(id: string): Session {
   const session = { agent, store: new InMemoryEventStore(agent) };
   agent.onIdle(() => {
     setTimeout(() => {
-      if (agent.status.phase === "idle" && live.get(id) === session) live.delete(id);
+      if (agent.status.phase !== "idle" || live.get(id) !== session) return;
+      live.delete(id);
+      session.store.close();
     }, releaseAfterMs);
   });
   live.set(id, session);

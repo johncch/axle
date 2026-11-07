@@ -175,6 +175,20 @@ describe("RemoteAgent", () => {
 });
 
 describe("RemoteAgent over a store", () => {
+  test("closing the store ends the remote and rejects its open sends", async () => {
+    const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
+    const store = new InMemoryEventStore(agent);
+    const remote = new RemoteAgent(served(agent, store));
+    const handle = remote.send("ask");
+    await waitFor(() => remote.toolCall("c1") !== undefined);
+
+    store.close();
+
+    await expect(handle.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+    expect(remote.connection).toEqual({ phase: "ended" });
+    agent.cancel();
+  });
+
   test("a consumer joining mid-turn gets the replay and can answer the waiting call", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const store = new InMemoryEventStore(agent);

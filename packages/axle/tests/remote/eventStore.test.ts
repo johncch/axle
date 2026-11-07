@@ -217,4 +217,24 @@ describe("toEventStreamResponse", () => {
 
     await expect(reader.read()).resolves.toMatchObject({ done: true });
   });
+
+  test("close ends open subscriptions, stops listening to the agent, and leaves the replay", async () => {
+    const agent = new Agent({ provider: textProvider(["one", "two"]), model: "mock" });
+    const store = new InMemoryEventStore<HostEvent>(agent);
+    await agent.send("first").final;
+    const open = collect(store);
+    await waitFor(() => open.seen.length > 0);
+    const held = store.lastCursor;
+
+    store.close();
+    await open.done;
+    await agent.send("second").final;
+    store.push({ type: "run:start", id: "cycle-2" });
+    const later = collect(store);
+    await later.done;
+
+    expect(open.seen.at(-1)?.cursor).toBe(held);
+    expect(store.lastCursor).toBe(held);
+    expect(later.seen.map((event) => event.cursor)).toEqual(open.seen.map((event) => event.cursor));
+  });
 });

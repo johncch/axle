@@ -127,11 +127,17 @@ front door and the process the agent runs in.
    detail, such as `HttpTransportError.status`, from it;
    `status` is `idle` until the opening state arrives and then follows the
    state events.
-9. **A `RemoteAgent` can be served.** `InMemoryEventStore` takes an
-   `Agent` or a `RemoteAgent`, and a host's command switch makes the same
-   calls on either, so a hop is a consumer facing upstream and a server
-   facing downstream, and a call is answered at whichever hop has the
-   handler for it.
+9. **A `RemoteAgent` stands in for an `Agent` wherever an agent is
+   served.** `InMemoryEventStore` takes either, and a host's command switch
+   makes the same calls on either, so a hop is a consumer facing upstream
+   and a server facing downstream, and a call is answered at whichever hop
+   has the handler for it. This is the test that the client side is
+   complete: a member the served side needs and `RemoteAgent` lacks, or a
+   noun that means something else on it, is a defect in `RemoteAgent`, not
+   a case for the host to special-case. The two-hop test holds it. One gap
+   is known and open: a remote `final` resolves at the turn's end, a local
+   one after its continuation, which waits on a sequenced event marking
+   the operation's end.
 10. **The HTTP transport reconnects on drops and on the served side being
     away, and stops on being told the agent is gone.** One URL: `GET` for
     the stream, `POST` for a command. A closed socket, a network failure
@@ -147,7 +153,10 @@ front door and the process the agent runs in.
     message whole from its cursor rather than parsing its prefix. A
     command does not retry; a failed `POST` rejects once.
 11. **A host with its own database is its own event store.**
-    `InMemoryEventStore` keeps every event for the life of the process. A
+    `InMemoryEventStore` keeps every event until `close()`, which stops
+    listening to the agent and ends every open subscription once it has
+    delivered what it holds; a host calls it when it releases the agent,
+    so a consumer reads `ended` rather than a stream gone quiet. A
     host that keeps events elsewhere does not use it: it stamps events
     with its store's own ids, which become the cursors, keeps the agent's
     latest state from `agent.on`, and answers a subscription with
