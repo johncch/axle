@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.36.0
 
 - A reply cut off at the output token limit shows
   `⚠ Stopped at the output token limit`; it looked finished before.

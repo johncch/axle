@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.36.0] - 2026-11-08
+
+- Added deferred tools: a tool definition with no `execute` that the caller answers. Calls go to `onToolCall` on `stream()`, `generate()` and `agent.onToolCall()`, or are answered from outside with `toolCall(id).answer()` / `.fail()`. A call with no answer keeps waiting instead of failing (`generate()` still fails fast). Added the `tool:waiting` and `action:waiting` events, the `deferred` action part, and the `isCall` / `isActionOf` helpers.
+- **Breaking:** `onToolCall` now receives a single `{ id, name, input }` call plus the tool context, and only handles deferred tools; it no longer intercepts executable tools. Unanswered calls no longer produce an `unanswered` error result.
+- Added experimental remote agents: `RemoteAgent` drives an Agent served elsewhere over `httpTransport` or `loopbackTransport`, with `InMemoryEventStore` and `toEventStreamResponse` on the served side. Streams resume from the last cursor after a dropped connection, and a 404 or 410 ends the agent. A runnable example is in `examples/remote`.
+- Added the agent operation lifecycle: `agent.on` now delivers `operation:start`, `after:start`, `after:end`, `operation:end` and `agent:idle` events, and `agent.status` reports whether the agent is idle or busy. `TurnEventCallback` is now `AgentEventCallback`.
+- Added `agent.onStart()`, which runs before an operation's turn opens and can refuse it. Turns sent inline from a continuation now carry a `threadId`.
+- **Breaking:** `onSettled` now fires once per send or manual compaction, after the continuation finishes, instead of after every turn.
+- **Breaking:** removed `signal` from inline `ctx.send()` options; it was previously ignored. Cancel the operation to abort an inline turn.
+- Added `turnTimeoutMs` to bound a whole turn, and `streamStallMs` to fail a step when the provider stream goes silent. Both are unset by default.
+- `send()` accepts an `id` for its user turn.
+- Fixed the `stream-web-search-error` check failing for the wrong reason on Haiku 5.5, and documented check retries in the checks README.
+
 ## Unreleased
 
 - Tool call arguments are now parsed with the tool's schema before `execute`. Invalid arguments no longer reach `execute`: the model gets an error tool result with type `validation` naming each issue (for example `description: Invalid input: expected string, received undefined`) and can correct the call in the same turn. `execute` receives the parsed value, so schema defaults and transforms now apply. A parallelized tool's call is rejected as a whole when any item is invalid. MCP tools are validated too, and unknown top-level keys are dropped before the call reaches the server, matching a default `z.object()`, rather than rejected.
