@@ -1,3 +1,14 @@
+export type { AgentStatus } from "./core/agent/types.js";
+export { Instruct } from "./core/Instruct.js";
+export type {
+  InstructContextSection,
+  InstructInputs,
+  InstructOptions,
+  InstructRenderOptions,
+  InstructResponse,
+  InstructVarsMode,
+} from "./core/Instruct.js";
+export type { OutputSchema } from "./core/parse.js";
 export type { CompactionStamp } from "./messages/compaction.js";
 export type {
   Citation,
@@ -9,23 +20,31 @@ export type {
 export type { ConsoleOutput, ProviderToolInput } from "./messages/providerTool.js";
 export { computeCost } from "./models/cost.js";
 export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/cost.js";
+export type { StoredEvent } from "./remote/eventStore.js";
 export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
-export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/protocol.js";
+export type {
+  AgentCommand,
+  AgentSubscription,
+  AgentTransport,
+  AgentWelcome,
+  CommandOutcome,
+  StreamItem,
+} from "./remote/protocol.js";
 export { RemoteAgent } from "./remote/RemoteAgent.js";
 export type {
-  RemoteAgentState,
+  RemoteConnection,
   RemoteHandle,
   RemoteSendOptions,
   RemoteWaitingToolCall,
 } from "./remote/RemoteAgent.js";
-export type { LoggedEvent } from "./remote/eventLog.js";
 export { isActionOf, isCall } from "./tools/deferred.js";
 export type { DeferredActionOf, DeferredCallOf } from "./tools/deferred.js";
 export type { DeferredCall, DeferredTool, WaitingToolCall } from "./tools/types.js";
-export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export type { AgentEvent, AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput, UnknownEvent } from "./turns/transcript.js";
+export { isTimeoutReason } from "./turns/types.js";
 export type {
   ActionPart,
   ActionResult,
@@ -37,11 +56,13 @@ export type {
   CompactionUpdate,
   DeferredAction,
   FilePart,
+  OperationOutcome,
   PendingDropReason,
   ProviderToolAction,
   SubagentAction,
   TextPart,
   ThinkingPart,
+  TimeoutReason,
   TimingInfo,
   ToolAction,
   Turn,

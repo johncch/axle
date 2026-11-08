@@ -5,9 +5,11 @@ export { Agent } from "./core/agent/index.js";
 export type {
   AgentConfig,
   AgentErrorResult,
+  AgentEventCallback,
   AgentHandle,
   AgentResult,
   AgentSession,
+  AgentStatus,
   Continuation,
   ContinuationContext,
   IdleCallback,
@@ -18,7 +20,8 @@ export type {
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
-  TurnEventCallback,
+  StartCallback,
+  StartedOperation,
 } from "./core/agent/index.js";
 export { Instruct } from "./core/index.js";
 export type {
@@ -211,9 +214,10 @@ export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/
 
 // Turns (public format)
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
-export type { AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
+export type { AgentEvent, AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
+export { isTimeoutReason } from "./turns/types.js";
 export type {
   ActionPart,
   ActionResult,
@@ -225,11 +229,13 @@ export type {
   CompactionUpdate,
   DeferredAction,
   FilePart,
+  OperationOutcome,
   PendingDropReason,
   ProviderToolAction,
   SubagentAction,
   TextPart,
   ThinkingPart,
+  TimeoutReason,
   ToolAction,
   Turn,
   TurnFailure,
@@ -239,16 +245,23 @@ export type {
 } from "./turns/types.js";
 
 // Remote (@experimental)
-export { EventLog } from "./remote/eventLog.js";
-export type { EventLogOptions, LoggedEvent } from "./remote/eventLog.js";
+export { InMemoryEventStore } from "./remote/eventStore.js";
+export type { StoredEvent } from "./remote/eventStore.js";
 export { HttpTransportError, httpTransport } from "./remote/httpTransport.js";
 export type { HttpTransportOptions } from "./remote/httpTransport.js";
 export { loopbackTransport } from "./remote/loopback.js";
-export { processAgentCommand } from "./remote/processAgentCommand.js";
-export type { AgentCommand, AgentTransport, CommandOutcome } from "./remote/protocol.js";
+export { agentCommandSchema, commandOutcomeSchema, parseAgentCommand } from "./remote/protocol.js";
+export type {
+  AgentCommand,
+  AgentSubscription,
+  AgentTransport,
+  AgentWelcome,
+  CommandOutcome,
+  StreamItem,
+} from "./remote/protocol.js";
 export { RemoteAgent } from "./remote/RemoteAgent.js";
 export type {
-  RemoteAgentState,
+  RemoteConnection,
   RemoteHandle,
   RemoteSendOptions,
   RemoteWaitingToolCall,

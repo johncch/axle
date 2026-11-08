@@ -7,7 +7,7 @@ import type { EventLevel, Span } from "../../observability/types.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
 import type { Skill } from "../../skills/types.js";
 import type { AnyTool, ProviderTool } from "../../tools/types.js";
-import type { TurnEvent } from "../../turns/events.js";
+import type { AgentEvent } from "../../turns/events.js";
 import type { CompactionUpdate, Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import type { FileResolver } from "../../utils/file.js";
@@ -45,6 +45,20 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   observability?: ObservabilityOptions;
   /** Optional file resolver for request file references. */
   fileResolver?: FileResolver;
+  /**
+   * Longest a turn may run, from opening to `turn:end`, every model step,
+   * tool call and deferred wait included. When it elapses the turn is
+   * cancelled as `cancel()` would, with `{ type: "timeout", limitMs }` as the
+   * abort reason. Unset by default; a send's own value overrides it.
+   */
+  turnTimeoutMs?: number;
+  /**
+   * Longest gap between two chunks from the provider, as `stream()`'s
+   * `streamStallMs`: when it passes, the turn fails `ok: false` with
+   * `{ kind: "api", type: "StreamStall" }`. Unset by default; a send's own
+   * value overrides it.
+   */
+  streamStallMs?: number;
 }
 
 /**
@@ -155,9 +169,22 @@ export type Continuation<T = string> = (
 ) => void | Promise<void>;
 
 /**
- * What a turn settled with, handed to `onSettled` first. `id` is the turn's
- * user turn id: for an operation's own turn, the one its `pending:queued`
- * turn carried; for an inline turn, one no `pending:queued` announced.
+ * The operation that just took the queue, handed to `onStart`. `id` is the
+ * one its `pending:queued` turn carried; `signal` aborts when it is
+ * cancelled.
+ */
+export interface StartedOperation {
+  kind: "send" | "compaction";
+  id: string;
+  signal: AbortSignal;
+}
+
+export type StartCallback = (operation: StartedOperation) => void | Promise<void>;
+
+/**
+ * What an operation ended with, handed to `onSettled`. `id` is the one its
+ * `pending:queued` turn carried. `result` is what its handle settles with:
+ * for a send, the result once its continuation returned, or the rejection.
  */
 export type SettledOperation =
   | {
@@ -174,7 +201,15 @@ export type SettledCallback = (
 
 export type IdleCallback = () => void;
 
-export type TurnEventCallback = (event: TurnEvent) => void;
+/**
+ * What the Agent is doing: `busy` from the moment an operation starts until
+ * it finishes, its `onStart` callbacks, continuation and `onSettled`
+ * callbacks included, with `id` the operation's (the send's user turn id, or
+ * the compaction's); `idle` when a `send()` would start at once.
+ */
+export type AgentStatus = { phase: "idle" } | { phase: "busy"; id: string };
+
+export type AgentEventCallback = (event: AgentEvent) => void;
 
 /**
  * Compaction is split into three layers, each with one job: `triggers` say
@@ -247,6 +282,10 @@ export interface CompactionConfig {
 
 export interface SendMessageOptions<T = any> extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
+  /** This send's turn timeout, overriding the agent's `turnTimeoutMs`; each inline turn may set its own. */
+  turnTimeoutMs?: number;
+  /** This send's stall limit, overriding the agent's `streamStallMs`. */
+  streamStallMs?: number;
   /**
    * Id for the send's user turn, the one `pending:queued`, `turn:user` and
    * `onSettled` carry. Generated when omitted.

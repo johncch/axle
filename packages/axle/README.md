@@ -121,9 +121,11 @@ agent.send("Next question."); // waits until the continuation returns
 ```
 
 An inline turn is an ordinary turn: it emits `turn:user` and the agent turn
-events, commits to messages, settles through `onSettled` under its own id,
-and resolves with its result once that settle has resolved. It starts at
-once, so it has no pending phase and emits no `pending:queued`. Inline sends
+events, commits to messages, and resolves with its result. It starts at
+once, so it has no pending phase and emits no `pending:queued`, and it fires
+no `onSettled` of its own. Its user turn carries `threadId`, the send's id,
+so a UI can draw the retry as a reply to the message that started it.
+`after:start` and `after:end` on `agent.on` bracket the continuation. Inline sends
 take the same arguments as `send()` without `after` or `signal`, run under
 `ctx.signal`, run one at a time in
 call order, and return a promise rather than a handle. The handle keeps its
@@ -142,8 +144,10 @@ flight, and rejects the handle; one that has not started never does.
 `false` while no turn is in flight. `clear()` never touches a continuation.
 A continuation that throws rejects the handle and the queue continues;
 committed inline turns stay committed. Bound your own attempts: the agent
-does not time a continuation out. `agent.send()` from inside queues at the
-back as usual, and awaiting it there deadlocks, as it does from `onSettled`.
+does not time a continuation out. `onSettled` fires once, when the whole
+operation ends, so a continuation that must save after each inline turn
+saves itself. `agent.send()` from inside queues at the back as usual, and
+awaiting it there deadlocks, as it does from `onStart` and `onSettled`.
 A manual `compact()` carries no continuation, and an inline turn carries
 none.
 
@@ -192,14 +196,6 @@ if (!result.ok) throw new Error(result.error.kind);
 ```
 
 For plain text interactions, pass a string directly to `send()` instead.
-
-An Instruct serializes. `instruct.toJSON()` (which `JSON.stringify` calls
-by itself) gives its prompt, inputs, files, references, context sections,
-vars mode and metadata as plain data, and `Instruct.fromJSON(json)` rebuilds
-one. A schema crosses as JSON Schema: structure and descriptions survive,
-refinements and transforms do not, so keep the original Instruct where the
-result is parsed. A file with a `ref` source crosses as is and is resolved
-by the receiving agent's `fileResolver`.
 
 ### Providers
 
@@ -392,6 +388,17 @@ Crossing either limit is a stop, not an error: the loop returns `ok: true` with
 everything accumulated so far and `stopped` set to `"max-steps"` or
 `"token-limit"`. The caller decides what happens next — e.g. compact the
 conversation and start a new call. Non-positive limits throw at call time.
+
+`streamStallMs` bounds a silent provider: the longest gap, in milliseconds,
+between two chunks on one step's stream, the wait for the first included.
+When it passes, the request is aborted and the call returns `ok: false` with
+`{ kind: "api", type: "StreamStall" }`; whatever streamed before is in the
+events, and nothing is retried. Tool execution isn't timed. Each provider's
+own `timeoutMs` stops once the response starts, so without this a dead socket
+waits on the runtime's own limit, about five minutes for Node's `fetch`. A
+model that reasons without streaming sends nothing while it does, so set
+this above that silence. `Agent` takes the same option in its config and per
+send.
 
 `sessionId` names the conversation a call continues. Providers that route or
 group by session use it (OpenRouter's `session_id`); the rest ignore it.
@@ -1346,7 +1353,7 @@ one or more `TurnEvent`s.
 
 A `Turn` folded from events that carry a `cursor` records the cursor of the
 event that closed it, as `turn.cursor`. Events straight from `agent.on`
-have none; events served through an `EventLog` do. A consumer that stores
+have none; events served through an event store do. A consumer that stores
 turns can subscribe again after the last cursor it holds.
 
 #### Turn events
@@ -2014,7 +2021,7 @@ resumed.on((event) => resumedTranscript.apply(event));
 `snapshot()` resolves once everything queued has finished, including sends
 queued after the call, so the session it returns never holds a half-finished
 turn. It is not queued work itself: `clear()` does not cancel it. To save as
-each turn finishes, register `onSettled` instead:
+each operation finishes, register `onSettled` instead:
 
 ```typescript
 agent.on((event) => transcript.apply(event));
@@ -2024,48 +2031,102 @@ agent.onSettled(async (session, operation) => {
 });
 ```
 
-It fires after every turn that commits, however it ended, and once for a
-send or manual compaction that ran without opening a turn: after the
-`turn:end`, and before the handle settles or the next turn opens. A send
-without a continuation fires exactly once; a send with one also fires for
-each inline turn it runs, under that turn's own id, which no
-`pending:queued` announced. `session` is the same value `snapshot()`
-returns. `operation` is a `SettledOperation`: its `kind` (`"send"` or
-`"compaction"`), the `id` of the turn that settled (for a queued operation,
-the one its `pending:queued` turn carried, so you can tell which queued row
-settled), and a `result` with the turn's outcome — `{ status: "fulfilled",
-value }` with the `AgentResult` (or `true`/`false` for a compaction), or
-`{ status: "rejected", reason }` with the error. A send cancelled while
-still waiting in the queue never ran and does not fire; a send that started
-and failed before committing its message does, with a rejected result and
-an unchanged session.
+It fires once for every send or manual compaction that started, however it
+ended: after its turn and its continuation, before `operation:end`, the
+handle settles or the next operation starts. Inline turns don't fire it on
+their own. `session` is the same value `snapshot()` returns. `operation` is
+a `SettledOperation`: its `kind` (`"send"` or `"compaction"`), its `id` (the
+one its `pending:queued` turn carried, so you can tell which queued row
+settled), and a `result` with what the handle settles with —
+`{ status: "fulfilled", value }` with the `AgentResult`, its `after` list
+included (or `true`/`false` for a compaction), or `{ status: "rejected",
+reason }` with the error, the same `AxleAgentAbortError` a cancelled handle
+rejects with, its `reason` included. A send cancelled while still waiting in
+the queue never started and does not fire; one that started and failed
+before committing its message does, with a rejected result and an unchanged
+session.
 
 The Agent waits for the callback. Return a promise when the work has to
-finish before the next turn starts: the handle does not settle, a
-continuation does not resume, and the next operation does not begin until
-every callback has settled, so the transcript read inside the callback
-agrees with `session.messages` and nothing from the next turn is visible
-before your callback resolves. Callbacks run together, not in order. A
-callback that starts async work without returning its promise does not
-hold the queue. Do not await `send()`, `compact()` or `snapshot()` on the
-same agent inside the callback: it holds the queue they wait for, so the
-nested call deadlocks. Work that belongs to a whole cycle rather than to
-one turn, such as a slow snapshot after a judge loop, goes at the end of
-the send's continuation instead, or it runs after every inline turn.
+finish before the next operation starts: the handle does not settle and the
+next operation does not begin until every callback has settled, so the
+transcript read inside the callback agrees with `session.messages`.
+Callbacks run together, not in order. A callback that starts async work
+without returning its promise does not hold the queue. Nothing cancels it:
+`agent.cancel()` and `agent.stop()` return `false` while it runs. Do not
+await `send()`, `compact()` or `snapshot()` on the same agent inside the
+callback: it holds the queue they wait for, so the nested call deadlocks.
 
-The turn is already over while callbacks run: `agent.stop()` returns
-`false` in that window, and so does `agent.cancel()` unless the send still
-has a continuation to run, and the callback is given no signal — cancel
-your own work your own way. A callback cannot affect the turn it reports
-on: if it throws or rejects, the error is recorded on the trace as a
-warning, the remaining callbacks still run, and the handle settles with its
-real result. Handle your own save failures inside the callback. Like `on`,
-it returns a function that unregisters it.
+A callback cannot affect the outcome it reports: if it throws or rejects,
+the error is recorded on the trace as a warning, the remaining callbacks
+still run, and the handle settles with its real result. Handle your own
+save failures inside the callback. Like `on`, it returns a function that
+unregisters it.
 
 A consumer that takes the outcome here does not have to read the handle. An
 unread `final` that rejects raises no unhandled rejection, so
 `agent.send(text)` with the handle dropped is safe. `final` still rejects
 for code that awaits or chains from it.
+
+To act when an operation starts, register `onStart`. It fires once the
+operation holds the queue and before its turn opens, never inside `send()`
+itself:
+
+```typescript
+agent.onStart(async ({ kind, id, signal }) => {
+  if (kind !== "send") return;
+  await db.markRunning(id, { signal }); // the turn opens once this returns
+});
+```
+
+`signal` aborts if the operation is cancelled while the callback runs, and
+the cancelled send is then dropped. Callbacks run together and are awaited.
+One that throws refuses the start: the turn and the continuation are
+skipped, the pending turn is dropped with the error and no message is
+committed, `onSettled` runs with the error, and the handle rejects with it.
+To refuse a start as a cancel instead, call `agent.cancel(reason)` inside
+the callback.
+
+To bound a runaway turn, set `turnTimeoutMs`, on the agent or per send:
+
+```typescript
+const agent = new Agent({ provider, model, turnTimeoutMs: 15 * 60_000 });
+agent.send(text, { turnTimeoutMs: 30 * 60_000 }); // overrides the agent's
+
+agent.onSettled((_session, { result }) => {
+  const timedOut =
+    result.status === "rejected" &&
+    result.reason instanceof AxleAgentAbortError &&
+    isTimeoutReason(result.reason.reason);
+  if (timedOut) markTimedOut();
+});
+```
+
+The clock runs from `turn:user` to `turn:end`: every model step, tool call
+and deferred wait counts, while `onStart`, the continuation's own time and
+the queue don't, and each inline turn gets its own window. When it runs
+out, that turn is cancelled with `{ type: "timeout", limitMs }` as the
+reason and ends `cancelled`. On the send's own turn the handle rejects with
+`AxleAgentAbortError` carrying that `reason`, and `operation:end` reports
+`{ type: "cancelled", reason }`, which a remote client reads the same way.
+On an inline turn only its `ctx.send()` rejects, so a judge can keep the
+draft:
+
+```typescript
+after: async (_result, ctx) => {
+  try {
+    await ctx.send(`Fix: ${feedback}`);
+  } catch (error) {
+    if (!(error instanceof AxleAgentAbortError && isTimeoutReason(error.reason))) throw error;
+  }
+},
+```
+
+It's unset by default; it's meant as a long limit, since a deferred call
+waiting on a person counts against it.
+
+A silent provider is a separate limit: `streamStallMs`, on the agent or per
+send, fails the turn as a provider failure (`ok: false`, `type:
+"StreamStall"`) rather than cancelling it. See the `stream()` options above.
 
 To learn when the agent has finished everything it was given, register
 `onIdle`:
@@ -2092,31 +2153,83 @@ free, so a `send()` from inside it starts at once. A callback that throws
 is recorded on the trace as a warning and the others still run. It returns
 a function that unregisters it.
 
+To read whether the agent is busy at any moment, use `agent.status`:
+`{ phase: "idle" }`, or `{ phase: "busy", id }` with the id of the
+operation holding the queue (the send's user turn id, or the compaction's).
+Busy lasts through `onStart`, the send's continuation and `onSettled`, so a
+send whose judge is still running is busy although its turn has ended.
+
+`agent.on` delivers the operation's lifecycle beside its turn events:
+
+```
+operation:start { id, kind }
+  turn:user … turn:end
+  after:start { id }
+    turn:user (threadId) … turn:end
+  after:end { id }
+operation:end { id, outcome }      // complete, cancelled (with a timeout reason, if one), or error with a message
+agent:idle
+```
+
+Status changes exactly at `operation:start` (to busy with that id) and at
+`agent:idle`, and `agent.status` already reads the new value when either is
+delivered, so a UI can follow it from the stream:
+
+```typescript
+agent.on((event) => {
+  if (event.type === "operation:start" || event.type === "agent:idle") showBusy(agent.status);
+});
+```
+
+`operation:end` comes after `onSettled` and just before the handle settles;
+`agent:idle` comes just before `onIdle` fires. A send that started ends with
+`operation:end`. `pending:dropped` ends only its preview: a send dropped
+before its turn opened (a setup failure, a throwing `onStart`) carries both,
+and one withdrawn while still queued carries `pending:dropped` alone.
+`Transcript.apply` reports lifecycle events handled and folds nothing from
+them, so `agent.on(transcript.apply)` needs no filter.
+
 ### Remote agents (experimental)
 
 An `Agent` runs where its provider key, tools and files are. A browser, or
 another process, drives it through a `RemoteAgent`, which has the Agent's
-own surface minus configuration: `on`, `onToolCall`, `toolCall(id)`,
-`send`, `cancel`, `stop`, `clear`. Events flow out through an `EventLog`
-beside the served agent; commands flow in through `processAgentCommand`.
-Axle ships both halves and an HTTP transport; routing, authentication and
-agent lifecycle are yours.
+own surface minus configuration: `on`, `status`, `onToolCall`,
+`toolCall(id)`, `send`, `cancel`, `stop`, `clear`. Events flow out through an
+`InMemoryEventStore` beside the served agent; commands flow in as JSON,
+which `parseAgentCommand` checks against the spec, and your code turns each
+into an agent call. Axle ships the spec, the client, the decoding and an
+HTTP transport; dispatch, routing, authentication and agent lifecycle are
+yours.
 
 The served side, in whatever framework answers HTTP with `Request` and
 `Response`:
 
 ```typescript
-import { Agent, EventLog, processAgentCommand, toEventStreamResponse } from "@fifthrevision/axle";
+import {
+  Agent,
+  InMemoryEventStore,
+  parseAgentCommand,
+  toEventStreamResponse,
+} from "@fifthrevision/axle";
 
 const agent = new Agent({ provider, model, tools: [askUser] });
-const log = new EventLog(agent);
+const store = new InMemoryEventStore(agent);
 
-// GET /agents/:id — the event stream, resumed from Last-Event-ID when sent
-toEventStreamResponse(log.subscribe(request.signal, request.headers.get("last-event-id")), request);
+// GET /agents/:id — the agent's state, then the events after Last-Event-ID when sent
+toEventStreamResponse(
+  store.subscribe(request.signal, request.headers.get("last-event-id")),
+  request,
+);
 
 // POST /agents/:id — one command; the body is JSON, so is the reply
-Response.json(await processAgentCommand(agent, await request.json()));
+const command = parseAgentCommand(await request.json());
+if (!command) return new Response(null, { status: 400 });
+return Response.json(await handleCommand(agent, command)); // your switch on command.type
 ```
+
+`parseAgentCommand` returns the typed `AgentCommand` or `null`;
+`handleCommand` is yours, and _Serving commands_ below shows the whole of
+it.
 
 The consumer side, from the browser-safe entry:
 
@@ -2134,14 +2247,60 @@ const result = await remote.send("hello").final;
 result.response; // as locally; an Instruct with a schema parses here
 ```
 
-`send` takes a string or an `Instruct`, which crosses as `toJSON()`:
-files by `ref` resolve on the served side, and the schema goes as JSON
-Schema and parses the response on this side. The handle has `final` only;
-`remote.cancel()` cancels the active turn as `agent.cancel()` does.
-`remote.state` is `connecting`, `idle`, `busy` with the open turn's id,
-`ended` or `error`; `onState` reports changes.
+`send` takes a string or an `Instruct`, which `/ui` exports as well. The
+Instruct is rendered on this side and crosses as
+`{ type: "send", id, prompt, files?, metadata? }`; its schema stays here
+and parses the response here. Files cross with their sources as they are,
+so a file the client uploaded can cross as a `ref` (a storage key, say)
+that the served agent's `fileResolver` reads. That `ref` came from the
+client, so the resolver must check the caller may read it. The handle has
+`final` only, and it settles when the served agent finishes the send, its
+continuation and `onSettled` included, exactly when the local handle there
+does: on the `operation:end` for that send. A continuation that throws or an
+`onStart` that refuses rejects it with an `AxleError` carrying the message.
+The remote result has no `after` list. `remote.cancel()` cancels the active
+turn as `agent.cancel()` does.
 
-Every entry the log stamps carries a `cursor`. The transport resumes a
+Two things are tracked separately. `remote.connection` is the link to the
+served side: `connecting`, `open`, `ended` or `error`, with
+`onConnection` reporting changes. `ended` means there is no agent: it
+ended, or the URL names none. `error` carries the error, so an HTTP
+failure's status is there:
+
+```typescript
+remote.onConnection((connection) => {
+  if (connection.phase === "error" && connection.error instanceof HttpTransportError) {
+    if (connection.error.status === 401) signIn();
+  }
+});
+```
+
+`remote.status` is the served agent's own `idle` or `busy` with an id,
+exactly as `agent.status` reads there.
+Every stream opens with the agent's current status, so a page that
+reconnects while a continuation is still running reads `busy`. From there
+`operation:start` and `agent:idle` move it, as they move `agent.status`, and
+`remote.status` already reads the new value when `remote.on` delivers
+either; the opening status, the stream's _welcome_, is not delivered on `on`. `status` reads
+`idle` until the stream opens, and already reads the opening status when
+`onConnection` reports `open`. For React, subscribe to both and read
+`remote.status` as the snapshot; it keeps the same object until it changes:
+
+```typescript
+const status = useSyncExternalStore(
+  (notify) => {
+    const offEvents = remote.on(notify);
+    const offConnection = remote.onConnection(notify);
+    return () => {
+      offEvents();
+      offConnection();
+    };
+  },
+  () => remote.status,
+);
+```
+
+Every event the store stamps carries a `cursor`. The transport resumes a
 dropped stream from the last one it delivered, so the served side replays
 the gap and nothing is folded twice. A page that renders from stored turns
 subscribes after the last turn it holds instead of replaying everything:
@@ -2152,34 +2311,129 @@ const remote = new RemoteAgent(httpTransport(url, { after: storedTurns.at(-1)?.c
 remote.on(transcript.apply);
 ```
 
-A cursor from a log that no longer exists replays from the start of the
-one that does. A new conversation is a new `Agent` and a new `EventLog`;
+A cursor from a store that no longer exists replays from the start of the
+one that does. If your server loses an agent, to a restart or a release,
+answer `410` on its old stream so clients end and their open sends reject,
+or send your own baseline event when you serve a new agent at the same URL;
+a send made before the loss never settles in that case. A new conversation is a new `Agent` and a new
+`InMemoryEventStore`;
 nothing on the client needs resetting.
 
-The log takes your own events beside the agent's, typed once:
+The store takes your own events beside the agent's, typed once:
 
 ```typescript
 type HostEvent = { type: "run:start"; id: string } | { type: "session:error"; message: string };
-const log = new EventLog<HostEvent>(agent);
-log.push({ type: "run:start", id: cycleId });
+const store = new InMemoryEventStore<HostEvent>(agent);
+store.push({ type: "run:start", id: cycleId });
 
 const remote = new RemoteAgent<HostEvent>(httpTransport(url));
 remote.on((event) => {
-  // TurnEvent | HostEvent, each with its cursor; host events leave remote.state alone
+  // what agent.on delivers, or a HostEvent, each with its cursor; host events leave remote.status alone
 });
 ```
 
-`new EventLog(agent, { retain: "none" })` keeps nothing, for a host that
-forwards entries to its own store and serves replay from there. A
+A host event never uses `type: "welcome"`, which the protocol uses for the
+opening status, nor the agent's lifecycle types.
+
+`InMemoryEventStore` keeps every event until `store.close()`, which
+stops it listening to the agent and ends open streams; call it when you
+release the agent, so connected clients read `ended`. A host
+that keeps events in its own database is its own event store and skips it:
+the database numbers the events, its ids are the cursors, and the host
+keeps the agent's status beside them to open each stream with, folded from
+the same events and seeded from `agent.status`:
+
+```typescript
+agent.on((event) => {
+  const status =
+    event.type === "operation:start"
+      ? { phase: "busy", id: event.id }
+      : event.type === "agent:idle"
+        ? { phase: "idle" }
+        : undefined;
+  const writes = [redis.xadd(`agent:${id}:events`, "*", "data", JSON.stringify(event))];
+  if (status) writes.push(redis.set(`agent:${id}:status`, JSON.stringify(status)));
+  Promise.all(writes).catch(reportStoreError); // on is not awaited; handle failures here
+});
+
+// GET: a subscription is { welcome, items }
+const status = JSON.parse(await redis.get(`agent:${id}:status`));
+const welcome = { type: "welcome", status } as const;
+return toEventStreamResponse(
+  { welcome, items: readAfter(id, lastEventId, request.signal) },
+  request,
+);
+```
+
+`items` yields the stored events after the cursor, each with its `cursor`
+set to the database's id, then live events. A
 `RemoteAgent` can itself be served, so a middle tier that answers some
-deferred calls and forwards the rest is `processAgentCommand(remote, …)`
-over `new EventLog(remote)`.
+deferred calls and forwards the rest is the same command switch over
+`remote`, with `new InMemoryEventStore(remote)`.
 
 `httpTransport(url, options)` reconnects a dropped stream after
 `reconnectDelayMs` (1000), doubling up to `maxReconnectDelayMs` (30000),
 and keeps trying through network failures and `5xx` until `close()`. A
-reconnect answered `404` or `410` ends the agent. `headers` is a value or
+`404` or `410` ends the agent, on the first connection or any later one.
+Any other failure on the first connection is an `error` at once. `headers` is a value or
 a function called per request, for a token; `fetch` can be supplied.
+
+#### Serving commands
+
+The remote agent is RPC: Axle owns the commands (`agentCommandSchema`), the
+client (`RemoteAgent`) and the decoding (`parseAgentCommand`); you own the
+handler, a switch where each command becomes one agent call. The switch is
+yours because your send is rarely a bare `agent.send`: it may carry a
+`signal`, an `after` continuation, a `fileResolver`, or bookkeeping of your
+own around the handle.
+
+| Command                                           | The call                                  | Outcome                                     |
+| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |
+| `{ type: "send", id, prompt, files?, metadata? }` | `agent.send(instruct, { id, metadata })`  | `{ accepted: true }`                        |
+| `{ type: "answer", callId, content }`             | `agent.toolCall(callId)?.answer(content)` | `accepted`, or `not-waiting` with no call   |
+| `{ type: "fail", callId, message }`               | `agent.toolCall(callId)?.fail(message)`   | `accepted`, or `not-waiting` with no call   |
+| `{ type: "cancel" }`                              | `agent.cancel()`                          | `accepted`, or `idle` when it returns false |
+| `{ type: "stop" }`                                | `agent.stop()`                            | `accepted`, or `idle` when it returns false |
+| `{ type: "clear" }`                               | `agent.clear()`                           | `{ accepted: true }`                        |
+
+The outcome says only whether the agent took the command. What happens
+next, the reply, a failure, the waiting call, reaches every consumer as
+events, so the `POST` never carries a result. The send case is where hosts
+go wrong, three ways:
+
+```typescript
+case "send": {
+  // 1. Only a send revives a released agent; a GET or a cancel never does.
+  const agent = live.get(id) ?? (await resume(id));
+  if (!agent) return notFound();
+
+  // 2. Build the message from the prompt. It is already rendered: the
+  //    client's inputs, references and output-format instructions are in it.
+  const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
+  for (const file of command.files ?? []) instruct.addFile(file);
+
+  // 3. Answer before the turn settles. Awaiting final holds the POST open
+  //    for the whole turn; the client reads the result from the events.
+  const handle = agent.send(instruct, { id: command.id, metadata: command.metadata });
+  handle.final.then(recordResult, reportFailure);
+  return Response.json({ accepted: true });
+}
+```
+
+`vars: "optional"` matters: a prompt that contains `{{` as text would
+otherwise fail as a missing variable. A file crosses with its source as it
+is, so a `ref` reaches the `fileResolver` you give the agent or the send.
+The client chose that `ref`, so the resolver checks the caller may read it
+before it reads anything.
+
+`examples/remote/server.ts` is the whole host in one file: creating agents,
+releasing idle ones, the switch above, and the stream route, with
+`examples/remote/client.ts` driving it from a `RemoteAgent`:
+
+```bash
+pnpm tsx packages/axle/examples/remote/server.ts -p anthropic
+pnpm tsx packages/axle/examples/remote/client.ts
+```
 
 The invariants, what is deferred and why, and the rejected alternatives
 are in [docs/architecture/remote-agent.md](../../docs/architecture/remote-agent.md).

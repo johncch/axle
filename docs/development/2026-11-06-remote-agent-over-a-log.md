@@ -80,3 +80,52 @@ Cancel by id, per-send request options, `compact` on the wire, progress
 from a remote handler. Recorded with their shapes in the architecture doc.
 The next consumer is Sunnyday itself, whose transport this replaces after
 the merge.
+
+## Status as state (later on 2026-11-06)
+
+A page that reloaded during a judge loop read idle while the agent was
+busy. It resumed after its stored turn's cursor, the continuation emits
+no turn event, and `RemoteAgent` derived its state from turn events. Every
+fix that kept status in the sequence broke the sequence: a numbered status
+entry is skipped by the resume, and re-sending it on connect either takes a
+new seq that every other consumer sees or reuses an old cursor that moves
+the resuming one backwards. A rule telling hosts to re-send it enforces
+nothing.
+
+What landed splits the stream into events, which are sequenced, and state,
+which is last-wins:
+
+- The scheduler owns `agent.status`, `idle` or `busy` with the operation's
+  id, busy through settle and the continuation, and the Agent delivers each
+  change on `agent.on` as `{ type: "state", status }`.
+- `EventLog` never stamps or keeps state. `subscribe` returns
+  `{ state, items }`; `toEventStreamResponse` takes that subscription and
+  writes the state first as `event: state` with no `id`.
+- `httpTransport` routes on `event: state`, because an SSE message without
+  an `id` inherits the previous one in the parser.
+- `RemoteAgent` splits `connection` from `status`, and `on` delivers
+  everything, including the opening state.
+
+Along the way: a separate `onStatus` on both sides was built and then
+folded into the one `on`, since a consumer forwarding the stream would
+merge them again; host state keys were dropped as derivable by the host;
+and the pending queue stays out of state, because a queued send missed by a
+resume still arrives as its turn and no command acts on one queued entry.
+The rule that came out of it is that something is state only when the
+events cannot rebuild it for a consumer that resumes.
+
+## `EventLog` became `InMemoryEventStore` (later on 2026-11-06)
+
+`retain: "none"` was dropped first. A host replaying from its own database
+already has numbering, replay and a live read there, so an `EventLog` that
+kept nothing handed it only a counter to throw away. That host is its own
+event store, and what is left of `EventLog` is the in-memory one. The name
+followed: "log" sat beside the tracer's `LogWriter` and `LogEntry`, and
+"event store" is the event-sourcing term for append, read from a position
+and catch-up subscribe. `LoggedEvent` became `StoredEvent`. Stream, feed,
+bus, pipe, queue, topic and sequencer were each considered and rejected;
+terminology.md records why. An `EventStore` interface was considered for
+`loopbackTransport` and deferred, with one caller.
+
+The vocabulary was tightened in the same pass: everything `agent.on`
+delivers is an event, of two kinds, sequenced events and state events.

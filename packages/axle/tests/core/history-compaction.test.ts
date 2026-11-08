@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { Agent } from "../../src/core/agent/index.js";
+import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { validateCompactedMessages } from "../../src/messages/compaction.js";
@@ -14,7 +14,7 @@ import type { SpanData } from "../../src/observability/index.js";
 import { Tracer } from "../../src/observability/index.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
-import type { TurnEvent } from "../../src/turns/events.js";
+import type { AgentEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import type { CompactionPart, Turn } from "../../src/turns/types.js";
 
@@ -174,7 +174,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const transcript = attachTranscript(agent);
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     const summary = [user("summary of the first four")];
@@ -194,10 +194,12 @@ describe("Agent.compact", () => {
     expect(agent.messages).toEqual(summary);
     expect(events.map((e) => e.type)).toEqual([
       "pending:queued",
+      "operation:start",
       "turn:start",
       "part:start",
       "compaction:complete",
       "turn:end",
+      "operation:end",
     ]);
 
     const entries = transcript.turns.filter(isCompactionTurn);
@@ -218,7 +220,7 @@ describe("Agent.compact", () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
     const transcript = attachTranscript(agent);
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     agent.setCompaction({
@@ -241,6 +243,29 @@ describe("Agent.compact", () => {
     expect(part?.progress).toBe(1);
   });
 
+  test("a manual compaction is busy under its own id", async () => {
+    const { provider } = createCapturingProvider();
+    const agent = seededAgent(provider, FOUR_MESSAGES);
+    const statuses: AgentStatus[] = [];
+    agent.on((event) => {
+      if (event.type === "operation:start" || event.type === "agent:idle") {
+        statuses.push(agent.status);
+      }
+    });
+    let compactionId = "";
+    agent.setCompaction({
+      compact: (_state, context) => {
+        compactionId = context.id;
+        return { messages: [user("summary")] };
+      },
+    });
+
+    await agent.compact();
+    await vi.waitFor(() => expect(agent.status).toEqual({ phase: "idle" }));
+
+    expect(statuses).toEqual([{ phase: "busy", id: compactionId }, { phase: "idle" }]);
+  });
+
   test("manual compaction bypasses the automatic-trigger policy", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
@@ -255,7 +280,7 @@ describe("Agent.compact", () => {
       },
     });
 
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     const result = await agent.compact();
@@ -289,7 +314,7 @@ describe("Agent.compact", () => {
   test("is a no-op without a registered config", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     await expect(agent.compact()).resolves.toBe(false);
@@ -565,7 +590,7 @@ describe("Agent.compact", () => {
   test("compact aborted before it starts rejects without running anything", async () => {
     const { provider } = createCapturingProvider();
     const agent = seededAgent(provider, FOUR_MESSAGES);
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     const controller = new AbortController();
@@ -582,7 +607,13 @@ describe("Agent.compact", () => {
     await expect(compaction).rejects.toBeInstanceOf(AxleAgentAbortError);
     await expect(compaction).rejects.toMatchObject({ name: "AbortError", reason: "stop" });
     expect(called).toBe(false);
-    expect(events.map((event) => event.type)).toEqual(["pending:queued", "pending:dropped"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "pending:queued",
+      "operation:start",
+      "pending:dropped",
+      "operation:end",
+      "agent:idle",
+    ]);
     expect(agent.messages).toEqual(FOUR_MESSAGES);
   });
 
@@ -652,7 +683,7 @@ describe("Agent.compact", () => {
     };
 
     const agent = new Agent({ provider, model: "mock" });
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
     let called = false;
     agent.setCompaction({
@@ -736,7 +767,7 @@ describe("Agent.compact", () => {
   test("compact without a registered config is never pending", async () => {
     const { provider } = createCapturingProvider();
     const agent = new Agent({ provider, model: "mock" });
-    const events: TurnEvent[] = [];
+    const events: AgentEvent[] = [];
     agent.on((event) => events.push(event));
 
     await agent.compact();

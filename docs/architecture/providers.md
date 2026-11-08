@@ -160,6 +160,24 @@ models.dev's `amazon-bedrock` ids are runtime's. Of the 61 ids Mantle's
 `/v1/models` listed, 48 match a models.dev id exactly; pricing the rest is
 the model catalog's concern, not the provider's.
 
+### Timeouts on a streaming request
+
+Read 2026-11-07 from the SDK sources Axle depends on. `timeoutMs` is the
+provider's per-attempt timeout; none of the four bounds the gap between
+chunks once a stream is flowing, which is why `stream()` has its own
+`streamStallMs` watchdog over the chunks it reads.
+
+| Protocol        | Client                    | What `timeoutMs` bounds                                                                     | Once chunks flow                                                                                             |
+| --------------- | ------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| messages        | `@anthropic-ai/sdk` 0.133 | the `fetch` until headers arrive: `fetchWithTimeout` clears its timer when `fetch` resolves | unbounded by the SDK; on Node, undici's default 300 s body timeout fails a silent body                       |
+| responses       | `openai` 7.31             | the same: the timer is cleared in `finally` once `fetch` returns                            | unbounded by the SDK; undici's 300 s body timeout on Node                                                    |
+| chatCompletions | Axle's `withRetry`        | the same: the attempt timer is cleared once the `Response` returns                          | unbounded by Axle; undici's 300 s body timeout on Node                                                       |
+| generateContent | `@google/genai` 2.31      | the whole attempt, body included ("the timeout must stay armed while the body is consumed") | a total deadline, not a gap; the SDK turns undici's own timeouts off and relies on the server's 20 min limit |
+
+A provider that reasons without streaming anything sends no chunk while it
+does, so `streamStallMs` must exceed that silence. Anthropic's `ping` events
+and similar keep-alives are not chunks Axle reads, so they do not reset it.
+
 ## Rejected alternatives
 
 - **`Endpoint` as a separate type and term** (2026-10-29): a protocol

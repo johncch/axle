@@ -5,6 +5,7 @@ import type {
   ActionResult,
   Annotation,
   CompactionUpdate,
+  OperationOutcome,
   PendingDropReason,
   TimingInfo,
   Turn,
@@ -21,7 +22,16 @@ export type AnnotationEvent<TAnnotation extends Annotation = Annotation> =
   | { type: "annotation:update"; target: AnnotationTarget; annotation: TAnnotation }
   | { type: "annotation:end"; target: AnnotationTarget; annotation: TAnnotation };
 
+/** Everything `agent.on` delivers. */
+export type AgentEvent<TAnnotation extends Annotation = Annotation> = TurnEvent<TAnnotation>;
+
 export type TurnEvent<TAnnotation extends Annotation = Annotation> =
+  // Operation lifecycle
+  | { type: "operation:start"; id: string; kind: "send" | "compaction" }
+  | { type: "after:start"; id: string }
+  | { type: "after:end"; id: string }
+  | { type: "operation:end"; id: string; outcome: OperationOutcome }
+  | { type: "agent:idle" }
   // Pending lifecycle
   | { type: "pending:queued"; turn: Turn<TAnnotation> }
   | { type: "pending:dropped"; id: string; reason: PendingDropReason }

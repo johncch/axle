@@ -1,3 +1,5 @@
+import { isWelcome, type AgentSubscription, type AgentWelcome } from "./protocol.js";
+
 export interface SseMessage {
   id?: string;
   event?: string;
@@ -70,27 +72,36 @@ export async function* parseSse(
 }
 
 /**
- * Answer an HTTP request with entries as Server-Sent Events: each entry as
- * JSON in `data:` with its cursor in `id:`, so `Last-Event-ID` on the next
- * request names where the client stopped. Ends the iterable when the
- * request aborts or the client cancels the body; holds nothing else.
+ * Answer an HTTP request with a subscription as Server-Sent Events: the
+ * welcome first as `event: welcome` with no `id`, then each event as JSON
+ * in `data:` with its cursor in `id:`, so `Last-Event-ID` on the next
+ * request names where the client stopped. Ends the items when the request
+ * aborts or the client cancels the body; holds nothing else.
  */
-export function toEventStreamResponse(
-  entries: AsyncIterable<{ cursor: string }>,
+export function toEventStreamResponse<THostEvent extends { type: string }>(
+  subscription: AgentSubscription<THostEvent>,
   request?: Request,
 ): Response {
-  const iterator = entries[Symbol.asyncIterator]();
+  const iterator = subscription.items[Symbol.asyncIterator]();
   const stop = (): void => void iterator.return?.().catch(() => {});
   request?.signal.addEventListener("abort", stop, { once: true });
   const encoder = new TextEncoder();
+  const welcomeMessage = (welcome: AgentWelcome): string =>
+    encodeSse({ event: "welcome", data: JSON.stringify(welcome) });
   const body = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(encoder.encode(welcomeMessage(subscription.welcome)));
+    },
     async pull(stream) {
       const next = await iterator.next();
       if (next.done) {
         stream.close();
         return;
       }
-      const message = encodeSse({ id: next.value.cursor, data: JSON.stringify(next.value) });
+      const item = next.value;
+      const message = isWelcome(item)
+        ? welcomeMessage(item)
+        : encodeSse({ id: item.cursor, data: JSON.stringify(item) });
       stream.enqueue(encoder.encode(message));
     },
     cancel: stop,

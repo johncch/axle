@@ -1,6 +1,8 @@
 import {
   Agent,
-  EventLog,
+  type AgentCommand,
+  type CommandOutcome,
+  InMemoryEventStore,
   Instruct,
   isActionOf,
   isCall,
@@ -13,15 +15,53 @@ import { askUser, system } from "./deferred-tools.js";
 import { fail } from "./helpers.js";
 import type { CheckCase } from "./types.js";
 
+async function handleCommand(agent: Agent, command: AgentCommand): Promise<CommandOutcome> {
+  switch (command.type) {
+    case "send": {
+      const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
+      for (const file of command.files ?? []) instruct.addFile(file);
+      agent.send(instruct, { id: command.id, metadata: command.metadata }).final.catch(() => {});
+      return { accepted: true };
+    }
+    case "answer":
+    case "fail": {
+      const call = agent.toolCall(command.callId);
+      if (!call) {
+        return {
+          accepted: false,
+          reason: { type: "not-waiting", message: `No waiting call ${command.callId}` },
+        };
+      }
+      if (command.type === "answer") await call.answer(command.content);
+      else await call.fail(command.message);
+      return { accepted: true };
+    }
+    case "cancel":
+    case "stop": {
+      const took = command.type === "cancel" ? await agent.cancel() : await agent.stop();
+      return took
+        ? { accepted: true }
+        : { accepted: false, reason: { type: "idle", message: "No active turn" } };
+    }
+    case "clear":
+      await agent.clear();
+      return { accepted: true };
+  }
+}
+
 export const remoteAgentCases: CheckCase[] = [
   {
     group: "extended",
     id: "remote-agent-roundtrip",
     description:
-      "An Instruct with a schema crosses as JSON Schema, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
+      "An Instruct with a schema crosses as a rendered prompt, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, system, tools: [askUser] });
-      const remote = new RemoteAgent(loopbackTransport(agent, new EventLog(agent)));
+      const remote = new RemoteAgent(
+        loopbackTransport(new InMemoryEventStore(agent), (command) =>
+          handleCommand(agent, command),
+        ),
+      );
       const transcript = new Transcript();
       remote.on(transcript.apply);
       const calls: Array<{ id: string; question: string }> = [];

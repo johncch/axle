@@ -55,8 +55,8 @@ export const continuationCases: CheckCase[] = [
         ...(userTexts.at(-1) !== "Reply exactly: done."
           ? [`The queued message did not run last; user turns were ${JSON.stringify(userTexts)}.`]
           : []),
-        ...(settledIds.length !== 2 + inlineTurns.length
-          ? [`Expected ${2 + inlineTurns.length} settles, received ${settledIds.length}.`]
+        ...(settledIds.length !== 2
+          ? [`Expected 2 settles, one per operation, received ${settledIds.length}.`]
           : []),
         ...(!String(second.response ?? "")
           .toLowerCase()

@@ -91,6 +91,11 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   annotations?: TAnnotation[];
   /** Stable consumer-owned render metadata copied from the source message. */
   metadata?: TurnMetadata;
+  /**
+   * On a user turn sent inline by a continuation, the id of the operation
+   * that sent it: the send's own user turn id, which roots the thread.
+   */
+  threadId?: string;
   /** Optional timing metadata. */
   timing?: TimingInfo;
   /** Token usage accumulated for this turn, when available. */
@@ -382,5 +387,32 @@ export type ActionResult =
 /**
  * Why a pending entry ended without opening its turn.
  */
+/**
+ * How an operation that ran ended, as `operation:end` carries it: `complete`
+ * when its handle resolved, `cancelled` when it was aborted, `error` when
+ * its work, its continuation or an `onStart` callback threw.
+ */
+export type OperationOutcome =
+  | { type: "complete" }
+  | { type: "cancelled"; reason?: TimeoutReason }
+  | { type: "error"; error: { message: string } };
+
+/** The abort reason a turn timeout cancels with, carried on `AxleAgentAbortError.reason`. */
+export interface TimeoutReason {
+  type: "timeout";
+  limitMs: number;
+}
+
+export function isTimeoutReason(reason: unknown): reason is TimeoutReason {
+  return (
+    typeof reason === "object" &&
+    reason !== null &&
+    "type" in reason &&
+    reason.type === "timeout" &&
+    "limitMs" in reason &&
+    typeof reason.limitMs === "number"
+  );
+}
+
 export type PendingDropReason =
   { type: "cancelled" } | { type: "error"; error: { type: string; message: string } };

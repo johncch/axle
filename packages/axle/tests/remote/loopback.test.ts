@@ -1,20 +1,21 @@
 import { describe, expect, test } from "vitest";
 import { Agent } from "../../src/core/agent/index.js";
-import { EventLog } from "../../src/remote/eventLog.js";
-import { loopbackTransport } from "../../src/remote/loopback.js";
+import { InMemoryEventStore } from "../../src/remote/eventStore.js";
 import type { AgentTransport } from "../../src/remote/protocol.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
-import { askUser, askUserProvider, sendCommand, textProvider, waitFor } from "./helpers.js";
+import { askUser, askUserProvider, sendCommand, served, textProvider, waitFor } from "./helpers.js";
 
 function consume(transport: AgentTransport) {
   const controller = new AbortController();
   const events: (TurnEvent & { cursor: string })[] = [];
   const transcript = new Transcript();
   const done = (async () => {
-    for await (const event of await transport.events(controller.signal)) {
-      events.push(event);
-      transcript.apply(event);
+    const subscription = await transport.events(controller.signal);
+    for await (const item of subscription?.items ?? []) {
+      if (item.type === "welcome") continue;
+      events.push(item);
+      transcript.apply(item);
     }
   })();
   return { events, transcript, stop: () => controller.abort(), done };
@@ -23,8 +24,8 @@ function consume(transport: AgentTransport) {
 describe("loopbackTransport", () => {
   test("a consumer sends through the transport and folds the events it hears back", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
-    const log = new EventLog(agent);
-    const transport = loopbackTransport(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const transport = served(agent, store);
     const consumer = consume(transport);
 
     const outcome = await transport.command(sendCommand("op-1", "hello"));
@@ -36,7 +37,7 @@ describe("loopbackTransport", () => {
     expect(consumer.events[0]).toMatchObject({
       type: "pending:queued",
       turn: { id: "op-1" },
-      cursor: `${log.id}-1`,
+      cursor: `${store.id}-1`,
     });
     expect(consumer.transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(consumer.transcript.turns.at(-1)?.parts).toEqual([
@@ -46,8 +47,8 @@ describe("loopbackTransport", () => {
 
   test("a second consumer answers the waiting call it saw on its own stream", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
-    const log = new EventLog(agent);
-    const transport = loopbackTransport(agent, log);
+    const store = new InMemoryEventStore(agent);
+    const transport = served(agent, store);
     const sender = consume(transport);
     const answerer = consume(transport);
 

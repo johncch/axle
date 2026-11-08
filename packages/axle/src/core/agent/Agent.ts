@@ -13,6 +13,7 @@ import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { Span, SpanStatus } from "../../observability/types.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
+import { requireInteger } from "../../protocols/utils.js";
 import { renderSkillsCatalog } from "../../skills/prompt.js";
 import { SkillRegistry } from "../../skills/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
@@ -25,20 +26,23 @@ import type {
 import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
-import type { Turn } from "../../turns/types.js";
+import { isTimeoutReason, type OperationOutcome, type Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
+import { timeoutSignal } from "../../utils/abort.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
 import { Instruct } from "../Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../parse.js";
 import { resolveObservability, spanStatusFromError } from "./observability.js";
-import { AgentScheduler, type InlineRunner } from "./scheduler.js";
+import { AgentScheduler, type InlineRunner, type OperationKind } from "./scheduler.js";
 import type {
   AgentConfig,
   AgentErrorResult,
+  AgentEventCallback,
   AgentHandle,
   AgentResult,
   AgentSession,
+  AgentStatus,
   CompactionConfig,
   CompactionTrigger,
   Continuation,
@@ -49,12 +53,15 @@ import type {
   SendMessageOptions,
   SettledCallback,
   SettledOperation,
-  TurnEventCallback,
+  StartCallback,
+  StartedOperation,
 } from "./types.js";
 
 interface PreparedSend {
   instruct: Instruct<any>;
   fileResolver?: FileResolver;
+  turnTimeoutMs?: number;
+  streamStallMs?: number;
   message: AxleUserMessage;
   userTurn: Turn;
   requestOptions: AxleModelRequestOptions;
@@ -79,6 +86,8 @@ export class Agent {
   readonly model: string;
   readonly name?: string;
   readonly fileResolver?: FileResolver;
+  readonly turnTimeoutMs?: number;
+  readonly streamStallMs?: number;
   readonly requestOptions: Omit<AxleModelRequestOptions, "signal">;
   readonly registry: ToolRegistry;
   readonly skills: SkillRegistry;
@@ -91,14 +100,25 @@ export class Agent {
   private spanParent?: Tracer | Span;
   private ownedTracer?: Tracer;
 
-  private eventCallbacks: TurnEventCallback[] = [];
+  private eventCallbacks: AgentEventCallback[] = [];
 
   private toolCallHandler: ToolCallCallback | undefined;
   private activeStream: StreamHandle | undefined;
+  private startCallbacks: StartCallback[] = [];
   private settledCallbacks: SettledCallback[] = [];
   private compaction?: CompactionConfig;
   private idleCallbacks: IdleCallback[] = [];
-  private scheduler = new AgentScheduler(() => this.notifyIdle());
+  private scheduler = new AgentScheduler({
+    started: (id, kind) => this.emitEvent({ type: "operation:start", id, kind }),
+    afterStarted: (id) => this.emitEvent({ type: "after:start", id }),
+    afterEnded: (id) => this.emitEvent({ type: "after:end", id }),
+    ended: (id, result) =>
+      this.emitEvent({ type: "operation:end", id, outcome: outcomeOf(result) }),
+    idle: () => {
+      this.emitEvent({ type: "agent:idle" });
+      this.notifyIdle();
+    },
+  });
   private turnActive = false;
   private stopRequested = false;
   private transcript = new Transcript();
@@ -123,6 +143,14 @@ export class Agent {
     this.baseSystem = config.system;
     this.name = config.name;
     this.fileResolver = config.fileResolver;
+    this.turnTimeoutMs =
+      config.turnTimeoutMs === undefined
+        ? undefined
+        : requireInteger(config.turnTimeoutMs, "turnTimeoutMs", { min: 1 });
+    this.streamStallMs =
+      config.streamStallMs === undefined
+        ? undefined
+        : requireInteger(config.streamStallMs, "streamStallMs", { min: 1 });
     this.requestOptions = {
       reasoning: config.reasoning,
       maxOutputTokens: config.maxOutputTokens,
@@ -161,7 +189,7 @@ export class Agent {
     return this.registry.size > 0 || this.mcps.length > 0;
   }
 
-  on(callback: TurnEventCallback) {
+  on(callback: AgentEventCallback) {
     this.eventCallbacks.push(callback);
     return () => {
       const index = this.eventCallbacks.indexOf(callback);
@@ -196,27 +224,51 @@ export class Agent {
   }
 
   /**
-   * Receive the session each time a turn settles.
+   * Called each time an operation takes the queue, before its turn opens: a
+   * send, or a compaction. Never inside `send()` itself; always after it
+   * returns. `status` is already `busy` with the operation's id, and
+   * `operation:start` has been emitted.
    *
-   * Fires after every turn that commits, however it ended, and once for an
-   * operation that ran without opening one: after the `turn:end`, and before
-   * the handle settles or the next turn opens. A send without a continuation
-   * fires exactly once; a send with one also fires for each inline turn,
-   * under that turn's own id. The agent is at rest and nothing else has
-   * started, so a consumer that reads its `Transcript.turns` inside the callback
-   * gets turns and messages that match. An operation cancelled while still
-   * queued never ran and does not fire. The session is the one `snapshot()`
-   * returns; unlike `snapshot()`, it does not wait behind queued operations.
-   * The operation carries the turn's outcome: the result on success, the
-   * rejection reason otherwise.
+   * A callback may return a promise; the operation does not start its work
+   * until every callback has settled, and all callbacks run together. One
+   * that throws skips the work and the continuation: the pending turn is
+   * dropped with the error, `onSettled` still runs with it as the result,
+   * and the handle rejects with it. A
+   * `cancel()` while callbacks run aborts `operation.signal`, and the work is
+   * skipped once they return. An operation cancelled while still queued
+   * never starts and does not fire.
    *
-   * A callback may return a promise. The handle does not settle, a
-   * continuation does not resume, and the next queued operation does not
-   * start until every callback has settled; all callbacks run together. A
-   * callback that throws or rejects cannot affect the turn: the error is
-   * recorded on the trace and the other callbacks still run. The turn is
-   * already done while callbacks run, so `stop()` returns `false` in that
-   * window, and so does `cancel()` unless a continuation remains to run.
+   * Do not await `send()`, `compact()` or `snapshot()` on this agent from
+   * inside a callback: the callback holds the queue they wait for, so the
+   * nested call deadlocks.
+   */
+  onStart(callback: StartCallback) {
+    this.startCallbacks.push(callback);
+    return () => {
+      const index = this.startCallbacks.indexOf(callback);
+      if (index >= 0) this.startCallbacks.splice(index, 1);
+    };
+  }
+
+  /**
+   * Receive the session each time an operation ends.
+   *
+   * Fires once for every operation that started, however it ended: after
+   * its turn and its continuation, before `operation:end` is emitted, the
+   * handle settles or the next operation starts. Inline turns sent by a
+   * continuation do not fire it on their own. The session is the one
+   * `snapshot()` returns; unlike `snapshot()`, it does not wait behind queued
+   * operations. The operation carries what the handle settles with: the
+   * result on success, the rejection reason otherwise, the same
+   * `AxleAgentAbortError`, abort reason included, a cancelled handle
+   * rejects with.
+   *
+   * A callback may return a promise. The handle does not settle and the
+   * next queued operation does not start until every callback has settled;
+   * all callbacks run together, and nothing cancels them: `cancel()` and
+   * `stop()` return `false` while they run. A callback that throws or
+   * rejects cannot affect the operation: the error is recorded on the trace
+   * and the other callbacks still run.
    *
    * Do not await `send()`, `compact()` or `snapshot()` on this agent from
    * inside a callback: the callback holds the queue they wait for, so the
@@ -235,7 +287,8 @@ export class Agent {
    * and nothing is queued behind it. Returns an unsubscribe function.
    *
    * It fires after the last operation's `onSettled` callbacks have settled,
-   * and also when the queue was emptied by `clear()` while they ran. Work
+   * and also when the queue was emptied by `clear()` while they ran, just
+   * after `agent:idle` is emitted. Work
    * scheduled during those callbacks keeps the agent busy, so it does not
    * fire until that work is done too.
    *
@@ -249,6 +302,18 @@ export class Agent {
       const index = this.idleCallbacks.indexOf(callback);
       if (index >= 0) this.idleCallbacks.splice(index, 1);
     };
+  }
+
+  /**
+   * `busy` with the running operation's id from the moment it starts until
+   * it finishes, its `onStart` callbacks, continuation and `onSettled`
+   * callbacks included; `idle` when a `send()` would start at once. It
+   * changes only where `on` delivers `operation:start` (to busy with that
+   * id) and `agent:idle`, and it already reads the new value when that event
+   * is delivered.
+   */
+  get status(): AgentStatus {
+    return this.scheduler.status;
   }
 
   /** The active, model-facing conversation. Requests are built from it; compaction replaces it. */
@@ -275,8 +340,9 @@ export class Agent {
    *
    * With `after`, the send carries a continuation: it runs after the turn
    * settles with a result, holds the queue until it returns, and may run
-   * inline turns through `ctx.send()`. The handle then resolves with the
-   * inline turns listed under `after`. A turn whose handle rejects skips it.
+   * inline turns through `ctx.send()`, each stamped with this send's id as
+   * its `threadId`. The handle then resolves with the inline turns listed
+   * under `after`. A turn whose handle rejects skips it.
    */
   send(
     message: string | Instruct<undefined>,
@@ -294,9 +360,11 @@ export class Agent {
     this.emitEvent({ type: "pending:queued", turn: { ...userTurn, status: "pending" } });
 
     return this.scheduler.schedule(
+      userTurn.id,
       ({ signal }) => this.executeTurn(prepared, { signal, announced: true }),
       {
         signal: prepared.requestOptions.signal,
+        start: (signal) => this.start({ kind: "send", id: userTurn.id, signal }),
         onWithdrawn: () =>
           this.emitEvent({
             type: "pending:dropped",
@@ -312,18 +380,30 @@ export class Agent {
   private prepareSend(
     messageOrInstruct: string | Instruct<any>,
     options: InlineSendOptions,
+    threadId?: string,
   ): PreparedSend {
-    const { fileResolver, metadata, id, ...modelOptions } = options;
+    const { fileResolver, metadata, id, turnTimeoutMs, streamStallMs, ...modelOptions } = options;
     const instruct =
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
     instruct.validate();
     const requestOptions = mergeAxleModelRequestOptions(this.requestOptions, modelOptions);
-    const message = instruct.toMessage({ metadata, id });
+    const message = {
+      ...instruct.toMessage({ metadata, id }),
+      ...(threadId ? { threadId } : {}),
+    };
     return {
       instruct,
       fileResolver,
+      turnTimeoutMs:
+        turnTimeoutMs === undefined
+          ? this.turnTimeoutMs
+          : requireInteger(turnTimeoutMs, "turnTimeoutMs", { min: 1 }),
+      streamStallMs:
+        streamStallMs === undefined
+          ? this.streamStallMs
+          : requireInteger(streamStallMs, "streamStallMs", { min: 1 }),
       message,
       userTurn: userTurnFromMessage(message),
       requestOptions,
@@ -352,7 +432,7 @@ export class Agent {
         return agent.pendingTurns;
       },
       send: (messageOrInstruct: string | Instruct<any>, options?: InlineSendOptions) =>
-        this.sendInline(messageOrInstruct, options ?? {}, inline, inlineTurns, span),
+        this.sendInline(messageOrInstruct, options ?? {}, inline, inlineTurns, span, id),
     };
     let status: SpanStatus = "ok";
     try {
@@ -373,11 +453,11 @@ export class Agent {
     inline: InlineRunner,
     inlineTurns: InlineTurn[],
     spanParent: Span | undefined,
+    threadId: string,
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const prepared = this.prepareSend(messageOrInstruct, options);
-    const result = await inline.run(
-      ({ signal }) => this.executeTurn(prepared, { signal, announced: false, spanParent }),
-      (outcome) => this.settle({ kind: "send", id: prepared.userTurn.id, result: outcome }),
+    const prepared = this.prepareSend(messageOrInstruct, options, threadId);
+    const result = await inline.run(({ signal }) =>
+      this.executeTurn(prepared, { signal, announced: false, spanParent }),
     );
     inlineTurns.push({ userTurn: prepared.userTurn, ...result });
     return result;
@@ -428,8 +508,17 @@ export class Agent {
     prepared: PreparedSend,
     runtime: { signal: AbortSignal; announced: boolean; spanParent?: Span },
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const { instruct, fileResolver, message, userTurn, requestOptions } = prepared;
-    const { signal, announced } = runtime;
+    const {
+      instruct,
+      fileResolver,
+      message,
+      userTurn,
+      requestOptions,
+      turnTimeoutMs,
+      streamStallMs,
+    } = prepared;
+    const { announced } = runtime;
+    let signal = runtime.signal;
     let userTurnOpened = false;
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
@@ -471,6 +560,8 @@ export class Agent {
       this.messagesInternal.push(message);
       this.emitEvent({ type: "turn:user", turn: userTurn });
       userTurnOpened = true;
+      using deadline = timeoutSignal(runtime.signal, turnTimeoutMs);
+      signal = deadline.signal;
       const startEvent = turnEventBuilder.startAgentTurn();
       agentTurnId = startEvent.turnId;
       this.emitEvent(startEvent);
@@ -502,6 +593,7 @@ export class Agent {
         agentName: this.name,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
+        streamStallMs,
         ...streamRequestOptions,
         signal,
       });
@@ -699,6 +791,7 @@ export class Agent {
     });
 
     return this.scheduler.schedule(
+      id,
       async ({ signal }) => {
         if (signal.aborted) dropCancelled();
         try {
@@ -713,7 +806,8 @@ export class Agent {
       },
       {
         signal: options?.signal,
-        operation: "compact",
+        kind: "compaction",
+        start: (signal) => this.start({ kind: "compaction", id, signal }),
         onWithdrawn: dropCancelled,
         settle: (result) => this.settle({ kind: "compaction", id, result }),
       },
@@ -879,7 +973,7 @@ export class Agent {
    * agent cannot go idle until they return, so the nested call deadlocks.
    */
   snapshot(): Promise<AgentSession> {
-    if (this.scheduler.idle) return Promise.resolve(this.currentSession());
+    if (this.scheduler.status.phase === "idle") return Promise.resolve(this.currentSession());
     const { promise, resolve } = Promise.withResolvers<AgentSession>();
     const unsubscribe = this.onIdle(() => {
       unsubscribe();
@@ -908,28 +1002,56 @@ export class Agent {
     }
   }
 
+  private async start(operation: StartedOperation): Promise<void> {
+    if (this.startCallbacks.length === 0) return;
+    const failures = await this.runCallbacks(
+      "agent.start",
+      { kind: operation.kind },
+      this.startCallbacks.map((cb) => () => cb(operation)),
+    );
+    if (failures.length === 0) return;
+    const [failure] = failures;
+    const message = failure instanceof Error ? failure.message : String(failure);
+    this.emitEvent({
+      type: "pending:dropped",
+      id: operation.id,
+      reason: { type: "error", error: { type: "start", message } },
+    });
+    throw failure;
+  }
+
   private async settle(operation: SettledOperation): Promise<void> {
     if (this.settledCallbacks.length === 0) return;
     const session = this.currentSession();
-    const span = this.spanParent?.startSpan("agent.settle", {
+    await this.runCallbacks(
+      "agent.settle",
+      { kind: operation.kind },
+      this.settledCallbacks.map((cb) => () => cb(session, operation)),
+      "onSettled",
+    );
+  }
+
+  private async runCallbacks(
+    name: string,
+    attributes: { kind: OperationKind },
+    callbacks: Array<() => void | Promise<void>>,
+    warnAs?: string,
+  ): Promise<unknown[]> {
+    const span = this.spanParent?.startSpan(name, {
       type: "workflow",
-      attributes: { sessionId: this.sessionId, kind: operation.kind },
+      attributes: { sessionId: this.sessionId, ...attributes },
     });
-    try {
-      await Promise.all(
-        this.settledCallbacks.map(async (cb) => {
-          try {
-            await cb(session, operation);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            span?.warn(`onSettled callback threw: ${message}`);
-          }
-        }),
-      );
-    } finally {
-      span?.end();
-      await this.ownedTracer?.flush();
+    const results = await Promise.allSettled(callbacks.map(async (cb) => cb()));
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    for (const failure of warnAs ? failures : []) {
+      const message = failure instanceof Error ? failure.message : String(failure);
+      span?.warn(`${warnAs} callback threw: ${message}`);
     }
+    span?.end();
+    await this.ownedTracer?.flush();
+    return failures;
   }
 
   private emitEvent(event: TurnEvent): void {
@@ -965,4 +1087,15 @@ export class Agent {
       schema: tool.schema,
     }));
   }
+}
+
+function outcomeOf(result: PromiseSettledResult<unknown>): OperationOutcome {
+  if (result.status === "fulfilled") return { type: "complete" };
+  if (result.reason instanceof AxleAbortError) {
+    return isTimeoutReason(result.reason.reason)
+      ? { type: "cancelled", reason: result.reason.reason }
+      : { type: "cancelled" };
+  }
+  const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+  return { type: "error", error: { message } };
 }

@@ -1,21 +1,65 @@
-import type { InstructJSON } from "../core/Instruct.js";
-import type { ToolResultPart } from "../messages/message.js";
-import type { LoggedEvent } from "./eventLog.js";
+import * as z from "zod";
+import type { AgentStatus } from "../core/agent/types.js";
+import type { StoredEvent } from "./eventStore.js";
+
+const fileBase = { mimeType: z.string(), name: z.string(), size: z.number().optional() };
+const urlSource = z.object({ type: z.literal("url"), url: z.string() });
+const refSource = z.object({ type: z.literal("ref"), ref: z.unknown() });
+
+const fileInfoSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...fileBase,
+    kind: z.literal("text"),
+    source: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("text"), content: z.string() }),
+      urlSource,
+      refSource,
+    ]),
+  }),
+  z.object({
+    ...fileBase,
+    kind: z.enum(["image", "document"]),
+    source: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("base64"), data: z.string() }),
+      urlSource,
+      refSource,
+    ]),
+  }),
+]);
+
+const toolResultPartSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({ type: z.literal("file"), file: fileInfoSchema }),
+]);
 
 /**
- * What a consumer asks of a served agent. Each is one Agent method: `send`
- * carries the Instruct as `toJSON()` gives it and names its user turn with
- * `id` so the consumer can match the events it hears back; `answer` and
- * `fail` settle the waiting call `callId` through `agent.toolCall(id)`; the
- * rest take nothing.
+ * What a consumer asks of a served agent, each one Agent method. `send`
+ * carries the rendered prompt, its files and metadata, and names its user
+ * turn with `id` so the consumer can match the events it hears back;
+ * `answer` and `fail` settle the waiting call `callId`; the rest take
+ * nothing. A file's source crosses as it is: a `ref` means whatever the
+ * host's `fileResolver` makes of it.
  */
-export type AgentCommand =
-  | { type: "send"; id: string; instruct: InstructJSON }
-  | { type: "answer"; callId: string; content: string | ToolResultPart[] }
-  | { type: "fail"; callId: string; message: string }
-  | { type: "cancel" }
-  | { type: "stop" }
-  | { type: "clear" };
+export const agentCommandSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("send"),
+    id: z.string().min(1),
+    prompt: z.string(),
+    files: z.array(fileInfoSchema).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  }),
+  z.object({
+    type: z.literal("answer"),
+    callId: z.string().min(1),
+    content: z.union([z.string(), z.array(toolResultPartSchema)]),
+  }),
+  z.object({ type: z.literal("fail"), callId: z.string().min(1), message: z.string() }),
+  z.object({ type: z.literal("cancel") }),
+  z.object({ type: z.literal("stop") }),
+  z.object({ type: z.literal("clear") }),
+]);
+
+export type AgentCommand = z.infer<typeof agentCommandSchema>;
 
 /**
  * Whether the Agent took the command. `not-waiting` is an answer or fail
@@ -23,19 +67,65 @@ export type AgentCommand =
  * active turn; a send and a clear always take. Everything after acceptance
  * arrives as events.
  */
-export type CommandOutcome =
-  | { accepted: true }
-  | { accepted: false; reason: { type: "not-waiting" | "idle"; message: string } };
+export const commandOutcomeSchema = z.discriminatedUnion("accepted", [
+  z.object({ accepted: z.literal(true) }),
+  z.object({
+    accepted: z.literal(false),
+    reason: z.object({ type: z.enum(["not-waiting", "idle"]), message: z.string() }),
+  }),
+]);
+
+export type CommandOutcome = z.infer<typeof commandOutcomeSchema>;
+
+/** A request body as an `AgentCommand`, or `null` when it is not one. */
+export function parseAgentCommand(body: unknown): AgentCommand | null {
+  const parsed = agentCommandSchema.safeParse(body);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The first message of every stream: the served agent's status as the
+ * stream opened, read from the store's own log so it describes exactly what
+ * the store replays next. It is not an event: never numbered, kept or
+ * replayed, and the Agent never emits it. `type: "welcome"` is the
+ * protocol's; a host event never uses it.
+ */
+export interface AgentWelcome {
+  type: "welcome";
+  status: AgentStatus;
+}
+
+/**
+ * One item on a served agent's stream: an event with its cursor, or the
+ * welcome a transport receives again each time it reconnects.
+ */
+export type StreamItem<THostEvent extends { type: string } = never> =
+  StoredEvent<THostEvent> | AgentWelcome;
+
+export function isWelcome<THostEvent extends { type: string }>(
+  item: StreamItem<THostEvent>,
+): item is AgentWelcome {
+  return item.type === "welcome";
+}
+
+/** An open stream: its welcome, then the events after the cursor and live ones, in order. */
+export interface AgentSubscription<THostEvent extends { type: string } = never> {
+  welcome: AgentWelcome;
+  items: AsyncIterable<StreamItem<THostEvent>>;
+}
 
 /**
  * How events and commands move between a consumer and a served agent. The
- * events are the served side's log entries, agent and host events alike,
+ * events come from the served side's store, agent and host events alike,
  * each with its cursor; a transport that reconnects resumes from the last
- * cursor it delivered. `events` resolves once the stream is open, which is
- * what a `RemoteAgent` means by connected; the iterable then runs until
- * `signal` aborts or the served agent is gone.
+ * cursor it delivered, and the welcome it reopens with arrives among the
+ * items.
+ * `events` resolves once the stream is open, which is what a `RemoteAgent`
+ * means by connected, or with `undefined` when there is no agent to
+ * subscribe to; the items then run until `signal` aborts or the served
+ * agent is gone.
  */
 export interface AgentTransport<THostEvent extends { type: string } = never> {
-  events(signal: AbortSignal): Promise<AsyncIterable<LoggedEvent<THostEvent>>>;
+  events(signal: AbortSignal): Promise<AgentSubscription<THostEvent> | undefined>;
   command(command: AgentCommand, signal?: AbortSignal): Promise<CommandOutcome>;
 }

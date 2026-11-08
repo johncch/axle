@@ -50,7 +50,7 @@ export const providerTargets: ProviderTarget[] = [
   {
     kind: "chat",
     id: "anthropic",
-    model: "anthropic/claude-haiku-4-5",
+    model: "anthropic/claude-haiku-5-5",
     default: true,
     createProvider: () => anthropic(getEnv("ANTHROPIC_API_KEY")),
   },

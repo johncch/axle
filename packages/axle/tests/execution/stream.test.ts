@@ -1870,4 +1870,90 @@ describe("stream()", () => {
       expect(ids).toEqual(["conversation-1", "conversation-1"]);
     });
   });
+
+  describe("streamStallMs", () => {
+    function silentAfter(chunks: AnyStreamChunk[]): AIProvider {
+      return makeProvider({
+        streamFactory: async function* () {
+          for (const chunk of chunks) yield chunk;
+          await new Promise(() => {});
+        },
+      });
+    }
+
+    test("a provider that goes silent fails the stream as a StreamStall, partial output emitted", async () => {
+      const { events, callback } = collectEvents();
+      const handle = stream({
+        provider: silentAfter([startChunk(), textStartChunk(0), textChunk(0, "Hel")]),
+        model: "test",
+        messages: [{ role: "user", content: "hi" }],
+        streamStallMs: 20,
+      });
+      handle.on(callback);
+
+      const result = await handle.final;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatchObject({
+          kind: "api",
+          type: "StreamStall",
+          message: "No data from the provider for 20ms",
+        });
+      }
+      expect(events).toContainEqual(expect.objectContaining({ type: "text:delta", delta: "Hel" }));
+    });
+
+    test("chunks that keep coming inside the limit never stall", async () => {
+      const result = await stream({
+        provider: makeProvider({
+          streamFactory: async function* () {
+            yield startChunk();
+            yield textStartChunk(0);
+            for (const word of ["a", "b", "c", "d"]) {
+              await new Promise((resolve) => setTimeout(resolve, 10));
+              yield textChunk(0, word);
+            }
+            yield textCompleteChunk(0);
+            yield completeChunk();
+          },
+        }),
+        model: "test",
+        messages: [{ role: "user", content: "hi" }],
+        streamStallMs: 25,
+      }).final;
+
+      expect(result.ok).toBe(true);
+    });
+
+    test("a cancel during a silent stream is still a cancel, with the partial kept", async () => {
+      const handle = stream({
+        provider: silentAfter([startChunk(), textStartChunk(0), textChunk(0, "Hel")]),
+        model: "test",
+        messages: [{ role: "user", content: "hi" }],
+        streamStallMs: 1_000,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      handle.cancel("user");
+
+      const error = await handle.final.then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+      expect(error).toBeInstanceOf(AxleAbortError);
+      expect(error).toMatchObject({ reason: "user" });
+      expect(error).toHaveProperty("partial.content", [expect.objectContaining({ text: "Hel" })]);
+    });
+
+    test("rejects a limit below 1", () => {
+      expect(() =>
+        stream({
+          provider: makeProvider({ streamChunks: [[]] }),
+          model: "test",
+          messages: [],
+          streamStallMs: 0,
+        }),
+      ).toThrow(expect.objectContaining({ code: AxleErrorCode.INVALID_OPTIONS }));
+    });
+  });
 });

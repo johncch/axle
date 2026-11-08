@@ -409,6 +409,21 @@ describe("Transcript", () => {
     }
   });
 
+  test("reports lifecycle events handled and leaves the turns alone", () => {
+    const transcript = new Transcript();
+    const turns = transcript.turns;
+    const events = [
+      { type: "operation:start", id: "u1", kind: "send" },
+      { type: "after:start", id: "u1" },
+      { type: "after:end", id: "u1" },
+      { type: "operation:end", id: "u1", outcome: { type: "complete" } },
+      { type: "agent:idle" },
+    ] as const;
+
+    for (const event of events) expect(transcript.apply(event)).toEqual({ handled: true, event });
+    expect(transcript.turns).toBe(turns);
+  });
+
   test("replaces the turn snapshot for handled mutations", () => {
     const transcript = new Transcript();
     const first = transcript.turns;

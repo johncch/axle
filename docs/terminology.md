@@ -163,10 +163,12 @@ Each row carries `at`, when the provider finished the request (ISO 8601),
 so a row is a billing record on its own and can be priced later.
 
 **Turn** — the render-layer unit only: one conversation entry in a transcript — a
-user turn or an agent turn. One send produces one user turn and one agent
-turn; the agent turn accumulates parts from every step of that send. Turns
-can also be started or ended by compaction: a manual compaction opens and
-closes its own agent turn around the compaction part. A turn's `status`
+user turn or an agent turn. A send's own exchange is one user turn and one
+agent turn; the agent turn accumulates parts from every step of that send,
+and a continuation adds further pairs, threaded under the first. Turns can
+also be started or ended by compaction: a manual compaction opens and
+closes its own agent turn around the compaction part. Turns are what people
+see; the _operation_ that produced them is not a turn. A turn's `status`
 runs `pending` → `streaming` → `complete` | `cancelled` | `error`; a user
 turn skips `streaming`, and a `pending` turn lives only in
 `Transcript.pending`. "Turn" never refers to a single assistant message or
@@ -189,15 +191,17 @@ a turn that ended because the call threw has none.
 (`agent.send(...)`), executed as a FIFO queue item. The consumer-facing unit of
 "the agent took its turn."
 
-**Operation** — a queued unit of agent work that opens a turn: a Send or a
-manual compaction. Operations run one at a time in FIFO order. An operation
-is _pending_ from the call until its turn opens, and ends when its turn
-ends or, for a send with a continuation, when the continuation returns.
-Every turn it commits _settles_: `agent.onSettled(...)` hands the consumer the
-session and that turn's outcome, and waits for the consumer before anything
-else runs. An operation cancelled while still queued never ran and does not
-settle. `agent.snapshot()` opens no turn, is not queued, and is not an
-operation.
+**Operation** — a queued unit of agent work: a Send or a manual
+compaction. Operations run one at a time in FIFO order. An operation is
+_pending_ from the call until its turn opens; it runs from `operation:start`
+to `operation:end`, and `onStart` and `onSettled` fire once each. An
+operation produces turns, and the two are not one-to-one: a send produces
+its own user and agent turn and, with a continuation, the inline turns it
+sends; a manual compaction produces one agent turn; one dropped before its
+turn opened produces none. The lifecycle belongs to the operation, and the
+turns it produces are its output. An operation cancelled while still queued
+never ran and does not settle. `agent.snapshot()` opens no turn, is not
+queued, and is not an operation.
 
 **Continuation** — a program a send carries (`after` in its options) that
 runs after the send's turn settles and before the queue moves on. It holds
@@ -210,15 +214,52 @@ the Agent's resumable state is the _session_.
 
 **Inline turn** — a turn a continuation runs through `ctx.send()`. It is an
 ordinary send turn in every way but one: it starts at once in the held
-slot, so it has no pending phase and announces no `pending:queued`. It
-commits to messages, settles through `onSettled` under its own id, and is
-recorded on its operation's result under `after`. Inline turns run one at a
-time, FIFO, like operations.
+slot, so it has no pending phase and announces no `pending:queued`, and it
+fires no hook of its own. It commits to messages, carries its operation's
+id as `threadId`, and is recorded on its operation's result under `after`.
+Inline turns run one at a time, FIFO, like operations.
+
+**Thread** — the turns an operation produced: its own user turn, which
+roots the thread, and the inline turns its continuation sent, whose user
+turns carry the root's id as `threadId`. One level deep, as in a chat app's
+thread. A renderer draws an inline turn as a reply; the transcript stays a
+flat list.
 
 **Idle** — the Agent has no operation running and none queued. It is
 _busy_ from the first call that schedules an operation until the last
 queued one has settled; `agent.onIdle(...)` fires at each change from busy
 to idle, and `agent.snapshot()` resolves there.
+
+**Agent status** — `agent.status`: `{ phase: "idle" }`, or
+`{ phase: "busy", id }` with the id of the operation holding the queue
+(the send's user turn id, or the compaction's id). Busy covers the
+operation's `onStart` callbacks, its continuation and its `onSettled`
+callbacks, so a send whose judge is still running is busy although its turn
+has ended. It changes only at `operation:start` and `agent:idle`; one
+operation handing the queue to the next is a single change to the next id,
+with no idle between. Not to be confused with `Turn.status`, which describes
+one turn. The Agent emits no status event; a `RemoteAgent` is told the
+served agent's status when its stream opens (the _welcome_) and moves it
+by the same two events.
+
+**Turn timeout** — `turnTimeoutMs`, on the agent or a send: the longest one
+turn may run, from `turn:user` to `turn:end`, every step, tool call and
+deferred wait included. Running out cancels that turn with the reason
+`{ type: "timeout", limitMs }`; it is a cancel, not a failure. The send's
+own turn takes the operation with it; an inline turn's rejects its
+`ctx.send()` and the continuation decides.
+
+**Stream stall** — `streamStallMs`, on `stream()`, the agent or a send: the
+longest gap between two chunks from the provider on one step. Exceeding it
+aborts the request and fails the step `ok: false`, `kind: "api"`,
+`type: "StreamStall"`. A network failure, not a cancel, and never retried.
+
+**Lifecycle event** — an event marking an operation's lifecycle rather than
+a turn's content: `operation:start`, `after:start`, `after:end`,
+`operation:end` with the operation's outcome, and `agent:idle`. Delivered on
+`agent.on` with the turn events and sequenced like them; `Transcript`
+reports them handled and folds nothing from them. They nest by position: a
+turn between `after:start` and `after:end` is the continuation's.
 
 **Skill** — a unit of on-demand instruction in the Agent Skills format: a
 `SKILL.md` (frontmatter `name` and `description`, Markdown body) with
@@ -279,19 +320,39 @@ mirror a live transcript.
 constructor restores. The transcript is not part of it; consumers persist its
 state alongside.
 
-**Event log** — the numbered stream of one served agent (`EventLog`):
-every agent event and every host event pushed onto it, stamped with a
-cursor in the order it happened, kept for replay by the host's retention
-choice. The one piece of state a served agent has beside the Agent itself.
+**Event store** — where a served agent's sequenced events are kept and
+served from: every agent event and every host event, stamped with a cursor
+in the order it happened, replayed after a cursor and then continued live.
+`InMemoryEventStore` is the shipped one, kept beside the agent in memory; a
+host with its own database is its own event store and serves subscriptions
+from there. The one piece of state a served agent has beside the Agent
+itself.
 
-**Event cursor** — the string an event log stamps on each entry,
-`<log id>-<seq>`. It names a position in one log; a cursor from another log
-is stale and cannot be continued from. A transport sends the last one it
+**Event cursor** — the string an event store stamps on each sequenced event; the
+in-memory store's is `<store id>-<seq>`, and a host's own store may use its
+own ids. It names a position in one store; a cursor from another store is
+stale and cannot be continued from. A transport sends the last one it
 delivered to resume, and the fold records the cursor of the event that
 closed a turn as `Turn.cursor` so stored turns carry their resume point.
 
+**Event (stream)** — anything `agent.on` delivers, and anything a served
+stream carries besides its welcome: turn events, lifecycle events, and
+host events on a served stream. Something that happened, in the order it
+happened. An event store numbers each one with an _event cursor_, keeps it,
+and replays it to a consumer that resumes. A consumer folds events, so each
+must arrive exactly once. "Sequenced event" is the same thing, named where
+the contrast with the welcome matters.
+
+**Welcome** — the first message of every served stream, and of every
+reconnect: `{ type: "welcome", status }`, the served agent's status as the
+stream opened. It is the _status sync_: what the agent is now, which history
+cannot say for a consumer that resumed partway through or a server that
+restarted. It is not an event: never numbered, kept or replayed, and the
+Agent never emits it. On SSE it is `event: welcome` with no `id`;
+`type: "welcome"` is reserved, and a host event never uses it.
+
 **Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
-exposes to consumers elsewhere: the Agent, its event log, and the host's
+exposes to consumers elsewhere: the Agent, its event store, and the host's
 routing to them. Agent lifecycle is the host's; the protocol begins once a
 served agent exists.
 
@@ -302,9 +363,10 @@ own surface minus configuration. It holds no transcript.
 **Command** — what a consumer asks of a served agent, one per Agent verb:
 `send`, `answer`, `fail`, `cancel`, `stop`, `clear`. A command's response
 is only whether the Agent took it; everything after acceptance arrives as
-events.
+events. Axle defines commands as a spec (`agentCommandSchema`) and decodes
+them (`parseAgentCommand`); the host dispatches them to the agent.
 
-**Transport** — what carries log entries one way and commands the other
+**Transport** — what carries stored events one way and commands the other
 (`AgentTransport`): `httpTransport` over SSE and `POST`, `loopbackTransport`
 with no wire. A transport that reconnects resumes from the last cursor it
 delivered.
@@ -473,8 +535,15 @@ transcript channel renders the model's conversation; runner lines frame it.
   transitions, not sub-entities). Core never uses it as a unit name.
 - **seed**, **frame** — the 2026-11-04 remote-agent prototype's first
   message carrying folded turns, and the envelope around every event.
-  Rejected 2026-11-05: a numbered _event log_ replays, and a baseline for
+  Rejected 2026-11-05: a numbered _event store_ replays, and a baseline for
   a cold open is the host's own event.
+- **event log** — the name of the event store until 2026-11-06
+  (`EventLog`, `LoggedEvent`). Renamed beside the tracer's `LogWriter` and
+  `LogEntry`, which made it read as logging. Also considered and rejected
+  for the object: _stream_ (taken by `stream()` and `ReadableStream`),
+  _feed_ (reads as a news feed), _bus_ and _pipe_ (fan-out with no
+  positions or replay), _queue_ (consumed once, and the Agent's operation
+  queue), _topic_ (Kafka jargon) and _sequencer_.
 - **tape** — the pre-0.30 design term for the event fold. Rejected for the
   public object because it materializes reader-facing state rather than
   retaining a raw event log.

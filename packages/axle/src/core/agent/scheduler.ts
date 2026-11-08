@@ -2,23 +2,47 @@ import { AxleAgentAbortError } from "../../errors/AxleAgentAbortError.js";
 import { AxleError } from "../../errors/AxleError.js";
 import { createStats } from "../../utils/stats.js";
 import type { Handle } from "../../utils/utils.js";
+import type { AgentStatus } from "./types.js";
 
-type TaskState = "queued" | "running" | "settling" | "continuing" | "settled";
+type TaskState = "queued" | "starting" | "running" | "continuing" | "settling" | "settled";
+
+export type OperationKind = "send" | "compaction";
 
 type Work<T> = (context: { signal: AbortSignal }) => Promise<T>;
+type Start = (signal: AbortSignal) => void | Promise<void>;
 type Settle<T> = (result: PromiseSettledResult<T>) => void | Promise<void>;
 
 /**
  * What a continuation runs inline turns through: each `run` executes its
- * work, then its settle step, one at a time in call order, under the
- * task's own signal.
+ * work, one at a time in call order, under the task's own signal.
  */
 export interface InlineRunner {
   readonly signal: AbortSignal;
-  run<U>(work: Work<U>, settle?: Settle<U>): Promise<U>;
+  run<U>(work: Work<U>): Promise<U>;
+}
+
+/**
+ * The scheduler's lifecycle points, called as they happen: `started` once
+ * the operation holds the queue and `status` already reports it, `ended`
+ * just before its handle settles, `idle` once `status` reports idle.
+ */
+export interface SchedulerLifecycle {
+  started(id: string, kind: OperationKind): void;
+  afterStarted(id: string): void;
+  afterEnded(id: string): void;
+  ended(id: string, result: PromiseSettledResult<unknown>): void;
+  idle(): void;
 }
 
 type Continue<T> = (value: T, inline: InlineRunner) => Promise<T | void>;
+
+const noLifecycle: SchedulerLifecycle = {
+  started: () => {},
+  afterStarted: () => {},
+  afterEnded: () => {},
+  ended: () => {},
+  idle: () => {},
+};
 
 class ScheduledTask<T> {
   readonly final: Promise<T>;
@@ -32,10 +56,13 @@ class ScheduledTask<T> {
 
   constructor(
     private readonly scheduler: AgentScheduler,
+    readonly id: string,
     private readonly work: Work<T>,
-    private readonly operation: string,
+    readonly kind: OperationKind,
+    private readonly lifecycle: SchedulerLifecycle,
     private readonly externalSignal: AbortSignal | undefined,
     private readonly onWithdrawn: (() => void) | undefined,
+    private readonly start: Start | undefined,
     private readonly settle: Settle<T> | undefined,
     private readonly after: Continue<T> | undefined,
   ) {
@@ -58,24 +85,29 @@ class ScheduledTask<T> {
   }
 
   async execute(): Promise<void> {
-    this.state = "running";
     let result: PromiseSettledResult<T>;
     try {
+      this.state = "starting";
+      await this.start?.(this.controller.signal);
+      this.state = "running";
       result = { status: "fulfilled", value: await this.work({ signal: this.controller.signal }) };
     } catch (reason) {
       result = { status: "rejected", reason };
     }
+    if (this.after && result.status === "fulfilled") {
+      result = this.controller.signal.aborted
+        ? { status: "rejected", reason: this.abortError() }
+        : await this.continue(result.value);
+    }
     this.state = "settling";
     try {
       await this.settle?.(result);
-      if (this.after && result.status === "fulfilled") {
-        result = this.controller.signal.aborted
-          ? { status: "rejected", reason: this.abortError() }
-          : await this.continue(result.value);
-      }
+    } catch (reason) {
+      result = { status: "rejected", reason };
     } finally {
       this.externalSignal?.removeEventListener("abort", this.onExternalAbort);
       this.state = "settled";
+      this.lifecycle.ended(this.id, result);
       if (result.status === "fulfilled") this.resolveFinal(result.value);
       else this.rejectFinal(result.reason);
     }
@@ -83,19 +115,17 @@ class ScheduledTask<T> {
 
   get remaining(): boolean {
     switch (this.state) {
+      case "starting":
       case "running":
       case "continuing":
         return true;
-      case "settling":
-        return this.after !== undefined && !this.controller.signal.aborted;
       default:
         return false;
     }
   }
 
   cancel(reason?: unknown): void {
-    if (this.state === "settled") return;
-    if (this.state === "settling" && !this.remaining) return;
+    if (this.state === "settled" || this.state === "settling") return;
     this.controller.abort(reason);
     if (this.scheduler.withdraw(this)) {
       this.state = "settled";
@@ -108,6 +138,7 @@ class ScheduledTask<T> {
   private async continue(value: T): Promise<PromiseSettledResult<T>> {
     this.state = "continuing";
     this.inlineOpen = true;
+    this.lifecycle.afterStarted(this.id);
     let result: PromiseSettledResult<T>;
     try {
       const replaced = await this.after!(value, this.inlineRunner());
@@ -117,6 +148,7 @@ class ScheduledTask<T> {
     } finally {
       this.inlineOpen = false;
       await this.inlineTail;
+      this.lifecycle.afterEnded(this.id);
     }
     if (this.controller.signal.aborted) {
       return { status: "rejected", reason: this.abortError() };
@@ -127,23 +159,13 @@ class ScheduledTask<T> {
   private inlineRunner(): InlineRunner {
     return {
       signal: this.controller.signal,
-      run: <U>(work: Work<U>, settle?: Settle<U>): Promise<U> => {
+      run: <U>(work: Work<U>): Promise<U> => {
         if (!this.inlineOpen) {
           return Promise.reject(
-            new AxleError(`Agent ${this.operation} continuation has already returned`),
+            new AxleError(`Agent ${this.label} continuation has already returned`),
           );
         }
-        const execution = this.inlineTail.then(async () => {
-          let result: PromiseSettledResult<U>;
-          try {
-            result = { status: "fulfilled", value: await work({ signal: this.controller.signal }) };
-          } catch (reason) {
-            result = { status: "rejected", reason };
-          }
-          await settle?.(result);
-          if (result.status === "fulfilled") return result.value;
-          throw result.reason;
-        });
+        const execution = this.inlineTail.then(() => work({ signal: this.controller.signal }));
         this.inlineTail = execution.then(
           () => {},
           () => {},
@@ -153,8 +175,12 @@ class ScheduledTask<T> {
     };
   }
 
+  private get label(): string {
+    return this.kind === "send" ? "send" : "compact";
+  }
+
   private abortError(): AxleAgentAbortError {
-    return new AxleAgentAbortError(`Agent ${this.operation} aborted`, {
+    return new AxleAgentAbortError(`Agent ${this.label} aborted`, {
       reason: this.controller.signal.reason,
       usage: createStats(),
     });
@@ -167,24 +193,29 @@ export class AgentScheduler {
   private current?: ScheduledTask<any>;
   private queue: ScheduledTask<any>[] = [];
 
-  constructor(private readonly onIdle?: () => void) {}
+  constructor(private readonly lifecycle: SchedulerLifecycle = noLifecycle) {}
 
   schedule<T>(
+    id: string,
     work: Work<T>,
     options?: {
       signal?: AbortSignal;
-      operation?: string;
+      kind?: OperationKind;
       onWithdrawn?: () => void;
+      start?: Start;
       settle?: Settle<T>;
       after?: Continue<T>;
     },
   ): Handle<T> {
     const task = new ScheduledTask(
       this,
+      id,
       work,
-      options?.operation ?? "send",
+      options?.kind ?? "send",
+      this.lifecycle,
       options?.signal,
       options?.onWithdrawn,
+      options?.start,
       options?.settle,
       options?.after,
     );
@@ -199,8 +230,8 @@ export class AgentScheduler {
     return { cancel: (reason?: unknown) => task.cancel(reason), final: task.final };
   }
 
-  get idle(): boolean {
-    return !this.current;
+  get status(): AgentStatus {
+    return this.current ? { phase: "busy", id: this.current.id } : { phase: "idle" };
   }
 
   cancelCurrent(reason?: unknown): boolean {
@@ -224,6 +255,7 @@ export class AgentScheduler {
 
   private activate(task: ScheduledTask<any>): void {
     this.current = task;
+    this.lifecycle.started(task.id, task.kind);
     queueMicrotask(() => void this.run(task));
   }
 
@@ -234,7 +266,7 @@ export class AgentScheduler {
       this.current = undefined;
       const next = this.queue.shift();
       if (next) this.activate(next);
-      else this.onIdle?.();
+      else this.lifecycle.idle();
     }
   }
 }

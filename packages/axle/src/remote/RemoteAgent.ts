@@ -1,4 +1,4 @@
-import type { AgentErrorResult, AgentResult } from "../core/agent/types.js";
+import type { AgentErrorResult, AgentResult, AgentStatus } from "../core/agent/types.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../core/parse.js";
 import { parseResponse } from "../core/parse.js";
@@ -9,17 +9,22 @@ import type { MessageMetadata, ToolResultPart } from "../messages/message.js";
 import type { DeferredCall, ToolCallCallback } from "../tools/types.js";
 import type { TurnEvent } from "../turns/events.js";
 import { isTurnEvent, Transcript } from "../turns/transcript.js";
-import type { Annotation, Turn, TurnFailure } from "../turns/types.js";
+import type { Annotation, OperationOutcome, Turn, TurnFailure } from "../turns/types.js";
 import { createStats } from "../utils/stats.js";
-import type { LoggedEvent } from "./eventLog.js";
-import type { AgentTransport, CommandOutcome } from "./protocol.js";
+import type { StoredEvent } from "./eventStore.js";
+import {
+  isWelcome,
+  type AgentCommand,
+  type AgentTransport,
+  type CommandOutcome,
+  type StreamItem,
+} from "./protocol.js";
 
-export type RemoteAgentState =
+export type RemoteConnection =
   | { phase: "connecting" }
-  | { phase: "idle" }
-  | { phase: "busy"; id: string }
+  | { phase: "open" }
   | { phase: "ended" }
-  | { phase: "error"; message: string };
+  | { phase: "error"; error: Error };
 
 export interface RemoteSendOptions {
   /** Id for the send's user turn, as `SendMessageOptions.id`. Generated when omitted. */
@@ -27,17 +32,18 @@ export interface RemoteSendOptions {
   metadata?: MessageMetadata;
 }
 
-/** The waiting call on a remote agent: `answer` and `fail` each post one command. */
 /**
- * What a remote `send` returns: the result, once the events say the turn
- * settled. There is no `cancel`: a queued send cannot be cancelled from
- * here, and `cancel()` on the `RemoteAgent` is the Agent's, for the active
- * turn.
+ * What a remote `send` returns: the result, once `operation:end` says the
+ * served agent finished the send, its continuation and `onSettled`
+ * included, as a local handle does. There is no `cancel`: a queued send
+ * cannot be cancelled from here, and `cancel()` on the `RemoteAgent` is the
+ * Agent's, for the active turn.
  */
 export interface RemoteHandle<T> {
   readonly final: Promise<AgentResult<T> | AgentErrorResult>;
 }
 
+/** The waiting call on a remote agent: `answer` and `fail` each post one command. */
 export interface RemoteWaitingToolCall {
   answer(content: string | ToolResultPart[]): Promise<CommandOutcome>;
   fail(message: string): Promise<CommandOutcome>;
@@ -45,8 +51,14 @@ export interface RemoteWaitingToolCall {
 
 type RemoteResponse = string | ParsedSchema<OutputSchema>;
 
+type HeldOutcome =
+  | { status: "fulfilled"; value: AgentResult<RemoteResponse> | AgentErrorResult }
+  | { status: "rejected"; turn: Turn };
+
 interface OpenOperation {
   schema: OutputSchema | undefined;
+  started: boolean;
+  held?: HeldOutcome;
   resolve: (result: AgentResult<RemoteResponse> | AgentErrorResult) => void;
   reject: (error: Error) => void;
 }
@@ -81,8 +93,8 @@ function failureOf(failure: TurnFailure): AxleProviderFailure {
   }
 }
 
-function isLoggedTurnEvent<THostEvent extends { type: string }>(
-  event: LoggedEvent<THostEvent>,
+function isStoredTurnEvent<THostEvent extends { type: string }>(
+  event: StoredEvent<THostEvent>,
 ): event is TurnEvent & { cursor: string } {
   return isTurnEvent(event);
 }
@@ -96,18 +108,16 @@ function textOf(turn: Turn): string {
  * commands out, and the same surface a consumer uses on `Agent`: `on`,
  * `onToolCall`, `toolCall(id)`, `send`, `cancel`, `stop`, `clear`. It holds
  * no transcript; it folds each turn only long enough to hand back `turn`
- * and `response` on the send's result, as `Agent` does. `state` is what the
- * events say: `busy` from a queued or open turn to its end, `idle`
- * otherwise, so a connection made in the middle of a turn reads `idle`
- * until that turn's next event arrives.
+ * and `response` on the send's result, as `Agent` does. `status` is the
+ * served agent's, as it last said; `connection` is the transport's.
  */
 export class RemoteAgent<THostEvent extends { type: string } = never> {
-  private eventCallbacks: Array<(event: LoggedEvent<THostEvent>) => void> = [];
-  private stateCallbacks: Array<(state: RemoteAgentState) => void> = [];
-  private stateInternal: RemoteAgentState = { phase: "connecting" };
+  private eventCallbacks: Array<(event: StoredEvent<THostEvent>) => void> = [];
+  private connectionCallbacks: Array<(connection: RemoteConnection) => void> = [];
+  private connectionInternal: RemoteConnection = { phase: "connecting" };
+  private statusInternal: AgentStatus = { phase: "idle" };
   private fold = new Transcript<Annotation, THostEvent>();
   private operations = new Map<string, OpenOperation>();
-  private pendingIds = new Set<string>();
   private openTurn: { turnId: string; operationId: string } | undefined;
   private nextOperationId: string | undefined;
   private waiting = new Map<string, WaitingEntry>();
@@ -118,12 +128,29 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     void this.consume();
   }
 
-  get state(): RemoteAgentState {
-    return this.stateInternal;
+  /**
+   * `connecting` until the stream opens, `open` while it runs, then `ended`
+   * or `error`. `status` already reads the stream's opening status when
+   * `onConnection` reports `open`.
+   */
+  get connection(): RemoteConnection {
+    return this.connectionInternal;
   }
 
-  /** Every entry the served side logged: the agent's turn events and the host's own, each with its cursor. */
-  on(callback: (event: LoggedEvent<THostEvent>) => void): () => void {
+  /**
+   * The served agent's status: what the stream opened with, then moved by
+   * `operation:start` (busy with its id) and `agent:idle`, already updated
+   * when `on` delivers either. `idle` until the stream opens.
+   */
+  get status(): AgentStatus {
+    return this.statusInternal;
+  }
+
+  /**
+   * Every event on the served side's stream, in order: what the agent's `on`
+   * delivers and the host's own events, each with its cursor.
+   */
+  on(callback: (event: StoredEvent<THostEvent>) => void): () => void {
     this.eventCallbacks.push(callback);
     return () => {
       const index = this.eventCallbacks.indexOf(callback);
@@ -131,11 +158,11 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     };
   }
 
-  onState(callback: (state: RemoteAgentState) => void): () => void {
-    this.stateCallbacks.push(callback);
+  onConnection(callback: (connection: RemoteConnection) => void): () => void {
+    this.connectionCallbacks.push(callback);
     return () => {
-      const index = this.stateCallbacks.indexOf(callback);
-      if (index >= 0) this.stateCallbacks.splice(index, 1);
+      const index = this.connectionCallbacks.indexOf(callback);
+      if (index >= 0) this.connectionCallbacks.splice(index, 1);
     };
   }
 
@@ -175,15 +202,19 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
-    if (options.metadata) instruct.metadata = options.metadata;
+    const prompt = instruct.render();
+    const metadata = options.metadata ?? instruct.metadata;
     const {
       promise: final,
       resolve,
       reject,
     } = Promise.withResolvers<AgentResult<RemoteResponse> | AgentErrorResult>();
     final.catch(() => {});
-    this.operations.set(id, { schema: instruct.schema, resolve, reject });
-    this.transport.command({ type: "send", id, instruct: instruct.toJSON() }).then(
+    this.operations.set(id, { schema: instruct.schema, started: false, resolve, reject });
+    const command: AgentCommand = { type: "send", id, prompt };
+    if (instruct.files.length > 0) command.files = instruct.files;
+    if (metadata) command.metadata = metadata;
+    this.transport.command(command).then(
       (outcome) => {
         if (outcome.accepted) return;
         this.settleOperation(id, (op) => op.reject(new AxleError(outcome.reason.message)));
@@ -212,40 +243,55 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
   close(): void {
     this.controller.abort();
     this.rejectAll(new AxleAgentAbortError("RemoteAgent closed"));
-    this.setState({ phase: "ended" });
+    this.setConnection({ phase: "ended" });
   }
 
   private async consume(): Promise<void> {
     try {
-      const events = await this.transport.events(this.controller.signal);
-      this.setState({ phase: "idle" });
-      for await (const event of events) this.apply(event);
+      const subscription = await this.transport.events(this.controller.signal);
+      if (subscription) {
+        this.apply(subscription.welcome);
+        this.setConnection({ phase: "open" });
+        for await (const item of subscription.items) this.apply(item);
+      }
       if (!this.controller.signal.aborted) {
         this.rejectAll(new AxleAgentAbortError("The served agent ended"));
-        this.setState({ phase: "ended" });
+        this.setConnection({ phase: "ended" });
       }
     } catch (error) {
       if (this.controller.signal.aborted) return;
       const wrapped = error instanceof Error ? error : new Error(String(error));
       this.rejectAll(wrapped);
-      this.setState({ phase: "error", message: wrapped.message });
+      this.setConnection({ phase: "error", error: wrapped });
     }
   }
 
-  private apply(event: LoggedEvent<THostEvent>): void {
-    if (isLoggedTurnEvent(event)) this.applyTurnEvent(event);
-    for (const callback of [...this.eventCallbacks]) callback(event);
+  private apply(item: StreamItem<THostEvent>): void {
+    if (isWelcome(item)) {
+      this.setStatus(item.status);
+      return;
+    }
+    if (isStoredTurnEvent(item)) this.applyTurnEvent(item);
+    for (const callback of [...this.eventCallbacks]) callback(item);
   }
 
   private applyTurnEvent(event: TurnEvent & { cursor: string }): void {
     this.fold.apply(event);
     switch (event.type) {
-      case "pending:queued":
-        this.pendingIds.add(event.turn.id);
-        this.setState({ phase: "busy", id: event.turn.id });
+      case "operation:start": {
+        this.setStatus({ phase: "busy", id: event.id });
+        const op = this.operations.get(event.id);
+        if (op) op.started = true;
+        break;
+      }
+      case "operation:end":
+        this.settleOperation(event.id, (op) => this.endOperation(op, event.outcome));
+        break;
+      case "agent:idle":
+        this.setStatus({ phase: "idle" });
         break;
       case "pending:dropped":
-        this.pendingIds.delete(event.id);
+        if (this.operations.get(event.id)?.started) break;
         this.settleOperation(event.id, (op) =>
           op.reject(
             event.reason.type === "cancelled"
@@ -253,12 +299,9 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
               : new AxleError(event.reason.error.message),
           ),
         );
-        this.settleIdle();
         break;
       case "turn:user":
-        this.pendingIds.delete(event.turn.id);
         this.nextOperationId = event.turn.id;
-        this.setState({ phase: "busy", id: event.turn.id });
         break;
       case "turn:start":
         if (this.nextOperationId !== undefined) {
@@ -320,41 +363,64 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     if (open?.turnId === turnId) {
       this.openTurn = undefined;
       const turn = this.fold.getTurn(turnId);
-      if (turn) this.settleOperation(open.operationId, (op) => this.resolveFrom(op, turn));
+      const op = this.operations.get(open.operationId);
+      if (turn && op) op.held = this.outcomeOf(op, turn);
     }
-    this.settleIdle();
   }
 
-  private resolveFrom(op: OpenOperation, turn: Turn): void {
+  private outcomeOf(op: OpenOperation, turn: Turn): HeldOutcome {
     const usage = turn.usage ?? createStats();
-    if (turn.status === "cancelled") {
-      op.reject(new AxleAgentAbortError("Agent send aborted", { turn, usage }));
-      return;
-    }
+    if (turn.status === "cancelled") return { status: "rejected", turn };
     if (turn.status === "error") {
-      op.resolve({
-        ok: false,
-        error: turn.failure
-          ? failureOf(turn.failure)
-          : { kind: "incomplete", type: "unknown", message: "The turn ended in error" },
-        turn,
-        usage,
-      });
-      return;
+      return {
+        status: "fulfilled",
+        value: {
+          ok: false,
+          error: turn.failure
+            ? failureOf(turn.failure)
+            : { kind: "incomplete", type: "unknown", message: "The turn ended in error" },
+          turn,
+          usage,
+        },
+      };
     }
     try {
-      op.resolve({ ok: true, response: parseResponse(textOf(turn), op.schema), turn, usage });
+      return {
+        status: "fulfilled",
+        value: { ok: true, response: parseResponse(textOf(turn), op.schema), turn, usage },
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      op.resolve({ ok: false, error: { kind: "parse", message, cause: error }, turn, usage });
+      return {
+        status: "fulfilled",
+        value: { ok: false, error: { kind: "parse", message, cause: error }, turn, usage },
+      };
     }
   }
 
-  private settleIdle(): void {
-    if (this.openTurn === undefined && this.pendingIds.size === 0) {
-      this.fold = new Transcript<Annotation, THostEvent>();
-      this.setState({ phase: "idle" });
+  private endOperation(op: OpenOperation, outcome: OperationOutcome): void {
+    const held = op.held;
+    if (outcome.type === "complete" && held?.status === "fulfilled") {
+      op.resolve(held.value);
+    } else if (outcome.type === "cancelled") {
+      const turn = held?.status === "rejected" ? held.turn : undefined;
+      op.reject(
+        new AxleAgentAbortError("Agent send aborted", {
+          reason: outcome.reason,
+          turn,
+          usage: turn?.usage ?? createStats(),
+        }),
+      );
+    } else if (outcome.type === "error") {
+      op.reject(new AxleError(outcome.error.message));
+    } else {
+      op.reject(new AxleError("The served agent ended the send without a turn"));
     }
+  }
+
+  private setStatus(status: AgentStatus): void {
+    this.statusInternal = status;
+    if (status.phase === "idle") this.fold = new Transcript<Annotation, THostEvent>();
   }
 
   private settleOperation(id: string, settle: (op: OpenOperation) => void): void {
@@ -372,9 +438,10 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     this.waiting.clear();
   }
 
-  private setState(state: RemoteAgentState): void {
-    if (this.stateInternal.phase === "ended" || this.stateInternal.phase === "error") return;
-    this.stateInternal = state;
-    for (const callback of [...this.stateCallbacks]) callback(state);
+  private setConnection(connection: RemoteConnection): void {
+    const current = this.connectionInternal.phase;
+    if (current === "ended" || current === "error") return;
+    this.connectionInternal = connection;
+    for (const callback of [...this.connectionCallbacks]) callback(connection);
   }
 }

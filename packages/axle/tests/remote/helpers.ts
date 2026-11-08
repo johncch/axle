@@ -1,8 +1,13 @@
 import * as z from "zod";
+import type { Agent } from "../../src/core/agent/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
+import type { InMemoryEventStore } from "../../src/remote/eventStore.js";
+import { loopbackTransport } from "../../src/remote/loopback.js";
+import type { AgentCommand, CommandOutcome } from "../../src/remote/protocol.js";
+import type { RemoteAgent } from "../../src/remote/RemoteAgent.js";
 import type { DeferredTool } from "../../src/tools/types.js";
 
 export const askUser = {
@@ -75,8 +80,53 @@ export function askUserProvider(question = "colour?"): AIProvider {
   };
 }
 
-export function sendCommand(id: string, prompt: string) {
-  return { type: "send" as const, id, instruct: new Instruct({ prompt, vars: "optional" }).toJSON() };
+export function sendCommand(id: string, prompt: string): AgentCommand {
+  return { type: "send", id, prompt };
+}
+
+/** The host's part in these tests: each command becomes one agent call. */
+export async function applyCommand<THostEvent extends { type: string }>(
+  agent: Agent | RemoteAgent<THostEvent>,
+  command: AgentCommand,
+): Promise<CommandOutcome> {
+  switch (command.type) {
+    case "send": {
+      const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
+      for (const file of command.files ?? []) instruct.addFile(file);
+      agent.send(instruct, { id: command.id, metadata: command.metadata }).final.catch(() => {});
+      return { accepted: true };
+    }
+    case "answer":
+    case "fail": {
+      const call = agent.toolCall(command.callId);
+      if (!call) {
+        return {
+          accepted: false,
+          reason: { type: "not-waiting", message: `No waiting call ${command.callId}` },
+        };
+      }
+      if (command.type === "answer") await call.answer(command.content);
+      else await call.fail(command.message);
+      return { accepted: true };
+    }
+    case "cancel":
+    case "stop": {
+      const took = command.type === "cancel" ? await agent.cancel() : await agent.stop();
+      return took
+        ? { accepted: true }
+        : { accepted: false, reason: { type: "idle", message: "No active turn" } };
+    }
+    case "clear":
+      await agent.clear();
+      return { accepted: true };
+  }
+}
+
+export function served<THostEvent extends { type: string } = never>(
+  agent: Agent | RemoteAgent<THostEvent>,
+  store: InMemoryEventStore<THostEvent>,
+) {
+  return loopbackTransport(store, (command) => applyCommand(agent, command));
 }
 
 export function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {

@@ -1,5 +1,11 @@
-import type { LoggedEvent } from "./eventLog.js";
-import type { AgentTransport, CommandOutcome } from "./protocol.js";
+import type { StoredEvent } from "./eventStore.js";
+import {
+  commandOutcomeSchema,
+  isWelcome,
+  type AgentTransport,
+  type AgentWelcome,
+  type StreamItem,
+} from "./protocol.js";
 import { parseSse, type SseMessage } from "./sse.js";
 
 export interface HttpTransportOptions {
@@ -40,7 +46,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
  * An `AgentTransport` over HTTP to one URL: `GET` opens the event stream as
  * Server-Sent Events, `POST` sends a command as JSON and reads the outcome
  * back. A dropped stream is reopened with `Last-Event-ID` set to the last
- * cursor delivered, so the served side's log fills the gap. Reconnecting
+ * cursor delivered, so the served side's store fills the gap. Reconnecting
  * retries a network failure or a `5xx` until the signal aborts, since the
  * served side may be mid-deploy, waiting `reconnectDelayMs` and doubling up
  * to `maxReconnectDelayMs`; a `404` or `410` ends the events, as the agent
@@ -99,37 +105,52 @@ export function httpTransport<THostEvent extends { type: string } = never>(
     }
   }
 
+  async function* itemsFrom(
+    first: ReadableStream<Uint8Array>,
+    signal: AbortSignal,
+  ): AsyncGenerator<StreamItem<THostEvent>, void, undefined> {
+    let body: ReadableStream<Uint8Array> | undefined = first;
+    let last = options.after;
+    while (body !== undefined) {
+      const messages = parseSse(body, signal);
+      try {
+        while (true) {
+          let next: IteratorResult<SseMessage, void>;
+          try {
+            next = await messages.next();
+          } catch (error) {
+            if (signal.aborted) return;
+            break;
+          }
+          if (next.done) break;
+          if (next.value.event === "welcome") {
+            const welcome: AgentWelcome = JSON.parse(next.value.data);
+            yield welcome;
+            continue;
+          }
+          const event: StoredEvent<THostEvent> = JSON.parse(next.value.data);
+          last = event.cursor;
+          yield event;
+        }
+      } finally {
+        await messages.return();
+      }
+      if (signal.aborted) return;
+      body = await reopen(last, signal);
+    }
+  }
+
   return {
     async events(signal) {
-      const first = bodyOf(await open(options.after, signal));
-      return {
-        async *[Symbol.asyncIterator]() {
-          let body: ReadableStream<Uint8Array> | undefined = first;
-          let last = options.after;
-          while (body !== undefined) {
-            const messages = parseSse(body, signal);
-            try {
-              while (true) {
-                let next: IteratorResult<SseMessage, void>;
-                try {
-                  next = await messages.next();
-                } catch (error) {
-                  if (signal.aborted) return;
-                  break;
-                }
-                if (next.done) break;
-                const entry: LoggedEvent<THostEvent> = JSON.parse(next.value.data);
-                last = entry.cursor;
-                yield entry;
-              }
-            } finally {
-              await messages.return();
-            }
-            if (signal.aborted) return;
-            body = await reopen(last, signal);
-          }
-        },
-      };
+      const response = await open(options.after, signal);
+      if (response.status === 404 || response.status === 410) return undefined;
+      const items = itemsFrom(bodyOf(response), signal);
+      const first = await items.next();
+      if (first.done || !isWelcome(first.value)) {
+        await items.return();
+        throw new HttpTransportError(response.status, "Event stream did not open with a welcome");
+      }
+      return { welcome: first.value, items: { [Symbol.asyncIterator]: () => items } };
     },
     async command(command, signal) {
       const headers = await headersWith({ "content-type": "application/json" });
@@ -145,8 +166,7 @@ export function httpTransport<THostEvent extends { type: string } = never>(
           `Command ${command.type} failed: ${response.status}`,
         );
       }
-      const outcome: CommandOutcome = await response.json();
-      return outcome;
+      return commandOutcomeSchema.parse(await response.json());
     },
   };
 }
