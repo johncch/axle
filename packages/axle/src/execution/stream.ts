@@ -23,6 +23,7 @@ import type {
   WaitingToolCall,
 } from "../tools/types.js";
 import type { Stats } from "../types.js";
+import { raceWithSignal, timeoutSignal, type TimeoutSignal } from "../utils/abort.js";
 import type { FileResolver } from "../utils/file.js";
 import { addStats, attributeStats, createStats, mergeStats, toTokenUsage } from "../utils/stats.js";
 import {
@@ -173,6 +174,16 @@ export interface StreamParams extends AxleModelRequestOptions {
    * compact the conversation and start a new stream.
    */
   maxContextTokens?: number;
+  /**
+   * Longest gap, in milliseconds, between two chunks from the provider on one
+   * step's stream, the wait for the first included. When it passes, the
+   * request is aborted and the stream ends `ok: false` with
+   * `{ kind: "api", type: "StreamStall" }`; nothing is retried. Tool
+   * execution is not timed. A provider that reasons without streaming
+   * anything sends no chunks while it does, so this must exceed that wait.
+   * Unset by default.
+   */
+  streamStallMs?: number;
   span?: Span;
   fileResolver?: FileResolver;
 }
@@ -299,6 +310,50 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   };
 }
 
+// --- Stall watchdog ---
+
+/**
+ * Re-yield a provider's chunks, restarting the stall timer on each one, and
+ * stop waiting the moment it expires even if the provider never notices its
+ * signal, as a reader blocked on a dead socket does not. A cancel ends the
+ * chunks instead, so the step reader keeps its partial as it would without
+ * the watchdog.
+ */
+async function* watchForStall<T>(
+  source: AsyncIterable<T>,
+  stall: TimeoutSignal,
+): AsyncGenerator<T, void, undefined> {
+  const iterator = source[Symbol.asyncIterator]();
+  try {
+    while (true) {
+      let next: IteratorResult<T>;
+      try {
+        next = await raceWithSignal(iterator.next(), stall.signal, "Stream stalled");
+      } catch (error) {
+        if (stall.expired) throw error;
+        return;
+      }
+      if (next.done) return;
+      stall.reset();
+      yield next.value;
+    }
+  } finally {
+    iterator.return?.()?.catch(() => {});
+  }
+}
+
+function stallFailure(limitMs: number, model: string): StepReadOutcome {
+  return {
+    kind: "failed",
+    failure: {
+      kind: "api",
+      type: "StreamStall",
+      message: `No data from the provider for ${limitMs}ms`,
+    },
+    model,
+  };
+}
+
 // --- Core loop ---
 
 async function run(
@@ -325,6 +380,7 @@ async function run(
     cache,
     providerOptions,
     agentName,
+    streamStallMs,
   } = options;
   const sessionId = options.sessionId ?? crypto.randomUUID();
   let system = options.system;
@@ -387,43 +443,56 @@ async function run(
     const providerTools = resolvedTools.provider();
 
     let outcome: StepReadOutcome;
-    try {
-      const streamSource = provider.createStreamingRequest(model, {
-        messages: workingMessages,
-        system,
-        tools,
-        providerTools: providerTools.length > 0 ? providerTools : undefined,
-        sessionId,
-        runtime: { span: stepSpan, fileResolver },
-        signal,
-        reasoning,
-        maxOutputTokens,
-        toolChoice,
-        parallelToolCalls,
-        cache,
-        providerOptions,
-      });
-
-      outcome = await readStep(streamSource, {
-        emit: (event) => emit(cbs, event),
-        tools: resolvedTools,
-        signal,
-        discloseThinking,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        stepSpan?.end("ok");
-        span?.end("ok");
-        throw new AxleAbortError("Stream aborted", {
-          reason: error instanceof AxleAbortError ? error.reason : signal.reason,
-          messages: error instanceof AxleAbortError ? (error.messages ?? newMessages) : newMessages,
-          partial: error instanceof AxleAbortError ? error.partial : undefined,
-          usage: error instanceof AxleAbortError ? mergeStats(usage, error.usage) : usage,
+    {
+      using stall = timeoutSignal(signal, streamStallMs);
+      try {
+        const streamSource = provider.createStreamingRequest(model, {
+          messages: workingMessages,
+          system,
+          tools,
+          providerTools: providerTools.length > 0 ? providerTools : undefined,
+          sessionId,
+          runtime: { span: stepSpan, fileResolver },
+          signal: stall.signal,
+          reasoning,
+          maxOutputTokens,
+          toolChoice,
+          parallelToolCalls,
+          cache,
+          providerOptions,
         });
+
+        const chunks =
+          streamStallMs === undefined ? streamSource : watchForStall(streamSource, stall);
+        outcome = await readStep(chunks, {
+          emit: (event) => emit(cbs, event),
+          tools: resolvedTools,
+          signal,
+          discloseThinking,
+        });
+        if (streamStallMs !== undefined && stall.expired && !signal.aborted) {
+          outcome = stallFailure(streamStallMs, "model" in outcome ? outcome.model : "");
+        }
+      } catch (error) {
+        if (streamStallMs !== undefined && stall.expired && !signal.aborted) {
+          outcome = stallFailure(streamStallMs, "");
+        } else {
+          if (error instanceof Error && error.name === "AbortError") {
+            stepSpan?.end("ok");
+            span?.end("ok");
+            throw new AxleAbortError("Stream aborted", {
+              reason: error instanceof AxleAbortError ? error.reason : signal.reason,
+              messages:
+                error instanceof AxleAbortError ? (error.messages ?? newMessages) : newMessages,
+              partial: error instanceof AxleAbortError ? error.partial : undefined,
+              usage: error instanceof AxleAbortError ? mergeStats(usage, error.usage) : usage,
+            });
+          }
+          stepSpan?.end("error");
+          span?.end("error");
+          throw error;
+        }
       }
-      stepSpan?.end("error");
-      span?.end("error");
-      throw error;
     }
 
     if (outcome.kind === "aborted") {

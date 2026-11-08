@@ -45,6 +45,20 @@ export interface AgentConfig extends Omit<AxleModelRequestOptions, "signal"> {
   observability?: ObservabilityOptions;
   /** Optional file resolver for request file references. */
   fileResolver?: FileResolver;
+  /**
+   * Longest a turn may run, from opening to `turn:end`, every model step,
+   * tool call and deferred wait included. When it elapses the turn is
+   * cancelled as `cancel()` would, with `{ type: "timeout", limitMs }` as the
+   * abort reason. Unset by default; a send's own value overrides it.
+   */
+  turnTimeoutMs?: number;
+  /**
+   * Longest gap between two chunks from the provider, as `stream()`'s
+   * `streamStallMs`: when it passes, the turn fails `ok: false` with
+   * `{ kind: "api", type: "StreamStall" }`. Unset by default; a send's own
+   * value overrides it.
+   */
+  streamStallMs?: number;
 }
 
 /**
@@ -268,6 +282,10 @@ export interface CompactionConfig {
 
 export interface SendMessageOptions<T = any> extends AxleModelRequestOptions {
   fileResolver?: FileResolver;
+  /** This send's turn timeout, overriding the agent's `turnTimeoutMs`; each inline turn may set its own. */
+  turnTimeoutMs?: number;
+  /** This send's stall limit, overriding the agent's `streamStallMs`. */
+  streamStallMs?: number;
   /**
    * Id for the send's user turn, the one `pending:queued`, `turn:user` and
    * `onSettled` carry. Generated when omitted.

@@ -131,7 +131,14 @@ and no `status`. A stop reason Axle cannot use is the API completing badly,
 so it is `incomplete`. A stream that ends with no completion signal at all
 (`IncompleteStream`) could be either and Axle cannot tell; it is
 `incomplete` because output may have flowed and the consumer's move is the
-same.
+same. A stream Axle cuts for silence is different: with `streamStallMs` set,
+no chunk for that long aborts the request and the step fails `api` with
+`type: "StreamStall"` and no `status`. The connection stopped delivering,
+which is the API failing to complete, as an HTTP timeout is; it is a result,
+not a cancel, because nothing the caller asked for stopped it. It is never
+retried: past the first chunk a retry would restart an answer the consumer
+has already been shown, so whether to send again is the caller's
+(2026-11-07).
 
 `Length` is not a failure. The model produced output and stopped at a limit
 the caller set; the result is `ok: true` with `finishReason: "length"`, and
@@ -286,6 +293,10 @@ to the subclass.
 as fields. `AxleAbortError` carries `reason`, `messages`, `partial`, and
 `usage`; `AxleAgentAbortError` adds `turn`. These are the interruptions of a
 request that did go out, so they carry what a result would have carried.
+`reason` is whatever the canceller gave; the one Axle gives itself is a
+turn timeout's `{ type: "timeout", limitMs }` (agent-state.md invariant 14),
+which `isTimeoutReason` narrows. A timeout is a cancel, not a failure kind:
+the agent cancelled on the host's behalf, at a limit the host set.
 `AxleInstructVariableError` carries `missingVariables`. No other code has a
 class. A payload class has no `details`: its fields are the payload, and
 `toJSON` serialises them at the top level.

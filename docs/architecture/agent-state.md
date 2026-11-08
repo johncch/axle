@@ -251,6 +251,27 @@ type: "start", message } }` and no user message committed, as for a
     machine is the protocol's job ([remote-agent.md](./remote-agent.md)
     invariant 8). The scheduler owns the value; the Agent adds no flag of
     its own. (2026-11-06; events 2026-11-07)
+14. **A turn can carry a timeout, and running out cancels that turn.**
+    `turnTimeoutMs` on the agent, or on a send or an inline send, which
+    overrides it, bounds one turn from `turn:user` to `turn:end`: every
+    model step, tool call and deferred wait counts. `onStart`, the
+    continuation's own time and the queue do not, and each inline turn gets
+    its own window. The turn runs on its own signal, the operation's
+    combined with the timer, so running out aborts that turn alone with
+    `{ type: "timeout", limitMs }` as the reason: it ends `cancelled` with
+    its partial work committed and rejects with `AxleAgentAbortError` whose
+    `reason` is that object (`isTimeoutReason` narrows it). The rejection
+    goes where the turn's outcome goes. The send's own turn rejects the
+    operation, so the continuation is skipped and the handle rejects; an
+    inline turn rejects its `ctx.send()`, and the continuation decides,
+    keeping the draft by catching it, or letting it propagate so the handle
+    rejects with it. `operation:end` carries the reason as
+    `{ type: "cancelled", reason }` when the operation ends on it, so a
+    remote consumer tells a timeout from a user's cancel without a string
+    convention; a user's `cancel()` aborts the operation's signal, stops
+    every turn and carries no reason. Unset by default; it is meant as a
+    long limit on runaway turns, not a deadline on a person answering a
+    deferred call. (2026-11-07)
 
 ## Design rationale (2026-08-12)
 

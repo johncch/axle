@@ -103,3 +103,39 @@ A remote result carries no `after` list, since inline sends' schemas live on
 the served side; an `error` outcome crosses as its message. Both are
 recorded in remote-agent.md invariant 9, to revisit when a remote consumer
 reads them.
+
+## Turn timeout and stream stall (later on 2026-11-07)
+
+Sunnyday asked for both: its two agents each armed a timer around
+`agent.cancel("timeout")`, and nothing bounded a provider socket gone silent.
+
+- **`turnTimeoutMs`**, on the agent or a send, bounds one turn from
+  `turn:user` to `turn:end`, deferred waits included, since it is meant as a
+  long limit on runaway turns. It first landed as a timer calling
+  `cancelCurrent`, which cancelled the whole operation, so a judge's fix
+  turn running long threw away a good draft. It now runs the turn on its own
+  signal, the operation's combined with the timer: the rejection goes where
+  the turn's outcome goes, `final` for the send's own turn and `ctx.send()`
+  for an inline one, where a judge can catch it and keep the draft. The
+  reason is typed, `{ type: "timeout", limitMs }`, carried on
+  `AxleAgentAbortError` and on `operation:end`'s `cancelled` outcome.
+  `AbortSignal.timeout` was weighed and left: its reason is a generic
+  `TimeoutError`, which Axle's own request retry also produces, so telling
+  them apart would be a string check again. A per-send value does not flow
+  to inline turns: a turn reads its own value, then the agent's.
+- **`streamStallMs`**, on `stream()`, the agent or a send, is the longest gap
+  between chunks on one step. Read from the SDK sources, no provider bounds
+  it: three stop timing at headers and Gemini's is a total deadline
+  (providers.md, _Timeouts on a streaming request_). A stall fails the step
+  `api`, `type: "StreamStall"`, never retried, because past the first chunk
+  a retry would replace an answer the consumer was already shown. The
+  watchdog races each chunk read, so a provider blocked on a dead socket
+  that never notices its signal is still stopped; a cancel during the wait
+  still keeps its partial.
+- **`timeoutSignal(parent, ms)`**, internal, returns a signal with `reset()`
+  and `Symbol.dispose` that aborts with `{ type: "timeout", limitMs }`, and
+  is a no-op with no `ms`, so each timer is one `using` line with no
+  conditional: the turn timeout, the stall watchdog, and Chat Completions'
+  attempt timer, which turns the timeout into the `DOMException` it already
+  threw. `using`
+  is server-side only, as Safari has not shipped it.

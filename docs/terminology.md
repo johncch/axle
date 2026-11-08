@@ -242,6 +242,18 @@ one turn. The Agent emits no status event; a `RemoteAgent` is told the
 served agent's status when its stream opens (the _welcome_) and moves it
 by the same two events.
 
+**Turn timeout** — `turnTimeoutMs`, on the agent or a send: the longest one
+turn may run, from `turn:user` to `turn:end`, every step, tool call and
+deferred wait included. Running out cancels that turn with the reason
+`{ type: "timeout", limitMs }`; it is a cancel, not a failure. The send's
+own turn takes the operation with it; an inline turn's rejects its
+`ctx.send()` and the continuation decides.
+
+**Stream stall** — `streamStallMs`, on `stream()`, the agent or a send: the
+longest gap between two chunks from the provider on one step. Exceeding it
+aborts the request and fails the step `ok: false`, `kind: "api"`,
+`type: "StreamStall"`. A network failure, not a cancel, and never retried.
+
 **Lifecycle event** — an event marking an operation's lifecycle rather than
 a turn's content: `operation:start`, `after:start`, `after:end`,
 `operation:end` with the operation's outcome, and `agent:idle`. Delivered on

@@ -221,6 +221,22 @@ describe("RemoteAgent", () => {
     expect(result.response).toBe("draft");
   });
 
+  test("a turn timeout reaches the remote as an abort carrying the same reason", async () => {
+    const agent = new Agent({
+      provider: askUserProvider(),
+      model: "mock",
+      tools: [askUser],
+      turnTimeoutMs: 20,
+    });
+    const remote = new RemoteAgent(servedFresh(agent));
+
+    await expect(remote.send("ask").final).rejects.toMatchObject({
+      name: "AbortError",
+      reason: { type: "timeout", limitMs: 20 },
+    });
+    remote.close();
+  });
+
   test("an onStart that throws rejects the remote send with its message", async () => {
     const agent = new Agent({ provider: textProvider(["unreachable"]), model: "mock" });
     agent.onStart(() => {

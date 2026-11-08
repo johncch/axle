@@ -17,6 +17,7 @@ import { createAgentTool } from "../../src/tools/agentTool.js";
 import type { AgentEvent, TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
 import type { Turn } from "../../src/turns/types.js";
+import { askUser, askUserProvider } from "../remote/helpers.js";
 
 function createMockStreamProvider(
   responses: string[],
@@ -1995,6 +1996,161 @@ describe("Agent", () => {
       expect(agent.messages).toEqual([]);
       expect(events.find((event) => event.type === "operation:end")).toMatchObject({
         outcome: { type: "cancelled" },
+      });
+    });
+  });
+
+  describe("turnTimeoutMs", () => {
+    test("cancels a turn that runs past it, with a typed reason on the error and operation:end", async () => {
+      const agent = new Agent({
+        provider: askUserProvider(),
+        model: "mock",
+        tools: [askUser],
+        turnTimeoutMs: 20,
+      });
+      const events: TurnEvent[] = [];
+      agent.on((event) => events.push(event));
+      let settledReason: unknown;
+      agent.onSettled((_session, { result }) => {
+        if (result.status === "rejected") settledReason = result.reason;
+      });
+
+      const final = agent.send("ask").final;
+
+      await expect(final).rejects.toMatchObject({
+        name: "AbortError",
+        reason: { type: "timeout", limitMs: 20 },
+      });
+      expect(settledReason).toBeInstanceOf(AxleAgentAbortError);
+      expect(events.find((event) => event.type === "operation:end")).toMatchObject({
+        outcome: { type: "cancelled", reason: { type: "timeout", limitMs: 20 } },
+      });
+      expect(events.find((event) => event.type === "turn:end")).toMatchObject({
+        status: "cancelled",
+      });
+    });
+
+    test("a send's own value overrides the agent's, and a user cancel carries no timeout reason", async () => {
+      const agent = new Agent({
+        provider: askUserProvider(),
+        model: "mock",
+        tools: [askUser],
+        turnTimeoutMs: 10_000,
+      });
+      const events: TurnEvent[] = [];
+      agent.on((event) => events.push(event));
+
+      await expect(agent.send("ask", { turnTimeoutMs: 15 }).final).rejects.toMatchObject({
+        reason: { type: "timeout", limitMs: 15 },
+      });
+
+      const cancelled = new Agent({
+        provider: askUserProvider(),
+        model: "mock",
+        tools: [askUser],
+        turnTimeoutMs: 10_000,
+      });
+      cancelled.on((event) => events.push(event));
+      const second = cancelled.send("ask");
+      await vi.waitFor(() => expect(cancelled.toolCall("c1")).toBeDefined());
+      cancelled.cancel();
+      await expect(second.final).rejects.toBeInstanceOf(AxleAgentAbortError);
+      expect(events.filter((event) => event.type === "operation:end").at(-1)).toEqual({
+        type: "operation:end",
+        id: expect.any(String),
+        outcome: { type: "cancelled" },
+      });
+    });
+
+    test("an inline turn's timeout rejects its ctx.send; a judge that catches it keeps the draft", async () => {
+      let requests = 0;
+      const provider = askUserProvider();
+      const agent = new Agent({
+        provider: {
+          ...provider,
+          createStreamingRequest(model, params) {
+            requests += 1;
+            return requests === 1
+              ? createEchoStreamProvider([]).createStreamingRequest(model, params)
+              : provider.createStreamingRequest(model, params);
+          },
+        },
+        model: "mock",
+        tools: [askUser],
+        turnTimeoutMs: 20,
+      });
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
+      let caught: unknown;
+      let laterSignalAborted: boolean | undefined;
+
+      const result = await agent.send("draft", {
+        after: async (_result, ctx) => {
+          try {
+            await ctx.send("fix");
+          } catch (error) {
+            caught = error;
+          }
+          laterSignalAborted = ctx.signal.aborted;
+        },
+      }).final;
+
+      expect(caught).toMatchObject({
+        name: "AbortError",
+        reason: { type: "timeout", limitMs: 20 },
+      });
+      expect(laterSignalAborted).toBe(false);
+      expect(result.ok).toBe(true);
+      expect(result.response).toBe("draft");
+      expect(result.after).toEqual([]);
+      expect(transcript.turns.at(-1)?.status).toBe("cancelled");
+    });
+
+    test("does not run during the continuation; each inline turn gets its own window", async () => {
+      const agent = new Agent({
+        provider: createEchoStreamProvider([]),
+        model: "mock",
+        turnTimeoutMs: 30,
+      });
+
+      const result = await agent.send("draft", {
+        after: async (_result, ctx) => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          await ctx.send("fix");
+        },
+      }).final;
+
+      expect(result.ok).toBe(true);
+      expect(result.after?.map((turn) => turn.ok)).toEqual([true]);
+    });
+  });
+
+  describe("streamStallMs", () => {
+    test("a provider gone silent fails the turn as a StreamStall, not a cancel", async () => {
+      const agent = new Agent({
+        provider: {
+          protocol: "chatCompletions",
+          id: "silent",
+          async *createStreamingRequest(): AsyncGenerator<AnyStreamChunk, void> {
+            yield { type: "start", id: "r1", data: { model: "mock", timestamp: 0 } };
+            yield { type: "text-start", data: { index: 0 } };
+            yield { type: "text-delta", data: { index: 0, text: "Hel" } };
+            await new Promise(() => {});
+          },
+        },
+        model: "mock",
+        streamStallMs: 20,
+      });
+      const transcript = new Transcript();
+      agent.on((event) => transcript.apply(event));
+
+      const result = await agent.send("hello").final;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatchObject({ kind: "api", type: "StreamStall" });
+      expect(transcript.turns.at(-1)).toMatchObject({
+        status: "error",
+        failure: { kind: "api", type: "StreamStall" },
       });
     });
   });

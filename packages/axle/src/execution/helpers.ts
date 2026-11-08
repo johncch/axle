@@ -133,7 +133,13 @@ export type GenerateResult<TResponse = AxleAssistantMessage> = StreamResult<TRes
 export function validateLoopLimits(options: {
   maxSteps?: number;
   maxContextTokens?: number;
+  streamStallMs?: number;
 }): void {
+  if (options.streamStallMs !== undefined && options.streamStallMs < 1) {
+    throw new AxleError(`streamStallMs must be at least 1 (got ${options.streamStallMs})`, {
+      code: "INVALID_OPTIONS",
+    });
+  }
   if (options.maxSteps !== undefined && options.maxSteps < 1) {
     throw new AxleError(`maxSteps must be at least 1 (got ${options.maxSteps})`, {
       code: "INVALID_OPTIONS",

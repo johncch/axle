@@ -1,4 +1,5 @@
-import { raceWithSignal, throwIfAborted } from "../../utils/abort.js";
+import { isTimeoutReason } from "../../turns/types.js";
+import { raceWithSignal, throwIfAborted, timeoutSignal } from "../../utils/abort.js";
 import { requireInteger } from "../utils.js";
 
 export interface ChatCompletionsRetryAttemptInfo {
@@ -52,10 +53,9 @@ export async function withRetry(
     } catch (thrown) {
       throwIfAborted(options.signal, "Request aborted");
       const abortReason = attemptSignal.signal.reason;
-      const error =
-        abortReason instanceof DOMException && abortReason.name === "TimeoutError"
-          ? abortReason
-          : thrown;
+      const error = isTimeoutReason(abortReason)
+        ? new DOMException(`Request timed out after ${abortReason.limitMs}ms`, "TimeoutError")
+        : thrown;
       if (attempt >= maxRetries) {
         throw error;
       }
@@ -74,28 +74,8 @@ function createAttemptSignal(
   signal: AbortSignal | undefined,
   timeoutMs: number,
 ): { signal: AbortSignal; cleanup: () => void } {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort(new DOMException(`Request timed out after ${timeoutMs}ms`, "TimeoutError"));
-  }, timeoutMs);
-
-  const abort = () => {
-    controller.abort(signal?.reason);
-  };
-
-  if (signal?.aborted) {
-    abort();
-  } else {
-    signal?.addEventListener("abort", abort, { once: true });
-  }
-
-  return {
-    signal: controller.signal,
-    cleanup: () => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-    },
-  };
+  const deadline = timeoutSignal(signal, timeoutMs);
+  return { signal: deadline.signal, cleanup: () => deadline[Symbol.dispose]() };
 }
 
 function isRetryableStatus(status: number): boolean {

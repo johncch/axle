@@ -393,7 +393,26 @@ export type ActionResult =
  * its work, its continuation or an `onStart` callback threw.
  */
 export type OperationOutcome =
-  { type: "complete" } | { type: "cancelled" } | { type: "error"; error: { message: string } };
+  | { type: "complete" }
+  | { type: "cancelled"; reason?: TimeoutReason }
+  | { type: "error"; error: { message: string } };
+
+/** The abort reason a turn timeout cancels with, carried on `AxleAgentAbortError.reason`. */
+export interface TimeoutReason {
+  type: "timeout";
+  limitMs: number;
+}
+
+export function isTimeoutReason(reason: unknown): reason is TimeoutReason {
+  return (
+    typeof reason === "object" &&
+    reason !== null &&
+    "type" in reason &&
+    reason.type === "timeout" &&
+    "limitMs" in reason &&
+    typeof reason.limitMs === "number"
+  );
+}
 
 export type PendingDropReason =
   { type: "cancelled" } | { type: "error"; error: { type: string; message: string } };

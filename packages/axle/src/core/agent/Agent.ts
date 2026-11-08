@@ -13,6 +13,7 @@ import { logContent } from "../../observability/log.js";
 import type { Tracer } from "../../observability/tracer.js";
 import type { Span, SpanStatus } from "../../observability/types.js";
 import type { AIProvider, AxleModelRequestOptions, ContextUsage } from "../../protocols/types.js";
+import { requireInteger } from "../../protocols/utils.js";
 import { renderSkillsCatalog } from "../../skills/prompt.js";
 import { SkillRegistry } from "../../skills/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
@@ -25,8 +26,9 @@ import type {
 import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
-import type { OperationOutcome, Turn } from "../../turns/types.js";
+import { isTimeoutReason, type OperationOutcome, type Turn } from "../../turns/types.js";
 import type { Stats } from "../../types.js";
+import { timeoutSignal } from "../../utils/abort.js";
 import type { FileResolver } from "../../utils/file.js";
 import { createStats } from "../../utils/stats.js";
 import { Instruct } from "../Instruct.js";
@@ -58,6 +60,8 @@ import type {
 interface PreparedSend {
   instruct: Instruct<any>;
   fileResolver?: FileResolver;
+  turnTimeoutMs?: number;
+  streamStallMs?: number;
   message: AxleUserMessage;
   userTurn: Turn;
   requestOptions: AxleModelRequestOptions;
@@ -82,6 +86,8 @@ export class Agent {
   readonly model: string;
   readonly name?: string;
   readonly fileResolver?: FileResolver;
+  readonly turnTimeoutMs?: number;
+  readonly streamStallMs?: number;
   readonly requestOptions: Omit<AxleModelRequestOptions, "signal">;
   readonly registry: ToolRegistry;
   readonly skills: SkillRegistry;
@@ -137,6 +143,14 @@ export class Agent {
     this.baseSystem = config.system;
     this.name = config.name;
     this.fileResolver = config.fileResolver;
+    this.turnTimeoutMs =
+      config.turnTimeoutMs === undefined
+        ? undefined
+        : requireInteger(config.turnTimeoutMs, "turnTimeoutMs", { min: 1 });
+    this.streamStallMs =
+      config.streamStallMs === undefined
+        ? undefined
+        : requireInteger(config.streamStallMs, "streamStallMs", { min: 1 });
     this.requestOptions = {
       reasoning: config.reasoning,
       maxOutputTokens: config.maxOutputTokens,
@@ -368,7 +382,7 @@ export class Agent {
     options: InlineSendOptions,
     threadId?: string,
   ): PreparedSend {
-    const { fileResolver, metadata, id, ...modelOptions } = options;
+    const { fileResolver, metadata, id, turnTimeoutMs, streamStallMs, ...modelOptions } = options;
     const instruct =
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
@@ -382,6 +396,14 @@ export class Agent {
     return {
       instruct,
       fileResolver,
+      turnTimeoutMs:
+        turnTimeoutMs === undefined
+          ? this.turnTimeoutMs
+          : requireInteger(turnTimeoutMs, "turnTimeoutMs", { min: 1 }),
+      streamStallMs:
+        streamStallMs === undefined
+          ? this.streamStallMs
+          : requireInteger(streamStallMs, "streamStallMs", { min: 1 }),
       message,
       userTurn: userTurnFromMessage(message),
       requestOptions,
@@ -486,8 +508,17 @@ export class Agent {
     prepared: PreparedSend,
     runtime: { signal: AbortSignal; announced: boolean; spanParent?: Span },
   ): Promise<AgentResult<any> | AgentErrorResult> {
-    const { instruct, fileResolver, message, userTurn, requestOptions } = prepared;
-    const { signal, announced } = runtime;
+    const {
+      instruct,
+      fileResolver,
+      message,
+      userTurn,
+      requestOptions,
+      turnTimeoutMs,
+      streamStallMs,
+    } = prepared;
+    const { announced } = runtime;
+    let signal = runtime.signal;
     let userTurnOpened = false;
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
@@ -529,6 +560,8 @@ export class Agent {
       this.messagesInternal.push(message);
       this.emitEvent({ type: "turn:user", turn: userTurn });
       userTurnOpened = true;
+      using deadline = timeoutSignal(runtime.signal, turnTimeoutMs);
+      signal = deadline.signal;
       const startEvent = turnEventBuilder.startAgentTurn();
       agentTurnId = startEvent.turnId;
       this.emitEvent(startEvent);
@@ -560,6 +593,7 @@ export class Agent {
         agentName: this.name,
         span: streamSpan,
         fileResolver: fileResolver ?? this.fileResolver,
+        streamStallMs,
         ...streamRequestOptions,
         signal,
       });
@@ -1057,7 +1091,11 @@ export class Agent {
 
 function outcomeOf(result: PromiseSettledResult<unknown>): OperationOutcome {
   if (result.status === "fulfilled") return { type: "complete" };
-  if (result.reason instanceof AxleAbortError) return { type: "cancelled" };
+  if (result.reason instanceof AxleAbortError) {
+    return isTimeoutReason(result.reason.reason)
+      ? { type: "cancelled", reason: result.reason.reason }
+      : { type: "cancelled" };
+  }
   const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
   return { type: "error", error: { message } };
 }

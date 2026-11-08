@@ -217,6 +217,7 @@ export { TurnEventBuilder } from "./turns/eventBuilder.js";
 export type { AgentEvent, AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
+export { isTimeoutReason } from "./turns/types.js";
 export type {
   ActionPart,
   ActionResult,
@@ -234,6 +235,7 @@ export type {
   SubagentAction,
   TextPart,
   ThinkingPart,
+  TimeoutReason,
   ToolAction,
   Turn,
   TurnFailure,

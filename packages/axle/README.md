@@ -389,6 +389,17 @@ everything accumulated so far and `stopped` set to `"max-steps"` or
 `"token-limit"`. The caller decides what happens next — e.g. compact the
 conversation and start a new call. Non-positive limits throw at call time.
 
+`streamStallMs` bounds a silent provider: the longest gap, in milliseconds,
+between two chunks on one step's stream, the wait for the first included.
+When it passes, the request is aborted and the call returns `ok: false` with
+`{ kind: "api", type: "StreamStall" }`; whatever streamed before is in the
+events, and nothing is retried. Tool execution isn't timed. Each provider's
+own `timeoutMs` stops once the response starts, so without this a dead socket
+waits on the runtime's own limit, about five minutes for Node's `fetch`. A
+model that reasons without streaming sends nothing while it does, so set
+this above that silence. `Agent` takes the same option in its config and per
+send.
+
 `sessionId` names the conversation a call continues. Providers that route or
 group by session use it (OpenRouter's `session_id`); the rest ignore it.
 `Agent` passes its own. A `stream()` or `generate()` call without one gets a
@@ -2075,6 +2086,48 @@ committed, `onSettled` runs with the error, and the handle rejects with it.
 To refuse a start as a cancel instead, call `agent.cancel(reason)` inside
 the callback.
 
+To bound a runaway turn, set `turnTimeoutMs`, on the agent or per send:
+
+```typescript
+const agent = new Agent({ provider, model, turnTimeoutMs: 15 * 60_000 });
+agent.send(text, { turnTimeoutMs: 30 * 60_000 }); // overrides the agent's
+
+agent.onSettled((_session, { result }) => {
+  const timedOut =
+    result.status === "rejected" &&
+    result.reason instanceof AxleAgentAbortError &&
+    isTimeoutReason(result.reason.reason);
+  if (timedOut) markTimedOut();
+});
+```
+
+The clock runs from `turn:user` to `turn:end`: every model step, tool call
+and deferred wait counts, while `onStart`, the continuation's own time and
+the queue don't, and each inline turn gets its own window. When it runs
+out, that turn is cancelled with `{ type: "timeout", limitMs }` as the
+reason and ends `cancelled`. On the send's own turn the handle rejects with
+`AxleAgentAbortError` carrying that `reason`, and `operation:end` reports
+`{ type: "cancelled", reason }`, which a remote client reads the same way.
+On an inline turn only its `ctx.send()` rejects, so a judge can keep the
+draft:
+
+```typescript
+after: async (_result, ctx) => {
+  try {
+    await ctx.send(`Fix: ${feedback}`);
+  } catch (error) {
+    if (!(error instanceof AxleAgentAbortError && isTimeoutReason(error.reason))) throw error;
+  }
+},
+```
+
+It's unset by default; it's meant as a long limit, since a deferred call
+waiting on a person counts against it.
+
+A silent provider is a separate limit: `streamStallMs`, on the agent or per
+send, fails the turn as a provider failure (`ok: false`, `type:
+"StreamStall"`) rather than cancelling it. See the `stream()` options above.
+
 To learn when the agent has finished everything it was given, register
 `onIdle`:
 
@@ -2114,7 +2167,7 @@ operation:start { id, kind }
   after:start { id }
     turn:user (threadId) … turn:end
   after:end { id }
-operation:end { id, outcome }      // complete, cancelled, or error with a message
+operation:end { id, outcome }      // complete, cancelled (with a timeout reason, if one), or error with a message
 agent:idle
 ```
 

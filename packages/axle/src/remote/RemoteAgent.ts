@@ -53,7 +53,7 @@ type RemoteResponse = string | ParsedSchema<OutputSchema>;
 
 type HeldOutcome =
   | { status: "fulfilled"; value: AgentResult<RemoteResponse> | AgentErrorResult }
-  | { status: "rejected"; reason: Error };
+  | { status: "rejected"; turn: Turn };
 
 interface OpenOperation {
   schema: OutputSchema | undefined;
@@ -370,12 +370,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
 
   private outcomeOf(op: OpenOperation, turn: Turn): HeldOutcome {
     const usage = turn.usage ?? createStats();
-    if (turn.status === "cancelled") {
-      return {
-        status: "rejected",
-        reason: new AxleAgentAbortError("Agent send aborted", { turn, usage }),
-      };
-    }
+    if (turn.status === "cancelled") return { status: "rejected", turn };
     if (turn.status === "error") {
       return {
         status: "fulfilled",
@@ -408,7 +403,14 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     if (outcome.type === "complete" && held?.status === "fulfilled") {
       op.resolve(held.value);
     } else if (outcome.type === "cancelled") {
-      op.reject(held?.status === "rejected" ? held.reason : new AxleAgentAbortError());
+      const turn = held?.status === "rejected" ? held.turn : undefined;
+      op.reject(
+        new AxleAgentAbortError("Agent send aborted", {
+          reason: outcome.reason,
+          turn,
+          usage: turn?.usage ?? createStats(),
+        }),
+      );
     } else if (outcome.type === "error") {
       op.reject(new AxleError(outcome.error.message));
     } else {
