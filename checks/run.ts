@@ -36,6 +36,7 @@ interface RunOptions {
   cases: string[];
   out: string;
   record: boolean;
+  retry: boolean;
 }
 
 interface CheckRecord {
@@ -51,6 +52,10 @@ interface CheckRecord {
   failureReasons?: string[];
   details?: Record<string, unknown>;
   error?: unknown;
+  /** Set when the case ran more than once: how many runs it took. */
+  attempts?: number;
+  /** What the first run failed with, when a retry followed it. */
+  firstFailure?: { status: "fail" | "error"; failureReasons?: string[] };
 }
 
 if (process.argv[2] === "ledger") {
@@ -265,6 +270,7 @@ let passed = 0;
 let skipped = 0;
 const records: CheckRecord[] = [];
 const failedRecords: CheckRecord[] = [];
+const flakyRecords: CheckRecord[] = [];
 const usageTotals: UsageTotals[] = targets.map(() => ({
   in: 0,
   out: 0,
@@ -305,51 +311,24 @@ async function runTarget(target: ProviderTarget, index: number): Promise<void> {
       continue;
     }
 
-    const startedAt = Date.now();
-
-    try {
-      const result = await run();
-      accumulateUsage(usageTotals[index], result.details?.usage);
-      const usageViolation = findUsageInvariantViolation(result.details?.usage);
-      const failureReasons = deriveFailureReasons(result, usageViolation);
-      const status = result.ok && failureReasons.length === 0 ? "pass" : "fail";
-      if (status === "pass") passed += 1;
-
-      const record: CheckRecord = {
-        timestamp: new Date().toISOString(),
-        providerId: target.id,
-        model: target.model,
-        reasoning: options.reasoning,
-        caseId: testCase.id,
-        caseDescription: testCase.description,
-        status,
-        durationMs: Date.now() - startedAt,
-        ...(failureReasons.length > 0 ? { failureReasons } : {}),
-        details: usageViolation ? { ...result.details, usageViolation } : result.details,
+    let record = await attemptCase(target, testCase, run, index);
+    if (record.status !== "pass" && options.retry) {
+      const first = record;
+      record = await attemptCase(target, testCase, run, index);
+      record = {
+        ...record,
+        attempts: 2,
+        firstFailure: {
+          status: first.status === "error" ? "error" : "fail",
+          ...(first.failureReasons ? { failureReasons: first.failureReasons } : {}),
+        },
       };
-      await writeRecord(record);
-      if (status !== "pass") failedRecords.push(record);
-      reporter.caseDone(index, status);
-    } catch (error) {
-      usageTotals[index].runCases += 1;
-      const serializedError = serializeError(error);
-      const failureReasons = [`Case threw: ${getErrorMessage(error) ?? "unknown error"}`];
-      const record: CheckRecord = {
-        timestamp: new Date().toISOString(),
-        providerId: target.id,
-        model: target.model,
-        reasoning: options.reasoning,
-        caseId: testCase.id,
-        caseDescription: testCase.description,
-        status: "error",
-        durationMs: Date.now() - startedAt,
-        failureReasons,
-        error: serializedError,
-      };
-      await writeRecord(record);
-      failedRecords.push(record);
-      reporter.caseDone(index, "error");
+      if (record.status === "pass") flakyRecords.push(record);
     }
+    await writeRecord(record);
+    if (record.status === "pass") passed += 1;
+    else failedRecords.push(record);
+    reporter.caseDone(index, record.status);
   }
 
   reporter.finish(index);
@@ -385,11 +364,22 @@ if (failedRecords.length > 0) {
   }
 }
 
+if (flakyRecords.length > 0) {
+  console.log(`\n${bar("PASSED ON RETRY")}`);
+  for (const record of flakyRecords) {
+    console.log(`\n${record.providerId}:${record.model} ${record.caseId}`);
+    if (record.firstFailure?.failureReasons) {
+      console.log(formatFailureReasons(record.firstFailure.failureReasons));
+    }
+  }
+}
+
 const failCount = failedRecords.filter((record) => record.status === "fail").length;
 const errorCount = failedRecords.filter((record) => record.status === "error").length;
 const summaryParts = [
   ...(failCount > 0 ? [`${failCount} failed`] : []),
   `${passed} passed`,
+  ...(flakyRecords.length > 0 ? [`${flakyRecords.length} on retry`] : []),
   ...(skipped > 0 ? [`${skipped} skipped`] : []),
   ...(errorCount > 0 ? [`${errorCount} errors`] : []),
 ];
@@ -416,6 +406,46 @@ if (options.record) {
 }
 
 if (failedRecords.length > 0) process.exitCode = 1;
+
+async function attemptCase(
+  target: ProviderTarget,
+  testCase: AnyCheckCase,
+  run: () => Promise<CheckCaseResult>,
+  index: number,
+): Promise<CheckRecord> {
+  const startedAt = Date.now();
+  const base = {
+    providerId: target.id,
+    model: target.model,
+    reasoning: options.reasoning,
+    caseId: testCase.id,
+    caseDescription: testCase.description,
+  };
+  try {
+    const result = await run();
+    accumulateUsage(usageTotals[index], result.details?.usage);
+    const usageViolation = findUsageInvariantViolation(result.details?.usage);
+    const failureReasons = deriveFailureReasons(result, usageViolation);
+    return {
+      timestamp: new Date().toISOString(),
+      ...base,
+      status: result.ok && failureReasons.length === 0 ? "pass" : "fail",
+      durationMs: Date.now() - startedAt,
+      ...(failureReasons.length > 0 ? { failureReasons } : {}),
+      details: usageViolation ? { ...result.details, usageViolation } : result.details,
+    };
+  } catch (error) {
+    usageTotals[index].runCases += 1;
+    return {
+      timestamp: new Date().toISOString(),
+      ...base,
+      status: "error",
+      durationMs: Date.now() - startedAt,
+      failureReasons: [`Case threw: ${getErrorMessage(error) ?? "unknown error"}`],
+      error: serializeError(error),
+    };
+  }
+}
 
 async function writeRecord(record: CheckRecord): Promise<void> {
   records.push(record);
@@ -583,6 +613,7 @@ function parseArgs(args: string[]): RunOptions {
     cases: [],
     out: join("output", "checks", `run-${Date.now()}.jsonl`),
     record: true,
+    retry: true,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -618,6 +649,9 @@ function parseArgs(args: string[]): RunOptions {
         break;
       case "--no-record":
         parsed.record = false;
+        break;
+      case "--no-retry":
+        parsed.retry = false;
         break;
       case "--help":
       case "-h":
@@ -684,5 +718,8 @@ Options:
   --no-record        Do not merge the results into checks/ledger.jsonl. By
                      default every run updates each model's entry; cases
                      that did not run keep theirs.
+  --no-retry         Do not run a failed case a second time. By default a case
+                     that fails or errors runs once more; one that passes then
+                     counts as passed and is listed as flaky.
 `);
 }

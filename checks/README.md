@@ -93,6 +93,17 @@ pnpm exec tsx checks/run.ts --case generate-basic,agent-basic
 pnpm exec tsx checks/run.ts --case "agent-*"
 ```
 
+A case that fails or errors runs once more before it counts. If the second
+run passes, the case is counted as passed, listed under _Passed on retry_
+with the first run's failure, and its record carries `attempts: 2` and
+`firstFailure`. That keeps one flaky provider response from failing a
+release check while still showing it. A retry costs another set of live
+calls; `--no-retry` turns it off:
+
+```bash
+pnpm exec tsx checks/run.ts --no-retry
+```
+
 Provider API keys are loaded from your shell environment or repo-local `.env`:
 
 ```bash

@@ -1236,6 +1236,14 @@ export const coreCases: CheckCase[] = [
     description:
       "A web search that Anthropic refuses is reported as a provider-tool error, and a follow-up request is accepted.",
     providers: ["anthropic"],
+    exclusions: [
+      {
+        provider: "anthropic",
+        model: /claude-haiku-5-5/,
+        reason:
+          "Haiku 5.5 usually declines a search past max_uses instead of attempting it, so no refusal is produced to test; run with --model on another Claude model.",
+      },
+    ],
     async run({ provider, model, requestOptions }) {
       const providerTools: ProviderTool[] = [
         { type: "provider", name: "web_search", config: { max_uses: 1 } },
