@@ -128,7 +128,11 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     void this.consume();
   }
 
-  /** `connecting` until the stream opens, `open` while it runs, then `ended` or `error`. */
+  /**
+   * `connecting` until the stream opens, `open` while it runs, then `ended`
+   * or `error`. `status` already reads the stream's opening status when
+   * `onConnection` reports `open`.
+   */
   get connection(): RemoteConnection {
     return this.connectionInternal;
   }
@@ -246,8 +250,8 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     try {
       const subscription = await this.transport.events(this.controller.signal);
       if (subscription) {
-        this.setConnection({ phase: "open" });
         this.apply(subscription.welcome);
+        this.setConnection({ phase: "open" });
         for await (const item of subscription.items) this.apply(item);
       }
       if (!this.controller.signal.aborted) {

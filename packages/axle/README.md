@@ -2229,9 +2229,23 @@ reconnects while a continuation is still running reads `busy`. From there
 `operation:start` and `agent:idle` move it, as they move `agent.status`, and
 `remote.status` already reads the new value when `remote.on` delivers
 either; the opening status, the stream's _welcome_, is not delivered on `on`. `status` reads
-`idle` until the stream opens. For React, subscribe with `remote.on` and
-read `remote.status` as the snapshot: it keeps the same object until it
-changes.
+`idle` until the stream opens, and already reads the opening status when
+`onConnection` reports `open`. For React, subscribe to both and read
+`remote.status` as the snapshot; it keeps the same object until it changes:
+
+```typescript
+const status = useSyncExternalStore(
+  (notify) => {
+    const offEvents = remote.on(notify);
+    const offConnection = remote.onConnection(notify);
+    return () => {
+      offEvents();
+      offConnection();
+    };
+  },
+  () => remote.status,
+);
+```
 
 Every event the store stamps carries a `cursor`. The transport resumes a
 dropped stream from the last one it delivered, so the served side replays
@@ -2245,7 +2259,10 @@ remote.on(transcript.apply);
 ```
 
 A cursor from a store that no longer exists replays from the start of the
-one that does. A new conversation is a new `Agent` and a new
+one that does. If your server loses an agent, to a restart or a release,
+answer `410` on its old stream so clients end and their open sends reject,
+or send your own baseline event when you serve a new agent at the same URL;
+a send made before the loss never settles in that case. A new conversation is a new `Agent` and a new
 `InMemoryEventStore`;
 nothing on the client needs resetting.
 

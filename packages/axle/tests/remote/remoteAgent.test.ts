@@ -321,6 +321,25 @@ describe("RemoteAgent over a store", () => {
     expect(statuses).toEqual([{ phase: "busy", id: "op-1" }, { phase: "idle" }]);
   });
 
+  test("onConnection(open) already reads the status the stream opened with", async () => {
+    const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
+    const store = new InMemoryEventStore(agent);
+    const final = agent.send("ask", { id: "op-1" }).final;
+    await waitFor(() => agent.toolCall("c1") !== undefined);
+
+    const remote = new RemoteAgent(served(agent, store));
+    const atOpen: AgentStatus[] = [];
+    remote.onConnection((connection) => {
+      if (connection.phase === "open") atOpen.push(remote.status);
+    });
+    await waitFor(() => remote.connection.phase === "open");
+
+    expect(atOpen).toEqual([{ phase: "busy", id: "op-1" }]);
+    await agent.toolCall("c1")?.answer("teal");
+    await final;
+    remote.close();
+  });
+
   test("host events reach on() with their cursor and leave the status alone", async () => {
     type HostEvent = { type: "run:start"; id: string };
     const agent = new Agent({ provider: textProvider(["hi"]), model: "mock" });

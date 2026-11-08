@@ -68,7 +68,15 @@ front door and the process the agent runs in.
    reconnects and sees the new store from its beginning, and nothing resets
    anything on the client. A host that keeps a baseline for a cold open
    sends it as its own event, as Sunnyday's `stream:reset` is; the library
-   has no reset frame.
+   has no reset frame. A host that lost an agent, to a restart or a
+   release, holds a new agent if it brings one back, and says so: it
+   answers `410` on the old stream, so the client ends and every open
+   `final` rejects, or it serves the new agent at the same URL with its
+   baseline event and accepts that a send from before is never settled,
+   since only the lost process could have ended it. Serving a fresh agent
+   as if it were the old one, with neither, leaves a client showing the
+   old status and holding sends that never settle; that is the host's to
+   prevent, and nothing in the protocol detects it.
 5. **Host events share the store and never touch the remote's status.** The
    store is generic over the host's event type; `push` stamps a host event
    in sequence with the agent's; `RemoteAgent.on` delivers both with their
@@ -141,7 +149,10 @@ front door and the process the agent runs in.
    with no subscription because there is no agent to subscribe to; `error`
    with the error that was thrown, so a consumer reads a transport's own
    detail, such as `HttpTransportError.status`, from it; `status` is `idle`
-   until the stream opens.
+   until the stream opens, and already reads the opening status when
+   `onConnection` reports `open`. So `status` is current whenever `on` or
+   `onConnection` fires, and a consumer that snapshots it from both misses
+   no change.
 9. **A `RemoteAgent` stands in for an `Agent` wherever an agent is
    served.** `InMemoryEventStore` takes either, and a host's command switch
    makes the same calls on either, so a hop is a consumer facing upstream
