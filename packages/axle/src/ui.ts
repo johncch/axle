@@ -27,6 +27,7 @@ export type {
   AgentCommand,
   AgentSubscription,
   AgentTransport,
+  AgentWelcome,
   CommandOutcome,
   StreamItem,
 } from "./remote/protocol.js";
@@ -40,13 +41,7 @@ export type {
 export { isActionOf, isCall } from "./tools/deferred.js";
 export type { DeferredActionOf, DeferredCallOf } from "./tools/deferred.js";
 export type { DeferredCall, DeferredTool, WaitingToolCall } from "./tools/types.js";
-export type {
-  AgentEvent,
-  AgentStateEvent,
-  AnnotationEvent,
-  AnnotationTarget,
-  TurnEvent,
-} from "./turns/events.js";
+export type { AgentEvent, AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput, UnknownEvent } from "./turns/transcript.js";
 export type {

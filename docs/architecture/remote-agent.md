@@ -74,7 +74,7 @@ front door and the process the agent runs in.
    in sequence with the agent's; `RemoteAgent.on` delivers both with their
    cursors; `RemoteAgent.status` comes from the opening status and the
    agent's `operation:start` and `agent:idle` alone. A host event never
-   uses those types, nor `type: "state"`, which the protocol uses.
+   uses those types, nor `type: "welcome"`, which the protocol uses.
 6. **A send crosses as a rendered prompt.** The `send` command is
    `{ type: "send", id, prompt, files?, metadata? }`: the user turn's `id`,
    `instruct.render()` with the inputs, references, context sections and
@@ -104,16 +104,23 @@ front door and the process the agent runs in.
    `ToolContext`: no `emit` for progress, no `signal`; cancellation is
    visible from the events. A `RemoteAgent` holds no transcript; it folds
    each turn only to produce `turn` and `response` on `final`, as the
-   Agent does.
+   Agent does. `final` settles when the served operation ends, not when
+   its turn does: at the operation's own `turn:end` the remote builds the
+   result and holds it, and on `operation:end` with the same id it
+   resolves with it (`complete`), rejects with `AxleAgentAbortError`
+   (`cancelled`), or rejects with an `AxleError` carrying the message
+   (`error`), so it settles after the continuation and `onSettled` as a
+   local handle does. A `pending:dropped` rejects at once only for a send
+   that never started; one that started waits for its `operation:end`.
 8. **Status is synced, not streamed.** The agent owns its status and
    emits no status event (agent-state.md invariant 13). What crosses is the
    served side's status at the moment a consumer subscribes, because
    history and the live server can disagree: a consumer that resumes after
    an operation started has skipped its `operation:start`, and a server
    that restarted has a history that says nothing of what it is doing now.
-   `AgentTransport.events` resolves to an `AgentSubscription`: `state`, the
-   status when the stream opened, and `items`, the events after the cursor
-   followed by live events. The store keeps that status by folding its own
+   `AgentTransport.events` resolves to an `AgentSubscription`: `welcome`,
+   `{ type: "welcome", status }` with the status when the stream opened,
+   and `items`, the events after the cursor followed by live events. The store keeps that status by folding its own
    log, `operation:start` to busy with that id and `agent:idle` to idle,
    seeded once from `agent.status` when it is built, so a store built while
    its agent is busy opens busy and the opening status always describes the
@@ -122,12 +129,13 @@ front door and the process the agent runs in.
    replay and live alike, and updates `status` before `on` delivers the
    event that moved it. A replay can move status briefly; it ends at the
    opening value, because the replay is the store's log up to that moment.
-   Over SSE the opening status is a message with `event: state` and no
-   `id`, written first on every response, so every reconnect brings a fresh
-   one; every later message is an event with its cursor as `id` and no
-   `event`. A state message never carries an empty `id:`, which would reset
-   the resume point. `toEventStreamResponse` takes the subscription and
-   cannot open without a status. On the consumer, the connection and the
+   Over SSE the welcome is a message with `event: welcome` and no `id`,
+   written first on every response, so every reconnect brings a fresh one,
+   which a transport delivers among the items; every later message is an
+   event with its cursor as `id` and no `event`. A welcome never carries an
+   empty `id:`, which would reset the resume point. `toEventStreamResponse`
+   takes the subscription and cannot open without a welcome; `httpTransport`
+   fails a stream that does not open with one. On the consumer, the connection and the
    status are separate: `connection` is `connecting` until `events`
    resolves, then `open`; `ended` when the items end or `events` resolves
    with no subscription because there is no agent to subscribe to; `error`
@@ -141,10 +149,11 @@ front door and the process the agent runs in.
    has the handler for it. This is the test that the client side is
    complete: a member the served side needs and `RemoteAgent` lacks, or a
    noun that means something else on it, is a defect in `RemoteAgent`, not
-   a case for the host to special-case. The two-hop test holds it. One gap
-   is known and open: a remote `final` resolves at the turn's end, a local
-   one after its continuation, which waits on a sequenced event marking
-   the operation's end.
+   a case for the host to special-case. The two-hop tests hold it,
+   including that the far `final` waits for the origin's `onSettled`. Two
+   gaps are known: a remote result carries no `after` list, since the
+   inline sends' schemas live on the served side, and an `error` outcome
+   crosses as its message, not as the error the served side threw.
 10. **The HTTP transport reconnects on drops and on the served side being
     away, and stops on being told the agent is gone.** One URL: `GET` for
     the stream, `POST` for a command. A closed socket, a network failure
@@ -167,8 +176,8 @@ front door and the process the agent runs in.
     host that keeps events elsewhere does not use it: it stamps events
     with its store's own ids, which become the cursors, keeps the agent's
     status by the same fold, seeded from `agent.status`, and answers a
-    subscription with `{ state, items }`, that status followed by the replay
-    after the cursor and live events. The cursor's format is the store's; the
+    subscription with `{ welcome, items }`, that status followed by the
+    replay after the cursor and live events. The cursor's format is the store's; the
     transport and `Turn.cursor` treat it as an opaque string. A store that
     evicts must never trim behind a cursor a client may still hold, or must
     notice the hole and send its own baseline event; the library cannot see
@@ -244,7 +253,7 @@ it made the stream two kinds of event and the Agent the emitter of a fact
 about itself. The Agent now emits only history, its operation's lifecycle
 included (agent-state.md, _Lifecycle is history_), and status is a property
 anyone can read. Between two machines the protocol syncs it, once per
-connection, and the lifecycle events move it from there, which is exact
+connection as its welcome, and the lifecycle events move it from there, which is exact
 because status changes only where an operation starts and where the queue
 empties. The store folds its own log rather than reading `agent.status` on
 each subscribe, so a store fed late through a host's channel still opens

@@ -1,4 +1,4 @@
-import type { AgentStateEvent, AnnotationEvent, TurnEvent } from "./events.js";
+import type { AnnotationEvent, TurnEvent } from "./events.js";
 import type { Annotation, Turn, TurnPart } from "./types.js";
 
 export type UnknownEvent = { type: string };
@@ -6,7 +6,7 @@ export type UnknownEvent = { type: string };
 export type TranscriptInput<
   TAnnotation extends Annotation = Annotation,
   TConsumerEvent extends UnknownEvent = UnknownEvent,
-> = (TurnEvent<TAnnotation> & { cursor?: string }) | AgentStateEvent | TConsumerEvent;
+> = (TurnEvent<TAnnotation> & { cursor?: string }) | TConsumerEvent;
 
 export type TranscriptApplyResult<
   TAnnotation extends Annotation = Annotation,
@@ -18,7 +18,7 @@ export type TranscriptApplyResult<
     }
   | {
       handled: false;
-      event: AgentStateEvent | TConsumerEvent;
+      event: TConsumerEvent;
     };
 
 /**

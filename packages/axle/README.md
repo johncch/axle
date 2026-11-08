@@ -2200,9 +2200,13 @@ Instruct is rendered on this side and crosses as
 and parses the response here. Files cross with their sources as they are,
 so a file the client uploaded can cross as a `ref` (a storage key, say)
 that the served agent's `fileResolver` reads. That `ref` came from the
-client, so the resolver must check the caller may read it. The handle has `final` only,
-and it resolves with the reply, as a local send without a continuation
-does; `remote.cancel()` cancels the active turn as `agent.cancel()` does.
+client, so the resolver must check the caller may read it. The handle has
+`final` only, and it settles when the served agent finishes the send, its
+continuation and `onSettled` included, exactly when the local handle there
+does: on the `operation:end` for that send. A continuation that throws or an
+`onStart` that refuses rejects it with an `AxleError` carrying the message.
+The remote result has no `after` list. `remote.cancel()` cancels the active
+turn as `agent.cancel()` does.
 
 Two things are tracked separately. `remote.connection` is the link to the
 served side: `connecting`, `open`, `ended` or `error`, with
@@ -2224,7 +2228,7 @@ Every stream opens with the agent's current status, so a page that
 reconnects while a continuation is still running reads `busy`. From there
 `operation:start` and `agent:idle` move it, as they move `agent.status`, and
 `remote.status` already reads the new value when `remote.on` delivers
-either; the opening status itself is not delivered on `on`. `status` reads
+either; the opening status, the stream's _welcome_, is not delivered on `on`. `status` reads
 `idle` until the stream opens. For React, subscribe with `remote.on` and
 read `remote.status` as the snapshot: it keeps the same object until it
 changes.
@@ -2258,7 +2262,7 @@ remote.on((event) => {
 });
 ```
 
-A host event never uses `type: "state"`, which the protocol uses for the
+A host event never uses `type: "welcome"`, which the protocol uses for the
 opening status, nor the agent's lifecycle types.
 
 `InMemoryEventStore` keeps every event until `store.close()`, which
@@ -2278,14 +2282,17 @@ agent.on((event) => {
         ? { phase: "idle" }
         : undefined;
   const writes = [redis.xadd(`agent:${id}:events`, "*", "data", JSON.stringify(event))];
-  if (status)
-    writes.push(redis.set(`agent:${id}:state`, JSON.stringify({ type: "state", status })));
+  if (status) writes.push(redis.set(`agent:${id}:status`, JSON.stringify(status)));
   Promise.all(writes).catch(reportStoreError); // on is not awaited; handle failures here
 });
 
-// GET: a subscription is { state, items }
-const state = JSON.parse(await redis.get(`agent:${id}:state`));
-return toEventStreamResponse({ state, items: readAfter(id, lastEventId, request.signal) }, request);
+// GET: a subscription is { welcome, items }
+const status = JSON.parse(await redis.get(`agent:${id}:status`));
+const welcome = { type: "welcome", status } as const;
+return toEventStreamResponse(
+  { welcome, items: readAfter(id, lastEventId, request.signal) },
+  request,
+);
 ```
 
 `items` yields the stored events after the cursor, each with its `cursor`

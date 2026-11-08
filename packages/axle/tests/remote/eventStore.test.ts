@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { InMemoryEventStore, type StoredEvent } from "../../src/remote/eventStore.js";
-import { isStateEvent } from "../../src/remote/protocol.js";
+import { isWelcome } from "../../src/remote/protocol.js";
 import { parseSse, toEventStreamResponse, type SseMessage } from "../../src/remote/sse.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
@@ -11,16 +11,16 @@ type HostEvent = { type: "run:start"; id: string };
 
 function collect<T extends { type: string }>(store: InMemoryEventStore<T>, after?: string) {
   const controller = new AbortController();
-  const { state, items } = store.subscribe(controller.signal, after);
+  const { welcome, items } = store.subscribe(controller.signal, after);
   const seen: StoredEvent<T>[] = [];
-  const statuses: AgentStatus[] = [];
+  const welcomes: AgentStatus[] = [];
   const done = (async () => {
     for await (const item of items) {
-      if (isStateEvent(item)) statuses.push(item.status);
+      if (isWelcome(item)) welcomes.push(item.status);
       else seen.push(item);
     }
   })();
-  return { opened: state.status, seen, statuses, stop: () => controller.abort(), done };
+  return { opened: welcome.status, seen, welcomes, stop: () => controller.abort(), done };
 }
 
 function seqs(entries: { cursor: string }[]): number[] {
@@ -133,7 +133,7 @@ describe("InMemoryEventStore status", () => {
       "operation:end",
       "agent:idle",
     ]);
-    expect(reloaded.statuses).toEqual([]);
+    expect(reloaded.welcomes).toEqual([]);
   });
 
   test("a later subscriber opens with the status folded from the log", async () => {
@@ -165,7 +165,9 @@ describe("InMemoryEventStore status", () => {
     await waitFor(() => joined.seen.some((entry) => entry.type === "agent:idle"));
     joined.stop();
     await joined.done;
-    expect(store.subscribe(new AbortController().signal).state.status).toEqual({ phase: "idle" });
+    expect(store.subscribe(new AbortController().signal).welcome.status).toEqual({
+      phase: "idle",
+    });
   });
 });
 
@@ -177,14 +179,14 @@ describe("toEventStreamResponse", () => {
     const messages: SseMessage[] = [];
     for await (const message of parseSse(body, signal)) {
       messages.push(message);
-      if (message.event === "state") continue;
+      if (message.event === "welcome") continue;
       const event: TurnEvent = JSON.parse(message.data);
       if (event.type === "turn:end") break;
     }
     return messages;
   }
 
-  test("writes the status first, then each entry with its cursor as the SSE id", async () => {
+  test("writes the welcome first, then each entry with its cursor as the SSE id", async () => {
     const agent = new Agent({ provider: textProvider(["hi there"]), model: "mock" });
     const store = new InMemoryEventStore(agent);
     const controller = new AbortController();
@@ -200,8 +202,8 @@ describe("toEventStreamResponse", () => {
     const [opening, ...entries] = messages;
     expect(opening).toEqual({
       id: undefined,
-      event: "state",
-      data: '{"type":"state","status":{"phase":"idle"}}',
+      event: "welcome",
+      data: '{"type":"welcome","status":{"phase":"idle"}}',
     });
     expect(entries[0].id).toBe(`${store.id}-1`);
     expect(entries.every((message) => message.event === undefined)).toBe(true);

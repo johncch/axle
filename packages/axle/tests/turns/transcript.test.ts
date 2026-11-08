@@ -403,18 +403,24 @@ describe("Transcript", () => {
 
     expect(result.handled).toBe(false);
     expect(transcript.turns).toBe(turns);
-    if (result.handled === false && result.event.type !== "state") {
+    if (result.handled === false) {
       const hostEvent: HostEvent = result.event;
       expect(hostEvent).toEqual({ type: "run:terminal", status: "completed" });
     }
   });
 
-  test("returns a state event unhandled and leaves the turns alone", () => {
+  test("reports lifecycle events handled and leaves the turns alone", () => {
     const transcript = new Transcript();
     const turns = transcript.turns;
-    const event = { type: "state", status: { phase: "busy", id: "u1" } } as const;
+    const events = [
+      { type: "operation:start", id: "u1", kind: "send" },
+      { type: "after:start", id: "u1" },
+      { type: "after:end", id: "u1" },
+      { type: "operation:end", id: "u1", outcome: { type: "complete" } },
+      { type: "agent:idle" },
+    ] as const;
 
-    expect(transcript.apply(event)).toEqual({ handled: false, event });
+    for (const event of events) expect(transcript.apply(event)).toEqual({ handled: true, event });
     expect(transcript.turns).toBe(turns);
   });
 

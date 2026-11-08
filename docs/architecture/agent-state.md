@@ -127,7 +127,10 @@ type: "start", message } }` and no user message committed, as for a
    fold, and nothing listening can hold the engine. The lifecycle events
    bracket by position, because operations and inline turns run one at a
    time: a turn between `after:start` and `after:end` is the
-   continuation's. `pending:queued` is the one event outside the brackets,
+   continuation's. An operation produces turns and is not one: it may
+   produce one exchange, several, or none, and the transcript stays a flat
+   list of turns, with an inline turn's `threadId` saying which thread it
+   replies in. `pending:queued` is the one event outside the brackets,
    since a send can be queued while another runs; it is addressed by id.
    An operation that started ends with `operation:end`; `pending:dropped`
    ends only the preview, so a send dropped before its turn opened, by a
@@ -911,6 +914,15 @@ already wanted once per operation (the CLI never continues; Sunnyday's
 assistant never saw an inline settle). `onStart` failing refuses the start;
 `onSettled` failing cannot change the result, because several unrelated
 callbacks share it and `final` reports what the agent did.
+
+The lifecycle produces turns; it is not made of them. An operation is the
+unit that holds the queue, has a status, starts and ends, and fires the
+hooks. A turn is the unit people see in the transcript. One operation can
+produce one exchange, several (a send whose judge asked for a fix), or none
+(a send refused by `onStart`), and the lifecycle events say which operation
+was running while each turn happened. So the transcript does not take the
+operation's shape: it stays a flat list of turns, and where turns belong
+together the turns themselves say so.
 
 Inline turns gained `threadId`: a turn a continuation sends belongs to the
 thread its operation started, rooted at the send's id, as a chat app roots a

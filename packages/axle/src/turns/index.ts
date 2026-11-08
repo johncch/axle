@@ -6,13 +6,7 @@ export type {
   ThinkingContinuity,
 } from "../messages/message.js";
 export { TurnEventBuilder } from "./eventBuilder.js";
-export type {
-  AgentEvent,
-  AgentStateEvent,
-  AnnotationEvent,
-  AnnotationTarget,
-  TurnEvent,
-} from "./events.js";
+export type { AgentEvent, AnnotationEvent, AnnotationTarget, TurnEvent } from "./events.js";
 export { Transcript } from "./transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./transcript.js";
 export type {

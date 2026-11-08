@@ -163,10 +163,12 @@ Each row carries `at`, when the provider finished the request (ISO 8601),
 so a row is a billing record on its own and can be priced later.
 
 **Turn** — the render-layer unit only: one conversation entry in a transcript — a
-user turn or an agent turn. One send produces one user turn and one agent
-turn; the agent turn accumulates parts from every step of that send. Turns
-can also be started or ended by compaction: a manual compaction opens and
-closes its own agent turn around the compaction part. A turn's `status`
+user turn or an agent turn. A send's own exchange is one user turn and one
+agent turn; the agent turn accumulates parts from every step of that send,
+and a continuation adds further pairs, threaded under the first. Turns can
+also be started or ended by compaction: a manual compaction opens and
+closes its own agent turn around the compaction part. Turns are what people
+see; the _operation_ that produced them is not a turn. A turn's `status`
 runs `pending` → `streaming` → `complete` | `cancelled` | `error`; a user
 turn skips `streaming`, and a `pending` turn lives only in
 `Transcript.pending`. "Turn" never refers to a single assistant message or
@@ -189,15 +191,17 @@ a turn that ended because the call threw has none.
 (`agent.send(...)`), executed as a FIFO queue item. The consumer-facing unit of
 "the agent took its turn."
 
-**Operation** — a queued unit of agent work that opens a turn: a Send or a
-manual compaction. Operations run one at a time in FIFO order. An operation
-is _pending_ from the call until its turn opens, and ends when its turn
-ends or, for a send with a continuation, when the continuation returns.
-Every turn it commits _settles_: `agent.onSettled(...)` hands the consumer the
-session and that turn's outcome, and waits for the consumer before anything
-else runs. An operation cancelled while still queued never ran and does not
-settle. `agent.snapshot()` opens no turn, is not queued, and is not an
-operation.
+**Operation** — a queued unit of agent work: a Send or a manual
+compaction. Operations run one at a time in FIFO order. An operation is
+_pending_ from the call until its turn opens; it runs from `operation:start`
+to `operation:end`, and `onStart` and `onSettled` fire once each. An
+operation produces turns, and the two are not one-to-one: a send produces
+its own user and agent turn and, with a continuation, the inline turns it
+sends; a manual compaction produces one agent turn; one dropped before its
+turn opened produces none. The lifecycle belongs to the operation, and the
+turns it produces are its output. An operation cancelled while still queued
+never ran and does not settle. `agent.snapshot()` opens no turn, is not
+queued, and is not an operation.
 
 **Continuation** — a program a send carries (`after` in its options) that
 runs after the send's turn settles and before the queue moves on. It holds
@@ -235,7 +239,7 @@ has ended. It changes only at `operation:start` and `agent:idle`; one
 operation handing the queue to the next is a single change to the next id,
 with no idle between. Not to be confused with `Turn.status`, which describes
 one turn. The Agent emits no status event; a `RemoteAgent` is told the
-served agent's status when its stream opens (the _status sync_) and moves it
+served agent's status when its stream opens (the _welcome_) and moves it
 by the same two events.
 
 **Lifecycle event** — an event marking an operation's lifecycle rather than
@@ -320,19 +324,20 @@ delivered to resume, and the fold records the cursor of the event that
 closed a turn as `Turn.cursor` so stored turns carry their resume point.
 
 **Event (stream)** — anything `agent.on` delivers, and anything a served
-stream carries besides its status sync: turn events, lifecycle events, and
+stream carries besides its welcome: turn events, lifecycle events, and
 host events on a served stream. Something that happened, in the order it
 happened. An event store numbers each one with an _event cursor_, keeps it,
 and replays it to a consumer that resumes. A consumer folds events, so each
 must arrive exactly once. "Sequenced event" is the same thing, named where
-the contrast with the status sync matters.
+the contrast with the welcome matters.
 
-**Status sync** — the served agent's status, sent once when a consumer's
-stream opens and on every reconnect: what the agent is now, which history
+**Welcome** — the first message of every served stream, and of every
+reconnect: `{ type: "welcome", status }`, the served agent's status as the
+stream opened. It is the _status sync_: what the agent is now, which history
 cannot say for a consumer that resumed partway through or a server that
 restarted. It is not an event: never numbered, kept or replayed, and the
-Agent never emits it. On SSE it is the first message, `event: state` with
-no `id`; `type: "state"` is reserved, and a host event never uses it.
+Agent never emits it. On SSE it is `event: welcome` with no `id`;
+`type: "welcome"` is reserved, and a host event never uses it.
 
 **Served agent** — an `Agent` (or a `RemoteAgent`, at a hop) that a host
 exposes to consumers elsewhere: the Agent, its event store, and the host's

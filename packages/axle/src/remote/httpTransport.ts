@@ -1,9 +1,9 @@
-import type { AgentStateEvent } from "../turns/events.js";
 import type { StoredEvent } from "./eventStore.js";
 import {
   commandOutcomeSchema,
-  isStateEvent,
+  isWelcome,
   type AgentTransport,
+  type AgentWelcome,
   type StreamItem,
 } from "./protocol.js";
 import { parseSse, type SseMessage } from "./sse.js";
@@ -123,9 +123,9 @@ export function httpTransport<THostEvent extends { type: string } = never>(
             break;
           }
           if (next.done) break;
-          if (next.value.event === "state") {
-            const state: AgentStateEvent = JSON.parse(next.value.data);
-            yield state;
+          if (next.value.event === "welcome") {
+            const welcome: AgentWelcome = JSON.parse(next.value.data);
+            yield welcome;
             continue;
           }
           const event: StoredEvent<THostEvent> = JSON.parse(next.value.data);
@@ -146,11 +146,11 @@ export function httpTransport<THostEvent extends { type: string } = never>(
       if (response.status === 404 || response.status === 410) return undefined;
       const items = itemsFrom(bodyOf(response), signal);
       const first = await items.next();
-      if (first.done || !isStateEvent(first.value)) {
+      if (first.done || !isWelcome(first.value)) {
         await items.return();
-        throw new HttpTransportError(response.status, "Event stream did not open with a state");
+        throw new HttpTransportError(response.status, "Event stream did not open with a welcome");
       }
-      return { state: first.value, items: { [Symbol.asyncIterator]: () => items } };
+      return { welcome: first.value, items: { [Symbol.asyncIterator]: () => items } };
     },
     async command(command, signal) {
       const headers = await headersWith({ "content-type": "application/json" });

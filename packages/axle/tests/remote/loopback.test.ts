@@ -13,7 +13,7 @@ function consume(transport: AgentTransport) {
   const done = (async () => {
     const subscription = await transport.events(controller.signal);
     for await (const item of subscription?.items ?? []) {
-      if (item.type === "state") continue;
+      if (item.type === "welcome") continue;
       events.push(item);
       transcript.apply(item);
     }

@@ -1,5 +1,4 @@
-import type { AgentStateEvent } from "../turns/events.js";
-import { isStateEvent, type AgentSubscription } from "./protocol.js";
+import { isWelcome, type AgentSubscription, type AgentWelcome } from "./protocol.js";
 
 export interface SseMessage {
   id?: string;
@@ -74,10 +73,9 @@ export async function* parseSse(
 
 /**
  * Answer an HTTP request with a subscription as Server-Sent Events: the
- * state first as `event: state`, then each event as JSON in `data:` with
- * its cursor in `id:`, so `Last-Event-ID` on the next request names where
- * the client stopped, and each state change as `event: state` with no
- * `id`, which leaves that position alone. Ends the items when the request
+ * welcome first as `event: welcome` with no `id`, then each event as JSON
+ * in `data:` with its cursor in `id:`, so `Last-Event-ID` on the next
+ * request names where the client stopped. Ends the items when the request
  * aborts or the client cancels the body; holds nothing else.
  */
 export function toEventStreamResponse<THostEvent extends { type: string }>(
@@ -88,11 +86,11 @@ export function toEventStreamResponse<THostEvent extends { type: string }>(
   const stop = (): void => void iterator.return?.().catch(() => {});
   request?.signal.addEventListener("abort", stop, { once: true });
   const encoder = new TextEncoder();
-  const stateMessage = (state: AgentStateEvent): string =>
-    encodeSse({ event: "state", data: JSON.stringify(state) });
+  const welcomeMessage = (welcome: AgentWelcome): string =>
+    encodeSse({ event: "welcome", data: JSON.stringify(welcome) });
   const body = new ReadableStream<Uint8Array>({
     start(stream) {
-      stream.enqueue(encoder.encode(stateMessage(subscription.state)));
+      stream.enqueue(encoder.encode(welcomeMessage(subscription.welcome)));
     },
     async pull(stream) {
       const next = await iterator.next();
@@ -101,8 +99,8 @@ export function toEventStreamResponse<THostEvent extends { type: string }>(
         return;
       }
       const item = next.value;
-      const message = isStateEvent(item)
-        ? stateMessage(item)
+      const message = isWelcome(item)
+        ? welcomeMessage(item)
         : encodeSse({ id: item.cursor, data: JSON.stringify(item) });
       stream.enqueue(encoder.encode(message));
     },

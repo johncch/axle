@@ -4,10 +4,18 @@ import { Agent, type AgentStatus } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { InMemoryEventStore } from "../../src/remote/eventStore.js";
+import { loopbackTransport } from "../../src/remote/loopback.js";
 import { RemoteAgent, type RemoteConnection } from "../../src/remote/RemoteAgent.js";
 import type { TurnEvent } from "../../src/turns/events.js";
 import { Transcript } from "../../src/turns/transcript.js";
-import { askUser, askUserProvider, served, textProvider, waitFor } from "./helpers.js";
+import {
+  applyCommand,
+  askUser,
+  askUserProvider,
+  served,
+  textProvider,
+  waitFor,
+} from "./helpers.js";
 
 function servedFresh(agent: Agent) {
   return served(agent, new InMemoryEventStore(agent));
@@ -130,6 +138,34 @@ describe("RemoteAgent", () => {
     expect(answerer.connection.phase).toBe("ended");
   });
 
+  test("across two hops the far send waits for the origin's onSettled", async () => {
+    const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
+    const { promise: saved, resolve: save } = Promise.withResolvers<void>();
+    let settled = false;
+    agent.onSettled(async () => {
+      await saved;
+      settled = true;
+    });
+    const hop = new RemoteAgent(servedFresh(agent));
+    const far = new RemoteAgent(served(hop, new InMemoryEventStore(hop)));
+    let farDone = false;
+
+    const final = far.send("write", { id: "op-1" }).final.then((result) => {
+      farDone = true;
+      return result;
+    });
+    await waitFor(() => agent.status.phase === "busy");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(farDone).toBe(false);
+    save();
+    const result = await final;
+    far.close();
+    hop.close();
+
+    expect(settled).toBe(true);
+    expect(result.response).toBe("draft");
+  });
+
   test("a RemoteAgent can itself be served: two hops, answered at the far end", async () => {
     const agent = new Agent({ provider: askUserProvider(), model: "mock", tools: [askUser] });
     const hop = new RemoteAgent(servedFresh(agent));
@@ -145,6 +181,77 @@ describe("RemoteAgent", () => {
     expect(result.response).toBe("saw ask-user=teal");
     expect(transcript.turns.map((turn) => turn.id)[0]).toBe("op-1");
     expect(lastText(transcript)).toBe("saw ask-user=teal");
+  });
+
+  test("final settles when the served operation ends, after its continuation and onSettled, as locally", async () => {
+    const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
+    const order: string[] = [];
+    const { promise: saved, resolve: save } = Promise.withResolvers<void>();
+    agent.onSettled(async () => {
+      order.push("settle start");
+      await saved;
+      order.push("settle end");
+    });
+    const store = new InMemoryEventStore(agent);
+    const remote = new RemoteAgent(
+      loopbackTransport(store, async (command) => {
+        if (command.type !== "send") return applyCommand(agent, command);
+        agent
+          .send(command.prompt, {
+            id: command.id,
+            after: async () => void order.push("after"),
+          })
+          .final.catch(() => {});
+        return { accepted: true };
+      }),
+    );
+
+    const final = remote.send("write", { id: "op-1" }).final.then((result) => {
+      order.push("remote final");
+      return result;
+    });
+    await waitFor(() => order.includes("settle start"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order).toEqual(["after", "settle start"]);
+    save();
+    const result = await final;
+    remote.close();
+
+    expect(order).toEqual(["after", "settle start", "settle end", "remote final"]);
+    expect(result.response).toBe("draft");
+  });
+
+  test("an onStart that throws rejects the remote send with its message", async () => {
+    const agent = new Agent({ provider: textProvider(["unreachable"]), model: "mock" });
+    agent.onStart(() => {
+      throw new Error("db unavailable");
+    });
+    const remote = new RemoteAgent(servedFresh(agent));
+
+    await expect(remote.send("hello").final).rejects.toThrow("db unavailable");
+    remote.close();
+  });
+
+  test("a continuation that throws rejects the remote send, as locally", async () => {
+    const agent = new Agent({ provider: textProvider(["draft"]), model: "mock" });
+    const store = new InMemoryEventStore(agent);
+    const remote = new RemoteAgent(
+      loopbackTransport(store, async (command) => {
+        if (command.type !== "send") return applyCommand(agent, command);
+        agent
+          .send(command.prompt, {
+            id: command.id,
+            after: async () => {
+              throw new Error("judge failed");
+            },
+          })
+          .final.catch(() => {});
+        return { accepted: true };
+      }),
+    );
+
+    await expect(remote.send("write").final).rejects.toThrow("judge failed");
+    remote.close();
   });
 
   test("cancel aborts the active turn and the send rejects as it does locally", async () => {
@@ -232,7 +339,7 @@ describe("RemoteAgent over a store", () => {
     remote.close();
 
     expect(seen[0]).toBe(`run:start@${store.id}-1`);
-    expect(seen.at(-1)).toMatch(/^turn:end@/);
+    expect(seen.at(-1)).toMatch(/^operation:end@/);
   });
 
   test("a consumer joining while a continuation runs reads busy until it returns", async () => {

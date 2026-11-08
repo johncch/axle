@@ -1,5 +1,5 @@
 import * as z from "zod";
-import type { AgentStateEvent } from "../turns/events.js";
+import type { AgentStatus } from "../core/agent/types.js";
 import type { StoredEvent } from "./eventStore.js";
 
 const fileBase = { mimeType: z.string(), name: z.string(), size: z.number().optional() };
@@ -84,34 +84,42 @@ export function parseAgentCommand(body: unknown): AgentCommand | null {
 }
 
 /**
- * One item on a served agent's stream: an event, logged with its cursor, or
- * the agent's state, which has no cursor and is never replayed.
+ * The first message of every stream: the served agent's status as the
+ * stream opened, read from the store's own log so it describes exactly what
+ * the store replays next. It is not an event: never numbered, kept or
+ * replayed, and the Agent never emits it. `type: "welcome"` is the
+ * protocol's; a host event never uses it.
  */
-export type StreamItem<THostEvent extends { type: string } = never> =
-  StoredEvent<THostEvent> | AgentStateEvent;
-
-/** `type: "state"` is the agent's; a host event never uses it. */
-export function isStateEvent<THostEvent extends { type: string }>(
-  item: StreamItem<THostEvent>,
-): item is AgentStateEvent {
-  return item.type === "state";
+export interface AgentWelcome {
+  type: "welcome";
+  status: AgentStatus;
 }
 
 /**
- * An open stream: the agent's state as it opened, then events and state
- * changes in the order they happened.
+ * One item on a served agent's stream: an event with its cursor, or the
+ * welcome a transport receives again each time it reconnects.
  */
+export type StreamItem<THostEvent extends { type: string } = never> =
+  StoredEvent<THostEvent> | AgentWelcome;
+
+export function isWelcome<THostEvent extends { type: string }>(
+  item: StreamItem<THostEvent>,
+): item is AgentWelcome {
+  return item.type === "welcome";
+}
+
+/** An open stream: its welcome, then the events after the cursor and live ones, in order. */
 export interface AgentSubscription<THostEvent extends { type: string } = never> {
-  state: AgentStateEvent;
+  welcome: AgentWelcome;
   items: AsyncIterable<StreamItem<THostEvent>>;
 }
 
 /**
  * How events and commands move between a consumer and a served agent. The
- * sequenced events come from the served side's store, agent and host events
- * alike, each with its cursor; a transport that reconnects resumes from the
- * last cursor it delivered, and the state it reopens with arrives as a state
- * event.
+ * events come from the served side's store, agent and host events alike,
+ * each with its cursor; a transport that reconnects resumes from the last
+ * cursor it delivered, and the welcome it reopens with arrives among the
+ * items.
  * `events` resolves once the stream is open, which is what a `RemoteAgent`
  * means by connected, or with `undefined` when there is no agent to
  * subscribe to; the items then run until `signal` aborts or the served

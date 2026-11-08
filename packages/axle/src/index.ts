@@ -214,13 +214,7 @@ export type { Cost, PricedEntry, UnpricedEntry, UnpricedReason } from "./models/
 
 // Turns (public format)
 export { TurnEventBuilder } from "./turns/eventBuilder.js";
-export type {
-  AgentEvent,
-  AgentStateEvent,
-  AnnotationEvent,
-  AnnotationTarget,
-  TurnEvent,
-} from "./turns/events.js";
+export type { AgentEvent, AnnotationEvent, AnnotationTarget, TurnEvent } from "./turns/events.js";
 export { Transcript } from "./turns/transcript.js";
 export type { TranscriptApplyResult, TranscriptInput } from "./turns/transcript.js";
 export type {
@@ -259,6 +253,7 @@ export type {
   AgentCommand,
   AgentSubscription,
   AgentTransport,
+  AgentWelcome,
   CommandOutcome,
   StreamItem,
 } from "./remote/protocol.js";

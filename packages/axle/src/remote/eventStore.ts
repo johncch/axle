@@ -102,7 +102,7 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
   }
 
   /**
-   * The store's status now, then events after `after` when this store
+   * A welcome with the store's status now, then events after `after` when this store
    * owns it, else every event held, then live events until `signal`
    * aborts. Registered before the replay starts, so an event
    * appended during it is delivered once, in order.
@@ -138,7 +138,7 @@ export class InMemoryEventStore<THostEvent extends { type: string } = never> {
         }
       },
     };
-    return { state: { type: "state", status: this.status }, items };
+    return { welcome: { type: "welcome", status: this.status }, items };
   }
 
   private append(event: TurnEvent | THostEvent): void {

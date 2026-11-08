@@ -9,11 +9,11 @@ import type { MessageMetadata, ToolResultPart } from "../messages/message.js";
 import type { DeferredCall, ToolCallCallback } from "../tools/types.js";
 import type { TurnEvent } from "../turns/events.js";
 import { isTurnEvent, Transcript } from "../turns/transcript.js";
-import type { Annotation, Turn, TurnFailure } from "../turns/types.js";
+import type { Annotation, OperationOutcome, Turn, TurnFailure } from "../turns/types.js";
 import { createStats } from "../utils/stats.js";
 import type { StoredEvent } from "./eventStore.js";
 import {
-  isStateEvent,
+  isWelcome,
   type AgentCommand,
   type AgentTransport,
   type CommandOutcome,
@@ -32,17 +32,18 @@ export interface RemoteSendOptions {
   metadata?: MessageMetadata;
 }
 
-/** The waiting call on a remote agent: `answer` and `fail` each post one command. */
 /**
- * What a remote `send` returns: the result, once the events say the turn
- * settled. There is no `cancel`: a queued send cannot be cancelled from
- * here, and `cancel()` on the `RemoteAgent` is the Agent's, for the active
- * turn.
+ * What a remote `send` returns: the result, once `operation:end` says the
+ * served agent finished the send, its continuation and `onSettled`
+ * included, as a local handle does. There is no `cancel`: a queued send
+ * cannot be cancelled from here, and `cancel()` on the `RemoteAgent` is the
+ * Agent's, for the active turn.
  */
 export interface RemoteHandle<T> {
   readonly final: Promise<AgentResult<T> | AgentErrorResult>;
 }
 
+/** The waiting call on a remote agent: `answer` and `fail` each post one command. */
 export interface RemoteWaitingToolCall {
   answer(content: string | ToolResultPart[]): Promise<CommandOutcome>;
   fail(message: string): Promise<CommandOutcome>;
@@ -50,8 +51,14 @@ export interface RemoteWaitingToolCall {
 
 type RemoteResponse = string | ParsedSchema<OutputSchema>;
 
+type HeldOutcome =
+  | { status: "fulfilled"; value: AgentResult<RemoteResponse> | AgentErrorResult }
+  | { status: "rejected"; reason: Error };
+
 interface OpenOperation {
   schema: OutputSchema | undefined;
+  started: boolean;
+  held?: HeldOutcome;
   resolve: (result: AgentResult<RemoteResponse> | AgentErrorResult) => void;
   reject: (error: Error) => void;
 }
@@ -199,7 +206,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       reject,
     } = Promise.withResolvers<AgentResult<RemoteResponse> | AgentErrorResult>();
     final.catch(() => {});
-    this.operations.set(id, { schema: instruct.schema, resolve, reject });
+    this.operations.set(id, { schema: instruct.schema, started: false, resolve, reject });
     const command: AgentCommand = { type: "send", id, prompt };
     if (instruct.files.length > 0) command.files = instruct.files;
     if (metadata) command.metadata = metadata;
@@ -240,7 +247,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       const subscription = await this.transport.events(this.controller.signal);
       if (subscription) {
         this.setConnection({ phase: "open" });
-        this.apply(subscription.state);
+        this.apply(subscription.welcome);
         for await (const item of subscription.items) this.apply(item);
       }
       if (!this.controller.signal.aborted) {
@@ -256,7 +263,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
   }
 
   private apply(item: StreamItem<THostEvent>): void {
-    if (isStateEvent(item)) {
+    if (isWelcome(item)) {
       this.setStatus(item.status);
       return;
     }
@@ -267,13 +274,20 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
   private applyTurnEvent(event: TurnEvent & { cursor: string }): void {
     this.fold.apply(event);
     switch (event.type) {
-      case "operation:start":
+      case "operation:start": {
         this.setStatus({ phase: "busy", id: event.id });
+        const op = this.operations.get(event.id);
+        if (op) op.started = true;
+        break;
+      }
+      case "operation:end":
+        this.settleOperation(event.id, (op) => this.endOperation(op, event.outcome));
         break;
       case "agent:idle":
         this.setStatus({ phase: "idle" });
         break;
       case "pending:dropped":
+        if (this.operations.get(event.id)?.started) break;
         this.settleOperation(event.id, (op) =>
           op.reject(
             event.reason.type === "cancelled"
@@ -345,32 +359,56 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     if (open?.turnId === turnId) {
       this.openTurn = undefined;
       const turn = this.fold.getTurn(turnId);
-      if (turn) this.settleOperation(open.operationId, (op) => this.resolveFrom(op, turn));
+      const op = this.operations.get(open.operationId);
+      if (turn && op) op.held = this.outcomeOf(op, turn);
     }
   }
 
-  private resolveFrom(op: OpenOperation, turn: Turn): void {
+  private outcomeOf(op: OpenOperation, turn: Turn): HeldOutcome {
     const usage = turn.usage ?? createStats();
     if (turn.status === "cancelled") {
-      op.reject(new AxleAgentAbortError("Agent send aborted", { turn, usage }));
-      return;
+      return {
+        status: "rejected",
+        reason: new AxleAgentAbortError("Agent send aborted", { turn, usage }),
+      };
     }
     if (turn.status === "error") {
-      op.resolve({
-        ok: false,
-        error: turn.failure
-          ? failureOf(turn.failure)
-          : { kind: "incomplete", type: "unknown", message: "The turn ended in error" },
-        turn,
-        usage,
-      });
-      return;
+      return {
+        status: "fulfilled",
+        value: {
+          ok: false,
+          error: turn.failure
+            ? failureOf(turn.failure)
+            : { kind: "incomplete", type: "unknown", message: "The turn ended in error" },
+          turn,
+          usage,
+        },
+      };
     }
     try {
-      op.resolve({ ok: true, response: parseResponse(textOf(turn), op.schema), turn, usage });
+      return {
+        status: "fulfilled",
+        value: { ok: true, response: parseResponse(textOf(turn), op.schema), turn, usage },
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      op.resolve({ ok: false, error: { kind: "parse", message, cause: error }, turn, usage });
+      return {
+        status: "fulfilled",
+        value: { ok: false, error: { kind: "parse", message, cause: error }, turn, usage },
+      };
+    }
+  }
+
+  private endOperation(op: OpenOperation, outcome: OperationOutcome): void {
+    const held = op.held;
+    if (outcome.type === "complete" && held?.status === "fulfilled") {
+      op.resolve(held.value);
+    } else if (outcome.type === "cancelled") {
+      op.reject(held?.status === "rejected" ? held.reason : new AxleAgentAbortError());
+    } else if (outcome.type === "error") {
+      op.reject(new AxleError(outcome.error.message));
+    } else {
+      op.reject(new AxleError("The served agent ended the send without a turn"));
     }
   }
 
