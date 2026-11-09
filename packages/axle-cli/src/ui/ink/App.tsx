@@ -4,7 +4,7 @@ import {
   type Turn,
   type TurnPart,
 } from "@fifthrevision/axle/ui";
-import { Box, Static, Text, useInput } from "ink";
+import { Box, Static, Text, useInput, type Key } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   capitalize,
@@ -17,6 +17,23 @@ import {
   indentContinuation,
 } from "../format.js";
 import type { SessionUsage } from "../renderer.js";
+import {
+  deleteBackward,
+  deleteForward,
+  deleteToLineStart,
+  deleteWordBackward,
+  EMPTY_INPUT_BUFFER,
+  insertText,
+  moveDown,
+  moveLeft,
+  moveRight,
+  moveToLineEnd,
+  moveToLineStart,
+  moveUp,
+  moveWordLeft,
+  moveWordRight,
+  type InputBuffer,
+} from "./input-buffer.js";
 import type { StaticItem, UiStore } from "./store.js";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -94,12 +111,7 @@ function InputLine({
   atIdlePrompt: boolean;
   onInterrupt?: () => void;
 }) {
-  const [value, setValue] = useState("");
-
-  const submit = (text: string) => {
-    setValue("");
-    onSubmit(text);
-  };
+  const [buffer, setBuffer] = useState(EMPTY_INPUT_BUFFER);
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
@@ -111,48 +123,84 @@ function InputLine({
       return;
     }
     if (key.ctrl && input === "d") {
-      if (atIdlePrompt && value === "") onSubmit(null);
+      if (atIdlePrompt && buffer.text === "") onSubmit(null);
       return;
     }
     if (key.return) {
       // Shift/Alt-Enter arrives as a modified return only in terminals that
       // send one (VSCode, iTerm2 with a mapping, kitty); plain Enter submits.
       if (key.shift || key.meta) {
-        setValue((v) => v + "\n");
+        setBuffer((current) => insertText(current, "\n"));
         return;
       }
-      submit(value);
+      setBuffer(EMPTY_INPUT_BUFFER);
+      onSubmit(buffer.text);
       return;
     }
-    if (key.backspace || key.delete) {
-      setValue((v) => v.slice(0, -1));
+
+    const edit = editForKey(input, key);
+    if (edit) {
+      setBuffer(edit);
       return;
     }
-    if (key.ctrl && input === "u") {
-      setValue("");
-      return;
-    }
-    if (input && !key.ctrl && !key.meta) {
+    if (input && !key.ctrl && !key.meta && !key.super) {
       // A paste arrives as one chunk (key.return only fires for a lone Enter
       // keypress); keep its newlines in the value instead of submitting.
-      setValue((v) => v + input.replace(/\r\n?/g, "\n"));
+      const pasted = input.replace(/\r\n?/g, "\n");
+      setBuffer((current) => insertText(current, pasted));
     }
   });
 
   // Invisible until the prompt is live or the user starts typing ahead \u2014
   // non-interactive runs keep the input mounted (raw mode, Ctrl-C handling)
   // without showing a prompt they can't use.
-  if (!awaitingInput && value === "") return null;
+  if (!awaitingInput && buffer.text === "") return null;
+
+  const underCursor = buffer.text[buffer.cursor];
+  const cursorOnCharacter = underCursor !== undefined && underCursor !== "\n";
+  const afterCursor = buffer.text.slice(cursorOnCharacter ? buffer.cursor + 1 : buffer.cursor);
 
   return (
     <Box marginTop={1}>
       <Text>
         <Text color="cyan">{"\u276f "}</Text>
-        {indentContinuation(value)}
-        <Text inverse> </Text>
+        {indentContinuation(buffer.text.slice(0, buffer.cursor))}
+        <Text inverse>{cursorOnCharacter ? underCursor : " "}</Text>
+        {indentContinuation(afterCursor)}
       </Text>
     </Box>
   );
+}
+
+// Cmd and Option reach us as whatever the terminal maps them to: Cmd-Left is
+// Ctrl-A or Home, Option-Left is Esc-b or a meta arrow, Option-Backspace is
+// Esc-DEL or Ctrl-W, Cmd-Backspace is Ctrl-U. Under the kitty keyboard
+// protocol Cmd arrives as `super` instead.
+function editForKey(input: string, key: Key): ((buffer: InputBuffer) => InputBuffer) | undefined {
+  if (key.leftArrow) {
+    if (key.super) return moveToLineStart;
+    return key.meta || key.ctrl ? moveWordLeft : moveLeft;
+  }
+  if (key.rightArrow) {
+    if (key.super) return moveToLineEnd;
+    return key.meta || key.ctrl ? moveWordRight : moveRight;
+  }
+  if (key.upArrow) return moveUp;
+  if (key.downArrow) return moveDown;
+  if (key.home) return moveToLineStart;
+  if (key.end) return moveToLineEnd;
+  if (key.backspace) {
+    if (key.super) return deleteToLineStart;
+    return key.meta ? deleteWordBackward : deleteBackward;
+  }
+  if (key.delete) return deleteForward;
+  if (key.meta && input === "b") return moveWordLeft;
+  if (key.meta && input === "f") return moveWordRight;
+  if (key.ctrl && input === "a") return moveToLineStart;
+  if (key.ctrl && input === "e") return moveToLineEnd;
+  if (key.ctrl && input === "w") return deleteWordBackward;
+  if (key.ctrl && input === "u") return deleteToLineStart;
+  return undefined;
 }
 
 export const RUNNER_LINE_MARKS = {
