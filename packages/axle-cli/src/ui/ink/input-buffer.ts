@@ -5,6 +5,60 @@ export interface InputBuffer {
 
 export const EMPTY_INPUT_BUFFER: InputBuffer = { text: "", cursor: 0 };
 
+export interface InputHistory {
+  current: InputBuffer;
+  undoStack: readonly InputBuffer[];
+  redoStack: readonly InputBuffer[];
+  lastChange: "typing" | "other";
+}
+
+export const EMPTY_INPUT_HISTORY: InputHistory = {
+  current: EMPTY_INPUT_BUFFER,
+  undoStack: [],
+  redoStack: [],
+  lastChange: "other",
+};
+
+export function applyEdit(
+  history: InputHistory,
+  edit: (buffer: InputBuffer) => InputBuffer,
+  change: "typing" | "other",
+): InputHistory {
+  const next = edit(history.current);
+  if (next.text === history.current.text) {
+    return { ...history, current: next, lastChange: "other" };
+  }
+  const extendsTypingRun = change === "typing" && history.lastChange === "typing";
+  return {
+    current: next,
+    undoStack: extendsTypingRun ? history.undoStack : [...history.undoStack, history.current],
+    redoStack: [],
+    lastChange: change,
+  };
+}
+
+export function undo(history: InputHistory): InputHistory {
+  const previous = history.undoStack.at(-1);
+  if (!previous) return history;
+  return {
+    current: previous,
+    undoStack: history.undoStack.slice(0, -1),
+    redoStack: [...history.redoStack, history.current],
+    lastChange: "other",
+  };
+}
+
+export function redo(history: InputHistory): InputHistory {
+  const next = history.redoStack.at(-1);
+  if (!next) return history;
+  return {
+    current: next,
+    undoStack: [...history.undoStack, history.current],
+    redoStack: history.redoStack.slice(0, -1),
+    lastChange: "other",
+  };
+}
+
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const WORD_CHARACTER = /[\p{L}\p{N}_]/u;
 

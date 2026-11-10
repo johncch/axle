@@ -18,11 +18,12 @@ import {
 } from "../format.js";
 import type { SessionUsage } from "../renderer.js";
 import {
+  applyEdit,
   deleteBackward,
   deleteForward,
   deleteToLineStart,
   deleteWordBackward,
-  EMPTY_INPUT_BUFFER,
+  EMPTY_INPUT_HISTORY,
   insertText,
   moveDown,
   moveLeft,
@@ -32,6 +33,8 @@ import {
   moveUp,
   moveWordLeft,
   moveWordRight,
+  redo,
+  undo,
   type InputBuffer,
 } from "./input-buffer.js";
 import type { StaticItem, UiStore } from "./store.js";
@@ -111,7 +114,8 @@ function InputLine({
   atIdlePrompt: boolean;
   onInterrupt?: () => void;
 }) {
-  const [buffer, setBuffer] = useState(EMPTY_INPUT_BUFFER);
+  const [history, setHistory] = useState(EMPTY_INPUT_HISTORY);
+  const buffer = history.current;
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
@@ -131,24 +135,30 @@ function InputLine({
     const kittyCtrlJ = key.ctrl && input === "j";
     if (key.return || kittyCtrlJ) {
       if (key.shift || key.meta || kittyCtrlJ) {
-        setBuffer((current) => insertText(current, "\n"));
+        setHistory((current) => applyEdit(current, (b) => insertText(b, "\n"), "other"));
         return;
       }
-      setBuffer(EMPTY_INPUT_BUFFER);
+      setHistory(EMPTY_INPUT_HISTORY);
       onSubmit(buffer.text);
+      return;
+    }
+
+    if ((key.super || key.ctrl) && input === "z") {
+      setHistory(key.shift ? redo : undo);
       return;
     }
 
     const edit = editForKey(input, key);
     if (edit) {
-      setBuffer(edit);
+      setHistory((current) => applyEdit(current, edit, "other"));
       return;
     }
     if (input && !key.ctrl && !key.meta && !key.super) {
       // A paste arrives as one chunk (key.return only fires for a lone Enter
       // keypress); keep its newlines in the value instead of submitting.
-      const pasted = input.replace(/\r\n?/g, "\n");
-      setBuffer((current) => insertText(current, pasted));
+      const inserted = input.replace(/\r\n?/g, "\n");
+      const change = inserted.length === 1 ? "typing" : "other";
+      setHistory((current) => applyEdit(current, (b) => insertText(b, inserted), change));
     }
   });
 

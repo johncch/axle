@@ -69,6 +69,10 @@ const SHIFT_ENTER_AS_KITTY = "\x1b[13;2u";
 const OPTION_ENTER_AS_ESC_CR = "\x1b\r";
 const CTRL_J_AS_LINE_FEED = "\n";
 const CTRL_J_AS_KITTY = "\x1b[106;5u";
+const CTRL_Z = "\x1a";
+const CMD_Z_AS_KITTY = "\x1b[122;9u";
+const CMD_SHIFT_Z_AS_KITTY = "\x1b[122;10u";
+const CTRL_SHIFT_Z_AS_KITTY = "\x1b[122;6u";
 
 describe("chat input line keys", () => {
   it("inserts at the cursor after moving left", async () => {
@@ -116,5 +120,19 @@ describe("chat input line keys", () => {
     ["Ctrl-J under the kitty protocol", CTRL_J_AS_KITTY],
   ])("inserts a newline on %s", async (_form, key) => {
     expect(await submitAfterKeys(["first", key, "second"])).toBe("first\nsecond");
+  });
+
+  it.each([
+    ["Ctrl-Z", CTRL_Z],
+    ["Cmd-Z under the kitty protocol", CMD_Z_AS_KITTY],
+  ])("undoes the last edit on %s", async (_form, key) => {
+    expect(await submitAfterKeys(["keep this", CTRL_W, key])).toBe("keep this");
+  });
+
+  it.each([
+    ["Cmd-Shift-Z", CMD_SHIFT_Z_AS_KITTY],
+    ["Ctrl-Shift-Z", CTRL_SHIFT_Z_AS_KITTY],
+  ])("redoes on %s under the kitty protocol", async (_form, key) => {
+    expect(await submitAfterKeys(["keep this", CTRL_W, CTRL_Z, key])).toBe("keep ");
   });
 });

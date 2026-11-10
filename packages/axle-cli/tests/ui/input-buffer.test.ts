@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEdit,
   deleteBackward,
   deleteForward,
   deleteToLineStart,
   deleteWordBackward,
+  EMPTY_INPUT_HISTORY,
   insertText,
   moveDown,
   moveLeft,
@@ -13,7 +15,10 @@ import {
   moveUp,
   moveWordLeft,
   moveWordRight,
+  redo,
+  undo,
   type InputBuffer,
+  type InputHistory,
 } from "../../src/ui/ink/input-buffer.js";
 
 function at(text: string): InputBuffer {
@@ -105,5 +110,56 @@ describe("input buffer", () => {
     it("deletes back to the start of the current line only", () => {
       expect(show(deleteToLineStart(at("first\nsec|ond")))).toBe("first\n|ond");
     });
+  });
+});
+
+function type(history: InputHistory, text: string): InputHistory {
+  return [...text].reduce(
+    (current, character) => applyEdit(current, (b) => insertText(b, character), "typing"),
+    history,
+  );
+}
+
+describe("input history", () => {
+  it("undoes a run of typed characters as one step", () => {
+    const typed = type(EMPTY_INPUT_HISTORY, "fix teh report");
+    expect(show(undo(typed).current)).toBe("|");
+  });
+
+  it("undoes a word delete separately from the typing before it", () => {
+    const typed = type(EMPTY_INPUT_HISTORY, "fix teh report");
+    const deleted = applyEdit(typed, deleteWordBackward, "other");
+    expect(show(undo(deleted).current)).toBe("fix teh report|");
+    expect(show(undo(undo(deleted)).current)).toBe("|");
+  });
+
+  it("starts a new step for typing after the cursor moved", () => {
+    const typed = type(EMPTY_INPUT_HISTORY, "ac");
+    const moved = applyEdit(typed, moveLeft, "other");
+    const inserted = type(moved, "b");
+    expect(show(inserted.current)).toBe("ab|c");
+    expect(show(undo(inserted).current)).toBe("a|c");
+  });
+
+  it("does not record cursor movement as a step", () => {
+    const typed = type(EMPTY_INPUT_HISTORY, "abc");
+    const moved = applyEdit(applyEdit(typed, moveLeft, "other"), moveLeft, "other");
+    expect(show(undo(moved).current)).toBe("|");
+  });
+
+  it("redoes what was undone", () => {
+    const typed = type(EMPTY_INPUT_HISTORY, "hello");
+    expect(show(redo(undo(typed)).current)).toBe("hello|");
+  });
+
+  it("drops the redo steps once a new edit is made", () => {
+    const undone = undo(type(EMPTY_INPUT_HISTORY, "hello"));
+    const retyped = type(undone, "bye");
+    expect(show(redo(retyped).current)).toBe("bye|");
+  });
+
+  it("leaves the buffer alone when there is nothing to undo or redo", () => {
+    expect(undo(EMPTY_INPUT_HISTORY)).toBe(EMPTY_INPUT_HISTORY);
+    expect(redo(EMPTY_INPUT_HISTORY)).toBe(EMPTY_INPUT_HISTORY);
   });
 });

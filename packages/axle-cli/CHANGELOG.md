@@ -13,6 +13,8 @@
 - Shift-Enter inserts a newline in Ghostty, where it did not before. The
   chat now asks the terminal for the kitty keyboard protocol at startup,
   which lets a terminal that supports it report Shift-Enter as its own key.
+- Cmd-Z or Ctrl-Z undoes the last edit in the chat input, and Cmd-Shift-Z
+  or Ctrl-Shift-Z redoes it. A run of typed characters counts as one edit.
 - The chat redraws at up to 60 frames a second, up from 30, so a held key
   moves smoothly.
 
