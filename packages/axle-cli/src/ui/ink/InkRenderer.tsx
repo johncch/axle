@@ -34,6 +34,7 @@ export class InkRenderer implements Renderer {
         exitOnCtrlC: false,
         patchConsole: false,
         maxFps: 60,
+        kittyKeyboard: { mode: "auto" },
       },
     );
   }

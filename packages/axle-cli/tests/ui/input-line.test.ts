@@ -65,6 +65,10 @@ const CMD_LEFT_AS_KITTY_SUPER = "\x1b[1;9D";
 const CMD_RIGHT_AS_CTRL_E = "\x05";
 const CMD_BACKSPACE_AS_CTRL_U = "\x15";
 const CTRL_W = "\x17";
+const SHIFT_ENTER_AS_KITTY = "\x1b[13;2u";
+const OPTION_ENTER_AS_ESC_CR = "\x1b\r";
+const CTRL_J_AS_LINE_FEED = "\n";
+const CTRL_J_AS_KITTY = "\x1b[106;5u";
 
 describe("chat input line keys", () => {
   it("inserts at the cursor after moving left", async () => {
@@ -103,5 +107,14 @@ describe("chat input line keys", () => {
 
   it("deletes to the line start on Ctrl-U", async () => {
     expect(await submitAfterKeys(["wrong", CMD_BACKSPACE_AS_CTRL_U, "right"])).toBe("right");
+  });
+
+  it.each([
+    ["Shift-Enter under the kitty protocol", SHIFT_ENTER_AS_KITTY],
+    ["Option-Enter as Esc-CR", OPTION_ENTER_AS_ESC_CR],
+    ["Ctrl-J as a line feed", CTRL_J_AS_LINE_FEED],
+    ["Ctrl-J under the kitty protocol", CTRL_J_AS_KITTY],
+  ])("inserts a newline on %s", async (_form, key) => {
+    expect(await submitAfterKeys(["first", key, "second"])).toBe("first\nsecond");
   });
 });

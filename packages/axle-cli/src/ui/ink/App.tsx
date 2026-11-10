@@ -126,10 +126,11 @@ function InputLine({
       if (atIdlePrompt && buffer.text === "") onSubmit(null);
       return;
     }
-    if (key.return) {
-      // Shift/Alt-Enter arrives as a modified return only in terminals that
-      // send one (VSCode, iTerm2 with a mapping, kitty); plain Enter submits.
-      if (key.shift || key.meta) {
+    // Ctrl-J is a raw line feed that inserts itself as text, except under the
+    // kitty keyboard protocol, where it arrives as ctrl + "j".
+    const kittyCtrlJ = key.ctrl && input === "j";
+    if (key.return || kittyCtrlJ) {
+      if (key.shift || key.meta || kittyCtrlJ) {
         setBuffer((current) => insertText(current, "\n"));
         return;
       }
