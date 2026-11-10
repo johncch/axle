@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **The chat input has a cursor.** Left / Right move by character,
+  Option-Left / Option-Right by word, Cmd-Left / Cmd-Right (or Ctrl-A /
+  Ctrl-E, Home / End) to the start and end of the line, and Up / Down
+  between the lines of a multi-line message. Typing and deleting happen at
+  the cursor. Option-Backspace (or Ctrl-W) deletes the word before the
+  cursor, and Delete removes the character under it.
+- Ctrl-U (Cmd-Backspace) deletes back to the start of the current line; it
+  cleared the whole message before.
+- Shift-Enter inserts a newline in Ghostty, where it did not before. The
+  chat now asks the terminal for the kitty keyboard protocol at startup,
+  which lets a terminal that supports it report Shift-Enter as its own key.
+- Cmd-Z or Ctrl-Z undoes the last edit in the chat input, and Cmd-Shift-Z
+  or Ctrl-Shift-Z redoes it. A run of typed characters counts as one edit.
+- The chat redraws at up to 60 frames a second, up from 30, so a held key
+  moves smoothly.
+
 ## 0.36.0
 
 - A reply cut off at the output token limit shows

@@ -72,6 +72,30 @@ cancels that turn, keeping its partial work, and the next queued message
 runs; a second Ctrl-C within a second drops the queue and exits. The session
 is saved on every exit path.
 
+The chat input edits like a macOS text field:
+
+| Key                               | Does                                       |
+| --------------------------------- | ------------------------------------------ |
+| Left / Right                      | Move one character                         |
+| Option-Left / Option-Right        | Move one word                              |
+| Cmd-Left / Cmd-Right              | Move to the start / end of the line        |
+| Up / Down                         | Move between lines of a multi-line message |
+| Option-Backspace, Ctrl-W          | Delete the word before the cursor          |
+| Cmd-Backspace, Ctrl-U             | Delete back to the start of the line       |
+| Shift-Enter, Option-Enter, Ctrl-J | Insert a newline                           |
+| Cmd-Z, Ctrl-Z                     | Undo                                       |
+| Cmd-Shift-Z, Ctrl-Shift-Z         | Redo                                       |
+
+Cmd and Option keys depend on what the terminal sends. Ghostty works as
+is. iTerm2 and macOS Terminal keep Cmd-Left, Cmd-Right and Cmd-Backspace
+for themselves: use Ctrl-A, Ctrl-E and Ctrl-U, or in iTerm2 load the
+"Natural Text Editing" key preset (Settings → Profiles → Keys → Key
+Mappings → Presets).
+
+Undo takes back one edit at a time: a run of typed characters is one edit,
+and so is a paste, a newline, or a delete. Redo needs a terminal that
+reports Shift with the key (Ghostty, Rex).
+
 A run without a chat (`-m`, a recipe with no interactive prompt) keeps the
 two-stage interrupt: the first Ctrl-C asks the agent to stop at the next tool
 boundary, a second cancels immediately.
