@@ -158,15 +158,27 @@ against it; divergence is a defect. State ownership is defined in
    task runner, not a chat app: consola gutter glyphs (`ℹ ✔ ⚠ ✖`) for runner
    lines, work lines that settle with a duration (`✔ Calculator {…}
 (430ms)`), model text as unadorned stdout, and the user's `❯` as the
-   only persona glyph. Under ink an agent text part, streaming or
+   only persona glyph. Under ink a user message in the transcript has one
+   blank line above and below it, a dim `❯`, and sits on a full-width
+   band: the terminal's own background, asked for once at startup (OSC 11) before ink takes stdin, shaded 8% toward white when it is dark and
+   4% toward black when it is light. A terminal that does not answer, or
+   shows fewer than 256 colours, gets no band; the message is otherwise
+   drawn the same. Queued rows stay dim. Under ink an agent text part,
+   streaming or
    settled, and the summary on a settled thinking line are drawn as
    terminal markdown (core's `renderTerminalMarkdown`: blocks separated
    by a blank line, bold headings, yellow inline code, fenced code behind
    a dim `│` gutter with no language label, plain list markers, tables as
-   padded columns under a dim rule, no boxes). The live tail is
-   the last lines of the rendered text, so a style flips in place when a
-   closing marker arrives; that is accepted over a screen of raw
-   asterisks. The plain renderer shows raw text: it streams deltas and
+   padded columns under a dim rule, no boxes). A streaming turn reaches
+   scrollback as it goes, not when it ends: each part commits once it has
+   settled (a later part has started, or its action has finished), and
+   the text part being written commits one markdown block at a time, each
+   block when the next one starts. Scrollback is append-only, so only the
+   last block stays in the redrawn live region, where a closing marker can
+   still flip its style in place; that flip is accepted over a screen of
+   raw asterisks. A block taller than the live region allows (half the
+   terminal's rows, between 6 and 20) shows its last rows, counted after
+   wrapping to the width it is drawn in, until it commits whole. The plain renderer shows raw text: it streams deltas and
    never reprints, and a piped log should carry what the model said, not
    ANSI. Render mode is fixed at launch: ink when stdin and
    stdout are both TTYs (a batch-progress variant when batch runs without
@@ -599,6 +611,25 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   consola/tsdown family: work lines spin and settle with durations, runner
   lines carry the gutter, model prose is plain stdout. The model's words
   are the product; the frame should look like tooling.
+- **2026-11-10 — a streaming turn commits to scrollback block by block
+  (AXL-105).** Before, the whole turn sat in the live region until it
+  ended, shown as a tail of its last 6 newline-separated lines. Rejected:
+  that newline tail, which grew a row with every wrap and lost several at
+  once when a paragraph scrolled out; a tail of 6 terminal rows, steady
+  but a keyhole onto a long reply; and a live region as tall as the
+  reply, which Ink cannot redraw once it passes the viewport. Accepted
+  cost: a committed block is frozen, so a link reference defined later in
+  the reply does not restyle a block already in scrollback.
+- **2026-11-10 — user messages sit on a shaded band (AXL-105).** A user
+  message was hard to find when scrolling back through long replies.
+  Rejected: a cyan or dim `❯` alone, too faint against a screen of prose;
+  bold text, which reads as a markdown heading; a rule above each message,
+  a line of chrome per exchange; a band in a fixed gray or the terminal's
+  bright black, right on one theme and wrong on the rest. The band is the
+  one mark of who is speaking besides the `❯`, and it is derived from the
+  terminal's background so it holds on any theme. The approach is the
+  Codex TUI's; its 12% on a dark background read too strong here, so the
+  dark shade is 8%.
 - **2026-10-09 — `axle setup` asks which home to write.** Rejected: always
   the user home (shipped until this date) — a new project could not get
   its own key without hand-editing. Rejected: project profile with the key

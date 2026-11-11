@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Your messages stand out in the chat transcript.** Each one has a blank
+  line above and below it and sits on a full-width band, a slightly
+  shaded version of your terminal's background. A terminal that does not
+  report its background, or has fewer than 256 colours, shows no band.
+- **A reply is readable while it streams.** Each paragraph, list or code
+  block moves into scrollback as soon as the next one starts, so the whole
+  reply is on screen as it arrives. Only the block being written is
+  redrawn. Before, a streaming reply showed only its last few lines, and
+  that region jumped as lines wrapped.
 - **A large paste collapses in the chat input.** A paste of more than 5
   lines or 500 characters shows as `[Pasted 84 lines]` in the input and in
   the transcript; the model still receives the full text. Backspace over

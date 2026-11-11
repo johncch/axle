@@ -246,6 +246,9 @@ importers:
       react:
         specifier: ^19.3.0
         version: 19.3.0
+      wrap-ansi:
+        specifier: ^10.0.2
+        version: 10.0.2
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
