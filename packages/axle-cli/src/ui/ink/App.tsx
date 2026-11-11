@@ -4,8 +4,9 @@ import {
   type Turn,
   type TurnPart,
 } from "@fifthrevision/axle/ui";
-import { Box, Static, Text, useInput, type Key } from "ink";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { Box, Static, Text, useInput, usePaste, type Key } from "ink";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { loadImageFile, readClipboardImage } from "../clipboard.js";
 import {
   capitalize,
   contextPie,
@@ -16,7 +17,18 @@ import {
   formatTokens,
   indentContinuation,
 } from "../format.js";
-import type { SessionUsage } from "../renderer.js";
+import { DISPLAY_METADATA_KEY, type ChatInput, type SessionUsage } from "../renderer.js";
+import {
+  decodeBase64Image,
+  nextPlaceholder,
+  pastedImagePath,
+  placeholderLabels,
+  renderPlaceholders,
+  resolveInput,
+  shouldCollapse,
+  stripReserved,
+  type Attachment,
+} from "./attachments.js";
 import {
   applyEdit,
   deleteBackward,
@@ -42,14 +54,34 @@ import type { StaticItem, UiStore } from "./store.js";
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const LIVE_TAIL_LINES = 6;
 
+/** Where the chat input gets images from; replaceable in tests. */
+export interface ImageSources {
+  readClipboard: typeof readClipboardImage;
+  loadFile: typeof loadImageFile;
+}
+
+const SYSTEM_IMAGE_SOURCES: ImageSources = {
+  readClipboard: readClipboardImage,
+  loadFile: loadImageFile,
+};
+
+const NOTICES = {
+  imagesNotAccepted: "This model does not accept images",
+  noClipboardImage: "No image on the clipboard",
+  clipboardUnsupported: "Reading an image from the clipboard is only supported on macOS",
+  tooManyAttachments: "Too many attachments in one message",
+};
+
 export function App({
   store,
   onSubmit,
   statusBar,
+  imageSources = SYSTEM_IMAGE_SOURCES,
 }: {
   store: UiStore;
-  onSubmit: (value: string | null) => void;
+  onSubmit: (value: ChatInput | null) => void;
   statusBar: boolean;
+  imageSources?: ImageSources;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const busy = state.liveTurn !== undefined || state.pending.length > 0;
@@ -68,7 +100,7 @@ export function App({
       {state.queuedInputs.map((queued, index) => (
         <Text key={index} dimColor>
           {"\u276f "}
-          {queued} (queued)
+          {queued.display ?? queued.text} (queued)
         </Text>
       ))}
       {!state.closed && (
@@ -77,6 +109,8 @@ export function App({
           awaitingInput={state.awaitingInput}
           atIdlePrompt={state.awaitingInput && !busy}
           onInterrupt={state.onInterrupt}
+          imageInput={state.imageInput}
+          imageSources={imageSources}
         />
       )}
       {statusBar && !state.closed && state.usage && <UsageBar usage={state.usage} />}
@@ -86,8 +120,13 @@ export function App({
 
 function pendingLabel(turn: Turn): string {
   if (turn.parts.some((part) => part.type === "compaction")) return "Compaction";
-  const text = turn.parts.find((part) => part.type === "text")?.text ?? "";
+  const text = displayText(turn) ?? turn.parts.find((part) => part.type === "text")?.text ?? "";
   return `\u276f ${text}`;
+}
+
+function displayText(turn: Turn): string | undefined {
+  const display = turn.metadata?.[DISPLAY_METADATA_KEY];
+  return turn.owner === "user" && typeof display === "string" ? display : undefined;
 }
 
 function UsageBar({ usage }: { usage: SessionUsage }) {
@@ -108,16 +147,81 @@ function InputLine({
   awaitingInput,
   atIdlePrompt,
   onInterrupt,
+  imageInput,
+  imageSources,
 }: {
-  onSubmit: (value: string | null) => void;
+  onSubmit: (value: ChatInput | null) => void;
   awaitingInput: boolean;
   atIdlePrompt: boolean;
   onInterrupt?: () => void;
+  imageInput?: boolean;
+  imageSources: ImageSources;
 }) {
   const [history, setHistory] = useState(EMPTY_INPUT_HISTORY);
+  const [notice, setNotice] = useState<string>();
+  const attachments = useRef(new Map<string, Attachment>());
   const buffer = history.current;
 
+  const insert = (inserted: string) => {
+    setHistory((current) => applyEdit(current, (b) => insertText(b, inserted), "other"));
+  };
+  const attach = (attachment: Attachment) => {
+    const placeholder = nextPlaceholder(attachments.current);
+    if (!placeholder) {
+      setNotice(NOTICES.tooManyAttachments);
+      return;
+    }
+    attachments.current.set(placeholder, attachment);
+    insert(placeholder);
+  };
+  const attachClipboardImage = async () => {
+    if (imageInput === false) {
+      setNotice(NOTICES.imagesNotAccepted);
+      return;
+    }
+    const clipboard = await imageSources.readClipboard();
+    if (clipboard.status === "image") {
+      attach({ kind: "image", file: clipboard.file });
+    } else {
+      setNotice(
+        clipboard.status === "none" ? NOTICES.noClipboardImage : NOTICES.clipboardUnsupported,
+      );
+    }
+  };
+  const handlePaste = async (pasted: string) => {
+    const text = stripReserved(pasted.replace(/\r\n?/g, "\n"));
+    if (text === "") {
+      await attachClipboardImage();
+      return;
+    }
+    const encoded = decodeBase64Image(text);
+    const path = encoded ? undefined : pastedImagePath(text);
+    if (encoded || path) {
+      if (imageInput === false) {
+        setNotice(NOTICES.imagesNotAccepted);
+        if (path) insert(text);
+        return;
+      }
+      const file = encoded ?? (path ? await imageSources.loadFile(path) : undefined);
+      if (file) {
+        attach({ kind: "image", file });
+        return;
+      }
+    }
+    if (shouldCollapse(text)) {
+      attach({ kind: "paste", text });
+    } else {
+      insert(text);
+    }
+  };
+
+  usePaste((pasted) => {
+    setNotice(undefined);
+    void handlePaste(pasted);
+  });
+
   useInput((input, key) => {
+    setNotice(undefined);
     if (key.ctrl && input === "c") {
       if (atIdlePrompt) {
         onSubmit(null);
@@ -138,8 +242,15 @@ function InputLine({
         setHistory((current) => applyEdit(current, (b) => insertText(b, "\n"), "other"));
         return;
       }
+      const submitted = resolveInput(buffer.text, attachments.current);
+      attachments.current = new Map();
       setHistory(EMPTY_INPUT_HISTORY);
-      onSubmit(buffer.text);
+      onSubmit(submitted);
+      return;
+    }
+
+    if (key.ctrl && input === "v") {
+      void attachClipboardImage();
       return;
     }
 
@@ -154,9 +265,10 @@ function InputLine({
       return;
     }
     if (input && !key.ctrl && !key.meta && !key.super) {
-      // A paste arrives as one chunk (key.return only fires for a lone Enter
-      // keypress); keep its newlines in the value instead of submitting.
-      const inserted = input.replace(/\r\n?/g, "\n");
+      // A terminal without bracketed paste delivers a paste here as one chunk
+      // (key.return only fires for a lone Enter keypress); keep its newlines
+      // in the value instead of submitting.
+      const inserted = stripReserved(input.replace(/\r\n?/g, "\n"));
       const change = inserted.length === 1 ? "typing" : "other";
       setHistory((current) => applyEdit(current, (b) => insertText(b, inserted), change));
     }
@@ -165,20 +277,27 @@ function InputLine({
   // Invisible until the prompt is live or the user starts typing ahead \u2014
   // non-interactive runs keep the input mounted (raw mode, Ctrl-C handling)
   // without showing a prompt they can't use.
-  if (!awaitingInput && buffer.text === "") return null;
+  if (!awaitingInput && buffer.text === "" && !notice) return null;
 
+  const labels = placeholderLabels(buffer.text, attachments.current);
+  const shown = (text: string) => indentContinuation(renderPlaceholders(text, labels));
   const underCursor = buffer.text[buffer.cursor];
   const cursorOnCharacter = underCursor !== undefined && underCursor !== "\n";
   const afterCursor = buffer.text.slice(cursorOnCharacter ? buffer.cursor + 1 : buffer.cursor);
 
   return (
-    <Box marginTop={1}>
+    <Box marginTop={1} flexDirection="column">
       <Text>
         <Text color="cyan">{"\u276f "}</Text>
-        {indentContinuation(buffer.text.slice(0, buffer.cursor))}
-        <Text inverse>{cursorOnCharacter ? underCursor : " "}</Text>
-        {indentContinuation(afterCursor)}
+        {shown(buffer.text.slice(0, buffer.cursor))}
+        <Text inverse>{cursorOnCharacter ? shown(underCursor) : " "}</Text>
+        {shown(afterCursor)}
       </Text>
+      {notice && (
+        <Text>
+          <Text color="yellow">⚠</Text> {notice}
+        </Text>
+      )}
     </Box>
   );
 }
@@ -269,12 +388,14 @@ function TurnView({
   live?: boolean;
   spinnerFrame?: string;
 }) {
+  const display = displayText(turn);
+  const displayPart = display ? turn.parts.find((part) => part.type === "text") : undefined;
   return (
     <Box flexDirection="column">
       {turn.parts.map((part, index) => (
         <PartView
           key={part.id}
-          part={part}
+          part={part === displayPart && display ? { ...part, text: display } : part}
           owner={turn.owner}
           live={live}
           spinner={index === turn.parts.length - 1 ? spinnerFrame : undefined}

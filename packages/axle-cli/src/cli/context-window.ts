@@ -41,14 +41,28 @@ export function resolveContextWindow(
 ): ResolvedContextWindow {
   const configured = endpoint.config.contextWindow;
   if (configured !== undefined) return { window: configured, source: { kind: "provider" } };
-  const found = catalog?.contextWindow(model, {
-    provider: createProvider(endpoint, CATALOG_LOOKUP_KEY).id,
-    publisher: endpoint.kind === "preset" ? FIRST_PARTY_PUBLISHERS[endpoint.preset] : undefined,
-  });
+  const found = catalog?.contextWindow(model, catalogLookupOptions(endpoint));
   if (found) {
     return { window: found.window, source: { kind: "catalog", id: found.id, match: found.match } };
   }
   return { window: ASSUMED_CONTEXT_WINDOW, source: { kind: "assumed" } };
+}
+
+/** Whether the model takes image input; undefined when the catalog does not know the model. */
+export function modelAcceptsImages(
+  endpoint: Endpoint,
+  model: string,
+  catalog: ModelCatalog | undefined,
+): boolean | undefined {
+  const found = catalog?.lookup(model, catalogLookupOptions(endpoint));
+  return found?.model.modalities.input.includes("image");
+}
+
+function catalogLookupOptions(endpoint: Endpoint): { provider?: string; publisher?: string } {
+  return {
+    provider: createProvider(endpoint, CATALOG_LOOKUP_KEY).id,
+    publisher: endpoint.kind === "preset" ? FIRST_PARTY_PUBLISHERS[endpoint.preset] : undefined,
+  };
 }
 
 export function describeContextWindowSource(source: ContextWindowSource): string {

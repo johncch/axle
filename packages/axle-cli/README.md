@@ -96,6 +96,29 @@ Undo takes back one edit at a time: a run of typed characters is one edit,
 and so is a paste, a newline, or a delete. Redo needs a terminal that
 reports Shift with the key (Ghostty, Rex).
 
+A paste of more than 5 lines or 500 characters shows in the input as a
+placeholder, such as `[Pasted 84 lines]`, and stays that way in the
+transcript. The model receives the full text. Shorter pastes stay inline.
+Backspace over a placeholder removes the whole paste.
+
+To attach an image to the next message, copy it and press Cmd-V, or Ctrl-V
+where Cmd-V does nothing. The input shows `[Image 1]`; Backspace over it
+removes the attachment. Images are PNG, JPEG, GIF or WebP.
+
+| Terminal       | Image on the clipboard                                  |
+| -------------- | ------------------------------------------------------- |
+| Rex            | Cmd-V                                                   |
+| iTerm2         | Cmd-V, then either choice in the dialog iTerm2 shows    |
+| VS Code        | Cmd-V                                                   |
+| Ghostty        | Ctrl-V (Cmd-V works for an image file copied in Finder) |
+| macOS Terminal | Ctrl-V                                                  |
+
+A pasted or dragged path to an image file attaches the image as well. Ctrl-V
+and Cmd-V in VS Code read the clipboard of the machine `axle` runs on, and
+only on macOS; over SSH that is the remote machine, not the one you are
+typing at. If the session's model does not accept images, the input says so
+when you paste.
+
 A run without a chat (`-m`, a recipe with no interactive prompt) keeps the
 two-stage interrupt: the first Ctrl-C asks the agent to stop at the next tool
 boundary, a second cancels immediately.

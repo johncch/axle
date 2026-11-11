@@ -23,7 +23,8 @@ import {
 import { glob } from "glob";
 import { readFile } from "node:fs/promises";
 import { capitalize } from "../ui/format.js";
-import type { BatchProgress, BatchTotals, Renderer } from "../ui/index.js";
+import type { BatchProgress, BatchTotals, ChatInput, Renderer } from "../ui/index.js";
+import { DISPLAY_METADATA_KEY } from "../ui/renderer.js";
 import type { AgentRecipe } from "./configs/schemas.js";
 import type { LedgerEntry } from "./ledger.js";
 import { appendLedgerEntry, computeHash, ledgerKey, loadLedger } from "./ledger.js";
@@ -68,6 +69,8 @@ export interface AgentSessionSpec {
   contextWindow: number;
   /** The provider as the recipe named it (profile name or type), for the model line. */
   providerName?: string;
+  /** Whether the model takes image input, when the catalog knows the model. */
+  acceptsImages?: boolean;
 }
 
 const COMPACTION_THRESHOLD_FRACTION = 0.8;
@@ -237,6 +240,7 @@ export async function runAgentSession(
   const onInterrupt = spec.interactive ? interruptChat : interruptRun;
   process.on("SIGINT", onInterrupt);
   renderer.setInterruptHandler(onInterrupt);
+  if (spec.acceptsImages !== undefined) renderer.setImageInput?.(spec.acceptsImages);
 
   runtime.saveOnSettle();
 
@@ -276,9 +280,15 @@ export async function runAgentSession(
     if (event.type === "turn:end" || event.type === "compaction:complete") reportUsage();
   });
 
-  const sendMessage = async (message: Instruct | string): Promise<SendOutcome> => {
+  const sendMessage = async (
+    message: Instruct | string,
+    display?: string,
+  ): Promise<SendOutcome> => {
     try {
-      const result = await agent.send(message, { signal: controller.signal }).final;
+      const result = await agent.send(message, {
+        signal: controller.signal,
+        ...(display === undefined ? {} : { metadata: { [DISPLAY_METADATA_KEY]: display } }),
+      }).final;
 
       if (!result.ok) {
         const msg = describeFailure(result.error);
@@ -314,9 +324,9 @@ export async function runAgentSession(
       const sessionAborted = new Promise<null>((resolve) => {
         controller.signal.addEventListener("abort", () => resolve(null), { once: true });
       });
-      const chatSend = async (text: string): Promise<void> => {
+      const chatSend = async (message: Instruct | string, display?: string): Promise<void> => {
         try {
-          await sendMessage(text);
+          await sendMessage(message, display);
         } catch (e) {
           if (e instanceof AxleAgentAbortError) return;
           const msg = e instanceof Error ? e.message : String(e);
@@ -330,11 +340,17 @@ export async function runAgentSession(
       while (!controller.signal.aborted) {
         const input = await Promise.race([renderer.promptInput(), sessionAborted]);
         if (input === null) break;
-        const text = input.trim();
-        if (text === "") continue;
+        const chat: ChatInput = typeof input === "string" ? { text: input, images: [] } : input;
+        const text = chat.text.trim();
+        if (text === "" && chat.images.length === 0) continue;
         if (text === "/quit" || ["exit", "quit"].includes(text.toLowerCase())) break;
 
-        const sent = chatSend(text);
+        let message: Instruct | string = text;
+        if (chat.images.length > 0) {
+          message = new Instruct({ prompt: text, vars: "optional" });
+          for (const image of chat.images) message.addFile(image);
+        }
+        const sent = chatSend(message, chat.display?.trim());
         if (renderer.acceptsInputDuringTurn) {
           inFlight.add(sent);
           void sent.finally(() => inFlight.delete(sent));

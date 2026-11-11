@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A large paste collapses in the chat input.** A paste of more than 5
+  lines or 500 characters shows as `[Pasted 84 lines]` in the input and in
+  the transcript; the model still receives the full text. Backspace over
+  the placeholder removes the whole paste.
+- **Images can be pasted into the chat.** Copy an image and press Cmd-V
+  (Rex, iTerm2, VS Code) or Ctrl-V (Ghostty, macOS Terminal); the input
+  shows `[Image 1]` and the image goes out with the next message. A pasted
+  or dragged path to a PNG, JPEG, GIF or WebP file attaches it too. Reading
+  the clipboard directly (Ctrl-V, and Cmd-V in VS Code) is macOS only. A
+  model that does not accept images says so at paste time.
 - **The chat input has a cursor.** Left / Right move by character,
   Option-Left / Option-Right by word, Cmd-Left / Cmd-Right (or Ctrl-A /
   Ctrl-E, Home / End) to the start and end of the line, and Up / Down

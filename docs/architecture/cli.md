@@ -180,7 +180,12 @@ against it; divergence is a defect. State ownership is defined in
    a run without a chat keeps stop-at-the-tool-boundary, then cancel. Ink
    accepts input during a turn and sends it straight to the agent's queue,
    drawing the transcript's pending turns as queued rows; the plain
-   renderer prompts only between turns.
+   renderer prompts only between turns. A chat submission is the text to
+   send plus what the input adds: images, and a `display` string when the
+   input showed something other than what is sent (a collapsed paste). The
+   runner sends `display` as the user message's `display` metadata, and ink
+   draws a user turn from it when present, so a collapsed paste stays
+   collapsed in scrollback and on resume while the model gets the full text.
    `close()` is async and paints one final frame before unmounting.
    Questions the CLI asks (`setup`, `cleanup`, the missing-model fallback)
    speak the GitHub CLI dialect: a green `?` before the question, the

@@ -27,6 +27,7 @@ import { listProjectInputs, resolveConfigDirs } from "./cli/configs/paths.js";
 import {
   describeContextWindowSource,
   formatTokens,
+  modelAcceptsImages,
   modelCatalogPath,
   resolveContextWindow,
 } from "./cli/context-window.js";
@@ -588,11 +589,8 @@ void catalogs.refreshIfStale().then(async (snapshot) => {
 });
 const catalog = catalogs.current;
 const runUsage = createStats();
-const contextWindow = resolveContextWindow(
-  resolveEndpoint(pending.target.provider, cliConfig),
-  agentConfig.model,
-  catalog,
-);
+const endpoint = resolveEndpoint(pending.target.provider, cliConfig);
+const contextWindow = resolveContextWindow(endpoint, agentConfig.model, catalog);
 rootSpan.info(
   `Context window: ${formatTokens(contextWindow.window)} (${describeContextWindowSource(contextWindow.source)})`,
 );
@@ -626,6 +624,7 @@ try {
           agentConfig,
           contextWindow: contextWindow.window,
           catalog,
+          acceptsImages: modelAcceptsImages(endpoint, agentConfig.model, catalog),
           providerName: pending.target.providerName,
         },
         runUsage,
