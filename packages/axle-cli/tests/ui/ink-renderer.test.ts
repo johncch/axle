@@ -53,6 +53,24 @@ describe("UiStore", () => {
 });
 
 describe("App", () => {
+  it("shows a user turn as it was displayed in the input, not as it was sent", () => {
+    const turn: Turn = {
+      ...userTurn("u1", "why does this fail?\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6"),
+      metadata: { display: "why does this fail? [Pasted 6 lines]" },
+    };
+    const store = new UiStore<UiState>({
+      staticItems: [{ kind: "turn", turn }],
+      awaitingInput: false,
+      pending: [],
+      queuedInputs: [],
+    });
+
+    const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(output).toContain("❯ why does this fail? [Pasted 6 lines]");
+    expect(output).not.toContain("line 6");
+  });
+
   it("omits the status bar when it is disabled for a non-interactive run", () => {
     const row = {
       model: "m",

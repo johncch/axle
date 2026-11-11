@@ -1,6 +1,6 @@
 import type { Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
 import { render } from "ink";
-import type { Renderer, SessionUsage } from "../renderer.js";
+import type { ChatInput, Renderer, SessionUsage } from "../renderer.js";
 import { App } from "./App.js";
 import type { StaticItem, UiState } from "./store.js";
 import { partitionTurns, UiStore } from "./store.js";
@@ -21,7 +21,7 @@ export class InkRenderer implements Renderer {
   });
   private committed = new Set<string>();
   private instance: ReturnType<typeof render>;
-  private waiter?: (value: string | null) => void;
+  private waiter?: (value: ChatInput | null) => void;
 
   constructor(options?: { statusBar?: boolean }) {
     this.instance = render(
@@ -39,7 +39,7 @@ export class InkRenderer implements Renderer {
     );
   }
 
-  private handleSubmit = (value: string | null): void => {
+  private handleSubmit = (value: ChatInput | null): void => {
     const waiter = this.waiter;
     if (waiter) {
       this.waiter = undefined;
@@ -100,7 +100,11 @@ export class InkRenderer implements Renderer {
     this.store.update((state) => ({ ...state, onInterrupt: handler }));
   }
 
-  promptInput(): Promise<string | null> {
+  setImageInput(accepted: boolean): void {
+    this.store.update((state) => ({ ...state, imageInput: accepted }));
+  }
+
+  promptInput(): Promise<ChatInput | null> {
     const queued = this.store.getSnapshot().queuedInputs;
     if (queued.length > 0) {
       const [next, ...rest] = queued;

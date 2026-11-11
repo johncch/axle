@@ -1,5 +1,5 @@
 import type { Turn } from "@fifthrevision/axle/ui";
-import type { SessionUsage } from "../renderer.js";
+import type { ChatInput, SessionUsage } from "../renderer.js";
 
 export type StaticItem =
   | { kind: "turn"; turn: Turn }
@@ -12,8 +12,10 @@ export interface UiState {
   pending: readonly Turn[];
   /** True while the runner is waiting at the prompt (submit sends directly). */
   awaitingInput: boolean;
-  /** Lines submitted while the runner is not prompting, consumed by the next prompt. */
-  queuedInputs: string[];
+  /** Messages submitted while the runner is not prompting, consumed by the next prompt. */
+  queuedInputs: ChatInput[];
+  /** False when the model is known not to accept images; undefined when unknown. */
+  imageInput?: boolean;
   /** Cumulative usage shown in the persistent bottom bar. */
   usage?: SessionUsage;
   /** Receives Ctrl-C pressed while a turn is running. */

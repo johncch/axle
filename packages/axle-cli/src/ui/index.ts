@@ -4,7 +4,7 @@ import type { Renderer } from "./renderer.js";
 export { supportsBatchProgress } from "./batch.js";
 export type { BatchProgress, BatchTotals } from "./batch.js";
 export { PlainRenderer } from "./plain.js";
-export type { Renderer, SessionUsage } from "./renderer.js";
+export type { ChatInput, Renderer, SessionUsage } from "./renderer.js";
 
 export type RenderMode = "plain" | "ink";
 

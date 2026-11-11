@@ -564,6 +564,49 @@ describe("runSingle session persistence", () => {
     expect(file.session.messages).toHaveLength(2);
   });
 
+  it("sends a chat submission's images and records how it was displayed", async () => {
+    const image = {
+      kind: "image" as const,
+      mimeType: "image/png",
+      name: "shot.png",
+      source: { type: "base64" as const, data: "AAAA" },
+    };
+    const inputs = [
+      { text: "look [Image 1]", display: "look [Image 1]", images: [image] },
+      { text: "line 1\nline 2", display: "[Pasted 2 lines]", images: [] },
+    ];
+    const scriptedRenderer: Renderer = {
+      ...nullRenderer,
+      promptInput: () => Promise.resolve(inputs.shift() ?? null),
+    };
+    const agentConfig: AgentConfig = {
+      provider: createMockProvider("hi", []),
+      model: "test-model",
+      sessionId: "chat-images",
+    };
+
+    await runAgentSession(
+      { agentConfig, spanName: "chat", contextWindow: 200_000, interactive: true },
+      createStats(),
+      new Tracer().startSpan("chat"),
+      scriptedRenderer,
+      new SessionStore(recipe, { home: HOME }),
+    );
+
+    const file = await readSessionFile("chat-images");
+    const [withImage, , withPaste] = file.session.messages;
+    expect(withImage.content).toEqual([
+      { type: "text", text: "look [Image 1]" },
+      { type: "file", file: image },
+    ]);
+    expect(withPaste.content).toEqual([{ type: "text", text: "line 1\nline 2" }]);
+    const userTurns = file.turns.filter((turn) => turn.owner === "user");
+    expect(userTurns.map((turn) => turn.metadata)).toEqual([
+      { display: "look [Image 1]" },
+      { display: "[Pasted 2 lines]" },
+    ]);
+  });
+
   describe("with a renderer that accepts input during a turn", () => {
     function createTypeAheadRenderer(
       inputs: string[],

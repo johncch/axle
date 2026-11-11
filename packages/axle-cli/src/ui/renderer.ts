@@ -1,4 +1,16 @@
+import type { FileInfo } from "@fifthrevision/axle";
 import type { Cost, Stats, Transcript, Turn, TurnEvent } from "@fifthrevision/axle/ui";
+
+/** The user-turn metadata key holding the text to show in place of the sent text. */
+export const DISPLAY_METADATA_KEY = "display";
+
+/** A chat submission: the text to send, plus what a renderer with attachments adds. */
+export interface ChatInput {
+  text: string;
+  /** How the message reads on screen when that differs from `text` (collapsed pastes). */
+  display?: string;
+  images: FileInfo[];
+}
 
 /** Cumulative run usage plus a rough estimate of the current context size. */
 export interface SessionUsage {
@@ -35,10 +47,13 @@ export interface Renderer {
   warn(message: string): void;
   error(message: string): void;
   /**
-   * Show the chat input line and resolve with the submitted text, or null
-   * when the user ends the chat (Ctrl-C or Ctrl-D at the prompt).
+   * Show the chat input line and resolve with the submission, or null when
+   * the user ends the chat (Ctrl-C or Ctrl-D at the prompt). A renderer
+   * without attachments resolves with the bare text.
    */
-  promptInput(): Promise<string | null>;
+  promptInput(): Promise<ChatInput | string | null>;
+  /** Tell the chat input whether the session's model accepts image input. */
+  setImageInput?(accepted: boolean): void;
   /** Refresh the persistent usage/context readout, where the renderer has one. */
   updateUsage(usage: SessionUsage): void;
   /**
