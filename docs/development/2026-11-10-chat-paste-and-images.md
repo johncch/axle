@@ -58,7 +58,8 @@ terminal chose for itself.
 - **Remote sessions.** The clipboard routes read the clipboard of the machine
   the CLI runs on, and a pasted path must exist there. Typing on one machine
   with `axle` on another (SSH, a Rex client attached to another host) only
-  works for the base64 route. What Rex pastes from a remote client is not
-  measured yet.
+  works for the base64 route. Rex is the exception: a Rex client attached to
+  another host pastes an image from the local clipboard and it attaches
+  (tried by hand on 2026-11-10, not with the probe).
 - **The plain renderer** has no placeholders and no image paste.
 - **Several images in one paste.** A paste of more than one path is text.
