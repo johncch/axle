@@ -3,12 +3,13 @@ import { render } from "ink";
 import type { ChatInput, Renderer, SessionUsage } from "../renderer.js";
 import { App } from "./App.js";
 import type { StaticItem, UiState } from "./store.js";
-import { partitionTurns, UiStore } from "./store.js";
+import { createCommitLog, partitionTurns, UiStore } from "./store.js";
 
 /**
- * Ink terminal-flow renderer: finished turns and runner lines commit to
- * scrollback via `<Static>`; a small live region shows the in-flight turn
- * (streaming text tail, current action) with a spinner. The chat input line
+ * Ink terminal-flow renderer: runner lines, finished turns and the settled
+ * parts of the in-flight turn commit to scrollback via `<Static>`; a live
+ * region shows what is still changing (the open text block, running actions)
+ * with a spinner. The chat input line
  * renders inside the app while a prompt is pending.
  */
 export class InkRenderer implements Renderer {
@@ -19,16 +20,17 @@ export class InkRenderer implements Renderer {
     awaitingInput: false,
     queuedInputs: [],
   });
-  private committed = new Set<string>();
+  private commitLog = createCommitLog();
   private instance: ReturnType<typeof render>;
   private waiter?: (value: ChatInput | null) => void;
 
-  constructor(options?: { statusBar?: boolean }) {
+  constructor(options?: { statusBar?: boolean; userMessageBackground?: string }) {
     this.instance = render(
       <App
         store={this.store}
         onSubmit={this.handleSubmit}
         statusBar={options?.statusBar ?? true}
+        userMessageBackground={options?.userMessageBackground}
       />,
       {
         exitOnCtrlC: false,
@@ -56,7 +58,7 @@ export class InkRenderer implements Renderer {
   renderPriorTurns(turns: readonly Turn[]): void {
     if (turns.length === 0) return;
     const items: StaticItem[] = turns.map((turn) => ({ kind: "turn", turn }));
-    for (const turn of turns) this.committed.add(turn.id);
+    for (const turn of turns) this.commitLog.finished.add(turn.id);
     this.store.update((state) => ({
       ...state,
       staticItems: [...state.staticItems, ...items],
@@ -64,14 +66,13 @@ export class InkRenderer implements Renderer {
   }
 
   onEvent(_event: TurnEvent, transcript: Transcript): void {
-    const { newlyFinished, liveTurn } = partitionTurns(transcript.turns, this.committed);
+    const { commits, liveTurn, liveContinues } = partitionTurns(transcript.turns, this.commitLog);
 
     this.store.update((state) => ({
       ...state,
-      staticItems: newlyFinished.length
-        ? [...state.staticItems, ...newlyFinished]
-        : state.staticItems,
+      staticItems: commits.length ? [...state.staticItems, ...commits] : state.staticItems,
       liveTurn,
+      liveContinues,
       pending: transcript.pending,
     }));
   }
@@ -126,8 +127,12 @@ export class InkRenderer implements Renderer {
       state.liveTurn
         ? {
             ...state,
-            staticItems: [...state.staticItems, { kind: "turn", turn: state.liveTurn }],
+            staticItems: [
+              ...state.staticItems,
+              { kind: "turn", turn: state.liveTurn, continues: state.liveContinues },
+            ],
             liveTurn: undefined,
+            liveContinues: false,
           }
         : state,
     );

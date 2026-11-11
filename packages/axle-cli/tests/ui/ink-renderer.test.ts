@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { App } from "../../src/ui/ink/App.js";
 import type { UiState } from "../../src/ui/ink/store.js";
-import { partitionTurns, UiStore } from "../../src/ui/ink/store.js";
+import { createCommitLog, partitionTurns, UiStore } from "../../src/ui/ink/store.js";
 
 function textPart(id: string, text: string) {
   return { id, type: "text" as const, text };
@@ -17,12 +17,13 @@ function userTurn(id: string, text: string): Turn {
 
 function createHarness() {
   const transcript = new Transcript();
-  const committed = new Set<string>();
+  const log = createCommitLog();
   const feed = (event: TurnEvent) => {
     transcript.apply(event);
-    return partitionTurns(transcript.turns, committed);
+    return partitionTurns(transcript.turns, log);
   };
-  return { feed };
+  const text = (delta: string) => feed({ type: "text:delta", turnId: "t1", partId: "p1", delta });
+  return { feed, text };
 }
 
 describe("UiStore", () => {
@@ -134,6 +135,102 @@ describe("App", () => {
     expect(render(streaming)).not.toContain("**");
   });
 
+  it("caps a long streaming block at a height that never shrinks", () => {
+    const reply = Array.from({ length: 400 }, (_, word) => `word${word}`).join(" ");
+    const heights: number[] = [];
+    for (let length = 40; length <= reply.length; length += 40) {
+      const store = new UiStore<UiState>({
+        staticItems: [],
+        liveTurn: {
+          id: "a1",
+          owner: "agent",
+          status: "streaming",
+          parts: [textPart("a1-p", reply.slice(0, length))],
+        },
+        awaitingInput: false,
+        pending: [],
+        queuedInputs: [],
+        closed: true,
+      });
+      const output = renderToString(
+        createElement(App, { store, statusBar: false, onSubmit() {} }),
+        { columns: 80 },
+      );
+      heights.push(output.split("\n").length);
+    }
+
+    // The cap is half the terminal's rows, held between 6 and 20; uncapped, the block is 35 rows.
+    expect(Math.max(...heights)).toBeGreaterThanOrEqual(6);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(20);
+    expect(heights.every((height, index) => index === 0 || height >= heights[index - 1])).toBe(
+      true,
+    );
+  });
+
+  it("separates text that continues in a later scrollback item with a blank line", () => {
+    const slice = (text: string): Turn => ({
+      id: "a1",
+      owner: "agent",
+      status: "streaming",
+      parts: [textPart("a1-p", text)],
+    });
+    const store = new UiStore<UiState>({
+      staticItems: [
+        { kind: "turn", turn: slice("First paragraph.\n\n") },
+        { kind: "turn", turn: slice("Second paragraph.\n\n"), continues: true },
+      ],
+      liveTurn: slice("Third"),
+      liveContinues: true,
+      awaitingInput: false,
+      pending: [],
+      queuedInputs: [],
+      closed: true,
+    });
+
+    const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(output).toBe("First paragraph.\n\nSecond paragraph.\n\nThird");
+  });
+
+  it("sets each user message off with a blank line above and below", () => {
+    const agentTurn: Turn = {
+      id: "a1",
+      owner: "agent",
+      status: "complete",
+      parts: [textPart("a1-p", "and that is why the test fails.")],
+    };
+    const store = new UiStore<UiState>({
+      staticItems: [
+        { kind: "turn", turn: userTurn("u1", "why?") },
+        { kind: "turn", turn: agentTurn },
+        { kind: "turn", turn: userTurn("u2", "ok, fix it") },
+        { kind: "turn", turn: userTurn("u3", "and run the tests") },
+        { kind: "runner", level: "info", text: "Done" },
+      ],
+      awaitingInput: false,
+      pending: [],
+      queuedInputs: [],
+      closed: true,
+    });
+
+    const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
+
+    expect(output).toBe(
+      [
+        "",
+        "❯ why?",
+        "",
+        "and that is why the test fails.",
+        "",
+        "❯ ok, fix it",
+        "",
+        "❯ and run the tests",
+        "",
+        "ℹ Done",
+      ].join("\n"),
+    );
+  });
+
   it("marks a cancelled turn as interrupted", () => {
     const store = new UiStore<UiState>({
       staticItems: [
@@ -147,7 +244,7 @@ describe("App", () => {
 
     const output = renderToString(createElement(App, { store, statusBar: false, onSubmit() {} }));
 
-    expect(output).toContain("what next?\n(interrupted)");
+    expect(output).toContain("what next?\n\n(interrupted)");
   });
 
   it("says when a turn stopped at the output limit", () => {
@@ -224,7 +321,7 @@ describe("partitionTurns", () => {
     feed({ type: "part:start", turnId: "t1", part: textPart("p1", "") });
     let result = feed({ type: "text:delta", turnId: "t1", partId: "p1", delta: "hello" });
 
-    expect(result.newlyFinished).toEqual([]);
+    expect(result.commits).toEqual([]);
     expect(result.liveTurn?.id).toBe("t1");
     expect(result.liveTurn?.status).toBe("streaming");
 
@@ -237,8 +334,8 @@ describe("partitionTurns", () => {
     });
 
     expect(result.liveTurn).toBeUndefined();
-    expect(result.newlyFinished).toHaveLength(1);
-    const item = result.newlyFinished[0];
+    expect(result.commits).toHaveLength(1);
+    const item = result.commits[0];
     if (item.kind === "turn") {
       expect(item.turn.status).toBe("complete");
       expect(item.turn.usage).toEqual({ in: 10, out: 20, breakdown: [] });
@@ -254,7 +351,7 @@ describe("partitionTurns", () => {
     const result = feed({ type: "turn:user", turn: userTurn("u1", "hi") });
 
     expect(result.liveTurn).toBeUndefined();
-    expect(result.newlyFinished).toEqual([{ kind: "turn", turn: userTurn("u1", "hi") }]);
+    expect(result.commits).toEqual([{ kind: "turn", turn: userTurn("u1", "hi") }]);
   });
 
   it("commits a cancelled turn with its partial content", () => {
@@ -271,7 +368,7 @@ describe("partitionTurns", () => {
     });
 
     expect(result.liveTurn).toBeUndefined();
-    const item = result.newlyFinished[0];
+    const item = result.commits[0];
     if (item.kind === "turn") {
       expect(item.turn.status).toBe("cancelled");
       expect(item.turn.parts[0]).toMatchObject({ type: "text", text: "partial" });
@@ -305,8 +402,93 @@ describe("partitionTurns", () => {
       usage: { in: 1, out: 1, breakdown: [] },
     });
 
-    expect(result.newlyFinished.map((item) => (item.kind === "turn" ? item.turn.id : ""))).toEqual([
+    expect(result.commits.map((item) => (item.kind === "turn" ? item.turn.id : ""))).toEqual([
       "t2",
     ]);
+  });
+
+  describe("while a turn streams", () => {
+    const texts = (items: { kind: string; turn?: Turn }[]) =>
+      items.map((item) =>
+        item.turn?.parts.map((part) => (part.type === "text" ? part.text : part.type)),
+      );
+
+    it("commits each markdown block once the next one starts", () => {
+      const { feed, text } = createHarness();
+      feed({ type: "turn:start", turnId: "t1" });
+      feed({ type: "part:start", turnId: "t1", part: textPart("p1", "") });
+
+      let result = text("First paragraph.\n\n");
+      expect(result.commits).toEqual([]);
+      expect(result.liveContinues).toBe(false);
+
+      result = text("Second");
+      expect(texts(result.commits)).toEqual([["First paragraph.\n\n"]]);
+      expect(result.commits[0]).toMatchObject({ continues: false });
+      expect(texts([{ kind: "turn", turn: result.liveTurn }])).toEqual([["Second"]]);
+      expect(result.liveContinues).toBe(true);
+
+      result = text(" paragraph.\n\n- one\n");
+      expect(texts(result.commits)).toEqual([["Second paragraph.\n\n"]]);
+      expect(result.commits[0]).toMatchObject({ continues: true });
+
+      result = text("- two\n");
+      expect(result.commits).toEqual([]);
+      expect(texts([{ kind: "turn", turn: result.liveTurn }])).toEqual([["- one\n- two\n"]]);
+    });
+
+    it("keeps an open code fence live across its blank lines", () => {
+      const { feed, text } = createHarness();
+      feed({ type: "turn:start", turnId: "t1" });
+      feed({ type: "part:start", turnId: "t1", part: textPart("p1", "") });
+
+      let result = text("Intro.\n\n```ts\nconst a = 1;\n\nconst b = 2;\n");
+      expect(texts(result.commits)).toEqual([["Intro.\n\n"]]);
+
+      result = text("\nconst c = 3;\n```\n\nAfter");
+      expect(texts(result.commits)).toEqual([
+        ["```ts\nconst a = 1;\n\nconst b = 2;\n\nconst c = 3;\n```\n\n"],
+      ]);
+    });
+
+    it("commits a settled part when the next part starts and holds a running action", () => {
+      const { feed } = createHarness();
+      feed({ type: "turn:start", turnId: "t1" });
+      feed({ type: "part:start", turnId: "t1", part: { id: "th", type: "thinking" } });
+      let result = feed({
+        type: "part:start",
+        turnId: "t1",
+        part: {
+          id: "act",
+          type: "action",
+          kind: "tool",
+          status: "running",
+          detail: { name: "calculator", parameters: {} },
+        },
+      });
+      expect(texts(result.commits)).toEqual([["thinking"]]);
+
+      result = feed({ type: "part:start", turnId: "t1", part: textPart("p1", "") });
+      expect(result.commits).toEqual([]);
+      expect(texts([{ kind: "turn", turn: result.liveTurn }])).toEqual([["action", ""]]);
+    });
+
+    it("commits only what is left when the turn finishes", () => {
+      const { feed, text } = createHarness();
+      feed({ type: "turn:start", turnId: "t1" });
+      feed({ type: "part:start", turnId: "t1", part: textPart("p1", "") });
+      text("First paragraph.\n\nSecond");
+
+      const result = feed({
+        type: "turn:end",
+        turnId: "t1",
+        status: "cancelled",
+        usage: { in: 1, out: 2, breakdown: [] },
+      });
+
+      expect(texts(result.commits)).toEqual([["Second"]]);
+      expect(result.commits[0]).toMatchObject({ continues: true, turn: { status: "cancelled" } });
+      expect(result.liveTurn).toBeUndefined();
+    });
   });
 });

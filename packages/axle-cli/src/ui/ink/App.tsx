@@ -4,8 +4,16 @@ import {
   type Turn,
   type TurnPart,
 } from "@fifthrevision/axle/ui";
-import { Box, Static, Text, useInput, usePaste, type Key } from "ink";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Box, Static, Text, useInput, usePaste, useWindowSize, type Key } from "ink";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import wrapAnsi from "wrap-ansi";
 import { loadImageFile, readClipboardImage } from "../clipboard.js";
 import {
   capitalize,
@@ -52,7 +60,11 @@ import {
 import type { StaticItem, UiStore } from "./store.js";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const LIVE_TAIL_LINES = 6;
+const MIN_LIVE_TAIL_ROWS = 6;
+const MAX_LIVE_TAIL_ROWS = 20;
+const CHILD_TURN_INDENT = 2;
+
+const UserMessageBackground = createContext<string | undefined>(undefined);
 
 /** Where the chat input gets images from; replaceable in tests. */
 export interface ImageSources {
@@ -76,22 +88,27 @@ export function App({
   store,
   onSubmit,
   statusBar,
+  userMessageBackground,
   imageSources = SYSTEM_IMAGE_SOURCES,
 }: {
   store: UiStore;
   onSubmit: (value: ChatInput | null) => void;
   statusBar: boolean;
+  /** Fill drawn behind a user message in the transcript; none when undefined. */
+  userMessageBackground?: string;
   imageSources?: ImageSources;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const busy = state.liveTurn !== undefined || state.pending.length > 0;
 
   return (
-    <>
+    <UserMessageBackground value={userMessageBackground}>
       <Static items={state.staticItems}>
-        {(item, index) => <StaticItemView key={index} item={item} />}
+        {(item, index) => (
+          <StaticItemView key={index} item={item} previous={state.staticItems[index - 1]} />
+        )}
       </Static>
-      {state.liveTurn && <LiveRegion turn={state.liveTurn} />}
+      {state.liveTurn && <LiveRegion turn={state.liveTurn} continues={state.liveContinues} />}
       {state.pending.map((turn) => (
         <Text key={turn.id} dimColor>
           {pendingLabel(turn)} (queued)
@@ -114,7 +131,7 @@ export function App({
         />
       )}
       {statusBar && !state.closed && state.usage && <UsageBar usage={state.usage} />}
-    </>
+    </UserMessageBackground>
   );
 }
 
@@ -355,19 +372,47 @@ export function RunnerLine({
   );
 }
 
-function StaticItemView({ item }: { item: StaticItem }) {
+/** Present while a turn streams: the columns it is drawn in and the rows its text may take. */
+interface LiveFrame {
+  width: number;
+  tailRows: number;
+}
+
+function StaticItemView({ item, previous }: { item: StaticItem; previous?: StaticItem }) {
+  const { columns } = useWindowSize();
   if (item.kind === "runner") {
     return <RunnerLine level={item.level} text={item.text} />;
+  }
+  if (item.turn.owner === "user") {
+    const followsUser = previous?.kind === "turn" && previous.turn.owner === "user";
+    return (
+      <Box flexDirection="column" width={columns} marginTop={followsUser ? 0 : 1} marginBottom={1}>
+        <TurnView turn={item.turn} />
+      </Box>
+    );
+  }
+  if (item.continues) {
+    return (
+      <Box marginTop={1}>
+        <TurnView turn={item.turn} />
+      </Box>
+    );
   }
   return <TurnView turn={item.turn} />;
 }
 
-function LiveRegion({ turn }: { turn: Turn }) {
+function LiveRegion({ turn, continues }: { turn: Turn; continues?: boolean }) {
   const frame = useSpinner();
+  const { columns, rows } = useWindowSize();
   if (turn.parts.length === 0) {
     return <Text color="cyan">{frame}</Text>;
   }
-  return <TurnView turn={turn} live spinnerFrame={frame} />;
+  const tailRows = Math.max(MIN_LIVE_TAIL_ROWS, Math.min(MAX_LIVE_TAIL_ROWS, Math.floor(rows / 2)));
+  return (
+    <Box marginTop={continues ? 1 : 0}>
+      <TurnView turn={turn} live={{ width: columns, tailRows }} spinnerFrame={frame} />
+    </Box>
+  );
 }
 
 export function useSpinner(): string {
@@ -385,7 +430,7 @@ function TurnView({
   spinnerFrame,
 }: {
   turn: Turn;
-  live?: boolean;
+  live?: LiveFrame;
   spinnerFrame?: string;
 }) {
   const display = displayText(turn);
@@ -420,25 +465,26 @@ function PartView({
 }: {
   part: TurnPart;
   owner: Turn["owner"];
-  live?: boolean;
+  live?: LiveFrame;
   spinner?: string;
 }) {
+  const userMessageBackground = useContext(UserMessageBackground);
   switch (part.type) {
     case "text": {
       if (!part.text) {
         return spinner ? <Text color="cyan">{spinner}</Text> : null;
       }
       if (owner === "user") {
-        const text = live ? lastLines(part.text, LIVE_TAIL_LINES) : part.text.trim();
         return (
-          <Text>
-            {"\u276f "}
-            {indentContinuation(text)}
-          </Text>
+          <Box backgroundColor={userMessageBackground}>
+            <Text>
+              <Text dimColor>{"\u276f"}</Text> {indentContinuation(part.text.trim())}
+            </Text>
+          </Box>
         );
       }
       const rendered = renderTerminalMarkdown(part.text).trimEnd();
-      return <Text>{live ? lastLines(rendered, LIVE_TAIL_LINES) : rendered}</Text>;
+      return <Text>{live ? lastRows(rendered, live.tailRows, live.width) : rendered}</Text>;
     }
 
     case "thinking": {
@@ -523,7 +569,7 @@ function ActionView({
   spinner,
 }: {
   part: ActionPart;
-  live?: boolean;
+  live?: LiveFrame;
   spinner?: string;
 }) {
   const running = part.status === "pending" || part.status === "running";
@@ -555,9 +601,13 @@ function ActionView({
       </Text>
       <ActionResultView result={part.detail.result} />
       {part.kind === "agent" && part.detail.children.length > 0 && (
-        <Box flexDirection="column" paddingLeft={2}>
+        <Box flexDirection="column" paddingLeft={CHILD_TURN_INDENT}>
           {part.detail.children.map((child) => (
-            <TurnView key={child.id} turn={child} live={live} />
+            <TurnView
+              key={child.id}
+              turn={child}
+              live={live && { ...live, width: live.width - CHILD_TURN_INDENT }}
+            />
           ))}
         </Box>
       )}
@@ -574,6 +624,12 @@ function ActionResultView({
   if (!formatted) return null;
   if (formatted.tone === "error") return <Text color="red"> {formatted.text}</Text>;
   return <Text dimColor> {formatted.text}</Text>;
+}
+
+function lastRows(text: string, count: number, width: number): string {
+  const tail = lastLines(text, count);
+  if (width <= 0) return tail;
+  return lastLines(wrapAnsi(tail, width, { trim: false, hard: true }), count);
 }
 
 // Called on every streaming re-render, so it scans backward for the last N

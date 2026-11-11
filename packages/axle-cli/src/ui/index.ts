@@ -1,5 +1,6 @@
 import { PlainRenderer } from "./plain.js";
 import type { Renderer } from "./renderer.js";
+import { queryUserMessageBackground } from "./terminal-background.js";
 
 export { supportsBatchProgress } from "./batch.js";
 export type { BatchProgress, BatchTotals } from "./batch.js";
@@ -21,7 +22,10 @@ export async function createRenderer(
       return new InkBatchRenderer();
     }
     const { InkRenderer } = await import("./ink/InkRenderer.js");
-    return new InkRenderer({ statusBar: options?.statusBar });
+    return new InkRenderer({
+      statusBar: options?.statusBar,
+      userMessageBackground: await queryUserMessageBackground(),
+    });
   }
   return new PlainRenderer();
 }
