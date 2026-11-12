@@ -41,6 +41,20 @@ function deferred(name: string, schema = z.looseObject({}), timeout?: number): D
   };
 }
 
+function cancelledResult(id: string, name: string) {
+  return {
+    id,
+    name,
+    content: JSON.stringify({
+      error: {
+        type: "cancelled",
+        message: "The tool call was cancelled before it returned a result.",
+      },
+    }),
+    isError: true,
+  };
+}
+
 function makeToolCallWithParams(
   name: string,
   id: string,
@@ -211,19 +225,27 @@ describe("executeToolCalls", () => {
       expect(results[0].content).toContain("validation");
     });
 
-    test("rethrows AxleToolFatalError from onToolCall", async () => {
+    test("reports AxleToolFatalError from onToolCall as the batch's failure", async () => {
       const fatal = new AxleToolFatalError("sandbox terminated", { toolName: "fatal-tool" });
 
-      await expect(
-        executeToolCalls(
-          [makeToolCall("fatal-tool")],
-          () => {
-            throw fatal;
-          },
-          testSignal,
-          deferredRegistry,
-        ),
-      ).rejects.toBe(fatal);
+      const batch = await executeToolCalls(
+        [makeToolCall("fatal-tool")],
+        () => {
+          throw fatal;
+        },
+        testSignal,
+        deferredRegistry,
+      );
+
+      expect(batch.failure).toBe(fatal);
+      expect(batch.results).toEqual([
+        {
+          id: "call-fatal-tool",
+          name: "fatal-tool",
+          content: JSON.stringify({ error: { type: "fatal", message: "sandbox terminated" } }),
+          isError: true,
+        },
+      ]);
     });
 
     test("passes a context whose signal follows the run signal", async () => {
@@ -236,10 +258,14 @@ describe("executeToolCalls", () => {
         return "ok";
       };
 
-      await expect(
-        executeToolCalls([makeToolCall("t")], onToolCall, controller.signal, deferredRegistry),
-      ).rejects.toBeInstanceOf(AxleAbortError);
+      const batch = await executeToolCalls(
+        [makeToolCall("t")],
+        onToolCall,
+        controller.signal,
+        deferredRegistry,
+      );
 
+      expect(batch.failure).toBeInstanceOf(AxleAbortError);
       expect(seen?.signal.aborted).toBe(true);
       expect(seen?.signal.reason).toBe("done");
     });
@@ -300,8 +326,9 @@ describe("executeToolCalls", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       controller.abort("cancelled");
 
-      const error = await pending.catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(AxleAbortError);
+      const batch = await pending;
+      expect(batch.failure).toBeInstanceOf(AxleAbortError);
+      expect(batch.results).toEqual([cancelledResult("call-my-tool", "my-tool")]);
       expect(seen?.signal.aborted).toBe(true);
       expect(seen?.signal.reason).toBe("cancelled");
     });
@@ -503,21 +530,30 @@ describe("executeToolCalls", () => {
         },
       };
 
-      await expect(
-        executeToolCalls(
-          [
-            makeToolCallWithParams("waiting", "a", { input: "a" }),
-            makeToolCall("fatal"),
-            makeToolCallWithParams("waiting", "c", { input: "c" }),
-          ],
-          undefined,
-          testSignal,
-          registry,
-          undefined,
-          observer,
-        ),
-      ).rejects.toBeInstanceOf(AxleToolFatalError);
+      const batch = await executeToolCalls(
+        [
+          makeToolCallWithParams("waiting", "a", { input: "a" }),
+          makeToolCall("fatal"),
+          makeToolCallWithParams("waiting", "c", { input: "c" }),
+        ],
+        undefined,
+        testSignal,
+        registry,
+        undefined,
+        observer,
+      );
 
+      expect(batch.failure).toBeInstanceOf(AxleToolFatalError);
+      expect(batch.results).toEqual([
+        cancelledResult("a", "waiting"),
+        {
+          id: "call-fatal",
+          name: "fatal",
+          content: JSON.stringify({ error: { type: "fatal", message: "boom" } }),
+          isError: true,
+        },
+        cancelledResult("c", "waiting"),
+      ]);
       expect(seen.sort()).toEqual(["a", "c"]);
       expect(errors).toEqual([
         { id: "call-fatal", type: "fatal" },
@@ -561,9 +597,13 @@ describe("executeToolCalls", () => {
       await delay(1);
       controller.abort("user cancelled");
 
-      const thrown = await pending.catch((error: unknown) => error);
-      expect(thrown).toBeInstanceOf(AxleAbortError);
-      expect((thrown as AxleAbortError).reason).toBe("user cancelled");
+      const batch = await pending;
+      expect(batch.failure).toBeInstanceOf(AxleAbortError);
+      expect((batch.failure as AxleAbortError).reason).toBe("user cancelled");
+      expect(batch.results).toEqual([
+        cancelledResult("a", "waiting"),
+        cancelledResult("b", "waiting"),
+      ]);
       expect(errors.sort()).toEqual(["a", "b"]);
     });
 
@@ -641,7 +681,7 @@ describe("executeToolCalls", () => {
       expect(results[0].content).toContain("fetch timed out");
     });
 
-    test("attaches usage from every settled call to the thrown terminal error", async () => {
+    test("attaches usage from every settled call to the batch's failure, and keeps finished results", async () => {
       const schema = z.object({ input: z.string() });
       const reportingTool: ExecutableTool<typeof schema> = {
         name: "reporting",
@@ -681,20 +721,20 @@ describe("executeToolCalls", () => {
         tools: [reportingTool, reportingThenWaitingTool, fatalTool],
       });
 
-      let thrown: unknown;
-      try {
-        await executeToolCalls(
-          [makeToolCall("reporting"), makeToolCall("reporting-waiting"), makeToolCall("fatal")],
-          undefined,
-          testSignal,
-          registry,
-        );
-      } catch (error) {
-        thrown = error;
-      }
+      const batch = await executeToolCalls(
+        [makeToolCall("reporting"), makeToolCall("reporting-waiting"), makeToolCall("fatal")],
+        undefined,
+        testSignal,
+        registry,
+      );
 
-      expect(thrown).toBeInstanceOf(AxleToolFatalError);
-      expect((thrown as AxleToolFatalError).usage).toMatchObject({ in: 111, out: 56 });
+      expect(batch.failure).toBeInstanceOf(AxleToolFatalError);
+      expect((batch.failure as AxleToolFatalError).usage).toMatchObject({ in: 111, out: 56 });
+      expect(batch.results.map((result) => [result.id, result.isError ?? false])).toEqual([
+        ["call-reporting", false],
+        ["call-reporting-waiting", true],
+        ["call-fatal", true],
+      ]);
     });
 
     test("returns no usage when no tool reports any", async () => {

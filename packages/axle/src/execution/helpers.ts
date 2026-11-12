@@ -294,7 +294,7 @@ export async function executeToolCalls(
   span?: Span,
   observer?: ToolExecutionObserver,
   waiting?: WaitingCalls,
-): Promise<{ results: AxleToolCallResult[]; usage?: Stats }> {
+): Promise<{ results: AxleToolCallResult[]; usage?: Stats; failure?: unknown }> {
   const batch = new AbortController();
   const forwardAbort = (): void => batch.abort(signal.reason);
   if (signal.aborted) forwardAbort();
@@ -329,27 +329,36 @@ export async function executeToolCalls(
   const results: AxleToolCallResult[] = [];
   const usage = createStats();
   let hasUsage = false;
-  for (const outcome of settled) {
+  settled.forEach((outcome, index) => {
     if (outcome.status === "fulfilled") {
       results.push(outcome.value.result);
       if (outcome.value.usage) {
         addStats(usage, outcome.value.usage);
         hasUsage = true;
       }
-      continue;
+      return;
     }
-    if (outcome.reason === firstError) continue;
+    results.push(unfinishedCallResult(toolCalls[index], outcome.reason));
+    if (outcome.reason === firstError) return;
     const siblingUsage = usageOfTerminalError(outcome.reason);
     if (siblingUsage) {
       addStats(usage, siblingUsage);
       hasUsage = true;
     }
-  }
+  });
 
   if (failed) {
-    throw hasUsage ? attachUsage(firstError, usage) : firstError;
+    return { results, failure: hasUsage ? attachUsage(firstError, usage) : firstError };
   }
   return { results, ...(hasUsage ? { usage } : {}) };
+}
+
+function unfinishedCallResult(call: ContentPartToolCall, reason: unknown): AxleToolCallResult {
+  const error =
+    reason instanceof AxleToolFatalError
+      ? { type: "fatal", message: reason.message }
+      : { type: "cancelled", message: "The tool call was cancelled before it returned a result." };
+  return { id: call.id, name: call.name, content: serializeToolError(error), isError: true };
 }
 
 function usageOfTerminalError(error: unknown): Stats | undefined {
@@ -556,11 +565,7 @@ async function answerDeferredCall(
   fromHandler.catch(() => {});
 
   try {
-    const outcome = await Promise.race([
-      fromHandler,
-      outside,
-      released.then(() => undefined),
-    ]);
+    const outcome = await Promise.race([fromHandler, outside, released.then(() => undefined)]);
     if (settledElsewhere) return settledElsewhere;
     if (outcome === undefined) {
       throw new AxleAbortError("Operation aborted", { reason: ctx.signal.reason });

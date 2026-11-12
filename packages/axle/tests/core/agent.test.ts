@@ -2559,17 +2559,24 @@ describe("Agent", () => {
       expect(callCount).toBe(1);
       expect(error).toBeInstanceOf(AxleAgentAbortError);
       expect((error as AxleAbortError).reason).toEqual(reason);
-      expect((error as AxleAbortError).messages).toHaveLength(1);
-      expect((error as AxleAbortError).messages![0].role).toBe("assistant");
+      expect((error as AxleAbortError).messages?.map((message) => message.role)).toEqual([
+        "assistant",
+        "tool",
+      ]);
       expect((error as AxleAgentAbortError).turn?.status).toBe("cancelled");
       expect((error as AxleAgentAbortError).turn?.usage).toMatchObject({
         in: 1,
         out: 1,
         breakdown: [{ provider: "mock-stream", model: "mock", in: 1, out: 1 }],
       });
-      expect(agent.messages).toHaveLength(2);
-      expect(agent.messages[0]).toMatchObject({ role: "user" });
-      expect(agent.messages[1]).toMatchObject({ role: "assistant" });
+      expect(agent.messages).toMatchObject([
+        { role: "user" },
+        { role: "assistant" },
+        {
+          role: "tool",
+          content: [{ isError: true, content: expect.stringContaining('"type":"cancelled"') }],
+        },
+      ]);
       expect(transcript.turns[1]?.status).toBe("cancelled");
     });
   });
@@ -2676,7 +2683,7 @@ describe("Agent", () => {
     expect(agent.hasTools()).toBe(true);
   });
 
-  test("tool AxleToolFatalError rejects send without feeding the error back to the model", async () => {
+  test("tool AxleToolFatalError rejects send without another request and answers every call", async () => {
     const { z } = await import("zod");
     const fatalCause = new Error("sandbox gone");
     const toolStream = createToolThenTextProvider(["exec", "next_tool"]);
@@ -2714,7 +2721,18 @@ describe("Agent", () => {
       out: 2,
       breakdown: [{ provider: "mock-tool-stream", model: "mock", in: 1, out: 2 }],
     });
-    expect(fatal.messages).toHaveLength(1);
+    expect(fatal.messages?.map((message) => message.role)).toEqual(["assistant", "tool"]);
+    expect(agent.messages.at(-1)).toMatchObject({
+      role: "tool",
+      content: [
+        { name: "exec", isError: true, content: expect.stringContaining('"type":"fatal"') },
+        {
+          name: "next_tool",
+          isError: true,
+          content: expect.stringContaining('"type":"not-found"'),
+        },
+      ],
+    });
     expect(fatal.partial?.role).toBe("assistant");
     expect(execTool.execute).toHaveBeenCalledTimes(1);
     expect(toolStream.callCount).toBe(1);

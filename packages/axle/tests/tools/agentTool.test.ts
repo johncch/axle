@@ -221,8 +221,7 @@ describe("createAgentTool", () => {
     expect((transcript.turns[1] as Turn | undefined)?.usage).toEqual(fatal.usage);
     // The child's conversation must not leak across the tool boundary.
     expect(fatal.toolName).toBe("delegate");
-    expect(fatal.messages).toHaveLength(1);
-    expect(fatal.messages?.[0]?.role).toBe("assistant");
+    expect(fatal.messages?.map((message) => message.role)).toEqual(["assistant", "tool"]);
   });
 
   test("preserves parent and partial child usage when the subagent is cancelled", async () => {
@@ -302,8 +301,7 @@ describe("createAgentTool", () => {
       ],
     });
     expect((transcript.turns[1] as Turn | undefined)?.usage).toEqual(abortError.usage);
-    expect(abortError.messages).toHaveLength(1);
-    expect(abortError.messages?.[0]?.role).toBe("assistant");
+    expect(abortError.messages?.map((message) => message.role)).toEqual(["assistant", "tool"]);
   });
 });
 

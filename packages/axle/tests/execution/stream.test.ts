@@ -1471,7 +1471,7 @@ describe("stream()", () => {
       expect(error.usage!.out).toBe(5);
     });
 
-    test("cancel during tool execution preserves completed assistant state without tool results", async () => {
+    test("cancel during tool execution preserves the assistant message and answers its tool call", async () => {
       let releaseTool!: () => void;
       const toolGate = new Promise<void>((resolve) => {
         releaseTool = resolve;
@@ -1508,14 +1508,71 @@ describe("stream()", () => {
 
       const error = await expectAbortError(handle.final);
       expect(error.reason).toEqual(reason);
-      expect(error.messages).toHaveLength(1);
-      expect(error.messages![0].role).toBe("assistant");
+      expect(error.messages).toMatchObject([
+        { role: "assistant" },
+        {
+          role: "tool",
+          content: [
+            {
+              id: "call_1",
+              name: "search",
+              isError: true,
+              content: expect.stringContaining('"type":"cancelled"'),
+            },
+          ],
+        },
+      ]);
       expect(error.partial).toBeUndefined();
       expect(error.usage).toMatchObject({
         in: 10,
         out: 5,
         breakdown: [{ provider: "test", model: "test-model" }],
       });
+    });
+
+    test("cancel during a batch keeps the results of calls that finished, in request order", async () => {
+      let markSlowStarted!: () => void;
+      const slowStarted = new Promise<void>((resolve) => {
+        markSlowStarted = resolve;
+      });
+
+      const turn1Chunks: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_slow", "slow"),
+        toolCallCompleteChunk(0, "call_slow", "slow", {}),
+        toolCallStartChunk(1, "call_fast", "fast"),
+        toolCallCompleteChunk(1, "call_fast", "fast", {}),
+        completeChunk(AxleStopReason.FunctionCall, { in: 10, out: 5 }),
+      ];
+
+      const provider = makeProvider({ streamChunks: [turn1Chunks] });
+      const handle = stream({
+        provider,
+        model: "test-model",
+        messages: [],
+        tools: [deferredTool("slow"), deferredTool("fast")],
+        onToolCall: (call) => {
+          if (call.name === "fast") return "fast result";
+          markSlowStarted();
+          return new Promise<string>(() => {});
+        },
+      });
+
+      await slowStarted;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      handle.cancel("stop");
+
+      const error = await expectAbortError(handle.final);
+      expect(error.messages).toMatchObject([
+        { role: "assistant" },
+        {
+          role: "tool",
+          content: [
+            { id: "call_slow", isError: true, content: expect.stringContaining('"cancelled"') },
+            { id: "call_fast", content: "fast result" },
+          ],
+        },
+      ]);
     });
 
     test("cancel after completion is a no-op", async () => {

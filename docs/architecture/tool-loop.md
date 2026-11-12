@@ -25,7 +25,8 @@ side is in [provider-tools.md](./provider-tools.md).
    requested them, whatever order the calls finished in. A call whose
    arguments did not parse holds its slot with a synthetic error result and
    never runs. Every provider requires a result for every call id before
-   the next request, so the loop waits for the whole batch.
+   the next request, so the loop waits for the whole batch, and a batch
+   that ends early still answers every call (invariant 4).
 3. **An ordinary failure is a result and touches no sibling.** Arguments
    that fail the schema, a tool that is not found, and an `execute` that
    throws a plain error each become an `isError` result for that call. The
@@ -35,8 +36,14 @@ side is in [provider-tools.md](./provider-tools.md).
    first terminal error by settle time aborts the batch's other calls
    through their signal, the loop waits for every call to settle, and the
    batch rejects with that first error. A tool that ignores its signal
-   delays the rejection until it returns. No tool results message is
-   appended; results the other calls already produced are discarded.
+   delays the rejection until it returns. The tool results message is
+   appended before the rejection, with one result per call: a call that
+   returned keeps its result, a call that threw `AxleToolFatalError` gets
+   an `isError` result of type `fatal` carrying its message, and a call
+   cut short by the abort gets an `isError` result of type `cancelled`. A
+   call that returns after its signal aborted counts as cut short. The
+   error's `messages` therefore end in that message, and so does the
+   Agent's history. (2026-11-12, AXL-109)
 5. **A tool's signal is the batch's, not the run's.** `ctx.signal` aborts
    when the run's signal aborts, with the run's reason, and when a sibling
    fails, with the sibling's error as the reason. A tool that rethrows its
@@ -142,6 +149,26 @@ is the error that caused the cancellation; any later terminal error from a
 sibling is either the abort it was given or a failure that raced it, and
 neither explains why the batch ended.
 
+## Design rationale (2026-11-12): a batch that ends early is still answered
+
+Through 0.36.1 a batch that ended on a terminal error appended no tool
+results message. The assistant message that requested the calls stayed in
+the conversation, since its request had completed and been paid for, so the
+history ended in tool calls with no results. The next request carried them
+unanswered. Observed on 2026-11-12 (AXL-109, `claude-haiku-5-5`): after
+`agent.cancel()` during a tool call, every later send on that agent failed
+with a 400, "`tool_use` ids were found without `tool_result` blocks
+immediately after". A fatal tool error left the same history, and so does a
+turn that runs out of `turnTimeoutMs` while a tool is running.
+
+The batch now writes the message it would have written, with a result for
+each call that says what happened to it. The history is valid to send
+again, the model on the next turn can see which calls ran and which were
+cut short, and a call that finished before the abort keeps its real result,
+which matters when it had a side effect. The loop still makes no further
+request: the rejection is unchanged, and the fatal result is read by the
+model only if the caller sends again.
+
 ## Design rationale (2026-11-05): deferred calls through `onToolCall`
 
 `onToolCall` predates `execute`: the first tool loop delegated every call to
@@ -202,6 +229,16 @@ by awaiting a promise.
   it returns no handle, so it supplies the last handler itself and fails
   what the caller's handler leaves, which is the general rule applied,
   not an exception to it.
+- **Dropping the assistant message when its batch ends early**
+  (2026-11-12, AXL-109): the history would be valid without any synthetic
+  result. Rejected because the request completed and its output is real:
+  the turn's parts already show the calls, the usage is counted, and a call
+  that finished may have changed something the model should know about.
+- **Repairing unanswered calls when a request is built** (2026-11-12,
+  AXL-109): each adapter would add missing results on the way out.
+  Rejected because the stored history would stay invalid and four adapters
+  would each need the rule; writing the message once, where the batch
+  ends, fixes what is stored.
 - **Aborting siblings with a synthetic reason** (2026-10-29): a marker
   object in place of the failing call's error. Rejected because the
   sibling's abort would no longer say why it was cut short; the classifier
