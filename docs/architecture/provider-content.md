@@ -527,7 +527,7 @@ Anthropic's rules, for the day this is revisited. All observed on
   "Citable block index not found!".
 
 Because of the last rule the Messages adapter never sends a document
-citation back. A conversation stored before 0.37.0 can hold answers with
+citation back. A conversation stored before 0.36.1 can hold answers with
 them; the stored message keeps them and the request carries the text
 without them. Search citations still go back.
 
