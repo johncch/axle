@@ -166,8 +166,7 @@ describe("generate() wrapper lifecycle", () => {
 
     const error = await expectAbortError(pending);
     expect(error.reason).toEqual({ type: "tool-timeout" });
-    expect(error.messages).toHaveLength(1);
-    expect(error.messages![0].role).toBe("assistant");
+    expect(error.messages?.map((message) => message.role)).toEqual(["assistant", "tool"]);
     expect(error.usage).toMatchObject({
       in: 10,
       out: 15,

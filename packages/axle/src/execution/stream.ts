@@ -619,15 +619,6 @@ async function run(
       });
     }
 
-    if (signal.aborted) {
-      span?.end("ok");
-      throw new AxleAbortError("Stream aborted", {
-        reason: signal.reason,
-        messages: newMessages,
-        usage,
-      });
-    }
-
     const toolResultsMessage = await executeStepTools(toolCalls, outcome, assistantMessage, loop);
 
     if (signal.aborted) {
