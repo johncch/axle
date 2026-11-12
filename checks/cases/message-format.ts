@@ -58,42 +58,80 @@ export const messageFormatCases: CheckCase[] = [
   },
   {
     group: "extended",
-    id: "format-document-citations",
-    description: "PDF inputs return document citations in Axle's normalized format.",
+    id: "format-document-stored-citations",
+    description:
+      "A PDF answer arrives without document citations, and a follow-up is accepted when a stored answer carries them.",
     providers: ["anthropic"],
     async run({ provider, model, requestOptions }) {
       const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
-      const result = await generate({
+      const messages: AxleMessage[] = [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Answer in one sentence: what does the attached PDF say about designing a new foundation?",
+            },
+            { type: "file", file: pdf },
+          ],
+        },
+      ];
+      const first = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages,
+        maxOutputTokens: 2048,
+      });
+      if (!first.ok) return fail({ error: first.error });
+
+      const citations = collectCitations(first.final);
+      if (citations.some((citation) => citation.source.type === "document")) {
+        return {
+          ok: false,
+          failureReasons: ["A document citation was returned without being asked for."],
+          details: { text: getAssistantText(first.final), citations },
+        };
+      }
+
+      const stored: Citation = {
+        source: {
+          type: "document",
+          title: pdf.name,
+          citedText: "Designing a new foundation",
+          locator: { type: "page", start: 1, end: 2 },
+        },
+        providerMetadata: { type: "page_location", documentIndex: 0 },
+      };
+      const followUp = await generate({
         provider,
         model,
         ...requestOptions,
         messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Answer in one sentence with a citation: what does the attached PDF say about designing a new foundation?",
-              },
-              { type: "file", file: pdf },
-            ],
-          },
+          ...messages,
+          ...first.messages.map((message) =>
+            message.role === "assistant"
+              ? {
+                  ...message,
+                  content: message.content.map((part) =>
+                    part.type === "text" ? { ...part, citations: [stored] } : part,
+                  ),
+                }
+              : message,
+          ),
+          { role: "user", content: "Repeat that in five words or fewer." },
         ],
         maxOutputTokens: 2048,
       });
+      if (!followUp.ok) return fail({ error: followUp.error });
 
-      if (!result.ok) return fail({ error: result.error });
-      const citations = collectCitations(result.final);
-      const failureReasons = [
-        ...(citations.some((citation) => citation.source.type === "document")
-          ? []
-          : ["No document citation was returned."]),
-        ...citations.flatMap(validateCitationFormat),
-      ];
       return {
-        ok: failureReasons.length === 0,
-        ...(failureReasons.length > 0 ? { failureReasons } : {}),
-        details: { text: getAssistantText(result.final), citations, usage: result.usage },
+        ok: true,
+        details: {
+          text: getAssistantText(first.final),
+          followUpText: getAssistantText(followUp.final),
+          usage: followUp.usage,
+        },
       };
     },
   },
@@ -121,33 +159,6 @@ export const messageFormatCases: CheckCase[] = [
                 : providerId === "google"
                   ? "Use Google Search and answer in one sentence, citing your source: what kind of company is Anthropic?"
                   : "Use web search and answer in one sentence, citing your source: what kind of company is Anthropic?",
-          },
-        ],
-      });
-    },
-  },
-  {
-    group: "extended",
-    id: "format-document-citations-follow-up",
-    description: "A follow-up request is accepted after an answer with document citations.",
-    providers: ["anthropic"],
-    async run({ provider, model, requestOptions }) {
-      const pdf = await loadFileContent("./packages/axle/examples/data/designing-a-new-foundation.pdf");
-      return runCitationFollowUp({
-        provider,
-        model,
-        requestOptions,
-        sourceType: "document",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Answer in one sentence with a citation: what does the attached PDF say about designing a new foundation?",
-              },
-              { type: "file", file: pdf },
-            ],
           },
         ],
       });

@@ -14,11 +14,11 @@ async function replayedTextBlock(citations: Citation[] | undefined) {
       content: [{ type: "text", text: "Axle is a runtime.", ...(citations ? { citations } : {}) }],
     },
   ];
-  const [converted] = await convertToProviderMessages(messages);
+  const [converted] = await convertToProviderMessages(messages, { model: "claude" });
   return (converted.content as Anthropic.ContentBlockParam[])[0];
 }
 
-const received: Record<string, Anthropic.TextCitation> = {
+const replayed: Record<string, Anthropic.TextCitation> = {
   web_search_result_location: {
     type: "web_search_result_location",
     cited_text: "Axle is a runtime",
@@ -26,6 +26,18 @@ const received: Record<string, Anthropic.TextCitation> = {
     title: "Axle",
     url: "https://example.com/axle",
   },
+  search_result_location: {
+    type: "search_result_location",
+    cited_text: "Axle is a runtime",
+    search_result_index: 4,
+    source: "https://example.com/axle",
+    title: "Axle",
+    start_block_index: 0,
+    end_block_index: 2,
+  },
+};
+
+const documentCitations: Record<string, Anthropic.TextCitation> = {
   char_location: {
     type: "char_location",
     cited_text: "Axle is a runtime",
@@ -53,37 +65,45 @@ const received: Record<string, Anthropic.TextCitation> = {
     end_block_index: 1,
     file_id: null,
   },
-  search_result_location: {
-    type: "search_result_location",
-    cited_text: "Axle is a runtime",
-    search_result_index: 4,
-    source: "https://example.com/axle",
-    title: "Axle",
-    start_block_index: 0,
-    end_block_index: 2,
-  },
 };
 
 describe("Anthropic citation replay", () => {
-  test.each(Object.keys(received))("sends a %s citation back as received", async (type) => {
-    // Request-side citation shapes have no `file_id`; responses do.
-    const expected: Record<string, unknown> = { ...received[type] };
-    delete expected.file_id;
+  test.each(Object.keys(replayed))("sends a %s citation back as received", async (type) => {
+    const block = await replayedTextBlock([normalizeAnthropicCitation(replayed[type])]);
 
-    const block = await replayedTextBlock([normalizeAnthropicCitation(received[type])]);
-
-    expect(block).toEqual({ type: "text", text: "Axle is a runtime.", citations: [expected] });
+    expect(block).toEqual({
+      type: "text",
+      text: "Axle is a runtime.",
+      citations: [replayed[type]],
+    });
   });
 
   test("keeps every citation of a text part, in order", async () => {
     const block = await replayedTextBlock([
-      normalizeAnthropicCitation(received.web_search_result_location),
-      normalizeAnthropicCitation(received.char_location),
+      normalizeAnthropicCitation(replayed.web_search_result_location),
+      normalizeAnthropicCitation(replayed.search_result_location),
     ]);
 
     expect(block).toMatchObject({
-      citations: [{ type: "web_search_result_location" }, { type: "char_location" }],
+      citations: [{ type: "web_search_result_location" }, { type: "search_result_location" }],
     });
+  });
+
+  test("leaves document citations out and keeps the rest", async () => {
+    const block = await replayedTextBlock([
+      normalizeAnthropicCitation(replayed.web_search_result_location),
+      ...Object.values(documentCitations).map(normalizeAnthropicCitation),
+    ]);
+
+    expect(block).toMatchObject({ citations: [{ type: "web_search_result_location" }] });
+  });
+
+  test("sends text whose only citations are document citations as a bare text block", async () => {
+    const block = await replayedTextBlock(
+      Object.values(documentCitations).map(normalizeAnthropicCitation),
+    );
+
+    expect(block).toEqual({ type: "text", text: "Axle is a runtime." });
   });
 
   test("sends text without citations as a bare text block", async () => {
