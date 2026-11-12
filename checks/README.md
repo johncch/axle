@@ -269,9 +269,8 @@ different surfaces; each case lists the providers it runs on and skips the
 rest.
 
 - `format-web-citations` (OpenAI, Gemini, OpenRouter hosted search)
-- `format-document-citations` (Anthropic PDF input)
-- `format-document-citations-follow-up` (Anthropic: a follow-up request after
-  a cited PDF answer)
+- `format-document-stored-citations` (Anthropic: a PDF answer has no document
+  citations, and a follow-up is accepted when a stored answer carries them)
 - `format-thinking-continuity` (OpenAI encrypted reasoning, Anthropic
   signature, Gemini summary, OpenRouter reasoning entries)
 - `format-thinking-hidden` (Anthropic hidden thinking: continuity only, not redacted)
