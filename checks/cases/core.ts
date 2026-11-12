@@ -1052,7 +1052,8 @@ export const coreCases: CheckCase[] = [
   {
     group: "default",
     id: "agent-tool-fatal",
-    description: "Fatal tool error terminates the send with usage and intact history.",
+    description:
+      "Fatal tool error terminates the send with usage, answers the call in history, and a follow-up turn is accepted.",
     async run({ provider, model, requestOptions }) {
       const fatalTool: ExecutableTool<z.ZodObject<{ id: z.ZodString }>> = {
         name: "fetch_record",
@@ -1075,20 +1076,92 @@ export const coreCases: CheckCase[] = [
 
       const fatal = thrown instanceof AxleToolFatalError ? thrown : undefined;
       const logRoles = agent.messages.map((message) => message.role);
+      const toolResults = getToolResultDetails(agent.messages);
+      const followUp = await agent.send("Never mind that. Reply with the single word: ready").final;
+
+      const failureReasons: string[] = [];
+      if (!fatal) failureReasons.push("the send did not reject with AxleToolFatalError");
+      if (!fatal?.usage || fatal.usage.in <= 0 || fatal.usage.out <= 0) {
+        failureReasons.push("the fatal error carries no usage");
+      }
+      if (logRoles.join(",") !== "user,assistant,tool") {
+        failureReasons.push(`unexpected message roles after the fatal: ${logRoles.join(",")}`);
+      }
+      if (!toolResults.some((result) => result.isError && result.content.includes('"fatal"'))) {
+        failureReasons.push("the failed call has no fatal result in history");
+      }
+      if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
       return {
-        ok: Boolean(
-          fatal &&
-          fatal.usage &&
-          fatal.usage.in > 0 &&
-          fatal.usage.out > 0 &&
-          logRoles.length === 2 &&
-          logRoles[0] === "user" &&
-          logRoles[1] === "assistant",
-        ),
+        ok: failureReasons.length === 0,
+        failureReasons,
         details: {
           error: serializeError(thrown),
           logRoles,
+          toolResults,
+          followUp: followUp.ok ? followUp.response : followUp.error,
           usage: fatal?.usage,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
+    id: "agent-tool-cancel-follow-up",
+    description:
+      "Cancelling during a tool call answers the call in history, and a follow-up turn is accepted.",
+    async run({ provider, model, requestOptions }) {
+      let started: (() => void) | undefined;
+      const running = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const slowTool: ExecutableTool<z.ZodObject<{ city: z.ZodString }>> = {
+        name: "lookup_weather",
+        description: "Look up the current weather for a city.",
+        schema: z.object({ city: z.string() }),
+        execute(_input, ctx) {
+          started?.();
+          return new Promise((_resolve, reject) => {
+            ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason), { once: true });
+          });
+        },
+      };
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [slowTool] });
+
+      const handle = agent.send("Use the lookup_weather tool for Paris and report the result.");
+      const settled = handle.final.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      const outcome = await Promise.race([running.then(() => "tool" as const), settled]);
+      if (outcome !== "tool") {
+        return fail({ reason: "the model did not call the tool", error: serializeError(outcome) });
+      }
+      agent.cancel("checks-cancel");
+      const thrown = await settled;
+
+      const logRoles = agent.messages.map((message) => message.role);
+      const toolResults = getToolResultDetails(agent.messages);
+      const followUp = await agent.send("Never mind that. Reply with the single word: ready").final;
+
+      const failureReasons: string[] = [];
+      if (!(thrown instanceof AxleAgentAbortError)) {
+        failureReasons.push("the cancelled send did not reject with AxleAgentAbortError");
+      }
+      if (logRoles.join(",") !== "user,assistant,tool") {
+        failureReasons.push(`unexpected message roles after the cancel: ${logRoles.join(",")}`);
+      }
+      if (!toolResults.some((result) => result.isError && result.content.includes('"cancelled"'))) {
+        failureReasons.push("the cancelled call has no cancelled result in history");
+      }
+      if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
+      return {
+        ok: failureReasons.length === 0,
+        failureReasons,
+        details: {
+          error: serializeError(thrown),
+          logRoles,
+          toolResults,
+          followUp: followUp.ok ? followUp.response : followUp.error,
         },
       };
     },
@@ -1137,7 +1210,7 @@ export const coreCases: CheckCase[] = [
       const aborted = thrown instanceof AxleAgentAbortError ? thrown : undefined;
       const messageRoles = aborted?.messages?.map((message) => message.role) ?? [];
       // A leaked child conversation would contain the delegated user prompt.
-      const noChildLeak = messageRoles.length === 1 && messageRoles[0] === "assistant";
+      const noChildLeak = messageRoles.join(",") === "assistant,tool";
       return {
         ok: Boolean(
           aborted && sawChildEvent && noChildLeak && aborted.usage && aborted.usage.in > 0,

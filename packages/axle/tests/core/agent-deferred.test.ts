@@ -295,7 +295,10 @@ describe("Agent deferred tools", () => {
     expect(transcript.turns.at(-1)?.status).toBe("cancelled");
     expect(deferredParts(transcript)[0]?.status).toBe("cancelled");
     expect(script.requestCount).toBe(1);
-    expect(agent.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(agent.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    expect(agent.messages.at(-1)).toMatchObject({
+      content: [{ isError: true, content: expect.stringContaining('"type":"cancelled"') }],
+    });
   });
 
   test("stop() while a call is waiting lets the answer arrive, commits it, and makes no further request", async () => {

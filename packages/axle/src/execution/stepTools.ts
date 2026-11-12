@@ -53,8 +53,9 @@ function toArgumentErrorResult(
  * Answer a completed step's tool calls: synthesize results for calls whose
  * arguments failed to parse, execute the rest, and append the tool results
  * message. Mutates the loop's shared `usage` and, via `addMessage`, its
- * working conversation. Abort and fatal errors are rethrown enriched with
- * the loop's accumulated messages and usage so callers can preserve state.
+ * working conversation. A batch that ends on an abort or a fatal error
+ * still appends its message, then rethrows the error enriched with the
+ * loop's accumulated messages and usage so callers can preserve state.
  */
 export async function executeStepTools(
   toolCalls: ContentPartToolCall[],
@@ -137,42 +138,22 @@ export async function executeStepTools(
 
   let executedResults: AxleToolCallMessage["content"] = [];
   let toolUsage: Stats | undefined;
-  try {
-    if (executableToolCalls.length > 0) {
-      ({ results: executedResults, usage: toolUsage } = await executeToolCalls(
-        executableToolCalls,
-        onToolCall,
-        signal,
-        resolvedTools,
-        span,
-        executionObserver,
-        waiting,
-      ));
-    }
-  } catch (error) {
-    if (error instanceof AxleToolFatalError) {
-      span?.end("error");
-      throw new AxleToolFatalError(error.message, {
-        toolName: error.toolName,
-        messages: error.messages ?? newMessages,
-        partial: error.partial ?? assistantMessage,
-        usage: mergeStats(usage, error.usage),
-        cause: error.cause,
-      });
-    }
-    if (error instanceof AxleAbortError) {
-      span?.end("ok");
-      throw new AxleAbortError("Stream aborted", {
-        reason: error.reason,
-        messages: error.messages ?? newMessages,
-        partial: error.partial,
-        usage: mergeStats(usage, error.usage),
-      });
-    }
-    throw error;
+  let failure: unknown;
+  if (executableToolCalls.length > 0) {
+    ({
+      results: executedResults,
+      usage: toolUsage,
+      failure,
+    } = await executeToolCalls(
+      executableToolCalls,
+      onToolCall,
+      signal,
+      resolvedTools,
+      span,
+      executionObserver,
+      waiting,
+    ));
   }
-
-  addStats(usage, toolUsage);
 
   const executedResultsById = new Map(executedResults.map((result) => [result.id, result]));
   const results = toolCalls.flatMap((call) => {
@@ -182,15 +163,34 @@ export async function executeStepTools(
     return executed ? [executed] : [];
   });
 
+  let toolResultsMessage: AxleToolCallMessage | undefined;
   if (results.length > 0) {
-    const toolResultsMessage: AxleToolCallMessage = {
-      role: "tool",
-      id: toolResultsId,
-      content: results,
-    };
+    toolResultsMessage = { role: "tool", id: toolResultsId, content: results };
     addMessage(toolResultsMessage);
     emit({ type: "tool-results:complete", message: toolResultsMessage });
-    return toolResultsMessage;
   }
-  return undefined;
+
+  if (failure instanceof AxleToolFatalError) {
+    span?.end("error");
+    throw new AxleToolFatalError(failure.message, {
+      toolName: failure.toolName,
+      messages: newMessages,
+      partial: failure.partial ?? assistantMessage,
+      usage: mergeStats(usage, failure.usage),
+      cause: failure.cause,
+    });
+  }
+  if (failure instanceof AxleAbortError) {
+    span?.end("ok");
+    throw new AxleAbortError("Stream aborted", {
+      reason: failure.reason,
+      messages: newMessages,
+      partial: failure.partial,
+      usage: mergeStats(usage, failure.usage),
+    });
+  }
+  if (failure !== undefined) throw failure;
+
+  addStats(usage, toolUsage);
+  return toolResultsMessage;
 }
