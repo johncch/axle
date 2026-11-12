@@ -166,7 +166,6 @@ async function convertFilePart(
       type: "document",
       source: toAnthropicPdfSource(resolved),
       title: resolved.name ?? file.name,
-      citations: { enabled: true },
     } satisfies Anthropic.DocumentBlockParam;
   }
 
@@ -197,7 +196,6 @@ async function convertFilePart(
       data: resolved.content,
     },
     title: resolved.name ?? file.name,
-    citations: { enabled: true },
   } satisfies Anthropic.DocumentBlockParam;
 }
 
@@ -504,36 +502,6 @@ export function normalizeAnthropicCitation(citation: Anthropic.Messages.TextCita
 function toAnthropicCitation(citation: Citation): Anthropic.TextCitationParam | undefined {
   const { source, providerMetadata } = citation;
   switch (providerMetadata?.type) {
-    case "char_location":
-      if (source.type !== "document" || source.locator?.type !== "char") return undefined;
-      return {
-        type: "char_location",
-        cited_text: source.citedText as string,
-        document_index: providerMetadata.documentIndex as number,
-        document_title: source.title ?? null,
-        start_char_index: source.locator.start as number,
-        end_char_index: source.locator.end as number,
-      };
-    case "page_location":
-      if (source.type !== "document" || source.locator?.type !== "page") return undefined;
-      return {
-        type: "page_location",
-        cited_text: source.citedText as string,
-        document_index: providerMetadata.documentIndex as number,
-        document_title: source.title ?? null,
-        start_page_number: source.locator.start as number,
-        end_page_number: source.locator.end as number,
-      };
-    case "content_block_location":
-      if (source.type !== "document" || source.locator?.type !== "block") return undefined;
-      return {
-        type: "content_block_location",
-        cited_text: source.citedText as string,
-        document_index: providerMetadata.documentIndex as number,
-        document_title: source.title ?? null,
-        start_block_index: source.locator.start as number,
-        end_block_index: source.locator.end as number,
-      };
     case "web_search_result_location":
       if (source.type !== "web") return undefined;
       return {

@@ -6,6 +6,7 @@ import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { togetheraiDialect } from "../../src/protocols/chatCompletions/dialects/togetherai.js";
 import { convertAxleMessages } from "../../src/protocols/chatCompletions/utils.js";
 import { convertAxleMessagesToGemini } from "../../src/protocols/generateContent/utils.js";
+import { convertToProviderMessages } from "../../src/protocols/messages/utils.js";
 import { convertAxleMessageToResponseInput } from "../../src/protocols/responses/utils.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
@@ -280,6 +281,46 @@ describe("deferred file resolution", () => {
         },
       ],
     });
+  });
+
+  test("sends Anthropic documents without asking for citations", async () => {
+    const pdf: FileInfo = {
+      kind: "document",
+      mimeType: "application/pdf",
+      name: "paper.pdf",
+      source: { type: "url", url: "https://example.com/paper.pdf" },
+    };
+    const text: FileInfo = {
+      kind: "text",
+      mimeType: "text/plain",
+      name: "notes.txt",
+      source: { type: "text", content: "plain notes" },
+    };
+    const messages = [
+      {
+        role: "user" as const,
+        content: [
+          { type: "file" as const, file: pdf },
+          { type: "file" as const, file: text },
+        ],
+      },
+    ];
+    const documents = [
+      {
+        type: "document",
+        source: { type: "url", url: "https://example.com/paper.pdf" },
+        title: "paper.pdf",
+      },
+      {
+        type: "document",
+        source: { type: "text", media_type: "text/plain", data: "plain notes" },
+        title: "notes.txt",
+      },
+    ];
+
+    const converted = await convertToProviderMessages(messages, { model: "claude" });
+
+    expect(converted[0].content).toEqual(documents);
   });
 
   test("emits OpenAI input_file with file_url and no filename for url-sourced PDFs", async () => {
