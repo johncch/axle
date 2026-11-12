@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.36.2] - 2026-11-12
+
+- Fixed an agent becoming unusable after a turn was cancelled, timed out, or hit a fatal tool error while a tool was running. The tool call was left without a result, and providers rejected every later request. Each call in the batch now gets a result: its real one if it finished, or an error of type `cancelled` or `fatal`. `agent.messages` and the error's `messages` therefore end in a tool results message. See `docs/0.36.2-migration.md`.
+
 ## [0.36.1] - 2026-11-12
 
 - **Breaking:** Axle no longer requests citations for documents sent to Anthropic, and there is no option to re-enable them. Answers about PDF or text documents now arrive as plain text parts. Document citations already stored in a conversation are kept on the messages but left out of requests to Anthropic, which would otherwise reject them. Citations from hosted web search are unchanged. See `docs/0.36.1-migration.md`.
