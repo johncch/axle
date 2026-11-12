@@ -17,10 +17,32 @@
 - `send()` accepts an `id` for its user turn.
 - Fixed the `stream-web-search-error` check failing for the wrong reason on Haiku 5.5, and documented check retries in the checks README.
 
-## Unreleased
+## [0.35.0] - 2026-11-03
+
+- **Breaking:** a configuration mistake now throws a coded `AxleError` before any request is sent, instead of resolving `ok: false`. `ok: false` carries only the provider's answer: `AxleFailure` is renamed `AxleProviderFailure`, and its `model` kind is split into `api` and `incomplete`. Added `AxleErrorCode` and `isAxleError` to narrow a catch. `InstructVariableError` is renamed `AxleInstructVariableError`, and `TaskError` is removed.
+- **Breaking:** a provider declares `protocol` and `id` in place of `name`. Added the protocol constructors `messages()`, `responses()`, `generateContent()` and `chatCompletions()`, which take a base URL, and the presets `openrouter()`, `togetherai()` and `bedrock()`. `anthropic()`, `openai()` and `gemini()` lose `baseUrl`; use the protocol constructor to reach a proxy. `chatCompletions()` takes one options object, and `vendor` is replaced by `id` and `dialect`.
+- **Breaking:** `PROVIDER_UNSUPPORTED` details and `FileResolveRequest` name the `protocol` instead of the old provider label, and `FileProviderId` is replaced by `Protocol`.
+- **Breaking:** `usage.breakdown` holds one row per provider request instead of one per provider and model, and is always present. Rows gain `agent`, `at` and `requestedModel`, and `provider` is the provider's `id`. Added `attributeStats` for building a row from a raw count.
+- **Breaking:** `ModelCatalog` no longer fetches. It is a synchronous index built from `CatalogData`, and `host` is renamed `provider`. Added `ModelCatalogStore`, `fetchModelsDev`, `parseCatalogData` and `catalogFile` for loading, refreshing and saving the data. All experimental.
+- Added experimental `computeCost(usage, catalog)`, which prices each usage row at the tier its own prompt size selects and reports the rows it could not price.
+- Added continuations: `send()` accepts `after`, a program that runs once the turn settles, holds the queue until it returns, and runs further turns inline with `ctx.send()`. Results list the inline turns under `after`.
+- **Breaking:** `onSettled` fires after every turn that commits. For a send without a continuation this is still once per send.
+- **Breaking:** removed `AgentDefinition`, `createAgentConfig` and their related types. `AgentSession` is unchanged; a host builds `AgentConfig` from its own saved recipe.
+- **Breaking:** the `error` turn event and `Turn.error` are replaced by `failure` on `turn:end` and `Turn.failure`, which carries the failure's `kind`, `message` and, where present, `type`, `status`, `text` or `category`. A send whose answer fails the Instruct's schema now ends its turn `error`.
+- Added `reason` to `turn:end` and `Turn`: `"stop"` or `"length"`, so a reply cut off at the output token limit can be told apart.
+- **Breaking:** a tool call interrupted by a cancel ends with the new `action:cancelled` event and `status: "cancelled"` instead of `action:error` with `type: "aborted"`. Calls that never ran settle `cancelled` instead of staying `pending`. A cancelled compaction ends with `compaction:cancelled`, and `CompactionPart` gains `trigger`.
+- A step's tool calls now run concurrently. Results still answer in request order, and a fatal tool error or a cancel aborts the batch's other calls through `ctx.signal`.
+- On Anthropic and OpenAI, a tool call whose arguments are not valid JSON is fed back to the model as an `invalid-arguments` tool error instead of rejecting the handle.
+- A Chat Completions `finish_reason` Axle does not recognize is now `ok: false` with `kind: "incomplete"` instead of a successful stop, and Gemini's `LANGUAGE` finish reason is a refusal.
+- Raised the `@google/genai` floor to 2.31.0. The SDK now continues a Gemini 4 response past its per-request output cap, so a long answer arrives as one response.
+- `Transcript.apply` is a bound property, so `agent.on(transcript.apply)` works without `bind`.
+- Fixed step and run spans being left open when a provider threw.
+- A parallelized tool's default description now starts with the wrapped tool's description, followed by a sentence on concurrent, ordered execution, so the model learns what each item does. Neither the description nor the `items` schema names the wrapped tool anymore: with a batch name one letter off the wrapped tool's, GLM-5.3-Flash on Together AI lost its tool calls, which came back as an empty reply.
+- See `docs/0.35.0-migration.md` for the full list and before/after code.
+
+## [0.34.3] - 2026-10-28
 
 - Tool call arguments are now parsed with the tool's schema before `execute`. Invalid arguments no longer reach `execute`: the model gets an error tool result with type `validation` naming each issue (for example `description: Invalid input: expected string, received undefined`) and can correct the call in the same turn. `execute` receives the parsed value, so schema defaults and transforms now apply. A parallelized tool's call is rejected as a whole when any item is invalid. MCP tools are validated too, and unknown top-level keys are dropped before the call reaches the server, matching a default `z.object()`, rather than rejected.
-- A parallelized tool's default description now starts with the wrapped tool's description, followed by a sentence on concurrent, ordered execution, so the model learns what each item does. Neither the description nor the `items` schema names the wrapped tool anymore: with a batch name one letter off the wrapped tool's, GLM-5.3-Flash on Together AI lost its tool calls, which came back as an empty reply.
 
 ## [0.34.2] - 2026-10-24
 
