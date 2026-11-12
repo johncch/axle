@@ -20,7 +20,7 @@
 - Test watch: `pnpm test -- --watch`
 - Start: `pnpm start` (runs with tsx)
 - Example jobs: `scripts/run-example-jobs.sh [job files...]` (runs `packages/axle-cli/examples/*` sequentially against real providers; starts the HTTP MCP server)
-- Release: `pnpm run release -- <version>` (runs tests, builds, versions packages, commits, and tags)
+- Release: `pnpm run release <major|minor|patch|x.y.z>` (generates the changelogs, pauses for review, then runs tests, builds, versions packages, commits, and tags)
 
 # Working with Humans
 
@@ -129,7 +129,7 @@ Documentation is layered by authority; each genre has one job:
   separate product with recipe/flag-level changes, not API call sites.
   Breaking changes lead each entry. New entries go under `## Unreleased`
   at the top (create it if missing), never under a released version.
-  `pnpm run cut-release` renames `## Unreleased` to `## <version>` and
+  `pnpm run release` renames `## Unreleased` to `## <version>` and
   commits it with the root changelog; the manual release path does not, so
   rename it by hand there. A released section is frozen; a later change to
   something it describes gets its own entry under `## Unreleased`.

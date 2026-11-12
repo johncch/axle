@@ -5,7 +5,7 @@ import { createInterface } from "node:readline/promises";
 
 const arg = process.argv[2];
 if (!arg) {
-  console.error("Usage: pnpm run cut-release <major|minor|patch|x.y.z>");
+  console.error("Usage: pnpm run release <major|minor|patch|x.y.z>");
   process.exit(1);
 }
 
@@ -62,6 +62,6 @@ execSync(
   `git add CHANGELOG.md packages/axle-cli/CHANGELOG.md && git commit -m "Update changelog for ${next}"`,
   { stdio: "inherit" },
 );
-execSync(`pnpm run release -- ${next}`, { stdio: "inherit" });
+execSync(`node scripts/release.mjs ${next}`, { stdio: "inherit" });
 
 console.log(`\nReleased ${next}. Push with: git push --follow-tags`);

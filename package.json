@@ -12,8 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "check": "pnpm run typecheck && pnpm test && pnpm run build",
     "changelog": "pnpm start -j ./jobs/changelog.job.yml --args",
-    "release": "node scripts/release.mjs",
-    "cut-release": "node scripts/cut-release.mjs",
+    "release": "node scripts/cut-release.mjs",
     "checks": "pnpm exec tsx checks/run.ts",
     "cli:install": "pnpm --filter axle-cli run package:install"
   },

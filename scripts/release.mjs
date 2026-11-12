@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const version = process.argv.find((arg) => /^\d+\.\d+\.\d+$/.test(arg));
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error("Usage: pnpm run release -- <x.y.z>");
+  console.error("Usage: node scripts/release.mjs <x.y.z>");
   process.exit(1);
 }
 
