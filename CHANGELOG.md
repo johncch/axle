@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.36.3] - 2026-11-14
+
+- Fixed an agent becoming unusable after a turn was cancelled or timed out while the model was still writing its response. A tool call that had started streaming was kept with no result, and a text part opened but not yet written to was kept as an empty string; providers rejected every later request. A cancelled model call now keeps only what was written: no tool calls, no empty text and no empty thinking parts. When nothing was written, `error.partial` is `undefined` and no assistant message is added. See `docs/0.36.3-migration.md`.
+- Anthropic thinking parts now carry `continuity` only once a signature or redacted data has arrived, instead of starting with an empty signature.
+
 ## [0.36.2] - 2026-11-12
 
 - Fixed an agent becoming unusable after a turn was cancelled, timed out, or hit a fatal tool error while a tool was running. The tool call was left without a result, and providers rejected every later request. Each call in the batch now gets a result: its real one if it finished, or an error of type `cancelled` or `fatal`. `agent.messages` and the error's `messages` therefore end in a tool results message. See `docs/0.36.2-migration.md`.
