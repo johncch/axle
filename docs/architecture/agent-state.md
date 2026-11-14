@@ -259,8 +259,10 @@ type: "start", message } }` and no user message committed, as for a
     its own window. The turn runs on its own signal, the operation's
     combined with the timer, so running out aborts that turn alone with
     `{ type: "timeout", limitMs }` as the reason: it ends `cancelled` with
-    its partial work committed and rejects with `AxleAgentAbortError` whose
-    `reason` is that object (`isTimeoutReason` narrows it). The rejection
+    its partial work committed (a response cut short keeps only what was
+    written: [tool-loop.md](./tool-loop.md) invariant 11) and rejects with
+    `AxleAgentAbortError` whose `reason` is that object (`isTimeoutReason`
+    narrows it). The rejection
     goes where the turn's outcome goes. The send's own turn rejects the
     operation, so the continuation is skipped and the handle rejects; an
     inline turn rejects its `ctx.send()`, and the continuation decides,
@@ -493,9 +495,12 @@ nests. The loop that was state across several settle firings becomes a
 `for` with a counter.
 
 The continuation split two jobs the hook had carried together. Saving is
-per turn: every committed turn is a point where turns and messages agree
-and nothing else runs, so `onSettled` fires for inline turns too, and
-`await ctx.send()` resolves only after that turn's callbacks resolve. Work
+per turn: every committed turn is a point where the turn and the messages
+are both settled and nothing else runs (they agree except that a cancelled
+turn can show a part its messages do not hold:
+[tool-loop.md](./tool-loop.md) invariant 11), so `onSettled` fires for
+inline turns too, and `await ctx.send()` resolves only after that turn's
+callbacks resolve. Work
 that belongs to the cycle, a `run:stop`, a sandbox snapshot, moves to the
 end of the continuation, in a `finally`. No per-operation hook was added:
 the end of the operation is the handle settling and the continuation's own

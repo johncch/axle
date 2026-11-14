@@ -56,7 +56,16 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `redactedData`, OpenAI `encrypted`, Gemini `thoughtSignature`, OpenRouter
    the `reasoning_details` entry's identity: `type`, `id`, `format`, `index`,
    `signature`, `data`). The turn part carries a copy for inspection;
-   requests are built from the message.
+   requests are built from the message. An adapter sets `continuity`, on
+   `thinking-start` or on a later `thinking-metadata`, only once the
+   provider has sent the data it holds: no placeholder object and no empty
+   token. A part whose `continuity` is set therefore holds something the
+   provider sent, and nothing downstream inspects its fields to find out.
+   Identity fields a provider sends count as data: an OpenRouter thinking
+   part whose continuity holds only the entry's identity was written to,
+   so a cancel keeps it ([tool-loop.md](./tool-loop.md) invariant 11), and
+   its request builder skips it while it has no `signature` or `data`.
+   (2026-11-14, AXL-113)
 9. **The step reader honors `display`; adapters do not know the request.**
    Under `display: "hidden"` the step reader still writes every thinking
    delta to the message part and emits no thinking content events, so the

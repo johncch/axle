@@ -7,6 +7,7 @@ import { AxleAbortError } from "../../src/errors/AxleAbortError.js";
 import { AxleAgentAbortError } from "../../src/errors/AxleAgentAbortError.js";
 import { AxleInstructVariableError } from "../../src/errors/AxleInstructVariableError.js";
 import { AxleToolFatalError } from "../../src/errors/AxleToolFatalError.js";
+import type { AxleMessage } from "../../src/messages/message.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import { getTextContent } from "../../src/messages/utils.js";
 import type { LogEntry, SpanData } from "../../src/observability/index.js";
@@ -510,6 +511,126 @@ describe("Agent", () => {
       const turn = transcript.turns.at(-1);
       expect(turn?.status).toBe("cancelled");
       expect(turn?.parts.find((part) => part.type === "action")?.status).toBe("cancelled");
+    });
+
+    describe("cancelled while the model is writing a response", () => {
+      function createCutShortProvider(firstResponse: AnyStreamChunk[]) {
+        let callCount = 0;
+        const requests: AxleMessage[][] = [];
+        const provider: AIProvider = {
+          protocol: "chatCompletions",
+          id: "response-cut-short",
+          async *createStreamingRequest(
+            _model,
+            { messages, signal },
+          ): AsyncGenerator<AnyStreamChunk, void> {
+            callCount += 1;
+            requests.push([...messages]);
+            yield { type: "start", id: `c${callCount}`, data: { model: "mock", timestamp: 0 } };
+            if (callCount > 1) {
+              yield { type: "text-start", data: { index: 0 } };
+              yield { type: "text-delta", data: { index: 0, text: "ready" } };
+              yield { type: "text-complete", data: { index: 0 } };
+              yield {
+                type: "complete",
+                data: { finishReason: AxleStopReason.Stop, usage: { in: 1, out: 1 } },
+              };
+              return;
+            }
+            for (const chunk of firstResponse) yield chunk;
+            await new Promise<void>((resolve) => {
+              signal?.addEventListener("abort", () => resolve(), { once: true });
+            });
+          },
+        };
+        return { provider, requests };
+      }
+
+      async function cancelOnFirstPart(
+        agent: Agent,
+        type: "action" | "text",
+      ): Promise<Turn | undefined> {
+        const transcript = new Transcript();
+        let partOpened = false;
+        agent.on((event) => {
+          transcript.apply(event);
+          if (event.type === "part:start" && event.part.type === type) partOpened = true;
+        });
+        const final = agent.send("go").final.catch((error) => error);
+        await vi.waitFor(() => expect(partOpened).toBe(true));
+        agent.cancel();
+        expect(await final).toBeInstanceOf(AxleAgentAbortError);
+        return transcript.turns.at(-1);
+      }
+
+      const toolCallsIn = (messages: AxleMessage[]) =>
+        messages.flatMap((message) =>
+          message.role === "assistant"
+            ? message.content.filter((part) => part.type === "tool-call")
+            : [],
+        );
+
+      test("keeps no assistant message when the call was all it had, and the next send goes out", async () => {
+        const { provider, requests } = createCutShortProvider([
+          { type: "tool-call-start", data: { index: 0, id: "tc1", name: "search" } },
+        ]);
+        const agent = new Agent({ provider, model: "mock" });
+
+        const turn = await cancelOnFirstPart(agent, "action");
+
+        expect(agent.messages.map((message) => message.role)).toEqual(["user"]);
+        expect(turn?.parts.find((part) => part.type === "action")?.status).toBe("cancelled");
+
+        const followUp = await agent.send("again").final;
+
+        expect(followUp.ok).toBe(true);
+        expect(requests[1].map((message) => message.role)).toEqual(["user", "user"]);
+        expect(agent.messages.map((message) => message.role)).toEqual([
+          "user",
+          "user",
+          "assistant",
+        ]);
+      });
+
+      test("keeps the text written before the call, without the call", async () => {
+        const { provider, requests } = createCutShortProvider([
+          { type: "text-start", data: { index: 0 } },
+          { type: "text-delta", data: { index: 0, text: "Let me look." } },
+          { type: "text-complete", data: { index: 0 } },
+          { type: "tool-call-start", data: { index: 1, id: "tc1", name: "search" } },
+        ]);
+        const agent = new Agent({ provider, model: "mock" });
+
+        await cancelOnFirstPart(agent, "action");
+
+        expect(agent.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+        expect(agent.messages[1]).toMatchObject({
+          content: [{ type: "text", text: "Let me look." }],
+          finishReason: AxleStopReason.Cancelled,
+        });
+
+        const followUp = await agent.send("again").final;
+
+        expect(followUp.ok).toBe(true);
+        expect(requests[1].map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+        expect(toolCallsIn(requests[1])).toEqual([]);
+      });
+
+      test("keeps no assistant message for a text part with nothing written, and the next send goes out", async () => {
+        const { provider, requests } = createCutShortProvider([
+          { type: "text-start", data: { index: 0 } },
+        ]);
+        const agent = new Agent({ provider, model: "mock" });
+
+        await cancelOnFirstPart(agent, "text");
+
+        expect(agent.messages.map((message) => message.role)).toEqual(["user"]);
+
+        const followUp = await agent.send("again").final;
+
+        expect(followUp.ok).toBe(true);
+        expect(requests[1].map((message) => message.role)).toEqual(["user", "user"]);
+      });
     });
 
     test("cancel() returns false when nothing is running", async () => {

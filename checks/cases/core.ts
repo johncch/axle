@@ -12,6 +12,7 @@ import {
   parallelize,
   stream,
   type AIProvider,
+  type AgentEvent,
   type AxleAssistantMessage,
   type AxleMessage,
   type AxleModelRequestOptions,
@@ -21,7 +22,7 @@ import {
   type ProviderTool,
 } from "@fifthrevision/axle";
 import * as z from "zod";
-import { fail, getAssistantText } from "./helpers.js";
+import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const answerSchema = z.object({
@@ -1168,6 +1169,161 @@ export const coreCases: CheckCase[] = [
   },
   {
     group: "default",
+    id: "agent-tool-call-cancel-follow-up",
+    description:
+      "Cancelling while the model writes a tool call leaves no call in history, and a follow-up turn is accepted.",
+    async run({ provider, model, requestOptions }) {
+      let executed = false;
+      const weatherTool: ExecutableTool<z.ZodObject<{ city: z.ZodString }>> = {
+        name: "lookup_weather",
+        description: "Look up the current weather for a city.",
+        schema: z.object({ city: z.string() }),
+        async execute() {
+          executed = true;
+          return "sunny";
+        },
+      };
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [weatherTool] });
+
+      let cancelled = false;
+      agent.on((event) => {
+        if (!cancelled && event.type === "part:start" && event.part.type === "action") {
+          cancelled = true;
+          agent.cancel("checks-cancel");
+        }
+      });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const thrown = await agent
+        .send("Use the lookup_weather tool for Paris and report the result.")
+        .final.then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      if (!cancelled) {
+        return fail({ reason: "the model did not call the tool", error: serializeError(thrown) });
+      }
+
+      const logRoles = agent.messages.map((message) => message.role);
+      const toolCallsKept = agent.messages.flatMap((message) =>
+        message.role === "assistant"
+          ? message.content.filter((part) => part.type === "tool-call")
+          : [],
+      ).length;
+      const actionStatuses = transcript.turns
+        .flatMap((turn) => turn.parts)
+        .filter((part) => part.type === "action")
+        .map((part) => part.status);
+      const followUp = await agent.send("Never mind that. Reply with the single word: ready").final;
+
+      const failureReasons: string[] = [];
+      if (!(thrown instanceof AxleAgentAbortError)) {
+        failureReasons.push("the cancelled send did not reject with AxleAgentAbortError");
+      }
+      if (executed) failureReasons.push("the tool ran although the step was cancelled");
+      if (toolCallsKept > 0) {
+        failureReasons.push(`${toolCallsKept} tool call(s) left in history after the cancel`);
+      }
+      if (logRoles.includes("tool")) {
+        failureReasons.push(`unexpected message roles after the cancel: ${logRoles.join(",")}`);
+      }
+      if (actionStatuses.some((status) => status !== "cancelled")) {
+        failureReasons.push(`action parts not cancelled: ${actionStatuses.join(",")}`);
+      }
+      if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
+      return {
+        ok: failureReasons.length === 0,
+        failureReasons,
+        details: {
+          error: serializeError(thrown),
+          logRoles,
+          actionStatuses,
+          followUp: followUp.ok ? followUp.response : followUp.error,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
+    id: "agent-text-cancel-follow-up",
+    description:
+      "Cancelling mid-text keeps the text written so far, and a follow-up turn is accepted.",
+    run({ provider, model, requestOptions }) {
+      return runPartialCancelFollowUp({
+        agent: new Agent({ provider, model, ...requestOptions }),
+        prompt: "Write about 300 words on the history of the bicycle.",
+        cancelOn: (event) => event.type === "text:delta",
+        notReached: "the model produced no text",
+        check(kept, failureReasons) {
+          if (!kept.some((part) => part.type === "text" && part.textLength > 0)) {
+            failureReasons.push("no non-empty text part was kept");
+          }
+        },
+        expectedRoles: "user,assistant,user,assistant",
+      });
+    },
+  },
+  {
+    group: "default",
+    id: "agent-text-start-cancel-follow-up",
+    description:
+      "Cancelling as a text part opens, before any delta, leaves a history a follow-up turn accepts.",
+    run({ provider, model, requestOptions }) {
+      return runPartialCancelFollowUp({
+        agent: new Agent({ provider, model, ...requestOptions }),
+        prompt: "Write about 300 words on the history of the bicycle.",
+        cancelOn: (event) => event.type === "part:start" && event.part.type === "text",
+        notReached: "the model opened no text part",
+      });
+    },
+  },
+  {
+    group: "default",
+    id: "agent-thinking-cancel-follow-up",
+    description: "Cancelling as a thinking part opens leaves a history a follow-up turn accepts.",
+    run({ provider, model, requestOptions }) {
+      return runPartialCancelFollowUp({
+        agent: new Agent({ provider, model, ...requestOptions, reasoning: "on" }),
+        prompt: reasoningPrompt,
+        cancelOn: (event) => event.type === "part:start" && event.part.type === "thinking",
+        notReached: "the model produced no thinking part",
+      });
+    },
+  },
+  {
+    group: "default",
+    id: "agent-text-then-tool-call-cancel-follow-up",
+    description:
+      "Cancelling at a tool call that follows text keeps the text without the call, and a follow-up turn is accepted.",
+    run({ provider, model, requestOptions }) {
+      const weatherTool: ExecutableTool<z.ZodObject<{ city: z.ZodString }>> = {
+        name: "lookup_weather",
+        description: "Look up the current weather for a city.",
+        schema: z.object({ city: z.string() }),
+        async execute() {
+          return "sunny";
+        },
+      };
+      return runPartialCancelFollowUp({
+        agent: new Agent({ provider, model, ...requestOptions, tools: [weatherTool] }),
+        prompt:
+          "First write one sentence saying what you are about to do. Then, in the same reply, call the lookup_weather tool for Paris.",
+        cancelOn: (event) => event.type === "part:start" && event.part.type === "action",
+        notReached: "the model did not call the tool",
+        check(kept, failureReasons) {
+          if (!kept.some((part) => part.type === "text" && part.textLength > 0)) {
+            failureReasons.push(
+              "the model wrote no text before the tool call, so no text was kept",
+            );
+          }
+        },
+        expectedRoles: "user,assistant,user,assistant",
+      });
+    },
+  },
+  {
+    group: "default",
     id: "agent-subagent-abort",
     description: "Cancelling mid-delegation aborts cleanly without leaking the child conversation.",
     async run({ provider, model, requestOptions }) {
@@ -1625,6 +1781,84 @@ function getToolResultDetails(
         }),
       ),
     );
+}
+
+type KeptPart = { type: string; textLength: number; continuity?: boolean };
+
+function describeKeptParts(messages: AxleMessage[]): KeptPart[] {
+  return messages.flatMap((message) =>
+    message.role === "assistant"
+      ? message.content.map((part): KeptPart => {
+          if (part.type === "text") return { type: part.type, textLength: part.text.length };
+          if (part.type === "thinking") {
+            return {
+              type: part.type,
+              textLength: (part.text ?? part.summary ?? "").length,
+              continuity: part.continuity !== undefined,
+            };
+          }
+          return { type: part.type, textLength: 0 };
+        })
+      : [],
+  );
+}
+
+async function runPartialCancelFollowUp({
+  agent,
+  prompt,
+  cancelOn,
+  notReached,
+  check,
+  expectedRoles,
+}: {
+  agent: Agent;
+  prompt: string;
+  cancelOn: (event: AgentEvent) => boolean;
+  notReached: string;
+  check?: (kept: KeptPart[], failureReasons: string[]) => void;
+  expectedRoles?: string;
+}): Promise<CheckCaseResult> {
+  let cancelled = false;
+  agent.on((event) => {
+    if (!cancelled && cancelOn(event)) {
+      cancelled = true;
+      agent.cancel("checks-cancel");
+    }
+  });
+
+  const thrown = await agent.send(prompt).final.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  if (!cancelled) return fail({ reason: notReached, error: serializeError(thrown) });
+
+  const keptRoles = agent.messages.map((message) => message.role);
+  const kept = describeKeptParts(agent.messages);
+  const followUp = await agent
+    .send("Never mind that. Reply with the single word: ready")
+    .final.then(
+      (result) => (result.ok ? { ok: true, response: result.response } : result),
+      (error: unknown) => ({ ok: false, error: serializeError(error) }),
+    );
+  const finalRoles = agent.messages.map((message) => message.role).join(",");
+
+  const failureReasons: string[] = [];
+  if (!(thrown instanceof AxleAgentAbortError)) {
+    failureReasons.push("the cancelled send did not reject with AxleAgentAbortError");
+  }
+  if (kept.some((part) => part.type === "tool-call")) {
+    failureReasons.push("a tool call was left in history after the cancel");
+  }
+  check?.(kept, failureReasons);
+  if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
+  else if (expectedRoles && finalRoles !== expectedRoles) {
+    failureReasons.push(`unexpected message roles after the follow-up: ${finalRoles}`);
+  }
+  return {
+    ok: failureReasons.length === 0,
+    failureReasons,
+    details: { keptRoles, kept, finalRoles, followUp },
+  };
 }
 
 function serializeError(error: unknown): unknown {

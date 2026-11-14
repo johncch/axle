@@ -153,27 +153,23 @@ export function createAnthropicStreamingAdapter(
           });
         } else if (event.content_block.type === "thinking") {
           blockTypes.set(index, "thinking");
+          const signature = event.content_block.signature;
           chunks.push({
             type: "thinking-start",
             data: {
               index,
-              continuity: {
-                provider: "anthropic",
-                signature: event.content_block.signature,
-              },
+              ...(signature ? { continuity: { provider: "anthropic", signature } } : {}),
             },
           });
         } else if (event.content_block.type === "redacted_thinking") {
           blockTypes.set(index, "thinking");
+          const redactedData = event.content_block.data;
           chunks.push({
             type: "thinking-start",
             data: {
               index,
               redacted: true,
-              continuity: {
-                provider: "anthropic",
-                redactedData: event.content_block.data,
-              },
+              ...(redactedData ? { continuity: { provider: "anthropic", redactedData } } : {}),
             },
           });
         } else if (event.content_block.type === "server_tool_use") {
@@ -266,13 +262,15 @@ export function createAnthropicStreamingAdapter(
           });
         } else if (event.delta.type === "signature_delta") {
           if (responseBlock?.type === "thinking") responseBlock.signature = event.delta.signature;
-          chunks.push({
-            type: "thinking-metadata",
-            data: {
-              index,
-              continuity: { provider: "anthropic", signature: event.delta.signature },
-            },
-          });
+          if (event.delta.signature) {
+            chunks.push({
+              type: "thinking-metadata",
+              data: {
+                index,
+                continuity: { provider: "anthropic", signature: event.delta.signature },
+              },
+            });
+          }
         } else if (event.delta.type === "citations_delta") {
           if (responseBlock?.type === "text") {
             responseBlock.citations = [...(responseBlock.citations ?? []), event.delta.citation];

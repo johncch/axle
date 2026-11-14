@@ -1410,6 +1410,156 @@ describe("stream()", () => {
       expect(error.messages![0].role).toBe("assistant");
     });
 
+    describe("what a cancelled partial keeps", () => {
+      async function cancelAtGate(
+        before: AnyStreamChunk[],
+        after: AnyStreamChunk[],
+      ): Promise<{ error: AxleAbortError; events: StreamEvent[] }> {
+        let open!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          open = resolve;
+        });
+        let reached!: () => void;
+        const atGate = new Promise<void>((resolve) => {
+          reached = resolve;
+        });
+        const provider = makeProvider({
+          streamFactory: async function* () {
+            for (const chunk of before) yield chunk;
+            reached();
+            await gate;
+            for (const chunk of after) yield chunk;
+          },
+        });
+        const { events, callback } = collectEvents();
+        const handle = stream({
+          provider,
+          model: "test-model",
+          messages: [],
+          tools: [deferredTool("search")],
+          onToolCall: () => "ok",
+        });
+        handle.on(callback);
+
+        await atGate;
+        handle.cancel();
+        open();
+
+        return { error: await expectAbortError(handle.final), events };
+      }
+
+      test("mid arguments — the call is dropped and nothing is kept", async () => {
+        const { error, events } = await cancelAtGate(
+          [
+            startChunk(),
+            toolCallStartChunk(0, "call_1", "search"),
+            toolCallArgsDeltaChunk(0, "call_1", "search", '{"q":', '{"q":'),
+          ],
+          [
+            toolCallArgsDeltaChunk(0, "call_1", "search", '"x"}', '{"q":"x"}'),
+            toolCallCompleteChunk(0, "call_1", "search", { q: "x" }),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+        );
+
+        expect(error.partial).toBeUndefined();
+        expect(error.messages).toEqual([]);
+        expect(events.some((event) => event.type === "tool:request")).toBe(true);
+        expect(events.some((event) => event.type === "tool:exec-start")).toBe(false);
+      });
+
+      test("after one complete call while a second streams — both are dropped", async () => {
+        const { error } = await cancelAtGate(
+          [
+            startChunk(),
+            toolCallStartChunk(0, "call_1", "search"),
+            toolCallCompleteChunk(0, "call_1", "search", { q: "x" }),
+            toolCallStartChunk(1, "call_2", "search"),
+          ],
+          [
+            toolCallArgsDeltaChunk(1, "call_2", "search", '{"q":', '{"q":'),
+            toolCallCompleteChunk(1, "call_2", "search", { q: "y" }),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+        );
+
+        expect(error.partial).toBeUndefined();
+        expect(error.messages).toEqual([]);
+      });
+
+      test("text followed by a call — the text is kept, the call is dropped", async () => {
+        const { error } = await cancelAtGate(
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "Let me look."),
+            textCompleteChunk(0),
+            toolCallStartChunk(1, "call_1", "search"),
+          ],
+          [
+            toolCallArgsDeltaChunk(1, "call_1", "search", "{}", "{}"),
+            toolCallCompleteChunk(1, "call_1", "search", {}),
+            completeChunk(AxleStopReason.FunctionCall),
+          ],
+        );
+
+        expect(error.partial).toEqual({
+          role: "assistant",
+          id: "msg_1",
+          model: "test-model",
+          content: [{ type: "text", text: "Let me look." }],
+          finishReason: AxleStopReason.Cancelled,
+        });
+        expect(error.messages).toEqual([error.partial]);
+      });
+
+      test("a text part with nothing written — nothing is kept", async () => {
+        const { error } = await cancelAtGate([startChunk(), textStartChunk(0)], []);
+
+        expect(error.partial).toBeUndefined();
+        expect(error.messages).toEqual([]);
+      });
+
+      test("an empty text part after real text — only the written text is kept", async () => {
+        const { error } = await cancelAtGate(
+          [
+            startChunk(),
+            textStartChunk(0),
+            textChunk(0, "Hello"),
+            textCompleteChunk(0),
+            textStartChunk(1),
+          ],
+          [],
+        );
+
+        expect(error.partial?.content).toEqual([{ type: "text", text: "Hello" }]);
+        expect(error.messages).toEqual([error.partial]);
+      });
+
+      test("a thinking part with nothing in it — nothing is kept", async () => {
+        const { error } = await cancelAtGate([startChunk(), thinkingStartChunk(0)], []);
+
+        expect(error.partial).toBeUndefined();
+        expect(error.messages).toEqual([]);
+      });
+
+      test("a thinking part with continuity data and no text is kept, the empty text after it is not", async () => {
+        const continuity = { provider: "anthropic" as const, signature: "sig" };
+        const { error } = await cancelAtGate(
+          [
+            startChunk(),
+            { type: "thinking-start", data: { index: 0, continuity } },
+            thinkingCompleteChunk(0),
+            textStartChunk(1),
+          ],
+          [],
+        );
+
+        expect(error.partial?.content).toEqual([{ type: "thinking", continuity }]);
+        expect(error.messages).toEqual([error.partial]);
+      });
+    });
+
     test("cancel between turns — completed messages, no partial", async () => {
       let cancelHandle!: () => void;
       let turn2Gate!: () => void;
