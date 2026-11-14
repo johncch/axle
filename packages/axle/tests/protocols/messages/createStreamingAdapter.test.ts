@@ -226,7 +226,7 @@ describe("createAnthropicStreamingAdapter", () => {
   });
 
   describe("thinking content", () => {
-    test("should handle thinking content_block_start", () => {
+    test("a thinking content_block_start with an empty signature carries no continuity", () => {
       const adapter = createAnthropicStreamingAdapter();
 
       const event = {
@@ -235,6 +235,7 @@ describe("createAnthropicStreamingAdapter", () => {
         content_block: {
           type: "thinking",
           thinking: "",
+          signature: "",
         } as any,
       };
 
@@ -245,11 +246,47 @@ describe("createAnthropicStreamingAdapter", () => {
       if (chunks[0].type === "thinking-start") {
         expect(chunks[0].data.index).toBe(0);
         expect(chunks[0].data).not.toHaveProperty("redacted");
-        expect(chunks[0].data.continuity).toEqual({
-          provider: "anthropic",
-          signature: undefined,
-        });
+        expect(chunks[0].data).not.toHaveProperty("continuity");
       }
+    });
+
+    test("the signature that arrives after an empty start is the block's continuity", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "", signature: "" } as any,
+      });
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "signature_delta", signature: "sig_late" },
+      } as any);
+
+      expect(chunks).toEqual([
+        {
+          type: "thinking-metadata",
+          data: { index: 0, continuity: { provider: "anthropic", signature: "sig_late" } },
+        },
+      ]);
+    });
+
+    test("an empty signature_delta yields no chunk", () => {
+      const adapter = createAnthropicStreamingAdapter();
+      adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "", signature: "" } as any,
+      });
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "signature_delta", signature: "" },
+      } as any);
+
+      expect(chunks).toEqual([]);
     });
 
     test("a hidden thinking block (empty text with a signature) is not redacted", () => {
@@ -277,7 +314,7 @@ describe("createAnthropicStreamingAdapter", () => {
         index: 0,
         content_block: {
           type: "redacted_thinking",
-          data: "",
+          data: "opaque",
         } as any,
       };
 
@@ -290,9 +327,21 @@ describe("createAnthropicStreamingAdapter", () => {
         expect(chunks[0].data.redacted).toBe(true);
         expect(chunks[0].data.continuity).toEqual({
           provider: "anthropic",
-          redactedData: "",
+          redactedData: "opaque",
         });
       }
+    });
+
+    test("a redacted_thinking content_block_start with no data carries no continuity", () => {
+      const adapter = createAnthropicStreamingAdapter();
+
+      const chunks = adapter.handleEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "redacted_thinking", data: "" } as any,
+      });
+
+      expect(chunks).toEqual([{ type: "thinking-start", data: { index: 0, redacted: true } }]);
     });
 
     test("should handle thinking_delta", () => {

@@ -57,6 +57,15 @@ type StepFailure =
   | { kind: "api"; type: string; message: string; status?: number; raw?: unknown }
   | { kind: "incomplete"; type: string; message: string; raw?: unknown };
 
+function wasWritten(part: AssistantContentPart): boolean {
+  if (part.type === "tool-call") return false;
+  if (part.type === "text") return part.text !== "";
+  if (part.type === "thinking") {
+    return Boolean(part.text || part.summary || part.redacted || part.continuity);
+  }
+  return true;
+}
+
 /**
  * Consume one model step from a provider chunk stream, translating chunks
  * into StreamEvents and accumulating the step's content parts.
@@ -438,12 +447,13 @@ export async function readStep(
 
   if (ctx.signal.aborted) {
     closePart();
-    const partial: AxleAssistantMessage | undefined = parts.length
+    const kept = parts.filter(wasWritten);
+    const partial: AxleAssistantMessage | undefined = kept.length
       ? {
           role: "assistant",
           id: stepId,
           model: stepModel,
-          content: parts,
+          content: kept,
           finishReason: AxleStopReason.Cancelled,
         }
       : undefined;
