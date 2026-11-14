@@ -100,6 +100,30 @@ side is in [provider-tools.md](./provider-tools.md).
     name and the validated input) until it settles, never `running`, and
     settled by invariant 9 like every other action part. (2026-11-05,
     AXL-103; `toolCall(id)` and the wait rule 2026-11-05, AXL-44)
+11. **A cancelled model call keeps only what was written.** When the run's
+    abort lands while a response is still streaming, the step never ended
+    and its batch never starts. The partial assistant message that is kept
+    (`finishReason: cancelled`, on the error's `partial` and `messages` and
+    in the Agent's history) holds the parts in which the model had written
+    something, and nothing else. A `tool-call` part is never kept, a call
+    whose arguments had finished streaming included. A `text` part is kept
+    only if its text is not empty. A `thinking` part is kept only if it
+    holds text, a summary, redacted content, or `continuity`; a thinking
+    part with continuity and no text is the normal shape when display is
+    omitted and stays, and continuity is never a placeholder
+    ([thinking.md](./thinking.md) invariant 8). Identity fields a provider
+    sends count as written: an OpenRouter thinking part holding only its
+    `reasoning_details` identity is kept, and its request builder skips it
+    while it has no `signature` or `data`. Every other part type is kept
+    as it is. A partial left with no parts is not kept at all, as when
+    the cancel lands before any output. The rule applies to the cancelled
+    partial alone; a
+    completed step keeps every part it read. With invariant 4 the tool
+    call half is structural: a kept assistant message holds a tool call
+    only when its step completed, and then the batch answers every call.
+    The turn's part for anything dropped stays (an action part settles
+    `action:cancelled` by invariant 9): the turn records what was shown,
+    the conversation what can be sent again. (2026-11-14, AXL-113)
 
 ## What the model sees
 
@@ -168,6 +192,36 @@ cut short, and a call that finished before the abort keeps its real result,
 which matters when it had a side effect. The loop still makes no further
 request: the rejection is unchanged, and the fatal result is read by the
 model only if the caller sends again.
+
+## Design rationale (2026-11-14): a cancelled response keeps only what was written
+
+The 2026-11-12 change covered a cancel during the batch. A cancel one
+window earlier, while the model was still writing the response, left the
+same history by another path: the step reader adds a `tool-call` part when
+the call starts streaming, and on an abort it returned every part it had as
+the partial message. No batch runs for a step that never ended, so nothing
+answered the call. Observed on 2026-11-13 (AXL-113, `claude-haiku-5-5`):
+after `agent.cancel()` on the first action `part:start`, the history was
+`user`, `assistant` with one tool call, and every later send failed with
+the same 400. A turn that runs out of `turnTimeoutMs` at that moment did
+the same.
+
+The reader now leaves tool calls out of the partial it returns. The call
+was never requested in full: the step has no finish reason, its arguments
+may be half-written or empty, and nothing ran. The drop is in the reader
+because the reader builds the partial, so `stream()`'s error and the
+Agent's history get the same message without either filtering it.
+
+A part that was opened and never written to goes the same way. The reader
+adds a `text` part at `text-start` with an empty string and a `thinking`
+part at `thinking-start`, so a cancel between a part's start and its first
+delta kept a part with nothing in it. Observed on 2026-11-14
+(`claude-haiku-5-5`): after `agent.cancel()` on the `part:start` of a text
+part, the kept assistant message ended in a text part of `""` and the next
+send failed with a 400, "text content blocks must be non-empty". The rule
+is one rule for both: if nothing of substance was written, it might as
+well not have happened. Text and thinking the model did write are kept as
+before.
 
 ## Design rationale (2026-11-05): deferred calls through `onToolCall`
 
@@ -239,6 +293,12 @@ by awaiting a promise.
   Rejected because the stored history would stay invalid and four adapters
   would each need the rule; writing the message once, where the batch
   ends, fixes what is stored.
+- **Answering a cancelled response's calls as cancelled** (2026-11-14,
+  AXL-113): keep the partial's tool calls and append a tool results
+  message, as invariant 4 does for a batch. Rejected because the request
+  did not complete: the arguments may be incomplete or empty, a provider
+  may reject a call whose input does not match the tool's schema, and a
+  result would record a call the model never finished making.
 - **Aborting siblings with a synthetic reason** (2026-10-29): a marker
   object in place of the failing call's error. Rejected because the
   sibling's abort would no longer say why it was cut short; the classifier
