@@ -1,6 +1,6 @@
 # Reasoning controls
 
-**Status**: current · **Last design revision**: 2026-09-12 (0.32.0, single transport)
+**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, six effort levels, no portable `on`)
 
 This document is normative for Axle's portable reasoning control: what the
 `reasoning` request option means, how each provider adapter translates it,
@@ -12,17 +12,23 @@ can be re-checked when they change.
 ## Invariants
 
 1. **One portable setting.** `reasoning?: ReasoningSetting` where
-   `ReasoningSetting = "default" | "off" | "on" | { effort: "low" | "medium" | "high"; display?: "visible" | "hidden" }`.
+   `ReasoningSetting = "default" | "off" | { effort: "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; display?: "visible" | "hidden" }`.
    It is the same option on `Agent`, `generate()`, `stream()`,
-   `PromptCompactor`, and the CLI's `request` block. Booleans are not
-   accepted.
+   `PromptCompactor`, and the CLI's `request` block. Booleans and `"on"`
+   are not accepted.
 2. **`"default"` and omission send nothing.** No reasoning field reaches the
    wire on any route; the model runs at its provider's own default, which may
    be thinking-on (Sonnet 5, Opus 5, Fable, Gemini 2.5 Pro) or thinking-off
    (Opus 4.6–4.8, Haiku 4.5). Axle does not resolve or report which.
-3. **`"on"` is `{ effort: "medium" }`.** It enables reasoning; it does not
-   promise a visible thinking block or thinking on every adaptive-model
-   response.
+3. **Effort names are the providers' own and reach the wire as written.**
+   The six levels (`REASONING_EFFORTS`, lowest first) are the union of the
+   names Anthropic, OpenAI and Gemini use. On a named-effort route the
+   level is sent unchanged; Axle never maps one level to another. No model
+   takes all six, and there is no portable "on": no level exists on every
+   model. A host with an on/off control chooses the level it stands for
+   (see [Choosing a level](#choosing-a-level)). An enable does not promise
+   a visible thinking block or thinking on every adaptive-model response.
+   (2026-11-17, AXL-106)
 4. **`"off"` sends the provider's explicit disable shape.** Never `minimal`,
    never `low`, never omission. Models that cannot disable thinking reject
    the request and the provider error surfaces unchanged.
@@ -35,18 +41,23 @@ can be re-checked when they change.
    Everything else, including aliases such as `gemini-flash-lite-latest` and
    IDs Axle has never seen, takes the modern named-effort syntax. No regex,
    no family/version parsing.
-7. **Legacy presets are fixed.** Low 2,048 · medium 8,192 · high 16,384
-   tokens (`LEGACY_REASONING_BUDGETS`). They are Axle's convention, not
-   validated equivalents of any provider's named levels. They are never
-   derived from `maxOutputTokens`, never clamped, and never cause a
-   caller-supplied output limit to change.
+7. **Legacy presets are fixed, one per level.** Minimal 1,024 · low 2,048 ·
+   medium 8,192 · high 16,384 · xhigh 20,480 · max 24,576 tokens
+   (`LEGACY_REASONING_BUDGETS`), so every level works on a budget-only
+   model. They are Axle's convention, not validated equivalents of any
+   provider's named levels. The range is what every model in the legacy
+   sets accepts: 1,024 is Anthropic's minimum and 24,576 is the ceiling of
+   Gemini 2.5 Flash and Flash Lite. They are never derived from
+   `maxOutputTokens`, never clamped, and never cause a caller-supplied
+   output limit to change.
 8. **No capability validation.** Axle sends the requested native fields and
    lets the provider reject unsupported combinations through the existing
    error path. There is no retry at a lower effort and no substitution.
+   The catalog's record of a model's levels is for hosts and is never
+   read on the request path.
 9. **`providerOptions` wins.** Raw provider fields are spread after the
-   portable mapping and override it field by field. Exact budgets,
-   `xhigh`/`max`, OpenAI summary lengths, and Anthropic's `updates` display
-   stay there. A nested object is one field: overriding `thinking` on
+   portable mapping and override it field by field. Exact budgets, OpenAI
+   summary lengths, and Anthropic's `updates` display stay there. A nested object is one field: overriding `thinking` on
    Anthropic replaces the whole object, `type` included.
 10. **Enabling reasoning requests disclosure wherever a field exists.**
     `display` defaults to `"visible"` and rides along with every enable:
@@ -74,6 +85,12 @@ can be re-checked when they change.
 Researched 2026-09-07 against the providers' current documentation and the
 `checks/` harness; the Opus 5.5 and Sonnet 5.5 rows were added 2026-10-01.
 Re-verify this section when a model generation ships.
+
+Which levels a model takes varies more than the tables below suggest. In
+models.dev's per-provider listing on 2026-11-17, `medium` was absent from
+1,521 of 5,470 effort lists (28%): `low, high, max` (605 entries) and
+`none, high` (243) are common shapes, and `gpt-5-pro` takes `high` alone.
+`minimal` appeared in 754 lists, `xhigh` in 2,250, and `max` in 2,840.
 
 ### Anthropic Messages API
 
@@ -125,6 +142,9 @@ Constraints that shape the translation:
 | Gemini 2.5 Flash, Flash Lite     | `thinkingBudget`                | `thinkingBudget: 0`                                     | budget                     | Flash Lite off by default            |
 | Gemini 2.0 and older             | none                            | n/a                                                     | n/a                        | any `thinkingConfig` returns 400     |
 
+The 2.5 budget ranges are 128–32,768 for Pro, 0–24,576 for Flash, and
+512–24,576 for Flash Lite (models.dev, 2026-11-17).
+
 Streaming responses from Gemini 3.5 Flash Lite carried no thought parts at
 any effort in the harness (2026-09-07) even though `reasoningOut` was
 non-zero; 3.1 Pro and 2.5 Flash Lite streamed a thinking part with a
@@ -158,18 +178,28 @@ requires `store: false` and `include: ["reasoning.encrypted_content"]` via
 ## Axle translation
 
 `resolveReasoning` collapses the setting to
-`"default" | "off" | { effort, display }` (with `"on"` →
-`{ effort: "medium", display: "visible" }`); each adapter maps that request:
+`"default" | "off" | { effort, display }`, with `display` defaulting to
+`"visible"`; each adapter maps that request. `<level>` is the effort as
+written and `<preset>` its row in the second table:
 
-| Route                                                | Off                                   | Low                                                           | On / Medium       | High            |
-| ---------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------- | ----------------- | --------------- |
-| Anthropic adaptive (every ID not in the legacy set)  | `thinking: {type: disabled}`          | `thinking: {type: adaptive}` + `output_config: {effort: low}` | adaptive + medium | adaptive + high |
-| Anthropic legacy budget                              | `thinking: {type: disabled}`          | `thinking: {type: enabled, budget_tokens: 2048}`              | enabled + 8192    | enabled + 16384 |
-| Gemini named levels (every ID not in the legacy set) | `thinkingConfig: {thinkingBudget: 0}` | `{thinkingLevel: low, includeThoughts: true}`                 | medium            | high            |
-| Gemini legacy budget                                 | `{thinkingBudget: 0}`                 | `{thinkingBudget: 2048, includeThoughts: true}`               | 8192              | 16384           |
-| OpenAI Responses                                     | `reasoning: {effort: none}`           | `{effort: low}`                                               | medium            | high            |
-| Chat Completions, OpenRouter                         | `reasoning_effort: none`              | low                                                           | medium            | high            |
-| Together AI                                          | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: low`           | medium            | high            |
+| Route                                                | Off                                   | `{ effort }`                                                      |
+| ---------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| Anthropic adaptive (every ID not in the legacy set)  | `thinking: {type: disabled}`          | `thinking: {type: adaptive}` + `output_config: {effort: <level>}` |
+| Anthropic legacy budget                              | `thinking: {type: disabled}`          | `thinking: {type: enabled, budget_tokens: <preset>}`              |
+| Gemini named levels (every ID not in the legacy set) | `thinkingConfig: {thinkingBudget: 0}` | `thinkingConfig: {thinkingLevel: <level>}`                        |
+| Gemini legacy budget                                 | `thinkingConfig: {thinkingBudget: 0}` | `thinkingConfig: {thinkingBudget: <preset>}`                      |
+| OpenAI Responses                                     | `reasoning: {effort: none}`           | `reasoning: {effort: <level>}`                                    |
+| Chat Completions, OpenRouter                         | `reasoning_effort: none`              | `reasoning_effort: <level>`                                       |
+| Together AI                                          | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: <level>`           |
+
+| Level   | Legacy budget preset |
+| ------- | -------------------- |
+| minimal | 1,024                |
+| low     | 2,048                |
+| medium  | 8,192                |
+| high    | 16,384               |
+| xhigh   | 20,480               |
+| max     | 24,576               |
 
 Default sends no fields on every route. Every enabled cell above also
 carries the route's display field:
@@ -202,6 +232,39 @@ Retired models are not routed: a retired ID falls to the modern route where
 the provider rejects it as unknown. Adding a model to a set is a same-diff
 change to this document.
 
+## Choosing a level
+
+Axle cannot say which levels a model takes without a registry it declines
+to keep (invariant 8), so the choice is the host's, and the model catalog
+carries what models.dev knows to help it make one.
+
+A provider entry in `CatalogData` holds `reasoningOptions`, models.dev's
+`reasoning_options` for that provider's model: `{ type: "effort", values }`
+in the provider's own words (`none` included where it has one),
+`{ type: "budget", min?, max? }`, and `{ type: "toggle" }`. models.dev
+records this per provider and not on its canonical layer, so `lookup()`
+returns it only for a provider match.
+
+`catalog.reasoningEfforts(model, { provider })` reads that record as an
+answer to "which `{ effort }` values can I offer":
+
+| The provider's record                          | `efforts`                                |
+| ---------------------------------------------- | ---------------------------------------- |
+| An `effort` list                               | Its values that Axle names, lowest first |
+| A `budget` and no `effort` list                | All six, since every level has a preset  |
+| A `toggle` alone, or an empty list             | None                                     |
+| The model does not reason                      | None                                     |
+| No record, no provider match, or unknown model | The method returns `undefined`           |
+
+`suggested` is the listed level closest to medium, the higher one on a tie,
+and absent when `efforts` is empty. It is what a host with an on/off
+control sends for "on": `{ effort: found?.suggested ?? "medium" }`.
+
+The answer is advisory. It is models.dev's data, which can be stale or
+wrong, and a level it lists can still be rejected. It does not say whether
+a model can be turned off: Opus 4.7 accepts a disable and has no `none` in
+its list.
+
 ## Anthropic output ceiling
 
 Anthropic is the only adapter that must send an output cap, so it is the only
@@ -229,6 +292,9 @@ same default and any preset fits.
 
 ## Harness coverage
 
+`reasoning-efforts` sends low, medium and high. Minimal, xhigh and max are
+covered by unit tests only, since no default target takes all six.
+
 `checks/cases/reasoning.ts` runs `reasoning-off`, `reasoning-efforts`,
 `reasoning-stream-effort`, and `reasoning-tool-continuity` on every default
 target (`reasoning-efforts` also requires disclosed thinking text from at
@@ -237,6 +303,37 @@ Flash Lite), `reasoning-route-modern` (Sonnet 4.6, `gemini-flash-lite-latest`),
 and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
 
 ## Rejected alternatives
+
+- **A portable `"on"` fixed at medium** (2026-11-17, AXL-106): the design
+  from 2026-09-07 until 0.37.0. `medium` is missing from 28% of the effort
+  lists models.dev records, so `"on"` was a setting that failed on models
+  the caller had not been told about. Any other fixed level has the same
+  hole.
+- **`"on"` as an enable at the provider's own effort** (2026-11-17):
+  Anthropic adaptive, Gemini and Together AI can express it. OpenAI
+  Responses and Chat Completions have no enable without an effort, and the
+  budget routes need a number, so on those routes `"on"` would send nothing
+  or an invented value.
+- **Resolving `"on"` from the catalog on the request path** (2026-11-17):
+  the request would depend on whether a catalog was loaded and on
+  third-party data, and the level sent would not appear at the call site.
+  The catalog's `suggested` gives the host the same pick where it can see
+  it.
+- **Keeping `"on"` as a deprecated alias for medium** (2026-11-17): the
+  same reasoning that rejected boolean aliases below. A type error is
+  clearer than a setting whose failure depends on the model.
+- **Rejecting levels without a preset on budget-only models** (2026-11-17):
+  one setting would stop working across the models a host can select. The
+  legacy sets are six frozen models, so a full table is nothing to
+  maintain.
+- **The middle of the model's list as `suggested`** (2026-11-17): one line,
+  but it drifts upward as providers add levels at the top. It picks high
+  for `low, medium, high, xhigh, max`, the shape of every current Claude
+  model, and max for `high, max`. Closest to medium stays a moderate
+  choice.
+- **Reasoning options on the canonical catalog model** (2026-11-17):
+  models.dev records them per provider only, and the same model takes
+  different levels through different providers.
 
 - **A fixed `summarized` with no portable knob** (2026-09-10): the only
   opt-out would be `providerOptions`, which replaces the whole `thinking`
@@ -260,7 +357,8 @@ and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
   under `{ effort }` makes the rule structural on every route instead of
   documented for one.
 
-- **`on` = high effort** (2026-09-07): the previous boolean mapped `true` to
+- **`on` = high effort** (2026-09-07; `on` itself was removed 2026-11-17):
+  the previous boolean mapped `true` to
   the highest named level. No portable-API precedent supports it; OpenRouter
   documents `enabled: true` as medium, and Anthropic's own default is high
   only because high equals omission. `on` is medium so that "turn it on" is a

@@ -81,23 +81,26 @@ properties:
     type: object
     properties:
       reasoning:
-        description: Model thinking. default leaves the provider's own default, on is
-          medium effort, off sends the provider's explicit disable.
+        description: Model thinking. default leaves the provider's own default, off
+          sends the provider's explicit disable, { effort } names a level.
         anyOf:
           - type: string
             enum:
               - default
               - off
-              - on
           - type: object
             properties:
               effort:
                 type: string
                 enum:
+                  - minimal
                   - low
                   - medium
                   - high
-                description: How much the model thinks.
+                  - xhigh
+                  - max
+                description: How much the model thinks. A level the model does not have is
+                  rejected by its provider.
               display:
                 description: hidden asks the provider not to return its thinking. Defaults to
                   visible.

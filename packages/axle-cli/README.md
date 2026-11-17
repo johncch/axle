@@ -193,7 +193,8 @@ sets provider-portable request options:
 system: You are a terse analyst.
 
 request:
-  reasoning: on
+  reasoning:
+    effort: medium
   maxOutputTokens: 16000
 ```
 
@@ -211,17 +212,20 @@ where asking is required (Anthropic, OpenRouter); `cache: false` omits the
 request, for a recipe that never repeats a prompt and would rather not pay
 the cache write premium. OpenAI, Gemini and Together AI cache on their own either way.
 
-`reasoning` takes `default`, `off`, `on`, or
-`{ effort: low | medium | high, display?: visible | hidden }`. `display`
-defaults to `visible`; `hidden` asks the provider to keep its thinking off
-the wire.
+`reasoning` takes `default`, `off`, or
+`{ effort: minimal | low | medium | high | xhigh | max, display?: visible | hidden }`.
+`display` defaults to `visible`; `hidden` asks the provider to keep its
+thinking off the wire.
 Leave it unset (or `default`) and the model runs at its provider's own
 default, which is always safe, including for models that cannot disable
-thinking. `on` is medium effort; `off` sends the provider's explicit disable
-and is rejected by models that cannot turn thinking off. On models that only
-take a thinking budget (Claude Haiku, Opus, and Sonnet 4.5; Gemini 2.5), a
-`maxOutputTokens` you set must exceed the budget: 8,192 for `on`, 16,384 for
-`high`. Leave it unset and Axle's default already does.
+thinking. `off` sends the provider's explicit disable and is rejected by
+models that cannot turn thinking off. An effort is sent to the provider as
+written. Models differ in which levels they take, and many have no
+`medium`; the provider rejects a level the model lacks, so pick another.
+On models that only take a thinking budget (Claude Haiku, Opus, and Sonnet
+4.5; Gemini 2.5), every level works and a `maxOutputTokens` you set must
+exceed the budget: 8,192 for `medium`, 16,384 for `high`, 24,576 for `max`.
+Leave it unset and Axle's default already does.
 
 ```yaml
 request:

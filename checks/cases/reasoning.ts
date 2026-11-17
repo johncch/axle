@@ -162,7 +162,7 @@ export const reasoningCases: CheckCase[] = [
     id: "reasoning-tool-continuity",
     description:
       "A reasoning-enabled tool loop passes thinking continuity back through the tool turn and finishes.",
-    run: (context) => runToolContinuity(context, "on"),
+    run: (context) => runToolContinuity(context, { effort: "medium" }),
   },
   {
     group: "extended",

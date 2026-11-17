@@ -73,7 +73,7 @@ describe("formatExplain", () => {
   it("shows the literal values of a union alongside its object form", () => {
     const lines = formatExplain("recipe.request.reasoning", WIDE);
 
-    expect(lines[0]).toBe("recipe.request.reasoning  default | off | on | object");
+    expect(lines[0]).toBe("recipe.request.reasoning  default | off | object");
     expect(keysOf(fieldsOf(lines))).toEqual(["effort", "display"]);
   });
 

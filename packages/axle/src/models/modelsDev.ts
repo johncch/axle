@@ -1,5 +1,11 @@
 import { z } from "zod";
-import type { CatalogData, CatalogModel, ModelCost, ProviderEntry } from "./catalog.js";
+import type {
+  CatalogData,
+  CatalogModel,
+  CatalogReasoningOption,
+  ModelCost,
+  ProviderEntry,
+} from "./catalog.js";
 
 const MODELS_DEV_URL = "https://models.dev";
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -39,6 +45,17 @@ const ModelsDevEntrySchema = z.looseObject({
       .optional(),
   }).optional(),
   canonical_model_id: z.string().optional(),
+  reasoning_options: z
+    .array(
+      z.looseObject({
+        type: z.string(),
+        values: z.array(z.string()).optional(),
+        min: z.number().int().nonnegative().optional(),
+        max: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional()
+    .catch(undefined),
 });
 
 type ModelsDevEntry = z.infer<typeof ModelsDevEntrySchema>;
@@ -113,7 +130,7 @@ export async function fetchModelsDev(options: FetchModelsDevOptions = {}): Promi
         : parseProviders(apiLayer, coverage, models);
 
   return {
-    version: 4,
+    version: 5,
     fetchedAt: new Date().toISOString(),
     etags: {
       models: modelsLayer.unchanged ? previous?.etags.models : modelsLayer.etag,
@@ -253,6 +270,21 @@ function toProviderEntry(
         input: knownLimit(entry.limit.input),
       }
     : undefined;
-  if (canonical in models) return { canonical, limit, cost };
-  return { model: toCatalogModel(entry), limit, cost };
+  const reasoningOptions = toReasoningOptions(entry.reasoning_options);
+  if (canonical in models) return { canonical, limit, cost, reasoningOptions };
+  return { model: toCatalogModel(entry), limit, cost, reasoningOptions };
+}
+
+function toReasoningOptions(
+  options: ModelsDevEntry["reasoning_options"],
+): CatalogReasoningOption[] | undefined {
+  return options?.flatMap((option): CatalogReasoningOption[] => {
+    if (option.type === "effort" && option.values) {
+      return [{ type: "effort", values: option.values }];
+    }
+    if (option.type === "budget_tokens") {
+      return [{ type: "budget", min: option.min, max: option.max }];
+    }
+    return option.type === "toggle" ? [{ type: "toggle" }] : [];
+  });
 }

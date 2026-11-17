@@ -773,7 +773,8 @@ persist the catalog to a file. The jobs are now split:
   and no send can produce. `CatalogFetchError` is a plain `Error` subclass
   matched with `instanceof`; the two-copies hazard `isAxleError` exists for
   does not reach a fetch caught one call up.
-- **`CatalogData` is public API.** Plain JSON, versioned (4), with
+- **`CatalogData` is public API.** Plain JSON, versioned (5; a provider
+  entry's `reasoningOptions` arrived with 5, see reasoning.md), with
   `coverage` recording the provider filter it was fetched with. Consumers
   save it, load it, and may write or amend it: a price override, a
   self-hosted model, an offline copy, a test literal. A shape change bumps

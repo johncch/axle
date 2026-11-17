@@ -1,3 +1,4 @@
+import { REASONING_EFFORTS } from "@fifthrevision/axle";
 import { z } from "zod";
 import {
   CLOCK_TIME_PATTERN,
@@ -351,21 +352,35 @@ export type ScheduleConfig = z.infer<typeof ScheduleConfigSchema>;
  * Job Config Schema
  * ========================================================================== */
 
+const reasoningError = {
+  error: (issue: z.core.$ZodRawIssue) =>
+    issue.input === "on"
+      ? "on was removed, since no effort level exists on every model. Name one the model takes, e.g. { effort: medium }."
+      : undefined,
+};
+
 export const RequestOptionsSchema = z.strictObject({
   reasoning: z
     .union([
-      z.enum(["default", "off", "on"]),
-      z.strictObject({
-        effort: z.enum(["low", "medium", "high"]).describe("How much the model thinks."),
-        display: z
-          .enum(["visible", "hidden"])
-          .optional()
-          .describe("hidden asks the provider not to return its thinking. Defaults to visible."),
-      }),
+      z.enum(["default", "off"], reasoningError),
+      z.strictObject(
+        {
+          effort: z
+            .enum(REASONING_EFFORTS)
+            .describe(
+              "How much the model thinks. A level the model does not have is rejected by its provider.",
+            ),
+          display: z
+            .enum(["visible", "hidden"])
+            .optional()
+            .describe("hidden asks the provider not to return its thinking. Defaults to visible."),
+        },
+        reasoningError,
+      ),
     ])
     .optional()
     .describe(
-      "Model thinking. default leaves the provider's own default, on is medium effort, off sends the provider's explicit disable.",
+      "Model thinking. default leaves the provider's own default, off sends the provider's explicit disable, { effort } names a level.",
     ),
   maxOutputTokens: z
     .number()

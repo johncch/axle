@@ -78,8 +78,9 @@ Override the model for one provider:
 pnpm exec tsx checks/run.ts --provider openai --model gpt-5.4
 ```
 
-Apply a portable reasoning setting (`default`, `off`, `on`, `low`, `medium`,
-`high`) to every case that forwards `requestOptions`:
+Apply a portable reasoning setting (`default`, `off`, or an effort: `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`) to every case that forwards
+`requestOptions`:
 
 ```bash
 pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-4-8 --reasoning high

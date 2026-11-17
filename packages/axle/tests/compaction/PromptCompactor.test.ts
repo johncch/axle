@@ -118,7 +118,7 @@ describe("PromptCompactor", () => {
   test("forwards reasoning and provider options without an output cap", async () => {
     const { provider, requests } = createProvider({ text: "Reasoned summary." });
     const compactor = createCompactor(provider, {
-      reasoning: "on",
+      reasoning: { effort: "high" },
       providerOptions: { reasoning: { effort: "medium" } },
     });
 
@@ -127,7 +127,7 @@ describe("PromptCompactor", () => {
       { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
     );
 
-    expect(requests[0].reasoning).toBe("on");
+    expect(requests[0].reasoning).toEqual({ effort: "high" });
     expect(requests[0].maxOutputTokens).toBeUndefined();
     expect(requests[0].providerOptions).toEqual({ reasoning: { effort: "medium" } });
   });

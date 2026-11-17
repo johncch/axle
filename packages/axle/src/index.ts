@@ -113,6 +113,7 @@ export type {
   ToolBatchCompleteCallback,
   ToolBatchDecision,
 } from "./execution/stream.js";
+export { REASONING_EFFORTS } from "./protocols/reasoning.js";
 export type { ReasoningEffort, ReasoningSetting } from "./protocols/reasoning.js";
 export { AxleStopReason } from "./protocols/types.js";
 export type {
@@ -302,8 +303,10 @@ export type {
   CatalogData,
   CatalogMatch,
   CatalogModel,
+  CatalogReasoningOption,
   ContextWindowMatch,
   ModelCost,
+  ReasoningEffortsMatch,
 } from "./models/catalog.js";
 export { CatalogFetchError, fetchModelsDev } from "./models/modelsDev.js";
 export type { FetchModelsDevOptions } from "./models/modelsDev.js";

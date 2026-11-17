@@ -98,7 +98,7 @@ A recipe is a YAML file run with \`axle -j path/to/job.yaml\`.
     providerTools: [web_search]         # provider-hosted tools
     files: [./data/report.txt]          # attached to the task
     request:
-      reasoning: on                     # default | off | on | { effort, display }
+      reasoning: { effort: medium }     # default | off | { effort, display }
       maxOutputTokens: 16000
       providerOptions:                  # passed through under the provider's names
         temperature: 0.2
@@ -125,11 +125,12 @@ declares recurrence (topic: schedule). An \`mcps:\` list connects MCP servers
 (topic: mcp).
 
 \`reasoning\`: leave unset or \`default\` for the provider's own default,
-which is always safe. \`on\` is medium effort. \`off\` is rejected by models
-that cannot disable thinking. \`{ effort: low|medium|high, display:
-visible|hidden }\` for fine control. On budget-based models, a
-\`maxOutputTokens\` you set must exceed the thinking budget (8,192 for on,
-16,384 for high).`,
+which is always safe. \`off\` is rejected by models that cannot disable
+thinking. \`{ effort: minimal|low|medium|high|xhigh|max, display:
+visible|hidden }\` names a level; models differ in which levels they take,
+and the provider rejects one the model lacks. On budget-based models, a
+\`maxOutputTokens\` you set must exceed the thinking budget (8,192 for
+medium, 24,576 for max).`,
 
   batch: `# Batch
 

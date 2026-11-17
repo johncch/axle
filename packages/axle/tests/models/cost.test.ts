@@ -14,7 +14,7 @@ const sonnet = {
 };
 
 const data: CatalogData = {
-  version: 4,
+  version: 5,
   fetchedAt: "2026-10-30T00:00:00.000Z",
   etags: {},
   coverage: "all",

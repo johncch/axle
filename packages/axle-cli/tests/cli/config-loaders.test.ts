@@ -141,6 +141,25 @@ describe("config loaders", () => {
     await expect(getJobConfig(path, {})).rejects.toThrow(/provider: Unrecognized key: "apiKey"/);
   });
 
+  it("accepts every reasoning effort and rejects the removed on", async () => {
+    const recipe = (reasoning: string) =>
+      writeFile(
+        join(TEST_DIR, "reasoning.yml"),
+        `request:\n  reasoning: ${reasoning}\ntask: Run\n`,
+      );
+    const path = join(TEST_DIR, "reasoning.yml");
+
+    for (const effort of ["minimal", "low", "medium", "high", "xhigh", "max"]) {
+      await recipe(`{ effort: ${effort} }`);
+      expect((await getJobConfig(path, {})).request?.reasoning).toEqual({ effort });
+    }
+
+    await recipe("on");
+    await expect(getJobConfig(path, {})).rejects.toThrow(
+      "request.reasoning: on was removed, since no effort level exists on every model. Name one the model takes, e.g. { effort: medium }.",
+    );
+  });
+
   it("rejects non-YAML job files", async () => {
     const path = join(TEST_DIR, "summarize.json");
     await writeFile(path, JSON.stringify({ provider: "openai", task: "test" }));

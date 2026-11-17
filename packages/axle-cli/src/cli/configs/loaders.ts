@@ -304,10 +304,10 @@ function isSecretKey(key: string): boolean {
  * Formats a Zod error into a readable string
  */
 function formatZodError(error: z.ZodError<any>): string {
-  return error.issues
+  const lines = error.issues
     .flatMap((issue) => flattenIssue(issue, issue.path))
-    .map(({ path, message }) => `  - ${path.join(".") || "root"}: ${message}`)
-    .join("\n");
+    .map(({ path, message }) => `  - ${path.join(".") || "root"}: ${message}`);
+  return [...new Set(lines)].join("\n");
 }
 
 function flattenIssue(

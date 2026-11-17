@@ -1158,7 +1158,7 @@ describe("Agent", () => {
     const agent = new Agent({
       provider,
       model: "mock",
-      reasoning: "on",
+      reasoning: { effort: "medium" },
       parallelToolCalls: false,
       maxOutputTokens: 100,
       providerOptions: { seed: 1, metadata: { source: "agent" } },

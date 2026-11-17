@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Breaking: `reasoning: on` is removed from recipes.** It meant medium
+  effort, and many models have no medium level, so it failed on them. Name
+  a level the model takes: `reasoning: { effort: medium }` is the request
+  `on` sent. A recipe that still says `on` is rejected with that advice.
+- **`reasoning.effort` takes six levels:** `minimal`, `low`, `medium`,
+  `high`, `xhigh` and `max`. The level is sent to the provider as written,
+  and the provider rejects one the model does not have. On models that
+  only take a thinking budget (Claude Haiku, Opus and Sonnet 4.5; Gemini
+  2.5), every level works: `minimal` is 1,024 tokens, `xhigh` 20,480 and
+  `max` 24,576.
+- The cached model catalog is refetched once after upgrading, since its
+  saved format changed.
 - **Your messages stand out in the chat transcript.** Each one has a blank
   line above and below it and sits on a full-width band, a slightly
   shaded version of your terminal's background. A terminal that does not

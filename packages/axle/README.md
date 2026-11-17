@@ -442,8 +442,9 @@ own and a bare call gets one for its own loop, so hits across separate
 accepted by `Agent`, `generate()`, `stream()`, and `PromptCompactor`:
 
 ```typescript
+type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type ReasoningSetting =
-  "default" | "off" | "on" | { effort: "low" | "medium" | "high"; display?: "visible" | "hidden" };
+  "default" | "off" | { effort: ReasoningEffort; display?: "visible" | "hidden" };
 
 await generate({ provider, model, messages, reasoning: { effort: "high" } });
 ```
@@ -452,19 +453,25 @@ await generate({ provider, model, messages, reasoning: { effort: "high" } });
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                                                                                                                                                             |
 | `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3, Gemini 2.5 Pro) reject the request                                                                                                                                       |
-| `"on"`                | Same as `{ effort: "medium" }`                                                                                                                                                                                                                                   |
-| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets                                                                                                                                              |
+| `{ effort }`          | A named level, sent to the provider as written, or a fixed token budget (1,024 / 2,048 / 8,192 / 16,384 / 20,480 / 24,576, lowest level first) on models that only accept budgets                                                                                |
 | `{ effort, display }` | `"visible"` (default) asks the provider to disclose its thinking; `"hidden"` asks it not to, and Axle withholds thinking from the transcript on every provider. On Anthropic the server also skips streaming thinking tokens, improving time to first text token |
 
-Effort is relative within a model, not comparable across models. `"on"`
-enables reasoning but does not guarantee a visible thinking block on every
-response. `display` controls whether thinking is disclosed, not its form:
+Effort is relative within a model, not comparable across models, and
+models differ in which levels they take: many have no `medium`, and few
+have `minimal` or `max`. Axle sends the level as written and the provider
+rejects one the model lacks, so there is no setting that just means "on".
+`REASONING_EFFORTS` is the six levels as a list, lowest first, for a host
+that renders a picker, and
+[`catalog.reasoningEfforts()`](#model-catalog) says
+which of them a provider's model is recorded as taking, with a level to
+use for an on/off control. Enabling reasoning does not guarantee a visible
+thinking block on every response. `display` controls whether thinking is disclosed, not its form:
 Anthropic, OpenAI, and Gemini return a summary, open-weight models return
 raw text, and chat-completions endpoints have no request field for it;
 under `"hidden"` their thinking stays on the message but never reaches the
 transcript. Axle does not validate support: an unsupported
 combination comes back as a provider error. Anything beyond these levels,
-such as `xhigh`, an exact budget, or an OpenAI summary length, goes through
+such as an exact budget or an OpenAI summary length, goes through
 `providerOptions`, which is applied after the portable mapping and overrides
 it.
 
@@ -1925,6 +1932,8 @@ catalog.lookup("gemma4:26b-mlx");
 catalog.contextWindow("gemma4:26b-mlx");
 // → { window: 262144, id: "google/gemma-4-26b-a4b-it", match: "prefix" }
 catalog.lookup("something-unlisted"); // → undefined
+catalog.reasoningEfforts("claude-sonnet-5", { provider: "anthropic" });
+// → { efforts: ["low", "medium", "high", "xhigh", "max"], suggested: "medium", id: "anthropic/claude-sonnet-5" }
 ```
 
 `model` is a `CatalogModel`: `name`, `limit.context` / `limit.output`,
@@ -1932,6 +1941,27 @@ catalog.lookup("something-unlisted"); // → undefined
 `knowledge` cutoff. `cost` is per million tokens as that provider charges it,
 with `tiers` for models priced by request size (`{ size: 200000, input:
 2.5, … }` applies to a request whose context exceeds 200,000 tokens).
+`reasoningOptions`, also only on a provider match, is how that provider
+lets the model's thinking be controlled, as models.dev records it:
+`{ type: "effort", values }` in the provider's own words, `{ type:
+"budget", min?, max? }`, or `{ type: "toggle" }`.
+
+`reasoningEfforts(model, { provider })` reads that record as the
+[`reasoning: { effort }`](#reasoning) levels to offer for the model, lowest
+first: the provider's listed levels, or all six for a model that only takes
+a token budget, since Axle maps each level to a budget there. `efforts` is
+empty for a model that does not reason or has no levels, and the method
+returns `undefined` when the catalog has no record for that provider's
+model. `suggested` is the listed level closest to medium, the higher one on
+a tie. It is the level to send when your UI has only an on/off control:
+
+```ts
+const found = catalog.reasoningEfforts(model, { provider: "anthropic" });
+const reasoning = thinkingOn ? { effort: found?.suggested ?? "medium" } : "off";
+```
+
+The answer is advisory. Axle never checks a request against it, models.dev
+can be stale, and it does not say whether a model can be turned off.
 
 The catalog has two layers. The canonical layer keys models by
 `publisher/model`, independent of who serves them. The provider layer keys each
@@ -1990,7 +2020,7 @@ those providers (the full provider layer is about 1.9 MB as JSON);
 `previous` fetched for other providers is not reused for the provider
 layer.
 
-`CatalogData` is `{ version: 4, fetchedAt, etags, coverage, models,
+`CatalogData` is `{ version: 5, fetchedAt, etags, coverage, models,
 providers }`. It is yours to edit before building a catalog: a negotiated
 price, a self-hosted model, or a test fixture with no network.
 Read saved data with `parseCatalogData(json)`: it returns `undefined` for
