@@ -30,7 +30,7 @@ import { isTimeoutReason, type OperationOutcome, type Turn } from "../../turns/t
 import type { Stats } from "../../types.js";
 import { timeoutSignal } from "../../utils/abort.js";
 import type { FileResolver } from "../../utils/file.js";
-import { createStats } from "../../utils/stats.js";
+import { addStats, createStats } from "../../utils/stats.js";
 import { Instruct } from "../Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../parse.js";
 import { resolveObservability, spanStatusFromError } from "./observability.js";
@@ -43,6 +43,7 @@ import type {
   AgentResult,
   AgentSession,
   AgentStatus,
+  AgentStep,
   CompactionConfig,
   CompactionTrigger,
   Continuation,
@@ -55,6 +56,7 @@ import type {
   SettledOperation,
   StartCallback,
   StartedOperation,
+  StepCallback,
 } from "./types.js";
 
 interface PreparedSend {
@@ -106,6 +108,7 @@ export class Agent {
   private activeStream: StreamHandle | undefined;
   private startCallbacks: StartCallback[] = [];
   private settledCallbacks: SettledCallback[] = [];
+  private stepCallbacks: StepCallback[] = [];
   private compaction?: CompactionConfig;
   private idleCallbacks: IdleCallback[] = [];
   private scheduler = new AgentScheduler({
@@ -247,6 +250,39 @@ export class Agent {
     return () => {
       const index = this.startCallbacks.indexOf(callback);
       if (index >= 0) this.startCallbacks.splice(index, 1);
+    };
+  }
+
+  /**
+   * Called each time a step ends inside a turn, so a host can save usage
+   * and state while the turn runs. A step is one model call and the tool
+   * batch it asked for, if any, and it fires however the step ended:
+   * answered, failed, refused or cancelled. A compaction whose callback ran
+   * is a step too. Inline turns sent by a continuation fire it.
+   *
+   * `step.index` counts the turn's steps from 0 and `step.usage` holds the
+   * rows the step added: the rows of a turn's steps, in order, are the
+   * `usage` its `turn:end` reports.
+   * The step's messages are already in `messages`, which is a conversation
+   * the provider accepts, and every event belonging to the step has reached
+   * `on` listeners.
+   *
+   * A callback may return a promise; the turn does not send its next
+   * request until every callback has settled, and all callbacks run
+   * together. One that throws stops the turn there: nothing further runs,
+   * the turn ends `error`, `onSettled` runs with the thrown error and the
+   * handle rejects with it. A `cancel()` while callbacks run aborts
+   * `step.signal` and takes effect once they return. No timeout is applied.
+   *
+   * Do not await `send()`, `compact()` or `snapshot()` on this agent from
+   * inside a callback: the callback holds the queue they wait for, so the
+   * nested call deadlocks.
+   */
+  onStep(callback: StepCallback) {
+    this.stepCallbacks.push(callback);
+    return () => {
+      const index = this.stepCallbacks.indexOf(callback);
+      if (index >= 0) this.stepCallbacks.splice(index, 1);
     };
   }
 
@@ -523,11 +559,18 @@ export class Agent {
     const emptyUsage: Stats = createStats();
     const turnEventBuilder = new TurnEventBuilder();
     let agentTurnId: string | undefined;
+    const turnUsage: Stats = createStats();
+    let committed = 0;
+    let steps = 0;
+    const nextStepIndex = (): number => steps++;
+    let stepFailure: { error: unknown } | undefined;
     const finalize = (
       outcome: "complete" | "cancelled" | "error",
       failure?: AxleProviderFailure,
     ): void => {
-      for (const event of turnEventBuilder.finalizeTurn(outcome, failure)) this.emitEvent(event);
+      for (const event of turnEventBuilder.finalizeTurn(outcome, failure, turnUsage)) {
+        this.emitEvent(event);
+      }
     };
 
     const root = (runtime.spanParent ?? this.spanParent)?.startSpan("agent.send", {
@@ -575,6 +618,7 @@ export class Agent {
           onApplied: () => {
             this.messagesInternal.push(message);
           },
+          nextStepIndex,
         });
       }
 
@@ -603,6 +647,19 @@ export class Agent {
         const turnEvents = turnEventBuilder.handleStreamEvent(streamEvent);
         for (const evt of turnEvents) this.emitEvent(evt);
       });
+      streamHandle.onStep(async ({ usage, messages }) => {
+        const index = nextStepIndex();
+        addStats(turnUsage, usage);
+        this.messagesInternal.push(...messages);
+        committed += messages.length;
+        if (stepFailure) return;
+        try {
+          await this.step({ turnId: startEvent.turnId, index, signal, usage });
+        } catch (error) {
+          stepFailure = { error };
+          streamHandle.cancel(error);
+        }
+      });
       streamHandle.onToolBatchComplete(() =>
         this.stopRequested
           ? "finish"
@@ -620,9 +677,7 @@ export class Agent {
       if (streamResult.ok && streamResult.final?.finishReason) {
         root?.setAttribute("finishReason", streamResult.final.finishReason);
       }
-      if (streamResult.messages.length > 0) {
-        this.messagesInternal.push(...streamResult.messages);
-      }
+      this.messagesInternal.push(...streamResult.messages.slice(committed));
 
       const usage = streamResult.usage ?? emptyUsage;
       root?.setAttributes({ inputTokens: usage.in, outputTokens: usage.out });
@@ -656,6 +711,7 @@ export class Agent {
         await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
           state: this.messages,
           target: { type: "turn", turnId: startEvent.turnId },
+          nextStepIndex,
         });
       }
 
@@ -675,13 +731,18 @@ export class Agent {
       return { ok: true, response, turn: agentTurn, usage };
     } catch (error) {
       // Lifecycle: settle a failed or cancelled turn
-      status = signal.aborted ? "cancelled" : spanStatusFromError(error);
+      const stepError = stepFailure && error instanceof AxleAbortError ? stepFailure : undefined;
+      status = stepError
+        ? spanStatusFromError(stepError.error)
+        : signal.aborted
+          ? "cancelled"
+          : spanStatusFromError(error);
 
       if (
         (error instanceof AxleAbortError || error instanceof AxleToolFatalError) &&
         error.messages?.length
       ) {
-        this.messagesInternal.push(...error.messages);
+        this.messagesInternal.push(...error.messages.slice(committed));
       }
 
       finalize(status === "cancelled" ? "cancelled" : "error");
@@ -702,7 +763,10 @@ export class Agent {
         });
       }
       const turn = agentTurnId ? this.transcript.getTurn(agentTurnId) : undefined;
-      root?.error(error instanceof Error ? error.message : String(error));
+      const reported = stepError ? stepError.error : error;
+      root?.error(reported instanceof Error ? reported.message : String(reported));
+
+      if (stepError) throw stepError.error;
 
       if (
         signal.aborted ||
@@ -822,16 +886,16 @@ export class Agent {
       state: AxleMessage[];
       target: { type: "turn"; turnId: string } | { type: "self-wrapped"; id: string };
       onApplied?: () => void;
+      nextStepIndex?: () => number;
     },
   ): Promise<"applied" | "declined" | "errored"> {
-    const manualAbort = (): never => {
-      throw new AxleAgentAbortError("Agent compact aborted", {
+    const manualAbortError = (): AxleAgentAbortError =>
+      new AxleAgentAbortError("Agent compact aborted", {
         reason: signal.reason,
         usage: createStats(),
       });
-    };
     if (signal.aborted) {
-      if (trigger === "manual") manualAbort();
+      if (trigger === "manual") throw manualAbortError();
       return "declined";
     }
 
@@ -869,6 +933,8 @@ export class Agent {
         part: { id, type: "compaction", trigger, status: "running", timing: { start } },
       });
 
+      let outcome: "applied" | "errored" = "applied";
+      let failure: { error: unknown } | undefined;
       try {
         const result = await config.compact(
           { messages: [...run.state] },
@@ -918,8 +984,8 @@ export class Agent {
             afterTokens: this.context().total,
           });
         }
-        return "applied";
       } catch (error) {
+        outcome = "errored";
         const aborted =
           signal.aborted || error instanceof AxleAbortError || error instanceof AxleAgentAbortError;
         const message = error instanceof Error ? error.message : String(error);
@@ -940,15 +1006,23 @@ export class Agent {
         }
         if (aborted) {
           root?.setAttribute("outcome", "skipped");
-          if (trigger === "manual") manualAbort();
-          return "errored";
+          if (trigger === "manual") failure = { error: manualAbortError() };
+        } else {
+          status = spanStatusFromError(error);
+          root?.error(message);
+          root?.setAttribute("outcome", "error");
+          if (trigger === "manual") failure = { error };
         }
-        status = spanStatusFromError(error);
-        root?.error(message);
-        root?.setAttribute("outcome", "error");
-        if (trigger === "manual") throw error;
-        return "errored";
       }
+
+      await this.step({
+        turnId,
+        index: run.nextStepIndex?.() ?? 0,
+        signal,
+        usage: createStats(),
+      });
+      if (failure) throw failure.error;
+      return outcome;
     } finally {
       root?.end(status);
       await this.ownedTracer?.flush();
@@ -1020,6 +1094,16 @@ export class Agent {
     throw failure;
   }
 
+  private async step(step: AgentStep): Promise<void> {
+    if (this.stepCallbacks.length === 0) return;
+    const failures = await this.runCallbacks(
+      "agent.step",
+      {},
+      this.stepCallbacks.map((cb) => () => cb(step)),
+    );
+    if (failures.length > 0) throw failures[0];
+  }
+
   private async settle(operation: SettledOperation): Promise<void> {
     if (this.settledCallbacks.length === 0) return;
     const session = this.currentSession();
@@ -1033,7 +1117,7 @@ export class Agent {
 
   private async runCallbacks(
     name: string,
-    attributes: { kind: OperationKind },
+    attributes: { kind?: OperationKind },
     callbacks: Array<() => void | Promise<void>>,
     warnAs?: string,
   ): Promise<unknown[]> {

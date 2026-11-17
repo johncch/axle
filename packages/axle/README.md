@@ -1660,6 +1660,13 @@ Agent uses this hook for `stop()` and to hand the loop its current prompt
 and tools after every batch, which is how a tool that changes
 `agent.registry` or `agent.skills` is visible on the next request.
 
+`StreamHandle.onStep(callback)` installs one awaited callback that runs each
+time a step ends, however it ended: after the tool results are written, or
+after a model call that asked for no tools. It receives `{ usage, messages
+}`: what that step added to the run's usage and to the conversation. The
+next model call is not sent until the callback returns; one that throws
+rejects `final` with that error. `agent.onStep` is built on it.
+
 ### Compaction (experimental)
 
 Compaction replaces the agent's active conversation with a shorter one — for
@@ -2127,6 +2134,56 @@ waiting on a person counts against it.
 A silent provider is a separate limit: `streamStallMs`, on the agent or per
 send, fails the turn as a provider failure (`ok: false`, `type:
 "StreamStall"`) rather than cancelling it. See the `stream()` options above.
+
+To save usage and state while a turn runs, register `onStep`. It fires each
+time a step ends: after a model call and the tools it asked for, or after a
+model call that asked for none. It fires however the step ended.
+
+```typescript
+agent.onStep(async (step) => {
+  await ledger.upsert(
+    step.usage.breakdown.map((row, i) => ({
+      turnId: step.turnId,
+      step: step.index,
+      row: i,
+      ...row,
+    })),
+  );
+  await sessions.save({ sessionId: agent.sessionId, messages: agent.messages });
+});
+```
+
+`index` counts the turn's steps from 0, so `turnId` and `index` identify a
+step: a write keyed on them is safe to repeat, and a missing number shows a
+step that was not saved. A compaction is a step too, so `index` can run
+ahead of the model calls `maxSteps` counts. `usage` holds the rows the step
+added: the model call's, plus any its tools reported, such as a subagent's.
+
+The rows of a turn's steps, in order, are the `usage` its `turn:end`
+reports. `turn:end` is the authoritative record of what a turn cost; a
+step's usage is the early copy, so a turn that never reaches `turn:end` does
+not lose its spend. A host that saves per step replaces the turn's rows with
+the `turn:end` usage when it arrives.
+
+The step's messages are already in `agent.messages` when the hook fires, and
+`agent.messages` is always a conversation the provider accepts: an assistant
+message that asks for tools is added together with its tool results. So what
+you save there can be restored and sent to. A turn that fails or is
+cancelled keeps its user message and the steps it finished; Axle does not
+rewind it.
+
+A compaction whose callback ran is also a step, with empty usage, so a host
+saves the compacted conversation the same way. That includes a direct
+`agent.compact()`.
+
+The agent waits for every callback before it sends the next request, so the
+time a callback takes is added to the turn. A callback that throws stops the
+turn there: nothing further runs, the turn ends `error`, `onSettled` runs
+with the thrown error and the handle rejects with it. Catch your own errors
+if saving should be best effort. A `cancel()` while a callback runs aborts
+`step.signal` and takes effect when the callback returns. Axle applies no
+timeout. Inline turns fire the hook too. As with `onStart`, don't await
+`send()`, `compact()` or `snapshot()` inside it.
 
 To learn when the agent has finished everything it was given, register
 `onIdle`:

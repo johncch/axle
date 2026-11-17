@@ -58,7 +58,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    `Stats` total is in exactly one row, so every total can be priced. A
    provider's count for one request before anyone knows who made it is a
    `TokenStats`, and it never leaves the adapters and the step reader;
-   `attributeStats` is the one place a count becomes a `Stats`.
+   `attributeStats` is the one place a count becomes a `Stats`. A turn's
+   `turn:end` usage is the sum of what its steps handed to `onStep`
+   (invariant 15), rows in the same order, so it includes a request that
+   failed or was refused.
 7. **Pending is live state, kept apart from turns, and shaped like them.**
    An operation — a send or a manual compaction — is announced with
    `pending:queued` when the Agent accepts it, carrying a preview `Turn`
@@ -137,7 +140,8 @@ type: "start", message } }` and no user message committed, as for a
    setup failure, a throwing `onStart` or a cancel during it, carries both,
    and one withdrawn while queued carries `pending:dropped` alone. Hooks
    are where the consumer acts, and whether a hook is awaited is a property
-   of that hook: `onStart` and `onSettled` are awaited (invariant 8), a
+   of that hook: `onStart` and `onSettled` are awaited (invariant 8), as is
+   `onStep` (invariant 15), a
    continuation (invariant 11) is the consumer's steering channel attached
    to one send, and `onIdle` is not awaited. The scheduler owns the rest
    point as a task state (`queued`, `starting`, `running`, `continuing`,
@@ -274,6 +278,54 @@ type: "start", message } }` and no user message committed, as for a
     every turn and carries no reason. Unset by default; it is meant as a
     long limit on runaway turns, not a deadline on a person answering a
     deferred call. (2026-11-07)
+15. **The Agent hands over each step as it ends, and waits for the
+    consumer.** `agent.onStep(...)` fires once per step
+    ([terminology.md](../terminology.md)): after a model call and the tool
+    batch it asked for, or after a model call that asked for no tools. It
+    fires however the step ended, whether answered, failed, refused or
+    cancelled, including a batch that ended early
+    ([tool-loop.md](./tool-loop.md) invariant 4). A compaction is a step
+    too: it fires if and only if the `compact` callback was called, whether
+    that applied, failed or was cancelled, and not when the trigger policy
+    declined. Inline turns fire it. Every step carries the same four
+    fields: `turnId`, `index`, the turn's `signal` and `usage`. `index`
+    counts the turn's steps from 0, compactions included, so a step is
+    identified by `turnId` and `index`; it can run ahead of the model calls
+    `maxSteps` counts. `usage` is what the Agent saw spent in the step: its
+    own model call, plus whatever the step's tools reported, such as a
+    subagent's rows. It is empty for a compaction, because the compactor is
+    the consumer's and reports nothing to the Agent. Each row is delivered
+    once, and the rows of a turn's steps, in order, are that turn's
+    `turn:end` usage. `turn:end` is the authoritative record of what a turn
+    cost; a step's usage is the early copy, there so a turn that never
+    reaches `turn:end` does not lose its spend. Nothing on a step or a row
+    points into the turn's breakdown.
+    The step carries no message and no outcome: the work reports its own
+    outcome on `agent.on`, and every event belonging to the step has reached
+    listeners before the hook is called. The hook is awaited and its
+    callbacks run together: the turn does not send its next request until
+    every callback has settled. It fails like `onStart`: a callback that
+    throws stops the turn there. Nothing further runs, the hook is not
+    called again for that turn, the turn ends `error`, `onSettled` runs with
+    the thrown error and the handle rejects with it. A `cancel()` while
+    callbacks run aborts `signal` and takes effect when they return; the
+    callbacks are not cancelled, because they are saving spend that already
+    happened. The Agent adds no timeout. A callback must not await `send()`,
+    `compact()` or `snapshot()`. (Step hook 2026-11-13.)
+16. **`messages` is always a conversation the provider accepts.** The Agent
+    commits a turn's messages step by step, not when the turn ends: the user
+    message when the turn opens (invariant 5), then each step's messages as
+    the step ends and before `onStep` is called. An assistant message that
+    asks for tools is committed together with its tool results, never
+    alone. So a consumer that reads `agent.messages` inside `onStep`, or at
+    any other moment, holds state it can restore and send to. A turn that
+    fails or is cancelled keeps its user message and the steps it finished:
+    the Agent guarantees the conversation can be resumed, not that it is
+    rewound. A consumer that wants to retry a turn from before it started
+    keeps the state it saved before the turn. A response cancelled while the
+    model is still writing it keeps only what was written, so it leaves no
+    unanswered tool call ([tool-loop.md](./tool-loop.md) invariant 11).
+    (Per-step commit 2026-11-13.)
 
 ## Design rationale (2026-08-12)
 
@@ -970,6 +1022,81 @@ This reverses three earlier decisions, each for a stated reason:
 - _A parent operation id on an inline turn_ (2026-10-14) was rejected as a
   field on `SettledOperation` with no reader. `threadId` is on the turn and
   its message, and its reader is the renderer.
+
+## Steps are a save point (2026-11-13)
+
+A host had no moment during a turn at which to save. Usage reached it at
+`turn:end`, as one total, and messages at `onSettled`. A turn can run for
+hours and spend most of a budget, so a host that crashed mid-turn lost that
+turn's cost, and the first consumer worked around it by debouncing events
+and writing every few seconds. `onStep` gives it the points inside a turn
+where something was just spent and the state is whole.
+
+The test for where the hook fires is that the state has changed and is good
+to snapshot. That is the end of a step as the vocabulary already defines
+it: a model call together with its tool batch. Between the two, the
+conversation ends in tool calls nobody has answered, which no provider
+accepts. So the hook fires once per step, the Agent commits the step's
+messages just before it, and `messages` can be saved as it stands. The
+guarantee is resumability, not rewind: a failed turn keeps what it did.
+
+It is awaited because that is all it adds over events. A host can already
+listen to events and queue its writes in order; what it cannot do is hold
+the next request back until the write lands, or stop the turn when the
+write fails. A throw stops the turn, as for `onStart` and unlike
+`onSettled`: `onSettled` runs when the operation is over, and here more
+spend is about to happen. A host that wants saving to be best effort catches
+its own errors.
+
+The step carries usage and nothing else to save. The host reads state from
+`agent.messages`, which also covers the two things a per-step message could
+not: the user message, and a compaction, which replaces the conversation
+and adds nothing to it. A compaction is reported as a step so the host
+saves after it, with empty usage, because `usage` means what the Agent saw
+spent and the compactor is not the Agent's.
+
+The turn's own usage is now built from the same steps, so the two cannot
+disagree: `turn:end` reports the sum of the steps. Before, the turn added up
+usage from stream events, which left out a failed or refused request and
+ordered a batch's subagent rows by finish order.
+
+Rejected:
+
+- **Firing after the model call as well as after the tool batch**
+  (2026-11-12, built and withdrawn 2026-11-13). It hands the model call's
+  usage over before the tools run, which matters when a deferred call waits
+  on a person for hours, and lets a host stop before tools start. But half
+  its firings land on a conversation that cannot be resumed, the step needed
+  a `kind` and a per-kind payload, and "step" would have meant two things.
+  The first consumer has no deferred calls and no need to stop before
+  tools. It can be added later as a further firing.
+- **Handing over the step's messages.** A log built from them misses the
+  user message and cannot represent a compaction.
+- **A `kind` on the step.** With one shape there is nothing to tell apart; a
+  compaction is a step with no usage.
+- **An outcome on the step.** The work reports its own.
+- **Rolling a failed turn back.** It would discard spend the conversation
+  already reflects, and no caller asked for it.
+- **Plain events on `agent.on`.** They give a better trigger for the same
+  debounced writing, and nothing else.
+- **Awaited events.** Every listener, the `Transcript` and a remote event
+  stream included, would sit in the agent's loop.
+- **Ignoring a throw, as `onSettled` does.** See above.
+- **A position into the turn's breakdown on the step** (`rowIndex`, built
+  and withdrawn 2026-11-15). It let a consumer whose write failed find the
+  gap and patch it from `turn:end` row for row. That makes the Agent
+  responsible for a consumer's durability at step grain and not at turn
+  grain, where a failed `turn:end` write has no such help and should not.
+  A consumer that cannot lose a write lets its callback throw; one that
+  saves on a best-effort basis replaces the turn's rows from `turn:end`.
+  The step's `index` identifies the step and shows when one was missed.
+- **An index or a minted id on each usage row** (2026-11-15). A position is
+  derived data and has to be renumbered when a subagent's rows join a
+  parent turn. A minted id turns a row from a value into an entity that
+  every producer must supply, for the sake of an upsert a replace does as
+  well. It can be added later without breaking anyone; removing it could
+  not. Stamping the provider's own response id on a row is a separate
+  question (AXL-114).
 
 ## Rejected alternatives
 

@@ -34,6 +34,7 @@ export interface LoopContext {
   newMessages: AxleMessage[];
   usage: Stats;
   addMessage: (message: AxleMessage) => void;
+  step: (usage?: Stats) => Promise<unknown>;
 }
 
 function toArgumentErrorResult(
@@ -53,19 +54,30 @@ function toArgumentErrorResult(
  * Answer a completed step's tool calls: synthesize results for calls whose
  * arguments failed to parse, execute the rest, and append the tool results
  * message. Mutates the loop's shared `usage` and, via `addMessage`, its
- * working conversation. A batch that ends on an abort or a fatal error
- * still appends its message, then rethrows the error enriched with the
+ * working conversation, then reports the step as ended. A batch that ends on
+ * an abort or a fatal error still appends its message, then rethrows the error enriched with the
  * loop's accumulated messages and usage so callers can preserve state.
  */
 export async function executeStepTools(
   toolCalls: ContentPartToolCall[],
   step: CompletedStep,
   assistantMessage: AxleAssistantMessage,
+  stepUsage: Stats,
   loop: LoopContext,
 ): Promise<AxleToolCallMessage | undefined> {
   const { toolCallArgumentErrors } = step;
-  const { emit, signal, resolvedTools, span, onToolCall, waiting, newMessages, usage, addMessage } =
-    loop;
+  const {
+    emit,
+    signal,
+    resolvedTools,
+    span,
+    onToolCall,
+    waiting,
+    newMessages,
+    usage,
+    addMessage,
+    step: reportStep,
+  } = loop;
 
   const toolResultsId = crypto.randomUUID();
   emit({ type: "tool-results:start", id: toolResultsId });
@@ -168,6 +180,11 @@ export async function executeStepTools(
     toolResultsMessage = { role: "tool", id: toolResultsId, content: results };
     addMessage(toolResultsMessage);
     emit({ type: "tool-results:complete", message: toolResultsMessage });
+    const failureUsage =
+      failure instanceof AxleToolFatalError || failure instanceof AxleAbortError
+        ? failure.usage
+        : undefined;
+    await reportStep(mergeStats(stepUsage, failure === undefined ? toolUsage : failureUsage));
   }
 
   if (failure instanceof AxleToolFatalError) {

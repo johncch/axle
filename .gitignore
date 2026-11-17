@@ -11,3 +11,4 @@ package-lock.json
 .claude/settings.local.json
 .axle
 .pnpm-store
+.claude/worktrees/

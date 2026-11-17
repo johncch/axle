@@ -7,6 +7,7 @@ export type {
   AgentResult,
   AgentSession,
   AgentStatus,
+  AgentStep,
   AutomaticCompactionTrigger,
   CompactionCallback,
   CompactionConfig,
@@ -24,4 +25,5 @@ export type {
   ShouldCompactOnTriggerCallback,
   StartCallback,
   StartedOperation,
+  StepCallback,
 } from "./types.js";

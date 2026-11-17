@@ -66,8 +66,8 @@ side is in [provider-tools.md](./provider-tools.md).
    interleave across calls. A consumer keys on the event's `id`, never on
    "the running tool". Tool spans open in request order, because the span
    starts before the call's first await, and close in finish order. Usage
-   breakdown rows from several subagents in one batch interleave in
-   wall-clock order; each row still carries its `agent`.
+   breakdown rows from several subagents in one batch are grouped per
+   call, in request order; each row still carries its `agent` and `at`.
 9. **Every action part in a turn that did not complete settles.** On the
    turn event stream an action part ends with exactly one of
    `action:complete`, `action:error` or `action:cancelled`. A call that

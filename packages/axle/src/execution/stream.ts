@@ -142,6 +142,18 @@ export type ToolBatchCompleteCallback = (
   message: AxleToolCallMessage,
 ) => ToolBatchDecision | Promise<ToolBatchDecision>;
 
+/**
+ * One step of a run, handed to `onStep` when it ends: a model call and the
+ * tool batch it asked for, if any. `usage` is what the step added to the
+ * run's usage, and `messages` what it added to the conversation.
+ */
+export interface StreamStep {
+  usage: Stats;
+  messages: AxleMessage[];
+}
+
+export type StreamStepCallback = (step: StreamStep) => void | Promise<void>;
+
 export interface StreamParams extends AxleModelRequestOptions {
   provider: AIProvider;
   model: string;
@@ -191,6 +203,14 @@ export interface StreamParams extends AxleModelRequestOptions {
 export interface StreamHandle {
   on(callback: StreamEventCallback): void;
   onToolBatchComplete(callback: ToolBatchCompleteCallback): void;
+  /**
+   * Install one awaited callback that runs each time a step ends, however
+   * it ended: after the tool results are written, or after a model call
+   * that asked for no tools. The next model call is not sent until it
+   * returns. A `cancel()` while it is pending takes effect when it returns;
+   * a callback that throws rejects `final` with that error.
+   */
+  onStep(callback: StreamStepCallback): void;
   cancel(reason?: unknown): void;
   /** The deferred call with this id while the run is waiting on it; `undefined` once it has settled. */
   toolCall(id: string): WaitingToolCall | undefined;
@@ -257,7 +277,7 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
     : controller.signal;
 
   const { promise: finalPromise, resolve, reject } = Promise.withResolvers<any>();
-  const control: { onToolBatchComplete?: ToolBatchCompleteCallback } = {};
+  const control: StreamControl = {};
   const waiting: WaitingCalls = new Map();
 
   // Kick off processing on next microtask so callers can register callbacks first
@@ -297,6 +317,9 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
     },
     onToolBatchComplete(callback) {
       control.onToolBatchComplete = callback;
+    },
+    onStep(callback) {
+      control.onStep = callback;
     },
     cancel(reason?: unknown) {
       controller.abort(reason);
@@ -356,11 +379,16 @@ function stallFailure(limitMs: number, model: string): StepReadOutcome {
 
 // --- Core loop ---
 
+interface StreamControl {
+  onToolBatchComplete?: ToolBatchCompleteCallback;
+  onStep?: StreamStepCallback;
+}
+
 async function run(
   options: StreamParams,
   signal: AbortSignal,
   cbs: StreamEventCallback[],
-  control: { onToolBatchComplete?: ToolBatchCompleteCallback },
+  control: StreamControl,
   waiting: WaitingCalls,
   discloseThinking: boolean,
 ): Promise<StreamResult> {
@@ -395,6 +423,24 @@ async function run(
     newMessages.push(message);
   };
 
+  const abortError = (): AxleAbortError =>
+    new AxleAbortError("Stream aborted", { reason: signal.reason, messages: newMessages, usage });
+
+  let reported = 0;
+  const step = async (stepUsage?: Stats): Promise<{ cancelled: boolean }> => {
+    const added = newMessages.slice(reported);
+    reported = newMessages.length;
+    if (!control.onStep) return { cancelled: false };
+    const abortedBefore = signal.aborted;
+    try {
+      await control.onStep({ usage: stepUsage ?? createStats(), messages: added });
+    } catch (error) {
+      span?.end("error");
+      throw error;
+    }
+    return { cancelled: !abortedBefore && signal.aborted };
+  };
+
   const loop: LoopContext = {
     emit: (event) => emit(cbs, event),
     signal,
@@ -405,6 +451,7 @@ async function run(
     newMessages,
     usage,
     addMessage,
+    step,
   };
 
   const endWithResult = (result: StreamResult): StreamResult => {
@@ -479,6 +526,7 @@ async function run(
         } else {
           if (error instanceof Error && error.name === "AbortError") {
             stepSpan?.end("ok");
+            await step(error instanceof AxleAbortError ? error.usage : undefined);
             span?.end("ok");
             throw new AxleAbortError("Stream aborted", {
               reason: error instanceof AxleAbortError ? error.reason : signal.reason,
@@ -498,6 +546,7 @@ async function run(
     if (outcome.kind === "aborted") {
       stepSpan?.end("ok");
       if (outcome.partial) addMessage(outcome.partial);
+      await step();
       span?.end("ok");
       throw new AxleAbortError("Stream aborted", {
         reason: signal.reason,
@@ -519,6 +568,10 @@ async function run(
         : undefined;
       addStats(usage, failureUsage);
       stepSpan?.end("error");
+      if ((await step(failureUsage)).cancelled) {
+        span?.end("ok");
+        throw abortError();
+      }
       return endWithResult({
         ok: false,
         messages: newMessages,
@@ -528,16 +581,14 @@ async function run(
     }
 
     if (outcome.kind === "refused") {
-      addStats(
-        usage,
-        attributeStats(outcome.usage, {
-          provider: provider.id,
-          model: outcome.model || model,
-          requestedModel: model,
-          agent: agentName,
-          requests: outcome.requests,
-        }),
-      );
+      const refusalUsage = attributeStats(outcome.usage, {
+        provider: provider.id,
+        model: outcome.model || model,
+        requestedModel: model,
+        agent: agentName,
+        requests: outcome.requests,
+      });
+      addStats(usage, refusalUsage);
       const message =
         outcome.refusal.text ??
         (outcome.refusal.category
@@ -545,6 +596,10 @@ async function run(
           : "Request refused");
       stepSpan?.warn("Request refused", { ...outcome.refusal });
       stepSpan?.end("error");
+      if ((await step(refusalUsage)).cancelled) {
+        span?.end("ok");
+        throw abortError();
+      }
       return endWithResult({
         ok: false,
         messages: newMessages,
@@ -598,18 +653,15 @@ async function run(
       usage: attributedStepUsage,
     });
 
-    if (stepFinishReason !== AxleStopReason.FunctionCall) {
-      return endWithResult({
-        ok: true,
-        response: assistantMessage,
-        messages: newMessages,
-        final: assistantMessage,
-        usage,
-      });
-    }
-
-    const toolCalls = stepParts.filter((p): p is ContentPartToolCall => p.type === "tool-call");
+    const toolCalls =
+      stepFinishReason === AxleStopReason.FunctionCall
+        ? stepParts.filter((p): p is ContentPartToolCall => p.type === "tool-call")
+        : [];
     if (toolCalls.length === 0) {
+      if ((await step(attributedStepUsage)).cancelled) {
+        span?.end("ok");
+        throw abortError();
+      }
       return endWithResult({
         ok: true,
         response: assistantMessage,
@@ -619,7 +671,13 @@ async function run(
       });
     }
 
-    const toolResultsMessage = await executeStepTools(toolCalls, outcome, assistantMessage, loop);
+    const toolResultsMessage = await executeStepTools(
+      toolCalls,
+      outcome,
+      assistantMessage,
+      attributedStepUsage,
+      loop,
+    );
 
     if (signal.aborted) {
       span?.end("ok");
