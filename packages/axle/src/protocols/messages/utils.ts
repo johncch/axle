@@ -9,7 +9,7 @@ import {
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { LEGACY_REASONING_BUDGETS, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
+import { legacyReasoningBudget, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 
@@ -278,7 +278,7 @@ export function toAnthropicThinking(
     return {
       thinking: {
         type: "enabled",
-        budget_tokens: LEGACY_REASONING_BUDGETS[request.effort],
+        budget_tokens: legacyReasoningBudget(request.effort, model),
         display,
       },
     };

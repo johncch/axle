@@ -199,7 +199,7 @@ describe("ModelCatalog.lookup", () => {
   });
 });
 
-describe("ModelCatalog.reasoningEfforts", () => {
+describe("ModelCatalog.reasoningControl", () => {
   let catalog: ModelCatalog;
 
   beforeEach(async () => {
@@ -217,7 +217,8 @@ describe("ModelCatalog.reasoningEfforts", () => {
   }
 
   it("lists a provider's named levels lowest first and suggests medium", () => {
-    expect(catalog.reasoningEfforts("claude-sonnet-5", { provider: "anthropic" })).toEqual({
+    expect(catalog.reasoningControl("claude-sonnet-5", { provider: "anthropic" })).toEqual({
+      control: "levels",
       efforts: ["low", "medium", "high", "xhigh", "max"],
       suggested: "medium",
       id: "anthropic/claude-sonnet-5",
@@ -225,7 +226,8 @@ describe("ModelCatalog.reasoningEfforts", () => {
   });
 
   it("suggests the higher neighbour when the model has no medium", () => {
-    expect(catalog.reasoningEfforts("z-ai/glm-5.3-flash", { provider: "openrouter" })).toEqual({
+    expect(catalog.reasoningControl("z-ai/glm-5.3-flash", { provider: "openrouter" })).toEqual({
+      control: "levels",
       efforts: ["low", "high", "max"],
       suggested: "high",
       id: "zhipuai/glm-5.3-flash",
@@ -233,47 +235,80 @@ describe("ModelCatalog.reasoningEfforts", () => {
   });
 
   it("suggests the listed level closest to medium", () => {
-    const efforts = (values: string[]) =>
-      withOptions([{ type: "effort", values }]).reasoningEfforts("old", { provider: "acme" });
+    const suggested = (values: string[]) =>
+      withOptions([{ type: "effort", values }]).reasoningControl("old", { provider: "acme" })
+        ?.suggested;
 
-    expect(efforts(["minimal", "high"])?.suggested).toBe("high");
-    expect(efforts(["high", "max"])?.suggested).toBe("high");
-    expect(efforts(["minimal", "low"])?.suggested).toBe("low");
-    expect(efforts(["max"])?.suggested).toBe("max");
+    expect(suggested(["minimal", "high"])).toBe("high");
+    expect(suggested(["high", "max"])).toBe("high");
+    expect(suggested(["minimal", "low"])).toBe("low");
+    expect(suggested(["max"])).toBe("max");
   });
 
   it("leaves out the provider's off value and levels Axle has no name for", () => {
     const found = withOptions([
       { type: "effort", values: ["none", "default", "high", "low"] },
-    ]).reasoningEfforts("old", { provider: "acme" });
+    ]).reasoningControl("old", { provider: "acme" });
 
-    expect(found).toEqual({ efforts: ["low", "high"], suggested: "high", id: "acme/old" });
+    expect(found).toEqual({
+      control: "levels",
+      efforts: ["low", "high"],
+      suggested: "high",
+      id: "acme/old",
+    });
   });
 
   it("offers every level for a model that only takes a token budget", () => {
-    expect(catalog.reasoningEfforts("gemini-2.5-pro", { provider: "google" })).toEqual({
+    expect(catalog.reasoningControl("gemini-2.5-pro", { provider: "google" })).toEqual({
+      control: "levels",
       efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
       suggested: "medium",
       id: "google/gemini-2.5-pro",
     });
   });
 
-  it("has no levels for a model that only toggles or does not reason", () => {
-    expect(catalog.reasoningEfforts("zai-org/GLM-5.1", { provider: "togetherai" })).toEqual({
-      efforts: [],
-      suggested: undefined,
+  it("offers on for a model whose thinking only switches", () => {
+    expect(catalog.reasoningControl("zai-org/GLM-5.1", { provider: "togetherai" })).toEqual({
+      control: "toggle",
+      efforts: ["on"],
+      suggested: "on",
       id: "togetherai/zai-org/GLM-5.1",
     });
-    expect(catalog.reasoningEfforts("sao10k/l3-lunaris-8b", { provider: "openrouter" })).toEqual({
+    expect(
+      withOptions([{ type: "effort", values: ["none"] }, { type: "toggle" }]).reasoningControl(
+        "old",
+        { provider: "acme" },
+      )?.control,
+    ).toBe("toggle");
+  });
+
+  it("prefers levels to a toggle recorded beside them", () => {
+    const control = (options: CatalogReasoningOption[]) =>
+      withOptions(options).reasoningControl("old", { provider: "acme" })?.control;
+
+    expect(control([{ type: "toggle" }, { type: "effort", values: ["low", "high"] }])).toBe(
+      "levels",
+    );
+    expect(control([{ type: "toggle" }, { type: "budget", min: 0, max: 24576 }])).toBe("levels");
+  });
+
+  it("has nothing to offer for a model with no control or no reasoning", () => {
+    expect(withOptions([]).reasoningControl("old", { provider: "acme" })).toEqual({
+      control: "none",
+      efforts: [],
+      id: "acme/old",
+    });
+    expect(catalog.reasoningControl("sao10k/l3-lunaris-8b", { provider: "openrouter" })).toEqual({
+      control: "none",
       efforts: [],
       id: "openrouter/sao10k/l3-lunaris-8b",
     });
   });
 
   it("has no answer without a record of the provider's reasoning controls", () => {
-    expect(withOptions(undefined).reasoningEfforts("old", { provider: "acme" })).toBeUndefined();
-    expect(catalog.reasoningEfforts("claude-sonnet-5", { provider: "elsewhere" })).toBeUndefined();
-    expect(catalog.reasoningEfforts("acme/unknown", { provider: "openrouter" })).toBeUndefined();
+    expect(withOptions(undefined).reasoningControl("old", { provider: "acme" })).toBeUndefined();
+    expect(catalog.reasoningControl("claude-sonnet-5", { provider: "elsewhere" })).toBeUndefined();
+    expect(catalog.reasoningControl("acme/unknown", { provider: "openrouter" })).toBeUndefined();
   });
 });
 

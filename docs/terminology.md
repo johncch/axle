@@ -399,6 +399,22 @@ what was sent is carried on the error. The rule is in
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means
 the conversation transcript.
 
+**Effort (reasoning)** — a word a `reasoning` setting sends to the
+provider: `off`, `on`, or a level. `off` is the provider's explicit
+disable. `on` is the word for a model whose thinking only switches; in
+core it is passed through and never means "some level". No effort is
+portable across models. Normative in `docs/architecture/reasoning.md`.
+
+**Level (reasoning)** — one of the six named reasoning depths, `minimal`
+to `max`, lowest first. A level is an effort; `off` and `on` are efforts
+that are not levels. Relative within a model, never comparable across
+models.
+
+**Control (reasoning)** — what the model catalog reports about how a
+provider's model has its thinking set: `levels`, `toggle` or `none`. It is
+the catalog's reading of models.dev for a host's UI, not a request
+setting.
+
 **Display (reasoning)** — the request-side disclosure control on
 `reasoning`: `display: "visible" | "hidden"`. It says whether the provider
 should show its thinking, never in what form. The form that arrives, a

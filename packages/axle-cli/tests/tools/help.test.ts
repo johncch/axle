@@ -36,7 +36,7 @@ describe("axle-help tool", () => {
 
     expect(result).toContain("recipe.task  string  (required)");
     expect(result).toContain(
-      "recipe.request.reasoning.effort  minimal | low | medium | high | xhigh | max  (required)",
+      "recipe.request.reasoning.effort  off | on | minimal | low | medium | high | xhigh | max  (required)",
     );
     expect(result).not.toContain("\u001b");
   });

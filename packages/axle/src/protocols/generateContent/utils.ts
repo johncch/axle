@@ -14,7 +14,7 @@ import {
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { LEGACY_REASONING_BUDGETS, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
+import { legacyReasoningBudget, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 
@@ -137,7 +137,7 @@ export function toGeminiThinkingConfig(reasoning: ReasoningSetting | undefined, 
   if (usesGeminiThinkingBudget(model)) {
     return {
       thinkingConfig: {
-        thinkingBudget: LEGACY_REASONING_BUDGETS[request.effort],
+        thinkingBudget: legacyReasoningBudget(request.effort, model),
         includeThoughts: request.display === "visible",
       },
     };

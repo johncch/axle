@@ -44,10 +44,11 @@ export type ToolChoice = "auto" | "none" | "required" | { type: "tool"; name: st
 export interface AxleModelRequestOptions {
   /**
    * Portable reasoning control: `"default"` inherits the model's behavior,
-   * `"off"` sends the provider's explicit disable, `{ effort, display? }`
-   * picks a named level (a budget preset on models that only take a budget)
-   * and whether the provider should disclose its thinking (default
-   * `"visible"`). A level the model lacks is rejected by its provider.
+   * `"off"` sends the provider's explicit disable, `"on"` its on/off switch,
+   * and a level (`"minimal"` to `"max"`) is sent as written, or as a budget
+   * preset on models that only take a budget. `{ effort, display? }` adds
+   * whether the provider should disclose its thinking (default `"visible"`).
+   * An effort the model lacks is rejected by its provider.
    */
   reasoning?: ReasoningSetting;
   /** Maximum output tokens to request from the model. */

@@ -1,6 +1,6 @@
 # Reasoning controls
 
-**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, six effort levels, no portable `on`)
+**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, effort words, `on` passed through)
 
 This document is normative for Axle's portable reasoning control: what the
 `reasoning` request option means, how each provider adapter translates it,
@@ -12,21 +12,27 @@ can be re-checked when they change.
 ## Invariants
 
 1. **One portable setting.** `reasoning?: ReasoningSetting` where
-   `ReasoningSetting = "default" | "off" | { effort: "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; display?: "visible" | "hidden" }`.
-   It is the same option on `Agent`, `generate()`, `stream()`,
-   `PromptCompactor`, and the CLI's `request` block. Booleans and `"on"`
-   are not accepted.
+   `ReasoningSetting = "default" | ReasoningEffort | { effort: ReasoningEffort; display?: "visible" | "hidden" }`
+   and
+   `ReasoningEffort = "off" | "on" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"`.
+   An effort word alone is the same request as `{ effort }`; the object
+   exists to carry `display`. It is the same option on `Agent`,
+   `generate()`, `stream()`, `PromptCompactor`, and the CLI's `request`
+   block. Booleans are not accepted.
 2. **`"default"` and omission send nothing.** No reasoning field reaches the
    wire on any route; the model runs at its provider's own default, which may
    be thinking-on (Sonnet 5, Opus 5, Fable, Gemini 2.5 Pro) or thinking-off
    (Opus 4.6–4.8, Haiku 4.5). Axle does not resolve or report which.
-3. **Effort names are the providers' own and reach the wire as written.**
-   The six levels (`REASONING_EFFORTS`, lowest first) are the union of the
-   names Anthropic, OpenAI and Gemini use. On a named-effort route the
-   level is sent unchanged; Axle never maps one level to another. No model
-   takes all six, and there is no portable "on": no level exists on every
-   model. A host with an on/off control chooses the level it stands for
-   (see [Choosing a level](#choosing-a-level)). An enable does not promise
+3. **An effort is sent as the provider spells it; Axle maps none to
+   another.** The six levels (`REASONING_LEVELS`, lowest first) are the
+   union of the names Anthropic, OpenAI and Gemini use, and on a
+   named-effort route a level reaches the wire unchanged. `"on"` is the
+   word for a model whose thinking only switches on or off. It has no
+   meaning of its own in Axle: it is sent as the provider's own switch
+   where the provider has one (Together AI, OpenRouter) and as the word
+   everywhere else. No model takes every effort, so no effort is portable.
+   A host with an on/off control chooses the effort it stands for (see
+   [Choosing an effort](#choosing-an-effort)). An enable does not promise
    a visible thinking block or thinking on every adaptive-model response.
    (2026-11-17, AXL-106)
 4. **`"off"` sends the provider's explicit disable shape.** Never `minimal`,
@@ -49,7 +55,9 @@ can be re-checked when they change.
    sets accepts: 1,024 is Anthropic's minimum and 24,576 is the ceiling of
    Gemini 2.5 Flash and Flash Lite. They are never derived from
    `maxOutputTokens`, never clamped, and never cause a caller-supplied
-   output limit to change.
+   output limit to change. `"on"` has no preset: a budget request cannot
+   be sent without a number, so on a budget-only route Axle rejects `"on"`
+   with `INVALID_OPTIONS` and invents none.
 8. **No capability validation.** Axle sends the requested native fields and
    lets the provider reject unsupported combinations through the existing
    error path. There is no retry at a lower effort and no substitution.
@@ -70,9 +78,9 @@ can be re-checked when they change.
     turn under `"hidden"` while the message keeps what the wire carried
     (thinking.md invariant 9); this is how `"hidden"` holds on OpenRouter,
     whose `exclude` leaves `reasoning_details` text in place. `off` and
-    `default` never carry a display field; on Anthropic it can only travel
-    inside a typed `thinking` object, so a display without an enable is
-    unrepresentable by construction.
+    `default` never carry a display field: `{ effort: "off", display }`
+    resolves to `off` and the display is dropped, and on Anthropic a
+    display can only travel inside a typed `thinking` object.
 11. **Display controls disclosure, not form.** The request says whether the
     provider should show its thinking. Whether a summary or raw text comes
     back is the model's property, recorded on the thinking part (see
@@ -163,8 +171,18 @@ requires `store: false` and `include: ["reasoning.encrypted_content"]` via
 
 ### OpenAI-compatible Chat Completions
 
-- **Generic endpoints and OpenRouter**: `reasoning_effort` with
-  `none | low | medium | high`. OpenRouter's own translation to the upstream
+- **Generic endpoints**: `reasoning_effort` with
+  `none | low | medium | high`.
+- **OpenRouter** (documentation, 2026-11-17): `reasoning_effort` and
+  `reasoning.effort` are one enum, `max | xhigh | high | medium | low |
+minimal | none`. `reasoning.enabled` is a boolean, and `enabled: true`
+  "enables reasoning at the medium effort level". What a word outside the
+  enum does is not documented. An effort the model does not support is not
+  rejected: OpenRouter "will map your requested effort to the nearest
+  supported level", so invariant 8's provider rejection does not happen on
+  this route. Its models endpoint publishes `supported_efforts`,
+  `default_enabled` and `mandatory` (the model rejects `none`) per model;
+  Axle does not read them. OpenRouter's own translation to the upstream
   provider is upstream behavior; it picks `summarized` for Claude. Its only
   disclosure control is `reasoning.exclude: boolean`, which removes the
   convenience `reasoning` string from the response and nothing else:
@@ -178,19 +196,25 @@ requires `store: false` and `include: ["reasoning.encrypted_content"]` via
 ## Axle translation
 
 `resolveReasoning` collapses the setting to
-`"default" | "off" | { effort, display }`, with `display` defaulting to
-`"visible"`; each adapter maps that request. `<level>` is the effort as
-written and `<preset>` its row in the second table:
+`"default" | "off" | { effort, display }`, where `effort` is `on` or a
+level and `display` defaults to `"visible"`; each adapter maps that
+request. `<level>` is the level as written and `<preset>` its row in the
+second table:
 
-| Route                                                | Off                                   | `{ effort }`                                                      |
-| ---------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------- |
-| Anthropic adaptive (every ID not in the legacy set)  | `thinking: {type: disabled}`          | `thinking: {type: adaptive}` + `output_config: {effort: <level>}` |
-| Anthropic legacy budget                              | `thinking: {type: disabled}`          | `thinking: {type: enabled, budget_tokens: <preset>}`              |
-| Gemini named levels (every ID not in the legacy set) | `thinkingConfig: {thinkingBudget: 0}` | `thinkingConfig: {thinkingLevel: <level>}`                        |
-| Gemini legacy budget                                 | `thinkingConfig: {thinkingBudget: 0}` | `thinkingConfig: {thinkingBudget: <preset>}`                      |
-| OpenAI Responses                                     | `reasoning: {effort: none}`           | `reasoning: {effort: <level>}`                                    |
-| Chat Completions, OpenRouter                         | `reasoning_effort: none`              | `reasoning_effort: <level>`                                       |
-| Together AI                                          | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: <level>`           |
+| Route                                                | `off`                                 | A level                                                           | `on`                          |
+| ---------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------- | ----------------------------- |
+| Anthropic adaptive (every ID not in the legacy set)  | `thinking: {type: disabled}`          | `thinking: {type: adaptive}` + `output_config: {effort: <level>}` | `output_config: {effort: on}` |
+| Anthropic legacy budget                              | `thinking: {type: disabled}`          | `thinking: {type: enabled, budget_tokens: <preset>}`              | Axle throws                   |
+| Gemini named levels (every ID not in the legacy set) | `thinkingConfig: {thinkingBudget: 0}` | `thinkingConfig: {thinkingLevel: <level>}`                        | `thinkingLevel: on`           |
+| Gemini legacy budget                                 | `thinkingConfig: {thinkingBudget: 0}` | `thinkingConfig: {thinkingBudget: <preset>}`                      | Axle throws                   |
+| OpenAI Responses                                     | `reasoning: {effort: none}`           | `reasoning: {effort: <level>}`                                    | `reasoning: {effort: on}`     |
+| Generic Chat Completions                             | `reasoning_effort: none`              | `reasoning_effort: <level>`                                       | `reasoning_effort: on`        |
+| OpenRouter                                           | `reasoning_effort: none`              | `reasoning_effort: <level>`                                       | `reasoning: {enabled: true}`  |
+| Together AI                                          | `reasoning: {enabled: false}`         | `reasoning: {enabled: true}, reasoning_effort: <level>`           | `reasoning: {enabled: true}`  |
+
+The word `on` is not a level any of the word routes documents, so a
+provider there is expected to reject it; none has been sent one in the
+harness. The two switch shapes are the providers' documented ones.
 
 | Level   | Legacy budget preset |
 | ------- | -------------------- |
@@ -213,7 +237,8 @@ carries the route's display field:
 | Generic endpoints, Together AI | nothing                        | nothing                        |
 
 Under `"hidden"` the turn receives no thinking content on any route; the
-step reader withholds it (thinking.md invariant 9).
+step reader withholds it (thinking.md invariant 9). `on` with `"hidden"` on
+OpenRouter is `reasoning: { enabled: true, exclude: true }`.
 
 ### Legacy budget sets
 
@@ -232,9 +257,9 @@ Retired models are not routed: a retired ID falls to the modern route where
 the provider rejects it as unknown. Adding a model to a set is a same-diff
 change to this document.
 
-## Choosing a level
+## Choosing an effort
 
-Axle cannot say which levels a model takes without a registry it declines
+Axle cannot say which efforts a model takes without a registry it declines
 to keep (invariant 8), so the choice is the host's, and the model catalog
 carries what models.dev knows to help it make one.
 
@@ -243,27 +268,36 @@ A provider entry in `CatalogData` holds `reasoningOptions`, models.dev's
 in the provider's own words (`none` included where it has one),
 `{ type: "budget", min?, max? }`, and `{ type: "toggle" }`. models.dev
 records this per provider and not on its canonical layer, so `lookup()`
-returns it only for a provider match.
+returns it only for a provider match. On 2026-11-17, of 7,843 reasoning
+models, 70% had an effort list, 5% a budget and no list, 10% a toggle
+alone, and 15% an empty record.
 
-`catalog.reasoningEfforts(model, { provider })` reads that record as an
-answer to "which `{ effort }` values can I offer":
+`catalog.reasoningControl(model, { provider })` reads that record as the
+kind of control a host should show and the efforts it can offer:
 
-| The provider's record                          | `efforts`                                |
-| ---------------------------------------------- | ---------------------------------------- |
-| An `effort` list                               | Its values that Axle names, lowest first |
-| A `budget` and no `effort` list                | All six, since every level has a preset  |
-| A `toggle` alone, or an empty list             | None                                     |
-| The model does not reason                      | None                                     |
-| No record, no provider match, or unknown model | The method returns `undefined`           |
+| The provider's record                         | `control` | `efforts`                               | `suggested`       |
+| --------------------------------------------- | --------- | --------------------------------------- | ----------------- |
+| An `effort` list with a level Axle names      | `levels`  | Those levels, lowest first              | Closest to medium |
+| A `budget` and no such list                   | `levels`  | All six, since every level has a preset | `medium`          |
+| A `toggle` and neither of the above           | `toggle`  | `on`                                    | `on`              |
+| An empty record, or the model does not reason | `none`    | None                                    | Absent            |
 
-`suggested` is the listed level closest to medium, the higher one on a tie,
-and absent when `efforts` is empty. It is what a host with an on/off
-control sends for "on": `{ effort: found?.suggested ?? "medium" }`.
+With no record, no provider match, or an unknown model, the method returns
+`undefined`.
+
+`suggested` is what an on/off control sends for "on". Among levels it is
+the one closest to medium, the higher one on a tie. A record with both a
+toggle and levels is `levels`, the finer control.
 
 The answer is advisory. It is models.dev's data, which can be stale or
-wrong, and a level it lists can still be rejected. It does not say whether
-a model can be turned off: Opus 4.7 accepts a disable and has no `none` in
-its list.
+wrong, and an effort it lists can still be rejected. `efforts` never
+contains `off`: models.dev records whether a model can be turned off for
+some providers only (Opus 4.7 accepts a disable and has neither a `none`
+nor a toggle in its record), so an absent flag would mean unknown. `off`
+stays a word the host sends and the provider may reject.
+
+The CLI is such a host: a recipe's `on` is resolved through `suggested`
+(cli.md).
 
 ## Anthropic output ceiling
 
@@ -292,15 +326,23 @@ same default and any preset fits.
 
 ## Harness coverage
 
-`reasoning-efforts` sends low, medium and high. Minimal, xhigh and max are
-covered by unit tests only, since no default target takes all six.
+`reasoning-efforts` sends low, medium and high. `reasoning-suggested`
+sends the effort `reasoningControl()` suggests for the target, fetched
+from models.dev at run time, and `reasoning-listed-efforts` (extended)
+sends every effort it lists; both run on Anthropic, OpenAI, Gemini,
+OpenRouter and Together AI and fail when the catalog has no record or no
+control for the target. Those two are the only live coverage of minimal,
+xhigh and max, on targets that list them. No default target is a toggle
+model, so `on` is covered by unit tests only.
 
 `checks/cases/reasoning.ts` runs `reasoning-off`, `reasoning-efforts`,
-`reasoning-stream-effort`, and `reasoning-tool-continuity` on every default
-target (`reasoning-efforts` also requires disclosed thinking text from at
-least one effort on Anthropic, OpenAI, and Gemini), and pins models for `reasoning-route-legacy` (Haiku 4.5, Gemini 2.5
-Flash Lite), `reasoning-route-modern` (Sonnet 4.6, `gemini-flash-lite-latest`),
-and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
+`reasoning-stream-effort`, `reasoning-suggested`, and
+`reasoning-tool-continuity` on every default target (`reasoning-efforts`
+also requires disclosed thinking text from at least one effort on
+Anthropic, OpenAI, and Gemini), and pins models for
+`reasoning-route-legacy` (Haiku 4.5, Gemini 2.5 Flash Lite),
+`reasoning-route-modern` (Sonnet 4.6, `gemini-flash-lite-latest`), and
+`reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
 
 ## Rejected alternatives
 
@@ -309,19 +351,44 @@ and `reasoning-unsupported-error` (`off` on Fable 5.1 and Gemini 3.1 Pro).
   lists models.dev records, so `"on"` was a setting that failed on models
   the caller had not been told about. Any other fixed level has the same
   hole.
-- **`"on"` as an enable at the provider's own effort** (2026-11-17):
-  Anthropic adaptive, Gemini and Together AI can express it. OpenAI
-  Responses and Chat Completions have no enable without an effort, and the
-  budget routes need a number, so on those routes `"on"` would send nothing
-  or an invented value.
+- **`"on"` as an enable that works on every route** (2026-11-17): Anthropic
+  adaptive, Gemini and Together AI can enable without naming a level.
+  OpenAI Responses and generic Chat Completions cannot, and the budget
+  routes need a number, so on those routes `"on"` would send nothing or an
+  invented value. `"on"` is a passthrough instead (invariant 3): the
+  provider's switch where it has one, the word where it does not.
+- **A level as the switch for a toggle model** (2026-11-17): asking the
+  host for any level means sending one the model does not have. Together
+  AI then gets `enabled: true` beside an effort word, a combination it does
+  not document.
+- **A budget preset for `"on"`** (2026-11-17): 8,192 would make `"on"` mean
+  medium again on the budget routes.
+- **`reasoning_effort: "on"` on OpenRouter** (2026-11-17): outside its
+  documented enum. `reasoning.enabled` is its switch.
+- **Booleans** (2026-11-17, again): `true` could only mean `"on"`, which
+  toggle models accept and level models reject, so it would read as the
+  universal switch and fail on most models. `false` does not say whether
+  it means `"off"` or `"default"`.
+- **An object-only setting, `{ effort, display? }`** (2026-11-17): it puts
+  `off`, `on` and the levels in one place, and so does the word form,
+  without making every call site write an object.
+- **`"off"` outside the effort vocabulary** (2026-11-17): the shape until
+  this revision, `"default" | "off" | { effort }`. Once `on` was an effort,
+  `off` beside the object and `on` inside it was two homes for one
+  vocabulary.
+- **An `off` flag on the catalog's answer** (2026-11-17): models.dev
+  records it for some providers only, so absence would mean unknown and a
+  host could not act on it.
 - **Resolving `"on"` from the catalog on the request path** (2026-11-17):
   the request would depend on whether a catalog was loaded and on
   third-party data, and the level sent would not appear at the call site.
   The catalog's `suggested` gives the host the same pick where it can see
-  it.
-- **Keeping `"on"` as a deprecated alias for medium** (2026-11-17): the
-  same reasoning that rejected boolean aliases below. A type error is
-  clearer than a setting whose failure depends on the model.
+  it. The CLI makes that pick as a host (cli.md): the library sends what
+  the caller wrote, and the friendly choice belongs to the host.
+- **Keeping `"on"` as an alias for medium** (2026-11-17): it would keep the
+  setting whose failure depends on the model. 0.36 code that says `"on"`
+  still compiles and now sends the word, which a level model rejects; the
+  migration entry says so.
 - **Rejecting levels without a preset on budget-only models** (2026-11-17):
   one setting would stop working across the models a host can select. The
   legacy sets are six frozen models, so a full table is nothing to

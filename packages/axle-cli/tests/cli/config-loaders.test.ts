@@ -141,23 +141,24 @@ describe("config loaders", () => {
     await expect(getJobConfig(path, {})).rejects.toThrow(/provider: Unrecognized key: "apiKey"/);
   });
 
-  it("accepts every reasoning effort and rejects the removed on", async () => {
-    const recipe = (reasoning: string) =>
-      writeFile(
-        join(TEST_DIR, "reasoning.yml"),
-        `request:\n  reasoning: ${reasoning}\ntask: Run\n`,
-      );
+  it("accepts a reasoning effort as a word or inside an object", async () => {
     const path = join(TEST_DIR, "reasoning.yml");
+    const reasoningOf = async (reasoning: string) => {
+      await writeFile(path, `request:\n  reasoning: ${reasoning}\ntask: Run\n`);
+      return (await getJobConfig(path, {})).request?.reasoning;
+    };
 
-    for (const effort of ["minimal", "low", "medium", "high", "xhigh", "max"]) {
-      await recipe(`{ effort: ${effort} }`);
-      expect((await getJobConfig(path, {})).request?.reasoning).toEqual({ effort });
+    for (const effort of ["off", "on", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+      expect(await reasoningOf(effort)).toBe(effort);
+      expect(await reasoningOf(`{ effort: ${effort} }`)).toEqual({ effort });
     }
-
-    await recipe("on");
-    await expect(getJobConfig(path, {})).rejects.toThrow(
-      "request.reasoning: on was removed, since no effort level exists on every model. Name one the model takes, e.g. { effort: medium }.",
-    );
+    expect(await reasoningOf("default")).toBe("default");
+    expect(await reasoningOf("{ effort: on, display: hidden }")).toEqual({
+      effort: "on",
+      display: "hidden",
+    });
+    await expect(reasoningOf("ultra")).rejects.toThrow(/request\.reasoning/);
+    await expect(reasoningOf("{ effort: default }")).rejects.toThrow(/request\.reasoning\.effort/);
   });
 
   it("rejects non-YAML job files", async () => {

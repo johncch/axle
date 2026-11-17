@@ -2,16 +2,21 @@
 
 ## Unreleased
 
-- **Breaking: `reasoning: on` is removed from recipes.** It meant medium
-  effort, and many models have no medium level, so it failed on them. Name
-  a level the model takes: `reasoning: { effort: medium }` is the request
-  `on` sent. A recipe that still says `on` is rejected with that advice.
-- **`reasoning.effort` takes six levels:** `minimal`, `low`, `medium`,
-  `high`, `xhigh` and `max`. The level is sent to the provider as written,
-  and the provider rejects one the model does not have. On models that
-  only take a thinking budget (Claude Haiku, Opus and Sonnet 4.5; Gemini
-  2.5), every level works: `minimal` is 1,024 tokens, `xhigh` 20,480 and
-  `max` 24,576.
+- **`reasoning: on` picks a level the model has.** It used to mean medium
+  effort, which many models do not have, so it failed on them. It now
+  uses the level models.dev records for the model that is closest to
+  medium, or the model's on/off switch if that is all it has, and medium
+  when there is no record. A recipe that worked keeps sending medium. The
+  run's log names the level and its source, for example
+  `Reasoning: on is high (models.dev (zhipuai/glm-5.3-flash))`. Name a
+  level when a recurring job must not follow the catalog.
+- **`reasoning` takes a level as a word.** `reasoning: high` is the same as
+  `reasoning: { effort: high }`; the object is only needed for `display`.
+- **Three more levels:** `minimal`, `xhigh` and `max`, beside `low`,
+  `medium` and `high`. A level is sent to the provider as written, and the
+  provider rejects one the model does not have. On models that only take a
+  thinking budget (Claude Haiku, Opus and Sonnet 4.5; Gemini 2.5), every
+  level works: `minimal` is 1,024 tokens, `xhigh` 20,480 and `max` 24,576.
 - The cached model catalog is refetched once after upgrading, since its
   saved format changed.
 - **Your messages stand out in the chat transcript.** Each one has a blank

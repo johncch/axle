@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { splitModelId } from "../protocols/model.js";
-import { REASONING_EFFORTS, type ReasoningEffort } from "../protocols/reasoning.js";
+import {
+  REASONING_LEVELS,
+  type ReasoningEffort,
+  type ReasoningLevel,
+} from "../protocols/reasoning.js";
 
 const CatalogModelSchema = z.object({
   name: z.string(),
@@ -117,14 +121,24 @@ export interface ContextWindowMatch {
   match: CatalogMatch["match"];
 }
 
-export interface ReasoningEffortsMatch {
+export interface ReasoningControlMatch {
   /**
-   * The `{ effort }` levels the provider is recorded as taking for this
-   * model, lowest first. Every level for a model that only takes a token
-   * budget; empty for one that does not reason or has no levels.
+   * How the provider lets the model's thinking be set: named `levels`, an
+   * on/off `toggle`, or `none` for a model that does not reason or whose
+   * thinking cannot be set.
+   */
+  control: "levels" | "toggle" | "none";
+  /**
+   * The `reasoning` efforts to offer, lowest first: the provider's listed
+   * levels (every level for a model that only takes a token budget), `on`
+   * for a toggle, nothing for `none`. `off` is never listed; the catalog
+   * does not record whether a model can be turned off.
    */
   efforts: ReasoningEffort[];
-  /** The level closest to medium, the higher one on a tie. Absent when `efforts` is empty. */
+  /**
+   * The effort for an on/off control to send: the level closest to medium,
+   * the higher one on a tie, or `on` for a toggle. Absent for `none`.
+   */
   suggested?: ReasoningEffort;
   id: string;
 }
@@ -228,39 +242,46 @@ export class ModelCatalog {
   }
 
   /**
-   * Which `reasoning: { effort }` levels to offer for a provider's model, and
-   * one to use when the choice is only on or off. Advisory: requests are
-   * never checked against it. `undefined` when the catalog has no record of
-   * the provider's reasoning controls for the model.
+   * How a provider's model has its thinking set: the kind of control, the
+   * `reasoning` efforts to offer, and one to send when the choice is only
+   * on or off. Advisory: requests are never checked against it. `undefined`
+   * when the catalog has no record of the provider's reasoning controls for
+   * the model.
    */
-  reasoningEfforts(
+  reasoningControl(
     model: string,
     options: { provider: string },
-  ): ReasoningEffortsMatch | undefined {
+  ): ReasoningControlMatch | undefined {
     const found = this.lookup(model, options);
     if (!found) return undefined;
-    if (!found.model.reasoning) return { efforts: [], id: found.id };
+    if (!found.model.reasoning) return { control: "none", efforts: [], id: found.id };
     if (!found.reasoningOptions) return undefined;
-    const efforts = listedEfforts(found.reasoningOptions);
-    return { efforts, suggested: suggestEffort(efforts), id: found.id };
+    const levels = listedLevels(found.reasoningOptions);
+    if (levels.length > 0) {
+      return { control: "levels", efforts: levels, suggested: nearestMedium(levels), id: found.id };
+    }
+    if (found.reasoningOptions.some((option) => option.type === "toggle")) {
+      return { control: "toggle", efforts: ["on"], suggested: "on", id: found.id };
+    }
+    return { control: "none", efforts: [], id: found.id };
   }
 }
 
-function listedEfforts(options: CatalogReasoningOption[]): ReasoningEffort[] {
+function listedLevels(options: CatalogReasoningOption[]): ReasoningLevel[] {
   const named = options.find((option) => option.type === "effort");
-  if (named) return REASONING_EFFORTS.filter((effort) => named.values.includes(effort));
-  if (options.some((option) => option.type === "budget")) return [...REASONING_EFFORTS];
-  return [];
+  const levels = named ? REASONING_LEVELS.filter((level) => named.values.includes(level)) : [];
+  if (levels.length > 0) return levels;
+  return options.some((option) => option.type === "budget") ? [...REASONING_LEVELS] : [];
 }
 
-function suggestEffort(efforts: ReasoningEffort[]): ReasoningEffort | undefined {
-  const medium = REASONING_EFFORTS.indexOf("medium");
-  let suggested: ReasoningEffort | undefined;
+function nearestMedium(levels: ReasoningLevel[]): ReasoningLevel | undefined {
+  const medium = REASONING_LEVELS.indexOf("medium");
+  let suggested: ReasoningLevel | undefined;
   let nearest = Infinity;
-  for (const effort of efforts) {
-    const distance = Math.abs(REASONING_EFFORTS.indexOf(effort) - medium);
+  for (const level of levels) {
+    const distance = Math.abs(REASONING_LEVELS.indexOf(level) - medium);
     if (distance <= nearest) {
-      suggested = effort;
+      suggested = level;
       nearest = distance;
     }
   }

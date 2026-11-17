@@ -83,6 +83,18 @@ against it; divergence is a defect. State ownership is defined in
    window with its source and the matched catalog id, so a best-effort match
    is visible.
 
+   A recipe's `reasoning: on` is resolved against the same catalog at the
+   same moment. `on` means "think, at a level this model has": it becomes
+   the effort `ModelCatalog.reasoningControl()` suggests for the model (the
+   level closest to medium, or `on` itself for a model whose thinking only
+   switches), else medium when the catalog has no record or no control for
+   it. `{ effort: on, display }` keeps its `display`. Every other setting,
+   a named level included, is sent as the recipe wrote it. The resolved
+   effort is logged beside the context window with its source, `models.dev
+(<id>)` or `assumed`. Core sends `on` literally
+   ([reasoning.md](./reasoning.md) invariant 3); picking for the user is
+   the CLI's job as a host.
+
    Usage is two `Stats`, each fed by `addStats` on `turn:end`: the
    session's, owned by `SessionRuntime`, restored from the file's `usage`
    and saved back; and the run's, created in `cli.ts` for the usage bar,
@@ -630,6 +642,19 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   terminal's background so it holds on any theme. The approach is the
   Codex TUI's; its 12% on a dark background read too strong here, so the
   dark shade is 8%.
+- **2026-11-17 — a recipe's `reasoning: on` is the catalog's suggested
+  effort (AXL-106).** Before, `on` was core's alias for medium, which many
+  models do not have. Core now passes `on` to the provider as written,
+  where only models with an on/off switch accept it. Rejected: passing it
+  through in the CLI too, which would turn every existing recipe on a
+  Claude or GPT model into a provider error; mapping it to `default`,
+  which sends nothing, so a recipe that says `on` would run without
+  thinking on a model whose default is off; and rejecting `on` with advice
+  to name a level, which breaks recipes that work. Resolving it keeps
+  every working recipe on medium and fixes the ones medium failed.
+  Accepted cost: the level is not written in the recipe, so it follows
+  models.dev's record of the model; a recipe that needs a fixed level
+  names one.
 - **2026-10-09 — `axle setup` asks which home to write.** Rejected: always
   the user home (shipped until this date) — a new project could not get
   its own key without hand-editing. Rejected: project profile with the key

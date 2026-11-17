@@ -193,8 +193,7 @@ sets provider-portable request options:
 system: You are a terse analyst.
 
 request:
-  reasoning:
-    effort: medium
+  reasoning: on
   maxOutputTokens: 16000
 ```
 
@@ -212,16 +211,26 @@ where asking is required (Anthropic, OpenRouter); `cache: false` omits the
 request, for a recipe that never repeats a prompt and would rather not pay
 the cache write premium. OpenAI, Gemini and Together AI cache on their own either way.
 
-`reasoning` takes `default`, `off`, or
-`{ effort: minimal | low | medium | high | xhigh | max, display?: visible | hidden }`.
-`display` defaults to `visible`; `hidden` asks the provider to keep its
-thinking off the wire.
-Leave it unset (or `default`) and the model runs at its provider's own
-default, which is always safe, including for models that cannot disable
-thinking. `off` sends the provider's explicit disable and is rejected by
-models that cannot turn thinking off. An effort is sent to the provider as
-written. Models differ in which levels they take, and many have no
-`medium`; the provider rejects a level the model lacks, so pick another.
+`reasoning` takes `default`, `off`, `on`, a level (`minimal`, `low`,
+`medium`, `high`, `xhigh`, `max`), or `{ effort, display }`, where `effort`
+is `off`, `on` or a level and `display` is `visible` (the default) or
+`hidden`, which asks the provider to keep its thinking off the wire.
+
+- Leave it unset (or `default`) and the model runs at its provider's own
+  default, which is always safe, including for models that cannot disable
+  thinking.
+- `off` sends the provider's explicit disable and is rejected by models
+  that cannot turn thinking off.
+- `on` picks a level for you: the one [models.dev](https://models.dev)
+  records for the model that is closest to medium, or the model's on/off
+  switch if that is all it has. With no record it is medium. The run's log
+  names the level and where it came from, so `on` keeps working when you
+  change models.
+- A level is sent to the provider as written. Models differ in which
+  levels they take, and many have no `medium`; the provider rejects a
+  level the model lacks. Name a level when a recurring job must not change
+  with the catalog.
+
 On models that only take a thinking budget (Claude Haiku, Opus, and Sonnet
 4.5; Gemini 2.5), every level works and a `maxOutputTokens` you set must
 exceed the budget: 8,192 for `medium`, 16,384 for `high`, 24,576 for `max`.
@@ -229,8 +238,14 @@ Leave it unset and Axle's default already does.
 
 ```yaml
 request:
+  reasoning: high
+```
+
+```yaml
+request:
   reasoning:
     effort: high
+    display: hidden
 ```
 
 Long sessions compact automatically: when the conversation approaches the

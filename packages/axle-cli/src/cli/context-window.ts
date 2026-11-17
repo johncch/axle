@@ -58,7 +58,10 @@ export function modelAcceptsImages(
   return found?.model.modalities.input.includes("image");
 }
 
-function catalogLookupOptions(endpoint: Endpoint): { provider?: string; publisher?: string } {
+export function catalogLookupOptions(endpoint: Endpoint): {
+  provider?: string;
+  publisher?: string;
+} {
   return {
     provider: createProvider(endpoint, CATALOG_LOOKUP_KEY).id,
     publisher: endpoint.kind === "preset" ? FIRST_PARTY_PUBLISHERS[endpoint.preset] : undefined,
