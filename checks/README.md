@@ -223,6 +223,7 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `agent-text-start-cancel-follow-up` (cancel as a text part opens, before any delta; a follow-up turn is accepted)
 - `agent-thinking-cancel-follow-up` (reasoning on, cancel as a thinking part opens; a follow-up turn is accepted; fails if the model produces no thinking part)
 - `agent-text-then-tool-call-cancel-follow-up` (cancel at a tool call that follows text; the text is kept without the call and a follow-up turn is accepted; fails if the model writes no text first)
+- `agent-step-hook` (`onStep` fires once per step with rows equal to `turn:end` and a resumable `agent.messages`; a throw stops the turn and a follow-up turn is accepted)
 - `agent-subagent-abort` (cancel mid-delegation; no child conversation leak)
 - `agent-parallel-subagents` (parallelize + createAgentTool fan-out)
 - `reasoning-off` (explicit disable; skipped on Fable, Opus 5.5, Sonnet 5.5, and GPT-6.1 Sol, which reject it)

@@ -531,6 +531,55 @@ describe("stream()", () => {
       expect(providerCalls).toBe(1);
     });
 
+    test("awaits onStep once per step, and a throw rejects final", async () => {
+      const toolTurn: AnyStreamChunk[] = [
+        startChunk("msg_1"),
+        toolCallStartChunk(0, "call_1", "web_search"),
+        toolCallCompleteChunk(0, "call_1", "web_search", { q: "test" }),
+        completeChunk(AxleStopReason.FunctionCall),
+      ];
+      const textTurn: AnyStreamChunk[] = [
+        startChunk("msg_2"),
+        textStartChunk(0),
+        textChunk(0, "done"),
+        textCompleteChunk(0),
+        completeChunk(),
+      ];
+      const run = (onStep: Parameters<ReturnType<typeof stream>["onStep"]>[0]) => {
+        let providerCalls = 0;
+        const handle = stream({
+          provider: makeProvider({
+            streamFactory: async function* () {
+              providerCalls += 1;
+              for (const chunk of providerCalls === 1 ? toolTurn : textTurn) yield chunk;
+            },
+          }),
+          model: "test-model",
+          messages: [],
+          tools: [deferredTool("web_search")],
+          onToolCall: () => "ok",
+        });
+        handle.onStep(onStep);
+        return handle;
+      };
+
+      const steps: string[] = [];
+      const final = await run(async (step) => {
+        await Promise.resolve();
+        steps.push(`${step.messages.map((m) => m.role).join("+")}:${step.usage.breakdown.length}`);
+      }).final;
+
+      expect(steps).toEqual(["assistant+tool:1", "assistant:1"]);
+      expect(final.usage?.breakdown).toHaveLength(2);
+
+      const failure = new Error("save failed");
+      await expect(
+        run(() => {
+          throw failure;
+        }).final,
+      ).rejects.toBe(failure);
+    });
+
     test("emits tool:request, tool:exec-start, tool:exec-complete events", async () => {
       const turn1Chunks: AnyStreamChunk[] = [
         startChunk("msg_1"),

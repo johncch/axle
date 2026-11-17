@@ -10,6 +10,7 @@ export type {
   AgentResult,
   AgentSession,
   AgentStatus,
+  AgentStep,
   Continuation,
   ContinuationContext,
   IdleCallback,
@@ -22,6 +23,7 @@ export type {
   SettledOperation,
   StartCallback,
   StartedOperation,
+  StepCallback,
 } from "./core/agent/index.js";
 export { Instruct } from "./core/index.js";
 export type {
@@ -106,6 +108,8 @@ export type {
   StreamInstructParams,
   StreamInstructResult,
   StreamParams,
+  StreamStep,
+  StreamStepCallback,
   ToolBatchCompleteCallback,
   ToolBatchDecision,
 } from "./execution/stream.js";

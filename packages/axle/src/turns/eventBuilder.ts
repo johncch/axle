@@ -529,6 +529,7 @@ export class TurnEventBuilder {
   finalizeTurn(
     outcome: "complete" | "cancelled" | "error" = "complete",
     failure?: AxleProviderFailure,
+    usage?: Stats,
   ): TurnEvent[] {
     const turnId = this.currentTurnId;
     if (!turnId) return [];
@@ -550,7 +551,7 @@ export class TurnEventBuilder {
       type: "turn:end",
       turnId,
       status: outcome,
-      usage: { ...this.accumulatedUsage },
+      usage: { ...(usage ?? this.accumulatedUsage) },
       ...(failure ? { failure: turnFailureOf(failure) } : {}),
       ...(this.finalAnswerReason ? { reason: this.finalAnswerReason } : {}),
       timing,

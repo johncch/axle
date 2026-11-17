@@ -1169,6 +1169,90 @@ export const coreCases: CheckCase[] = [
   },
   {
     group: "default",
+    id: "agent-step-hook",
+    description:
+      "onStep fires once per step with rows that add up to turn:end and a resumable agent.messages; a throw stops the turn and a follow-up turn is accepted.",
+    async run({ provider, model, requestOptions }) {
+      const weatherTool: ExecutableTool<z.ZodObject<{ city: z.ZodString }>> = {
+        name: "lookup_weather",
+        description: "Look up the current weather for a city.",
+        schema: z.object({ city: z.string() }),
+        execute: async () => "Sunny, 21C",
+      };
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [weatherTool] });
+      const steps: Array<{ index: number; rows: number; lastRole?: string }> = [];
+      const rows: unknown[] = [];
+      let turnRows: unknown[] | undefined;
+      agent.on((event) => {
+        if (event.type === "turn:end") turnRows = event.usage.breakdown;
+      });
+      const stop = new Error("checks-step-stop");
+      let throwOnStep = false;
+      agent.onStep((step) => {
+        steps.push({
+          index: step.index,
+          rows: step.usage.breakdown.length,
+          lastRole: agent.messages.at(-1)?.role,
+        });
+        rows.push(...step.usage.breakdown);
+        if (throwOnStep) throw stop;
+      });
+
+      const prompt = "Use the lookup_weather tool for Paris and report the result.";
+      const first = await agent.send(prompt).final;
+      const firstSteps = steps.splice(0);
+      const firstRows = rows.splice(0);
+      const firstTurnRows = turnRows;
+
+      throwOnStep = true;
+      const thrown = await agent.send(prompt.replace("Paris", "Oslo")).final.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      const stepsBeforeThrow = steps.length;
+      const rolesAfterThrow = agent.messages.slice(-3).map((message) => message.role);
+      throwOnStep = false;
+      const followUp = await agent.send("Never mind that. Reply with the single word: ready").final;
+
+      const failureReasons: string[] = [];
+      if (!first.ok) failureReasons.push("the first turn failed");
+      if (firstSteps.length < 2) {
+        failureReasons.push(`expected at least two steps, got ${firstSteps.length}`);
+      }
+      const lastRoles = firstSteps.map((step) => step.lastRole).join(",");
+      if (!/^(tool,)+assistant$/.test(lastRoles)) {
+        failureReasons.push(`agent.messages ended with: ${lastRoles}`);
+      }
+      const indexes = firstSteps.map((step) => step.index).join(",");
+      if (indexes !== firstSteps.map((_, i) => i).join(",")) {
+        failureReasons.push(`step indexes were ${indexes}`);
+      }
+      if (JSON.stringify(firstRows) !== JSON.stringify(firstTurnRows)) {
+        failureReasons.push("the steps' usage rows do not equal the turn:end breakdown");
+      }
+      if (thrown !== stop) failureReasons.push("the send did not reject with the thrown error");
+      if (stepsBeforeThrow !== 1) {
+        failureReasons.push(`the hook fired ${stepsBeforeThrow} times in the stopped turn`);
+      }
+      if (rolesAfterThrow.join(",") !== "user,assistant,tool") {
+        failureReasons.push(`unexpected roles after the throw: ${rolesAfterThrow.join(",")}`);
+      }
+      if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
+      return {
+        ok: failureReasons.length === 0,
+        failureReasons,
+        details: {
+          firstSteps,
+          turnRows: firstTurnRows,
+          error: serializeError(thrown),
+          rolesAfterThrow,
+          followUp: followUp.ok ? followUp.response : followUp.error,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
     id: "agent-tool-call-cancel-follow-up",
     description:
       "Cancelling while the model writes a tool call leaves no call in history, and a follow-up turn is accepted.",

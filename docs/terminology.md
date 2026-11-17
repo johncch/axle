@@ -89,7 +89,12 @@ requests (if any). A send ends with the first step whose message requests
 no tools, or when a budget (`maxSteps`, context limit) or boundary control
 stops the loop. Steps are invisible in conversation state — each step's
 output is flattened into messages and into the agent turn's parts. Spans are
-named `step-N`; stream events are `step:start` / `step:complete`. This
+named `step-N`; stream events are `step:start` / `step:complete`. The
+Agent commits a step's messages when the step ends and then calls
+`agent.onStep`, so a host can save there. A compaction whose callback ran is
+reported as a step too, with no usage. The `index` on a step handed to
+`onStep` counts the turn's steps from 0, compactions included; with the
+`turnId` it identifies the step. `maxSteps` counts model calls only. This
 matches the unit's industry usage (Vercel AI SDK `maxSteps`, OpenAI run
 steps). Two exceptions to "one provider request": when Anthropic pauses a
 response (`pause_turn`), the adapter sends the follow-up requests itself; and
@@ -152,8 +157,8 @@ policy. Rows are kept
 in request order and never summed per model, because providers bill a request at
 the tier its own prompt size selects; a row's `in` is that prompt size. A
 subagent's rows sit between the parent requests that bracket its tool call,
-under the subagent's own name; several subagents in one tool batch
-interleave their rows in wall-clock order. A paused Anthropic response (`pause_turn`)
+under the subagent's own name; several subagents in one tool batch keep
+each subagent's rows together, in the order the calls were requested. A paused Anthropic response (`pause_turn`)
 is one step but several requests, and yields one row per request. A Gemini 4
 response continued past its per-request cap (`CONTINUATION`) is also several
 requests but yields one row, because the SDK runs those requests and reports

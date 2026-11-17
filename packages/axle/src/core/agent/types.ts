@@ -199,6 +199,27 @@ export type SettledCallback = (
   operation: SettledOperation,
 ) => void | Promise<void>;
 
+/**
+ * A step that just ended inside a turn, handed to `onStep`: one model call
+ * and the tool batch it asked for, if any, or a compaction whose callback
+ * ran.
+ *
+ * `index` counts the turn's steps from 0, compactions included, so it can
+ * run ahead of the model calls `maxSteps` counts. `usage` is what the Agent
+ * saw spent in the step: its own model call, plus whatever the step's tools
+ * reported, such as a subagent's rows. It is empty for a compaction, whose
+ * spend belongs to the host's compactor. `signal` aborts when the turn is
+ * cancelled or times out.
+ */
+export interface AgentStep {
+  turnId: string;
+  index: number;
+  signal: AbortSignal;
+  usage: Stats;
+}
+
+export type StepCallback = (step: AgentStep) => void | Promise<void>;
+
 export type IdleCallback = () => void;
 
 /**
