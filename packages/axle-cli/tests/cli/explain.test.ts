@@ -76,7 +76,7 @@ describe("formatExplain", () => {
     expect(lines[0]).toBe(
       "recipe.request.reasoning  default | off | on | minimal | low | medium | high | xhigh | max | object",
     );
-    expect(keysOf(fieldsOf(lines))).toEqual(["effort", "display"]);
+    expect(keysOf(fieldsOf(lines))).toEqual(["enabled", "effort", "display"]);
   });
 
   it("walks through lists and names the variant a key belongs to", () => {

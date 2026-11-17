@@ -2,21 +2,26 @@
 
 ## Unreleased
 
-- **`reasoning: on` picks a level the model has.** It used to mean medium
+- **`reasoning: on` picks an effort the model has.** It used to mean medium
   effort, which many models do not have, so it failed on them. It now
-  uses the level models.dev records for the model that is closest to
+  uses the effort models.dev records for the model that is closest to
   medium, or the model's on/off switch if that is all it has, and medium
   when there is no record. A recipe that worked keeps sending medium. The
-  run's log names the level and its source, for example
-  `Reasoning: on is high (models.dev (zhipuai/glm-5.3-flash))`. Name a
-  level when a recurring job must not follow the catalog.
-- **`reasoning` takes a level as a word.** `reasoning: high` is the same as
-  `reasoning: { effort: high }`; the object is only needed for `display`.
-- **Three more levels:** `minimal`, `xhigh` and `max`, beside `low`,
-  `medium` and `high`. A level is sent to the provider as written, and the
-  provider rejects one the model does not have. On models that only take a
-  thinking budget (Claude Haiku, Opus and Sonnet 4.5; Gemini 2.5), every
-  level works: `minimal` is 1,024 tokens, `xhigh` 20,480 and `max` 24,576.
+  run's log names the pick and its source, for example
+  `Reasoning: on is high (models.dev (zhipuai/glm-5.3-flash))`. Name an
+  effort when a recurring job must not follow the catalog.
+- **`reasoning` takes an effort as a word.** `reasoning: high` is the same
+  as `reasoning: { effort: high }`.
+- **Three more efforts:** `minimal`, `xhigh` and `max`, beside `low`,
+  `medium` and `high`. An effort is sent to the provider as written, and
+  the provider rejects one the model does not have. On models that only
+  take a thinking budget (Claude Haiku, Opus and Sonnet 4.5; Gemini 2.5),
+  every effort works: `minimal` is 1,024 tokens, `xhigh` 20,480 and `max`
+  24,576.
+- **`reasoning` takes `enabled` in its object form.**
+  `reasoning: { enabled: true }` flips a model's on/off switch without
+  naming an effort, for a model or provider that has one, and
+  `{ enabled: false }` is the same as `off`.
 - The cached model catalog is refetched once after upgrading, since its
   saved format changed.
 - **Your messages stand out in the chat transcript.** Each one has a blank

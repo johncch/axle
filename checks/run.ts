@@ -25,7 +25,7 @@ import {
   type ProviderTarget,
 } from "./providers.js";
 
-const REASONING_FLAGS = ["default", ...REASONING_EFFORTS] as const;
+const REASONING_FLAGS = ["default", "off", "on", ...REASONING_EFFORTS] as const;
 
 interface RunOptions {
   providers: string[];
@@ -598,9 +598,11 @@ function formatFailureReasons(reasons: string[]): string {
 }
 
 function parseReasoningFlag(value: string): ReasoningSetting {
-  const setting = REASONING_FLAGS.find((flag) => flag === value);
-  if (!setting) throw new Error(`--reasoning expects one of ${REASONING_FLAGS.join(", ")}`);
-  return setting;
+  const flag = REASONING_FLAGS.find((known) => known === value);
+  if (!flag) throw new Error(`--reasoning expects one of ${REASONING_FLAGS.join(", ")}`);
+  if (flag === "default") return flag;
+  if (flag === "off" || flag === "on") return { enabled: flag === "on" };
+  return { effort: flag };
 }
 
 function parseArgs(args: string[]): RunOptions {

@@ -1,6 +1,5 @@
 import type { ResponseIncludable } from "openai/resources/responses/responses.js";
 import { ResponseInput } from "openai/resources/responses/responses.js";
-import type { ReasoningEffort as OpenAIReasoningEffort } from "openai/resources/shared.js";
 import { AxleError, AxleErrorCode } from "../../errors/AxleError.js";
 import { AxleMessage, ContentPart, ContentPartText } from "../../messages/message.js";
 import { getTextContent } from "../../messages/utils.js";
@@ -11,7 +10,7 @@ import {
   type FileResolver,
   type ResolvedFileSource,
 } from "../../utils/file.js";
-import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
+import { reasoningNeedsEffort, resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import type { ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 
@@ -113,9 +112,9 @@ export function toOpenAIReasoning(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning: { effort: "none" as const } };
-  const effort = request.effort as NonNullable<OpenAIReasoningEffort>;
-  if (request.display === "hidden") return { reasoning: { effort } };
-  return { reasoning: { effort, summary: "auto" as const } };
+  if (request.effort === undefined) throw reasoningNeedsEffort("the Responses API");
+  if (request.display === "hidden") return { reasoning: { effort: request.effort } };
+  return { reasoning: { effort: request.effort, summary: "auto" as const } };
 }
 
 interface OpenAIConversionContext {

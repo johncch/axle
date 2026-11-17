@@ -6,6 +6,7 @@ import {
   type AxleAssistantMessage,
   type AxleMessage,
   type ExecutableTool,
+  type ReasoningConfig,
   type ReasoningControlMatch,
   type ReasoningEffort,
   type ReasoningSetting,
@@ -34,7 +35,7 @@ function loadCatalog(): Promise<ModelCatalog> {
   return catalog;
 }
 
-type OfferedControl = ReasoningControlMatch & { suggested: ReasoningEffort };
+type OfferedControl = ReasoningControlMatch & { suggested: ReasoningConfig };
 
 async function offeredControl(
   providerId: ProviderId,
@@ -80,8 +81,8 @@ const MODERN_EFFORT_MODELS: Partial<Record<ProviderId, string>> = {
 const UNSUPPORTED_SETTINGS: Partial<
   Record<ProviderId, { model: string; reasoning: ReasoningSetting }>
 > = {
-  anthropic: { model: "claude-fable-5-1", reasoning: "off" },
-  google: { model: "gemini-3.1-pro-preview", reasoning: "off" },
+  anthropic: { model: "claude-fable-5-1", reasoning: { enabled: false } },
+  google: { model: "gemini-3.1-pro-preview", reasoning: { enabled: false } },
 };
 
 export const reasoningCases: CheckCase[] = [
@@ -113,7 +114,7 @@ export const reasoningCases: CheckCase[] = [
         model,
         ...requestOptions,
         messages: [{ role: "user", content: "Reply with exactly: pong" }],
-        reasoning: "off",
+        reasoning: { enabled: false },
       });
 
       if (!result.ok) return fail({ error: result.error });
@@ -232,27 +233,32 @@ export const reasoningCases: CheckCase[] = [
     group: "extended",
     id: "reasoning-listed-efforts",
     description:
-      "Every effort the model catalog lists for the target model is accepted by its provider.",
+      "Every effort the model catalog lists for the target model, or its switch, is accepted by its provider.",
     providers: CATALOG_PROVIDERS,
     async run({ provider, providerId, model, requestOptions }) {
       const control = await offeredControl(providerId, model);
       if ("ok" in control) return control;
-      const perEffort: Record<string, unknown> = {};
+      const settings: ReasoningConfig[] =
+        control.efforts.length > 0
+          ? control.efforts.map((effort) => ({ effort }))
+          : [control.suggested];
+      const perSetting: Record<string, unknown> = {};
       const failureReasons: string[] = [];
-      for (const effort of control.efforts) {
+      for (const reasoning of settings) {
+        const name = reasoning.effort ?? "switch";
         const result = await generate({
           provider,
           model,
           ...requestOptions,
           messages: [{ role: "user", content: reasoningPrompt }],
-          reasoning: effort,
+          reasoning,
         });
         if (!result.ok) {
-          failureReasons.push(`effort ${effort}: ${result.error.message}`);
-          perEffort[effort] = { error: result.error };
+          failureReasons.push(`${name}: ${result.error.message}`);
+          perSetting[name] = { error: result.error };
           continue;
         }
-        perEffort[effort] = {
+        perSetting[name] = {
           reasoningOut: result.usage?.reasoningOut,
           thinkingParts: countThinking(result.final),
         };
@@ -260,7 +266,7 @@ export const reasoningCases: CheckCase[] = [
       return {
         ok: failureReasons.length === 0,
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
-        details: { control, perEffort },
+        details: { control, perSetting },
       };
     },
   },
@@ -269,7 +275,7 @@ export const reasoningCases: CheckCase[] = [
     id: "reasoning-tool-continuity",
     description:
       "A reasoning-enabled tool loop passes thinking continuity back through the tool turn and finishes.",
-    run: (context) => runToolContinuity(context, "medium"),
+    run: (context) => runToolContinuity(context, { effort: "medium" }),
   },
   {
     group: "extended",

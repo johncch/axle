@@ -21,7 +21,7 @@ export function toOpenRouterReasoning(reasoning: ReasoningSetting | undefined) {
   if (request === "default") return {};
   if (request === "off") return { reasoning_effort: "none" as const };
   const hidden = request.display === "hidden";
-  if (request.effort === "on") {
+  if (request.effort === undefined) {
     return { reasoning: hidden ? { enabled: true, exclude: true } : { enabled: true } };
   }
   if (hidden) return { reasoning_effort: request.effort, reasoning: { exclude: true } };

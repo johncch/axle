@@ -113,8 +113,8 @@ export type {
   ToolBatchCompleteCallback,
   ToolBatchDecision,
 } from "./execution/stream.js";
-export { REASONING_EFFORTS, REASONING_LEVELS } from "./protocols/reasoning.js";
-export type { ReasoningEffort, ReasoningLevel, ReasoningSetting } from "./protocols/reasoning.js";
+export { REASONING_EFFORTS } from "./protocols/reasoning.js";
+export type { ReasoningConfig, ReasoningEffort, ReasoningSetting } from "./protocols/reasoning.js";
 export { AxleStopReason } from "./protocols/types.js";
 export type {
   AIProvider,

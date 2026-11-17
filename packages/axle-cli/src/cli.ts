@@ -37,7 +37,7 @@ import type { CommonOpts, Invocation } from "./cli/invocation.js";
 import { buildPendingPlan, parseTemplateArgs } from "./cli/invocation.js";
 import { loadLedger } from "./cli/ledger.js";
 import { closeMcps } from "./cli/mcp.js";
-import { describeOnEffort, resolveRecipeReasoning } from "./cli/reasoning.js";
+import { describeOn, resolveRecipeReasoning } from "./cli/reasoning.js";
 import { runAgentSession, runBatch } from "./cli/runners.js";
 import type { ScheduleContext, ScheduledJobConfig } from "./cli/schedule/commands.js";
 import {
@@ -598,7 +598,7 @@ const endpoint = resolveEndpoint(pending.target.provider, cliConfig);
 const reasoning = resolveRecipeReasoning(
   endpoint,
   recipeAgentConfig.model,
-  recipeAgentConfig.reasoning,
+  pending.recipe.request?.reasoning,
   catalog,
 );
 const agentConfig = { ...recipeAgentConfig, reasoning: reasoning.setting };
@@ -606,7 +606,7 @@ const contextWindow = resolveContextWindow(endpoint, agentConfig.model, catalog)
 rootSpan.info(
   `Context window: ${formatTokens(contextWindow.window)} (${describeContextWindowSource(contextWindow.source)})`,
 );
-if (reasoning.on) rootSpan.info(describeOnEffort(reasoning.on));
+if (reasoning.on) rootSpan.info(describeOn(reasoning.on));
 
 try {
   rootSpan.info("All systems operational. Running job...");

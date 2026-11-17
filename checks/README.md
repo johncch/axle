@@ -78,9 +78,10 @@ Override the model for one provider:
 pnpm exec tsx checks/run.ts --provider openai --model gpt-5.4
 ```
 
-Apply a portable reasoning setting (`default`, `off`, `on`, or a level:
-`minimal`, `low`, `medium`, `high`, `xhigh`, `max`) to every case that
-forwards `requestOptions`:
+Apply a reasoning setting to every case that forwards `requestOptions`:
+`default`, `off` (`{ enabled: false }`), `on` (`{ enabled: true }`, the
+switch alone), or an effort (`minimal`, `low`, `medium`, `high`, `xhigh`,
+`max`):
 
 ```bash
 pnpm exec tsx checks/run.ts --provider anthropic --model claude-opus-4-8 --reasoning high
@@ -230,8 +231,8 @@ for the provider, and `N` in the suite but not yet run on this model.
 - `reasoning-off` (explicit disable; skipped on Fable, Opus 5.5, Sonnet 5.5, and GPT-6.1 Sol, which reject it)
 - `reasoning-efforts` (low, medium, and high each accepted on the target model)
 - `reasoning-stream-effort`
-- `reasoning-suggested` (Anthropic, OpenAI, Gemini, OpenRouter, Together AI: the effort `ModelCatalog.reasoningControl()` suggests for the target model is accepted; fetches models.dev, and fails if the catalog has no reasoning record or no control for the model)
-- `reasoning-listed-efforts` (extended; same providers: every effort the catalog lists for the target model is accepted, one request per effort)
+- `reasoning-suggested` (Anthropic, OpenAI, Gemini, OpenRouter, Together AI: the setting `ModelCatalog.reasoningControl()` suggests for the target model is accepted; fetches models.dev, and fails if the catalog has no reasoning record or no control for the model)
+- `reasoning-listed-efforts` (extended; same providers: every effort the catalog lists for the target model is accepted, one request per effort, or its switch for a model that only switches)
 - `reasoning-tool-continuity` (thinking carried back through a tool turn)
 - `stream-web-search`
 - `format-web-citations-follow-up` (Anthropic, OpenAI, Gemini, OpenRouter: a

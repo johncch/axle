@@ -181,7 +181,7 @@ describe("createStreamingRequest (Anthropic)", () => {
         model: "claude-opus-4-8",
         messages,
         runtime: {},
-        reasoning: "off",
+        reasoning: { enabled: false },
         providerOptions: { thinking: { type: "adaptive" }, output_config: { effort: "max" } },
       }),
     );

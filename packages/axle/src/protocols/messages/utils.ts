@@ -260,6 +260,7 @@ export type AnthropicThinkingFields =
   | Record<string, never>
   | { thinking: { type: "disabled" } }
   | { thinking: { type: "enabled"; budget_tokens: number; display: AnthropicThinkingDisplay } }
+  | { thinking: { type: "adaptive"; display: AnthropicThinkingDisplay } }
   | {
       thinking: { type: "adaptive"; display: AnthropicThinkingDisplay };
       output_config: { effort: AnthropicEffort };
@@ -283,6 +284,7 @@ export function toAnthropicThinking(
       },
     };
   }
+  if (request.effort === undefined) return { thinking: { type: "adaptive", display } };
   return {
     thinking: { type: "adaptive", display },
     output_config: { effort: request.effort as AnthropicEffort },

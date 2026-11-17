@@ -220,7 +220,7 @@ describe("ModelCatalog.reasoningControl", () => {
     expect(catalog.reasoningControl("claude-sonnet-5", { provider: "anthropic" })).toEqual({
       control: "levels",
       efforts: ["low", "medium", "high", "xhigh", "max"],
-      suggested: "medium",
+      suggested: { effort: "medium" },
       id: "anthropic/claude-sonnet-5",
     });
   });
@@ -229,7 +229,7 @@ describe("ModelCatalog.reasoningControl", () => {
     expect(catalog.reasoningControl("z-ai/glm-5.3-flash", { provider: "openrouter" })).toEqual({
       control: "levels",
       efforts: ["low", "high", "max"],
-      suggested: "high",
+      suggested: { effort: "high" },
       id: "zhipuai/glm-5.3-flash",
     });
   });
@@ -239,10 +239,10 @@ describe("ModelCatalog.reasoningControl", () => {
       withOptions([{ type: "effort", values }]).reasoningControl("old", { provider: "acme" })
         ?.suggested;
 
-    expect(suggested(["minimal", "high"])).toBe("high");
-    expect(suggested(["high", "max"])).toBe("high");
-    expect(suggested(["minimal", "low"])).toBe("low");
-    expect(suggested(["max"])).toBe("max");
+    expect(suggested(["minimal", "high"])).toEqual({ effort: "high" });
+    expect(suggested(["high", "max"])).toEqual({ effort: "high" });
+    expect(suggested(["minimal", "low"])).toEqual({ effort: "low" });
+    expect(suggested(["max"])).toEqual({ effort: "max" });
   });
 
   it("leaves out the provider's off value and levels Axle has no name for", () => {
@@ -253,7 +253,7 @@ describe("ModelCatalog.reasoningControl", () => {
     expect(found).toEqual({
       control: "levels",
       efforts: ["low", "high"],
-      suggested: "high",
+      suggested: { effort: "high" },
       id: "acme/old",
     });
   });
@@ -262,16 +262,16 @@ describe("ModelCatalog.reasoningControl", () => {
     expect(catalog.reasoningControl("gemini-2.5-pro", { provider: "google" })).toEqual({
       control: "levels",
       efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
-      suggested: "medium",
+      suggested: { effort: "medium" },
       id: "google/gemini-2.5-pro",
     });
   });
 
-  it("offers on for a model whose thinking only switches", () => {
+  it("suggests the switch for a model whose thinking only switches", () => {
     expect(catalog.reasoningControl("zai-org/GLM-5.1", { provider: "togetherai" })).toEqual({
       control: "toggle",
-      efforts: ["on"],
-      suggested: "on",
+      efforts: [],
+      suggested: { enabled: true },
       id: "togetherai/zai-org/GLM-5.1",
     });
     expect(
@@ -292,7 +292,7 @@ describe("ModelCatalog.reasoningControl", () => {
     expect(control([{ type: "toggle" }, { type: "budget", min: 0, max: 24576 }])).toBe("levels");
   });
 
-  it("has nothing to offer for a model with no control or no reasoning", () => {
+  it("has nothing to offer for a model that always reasons or never does", () => {
     expect(withOptions([]).reasoningControl("old", { provider: "acme" })).toEqual({
       control: "none",
       efforts: [],

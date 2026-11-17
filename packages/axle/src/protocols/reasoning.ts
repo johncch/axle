@@ -4,19 +4,11 @@ import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
  * Every named reasoning depth, lowest first. No model accepts all of them;
  * a level a model lacks is rejected by its provider.
  */
-export const REASONING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
-
-/** A named reasoning depth. Relative within a model, not comparable across models. */
-export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
-
-/** Every word a reasoning setting can name: `off`, `on`, then the levels lowest first. */
-export const REASONING_EFFORTS = ["off", "on", ...REASONING_LEVELS] as const;
+export const REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
- * What to ask of a model's thinking. `"off"` is the provider's explicit
- * disable. `"on"` is for a model whose thinking only switches on or off and
- * is sent as the provider's own switch where it has one. A level is sent as
- * written.
+ * Named reasoning depth. Relative within a model, not comparable compute or
+ * token spend across models.
  */
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
@@ -27,22 +19,42 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 export type ReasoningDisplay = "visible" | "hidden";
 
 /**
- * Provider-portable reasoning control: `"default"` (or omission) sends no
- * reasoning fields; an effort word, alone or as `{ effort }`, is sent to the
- * provider. `display` (default `"visible"`) asks the provider to disclose
- * its thinking wherever a request field exists. Normative in
+ * The knobs a model's thinking can have, each sent as its provider spells
+ * it. A knob the model or provider lacks is rejected, by the provider or,
+ * where there is no field to send, by Axle.
+ */
+export interface ReasoningConfig {
+  /**
+   * The model's on/off switch. `false` sends the provider's explicit
+   * disable. `true` on its own turns thinking on without naming a depth,
+   * where the provider has a switch.
+   */
+  enabled?: boolean;
+  /** The depth to think at. Naming one turns thinking on. */
+  effort?: ReasoningEffort;
+  /** Defaults to `"visible"`. */
+  display?: ReasoningDisplay;
+}
+
+/**
+ * Reasoning control. `"default"` (or omission) sends no reasoning fields and
+ * the model runs at its provider's default. Normative in
  * docs/architecture/reasoning.md.
  */
-export type ReasoningSetting =
-  "default" | ReasoningEffort | { effort: ReasoningEffort; display?: ReasoningDisplay };
+export type ReasoningSetting = "default" | ReasoningConfig;
 
+/** `effort` absent means the switch alone: on, with no depth named. */
 export type ReasoningRequest =
-  "default" | "off" | { effort: Exclude<ReasoningEffort, "off">; display: ReasoningDisplay };
+  "default" | "off" | { effort?: ReasoningEffort; display: ReasoningDisplay };
 
-const REASONING_DISPLAYS: ReadonlySet<string> = new Set(["visible", "hidden"]);
+const REASONING_DISPLAYS: readonly unknown[] = ["visible", "hidden"];
+const REASONING_KEYS: readonly string[] = ["enabled", "effort", "display"];
 
-function isReasoningEffort(value: unknown): value is ReasoningEffort {
-  return (REASONING_EFFORTS as readonly unknown[]).includes(value);
+function invalid(setting: unknown, problem: string): AxleError {
+  return new AxleError(
+    `Unsupported reasoning setting ${JSON.stringify(setting)}: ${problem}. Expected "default" or { enabled?: boolean, effort?: ${REASONING_EFFORTS.map((effort) => `"${effort}"`).join(" | ")}, display?: "visible" | "hidden" }`,
+    { code: AxleErrorCode.INVALID_OPTIONS },
+  );
 }
 
 export function resolveReasoningDisplay(setting: ReasoningSetting | undefined): ReasoningDisplay {
@@ -52,31 +64,36 @@ export function resolveReasoningDisplay(setting: ReasoningSetting | undefined): 
 
 export function resolveReasoning(setting: ReasoningSetting | undefined): ReasoningRequest {
   if (setting === undefined || setting === "default") return "default";
-  if (isReasoningEffort(setting)) {
-    return setting === "off" ? "off" : { effort: setting, display: "visible" };
+  if (typeof setting !== "object" || setting === null || Array.isArray(setting)) {
+    throw invalid(setting, "it is not an object");
   }
-  if (
-    typeof setting === "object" &&
-    setting !== null &&
-    isReasoningEffort(setting.effort) &&
-    (setting.display === undefined || REASONING_DISPLAYS.has(setting.display))
-  ) {
-    return setting.effort === "off"
-      ? "off"
-      : { effort: setting.effort, display: setting.display ?? "visible" };
+  const unknown = Object.keys(setting).find((key) => !REASONING_KEYS.includes(key));
+  if (unknown !== undefined) throw invalid(setting, `unknown key ${unknown}`);
+  const { enabled, effort, display } = setting;
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw invalid(setting, "enabled is not a boolean");
   }
-  const efforts = REASONING_EFFORTS.map((effort) => `"${effort}"`).join(" | ");
-  throw new AxleError(
-    `Unsupported reasoning setting ${JSON.stringify(setting)}; expected "default", an effort (${efforts}), or { effort, display?: "visible" | "hidden" }`,
-    { code: AxleErrorCode.INVALID_OPTIONS },
-  );
+  if (effort !== undefined && !(REASONING_EFFORTS as readonly unknown[]).includes(effort)) {
+    throw invalid(setting, "unknown effort");
+  }
+  if (display !== undefined && !REASONING_DISPLAYS.includes(display)) {
+    throw invalid(setting, "unknown display");
+  }
+  if (enabled === false) {
+    if (effort !== undefined) throw invalid(setting, "enabled is false and an effort is named");
+    return "off";
+  }
+  if (enabled === undefined && effort === undefined) {
+    throw invalid(setting, "it sets neither enabled nor effort");
+  }
+  return { effort, display: display ?? "visible" };
 }
 
 /**
  * Fixed Axle presets for routes that only accept a thinking token budget.
  * Not derived from any provider's named effort levels.
  */
-export const LEGACY_REASONING_BUDGETS: Record<ReasoningLevel, number> = {
+export const LEGACY_REASONING_BUDGETS: Record<ReasoningEffort, number> = {
   minimal: 1024,
   low: 2048,
   medium: 8192,
@@ -85,15 +102,15 @@ export const LEGACY_REASONING_BUDGETS: Record<ReasoningLevel, number> = {
   max: 24576,
 };
 
-export function legacyReasoningBudget(
-  effort: Exclude<ReasoningEffort, "off">,
-  model: string,
-): number {
-  if (effort === "on") {
-    throw new AxleError(
-      `Reasoning "on" has no token budget, and ${model} only takes a budget; name a level (${REASONING_LEVELS.join(", ")})`,
-      { code: AxleErrorCode.INVALID_OPTIONS },
-    );
-  }
+/** The error for `{ enabled: true }` alone on a route with no switch to send. */
+export function reasoningNeedsEffort(route: string): AxleError {
+  return new AxleError(
+    `Reasoning { enabled: true } needs an effort on ${route}, which has no switch that turns thinking on without one. Name an effort (${REASONING_EFFORTS.join(", ")})`,
+    { code: AxleErrorCode.INVALID_OPTIONS },
+  );
+}
+
+export function legacyReasoningBudget(effort: ReasoningEffort | undefined, model: string): number {
+  if (effort === undefined) throw reasoningNeedsEffort(`${model}, which only takes a token budget`);
   return LEGACY_REASONING_BUDGETS[effort];
 }

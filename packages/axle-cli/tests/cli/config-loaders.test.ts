@@ -141,24 +141,35 @@ describe("config loaders", () => {
     await expect(getJobConfig(path, {})).rejects.toThrow(/provider: Unrecognized key: "apiKey"/);
   });
 
-  it("accepts a reasoning effort as a word or inside an object", async () => {
+  it("accepts reasoning as a word or as the model's knobs", async () => {
     const path = join(TEST_DIR, "reasoning.yml");
     const reasoningOf = async (reasoning: string) => {
       await writeFile(path, `request:\n  reasoning: ${reasoning}\ntask: Run\n`);
       return (await getJobConfig(path, {})).request?.reasoning;
     };
 
-    for (const effort of ["off", "on", "minimal", "low", "medium", "high", "xhigh", "max"]) {
-      expect(await reasoningOf(effort)).toBe(effort);
-      expect(await reasoningOf(`{ effort: ${effort} }`)).toEqual({ effort });
+    for (const word of [
+      "default",
+      "off",
+      "on",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]) {
+      expect(await reasoningOf(word)).toBe(word);
     }
-    expect(await reasoningOf("default")).toBe("default");
-    expect(await reasoningOf("{ effort: on, display: hidden }")).toEqual({
-      effort: "on",
+    expect(await reasoningOf("{ effort: high, display: hidden }")).toEqual({
+      effort: "high",
       display: "hidden",
     });
+    expect(await reasoningOf("{ enabled: true }")).toEqual({ enabled: true });
+    expect(await reasoningOf("{ enabled: false }")).toEqual({ enabled: false });
     await expect(reasoningOf("ultra")).rejects.toThrow(/request\.reasoning/);
-    await expect(reasoningOf("{ effort: default }")).rejects.toThrow(/request\.reasoning\.effort/);
+    await expect(reasoningOf("{ effort: on }")).rejects.toThrow(/request\.reasoning\.effort/);
+    await expect(reasoningOf("{ budget: 2048 }")).rejects.toThrow(/request\.reasoning/);
   });
 
   it("rejects non-YAML job files", async () => {

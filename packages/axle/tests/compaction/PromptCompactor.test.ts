@@ -226,16 +226,16 @@ describe("PromptCompactor", () => {
     expect(summary).toContain("w0");
   });
 
-  test('relays explicit reasoning: "off" instead of collapsing unset into it', async () => {
+  test("relays an explicit reasoning disable instead of collapsing unset into it", async () => {
     const { provider, requests } = createProvider({ text: "Summary." });
-    const compactor = createCompactor(provider, { reasoning: "off" });
+    const compactor = createCompactor(provider, { reasoning: { enabled: false } });
 
     await compactor.compact(
       { messages: [user("remember blue"), assistant("acknowledged")] },
       { usage: usage(500), trigger: "manual", id: "comp-1", emit: () => {} },
     );
 
-    expect(requests[0].reasoning).toBe("off");
+    expect(requests[0].reasoning).toEqual({ enabled: false });
   });
 
   test("returns a stamped summary message and a stamped appendix of recent user messages", async () => {

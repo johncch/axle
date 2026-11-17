@@ -399,16 +399,16 @@ what was sent is carried on the error. The rule is in
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means
 the conversation transcript.
 
-**Effort (reasoning)** — a word a `reasoning` setting sends to the
-provider: `off`, `on`, or a level. `off` is the provider's explicit
-disable. `on` is the word for a model whose thinking only switches; in
-core it is passed through and never means "some level". No effort is
-portable across models. Normative in `docs/architecture/reasoning.md`.
+**Effort (reasoning)** — the depth knob of a `reasoning` setting: one of
+`minimal`, `low`, `medium`, `high`, `xhigh`, `max`, sent to the provider as
+written. Relative within a model, never comparable across models, and no
+effort exists on every model. "Level" is the same thing as models.dev and
+the catalog name it. Normative in `docs/architecture/reasoning.md`.
 
-**Level (reasoning)** — one of the six named reasoning depths, `minimal`
-to `max`, lowest first. A level is an effort; `off` and `on` are efforts
-that are not levels. Relative within a model, never comparable across
-models.
+**Enabled (reasoning)** — the switch knob of a `reasoning` setting. `false`
+is the provider's explicit disable. `true` alone turns thinking on without
+naming an effort, for a model or provider that has such a switch. It is
+never a stand-in for "some effort".
 
 **Control (reasoning)** — what the model catalog reports about how a
 provider's model has its thinking set: `levels`, `toggle` or `none`. It is

@@ -3,7 +3,10 @@ import { AxleErrorCode } from "../../src/errors/AxleError.js";
 import { toOpenRouterReasoning } from "../../src/protocols/chatCompletions/dialects/openrouter.js";
 import { toTogetherReasoning } from "../../src/protocols/chatCompletions/dialects/togetherai.js";
 import { toReasoningEffort } from "../../src/protocols/chatCompletions/utils.js";
-import { toGeminiThinkingConfig } from "../../src/protocols/generateContent/utils.js";
+import {
+  GEMINI_THINKING_TOGGLE_MODELS,
+  toGeminiThinkingConfig,
+} from "../../src/protocols/generateContent/utils.js";
 import {
   ANTHROPIC_THINKING_BUDGET_MODELS,
   getAnthropicStreamMaxTokens,
@@ -11,11 +14,18 @@ import {
 } from "../../src/protocols/messages/utils.js";
 import {
   LEGACY_REASONING_BUDGETS,
-  REASONING_LEVELS,
+  REASONING_EFFORTS,
   resolveReasoning,
   resolveReasoningDisplay,
 } from "../../src/protocols/reasoning.js";
 import { toOpenAIReasoning } from "../../src/protocols/responses/utils.js";
+
+const invalid = expect.objectContaining({
+  name: "AxleError",
+  code: AxleErrorCode.INVALID_OPTIONS,
+});
+const off = { enabled: false };
+const on = { enabled: true };
 
 describe("reasoning translation", () => {
   describe("resolveReasoning", () => {
@@ -23,12 +33,22 @@ describe("reasoning translation", () => {
       expect(resolveReasoning(undefined)).toBe("default");
       expect(resolveReasoning("default")).toBe("default");
     });
-    test.each(REASONING_LEVELS)("effort %s resolves to itself", (effort) => {
+    test.each(REASONING_EFFORTS)("effort %s resolves to itself", (effort) => {
       expect(resolveReasoning({ effort })).toEqual({ effort, display: "visible" });
     });
-    test("off and explicit efforts pass through, display defaults to visible", () => {
-      expect(resolveReasoning("off")).toBe("off");
-      expect(resolveReasoning({ effort: "low" })).toEqual({ effort: "low", display: "visible" });
+    test("enabled false is off, and its display is dropped", () => {
+      expect(resolveReasoning(off)).toBe("off");
+      expect(resolveReasoning({ enabled: false, display: "hidden" })).toBe("off");
+      expect(resolveReasoningDisplay({ enabled: false, display: "hidden" })).toBe("visible");
+    });
+    test("enabled true alone is the switch with no effort", () => {
+      expect(resolveReasoning(on)).toEqual({ display: "visible" });
+      expect(resolveReasoning({ enabled: true, display: "hidden" })).toEqual({ display: "hidden" });
+    });
+    test("an effort turns reasoning on with or without enabled", () => {
+      expect(resolveReasoning({ enabled: true, effort: "high" })).toEqual(
+        resolveReasoning({ effort: "high" }),
+      );
       expect(resolveReasoning({ effort: "high", display: "hidden" })).toEqual({
         effort: "high",
         display: "hidden",
@@ -36,34 +56,31 @@ describe("reasoning translation", () => {
     });
     test("resolveReasoningDisplay is visible unless an enable says hidden", () => {
       expect(resolveReasoningDisplay(undefined)).toBe("visible");
-      expect(resolveReasoningDisplay("off")).toBe("visible");
+      expect(resolveReasoningDisplay(off)).toBe("visible");
       expect(resolveReasoningDisplay({ effort: "medium" })).toBe("visible");
       expect(resolveReasoningDisplay({ effort: "low", display: "hidden" })).toBe("hidden");
     });
-    test("an effort word alone is the same request as its object form", () => {
-      expect(resolveReasoning("high")).toEqual(resolveReasoning({ effort: "high" }));
-      expect(resolveReasoning("on")).toEqual({ effort: "on", display: "visible" });
-      expect(resolveReasoning({ effort: "on", display: "hidden" })).toEqual({
-        effort: "on",
-        display: "hidden",
-      });
+    test.each([
+      ["the 0.30 boolean", true],
+      ["the 0.36 off", "off"],
+      ["the 0.36 on", "on"],
+      ["a bare effort", "high"],
+      ["null", null],
+      ["an array", ["high"]],
+      ["an unknown effort", { effort: "ultra" }],
+      ["an unknown display", { effort: "low", display: "summary" }],
+      ["an unknown key", { effort: "low", budget: 2048 }],
+      ["a non-boolean enabled", { enabled: "yes" }],
+    ])("%s throws", (_name, setting) => {
+      expect(() => resolveReasoning(setting as never)).toThrow(invalid);
     });
-    test("off inside the object is off, and its display is dropped", () => {
-      expect(resolveReasoning({ effort: "off" })).toBe("off");
-      expect(resolveReasoning({ effort: "off", display: "hidden" })).toBe("off");
-      expect(resolveReasoningDisplay({ effort: "off", display: "hidden" })).toBe("visible");
+    test("a setting that names no knob throws", () => {
+      expect(() => resolveReasoning({})).toThrow("it sets neither enabled nor effort");
+      expect(() => resolveReasoning({ display: "hidden" })).toThrow(invalid);
     });
-    test("booleans, unknown efforts, and unknown displays throw", () => {
-      const invalid = { name: "AxleError", code: AxleErrorCode.INVALID_OPTIONS };
-      expect(() => resolveReasoning(true as never)).toThrow(expect.objectContaining(invalid));
-      expect(() => resolveReasoning(false as never)).toThrow(expect.objectContaining(invalid));
-      expect(() => resolveReasoning("ultra" as never)).toThrow(expect.objectContaining(invalid));
-      expect(() => resolveReasoning(null as never)).toThrow(expect.objectContaining(invalid));
-      expect(() => resolveReasoning({ effort: "ultra" } as never)).toThrow(
-        expect.objectContaining(invalid),
-      );
-      expect(() => resolveReasoning({ effort: "low", display: "summary" } as never)).toThrow(
-        expect.objectContaining(invalid),
+    test("enabled false beside an effort throws", () => {
+      expect(() => resolveReasoning({ enabled: false, effort: "high" })).toThrow(
+        "enabled is false and an effort is named",
       );
     });
   });
@@ -74,14 +91,14 @@ describe("reasoning translation", () => {
       expect(toAnthropicThinking("default", "claude-haiku-4-5")).toEqual({});
     });
     test("off → thinking disabled on every route", () => {
-      expect(toAnthropicThinking("off", "claude-opus-5")).toEqual({
+      expect(toAnthropicThinking(off, "claude-opus-5")).toEqual({
         thinking: { type: "disabled" },
       });
-      expect(toAnthropicThinking("off", "claude-haiku-4-5")).toEqual({
+      expect(toAnthropicThinking(off, "claude-haiku-4-5")).toEqual({
         thinking: { type: "disabled" },
       });
     });
-    test.each(REASONING_LEVELS)(
+    test.each(REASONING_EFFORTS)(
       "effort %s → adaptive thinking at that effort on modern models",
       (effort) => {
         expect(toAnthropicThinking({ effort }, "claude-opus-4-8")).toEqual({
@@ -90,6 +107,20 @@ describe("reasoning translation", () => {
         });
       },
     );
+    test("the switch alone → adaptive thinking with no effort on modern models", () => {
+      expect(toAnthropicThinking(on, "claude-opus-4-8")).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+      });
+      expect(toAnthropicThinking({ enabled: true, display: "hidden" }, "claude-opus-4-8")).toEqual({
+        thinking: { type: "adaptive", display: "omitted" },
+      });
+    });
+    test("the switch alone has no budget on the legacy route", () => {
+      expect(() => toAnthropicThinking(on, "claude-haiku-4-5")).toThrow(invalid);
+      expect(() => toAnthropicThinking(on, "claude-haiku-4-5")).toThrow(
+        "Reasoning { enabled: true } needs an effort on claude-haiku-4-5, which only takes a token budget",
+      );
+    });
     test.each(["claude-opus-5", "claude-fable-5-1", "claude-sonnet-5", "claude-sonnet-4-6"])(
       "%s takes the adaptive route with named effort",
       (model) => {
@@ -104,18 +135,12 @@ describe("reasoning translation", () => {
       },
     );
     test("unknown and retired models take the adaptive route, never a legacy budget", () => {
-      expect(toAnthropicThinking({ effort: "medium" }, "claude-opus-4-1")).toEqual({
-        thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: "medium" },
-      });
-      expect(toAnthropicThinking({ effort: "medium" }, "claude-nova-7")).toEqual({
-        thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: "medium" },
-      });
-      expect(toAnthropicThinking({ effort: "medium" }, "")).toEqual({
-        thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: "medium" },
-      });
+      for (const model of ["claude-opus-4-1", "claude-nova-7", ""]) {
+        expect(toAnthropicThinking({ effort: "medium" }, model)).toEqual({
+          thinking: { type: "adaptive", display: "summarized" },
+          output_config: { effort: "medium" },
+        });
+      }
     });
     test.each([
       "claude-haiku-4-5",
@@ -135,18 +160,6 @@ describe("reasoning translation", () => {
       expect(toAnthropicThinking({ effort: "high" }, model)).toEqual({
         thinking: { type: "enabled", budget_tokens: 16384, display: "summarized" },
       });
-    });
-    test("on is sent as written on the adaptive route and has no budget on the legacy one", () => {
-      expect(toAnthropicThinking("on", "claude-opus-4-8")).toEqual({
-        thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: "on" },
-      });
-      expect(() => toAnthropicThinking("on", "claude-haiku-4-5")).toThrow(
-        expect.objectContaining({ name: "AxleError", code: AxleErrorCode.INVALID_OPTIONS }),
-      );
-      expect(() => toAnthropicThinking("on", "claude-haiku-4-5")).toThrow(
-        'Reasoning "on" has no token budget, and claude-haiku-4-5 only takes a budget',
-      );
     });
     test.each([
       ["minimal", 1024],
@@ -213,9 +226,9 @@ describe("reasoning translation", () => {
       expect(toOpenAIReasoning("default")).toEqual({});
     });
     test("off → effort: none", () => {
-      expect(toOpenAIReasoning("off")).toEqual({ reasoning: { effort: "none" } });
+      expect(toOpenAIReasoning(off)).toEqual({ reasoning: { effort: "none" } });
     });
-    test.each(REASONING_LEVELS)("effort %s passes through with auto summary", (effort) => {
+    test.each(REASONING_EFFORTS)("effort %s passes through with auto summary", (effort) => {
       expect(toOpenAIReasoning({ effort })).toEqual({ reasoning: { effort, summary: "auto" } });
     });
     test("display hidden → no summary field", () => {
@@ -223,8 +236,9 @@ describe("reasoning translation", () => {
         reasoning: { effort: "high" },
       });
     });
-    test("on is sent as written", () => {
-      expect(toOpenAIReasoning("on")).toEqual({ reasoning: { effort: "on", summary: "auto" } });
+    test("the switch alone has nothing to send", () => {
+      expect(() => toOpenAIReasoning(on)).toThrow(invalid);
+      expect(() => toOpenAIReasoning(on)).toThrow("needs an effort on the Responses API");
     });
   });
 
@@ -233,18 +247,18 @@ describe("reasoning translation", () => {
       expect(toGeminiThinkingConfig(undefined, "gemini-3.5-flash-lite")).toEqual({});
       expect(toGeminiThinkingConfig("default", "gemini-2.5-flash")).toEqual({});
     });
-    test("off → thinkingBudget 0 on every route", () => {
-      expect(toGeminiThinkingConfig("off", "gemini-3.5-flash-lite")).toEqual({
+    test("off → thinkingBudget 0 on the level and budget routes", () => {
+      expect(toGeminiThinkingConfig(off, "gemini-3.5-flash-lite")).toEqual({
         thinkingConfig: { thinkingBudget: 0 },
       });
-      expect(toGeminiThinkingConfig("off", "gemini-2.5-pro")).toEqual({
+      expect(toGeminiThinkingConfig(off, "gemini-2.5-pro")).toEqual({
         thinkingConfig: { thinkingBudget: 0 },
       });
-      expect(toGeminiThinkingConfig("off", "gemini-flash-lite-latest")).toEqual({
+      expect(toGeminiThinkingConfig(off, "gemini-flash-lite-latest")).toEqual({
         thinkingConfig: { thinkingBudget: 0 },
       });
     });
-    test.each(REASONING_LEVELS)(
+    test.each(REASONING_EFFORTS)(
       "effort %s → that thinking level with included thoughts",
       (effort) => {
         expect(toGeminiThinkingConfig({ effort }, "gemini-3.5-flash-lite")).toEqual({
@@ -266,14 +280,30 @@ describe("reasoning translation", () => {
         thinkingConfig: { thinkingLevel: "low", includeThoughts: true },
       });
     });
-    test("on is sent as written on the named-level route and has no budget on the legacy one", () => {
-      expect(toGeminiThinkingConfig("on", "gemini-3.5-flash-lite")).toEqual({
-        thinkingConfig: { thinkingLevel: "on", includeThoughts: true },
-      });
-      expect(() => toGeminiThinkingConfig("on", "gemini-2.5-flash")).toThrow(
-        expect.objectContaining({ name: "AxleError", code: AxleErrorCode.INVALID_OPTIONS }),
+    test("the switch alone has nothing to send on the level and budget routes", () => {
+      expect(() => toGeminiThinkingConfig(on, "gemini-3.5-flash-lite")).toThrow(invalid);
+      expect(() => toGeminiThinkingConfig(on, "gemini-3.5-flash-lite")).toThrow(
+        "needs an effort on Gemini",
       );
+      expect(() => toGeminiThinkingConfig(on, "gemini-2.5-flash")).toThrow(invalid);
     });
+    test.each([...GEMINI_THINKING_TOGGLE_MODELS, "Gemma-4-31B-it"])(
+      "%s switches with the levels high and minimal",
+      (model) => {
+        expect(toGeminiThinkingConfig(on, model)).toEqual({
+          thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
+        });
+        expect(toGeminiThinkingConfig({ enabled: true, display: "hidden" }, model)).toEqual({
+          thinkingConfig: { thinkingLevel: "high", includeThoughts: false },
+        });
+        expect(toGeminiThinkingConfig(off, model)).toEqual({
+          thinkingConfig: { thinkingLevel: "minimal" },
+        });
+        expect(toGeminiThinkingConfig({ effort: "low" }, model)).toEqual({
+          thinkingConfig: { thinkingLevel: "low", includeThoughts: true },
+        });
+      },
+    );
     test("display hidden → includeThoughts false on both routes", () => {
       expect(
         toGeminiThinkingConfig({ effort: "high", display: "hidden" }, "gemini-3.1-pro-preview"),
@@ -314,13 +344,14 @@ describe("reasoning translation", () => {
       expect(toReasoningEffort("default")).toEqual({});
     });
     test("off → reasoning_effort: none", () => {
-      expect(toReasoningEffort("off")).toEqual({ reasoning_effort: "none" });
+      expect(toReasoningEffort(off)).toEqual({ reasoning_effort: "none" });
     });
-    test.each(REASONING_LEVELS)("effort %s passes through", (effort) => {
+    test.each(REASONING_EFFORTS)("effort %s passes through", (effort) => {
       expect(toReasoningEffort({ effort })).toEqual({ reasoning_effort: effort });
     });
-    test("on is sent as written on a generic endpoint", () => {
-      expect(toReasoningEffort("on")).toEqual({ reasoning_effort: "on" });
+    test("the switch alone has nothing to send on a generic endpoint", () => {
+      expect(() => toReasoningEffort(on)).toThrow(invalid);
+      expect(() => toReasoningEffort(on)).toThrow("needs an effort on a Chat Completions endpoint");
     });
     test("display has no field on generic endpoints and Together AI and is dropped", () => {
       expect(toReasoningEffort({ effort: "low", display: "hidden" })).toEqual({
@@ -334,17 +365,16 @@ describe("reasoning translation", () => {
 
     test("OpenRouter maps display hidden to reasoning.exclude", () => {
       expect(toOpenRouterReasoning(undefined)).toEqual({});
-      expect(toOpenRouterReasoning("off")).toEqual({ reasoning_effort: "none" });
-      expect(toOpenRouterReasoning("xhigh")).toEqual({ reasoning_effort: "xhigh" });
+      expect(toOpenRouterReasoning(off)).toEqual({ reasoning_effort: "none" });
+      expect(toOpenRouterReasoning({ effort: "xhigh" })).toEqual({ reasoning_effort: "xhigh" });
       expect(toOpenRouterReasoning({ effort: "low", display: "hidden" })).toEqual({
         reasoning_effort: "low",
         reasoning: { exclude: true },
       });
     });
-
-    test("OpenRouter sends on as its enabled switch, with no effort", () => {
-      expect(toOpenRouterReasoning("on")).toEqual({ reasoning: { enabled: true } });
-      expect(toOpenRouterReasoning({ effort: "on", display: "hidden" })).toEqual({
+    test("OpenRouter sends the switch alone as its enabled field, with no effort", () => {
+      expect(toOpenRouterReasoning(on)).toEqual({ reasoning: { enabled: true } });
+      expect(toOpenRouterReasoning({ enabled: true, display: "hidden" })).toEqual({
         reasoning: { enabled: true, exclude: true },
       });
     });
@@ -353,11 +383,11 @@ describe("reasoning translation", () => {
       expect(toTogetherReasoning(undefined)).toEqual({});
     });
     test("Together AI off → reasoning disabled", () => {
-      expect(toTogetherReasoning("off")).toEqual({ reasoning: { enabled: false } });
+      expect(toTogetherReasoning(off)).toEqual({ reasoning: { enabled: false } });
     });
-    test("Together AI on → the enabled switch alone", () => {
-      expect(toTogetherReasoning("on")).toEqual({ reasoning: { enabled: true } });
-      expect(toTogetherReasoning({ effort: "on", display: "hidden" })).toEqual({
+    test("Together AI sends the switch alone as its enabled field", () => {
+      expect(toTogetherReasoning(on)).toEqual({ reasoning: { enabled: true } });
+      expect(toTogetherReasoning({ enabled: true, display: "hidden" })).toEqual({
         reasoning: { enabled: true },
       });
     });

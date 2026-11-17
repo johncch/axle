@@ -1165,14 +1165,14 @@ describe("Agent", () => {
     });
 
     await agent.send("Hi", {
-      reasoning: "off",
+      reasoning: { enabled: false },
       maxOutputTokens: 20,
       toolChoice: "none",
       providerOptions: { metadata: { source: "send" } },
     }).final;
 
     expect(observedRequest).toEqual({
-      reasoning: "off",
+      reasoning: { enabled: false },
       maxOutputTokens: 20,
       toolChoice: "none",
       parallelToolCalls: false,
