@@ -112,7 +112,9 @@ can be re-checked when they change.
 
 Researched 2026-09-07 against the providers' current documentation and the
 `checks/` harness; the Opus 5.5 and Sonnet 5.5 rows were added 2026-10-01.
-Re-verify this section when a model generation ships.
+The Anthropic table was re-read against Anthropic's "Troubleshooting
+thinking" page on 2026-11-17, which confirmed every row and added Haiku 5.5
+and Fable 5.2. Re-verify this section when a model generation ships.
 
 Which levels a model takes varies more than the tables below suggest. In
 models.dev's per-provider listing on 2026-11-17, `medium` was absent from
@@ -124,9 +126,10 @@ models.dev's per-provider listing on 2026-11-17, `medium` was absent from
 
 | Generation                      | Thinking modes                                           | Disable                                                                                                   | Effort values                                                           | Default                    |
 | ------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------- |
-| Fable 5 / 5.1, Mythos           | adaptive only                                            | rejected (400)                                                                                            | low, medium, high, xhigh, max                                           | thinking on, effort high   |
+| Fable 5 / 5.1 / 5.2, Mythos     | adaptive only                                            | rejected (400)                                                                                            | low, medium, high, xhigh, max                                           | thinking on, effort high   |
 | Opus 5.5                        | adaptive only                                            | rejected (400)                                                                                            | low, medium, high, xhigh, max                                           | thinking on, effort medium |
 | Sonnet 5.5                      | adaptive only                                            | `disabled` rejected (400); `thinking.type: between_tools` stops up-front thinking at effort high or below | low, medium, high, xhigh, max                                           | thinking on, effort high   |
+| Haiku 5.5                       | adaptive only                                            | `thinking.type: disabled` (rejected at xhigh/max)                                                         | low, medium, high, xhigh, max                                           | thinking on, effort medium |
 | Opus 5, Sonnet 5                | adaptive only                                            | `thinking.type: disabled` (Opus 5 rejects it at xhigh/max)                                                | low, medium, high, xhigh, max                                           | thinking on, effort high   |
 | Opus 4.7, 4.8                   | adaptive only; `enabled` + budget returns 400            | `disabled`                                                                                                | low, medium, high, xhigh, max                                           | thinking off               |
 | Opus 4.6, Sonnet 4.6            | adaptive or `enabled` + budget (budget deprecated)       | `disabled`                                                                                                | low, medium, high, max                                                  | thinking off               |
@@ -342,9 +345,12 @@ efforts is `levels`, the finer control.
 The answer is advisory. It is models.dev's data, which can be stale or
 wrong, and a setting it suggests can still be rejected. It does not report
 whether a model can be turned off. models.dev's rules make that derivable
-(a toggle, or `none` among the efforts), but entries disagree with provider
-documentation (Opus 4.7 accepts a disable and has neither), so a host sends
-`{ enabled: false }` and the provider may reject it.
+(a toggle, or `none` among the efforts), but its records do not hold up:
+checked against Anthropic's own table on 2026-11-17, eight of Anthropic's
+fifteen models accept `thinking.type: disabled` and are recorded with
+neither (Opus 5, 4.8, 4.7, 4.6 and 4.5, Sonnet 4.6 and 4.5, Haiku 4.5).
+The seven it gets right are all on by default. So a host
+sends `{ enabled: false }` and the provider may reject it.
 
 The CLI is such a host: a recipe's `on` is resolved through `suggested`
 (cli.md).
