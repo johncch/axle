@@ -344,13 +344,17 @@ efforts is `levels`, the finer control.
 
 The answer is advisory. It is models.dev's data, which can be stale or
 wrong, and a setting it suggests can still be rejected. It does not report
-whether a model can be turned off. models.dev's rules make that derivable
-(a toggle, or `none` among the efforts), but its records do not hold up:
-checked against Anthropic's own table on 2026-11-17, eight of Anthropic's
-fifteen models accept `thinking.type: disabled` and are recorded with
-neither (Opus 5, 4.8, 4.7, 4.6 and 4.5, Sonnet 4.6 and 4.5, Haiku 4.5).
-The seven it gets right are all on by default. So a host
-sends `{ enabled: false }` and the provider may reject it.
+whether a model can be turned off. A toggle, or `none` among the efforts,
+says it can. Their absence does not say it cannot. models.dev's policy
+defines a toggle as a model that "can be turned on/off via a request field"
+and does not say how to record a model whose thinking is off until asked
+for. Read against Anthropic's own table on 2026-11-17, every Claude model
+that is off by default (Opus 4.5 to 4.8, Sonnet 4.5 and 4.6, Haiku 4.5)
+accepts `thinking.type: disabled` and is recorded with neither, which
+reads as a convention for opt-in models and not as an error. Answering
+"can this be turned off" therefore needs the model's default as well as
+its controls, and the published record carries no default. So a host sends
+`{ enabled: false }` and the provider may reject it.
 
 The CLI is such a host: a recipe's `on` is resolved through `suggested`
 (cli.md).

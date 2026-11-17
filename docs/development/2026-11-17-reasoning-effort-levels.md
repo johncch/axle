@@ -134,9 +134,13 @@ Smaller decisions along the way:
 - **Budget-only models.** The first proposal was to reject levels without
   a preset. The models are six and frozen, so a full table won out.
 - **An `off` flag on the catalog's answer.** Proposed, then dropped on the
-  belief that models.dev did not record it. Its policy does define it (a
-  toggle, or `none` among the efforts), though entries disagree with
-  provider documentation. Left out; not revisited.
+  belief that models.dev did not record it. A toggle, or `none` among the
+  efforts, does say a model can be turned off. Their absence was first
+  read as "cannot", which made eight of Anthropic's fifteen entries look
+  wrong against Anthropic's own table. Seven of those eight are models
+  that are off by default, so the absence reads as a convention for opt-in
+  models, not an error. The flag would need the model's default, which the
+  published data does not carry. Left out.
 
 ## Not done
 
