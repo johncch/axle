@@ -1,3 +1,4 @@
+import type { JsonSchema } from "../core/parse.js";
 import { AxleStopReason } from "../protocols/types.js";
 import type { FileInfo } from "../utils/file.js";
 import type {
@@ -49,6 +50,12 @@ export interface AxleUserMessage {
   metadata?: MessageMetadata;
   /** The operation that sent this message inline, copied to the user turn as `threadId`. */
   threadId?: string;
+  /**
+   * The JSON Schema this message asks its answer to match. `stream()` puts
+   * it on the provider request or writes it into the prompt; the text in
+   * `content` never contains it. Copied to the user turn.
+   */
+  output?: { schema: JsonSchema };
 }
 
 /**

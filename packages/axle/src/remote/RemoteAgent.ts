@@ -1,10 +1,11 @@
 import type { AgentErrorResult, AgentResult, AgentStatus } from "../core/agent/types.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../core/parse.js";
-import { parseResponse } from "../core/parse.js";
+import { parseResponse, toJsonSchema } from "../core/parse.js";
 import { AxleAgentAbortError } from "../errors/AxleAgentAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { AxleProviderFailure } from "../execution/helpers.js";
+import { outputInstructions } from "../execution/output.js";
 import type { MessageMetadata, ToolResultPart } from "../messages/message.js";
 import type { DeferredCall, ToolCallCallback } from "../tools/types.js";
 import type { TurnEvent } from "../turns/events.js";
@@ -202,7 +203,9 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
-    const prompt = instruct.render();
+    const prompt = instruct.schema
+      ? outputInstructions(toJsonSchema(instruct.schema)) + instruct.render()
+      : instruct.render();
     const metadata = options.metadata ?? instruct.metadata;
     const {
       promise: final,

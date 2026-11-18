@@ -114,6 +114,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
       id: options.id ?? crypto.randomUUID(),
       content: toContentParts({ text: this.render(), files: this.files }),
       ...(metadata ? { metadata } : {}),
+      ...(this.schema ? { output: { schema: toJsonSchema(this.schema) } } : {}),
     };
   }
 
@@ -155,13 +156,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
       message += `\n\n## Context ${index + 1}${contextTitle}\n\n${fence}\n${section.content}\n${fence}`;
     }
 
-    if (!this.schema) return message;
-
-    const instructions =
-      "# Output Format Instructions\n\nReturn only valid JSON matching this JSON Schema. Do not wrap it in markdown. Do not include prose before or after the JSON.\n\n" +
-      `${JSON.stringify(toJsonSchema(this.schema), null, 2)}\n\n`;
-
-    return instructions + message;
+    return message;
   }
 }
 

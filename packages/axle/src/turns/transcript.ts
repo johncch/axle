@@ -338,6 +338,7 @@ export class Transcript<
           usage: event.usage,
           ...(event.failure ? { failure: event.failure } : {}),
           ...(event.reason ? { reason: event.reason } : {}),
+          ...(event.output ? { output: event.output } : {}),
           ...(event.cursor ? { cursor: event.cursor } : {}),
           timing: event.timing ?? turn.timing,
         }));

@@ -16,6 +16,7 @@ import type {
   ToolAction,
   Turn,
   TurnFailure,
+  TurnOutput,
   TurnPart,
 } from "./types.js";
 
@@ -113,6 +114,7 @@ export function userTurnFromMessage(message: AxleUserMessage): Turn {
     timing,
     ...(message.metadata ? { metadata: message.metadata } : {}),
     ...(message.threadId ? { threadId: message.threadId } : {}),
+    ...(message.output ? { output: { schema: message.output.schema } } : {}),
   };
 }
 
@@ -530,6 +532,7 @@ export class TurnEventBuilder {
     outcome: "complete" | "cancelled" | "error" = "complete",
     failure?: AxleProviderFailure,
     usage?: Stats,
+    output?: TurnOutput,
   ): TurnEvent[] {
     const turnId = this.currentTurnId;
     if (!turnId) return [];
@@ -554,6 +557,7 @@ export class TurnEventBuilder {
       usage: { ...(usage ?? this.accumulatedUsage) },
       ...(failure ? { failure: turnFailureOf(failure) } : {}),
       ...(this.finalAnswerReason ? { reason: this.finalAnswerReason } : {}),
+      ...(output ? { output } : {}),
       timing,
     });
     this.currentTurnId = null;

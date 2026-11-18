@@ -9,6 +9,7 @@ export type {
   InstructVarsMode,
 } from "./core/Instruct.js";
 export type { OutputSchema } from "./core/parse.js";
+export type { OutputMode } from "./execution/output.js";
 export type { CompactionStamp } from "./messages/compaction.js";
 export type {
   Citation,
@@ -68,6 +69,7 @@ export type {
   Turn,
   TurnFailure,
   TurnMetadata,
+  TurnOutput,
   TurnPart,
   TurnStatus,
 } from "./turns/types.js";

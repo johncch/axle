@@ -470,7 +470,7 @@ console.log("code block");
       expect(compiled).toContain("Extract information");
       expect(compiled).toContain("## Reference 1: Score Data");
       expect(compiled).toContain(textContent);
-      expect(compiled).toContain('"score": {\n      "type": "number"');
+      expect(compiled).not.toContain("Output Format Instructions");
     });
   });
 
@@ -486,31 +486,36 @@ console.log("code block");
       expect(compiled).toBe("Hello world");
     });
 
-    it("puts the JSON Schema ahead of the prompt", () => {
+    it("renders the prompt without the schema", () => {
       const instruct = new Instruct({
         prompt: "Hello world",
         schema: z.object({ answer: z.string() }),
       });
-      const compiled = instruct.render();
 
-      const match = compiled.match(
-        /^# Output Format Instructions\n\n(.*)\n\n([\s\S]*)\n\nHello world$/,
-      );
-      expect(match?.[1]).toBe(
-        "Return only valid JSON matching this JSON Schema. Do not wrap it in markdown. Do not include prose before or after the JSON.",
-      );
-      expect(JSON.parse(match![2])).toEqual(z.toJSONSchema(instruct.schema, { io: "input" }));
+      expect(instruct.render()).toBe("Hello world");
     });
 
-    it("renders a JSON Schema object as written", () => {
+    it("puts a Standard Schema on the message as its JSON Schema", () => {
+      const schema = z.object({ answer: z.string() });
+      const message = new Instruct({ prompt: "Hello world", schema }).toMessage();
+
+      expect(message.content).toEqual([{ type: "text", text: "Hello world" }]);
+      expect(message.output).toEqual({ schema: z.toJSONSchema(schema, { io: "input" }) });
+    });
+
+    it("puts a JSON Schema object on the message as written", () => {
       const schema = {
         type: "object",
         properties: { status: { enum: ["success", "fail"] } },
         required: ["status"],
       };
-      const compiled = new Instruct({ prompt: "Classify the run", schema }).render();
+      const message = new Instruct({ prompt: "Classify the run", schema }).toMessage();
 
-      expect(compiled).toContain(JSON.stringify(schema, null, 2));
+      expect(message.output?.schema).toBe(schema);
+    });
+
+    it("puts no output on a message without a schema", () => {
+      expect(new Instruct({ prompt: "Hello world" }).toMessage()).not.toHaveProperty("output");
     });
 
     it("accepts schemas the example builder used to reject", () => {
@@ -527,12 +532,12 @@ console.log("code block");
     });
 
     it("accepts a root that is not an object", () => {
-      const compiled = new Instruct({
+      const message = new Instruct({
         prompt: "Return the fixed status",
         schema: z.literal("approved"),
-      }).render();
+      }).toMessage();
 
-      expect(compiled).toContain('"const": "approved"');
+      expect(message.output?.schema).toMatchObject({ const: "approved" });
     });
 
     it("throws the library's conversion error when validated", () => {

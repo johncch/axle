@@ -37,6 +37,7 @@ import {
   type ToolCallResult,
   type WaitingCalls,
 } from "./helpers.js";
+import { requestOutput, withOutputInstructions } from "./output.js";
 import { readStep, type StepReadOutcome } from "./stepReader.js";
 import { executeStepTools, type LoopContext } from "./stepTools.js";
 
@@ -223,6 +224,8 @@ export interface StreamInstructParams<TSchema extends OutputSchema | undefined> 
 > {
   messages?: Array<AxleMessage>;
   instruct: Instruct<TSchema>;
+  /** @internal `messages` already ends with the message built from `instruct`. */
+  messageIncluded?: boolean;
 }
 
 export type StreamInstructResult<TSchema extends OutputSchema | undefined> = StreamResult<
@@ -257,12 +260,12 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   let parse: ((final: AxleAssistantMessage | undefined) => unknown) | undefined;
 
   if ("instruct" in options) {
-    const { instruct, messages, ...rest } = options;
+    const { instruct, messages, messageIncluded, ...rest } = options;
     const prepared = instruct.clone();
     parse = (final) => prepared.parse(final);
     streamOptions = {
       ...rest,
-      messages: [...(messages ?? []), prepared.toMessage()],
+      messages: messageIncluded ? (messages ?? []) : [...(messages ?? []), prepared.toMessage()],
     };
   } else {
     streamOptions = options;
@@ -417,6 +420,8 @@ async function run(
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
   let steps = 0;
+  const output = requestOutput(provider, messages);
+  if (output) span?.setAttribute("outputMode", output.mode);
 
   const addMessage = (message: AxleMessage) => {
     workingMessages.push(message);
@@ -494,7 +499,10 @@ async function run(
       using stall = timeoutSignal(signal, streamStallMs);
       try {
         const streamSource = provider.createStreamingRequest(model, {
-          messages: workingMessages,
+          messages: provider.structuredOutput
+            ? workingMessages
+            : withOutputInstructions(workingMessages),
+          ...(output?.mode === "native" ? { output: { schema: output.schema } } : {}),
           system,
           tools,
           providerTools: providerTools.length > 0 ? providerTools : undefined,

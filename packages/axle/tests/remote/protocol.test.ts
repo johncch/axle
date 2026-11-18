@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import * as z from "zod";
 import { Agent } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
+import { toJsonSchema } from "../../src/core/parse.js";
+import { outputInstructions } from "../../src/execution/output.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
@@ -73,7 +75,7 @@ describe("the send command", () => {
       {
         type: "send",
         id: "op-1",
-        prompt: instruct.render(),
+        prompt: outputInstructions(toJsonSchema(instruct.schema)) + instruct.render(),
         files: [
           expect.objectContaining({ source: { type: "ref", ref: { key: "uploads/abc123" } } }),
         ],
