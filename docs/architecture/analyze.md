@@ -1,6 +1,6 @@
 # Analyze: asking questions of a conversation
 
-**Status**: proposed, not yet built (@experimental API) · **Last design revision**: 2026-11-18 (0.37.0, AXL-101)
+**Status**: current (@experimental API) · **Last design revision**: 2026-11-18 (0.37.0, AXL-101)
 
 This document is normative for `analyze` and the functions that ship with
 it: what they return, what each field means, and what they deliberately

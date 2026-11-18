@@ -63,6 +63,7 @@
   - `src/messages/`: Conversation history and message types
   - `src/tools/`: Tool interfaces and registry
   - `src/turns/`: Turn presentation types, events, transcript
+  - `src/analyze/`: `analyze()`, predicates and functions over stored turns (the `@fifthrevision/axle/analyze` entry point)
   - `src/tracer/`: Tracing/logging with pluggable writers
   - `src/errors/`: Custom error classes
   - `src/utils/`: Helper functions
