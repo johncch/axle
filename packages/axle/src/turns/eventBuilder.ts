@@ -133,6 +133,7 @@ export class TurnEventBuilder {
   private currentTurnTiming: TimingInfo | undefined;
   private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
   private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
+  private stepPartIds = new Map<number, string>();
   private openActions = new Map<
     string,
     {
@@ -156,6 +157,7 @@ export class TurnEventBuilder {
     this.currentTurnTiming = startTiming();
     this.currentTextPart = null;
     this.currentThinkingPart = null;
+    this.stepPartIds.clear();
     this.openActions.clear();
     this.accumulatedUsage = createStats();
     this.finalAnswerReason = undefined;
@@ -170,8 +172,7 @@ export class TurnEventBuilder {
 
     switch (event.type) {
       case "step:start":
-        // The stream emits step:start per model request, but the agent
-        // presents the entire tool loop as one turn.
+        this.stepPartIds.clear();
         break;
 
       case "text:start": {
@@ -179,19 +180,14 @@ export class TurnEventBuilder {
         const partId = crypto.randomUUID();
         const part: TextPart = { id: partId, type: "text", text: "", timing: startTiming() };
         this.currentTextPart = { id: partId, timing: part.timing };
+        this.stepPartIds.set(event.index, partId);
         events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "text:delta": {
-        if (this.currentTextPart) {
-          events.push({
-            type: "text:delta",
-            turnId,
-            partId: this.currentTextPart.id,
-            delta: event.delta,
-          });
-        }
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) events.push({ type: "text:delta", turnId, partId, delta: event.delta });
         break;
       }
 
@@ -235,52 +231,39 @@ export class TurnEventBuilder {
           ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
         };
         this.currentThinkingPart = { id: partId, timing: part.timing };
+        this.stepPartIds.set(event.index, partId);
         events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "thinking:raw-delta": {
-        if (this.currentThinkingPart) {
-          events.push({
-            type: "thinking:raw-delta",
-            turnId,
-            partId: this.currentThinkingPart.id,
-            delta: event.delta,
-          });
-        }
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) events.push({ type: "thinking:raw-delta", turnId, partId, delta: event.delta });
         break;
       }
 
       case "text:citation": {
-        if (this.currentTextPart) {
-          events.push({
-            type: "text:citation",
-            turnId,
-            partId: this.currentTextPart.id,
-            citation: event.citation,
-          });
-        }
+        const partId = this.stepPartIds.get(event.index);
+        if (partId)
+          events.push({ type: "text:citation", turnId, partId, citation: event.citation });
         break;
       }
 
       case "thinking:summary-delta": {
-        if (this.currentThinkingPart) {
-          events.push({
-            type: "thinking:summary-delta",
-            turnId,
-            partId: this.currentThinkingPart.id,
-            delta: event.delta,
-          });
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) {
+          events.push({ type: "thinking:summary-delta", turnId, partId, delta: event.delta });
         }
         break;
       }
 
       case "thinking:update": {
-        if (this.currentThinkingPart) {
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) {
           events.push({
             type: "thinking:update",
             turnId,
-            partId: this.currentThinkingPart.id,
+            partId,
             continuity: event.continuity,
             providerMetadata: event.providerMetadata,
           });

@@ -51,6 +51,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    stream and turn vocabularies; adapter chunks are `thinking-raw-delta` and
    `thinking-summary-delta`. Part open and close use `thinking:start` /
    `thinking:end` on the stream and `part:start` / `part:end` on the turn.
+   Every thinking stream event carries `index`, the part's position in the
+   step's assistant message, and the turn builder resolves the turn part
+   from it, so a `thinking:update` that arrives after its part closed
+   still reaches that part (2026-11-18).
 8. **Continuity is round-tripped by the message, never by the turn.**
    `continuity` holds the provider's resume token (Anthropic `signature` or
    `redactedData`, OpenAI `encrypted`, Gemini `thoughtSignature`, OpenRouter

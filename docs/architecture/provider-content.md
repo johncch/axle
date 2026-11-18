@@ -198,6 +198,14 @@ together with the finish reason, so the part follows the text and its events
 fire when the answer ends. The id is the response id with `:web_search`
 appended, since Gemini gives the search none.
 
+The grounding citations arrive in that last chunk too, after the text they
+support has closed. A `text:citation` stream event therefore names its text
+part by `index`, the part's position in the step's assistant message, and
+the turn builder resolves the turn part from it. Observed on 2026-11-18
+(AXL-101, `gemini-flash-lite-latest`): before the event carried an index,
+the citation reached the message and was dropped from the turn, because
+the builder applied it only to a text part that was still open.
+
 ## Chat Completions (generic, OpenRouter, Together AI)
 
 Axle speaks the wire format directly, with its own types in

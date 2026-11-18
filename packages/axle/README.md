@@ -1715,8 +1715,12 @@ run concurrently, so `tool:exec-start` fires for every call before any
 completes and their delta, complete and error events interleave; key on `id`.
 `tool:request` carries `kind: "deferred"` for a deferred tool, and
 `tool:waiting` fires when its validated call has been handed to `onToolCall`.
-Text and thinking parts stream sequentially within a step, so their deltas
-belong to the most recently opened part.
+Text and thinking events carry `index`, the part's position in the step's
+assistant message, so each one names its part. Most arrive while the part
+is open, but an update can follow the part's end: Gemini sends a grounding
+citation after the text it supports, as a `text:citation` with that text
+part's `index`. On `agent.on`, the same citation arrives as a
+`text:citation` for a part whose `part:end` has already been emitted.
 
 The `step:complete` and `tool-results:complete` events carry complete
 `AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { StreamEvent } from "../../src/execution/stream.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
 import { TurnEventBuilder } from "../../src/turns/eventBuilder.js";
 import type { TurnEvent } from "../../src/turns/events.js";
+import { Transcript } from "../../src/turns/transcript.js";
+import type { Turn } from "../../src/turns/types.js";
 
 describe("TurnEventBuilder", () => {
   afterEach(() => {
@@ -48,15 +51,16 @@ describe("TurnEventBuilder", () => {
     const start = builder.startAgentTurn();
 
     const events: TurnEvent[] = [];
-    events.push(...builder.handleStreamEvent({ type: "text:start" }));
+    events.push(...builder.handleStreamEvent({ type: "text:start", index: 0 }));
     events.push(
       ...builder.handleStreamEvent({
         type: "text:delta",
+        index: 0,
         delta: "Hello",
         accumulated: "Hello",
       }),
     );
-    events.push(...builder.handleStreamEvent({ type: "text:end", final: "Hello" }));
+    events.push(...builder.handleStreamEvent({ type: "text:end", index: 0, final: "Hello" }));
 
     expect(events.map((event) => event.type)).toEqual(["part:start", "text:delta", "part:end"]);
     expect(events[0]).toMatchObject({
@@ -79,12 +83,14 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "thinking:start",
+        index: 0,
         continuity: { provider: "anthropic", signature: "sig" },
       }),
     );
     events.push(
       ...builder.handleStreamEvent({
         type: "thinking:summary-delta",
+        index: 0,
         delta: "gist",
         accumulated: "gist",
       }),
@@ -92,12 +98,18 @@ describe("TurnEventBuilder", () => {
     events.push(
       ...builder.handleStreamEvent({
         type: "thinking:raw-delta",
+        index: 0,
         delta: "chain",
         accumulated: "chain",
       }),
     );
     events.push(
-      ...builder.handleStreamEvent({ type: "thinking:end", summary: "gist", raw: "chain" }),
+      ...builder.handleStreamEvent({
+        type: "thinking:end",
+        index: 0,
+        summary: "gist",
+        raw: "chain",
+      }),
     );
 
     expect(events.map((event) => event.type)).toEqual([
@@ -634,6 +646,68 @@ describe("TurnEventBuilder", () => {
     const builder = new TurnEventBuilder();
 
     expect(builder.finalizeTurn()).toEqual([]);
-    expect(builder.handleStreamEvent({ type: "text:start" })).toEqual([]);
+    expect(builder.handleStreamEvent({ type: "text:start", index: 0 })).toEqual([]);
+  });
+
+  describe("updates addressed by part index", () => {
+    const citation = {
+      source: { type: "web" as const, title: "Example", url: "https://example.com" },
+      outputSpan: { start: 0, end: 8 },
+    };
+
+    function fold(streamEvents: StreamEvent[]): Turn {
+      const builder = new TurnEventBuilder();
+      const transcript = new Transcript();
+      transcript.apply(builder.startAgentTurn());
+      for (const streamEvent of streamEvents) {
+        for (const event of builder.handleStreamEvent(streamEvent)) transcript.apply(event);
+      }
+      return transcript.turns[0]!;
+    }
+
+    test("a citation that arrives after its text part closed lands on that part", () => {
+      const turn = fold([
+        { type: "step:start", id: "s1", model: "m" },
+        { type: "text:start", index: 0 },
+        { type: "text:delta", index: 0, delta: "grounded", accumulated: "grounded" },
+        { type: "text:end", index: 0, final: "grounded" },
+        { type: "thinking:start", index: 1 },
+        { type: "thinking:end", index: 1 },
+        { type: "text:start", index: 2 },
+        { type: "text:citation", index: 0, citation, citations: [citation] },
+        { type: "text:end", index: 2, final: "" },
+      ]);
+
+      expect(turn.parts.map((part) => part.type)).toEqual(["text", "thinking", "text"]);
+      expect(turn.parts[0]).toMatchObject({ text: "grounded", citations: [citation] });
+      expect(turn.parts[2]).not.toHaveProperty("citations");
+    });
+
+    test("a thinking update that arrives after its part closed lands on that part", () => {
+      const continuity = { provider: "anthropic", signature: "sig" } as const;
+      const turn = fold([
+        { type: "step:start", id: "s1", model: "m" },
+        { type: "thinking:start", index: 0 },
+        { type: "thinking:end", index: 0 },
+        { type: "text:start", index: 1 },
+        { type: "thinking:update", index: 0, continuity },
+        { type: "text:end", index: 1, final: "" },
+      ]);
+
+      expect(turn.parts[0]).toMatchObject({ type: "thinking", continuity });
+    });
+
+    test("an index names a part of its own step only", () => {
+      const turn = fold([
+        { type: "step:start", id: "s1", model: "m" },
+        { type: "text:start", index: 0 },
+        { type: "text:end", index: 0, final: "" },
+        { type: "step:start", id: "s2", model: "m" },
+        { type: "text:citation", index: 0, citation, citations: [citation] },
+      ]);
+
+      expect(turn.parts).toHaveLength(1);
+      expect(turn.parts[0]).not.toHaveProperty("citations");
+    });
   });
 });

@@ -127,9 +127,9 @@ export async function readStep(
 
   const closePart = () => {
     if (openPartType === "text") {
-      ctx.emit({ type: "text:end", final: openText });
+      ctx.emit({ type: "text:end", index: currentPartIndex, final: openText });
     } else if (openPartType === "thinking") {
-      ctx.emit({ type: "thinking:end", ...openThinking });
+      ctx.emit({ type: "thinking:end", index: currentPartIndex, ...openThinking });
     }
     openPartType = null;
     openText = "";
@@ -155,7 +155,7 @@ export async function readStep(
         chunkIndexToPartIndex.set(chunk.data.index, currentPartIndex);
         openPartType = "text";
         openText = "";
-        ctx.emit({ type: "text:start" });
+        ctx.emit({ type: "text:start", index: currentPartIndex });
         break;
       }
 
@@ -165,6 +165,7 @@ export async function readStep(
         openText = part.text;
         ctx.emit({
           type: "text:delta",
+          index: currentPartIndex,
           delta: chunk.data.text,
           accumulated: openText,
         });
@@ -178,6 +179,7 @@ export async function readStep(
         part.citations = [...(part.citations ?? []), chunk.data.citation];
         ctx.emit({
           type: "text:citation",
+          index: partIndex,
           citation: chunk.data.citation,
           citations: part.citations,
         });
@@ -225,6 +227,7 @@ export async function readStep(
         openThinking = {};
         ctx.emit({
           type: "thinking:start",
+          index: currentPartIndex,
           continuity: chunk.data.continuity,
           providerMetadata: chunk.data.providerMetadata,
         });
@@ -238,6 +241,7 @@ export async function readStep(
         openThinking.raw = part.text;
         ctx.emit({
           type: "thinking:raw-delta",
+          index: currentPartIndex,
           delta: chunk.data.text,
           accumulated: part.text,
         });
@@ -251,6 +255,7 @@ export async function readStep(
         openThinking.summary = part.summary;
         ctx.emit({
           type: "thinking:summary-delta",
+          index: currentPartIndex,
           delta: chunk.data.text,
           accumulated: part.summary,
         });
@@ -266,6 +271,7 @@ export async function readStep(
         if (chunk.data.providerMetadata) part.providerMetadata = chunk.data.providerMetadata;
         ctx.emit({
           type: "thinking:update",
+          index: partIndex,
           continuity: chunk.data.continuity,
           providerMetadata: chunk.data.providerMetadata,
         });
