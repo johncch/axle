@@ -11,9 +11,9 @@ tests are built against it; divergence is a defect.
 
 1. **The format is JSON Schema.** `OutputSchema` is a JSON Schema object, or
    a Standard Schema object that converts to one. Everything Axle does with
-   a schema after it is given (writing it into the prompt today; sending it
-   to a provider, across the wire and onto a turn, see Planned) is done with
-   the JSON Schema. A schema library is a way to write one.
+   a schema after it is given (storing it on the message and the turn,
+   sending it to a provider, writing it into the prompt) is done with the
+   JSON Schema. A schema library is a way to write one.
 2. **A schema library is reached through `~standard` only.** Axle calls
    `~standard.jsonSchema.input({ target: "draft-2020-12" })` for the JSON
    Schema and `~standard.validate()` to check the answer, as
@@ -26,7 +26,7 @@ tests are built against it; divergence is a defect.
    the type it accepts, and a key with a default is not required.
 4. **Axle defines no subset.** It does not inspect a schema, reject a
    keyword or rewrite one. A schema the library cannot convert throws the
-   library's own error from `Instruct.validate()` and from `render()`. A
+   library's own error from `Instruct.validate()` and `toMessage()`. A
    schema a provider cannot accept is the provider's failure. The same
    `Instruct` can therefore work on one provider and fail on another.
 5. **The answer is JSON, then the library's verdict.** The final assistant
@@ -42,36 +42,61 @@ tests are built against it; divergence is a defect.
    the library rejects, both resolve `ok: false` with `error.kind: "parse"`
    (errors.md). The message for a rejected value names each issue's path.
    There is no retry and no repair.
-8. **The prompt carries the JSON Schema, not an example.** `render()` puts
-   an "Output Format Instructions" block ahead of the prompt: one sentence
-   asking for JSON matching the schema and nothing else, then the JSON
-   Schema, indented by two spaces. Axle builds no example value.
+8. **The schema lives on the user message.** `Instruct.toMessage()` puts
+   the JSON Schema on the message as `output: { schema }`. The message's
+   text is the clean prompt: `render()` returns the prompt, references and
+   context sections and never the schema, so neither the stored
+   conversation nor the user turn shows output instructions. The schema is
+   scoped to its message. It is not a conversation setting.
+9. **`stream()` applies the schema, by one of two paths.** Before the first
+   request it reads the schema of the last user message and asks the
+   provider once whether it takes one natively (`AIProvider.structuredOutput`).
+   - **Native output:** the schema goes to the provider as
+     `ProviderStreamParams.output`, and the messages are sent as stored.
+     Earlier messages' schemas are not sent.
+   - **Prompt output:** the request's copy of every user message that
+     carries a schema gets an "Output Format Instructions" block written
+     ahead of its first text part: one sentence asking for JSON matching the
+     schema and nothing else, then the JSON Schema, indented by two spaces.
+     The stored messages are not changed.
+
+   Either way it is done again on every step of the send. Axle builds no
+   example value.
+
+10. **Prompt output is stable across requests.** The block is generated
+    from the stored schema the same way each time, for earlier sends too,
+    so an earlier request stays a prefix of a later one and the model still
+    sees why an earlier answer was JSON.
+11. **The caller does not choose the path, and a provider's refusal of a
+    schema is final.** There is no mode option. A provider error on a schema
+    surfaces as that error and never triggers a second attempt on the other
+    path.
+12. **`stream()` parses, with the `Instruct` it was given.** Parsing
+    (invariant 5) happens in `stream()` for a direct call and for the
+    Agent alike: the Agent builds the user message at `send()`, because the
+    user turn is announced then, and hands `stream()` both that message and
+    the `Instruct` it came from. A `stream()` call with messages and no
+    `Instruct` applies a message's schema and returns no `response`.
+13. **The path and the schema are recorded.** The stream's span carries
+    `outputMode`. A user turn carries `output: { schema }`, copied from its
+    message. An agent turn's `turn:end` carries `output: { schema, mode }`,
+    which marks the turn's text as a structured answer for a reader that
+    never held the schema.
 
 ## Planned (AXL-108)
 
 Settled on 2026-11-17 and not yet built. Each moves into Invariants in the
 change that builds it.
 
-- **The schema lives on the user message.** It is stored as data at
-  `send()`. The message's text is the clean prompt: the instruction block
-  of invariant 8 is no longer written into the stored message or shown in
-  the turn. The turn copies the schema, which marks its answer as
-  structured.
-- **`stream()` applies the schema.** It asks the provider once, before the
-  request, whether it takes a schema natively. If so the current send's
-  schema goes on the provider request. If not, `stream()` writes the
-  instruction block for every message that carries a schema, on every
-  request, so an earlier request stays a prefix of a later one. `stream()`
-  parses the answer; the Agent passes the schema through.
 - **Native support is declared by the protocol**, and per preset for Chat
-  Completions. There is no caller-facing mode and no registry by model. A
-  provider error on a schema surfaces and never triggers a second attempt
-  on the prompt path. The path taken is recorded on the tracer span and on
-  the turn.
+  Completions. There is no registry by model. No provider declares it yet,
+  so every send takes the prompt path.
 - **An `Instruct` crosses the wire as data**, its schema as JSON Schema. The
   served agent holds a JSON Schema object, so it stops at `JSON.parse`
   (invariant 5) and the client, which holds the Standard Schema object,
-  validates. This reverses remote-agent.md invariant 6.
+  validates. This reverses remote-agent.md invariant 6. Until then a
+  `RemoteAgent` writes the prompt-output block ahead of the rendered prompt
+  itself, so a served agent receives text and no schema.
 - **`providerOptions` still wins.** It is applied last and replaces whole
   top-level fields, so a caller's `output_config` on Anthropic replaces the
   schema with it.
@@ -132,5 +157,16 @@ checks the answer (invariant 5).
   choosing native or prompt. Rejected: the prompt path is the normal path
   for a protocol without native support, and the caller has nothing to
   decide.
+- **Output instructions stored in the message text** (2026-11-17): what
+  `render()` did before, so the instructions were part of the conversation
+  and of the user turn. Rejected: the path is only known when `stream()`
+  asks the provider, native output has no text to store, and a transcript
+  should show what the user wrote. The schema is stored instead and the
+  text regenerated from it (invariant 10).
+- **Announcing the user message after `stream()` starts** (2026-11-17), so
+  the Agent need not build the message before `stream()` does. Rejected: a
+  queued send's message would not appear until its turn came, which is what
+  pending turns exist to prevent, and the message's text does not depend on
+  the provider.
 - **Stripping value constraints from the native schema** (open): AXL-108
   records it as undecided. Until it is decided, invariant 4 holds.

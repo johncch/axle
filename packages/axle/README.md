@@ -693,8 +693,18 @@ What each kind of schema gives you:
 - **A bad answer is a failure, not a throw.** Text that is not JSON, or a
   value the schema rejects, resolves `ok: false` with `error.kind: "parse"`.
 
-The JSON Schema is written into the prompt under an "Output Format
-Instructions" heading. See
+How the schema reaches the model is not your choice to make. A provider
+that takes a schema on the request gets it there (native output); for any
+other, Axle writes it into the request's copy of your message under an
+"Output Format Instructions" heading (prompt output). No provider declares
+native output yet, so every send takes the prompt path.
+
+The message Axle stores is your prompt, without those instructions, plus the
+schema as `output: { schema }`. `instruct.render()` returns the prompt
+alone. A user turn carries the same `output`, and the agent turn that
+answers it carries `output: { schema, mode }` with `mode` `"native"` or
+`"prompt"`, so a transcript can tell a structured answer from ordinary text
+without holding the schema. See
 [structured-output.md](../../docs/architecture/structured-output.md) for the
 design.
 
@@ -1484,6 +1494,10 @@ so `reason` is the only thing that tells it apart; a cut-off structured
 answer that then fails to parse ends `error` with both. A turn that ended
 before a final answer (a fatal tool, a cancel, an API failure mid-loop, a
 refusal) has none. The `Transcript` keeps it as `turn.reason`.
+
+`turn:end` carries `output` when the send asked for a structured answer:
+`{ schema, mode }`, the JSON Schema and whether it reached the model as
+`"native"` or `"prompt"` output. The `Transcript` keeps it as `turn.output`.
 
 The `compaction:*` events mirror the action lifecycle: a compaction part
 arrives `running` via `part:start`, `compaction:update` replaces transient

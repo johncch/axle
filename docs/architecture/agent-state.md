@@ -39,7 +39,8 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    (invariant 7), which commits nothing. `Agent.send()` clones and validates
    its `Instruct` and materializes the `AxleUserMessage` and its user turn
    synchronously before scheduling; execution emits that same turn as
-   `turn:user`, then the same `Instruct` parses the final assistant response.
+   `turn:user`, then hands `stream()` the same `Instruct`, which parses the
+   final assistant response (structured-output.md).
 6. **Usage accounting belongs to the consumer.** Every `turn:end` carries
    `turn.usage`; consumers accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none. A running total

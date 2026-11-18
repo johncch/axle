@@ -85,8 +85,9 @@ front door and the process the agent runs in.
    uses those types, nor `type: "welcome"`, which the protocol uses.
 6. **A send crosses as a rendered prompt.** The `send` command is
    `{ type: "send", id, prompt, files?, metadata? }`: the user turn's `id`,
-   `instruct.render()` with the inputs, references, context sections and
-   output-format instructions already in it, the Instruct's files, and the
+   `instruct.render()` with the inputs, references and context sections
+   already in it and the output instructions written ahead of it
+   (structured-output.md invariant 9), the Instruct's files, and the
    metadata the send or the Instruct carries. The schema never crosses;
    the client that holds it parses, so the remote's `send(instruct).final`
    gives `response` as the parsed object, and a parse failure is the
