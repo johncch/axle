@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as z from "zod";
 import { Agent } from "../../src/core/agent/index.js";
 import { Instruct } from "../../src/core/Instruct.js";
+import { toJsonSchema } from "../../src/core/parse.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
 import type { AIProvider } from "../../src/protocols/types.js";
 import { AxleStopReason } from "../../src/protocols/types.js";
@@ -41,7 +42,7 @@ function capturingProvider() {
 }
 
 describe("the send command", () => {
-  test("carries the rendered prompt, the files with their sources, and the metadata", async () => {
+  test("carries the Instruct as data, its schema as JSON Schema, and the served side renders it", async () => {
     const { provider, prompts, files } = capturingProvider();
     const agent = new Agent({ provider, model: "mock" });
     const store = new InMemoryEventStore(agent);
@@ -73,17 +74,63 @@ describe("the send command", () => {
       {
         type: "send",
         id: "op-1",
-        prompt: instruct.render(),
-        files: [
-          expect.objectContaining({ source: { type: "ref", ref: { key: "uploads/abc123" } } }),
-        ],
-        metadata: { origin: "web" },
+        instruct: {
+          prompt: "Rate {{thing}}",
+          inputs: { thing: "the report" },
+          files: [
+            expect.objectContaining({ source: { type: "ref", ref: { key: "uploads/abc123" } } }),
+          ],
+          metadata: { origin: "web" },
+          schema: toJsonSchema(instruct.schema),
+        },
       },
     ]);
     expect(prompts.join("\n")).toContain("Rate the report");
     expect(prompts.join("\n")).toContain("Output Format Instructions");
     expect(files).toEqual([expect.objectContaining({ name: "report.txt" })]);
-    expect(agent.messages[0]).toMatchObject({ id: "op-1", metadata: { origin: "web" } });
+    expect(agent.messages[0]).toMatchObject({
+      id: "op-1",
+      metadata: { origin: "web" },
+      output: { schema: toJsonSchema(instruct.schema) },
+    });
+  });
+
+  test("the client validates an answer the served side only parsed as JSON", async () => {
+    const { provider } = capturingProvider();
+    const agent = new Agent({ provider, model: "mock" });
+    const store = new InMemoryEventStore(agent);
+    const remote = new RemoteAgent(
+      loopbackTransport(store, async (command) => applyCommand(agent, command)),
+    );
+
+    const result = await remote.send(
+      new Instruct({ prompt: "Rate it", schema: z.object({ title: z.number() }) }),
+    ).final;
+    remote.close();
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.kind).toBe("parse");
+    expect(result.turn).toMatchObject({
+      status: "complete",
+      output: { schema: { type: "object" } },
+    });
+  });
+
+  test("a missing variable is rejected before anything is sent", () => {
+    const posted: AgentCommand[] = [];
+    const agent = new Agent({ provider: capturingProvider().provider, model: "mock" });
+    const remote = new RemoteAgent(
+      loopbackTransport(new InMemoryEventStore(agent), async (command) => {
+        posted.push(command);
+        return { accepted: true };
+      }),
+    );
+
+    expect(() => remote.send(new Instruct({ prompt: "Rate {{thing}}" }))).toThrow(
+      "Missing variable: thing",
+    );
+    remote.close();
+    expect(posted).toEqual([]);
   });
 });
 
@@ -98,22 +145,28 @@ describe("parseAgentCommand", () => {
 
   test.each([
     ["an unknown type", { type: "reset" }],
-    ["a send without an id", { type: "send", prompt: "hi" }],
-    ["a send carrying the old instruct", { type: "send", id: "op-1", instruct: { prompt: "hi" } }],
+    ["a send without an id", { type: "send", instruct: { prompt: "hi" } }],
+    ["a send carrying a rendered prompt", { type: "send", id: "op-1", prompt: "hi" }],
+    [
+      "an input that is not a string, number, boolean or null",
+      { type: "send", id: "op-1", instruct: { prompt: "hi", inputs: { when: { nested: true } } } },
+    ],
     [
       "a file with a source its kind cannot have",
       {
         type: "send",
         id: "op-1",
-        prompt: "hi",
-        files: [
-          {
-            kind: "image",
-            mimeType: "image/png",
-            name: "a.png",
-            source: { type: "text", content: "x" },
-          },
-        ],
+        instruct: {
+          prompt: "hi",
+          files: [
+            {
+              kind: "image",
+              mimeType: "image/png",
+              name: "a.png",
+              source: { type: "text", content: "x" },
+            },
+          ],
+        },
       },
     ],
     ["a body that is not an object", "cancel"],

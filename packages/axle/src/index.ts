@@ -28,13 +28,17 @@ export type {
 export { Instruct } from "./core/index.js";
 export type {
   InstructContextSection,
+  InstructData,
+  InstructInput,
   InstructInputs,
   InstructOptions,
   InstructRenderOptions,
   InstructResponse,
   InstructVarsMode,
+  JsonSchema,
   OutputSchema,
   ParsedSchema,
+  StandardOutputSchema,
 } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
 export {
@@ -245,6 +249,7 @@ export type {
   Turn,
   TurnFailure,
   TurnMetadata,
+  TurnOutput,
   TurnPart,
   TurnStatus,
 } from "./turns/types.js";

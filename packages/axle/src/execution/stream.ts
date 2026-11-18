@@ -37,6 +37,7 @@ import {
   type ToolCallResult,
   type WaitingCalls,
 } from "./helpers.js";
+import { withOutputInstructions } from "./output.js";
 import { readStep, type StepReadOutcome } from "./stepReader.js";
 import { executeStepTools, type LoopContext } from "./stepTools.js";
 
@@ -223,6 +224,8 @@ export interface StreamInstructParams<TSchema extends OutputSchema | undefined> 
 > {
   messages?: Array<AxleMessage>;
   instruct: Instruct<TSchema>;
+  /** @internal `messages` already ends with the message built from `instruct`. */
+  messageIncluded?: boolean;
 }
 
 export type StreamInstructResult<TSchema extends OutputSchema | undefined> = StreamResult<
@@ -257,12 +260,12 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   let parse: ((final: AxleAssistantMessage | undefined) => unknown) | undefined;
 
   if ("instruct" in options) {
-    const { instruct, messages, ...rest } = options;
+    const { instruct, messages, messageIncluded, ...rest } = options;
     const prepared = instruct.clone();
     parse = (final) => prepared.parse(final);
     streamOptions = {
       ...rest,
-      messages: [...(messages ?? []), prepared.toMessage()],
+      messages: messageIncluded ? (messages ?? []) : [...(messages ?? []), prepared.toMessage()],
     };
   } else {
     streamOptions = options;
@@ -284,10 +287,10 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   const runStream = () =>
     run(streamOptions, effectiveSignal, callbacks, control, waiting, discloseThinking);
   Promise.resolve().then(() =>
-    runStream().then((result) => {
+    runStream().then(async (result) => {
       if (parse && result.ok) {
         try {
-          resolve({ ...result, response: parse(result.final) });
+          resolve({ ...result, response: await parse(result.final) });
         } catch (parseError) {
           resolve({
             ok: false,
@@ -494,7 +497,7 @@ async function run(
       using stall = timeoutSignal(signal, streamStallMs);
       try {
         const streamSource = provider.createStreamingRequest(model, {
-          messages: workingMessages,
+          messages: withOutputInstructions(workingMessages),
           system,
           tools,
           providerTools: providerTools.length > 0 ? providerTools : undefined,

@@ -2,6 +2,8 @@ export type { AgentStatus } from "./core/agent/types.js";
 export { Instruct } from "./core/Instruct.js";
 export type {
   InstructContextSection,
+  InstructData,
+  InstructInput,
   InstructInputs,
   InstructOptions,
   InstructRenderOptions,
@@ -68,6 +70,7 @@ export type {
   Turn,
   TurnFailure,
   TurnMetadata,
+  TurnOutput,
   TurnPart,
   TurnStatus,
 } from "./turns/types.js";

@@ -1,102 +1,87 @@
-import * as z from "zod";
 import { AxleError, AxleErrorCode } from "../errors/AxleError.js";
 
-export type OutputSchema = z.ZodTypeAny;
+/** A JSON Schema document, passed to the model as written. */
+export type JsonSchema = Record<string, unknown>;
 
-export type ParsedSchema<T extends OutputSchema> = z.output<T>;
-
-export function zodToExample(schema: z.ZodTypeAny): [string, unknown] {
-  if (schema instanceof z.ZodString) {
-    return ["string", "Your answer"];
-  }
-  if (schema instanceof z.ZodNumber) {
-    return ["number", 42];
-  }
-  if (schema instanceof z.ZodBoolean) {
-    return ["boolean", true];
-  }
-  if (schema instanceof z.ZodEnum) {
-    const values = schema.options;
-    return [values.map(formatLiteralLabel).join(" | "), values[0]];
-  }
-  if (schema instanceof z.ZodLiteral) {
-    const value = schema.value;
-    return [formatLiteralLabel(value), value];
-  }
-  if (schema instanceof z.ZodArray) {
-    const elementSchema = schema.element;
-    if (elementSchema instanceof z.ZodString) {
-      return ["string array", ["answer 1", "answer 2", "third answer"]];
-    } else if (elementSchema instanceof z.ZodNumber) {
-      return ["number array", [42, 59, 3.14]];
-    } else if (elementSchema instanceof z.ZodBoolean) {
-      return ["boolean array", [true, false, false]];
-    } else if (elementSchema instanceof z.ZodObject) {
-      const [, objectExample] = zodToExample(elementSchema);
-      return ["object array", [objectExample, objectExample]];
-    } else if (elementSchema instanceof z.ZodEnum || elementSchema instanceof z.ZodLiteral) {
-      const [elementLabel, elementExample] = zodToExample(elementSchema);
-      return [`${elementLabel} array`, [elementExample]];
-    }
-    return ["array", []];
-  }
-  if (schema instanceof z.ZodObject) {
-    const shape = schema.shape;
-    const example: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(shape)) {
-      const [, exampleValue] = zodToExample(value);
-      example[key] = exampleValue;
-    }
-    return ["JSON object", example];
-  }
-  if (schema instanceof z.ZodOptional) {
-    const innerSchema = schema.unwrap();
-    const [innerType, exampleValue] = zodToExample(innerSchema as z.ZodTypeAny);
-    return [`${innerType} | undefined`, exampleValue];
-  }
-
-  throw new AxleError(`Unsupported Zod schema: ${schema.constructor.name}`, {
-    code: AxleErrorCode.INVALID_OPTIONS,
-  });
+interface StandardIssue {
+  readonly message: string;
+  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined;
 }
 
-export function zodToFieldDescriptions(schema: z.ZodTypeAny): Array<[string, string]> {
-  if (schema instanceof z.ZodObject) {
-    return Object.entries(schema.shape).map(([key, fieldSchema]) => {
-      const [label] = zodToExample(fieldSchema);
-      return [key, label];
-    });
+type StandardResult<Output> =
+  | { readonly value: Output; readonly issues?: undefined }
+  | { readonly issues: ReadonlyArray<StandardIssue> };
+
+/**
+ * A schema object from a library that implements Standard Schema and
+ * Standard JSON Schema (https://standardschema.dev): Zod 4.2 and later,
+ * ArkType, and others. Axle reads its JSON Schema and validates the answer
+ * through the `~standard` property and imports no schema library to do so.
+ */
+export interface StandardOutputSchema<Input = unknown, Output = Input> {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (value: unknown) => StandardResult<Output> | Promise<StandardResult<Output>>;
+    readonly jsonSchema: {
+      readonly input: (options: { target: "draft-2020-12" }) => Record<string, unknown>;
+    };
+    readonly types?: { readonly input: Input; readonly output: Output } | undefined;
+  };
+}
+
+/**
+ * What an `Instruct` takes as its schema: a JSON Schema, or a Standard
+ * Schema object that converts to one. See docs/architecture/structured-output.md.
+ */
+export type OutputSchema = StandardOutputSchema<any, any> | JsonSchema;
+
+export type ParsedSchema<T extends OutputSchema> =
+  T extends StandardOutputSchema<any, any>
+    ? NonNullable<T["~standard"]["types"]>["output"]
+    : unknown;
+
+function isStandardSchema(schema: OutputSchema): schema is StandardOutputSchema<any, any> {
+  return "~standard" in schema;
+}
+
+/** The JSON Schema an output schema sends to the model. */
+export function toJsonSchema(schema: OutputSchema): JsonSchema {
+  if (!isStandardSchema(schema)) return schema;
+
+  const standard = schema["~standard"];
+  if (typeof standard?.jsonSchema?.input !== "function") {
+    throw new AxleError(
+      `The schema's library (${standard?.vendor ?? "unknown"}) does not implement Standard JSON Schema. Pass a JSON Schema object, or a schema from a library that does (Zod 4.2 or later).`,
+      { code: AxleErrorCode.INVALID_OPTIONS },
+    );
   }
-
-  const [label] = zodToExample(schema);
-  return [["response", label]];
+  return { ...standard.jsonSchema.input({ target: "draft-2020-12" }) };
 }
 
-function formatLiteralLabel(value: unknown): string {
-  return typeof value === "string" ? JSON.stringify(value) : String(value);
-}
-
-export function parseResponse<T extends OutputSchema>(
+export async function parseResponse<T extends OutputSchema>(
   rawValue: string,
   schema?: T,
-): ParsedSchema<T> | string {
-  if (!schema) {
-    return rawValue;
-  }
+): Promise<ParsedSchema<T> | string> {
+  if (!schema) return rawValue;
 
   const parsed = parseJsonObject(rawValue);
+  if (!isStandardSchema(schema)) return parsed as ParsedSchema<T>;
 
-  try {
-    return schema.parse(parsed) as ParsedSchema<T>;
-  } catch (error) {
-    if (error && typeof error === "object" && "issues" in error) {
-      const formattedErrors = (error as any).issues
-        .map((err: any) => `${err.path.join(".")}: ${err.message}`)
-        .join(", ");
-      throw new Error(`Validation failed: ${formattedErrors}`);
-    }
-    throw error;
+  const result = await schema["~standard"].validate(parsed);
+  if (result.issues) {
+    const formatted = result.issues
+      .map((issue) => `${formatPath(issue.path)}: ${issue.message}`)
+      .join(", ");
+    throw new Error(`Validation failed: ${formatted}`);
   }
+  return result.value as ParsedSchema<T>;
+}
+
+function formatPath(path: StandardIssue["path"]): string {
+  return (path ?? [])
+    .map((segment) => String(typeof segment === "object" ? segment.key : segment))
+    .join(".");
 }
 
 export function parseJsonObject(rawValue: string): unknown {

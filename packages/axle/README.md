@@ -630,9 +630,10 @@ Cancellation follows standard JavaScript abort semantics:
 
 ### Structured Output
 
-Pass a Zod schema to Instruct. Axle compiles the schema
-into output format instructions, then parses the response back into typed
-objects.
+Give an `Instruct` a schema and Axle asks the model for JSON matching it,
+then parses the answer. The schema is a JSON Schema. You can pass one
+directly, or pass a Zod schema, which Axle converts to JSON Schema and also
+uses to check and type the answer.
 
 ```typescript
 import * as z from "zod";
@@ -657,6 +658,53 @@ result.response.moons; // string[]
 
 For one-shot structured calls without agent-managed history, pass the same
 `Instruct` directly to `generate()` or `stream()`.
+
+A plain JSON Schema object works the same way. Axle sends it as written and
+returns the parsed JSON, typed `unknown`, without validating it:
+
+```typescript
+const instruct = new Instruct({
+  prompt: "Tell me about Mars.",
+  schema: {
+    type: "object",
+    properties: { name: { type: "string" }, moons: { type: "array", items: { type: "string" } } },
+    required: ["name", "moons"],
+  },
+});
+```
+
+What each kind of schema gives you:
+
+| Schema                          | Sent to the model                 | Answer checked by | `response` type     |
+| ------------------------------- | --------------------------------- | ----------------- | ------------------- |
+| Zod, or another Standard Schema | its JSON Schema, converted by Zod | the Zod schema    | the schema's output |
+| JSON Schema object              | as written                        | nothing           | `unknown`           |
+
+- **Any Zod schema that converts to JSON Schema is accepted.** Axle defines
+  no subset. A schema Zod cannot convert, such as one with `z.date()`,
+  throws Zod's own error when the `Instruct` is validated or sent.
+- **Refinements, transforms and defaults run on the answer.** `.refine()`
+  is not part of the JSON Schema the model sees, but it is still checked.
+  The model is shown what the schema takes in, so a `.transform()` appears
+  as its input type.
+- **Other libraries work too.** Anything that implements
+  [Standard Schema and Standard JSON Schema](https://standardschema.dev)
+  is handled like Zod. Zod needs 4.2 or later.
+- **A bad answer is a failure, not a throw.** Text that is not JSON, or a
+  value the schema rejects, resolves `ok: false` with `error.kind: "parse"`.
+
+Axle writes the schema into the request's copy of your message under an
+"Output Format Instructions" heading. It does not use a provider's native
+structured output; to use one, send the provider's own field through
+`providerOptions`.
+
+The message Axle stores is your prompt, without those instructions, plus the
+schema as `output: { schema }`. `instruct.render()` returns the prompt
+alone. A user turn carries the same `output`, and the agent turn that
+answers it carries the same on `turn:end`, so a transcript can tell a structured answer from ordinary text
+without holding the schema. See
+[structured-output.md](../../docs/architecture/structured-output.md) for the
+design.
 
 ### Supporting Context and Files
 
@@ -1444,6 +1492,9 @@ so `reason` is the only thing that tells it apart; a cut-off structured
 answer that then fails to parse ends `error` with both. A turn that ended
 before a final answer (a fatal tool, a cancel, an API failure mid-loop, a
 refusal) has none. The `Transcript` keeps it as `turn.reason`.
+
+`turn:end` carries `output` when the send asked for a structured answer:
+`{ schema }`, the JSON Schema. The `Transcript` keeps it as `turn.output`.
 
 The `compaction:*` events mirror the action lifecycle: a compaction part
 arrives `running` via `part:start`, `compaction:update` replaces transient
@@ -2359,9 +2410,9 @@ result.response; // as locally; an Instruct with a schema parses here
 ```
 
 `send` takes a string or an `Instruct`, which `/ui` exports as well. The
-Instruct is rendered on this side and crosses as
-`{ type: "send", id, prompt, files?, metadata? }`; its schema stays here
-and parses the response here. Files cross with their sources as they are,
+Instruct crosses as data, `{ type: "send", id, instruct }`, with its schema
+as JSON Schema, and the served side renders it. The schema object stays
+here and validates the response here. Files cross with their sources as they are,
 so a file the client uploaded can cross as a `ref` (a storage key, say)
 that the served agent's `fileResolver` reads. That `ref` came from the
 client, so the resolver must check the caller may read it. The handle has
@@ -2498,14 +2549,14 @@ yours because your send is rarely a bare `agent.send`: it may carry a
 `signal`, an `after` continuation, a `fileResolver`, or bookkeeping of your
 own around the handle.
 
-| Command                                           | The call                                  | Outcome                                     |
-| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |
-| `{ type: "send", id, prompt, files?, metadata? }` | `agent.send(instruct, { id, metadata })`  | `{ accepted: true }`                        |
-| `{ type: "answer", callId, content }`             | `agent.toolCall(callId)?.answer(content)` | `accepted`, or `not-waiting` with no call   |
-| `{ type: "fail", callId, message }`               | `agent.toolCall(callId)?.fail(message)`   | `accepted`, or `not-waiting` with no call   |
-| `{ type: "cancel" }`                              | `agent.cancel()`                          | `accepted`, or `idle` when it returns false |
-| `{ type: "stop" }`                                | `agent.stop()`                            | `accepted`, or `idle` when it returns false |
-| `{ type: "clear" }`                               | `agent.clear()`                           | `{ accepted: true }`                        |
+| Command                               | The call                                          | Outcome                                     |
+| ------------------------------------- | ------------------------------------------------- | ------------------------------------------- |
+| `{ type: "send", id, instruct }`      | `agent.send(Instruct.fromJSON(instruct), { id })` | `{ accepted: true }`                        |
+| `{ type: "answer", callId, content }` | `agent.toolCall(callId)?.answer(content)`         | `accepted`, or `not-waiting` with no call   |
+| `{ type: "fail", callId, message }`   | `agent.toolCall(callId)?.fail(message)`           | `accepted`, or `not-waiting` with no call   |
+| `{ type: "cancel" }`                  | `agent.cancel()`                                  | `accepted`, or `idle` when it returns false |
+| `{ type: "stop" }`                    | `agent.stop()`                                    | `accepted`, or `idle` when it returns false |
+| `{ type: "clear" }`                   | `agent.clear()`                                   | `{ accepted: true }`                        |
 
 The outcome says only whether the agent took the command. What happens
 next, the reply, a failure, the waiting call, reaches every consumer as
@@ -2518,22 +2569,21 @@ case "send": {
   const agent = live.get(id) ?? (await resume(id));
   if (!agent) return notFound();
 
-  // 2. Build the message from the prompt. It is already rendered: the
-  //    client's inputs, references and output-format instructions are in it.
-  const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
-  for (const file of command.files ?? []) instruct.addFile(file);
+  // 2. Rebuild the Instruct from its data. It carries the client's inputs,
+  //    references, files, metadata and the schema as JSON Schema.
+  const instruct = Instruct.fromJSON(command.instruct);
 
   // 3. Answer before the turn settles. Awaiting final holds the POST open
   //    for the whole turn; the client reads the result from the events.
-  const handle = agent.send(instruct, { id: command.id, metadata: command.metadata });
+  const handle = agent.send(instruct, { id: command.id });
   handle.final.then(recordResult, reportFailure);
   return Response.json({ accepted: true });
 }
 ```
 
-`vars: "optional"` matters: a prompt that contains `{{` as text would
-otherwise fail as a missing variable. A file crosses with its source as it
-is, so a `ref` reaches the `fileResolver` you give the agent or the send.
+The variable mode crosses with the Instruct, so a plain string send, which
+the client builds with `vars: "optional"`, does not fail here on a `{{` in
+its text. A file crosses with its source as it is, so a `ref` reaches the `fileResolver` you give the agent or the send.
 The client chose that `ref`, so the resolver checks the caller may read it
 before it reads anything.
 

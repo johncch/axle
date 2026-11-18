@@ -30,6 +30,7 @@ export type {
   ToolAction,
   Turn,
   TurnFailure,
+  TurnOutput,
   TurnPart,
   TurnStatus,
 } from "./types.js";

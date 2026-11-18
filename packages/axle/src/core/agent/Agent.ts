@@ -568,7 +568,12 @@ export class Agent {
       outcome: "complete" | "cancelled" | "error",
       failure?: AxleProviderFailure,
     ): void => {
-      for (const event of turnEventBuilder.finalizeTurn(outcome, failure, turnUsage)) {
+      for (const event of turnEventBuilder.finalizeTurn(
+        outcome,
+        failure,
+        turnUsage,
+        message.output,
+      )) {
         this.emitEvent(event);
       }
     };
@@ -628,6 +633,8 @@ export class Agent {
       const streamHandle = stream({
         provider: this.provider,
         model: this.model,
+        instruct,
+        messageIncluded: true,
         messages: [...this.messagesInternal],
         system: this.system,
         tools: this.callableTools(),
@@ -693,21 +700,9 @@ export class Agent {
         };
       }
 
-      // Lifecycle: parse the response and compact the completed turn
-      let response: any;
-      let parseFailure: AgentErrorResult["error"] | undefined;
-      try {
-        response = instruct.parse(streamResult.final);
-      } catch (parseError) {
-        parseFailure = {
-          kind: "parse",
-          message: parseError instanceof Error ? parseError.message : String(parseError),
-          cause: parseError,
-        };
-      }
-
+      // Lifecycle: compact the completed turn
       const afterTurnCompaction = this.compaction;
-      if (!parseFailure && afterTurnCompaction?.triggers?.afterTurn) {
+      if (afterTurnCompaction?.triggers?.afterTurn) {
         await this.runCompaction(afterTurnCompaction, signal, "afterTurn", {
           state: this.messages,
           target: { type: "turn", turnId: startEvent.turnId },
@@ -715,20 +710,14 @@ export class Agent {
         });
       }
 
-      if (parseFailure) finalize("error", parseFailure);
-      else finalize("complete");
+      finalize("complete");
       const agentTurn = this.transcript.getTurn(startEvent.turnId);
-
-      if (parseFailure) {
-        status = "error";
-        return { ok: false, error: parseFailure, turn: agentTurn, usage };
-      }
 
       if (!agentTurn) {
         throw new AxleError("Agent turn missing after send");
       }
 
-      return { ok: true, response, turn: agentTurn, usage };
+      return { ok: true, response: streamResult.response, turn: agentTurn, usage };
     } catch (error) {
       // Lifecycle: settle a failed or cancelled turn
       const stepError = stepFailure && error instanceof AxleAbortError ? stepFailure : undefined;

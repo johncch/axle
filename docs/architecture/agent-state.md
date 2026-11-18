@@ -39,7 +39,8 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    (invariant 7), which commits nothing. `Agent.send()` clones and validates
    its `Instruct` and materializes the `AxleUserMessage` and its user turn
    synchronously before scheduling; execution emits that same turn as
-   `turn:user`, then the same `Instruct` parses the final assistant response.
+   `turn:user`, then hands `stream()` the same `Instruct`, which parses the
+   final assistant response (structured-output.md).
 6. **Usage accounting belongs to the consumer.** Every `turn:end` carries
    `turn.usage`; consumers accumulate totals in their own storage. The Agent
    exposes no usage meter, and `AgentSession` carries none. A running total
@@ -921,6 +922,17 @@ the client renders the prompt, attaches the files and sends `{ id, prompt,
 files?, metadata? }`, and parses the reply itself. A `ref` stays opaque and
 resolves where the agent runs, which is where the storage is; a client and
 server that share storage both know what the key means.
+
+**Revised 2026-11-17: the `Instruct` crosses as data.** The 2026-11-07
+reasoning held while the client could finish the prompt. It no longer can.
+Output instructions are written by `stream()` into the request
+(structured-output.md invariant 9), and only the served side runs it. And a
+schema is no longer behavior:
+an `Instruct` schema is a JSON Schema, with a Standard Schema object as one
+way to write it, so what crosses is data. The client sends
+`instruct.toJSON()`, the served side rebuilds it with `Instruct.fromJSON()`
+and renders, and the client still validates the reply, because it alone
+holds the object that can. remote-agent.md invariant 6 has the wire shape.
 
 ## Status is state (2026-11-06)
 

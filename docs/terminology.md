@@ -143,6 +143,15 @@ wins; the lookup returns `undefined` once the call has settled. A handler
 that returns nothing has not answered; the call stays waiting for whoever
 holds this handle, which is what "not from me" means at every layer.
 
+**Output schema** — what an `Instruct` carries to describe its answer
+(`OutputSchema`): a JSON Schema object, or a Standard Schema object that
+converts to one (a Zod schema is one). JSON Schema is the format; the
+Standard Schema object is a typed way to write it and to check the answer.
+Axle defines no subset of either: what a library cannot convert is the
+library's error. See
+`architecture/structured-output.md`. "Output schema" never refers to a
+tool's parameter schema.
+
 **UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
 usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent
 when the provider has none), two models, and, when the `Agent` that made it
@@ -368,7 +377,7 @@ own surface minus configuration. It holds no transcript.
 **Command** — what a consumer asks of a served agent, one per Agent verb:
 `send`, `answer`, `fail`, `cancel`, `stop`, `clear`. A command's response
 is only whether the Agent took it; everything after acceptance arrives as
-events. Axle defines commands as a spec (`agentCommandSchema`) and decodes
+events. A `send` carries its `Instruct` as data (`InstructData`). Axle defines commands as a spec (`agentCommandSchema`) and decodes
 them (`parseAgentCommand`); the host dispatches them to the agent.
 
 **Transport** — what carries stored events one way and commands the other

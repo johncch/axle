@@ -10,6 +10,7 @@ import type {
   TimingInfo,
   Turn,
   TurnFailure,
+  TurnOutput,
   TurnPart,
   TurnStatus,
 } from "./types.js";
@@ -45,6 +46,7 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       usage: Stats;
       failure?: TurnFailure;
       reason?: "stop" | "length";
+      output?: TurnOutput;
       timing?: TimingInfo;
     }
   // Compaction part lifecycle (@experimental)

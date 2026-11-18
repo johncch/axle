@@ -1,4 +1,5 @@
 import type { CompactionTrigger } from "../core/agent/types.js";
+import type { JsonSchema } from "../core/parse.js";
 import type { Citation, ThinkingContinuity, ToolResultPart } from "../messages/message.js";
 import type { ConsoleOutput, ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
@@ -103,6 +104,12 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   /** How the turn failed, when its send resolved `ok: false`. */
   failure?: TurnFailure;
   /**
+   * Set when the send asked for a structured answer. A user turn carries the
+   * schema it asked for; an agent turn carries that schema and the path it
+   * reached the model by, and its text is the JSON answer.
+   */
+  output?: TurnOutput;
+  /**
    * Where this turn closed on the event stream it was folded from: the
    * `cursor` of its `turn:user` or `turn:end`, when that event carried one.
    * A consumer resuming from stored turns subscribes after the last one.
@@ -114,6 +121,11 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
    * before a final answer arrived.
    */
   reason?: "stop" | "length";
+}
+
+/** The schema a structured send asked for. */
+export interface TurnOutput {
+  schema: JsonSchema;
 }
 
 /**

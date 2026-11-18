@@ -58,7 +58,7 @@ type HeldOutcome =
 interface OpenOperation {
   schema: OutputSchema | undefined;
   started: boolean;
-  held?: HeldOutcome;
+  held?: Promise<HeldOutcome>;
   resolve: (result: AgentResult<RemoteResponse> | AgentErrorResult) => void;
   reject: (error: Error) => void;
 }
@@ -202,8 +202,9 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
-    const prompt = instruct.render();
+    instruct.validate();
     const metadata = options.metadata ?? instruct.metadata;
+    const data = { ...instruct.toJSON(), ...(metadata ? { metadata } : {}) };
     const {
       promise: final,
       resolve,
@@ -211,9 +212,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     } = Promise.withResolvers<AgentResult<RemoteResponse> | AgentErrorResult>();
     final.catch(() => {});
     this.operations.set(id, { schema: instruct.schema, started: false, resolve, reject });
-    const command: AgentCommand = { type: "send", id, prompt };
-    if (instruct.files.length > 0) command.files = instruct.files;
-    if (metadata) command.metadata = metadata;
+    const command: AgentCommand = { type: "send", id, instruct: data };
     this.transport.command(command).then(
       (outcome) => {
         if (outcome.accepted) return;
@@ -285,7 +284,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
         break;
       }
       case "operation:end":
-        this.settleOperation(event.id, (op) => this.endOperation(op, event.outcome));
+        this.settleOperation(event.id, (op) => void this.endOperation(op, event.outcome));
         break;
       case "agent:idle":
         this.setStatus({ phase: "idle" });
@@ -368,7 +367,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     }
   }
 
-  private outcomeOf(op: OpenOperation, turn: Turn): HeldOutcome {
+  private async outcomeOf(op: OpenOperation, turn: Turn): Promise<HeldOutcome> {
     const usage = turn.usage ?? createStats();
     if (turn.status === "cancelled") return { status: "rejected", turn };
     if (turn.status === "error") {
@@ -387,7 +386,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     try {
       return {
         status: "fulfilled",
-        value: { ok: true, response: parseResponse(textOf(turn), op.schema), turn, usage },
+        value: { ok: true, response: await parseResponse(textOf(turn), op.schema), turn, usage },
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -398,8 +397,8 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     }
   }
 
-  private endOperation(op: OpenOperation, outcome: OperationOutcome): void {
-    const held = op.held;
+  private async endOperation(op: OpenOperation, outcome: OperationOutcome): Promise<void> {
+    const held = await op.held;
     if (outcome.type === "complete" && held?.status === "fulfilled") {
       op.resolve(held.value);
     } else if (outcome.type === "cancelled") {

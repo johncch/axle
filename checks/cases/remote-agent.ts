@@ -18,9 +18,7 @@ import type { CheckCase } from "./types.js";
 async function handleCommand(agent: Agent, command: AgentCommand): Promise<CommandOutcome> {
   switch (command.type) {
     case "send": {
-      const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
-      for (const file of command.files ?? []) instruct.addFile(file);
-      agent.send(instruct, { id: command.id, metadata: command.metadata }).final.catch(() => {});
+      agent.send(Instruct.fromJSON(command.instruct), { id: command.id }).final.catch(() => {});
       return { accepted: true };
     }
     case "answer":
@@ -54,7 +52,7 @@ export const remoteAgentCases: CheckCase[] = [
     group: "extended",
     id: "remote-agent-roundtrip",
     description:
-      "An Instruct with a schema crosses as a rendered prompt, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
+      "An Instruct with a schema crosses as data, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, system, tools: [askUser] });
       const remote = new RemoteAgent(
