@@ -272,7 +272,9 @@ segments follow the subagent call that produced them. Segments are the
 same objects and are told apart by `depth`.
 
 `partOf` searches subagent runs as well, so it works on a segment of any
-depth.
+depth. Its return type follows the segment: a text segment gives a
+`TextPart`, a compaction segment a `CompactionPart`, a subagent call a
+`SubagentAction`, and a tool call one of the three tool action types.
 
 ## Simplify
 

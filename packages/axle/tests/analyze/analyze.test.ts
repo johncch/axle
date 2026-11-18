@@ -360,7 +360,12 @@ describe("analyze", () => {
     test("returns the original turn for a turn segment and the original part otherwise", () => {
       expect(partOf(turns, a.turns[3]!)).toBe(turns[3]);
       expect(partOf(turns, a.tools[1]!)).toBe(turns[3]!.parts[0]);
-      expect(partOf(turns, a.texts[0]!)).toMatchObject({ type: "text", text: "looks fine" });
+      expect(partOf(turns, a.texts[0]!)?.text).toBe("looks fine");
+      expect(partOf(turns, a.tools[1]!)?.detail.result).toMatchObject({
+        type: "error",
+        error: { message: "ENOENT" },
+      });
+      expect(partOf(turns, a.subagents[0]!)?.detail.children).toHaveLength(2);
     });
 
     test("finds a segment inside a subagent run", () => {

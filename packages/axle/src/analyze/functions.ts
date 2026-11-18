@@ -1,9 +1,18 @@
-import type { Turn, TurnPart } from "../turns/types.js";
+import type {
+  Annotation,
+  CompactionPart,
+  DeferredAction,
+  ProviderToolAction,
+  SubagentAction,
+  TextPart,
+  ToolAction,
+  Turn,
+  TurnPart,
+} from "../turns/types.js";
 import type {
   Analysis,
   AnySegment,
   CompactionSegment,
-  FailedSegment,
   PartSegment,
   SubagentCallSegment,
   TextSegment,
@@ -124,16 +133,33 @@ function add(part: PartSegment, into: Analysis): void {
 
 /**
  * The original `Turn` a turn segment was made from, or the original part
- * for any other segment. Searches subagent runs too.
+ * for any other segment, typed by the segment's kind. Searches subagent
+ * runs too.
  */
-export function partOf<TTurn extends AnyTurn>(
-  turns: readonly TTurn[],
+export function partOf<A extends Annotation>(
+  turns: readonly Turn<A>[],
   segment: TurnSegment,
-): TTurn | undefined;
-export function partOf<TTurn extends AnyTurn>(
-  turns: readonly TTurn[],
-  segment: ToolCallSegment | SubagentCallSegment | CompactionSegment | TextSegment | FailedSegment,
-): TTurn | TTurn["parts"][number] | undefined;
+): Turn<A> | undefined;
+export function partOf<A extends Annotation>(
+  turns: readonly Turn<A>[],
+  segment: TextSegment,
+): TextPart<A> | undefined;
+export function partOf<A extends Annotation>(
+  turns: readonly Turn<A>[],
+  segment: CompactionSegment,
+): CompactionPart<A> | undefined;
+export function partOf<A extends Annotation>(
+  turns: readonly Turn<A>[],
+  segment: SubagentCallSegment,
+): SubagentAction<A> | undefined;
+export function partOf<A extends Annotation>(
+  turns: readonly Turn<A>[],
+  segment: ToolCallSegment,
+): ToolAction<A> | ProviderToolAction<A> | DeferredAction<A> | undefined;
+export function partOf<A extends Annotation>(
+  turns: readonly Turn<A>[],
+  segment: AnySegment,
+): Turn<A> | TurnPart<A> | undefined;
 export function partOf(
   turns: readonly AnyTurn[],
   segment: AnySegment,
