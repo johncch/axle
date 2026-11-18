@@ -1,4 +1,5 @@
 import { Agent, Transcript, isActionOf, isCall, type DeferredTool } from "@fifthrevision/axle";
+import { analyze, failed } from "@fifthrevision/axle/analyze";
 import * as z from "zod";
 import { fail } from "./helpers.js";
 import type { CheckCase } from "./types.js";
@@ -78,6 +79,8 @@ export const deferredToolCases: CheckCase[] = [
       "A handler that throws reaches the model as an error result and the turn still completes.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, system, tools: [askUser] });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
       agent.onToolCall(() => {
         throw new Error("The person dismissed the question without answering");
       });
@@ -89,11 +92,24 @@ export const deferredToolCases: CheckCase[] = [
 
       const toolMessage = agent.messages.find((message) => message.role === "tool");
       const toolResult = toolMessage?.role === "tool" ? toolMessage.content[0] : undefined;
-      const details = { response: result.response, toolResult, usage: result.usage };
+      const declined = analyze(transcript.turns).tools.filter(failed);
+      const details = {
+        response: result.response,
+        toolResult,
+        declined: declined.map((call) => ({
+          kind: call.kind,
+          error: call.error,
+          recovered: call.recovered,
+        })),
+        usage: result.usage,
+      };
       const failureReasons: string[] = [];
       if (!toolResult) failureReasons.push("no tool result was committed");
       else if (!toolResult.isError || !String(toolResult.content).includes("dismissed")) {
         failureReasons.push("tool result is not the thrown error");
+      }
+      if (declined.length !== 1 || declined[0].kind !== "deferred" || !declined[0].recovered) {
+        failureReasons.push("transcript has no failed deferred call recorded as recovered");
       }
       if (result.turn?.status !== "complete")
         failureReasons.push(`turn ended ${result.turn?.status}`);

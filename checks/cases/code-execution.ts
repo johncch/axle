@@ -1,9 +1,12 @@
 import {
+  Agent,
+  Transcript,
   generate,
   stream,
   type ContentPartProviderTool,
   type ProviderTool,
 } from "@fifthrevision/axle";
+import { analyze, completed, partOf } from "@fifthrevision/axle/analyze";
 import { fail, getAssistantText } from "./helpers.js";
 import type { CheckCase, CheckCaseContext } from "./types.js";
 
@@ -92,6 +95,67 @@ export const codeExecutionCases: CheckCase[] = [
         ok: answered,
         failureReasons: answered ? undefined : ["Follow-up did not answer 0."],
         details: { events, output, text, usage: followUp.usage },
+      };
+    },
+  },
+  {
+    group: "extended",
+    id: "agent-code-execution",
+    description:
+      "Code execution through an Agent lands in the turn as a completed provider tool call with its code and its output.",
+    providers: ["openai", "anthropic", "google"],
+    async run({ provider, model, providerId, requestOptions }) {
+      const agent = new Agent({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools: [codeExecutionTool(providerId)],
+      });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const result = await agent.send(
+        "Use code execution to compute the sum of the first 50 prime numbers. Print the result and then tell me the answer in one sentence.",
+      ).final;
+      if (!result.ok) return fail({ error: result.error });
+
+      const runs = analyze(transcript.turns).tools.filter(
+        (call) =>
+          call.kind === "provider" &&
+          (call.name === "code_execution" || call.name === "bash_code_execution"),
+      );
+      const outputs = runs.map((run) => {
+        const part = partOf(transcript.turns, run);
+        const actionResult =
+          part && "type" in part && part.type === "action" ? part.detail.result : undefined;
+        return actionResult?.type === "success" ? JSON.stringify(actionResult.content ?? "") : "";
+      });
+      const failureReasons: string[] = [];
+      if (runs.length === 0) failureReasons.push("The transcript records no code execution call.");
+      if (runs.length > 0 && !runs.some(completed)) {
+        failureReasons.push(
+          `No code execution call completed: ${runs.map((run) => run.status).join(",")}.`,
+        );
+      }
+      if (runs.some((run) => run.parameters.type !== "code" && run.parameters.type !== "command")) {
+        failureReasons.push("A call's parameters are neither the code nor the command shape.");
+      }
+      if (runs.length > 0 && !outputs.some((output) => output.includes("5117"))) {
+        failureReasons.push("No recorded output holds the sum.");
+      }
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          response: result.response,
+          runs: runs.map((run, index) => ({
+            name: run.name,
+            status: run.status,
+            parameters: run.parameters,
+            output: outputs[index],
+          })),
+          usage: result.usage,
+        },
       };
     },
   },

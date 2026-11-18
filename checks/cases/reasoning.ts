@@ -1,8 +1,10 @@
 import {
+  Agent,
   fetchModelsDev,
   generate,
   ModelCatalog,
   stream,
+  Transcript,
   type AxleAssistantMessage,
   type AxleMessage,
   type ExecutableTool,
@@ -11,6 +13,7 @@ import {
   type ReasoningEffort,
   type ReasoningSetting,
 } from "@fifthrevision/axle";
+import { simplify } from "@fifthrevision/axle/analyze";
 import * as z from "zod";
 import type { ProviderId } from "../providers.js";
 import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
@@ -196,6 +199,57 @@ export const reasoningCases: CheckCase[] = [
           text,
           thinkingDeltaCount,
           thinkingParts: countThinking(result.final),
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
+    id: "agent-thinking",
+    description:
+      "Thinking through an Agent lands in the turn: the thinking content history holds is on the transcript and in its simplified form.",
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({ provider, model, ...requestOptions });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const result = await agent.send(reasoningPrompt, { reasoning: { effort: "low" } }).final;
+      if (!result.ok) return fail({ error: result.error });
+
+      const inHistory = agent.messages
+        .flatMap((message) => (message.role === "assistant" ? message.content : []))
+        .filter((part) => part.type === "thinking")
+        .filter((part) => (part.summary ?? part.text ?? "").trim().length > 0).length;
+      const onTranscript = transcript.turns
+        .flatMap((turn) => turn.parts)
+        .filter((part) => part.type === "thinking")
+        .filter((part) => (part.summary || part.raw || "").trim().length > 0).length;
+      const simplified = simplify(transcript.turns)
+        .flatMap((turn) => turn.parts)
+        .filter((part) => part.type === "thinking").length;
+      const failureReasons = [
+        ...(String(result.response ?? "").trim().length === 0 ? ["The reply is empty."] : []),
+        ...(inHistory !== onTranscript
+          ? [
+              `History holds ${inHistory} thinking part(s) with content; the transcript has ${onTranscript}.`,
+            ]
+          : []),
+        ...(simplified !== onTranscript
+          ? [
+              `The transcript has ${onTranscript} thinking part(s) with content; simplify kept ${simplified}.`,
+            ]
+          : []),
+      ];
+
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          response: result.response,
+          inHistory,
+          onTranscript,
+          simplified,
           usage: result.usage,
         },
       };

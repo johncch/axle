@@ -8,6 +8,7 @@ import {
   Transcript,
   createAgentTool,
   generate,
+  isTimeoutReason,
   loadFileContent,
   parallelize,
   stream,
@@ -21,6 +22,7 @@ import {
   type FileResolver,
   type ProviderTool,
 } from "@fifthrevision/axle";
+import { analyze, cancelled, completed, failed, named } from "@fifthrevision/axle/analyze";
 import * as z from "zod";
 import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
@@ -400,10 +402,8 @@ export const coreCases: CheckCase[] = [
 
       const result = await agent.send("Reply with exactly: compaction-triggers-ok").final;
       const text = String(result.response ?? "");
-      const appliedCompactions = transcript.turns.filter(
-        (turn) =>
-          turn.status === "complete" && turn.parts.some((part) => part.type === "compaction"),
-      ).length;
+      const compactions = analyze(transcript.turns).compactions;
+      const appliedCompactions = compactions.filter(completed).length;
       const failureReasons = [
         ...(!text.toLowerCase().includes("compaction-triggers-ok")
           ? ["Agent did not return the requested compaction-triggers-ok marker."]
@@ -420,6 +420,13 @@ export const coreCases: CheckCase[] = [
           : []),
         ...(appliedCompactions !== 1
           ? [`Expected one applied automatic compaction, got ${appliedCompactions}.`]
+          : []),
+        ...(compactions.map((compaction) => compaction.trigger).join(",") !== "afterTurn"
+          ? [
+              `Expected the transcript to record one afterTurn compaction; got ${
+                compactions.map((compaction) => compaction.trigger).join(",") || "none"
+              }.`,
+            ]
           : []),
         ...(agent.messages.length !== 1
           ? [`Expected one active compacted message, got ${agent.messages.length}.`]
@@ -681,12 +688,27 @@ export const coreCases: CheckCase[] = [
         "Use the add_numbers tool to add 17 and 25. Then answer with the result.",
       ).final;
       const text = String(result.response ?? "");
+      const a = analyze(transcript.turns);
+      const failureReasons = [
+        ...(!text.includes("42") ? ["The final answer does not hold 42."] : []),
+        ...(!hasSuccessfulToolResult(agent.messages)
+          ? ["History has no successful add_numbers result."]
+          : []),
+        ...(!a.tools.filter(named("add_numbers")).some(completed)
+          ? ["The transcript records no completed add_numbers call."]
+          : []),
+        ...(a.errors.some((error) => !error.recovered)
+          ? ["The transcript records an error the turn did not recover from."]
+          : []),
+      ];
 
       return {
-        ok: text.includes("42") && hasSuccessfulToolResult(agent.messages),
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
           toolResults: getToolResultDetails(agent.messages),
+          tools: a.tools.map((call) => ({ name: call.name, status: call.status })),
           turnCount: transcript.turns.length,
           usage: result.usage,
         },
@@ -1025,9 +1047,20 @@ export const coreCases: CheckCase[] = [
             entry.in > 0 &&
             entry.out > 0,
         ) === true;
+      const delegations = analyze(transcript.turns).subagents.filter(named("delegate_code_word"));
+      const childRecorded = delegations.some(
+        (call) =>
+          completed(call) &&
+          call.turns.length === 2 &&
+          call.turns.every(completed) &&
+          call.turns.every((turn) => turn.depth === 1),
+      );
       const failureReasons = [
         ...(!parentReturnedCodeWord
           ? ["Parent response did not preserve the orchid code word."]
+          : []),
+        ...(!childRecorded
+          ? ["The transcript did not record the child's two turns under a completed subagent call."]
           : []),
         ...(!childReturnedExpectedValue
           ? ["Child tool result did not contain subagent-orchid."]
@@ -1044,6 +1077,10 @@ export const coreCases: CheckCase[] = [
           response: result.response,
           toolResults,
           turnCount: transcript.turns.length,
+          delegations: delegations.map((call) => ({
+            status: call.status,
+            turns: call.turns.map((turn) => `${turn.owner}:${turn.status}`),
+          })),
           childProvider: childProvider.id,
           usage: result.usage,
         },
@@ -1162,6 +1199,114 @@ export const coreCases: CheckCase[] = [
           error: serializeError(thrown),
           logRoles,
           toolResults,
+          followUp: followUp.ok ? followUp.response : followUp.error,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
+    id: "agent-tool-error-recovery",
+    description:
+      "A tool that fails once is retried, the turn completes, and the transcript records the error as recovered.",
+    async run({ provider, model, requestOptions }) {
+      let calls = 0;
+      const flakyTool: ExecutableTool<z.ZodObject<{ id: z.ZodString }>> = {
+        name: "fetch_record",
+        description: "Fetch a record from the datastore by id.",
+        schema: z.object({ id: z.string() }),
+        async execute(input) {
+          calls += 1;
+          if (calls === 1) throw new Error("datastore temporarily unavailable, try again");
+          return `record ${input.id}: status=active`;
+        },
+      };
+      const agent = new Agent({ provider, model, ...requestOptions, tools: [flakyTool] });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const result = await agent.send(
+        "Call fetch_record with id 'r-123'. If the call fails, call it again. Then report the record's status.",
+      ).final;
+      if (!result.ok) return fail({ error: result.error });
+
+      const text = String(result.response ?? "");
+      const a = analyze(transcript.turns);
+      const failedCalls = a.tools.filter(failed);
+      const failureReasons: string[] = [];
+      if (calls < 2) failureReasons.push(`the tool ran ${calls} time(s); the model did not retry`);
+      if (!/active/i.test(text)) failureReasons.push("the final answer does not report the status");
+      if (failedCalls.length !== 1) {
+        failureReasons.push(`expected one failed tool call on record, got ${failedCalls.length}`);
+      }
+      if (failedCalls.some((call) => call.recovered !== true)) {
+        failureReasons.push("the failed call is not recorded as recovered");
+      }
+      if (!a.tools.filter(named("fetch_record")).some(completed)) {
+        failureReasons.push("the transcript records no completed fetch_record call");
+      }
+      if (a.turns.some(failed)) failureReasons.push("a turn is recorded as failed");
+      return {
+        ok: failureReasons.length === 0,
+        failureReasons,
+        details: {
+          response: result.response,
+          calls,
+          tools: a.tools.map((call) => ({
+            name: call.name,
+            status: call.status,
+            error: call.error,
+            recovered: call.recovered,
+          })),
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    group: "extended",
+    id: "agent-turn-timeout",
+    description:
+      "A turn that runs past turnTimeoutMs is cancelled with a timeout reason on the error and on the turn, and a follow-up turn is accepted.",
+    async run({ provider, model, requestOptions }) {
+      const limitMs = 3000;
+      const agent = new Agent({ provider, model, ...requestOptions, turnTimeoutMs: limitMs });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const outcome = await agent
+        .send("Write about 3000 words on the history of the bicycle.")
+        .final.then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      if (outcome === undefined) {
+        return fail({ reason: `the turn finished inside ${limitMs}ms, so nothing timed out` });
+      }
+
+      const a = analyze(transcript.turns);
+      const timedOut = a.turns.find(cancelled);
+      const followUp = await agent.send("Never mind that. Reply with the single word: ready", {
+        turnTimeoutMs: 120_000,
+      }).final;
+
+      const failureReasons: string[] = [];
+      if (!(outcome instanceof AxleAgentAbortError) || !isTimeoutReason(outcome.reason)) {
+        failureReasons.push("the send did not reject with a timeout reason");
+      }
+      if (timedOut?.cancelled !== "timeout") {
+        failureReasons.push(
+          `the turn is not recorded as cancelled by the timeout: ${timedOut?.cancelled ?? "none"}`,
+        );
+      }
+      if (a.errors.length > 0) failureReasons.push("the timeout is recorded as an error");
+      if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
+      return {
+        ok: failureReasons.length === 0,
+        failureReasons,
+        details: {
+          error: serializeError(outcome),
+          turns: a.turns.map((turn) => `${turn.owner}:${turn.status}:${turn.cancelled ?? ""}`),
           followUp: followUp.ok ? followUp.response : followUp.error,
         },
       };
@@ -1295,10 +1440,7 @@ export const coreCases: CheckCase[] = [
           ? message.content.filter((part) => part.type === "tool-call")
           : [],
       ).length;
-      const actionStatuses = transcript.turns
-        .flatMap((turn) => turn.parts)
-        .filter((part) => part.type === "action")
-        .map((part) => part.status);
+      const actionStatuses = analyze(transcript.turns).tools.map((call) => call.status);
       const followUp = await agent.send("Never mind that. Reply with the single word: ready").final;
 
       const failureReasons: string[] = [];
@@ -1425,6 +1567,8 @@ export const coreCases: CheckCase[] = [
         prompt: (input) => `Write a 500-word essay about ${input.topic}.`,
       });
       const agent = new Agent({ provider, model, ...requestOptions, tools: [subagentTool] });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
 
       let sawChildEvent = false;
       let handleRef: { cancel: (reason?: unknown) => void } | undefined;
@@ -1451,13 +1595,24 @@ export const coreCases: CheckCase[] = [
       const messageRoles = aborted?.messages?.map((message) => message.role) ?? [];
       // A leaked child conversation would contain the delegated user prompt.
       const noChildLeak = messageRoles.join(",") === "assistant,tool";
+      const delegations = analyze(transcript.turns).subagents.filter(named("delegate_essay"));
+      const delegationCancelled = delegations.length > 0 && delegations.every(cancelled);
       return {
         ok: Boolean(
-          aborted && sawChildEvent && noChildLeak && aborted.usage && aborted.usage.in > 0,
+          aborted &&
+          sawChildEvent &&
+          noChildLeak &&
+          delegationCancelled &&
+          aborted.usage &&
+          aborted.usage.in > 0,
         ),
         details: {
           sawChildEvent,
           messageRoles,
+          delegations: delegations.map((call) => ({
+            status: call.status,
+            turns: call.turns.map((turn) => `${turn.owner}:${turn.status}`),
+          })),
           error: serializeError(thrown),
           usage: aborted?.usage,
         },
@@ -1524,6 +1679,101 @@ export const coreCases: CheckCase[] = [
           text,
           childEvents,
           batchResult: batchResult?.content,
+          usage: result.usage,
+        },
+      };
+    },
+  },
+  {
+    group: "default",
+    id: "agent-web-search",
+    description:
+      "A web search through an Agent lands in the turn: the search call and the citations history holds are on the transcript.",
+    async run({ provider, model, requestOptions }) {
+      const agent = new Agent({
+        provider,
+        model,
+        ...requestOptions,
+        providerTools: [webSearchTool],
+      });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
+
+      const result = await agent.send(
+        "Use web search to find the current top headline on Reuters.com. Answer with only the headline.",
+        { reasoning: { effort: "medium" }, maxOutputTokens: 12000 },
+      ).final;
+      if (!result.ok) return fail({ error: result.error });
+
+      const assistantMessages = agent.messages.filter((message) => message.role === "assistant");
+      const history = {
+        providerTools: assistantMessages.reduce(
+          (total, message) => total + countProviderToolParts(message),
+          0,
+        ),
+        localSearches: getToolResultDetails(agent.messages).filter(
+          (toolResult) => toolResult.name === "web_search" && toolResult.isError !== true,
+        ).length,
+        citations: assistantMessages.reduce(
+          (total, message) => total + countCitationParts(message) + countTextCitations(message),
+          0,
+        ),
+      };
+      const a = analyze(transcript.turns);
+      const recorded = {
+        providerTools: a.tools.filter((call) => call.kind === "provider").length,
+        localSearches: a.tools
+          .filter(named("web_search"))
+          .filter((call) => call.kind === "tool")
+          .filter(completed).length,
+        citations: transcript.turns
+          .flatMap((turn) => turn.parts)
+          .reduce(
+            (total, part) =>
+              total +
+              (part.type === "citation"
+                ? part.citations.length
+                : part.type === "text"
+                  ? (part.citations?.length ?? 0)
+                  : 0),
+            0,
+          ),
+      };
+      const failureReasons = [
+        ...(history.providerTools + history.localSearches + history.citations === 0
+          ? ["No citations, provider-tool activity, or successful web_search result."]
+          : []),
+        ...(history.providerTools !== recorded.providerTools
+          ? [
+              `History holds ${history.providerTools} provider-tool part(s); the transcript records ${recorded.providerTools}.`,
+            ]
+          : []),
+        ...(history.localSearches !== recorded.localSearches
+          ? [
+              `History holds ${history.localSearches} web_search result(s); the transcript records ${recorded.localSearches} completed call(s).`,
+            ]
+          : []),
+        ...(history.citations > 0 && recorded.citations === 0
+          ? [`History holds ${history.citations} citation(s); the transcript has none.`]
+          : []),
+        ...(a.errors.some((error) => !error.recovered)
+          ? ["The transcript records an error the turn did not recover from."]
+          : []),
+      ];
+
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: {
+          response: result.response,
+          history,
+          recorded,
+          tools: a.tools.map((call) => ({
+            kind: call.kind,
+            name: call.name,
+            status: call.status,
+            parameters: call.parameters,
+          })),
           usage: result.usage,
         },
       };
