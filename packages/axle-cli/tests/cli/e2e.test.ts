@@ -112,7 +112,7 @@ const it = test.extend<{ cli: CliFixture; schedule: ScheduleFixture }>({
     await writeFile(
       join(HOME, ".axle", "cache", "models.json"),
       JSON.stringify({
-        version: 4,
+        version: 5,
         fetchedAt: new Date().toISOString(),
         etags: {},
         coverage: "all",

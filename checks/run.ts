@@ -1,4 +1,4 @@
-import type { ReasoningSetting } from "@fifthrevision/axle";
+import { REASONING_EFFORTS, type ReasoningSetting } from "@fifthrevision/axle";
 import "dotenv/config";
 import logUpdate from "log-update";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -25,7 +25,7 @@ import {
   type ProviderTarget,
 } from "./providers.js";
 
-const REASONING_FLAGS = ["default", "off", "on", "low", "medium", "high"] as const;
+const REASONING_FLAGS = ["default", "off", "on", ...REASONING_EFFORTS] as const;
 
 interface RunOptions {
   providers: string[];
@@ -598,11 +598,11 @@ function formatFailureReasons(reasons: string[]): string {
 }
 
 function parseReasoningFlag(value: string): ReasoningSetting {
-  if (!(REASONING_FLAGS as readonly string[]).includes(value)) {
-    throw new Error(`--reasoning expects one of ${REASONING_FLAGS.join(", ")}`);
-  }
-  if (value === "low" || value === "medium" || value === "high") return { effort: value };
-  return value as "default" | "off" | "on";
+  const flag = REASONING_FLAGS.find((known) => known === value);
+  if (!flag) throw new Error(`--reasoning expects one of ${REASONING_FLAGS.join(", ")}`);
+  if (flag === "default") return flag;
+  if (flag === "off" || flag === "on") return { enabled: flag === "on" };
+  return { effort: flag };
 }
 
 function parseArgs(args: string[]): RunOptions {

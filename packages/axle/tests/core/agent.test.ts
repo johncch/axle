@@ -1158,21 +1158,21 @@ describe("Agent", () => {
     const agent = new Agent({
       provider,
       model: "mock",
-      reasoning: "on",
+      reasoning: { effort: "medium" },
       parallelToolCalls: false,
       maxOutputTokens: 100,
       providerOptions: { seed: 1, metadata: { source: "agent" } },
     });
 
     await agent.send("Hi", {
-      reasoning: "off",
+      reasoning: { enabled: false },
       maxOutputTokens: 20,
       toolChoice: "none",
       providerOptions: { metadata: { source: "send" } },
     }).final;
 
     expect(observedRequest).toEqual({
-      reasoning: "off",
+      reasoning: { enabled: false },
       maxOutputTokens: 20,
       toolChoice: "none",
       parallelToolCalls: false,

@@ -81,23 +81,40 @@ properties:
     type: object
     properties:
       reasoning:
-        description: Model thinking. default leaves the provider's own default, on is
-          medium effort, off sends the provider's explicit disable.
+        description: Model thinking. default leaves the provider's own default, off
+          turns it off, on picks what models.dev suggests for the model, and an
+          effort (minimal to max) is sent as written. The object form sets the
+          model's own knobs and is sent as written.
         anyOf:
           - type: string
             enum:
               - default
               - off
               - on
+              - minimal
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
           - type: object
             properties:
+              enabled:
+                description: The model's on/off switch. false turns thinking off. true turns it
+                  on without naming an effort, for a model or provider that has
+                  such a switch.
+                type: boolean
               effort:
+                description: How deeply the model thinks. An effort the model does not have is
+                  rejected by its provider.
                 type: string
                 enum:
+                  - minimal
                   - low
                   - medium
                   - high
-                description: How much the model thinks.
+                  - xhigh
+                  - max
               display:
                 description: hidden asks the provider not to return its thinking. Defaults to
                   visible.
@@ -105,8 +122,6 @@ properties:
                 enum:
                   - visible
                   - hidden
-            required:
-              - effort
             additionalProperties: false
       maxOutputTokens:
         description: Upper limit on tokens the model generates per response.

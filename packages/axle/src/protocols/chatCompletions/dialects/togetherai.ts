@@ -6,12 +6,13 @@ import type { ChatCompletionsDialect } from "../dialect.js";
 /**
  * Together AI toggles hybrid models with `reasoning.enabled` and steers GPT-OSS
  * and DeepSeek V4 with `reasoning_effort`; each model family reads the field
- * it knows, so an enabled request carries both.
+ * it knows, so an effort carries both and the switch alone carries no effort.
  */
 export function toTogetherReasoning(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning: { enabled: false } };
+  if (request.effort === undefined) return { reasoning: { enabled: true } };
   return { reasoning: { enabled: true }, reasoning_effort: request.effort };
 }
 

@@ -80,7 +80,7 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
         model: MODEL,
         messages,
         runtime: {},
-        reasoning: "on",
+        reasoning: { effort: "high" },
         maxOutputTokens: 100,
         providerOptions: { max_output_tokens: 200, reasoning: { effort: "medium" } },
       }),

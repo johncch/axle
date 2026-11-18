@@ -14,7 +14,12 @@ import {
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import { LEGACY_REASONING_BUDGETS, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
+import {
+  legacyReasoningBudget,
+  reasoningNeedsEffort,
+  type ReasoningSetting,
+  resolveReasoning,
+} from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 
@@ -133,21 +138,37 @@ export function toGeminiToolConfig(
 export function toGeminiThinkingConfig(reasoning: ReasoningSetting | undefined, model = "") {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
-  if (request === "off") return { thinkingConfig: { thinkingBudget: 0 } };
+  const toggles = usesGeminiThinkingToggle(model);
+  if (request === "off") {
+    return { thinkingConfig: toggles ? { thinkingLevel: "minimal" } : { thinkingBudget: 0 } };
+  }
+  const includeThoughts = request.display === "visible";
   if (usesGeminiThinkingBudget(model)) {
     return {
       thinkingConfig: {
-        thinkingBudget: LEGACY_REASONING_BUDGETS[request.effort],
-        includeThoughts: request.display === "visible",
+        thinkingBudget: legacyReasoningBudget(request.effort, model),
+        includeThoughts,
       },
     };
   }
-  return {
-    thinkingConfig: {
-      thinkingLevel: request.effort,
-      includeThoughts: request.display === "visible",
-    },
-  };
+  if (request.effort === undefined) {
+    if (!toggles) throw reasoningNeedsEffort("Gemini");
+    return { thinkingConfig: { thinkingLevel: "high", includeThoughts } };
+  }
+  return { thinkingConfig: { thinkingLevel: request.effort, includeThoughts } };
+}
+
+/**
+ * The models whose thinking only switches on or off, which Google spells as
+ * the levels `high` and `minimal`. Looked up exactly, like the budget set.
+ */
+export const GEMINI_THINKING_TOGGLE_MODELS: ReadonlySet<string> = new Set([
+  "gemma-4-26b-a4b-it",
+  "gemma-4-31b-it",
+]);
+
+function usesGeminiThinkingToggle(model: string): boolean {
+  return GEMINI_THINKING_TOGGLE_MODELS.has(model.toLowerCase());
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   type FileResolver,
   type ResolvedFileSource,
 } from "../../utils/file.js";
-import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
+import { reasoningNeedsEffort, resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import type { ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 
@@ -112,6 +112,7 @@ export function toOpenAIReasoning(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning: { effort: "none" as const } };
+  if (request.effort === undefined) throw reasoningNeedsEffort("the Responses API");
   if (request.display === "hidden") return { reasoning: { effort: request.effort } };
   return { reasoning: { effort: request.effort, summary: "auto" as const } };
 }

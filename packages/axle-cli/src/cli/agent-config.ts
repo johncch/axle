@@ -300,7 +300,6 @@ export async function createCliAgentConfig(
       providerTools: recipe.providerTools?.map((name) => ({ type: "provider", name })),
       mcps: mcps.length > 0 ? mcps : undefined,
       skills: skills.length > 0 ? skills : undefined,
-      reasoning: recipe.request?.reasoning,
       maxOutputTokens: recipe.request?.maxOutputTokens,
       toolChoice: recipe.request?.toolChoice,
       parallelToolCalls: recipe.request?.parallelToolCalls,

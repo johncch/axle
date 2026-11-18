@@ -1,3 +1,4 @@
+import { REASONING_EFFORTS } from "@fifthrevision/axle";
 import { z } from "zod";
 import {
   CLOCK_TIME_PATTERN,
@@ -354,9 +355,20 @@ export type ScheduleConfig = z.infer<typeof ScheduleConfigSchema>;
 export const RequestOptionsSchema = z.strictObject({
   reasoning: z
     .union([
-      z.enum(["default", "off", "on"]),
+      z.enum(["default", "off", "on", ...REASONING_EFFORTS]),
       z.strictObject({
-        effort: z.enum(["low", "medium", "high"]).describe("How much the model thinks."),
+        enabled: z
+          .boolean()
+          .optional()
+          .describe(
+            "The model's on/off switch. false turns thinking off. true turns it on without naming an effort, for a model or provider that has such a switch.",
+          ),
+        effort: z
+          .enum(REASONING_EFFORTS)
+          .optional()
+          .describe(
+            "How deeply the model thinks. An effort the model does not have is rejected by its provider.",
+          ),
         display: z
           .enum(["visible", "hidden"])
           .optional()
@@ -365,7 +377,7 @@ export const RequestOptionsSchema = z.strictObject({
     ])
     .optional()
     .describe(
-      "Model thinking. default leaves the provider's own default, on is medium effort, off sends the provider's explicit disable.",
+      "Model thinking. default leaves the provider's own default, off turns it off, on picks what models.dev suggests for the model, and an effort (minimal to max) is sent as written. The object form sets the model's own knobs and is sent as written.",
     ),
   maxOutputTokens: z
     .number()

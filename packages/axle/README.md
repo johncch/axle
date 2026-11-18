@@ -438,33 +438,55 @@ own and a bare call gets one for its own loop, so hits across separate
 
 ### Reasoning
 
-`reasoning` is the one portable control over provider thinking. It is
-accepted by `Agent`, `generate()`, `stream()`, and `PromptCompactor`:
+`reasoning` controls provider thinking. It is accepted by `Agent`,
+`generate()`, `stream()`, and `PromptCompactor`:
 
 ```typescript
+type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type ReasoningSetting =
-  "default" | "off" | "on" | { effort: "low" | "medium" | "high"; display?: "visible" | "hidden" };
+  "default" | { enabled?: boolean; effort?: ReasoningEffort; display?: "visible" | "hidden" };
 
 await generate({ provider, model, messages, reasoning: { effort: "high" } });
+await generate({ provider, model, messages, reasoning: { enabled: false } });
 ```
+
+Prefer leaving it out. The object names the knobs a model's thinking can
+have, a switch (`enabled`) and a depth (`effort`), and a model may have
+either, both or neither. If you set one, you are expected to know the
+model has it.
 
 | Setting               | Meaning                                                                                                                                                                                                                                                          |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default                                                                                                                                                                                             |
-| `"off"`               | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3, Gemini 2.5 Pro) reject the request                                                                                                                                       |
-| `"on"`                | Same as `{ effort: "medium" }`                                                                                                                                                                                                                                   |
-| `{ effort }`          | A named level on modern models, or a fixed token budget (2,048 / 8,192 / 16,384) on models that only accept budgets                                                                                                                                              |
-| `{ effort, display }` | `"visible"` (default) asks the provider to disclose its thinking; `"hidden"` asks it not to, and Axle withholds thinking from the transcript on every provider. On Anthropic the server also skips streaming thinking tokens, improving time to first text token |
+| omitted / `"default"` | No reasoning fields are sent; the model runs at its provider default. `"default"` on a single `send()` resets an Agent-level setting                                                                                                                             |
+| `{ enabled: false }`  | The provider's explicit disable. Models that cannot turn thinking off (Fable, Gemini 3, Gemini 2.5 Pro) reject the request                                                                                                                                       |
+| `{ effort }`          | A named depth, sent to the provider as written, or a fixed token budget (1,024 / 2,048 / 8,192 / 16,384 / 20,480 / 24,576, lowest effort first) on models that only accept budgets. Naming an effort turns thinking on                                           |
+| `{ enabled: true }`   | The switch alone: on, with no depth named. Sent as the provider's own switch on Anthropic, Together AI and OpenRouter, and for Gemma on Gemini. OpenAI, generic endpoints, other Gemini models and budget-only models have no such switch, and Axle throws       |
+| `{ …, display }`      | `"visible"` (default) asks the provider to disclose its thinking; `"hidden"` asks it not to, and Axle withholds thinking from the transcript on every provider. On Anthropic the server also skips streaming thinking tokens, improving time to first text token |
 
-Effort is relative within a model, not comparable across models. `"on"`
-enables reasoning but does not guarantee a visible thinking block on every
+`{ enabled: true, effort }` is the same as `{ effort }`. An object that
+sets neither `enabled` nor `effort`, or sets `enabled: false` beside an
+effort, throws.
+
+Effort is relative within a model, not comparable across models, and no
+effort works on every model: many have no `medium`, few have `minimal` or
+`max`, and some only switch. Axle sends what you wrote and the provider
+rejects what the model lacks. To get a working setting for a model chosen
+at run time, ask [`catalog.reasoningControl()`](#model-catalog), which says
+what kind of control a provider's model has, which efforts to offer, and
+which setting to send for an on/off control. `REASONING_EFFORTS` is the six
+efforts as a list, lowest first, for a host that renders a picker.
+
+OpenRouter and Together AI are exceptions to "the provider rejects": both
+can map an effort a model lacks to one it has.
+
+Enabling reasoning does not guarantee a visible thinking block on every
 response. `display` controls whether thinking is disclosed, not its form:
 Anthropic, OpenAI, and Gemini return a summary, open-weight models return
 raw text, and chat-completions endpoints have no request field for it;
 under `"hidden"` their thinking stays on the message but never reaches the
 transcript. Axle does not validate support: an unsupported
-combination comes back as a provider error. Anything beyond these levels,
-such as `xhigh`, an exact budget, or an OpenAI summary length, goes through
+combination comes back as a provider error. Anything beyond these knobs,
+such as an exact budget or an OpenAI summary length, goes through
 `providerOptions`, which is applied after the portable mapping and overrides
 it.
 
@@ -1925,6 +1947,8 @@ catalog.lookup("gemma4:26b-mlx");
 catalog.contextWindow("gemma4:26b-mlx");
 // → { window: 262144, id: "google/gemma-4-26b-a4b-it", match: "prefix" }
 catalog.lookup("something-unlisted"); // → undefined
+catalog.reasoningControl("claude-sonnet-5", { provider: "anthropic" });
+// → { control: "levels", efforts: ["low", "medium", "high", "xhigh", "max"], suggested: { effort: "medium" }, id: "anthropic/claude-sonnet-5" }
 ```
 
 `model` is a `CatalogModel`: `name`, `limit.context` / `limit.output`,
@@ -1932,6 +1956,36 @@ catalog.lookup("something-unlisted"); // → undefined
 `knowledge` cutoff. `cost` is per million tokens as that provider charges it,
 with `tiers` for models priced by request size (`{ size: 200000, input:
 2.5, … }` applies to a request whose context exceeds 200,000 tokens).
+`reasoningOptions`, also only on a provider match, is how that provider
+lets the model's thinking be controlled, as models.dev records it:
+`{ type: "effort", values }` in the provider's own words, `{ type:
+"budget", min?, max? }`, or `{ type: "toggle" }`.
+
+`reasoningControl(model, { provider })` reads that record as what to show
+for the model's thinking and which [`reasoning`](#reasoning) setting to
+send:
+
+| `control`  | The model has                               | `efforts`                                                 | `suggested`                                                  |
+| ---------- | ------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| `"levels"` | Named levels, or only a token budget        | The listed efforts, or all six for a budget, lowest first | `{ effort }`, the one closest to medium, the higher on a tie |
+| `"toggle"` | An on/off switch and no levels              | `[]`                                                      | `{ enabled: true }`                                          |
+| `"none"`   | No reasoning, or thinking that is always on | `[]`                                                      | absent                                                       |
+
+It returns `undefined` when the catalog has no record for that provider's
+model. `suggested` is a `reasoning` setting, the one to send when your UI
+has only an on/off control:
+
+```ts
+const found = catalog.reasoningControl(model, { provider: "anthropic" });
+const reasoning = thinkingOn ? (found?.suggested ?? { effort: "medium" }) : { enabled: false };
+// or, to keep the thinking out of the transcript:
+// { ...found.suggested, display: "hidden" }
+```
+
+The answer is advisory. Axle never checks a request against it and
+models.dev can be stale. It does not say whether a model can be turned
+off, so `{ enabled: false }` is yours to send and the provider's to
+reject.
 
 The catalog has two layers. The canonical layer keys models by
 `publisher/model`, independent of who serves them. The provider layer keys each
@@ -1990,7 +2044,7 @@ those providers (the full provider layer is about 1.9 MB as JSON);
 `previous` fetched for other providers is not reused for the provider
 layer.
 
-`CatalogData` is `{ version: 4, fetchedAt, etags, coverage, models,
+`CatalogData` is `{ version: 5, fetchedAt, etags, coverage, models,
 providers }`. It is yours to edit before building a catalog: a negotiated
 price, a self-hosted model, or a test fixture with no network.
 Read saved data with `parseCatalogData(json)`: it returns `undefined` for

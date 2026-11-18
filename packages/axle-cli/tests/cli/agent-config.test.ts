@@ -403,7 +403,6 @@ describe("createCliAgentConfig", () => {
         provider: { name: "anthropic" },
         system: "You are terse.",
         request: {
-          reasoning: { effort: "low" },
           parallelToolCalls: false,
           maxOutputTokens: 2048,
         },
@@ -416,7 +415,6 @@ describe("createCliAgentConfig", () => {
     );
 
     expect(agentConfig.system).toBe("You are terse.");
-    expect(agentConfig.reasoning).toEqual({ effort: "low" });
     expect(agentConfig.parallelToolCalls).toBe(false);
     expect(agentConfig.maxOutputTokens).toBe(2048);
   });

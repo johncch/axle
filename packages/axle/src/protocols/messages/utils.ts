@@ -9,12 +9,7 @@ import {
   type ResolvedFileSource,
   resolveFileSource,
 } from "../../utils/file.js";
-import {
-  LEGACY_REASONING_BUDGETS,
-  type ReasoningEffort,
-  type ReasoningSetting,
-  resolveReasoning,
-} from "../reasoning.js";
+import { legacyReasoningBudget, type ReasoningSetting, resolveReasoning } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 
@@ -259,14 +254,16 @@ function toAnthropicPdfSource(
 }
 
 type AnthropicThinkingDisplay = "summarized" | "omitted";
+type AnthropicEffort = NonNullable<Anthropic.Messages.OutputConfig["effort"]>;
 
 export type AnthropicThinkingFields =
   | Record<string, never>
   | { thinking: { type: "disabled" } }
   | { thinking: { type: "enabled"; budget_tokens: number; display: AnthropicThinkingDisplay } }
+  | { thinking: { type: "adaptive"; display: AnthropicThinkingDisplay } }
   | {
       thinking: { type: "adaptive"; display: AnthropicThinkingDisplay };
-      output_config: { effort: ReasoningEffort };
+      output_config: { effort: AnthropicEffort };
     };
 
 export function toAnthropicThinking(
@@ -282,14 +279,15 @@ export function toAnthropicThinking(
     return {
       thinking: {
         type: "enabled",
-        budget_tokens: LEGACY_REASONING_BUDGETS[request.effort],
+        budget_tokens: legacyReasoningBudget(request.effort, model),
         display,
       },
     };
   }
+  if (request.effort === undefined) return { thinking: { type: "adaptive", display } };
   return {
     thinking: { type: "adaptive", display },
-    output_config: { effort: request.effort },
+    output_config: { effort: request.effort as AnthropicEffort },
   };
 }
 

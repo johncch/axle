@@ -83,6 +83,27 @@ against it; divergence is a defect. State ownership is defined in
    window with its source and the matched catalog id, so a best-effort match
    is visible.
 
+   A recipe's `reasoning` is written in the CLI's own words and turned into
+   core's setting at the same moment, against the same catalog:
+
+   | Recipe                            | Setting sent to core                                  |
+   | --------------------------------- | ----------------------------------------------------- |
+   | `default`                         | `"default"`                                           |
+   | `off`                             | `{ enabled: false }`                                  |
+   | an effort, `minimal` to `max`     | `{ effort }`                                          |
+   | `on`                              | the catalog's suggestion, else `{ effort: "medium" }` |
+   | `{ enabled?, effort?, display? }` | as written                                            |
+
+   `on` means "think, in whatever way this model does": it becomes what
+   `ModelCatalog.reasoningControl()` suggests for the model (the effort
+   closest to medium, or `{ enabled: true }` for a model whose thinking
+   only switches), else medium when the catalog has no record or no control
+   for it. The pick is logged beside the context window with its source,
+   `models.dev (<id>)` or `assumed`. Core has no such word: its setting
+   names the model's own knobs and is sent as written
+   ([reasoning.md](./reasoning.md) invariants 1 and 3). The words and the
+   pick are the CLI's job as a host.
+
    Usage is two `Stats`, each fed by `addStats` on `turn:end`: the
    session's, owned by `SessionRuntime`, restored from the file's `usage`
    and saved back; and the run's, created in `cli.ts` for the usage bar,
@@ -630,6 +651,18 @@ concurrency}`. Rejected: `--each`/`--concurrency` flags (built and
   terminal's background so it holds on any theme. The approach is the
   Codex TUI's; its 12% on a dark background read too strong here, so the
   dark shade is 8%.
+- **2026-11-17 — recipes keep reasoning words, and `on` is the catalog's
+  suggestion (AXL-106).** Before, `on` was core's alias for medium, which
+  many models do not have. Core's setting became an object of the model's
+  own knobs with no `on`, `off` or bare effort. Rejected: making recipes
+  write that object, since a recipe is written by hand and `reasoning:
+high` is the common case; mapping `on` to `default`, which sends nothing,
+  so a recipe that says `on` would run without thinking on a model whose
+  default is off; and rejecting `on` with advice to name a level, which
+  breaks recipes that work. Resolving `on` keeps every working recipe on
+  medium and fixes the ones medium failed. Accepted cost: the pick is not
+  written in the recipe, so it follows models.dev's record of the model; a
+  recipe that needs a fixed effort names one.
 - **2026-10-09 — `axle setup` asks which home to write.** Rejected: always
   the user home (shipped until this date) — a new project could not get
   its own key without hand-editing. Rejected: project profile with the key

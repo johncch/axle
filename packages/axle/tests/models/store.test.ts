@@ -18,7 +18,7 @@ const acme = {
 
 function savedJson(ageMs: number): string {
   const data: CatalogData = {
-    version: 4,
+    version: 5,
     fetchedAt: new Date(Date.now() - ageMs).toISOString(),
     etags: { models: '"m0"' },
     coverage: "all",

@@ -20,9 +20,11 @@ export function toOpenRouterReasoning(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning_effort: "none" as const };
-  if (request.display === "hidden") {
-    return { reasoning_effort: request.effort, reasoning: { exclude: true } };
+  const hidden = request.display === "hidden";
+  if (request.effort === undefined) {
+    return { reasoning: hidden ? { enabled: true, exclude: true } : { enabled: true } };
   }
+  if (hidden) return { reasoning_effort: request.effort, reasoning: { exclude: true } };
   return { reasoning_effort: request.effort };
 }
 

@@ -98,7 +98,7 @@ A recipe is a YAML file run with \`axle -j path/to/job.yaml\`.
     providerTools: [web_search]         # provider-hosted tools
     files: [./data/report.txt]          # attached to the task
     request:
-      reasoning: on                     # default | off | on | { effort, display }
+      reasoning: on                     # default | off | on | an effort | { enabled, effort, display }
       maxOutputTokens: 16000
       providerOptions:                  # passed through under the provider's names
         temperature: 0.2
@@ -125,11 +125,17 @@ declares recurrence (topic: schedule). An \`mcps:\` list connects MCP servers
 (topic: mcp).
 
 \`reasoning\`: leave unset or \`default\` for the provider's own default,
-which is always safe. \`on\` is medium effort. \`off\` is rejected by models
-that cannot disable thinking. \`{ effort: low|medium|high, display:
-visible|hidden }\` for fine control. On budget-based models, a
-\`maxOutputTokens\` you set must exceed the thinking budget (8,192 for on,
-16,384 for high).`,
+which is always safe. \`off\` is rejected by models that cannot disable
+thinking. \`on\` picks what models.dev suggests for the model: medium
+where the model has it, else its nearest effort, or its on/off switch if
+that is all it has. The run's log names the pick. An effort,
+\`minimal|low|medium|high|xhigh|max\`, is sent as written; models differ in
+which they take, and the provider rejects one the model lacks. The object
+form sets the model's own knobs and is sent as written:
+\`{ enabled: true|false, effort: <effort>, display: visible|hidden }\`.
+\`enabled: true\` alone is only for a model or provider with an on/off
+switch. On budget-based models, a \`maxOutputTokens\` you set must exceed
+the thinking budget (8,192 for medium, 24,576 for max).`,
 
   batch: `# Batch
 

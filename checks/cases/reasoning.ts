@@ -1,9 +1,13 @@
 import {
+  fetchModelsDev,
   generate,
+  ModelCatalog,
   stream,
   type AxleAssistantMessage,
   type AxleMessage,
   type ExecutableTool,
+  type ReasoningConfig,
+  type ReasoningControlMatch,
   type ReasoningEffort,
   type ReasoningSetting,
 } from "@fifthrevision/axle";
@@ -13,6 +17,46 @@ import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
+
+const CATALOG_PROVIDERS: ProviderId[] = [
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "togetherai",
+];
+
+let catalog: Promise<ModelCatalog> | undefined;
+
+function loadCatalog(): Promise<ModelCatalog> {
+  catalog ??= fetchModelsDev({ providers: CATALOG_PROVIDERS }).then(
+    (data) => new ModelCatalog(data),
+  );
+  return catalog;
+}
+
+type OfferedControl = ReasoningControlMatch & { suggested: ReasoningConfig };
+
+async function offeredControl(
+  providerId: ProviderId,
+  model: string,
+): Promise<OfferedControl | CheckCaseResult> {
+  const control = (await loadCatalog()).reasoningControl(model, { provider: providerId });
+  if (!control) {
+    return {
+      ok: false,
+      failureReasons: [`The catalog has no reasoning record for ${providerId} ${model}.`],
+    };
+  }
+  if (control.suggested === undefined) {
+    return {
+      ok: false,
+      failureReasons: [`The catalog reports no reasoning control for ${control.id}.`],
+      details: { control },
+    };
+  }
+  return { ...control, suggested: control.suggested };
+}
 
 const DISCLOSING_PROVIDERS: ReadonlySet<ProviderId> = new Set([
   "anthropic",
@@ -37,8 +81,8 @@ const MODERN_EFFORT_MODELS: Partial<Record<ProviderId, string>> = {
 const UNSUPPORTED_SETTINGS: Partial<
   Record<ProviderId, { model: string; reasoning: ReasoningSetting }>
 > = {
-  anthropic: { model: "claude-fable-5-1", reasoning: "off" },
-  google: { model: "gemini-3.1-pro-preview", reasoning: "off" },
+  anthropic: { model: "claude-fable-5-1", reasoning: { enabled: false } },
+  google: { model: "gemini-3.1-pro-preview", reasoning: { enabled: false } },
 };
 
 export const reasoningCases: CheckCase[] = [
@@ -70,7 +114,7 @@ export const reasoningCases: CheckCase[] = [
         model,
         ...requestOptions,
         messages: [{ role: "user", content: "Reply with exactly: pong" }],
-        reasoning: "off",
+        reasoning: { enabled: false },
       });
 
       if (!result.ok) return fail({ error: result.error });
@@ -159,10 +203,79 @@ export const reasoningCases: CheckCase[] = [
   },
   {
     group: "default",
+    id: "reasoning-suggested",
+    description:
+      "The effort the model catalog suggests for the target model is accepted by its provider.",
+    providers: CATALOG_PROVIDERS,
+    async run({ provider, providerId, model, requestOptions }) {
+      const control = await offeredControl(providerId, model);
+      if ("ok" in control) return control;
+      const result = await generate({
+        provider,
+        model,
+        ...requestOptions,
+        messages: [{ role: "user", content: reasoningPrompt }],
+        reasoning: control.suggested,
+      });
+      if (!result.ok) return fail({ control, error: result.error });
+      return {
+        ok: true,
+        details: {
+          control,
+          text: getAssistantText(result.final),
+          reasoningOut: result.usage?.reasoningOut,
+          thinkingParts: countThinking(result.final),
+        },
+      };
+    },
+  },
+  {
+    group: "extended",
+    id: "reasoning-listed-efforts",
+    description:
+      "Every effort the model catalog lists for the target model, or its switch, is accepted by its provider.",
+    providers: CATALOG_PROVIDERS,
+    async run({ provider, providerId, model, requestOptions }) {
+      const control = await offeredControl(providerId, model);
+      if ("ok" in control) return control;
+      const settings: ReasoningConfig[] =
+        control.efforts.length > 0
+          ? control.efforts.map((effort) => ({ effort }))
+          : [control.suggested];
+      const perSetting: Record<string, unknown> = {};
+      const failureReasons: string[] = [];
+      for (const reasoning of settings) {
+        const name = reasoning.effort ?? "switch";
+        const result = await generate({
+          provider,
+          model,
+          ...requestOptions,
+          messages: [{ role: "user", content: reasoningPrompt }],
+          reasoning,
+        });
+        if (!result.ok) {
+          failureReasons.push(`${name}: ${result.error.message}`);
+          perSetting[name] = { error: result.error };
+          continue;
+        }
+        perSetting[name] = {
+          reasoningOut: result.usage?.reasoningOut,
+          thinkingParts: countThinking(result.final),
+        };
+      }
+      return {
+        ok: failureReasons.length === 0,
+        ...(failureReasons.length > 0 ? { failureReasons } : {}),
+        details: { control, perSetting },
+      };
+    },
+  },
+  {
+    group: "default",
     id: "reasoning-tool-continuity",
     description:
       "A reasoning-enabled tool loop passes thinking continuity back through the tool turn and finishes.",
-    run: (context) => runToolContinuity(context, "on"),
+    run: (context) => runToolContinuity(context, { effort: "medium" }),
   },
   {
     group: "extended",

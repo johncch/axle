@@ -399,6 +399,22 @@ what was sent is carried on the error. The rule is in
 consumed by span writers (`TraceWriter`, `LogWriter`). "Trace" never means
 the conversation transcript.
 
+**Effort (reasoning)** — the depth knob of a `reasoning` setting: one of
+`minimal`, `low`, `medium`, `high`, `xhigh`, `max`, sent to the provider as
+written. Relative within a model, never comparable across models, and no
+effort exists on every model. "Level" is the same thing as models.dev and
+the catalog name it. Normative in `docs/architecture/reasoning.md`.
+
+**Enabled (reasoning)** — the switch knob of a `reasoning` setting. `false`
+is the provider's explicit disable. `true` alone turns thinking on without
+naming an effort, for a model or provider that has such a switch. It is
+never a stand-in for "some effort".
+
+**Control (reasoning)** — what the model catalog reports about how a
+provider's model has its thinking set: `levels`, `toggle` or `none`. It is
+the catalog's reading of models.dev for a host's UI, not a request
+setting.
+
 **Display (reasoning)** — the request-side disclosure control on
 `reasoning`: `display: "visible" | "hidden"`. It says whether the provider
 should show its thinking, never in what form. The form that arrives, a

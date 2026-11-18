@@ -211,22 +211,45 @@ where asking is required (Anthropic, OpenRouter); `cache: false` omits the
 request, for a recipe that never repeats a prompt and would rather not pay
 the cache write premium. OpenAI, Gemini and Together AI cache on their own either way.
 
-`reasoning` takes `default`, `off`, `on`, or
-`{ effort: low | medium | high, display?: visible | hidden }`. `display`
-defaults to `visible`; `hidden` asks the provider to keep its thinking off
-the wire.
-Leave it unset (or `default`) and the model runs at its provider's own
-default, which is always safe, including for models that cannot disable
-thinking. `on` is medium effort; `off` sends the provider's explicit disable
-and is rejected by models that cannot turn thinking off. On models that only
-take a thinking budget (Claude Haiku, Opus, and Sonnet 4.5; Gemini 2.5), a
-`maxOutputTokens` you set must exceed the budget: 8,192 for `on`, 16,384 for
-`high`. Leave it unset and Axle's default already does.
+`reasoning` takes a word: `default`, `off`, `on`, or an effort (`minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`).
+
+- Leave it unset (or `default`) and the model runs at its provider's own
+  default, which is always safe, including for models that cannot disable
+  thinking.
+- `off` sends the provider's explicit disable and is rejected by models
+  that cannot turn thinking off.
+- `on` picks for you: the effort [models.dev](https://models.dev) records
+  for the model that is closest to medium, or the model's on/off switch if
+  that is all it has. With no record it is medium. The run's log names the
+  pick and where it came from, so `on` keeps working when you change
+  models.
+- An effort is sent to the provider as written. Models differ in which
+  they take, and many have no `medium`; the provider rejects an effort the
+  model lacks. Name one when a recurring job must not change with the
+  catalog.
+
+It also takes an object that sets the model's own knobs and is sent as
+written: `enabled` (`true` or `false`, the model's switch), `effort`, and
+`display` (`visible`, the default, or `hidden`, which asks the provider to
+keep its thinking off the wire). `enabled: true` on its own only works on a
+model or provider with an on/off switch.
+
+On models that only take a thinking budget (Claude Haiku, Opus, and Sonnet
+4.5; Gemini 2.5), every level works and a `maxOutputTokens` you set must
+exceed the budget: 8,192 for `medium`, 16,384 for `high`, 24,576 for `max`.
+Leave it unset and Axle's default already does.
+
+```yaml
+request:
+  reasoning: high
+```
 
 ```yaml
 request:
   reasoning:
     effort: high
+    display: hidden
 ```
 
 Long sessions compact automatically: when the conversation approaches the

@@ -35,7 +35,9 @@ describe("axle-help tool", () => {
     const result = await helpTool.execute({ topic: "recipes" }, ctx);
 
     expect(result).toContain("recipe.task  string  (required)");
-    expect(result).toContain("recipe.request.reasoning.effort  low | medium | high  (required)");
+    expect(result).toContain(
+      "recipe.request.reasoning.effort  minimal | low | medium | high | xhigh | max",
+    );
     expect(result).not.toContain("\u001b");
   });
 

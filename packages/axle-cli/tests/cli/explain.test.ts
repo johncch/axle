@@ -73,8 +73,10 @@ describe("formatExplain", () => {
   it("shows the literal values of a union alongside its object form", () => {
     const lines = formatExplain("recipe.request.reasoning", WIDE);
 
-    expect(lines[0]).toBe("recipe.request.reasoning  default | off | on | object");
-    expect(keysOf(fieldsOf(lines))).toEqual(["effort", "display"]);
+    expect(lines[0]).toBe(
+      "recipe.request.reasoning  default | off | on | minimal | low | medium | high | xhigh | max | object",
+    );
+    expect(keysOf(fieldsOf(lines))).toEqual(["enabled", "effort", "display"]);
   });
 
   it("walks through lists and names the variant a key belongs to", () => {

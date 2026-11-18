@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CatalogData } from "../../src/models/catalog.js";
+import type { CatalogData, CatalogReasoningOption } from "../../src/models/catalog.js";
 import { ModelCatalog, parseCatalogData } from "../../src/models/catalog.js";
 import { CatalogFetchError, fetchModelsDev } from "../../src/models/modelsDev.js";
 
@@ -46,7 +46,7 @@ const acmeModel = {
 
 function previousData(overrides: Partial<CatalogData> = {}): CatalogData {
   return {
-    version: 4,
+    version: 5,
     fetchedAt: "2026-10-01T00:00:00.000Z",
     etags: { models: '"m0"', api: '"a0"' },
     coverage: "all",
@@ -199,6 +199,119 @@ describe("ModelCatalog.lookup", () => {
   });
 });
 
+describe("ModelCatalog.reasoningControl", () => {
+  let catalog: ModelCatalog;
+
+  beforeEach(async () => {
+    await stubBoth();
+    catalog = new ModelCatalog(await fetchModelsDev());
+  });
+
+  function withOptions(reasoningOptions: CatalogReasoningOption[] | undefined): ModelCatalog {
+    return new ModelCatalog(
+      previousData({
+        models: { "acme/old": { ...acmeModel, reasoning: true } },
+        providers: { acme: { old: { canonical: "acme/old", reasoningOptions } } },
+      }),
+    );
+  }
+
+  it("lists a provider's named levels lowest first and suggests medium", () => {
+    expect(catalog.reasoningControl("claude-sonnet-5", { provider: "anthropic" })).toEqual({
+      control: "levels",
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+      suggested: { effort: "medium" },
+      id: "anthropic/claude-sonnet-5",
+    });
+  });
+
+  it("suggests the higher neighbour when the model has no medium", () => {
+    expect(catalog.reasoningControl("z-ai/glm-5.3-flash", { provider: "openrouter" })).toEqual({
+      control: "levels",
+      efforts: ["low", "high", "max"],
+      suggested: { effort: "high" },
+      id: "zhipuai/glm-5.3-flash",
+    });
+  });
+
+  it("suggests the listed level closest to medium", () => {
+    const suggested = (values: string[]) =>
+      withOptions([{ type: "effort", values }]).reasoningControl("old", { provider: "acme" })
+        ?.suggested;
+
+    expect(suggested(["minimal", "high"])).toEqual({ effort: "high" });
+    expect(suggested(["high", "max"])).toEqual({ effort: "high" });
+    expect(suggested(["minimal", "low"])).toEqual({ effort: "low" });
+    expect(suggested(["max"])).toEqual({ effort: "max" });
+  });
+
+  it("leaves out the provider's off value and levels Axle has no name for", () => {
+    const found = withOptions([
+      { type: "effort", values: ["none", "default", "high", "low"] },
+    ]).reasoningControl("old", { provider: "acme" });
+
+    expect(found).toEqual({
+      control: "levels",
+      efforts: ["low", "high"],
+      suggested: { effort: "high" },
+      id: "acme/old",
+    });
+  });
+
+  it("offers every level for a model that only takes a token budget", () => {
+    expect(catalog.reasoningControl("gemini-2.5-pro", { provider: "google" })).toEqual({
+      control: "levels",
+      efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      suggested: { effort: "medium" },
+      id: "google/gemini-2.5-pro",
+    });
+  });
+
+  it("suggests the switch for a model whose thinking only switches", () => {
+    expect(catalog.reasoningControl("zai-org/GLM-5.1", { provider: "togetherai" })).toEqual({
+      control: "toggle",
+      efforts: [],
+      suggested: { enabled: true },
+      id: "togetherai/zai-org/GLM-5.1",
+    });
+    expect(
+      withOptions([{ type: "effort", values: ["none"] }, { type: "toggle" }]).reasoningControl(
+        "old",
+        { provider: "acme" },
+      )?.control,
+    ).toBe("toggle");
+  });
+
+  it("prefers levels to a toggle recorded beside them", () => {
+    const control = (options: CatalogReasoningOption[]) =>
+      withOptions(options).reasoningControl("old", { provider: "acme" })?.control;
+
+    expect(control([{ type: "toggle" }, { type: "effort", values: ["low", "high"] }])).toBe(
+      "levels",
+    );
+    expect(control([{ type: "toggle" }, { type: "budget", min: 0, max: 24576 }])).toBe("levels");
+  });
+
+  it("has nothing to offer for a model that always reasons or never does", () => {
+    expect(withOptions([]).reasoningControl("old", { provider: "acme" })).toEqual({
+      control: "none",
+      efforts: [],
+      id: "acme/old",
+    });
+    expect(catalog.reasoningControl("sao10k/l3-lunaris-8b", { provider: "openrouter" })).toEqual({
+      control: "none",
+      efforts: [],
+      id: "openrouter/sao10k/l3-lunaris-8b",
+    });
+  });
+
+  it("has no answer without a record of the provider's reasoning controls", () => {
+    expect(withOptions(undefined).reasoningControl("old", { provider: "acme" })).toBeUndefined();
+    expect(catalog.reasoningControl("claude-sonnet-5", { provider: "elsewhere" })).toBeUndefined();
+    expect(catalog.reasoningControl("acme/unknown", { provider: "openrouter" })).toBeUndefined();
+  });
+});
+
 describe("ModelCatalog", () => {
   it("reports when its data was fetched and which providers it covers", () => {
     const catalog = new ModelCatalog(previousData({ coverage: ["acme"] }));
@@ -217,7 +330,7 @@ describe("parseCatalogData", () => {
 
   it("has no data for text that is not JSON, another version, or another shape", () => {
     const version3 = JSON.stringify({ ...previousData(), version: 3 });
-    const shapeless = JSON.stringify({ version: 4, models: [] });
+    const shapeless = JSON.stringify({ version: 5, models: [] });
 
     for (const text of ["{", version3, shapeless]) {
       expect(parseCatalogData(text)).toBeUndefined();
@@ -232,7 +345,7 @@ describe("fetchModelsDev", () => {
     const data = await fetchModelsDev();
 
     expect(fetched).toHaveBeenCalledTimes(2);
-    expect(data.version).toBe(4);
+    expect(data.version).toBe(5);
     expect(data.coverage).toBe("all");
     expect(data.etags).toEqual({ models: '"m1"', api: '"a1"' });
     expect(data.models["anthropic/claude-sonnet-5"].limit.context).toBe(1_000_000);
@@ -246,6 +359,48 @@ describe("fetchModelsDev", () => {
     expect(
       new ModelCatalog(JSON.parse(JSON.stringify(data))).contextWindow("openai/gpt-5")?.window,
     ).toBe(400_000);
+  });
+
+  it("keeps each provider's reasoning controls and drops what it cannot read", async () => {
+    await stubBoth();
+    const data = await fetchModelsDev();
+
+    expect(data.providers.google["gemini-2.5-pro"].reasoningOptions).toEqual([
+      { type: "budget", min: 128, max: 32768 },
+    ]);
+    expect(data.providers.anthropic["claude-sonnet-5"].reasoningOptions).toEqual([
+      { type: "toggle" },
+      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+    ]);
+    expect(data.providers.openrouter["sao10k/l3-lunaris-8b"]).toHaveProperty("limit");
+    expect(data.providers.openrouter["sao10k/l3-lunaris-8b"].reasoningOptions).toBeUndefined();
+    expect(parseCatalogData(JSON.stringify(data))).toEqual(JSON.parse(JSON.stringify(data)));
+
+    const entry = {
+      name: "Acme",
+      limit: { context: 1000 },
+      reasoning: true,
+      tool_call: true,
+      attachment: false,
+      modalities: { input: ["text"], output: ["text"] },
+    };
+    const api = {
+      acme: {
+        models: {
+          novel: { ...entry, reasoning_options: [{ type: "dial" }, { type: "toggle" }] },
+          malformed: { ...entry, reasoning_options: "high" },
+        },
+      },
+    };
+    stubFetch({
+      models: await fixture("models-dev.json"),
+      api: () => new Response(JSON.stringify(api), { status: 200 }),
+    });
+    const acme = (await fetchModelsDev()).providers.acme;
+
+    expect(acme.novel.reasoningOptions).toEqual([{ type: "toggle" }]);
+    expect(acme.malformed.model?.name).toBe("Acme");
+    expect(acme.malformed.reasoningOptions).toBeUndefined();
   });
 
   it("providers: [] skips api.json; providers: [...] keeps only those", async () => {

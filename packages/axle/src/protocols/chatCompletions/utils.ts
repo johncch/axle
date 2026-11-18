@@ -9,7 +9,7 @@ import {
   type ResolvedFileSource,
 } from "../../utils/file.js";
 import { withUsageDetails } from "../../utils/stats.js";
-import { resolveReasoning, type ReasoningSetting } from "../reasoning.js";
+import { reasoningNeedsEffort, resolveReasoning, type ReasoningSetting } from "../reasoning.js";
 import { AxleStopReason, ToolChoice } from "../types.js";
 import { toolJsonSchema } from "../utils.js";
 import type { ChatCompletionsDialect } from "./dialect.js";
@@ -56,6 +56,7 @@ export function toReasoningEffort(reasoning: ReasoningSetting | undefined) {
   const request = resolveReasoning(reasoning);
   if (request === "default") return {};
   if (request === "off") return { reasoning_effort: "none" as const };
+  if (request.effort === undefined) throw reasoningNeedsEffort("a Chat Completions endpoint");
   return { reasoning_effort: request.effort };
 }
 

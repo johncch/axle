@@ -1368,7 +1368,7 @@ export const coreCases: CheckCase[] = [
     description: "Cancelling as a thinking part opens leaves a history a follow-up turn accepts.",
     run({ provider, model, requestOptions }) {
       return runPartialCancelFollowUp({
-        agent: new Agent({ provider, model, ...requestOptions, reasoning: "on" }),
+        agent: new Agent({ provider, model, ...requestOptions, reasoning: { effort: "medium" } }),
         prompt: reasoningPrompt,
         cancelOn: (event) => event.type === "part:start" && event.part.type === "thinking",
         notReached: "the model produced no thinking part",
@@ -1740,7 +1740,7 @@ async function runStreamingWebSearchCitationCase({
     provider,
     model,
     ...requestOptions,
-    reasoning: "on",
+    reasoning: { effort: "medium" },
     providerTools: [webSearchTool],
     messages: [
       {

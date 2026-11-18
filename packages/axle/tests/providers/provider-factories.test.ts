@@ -496,7 +496,7 @@ describe("provider client factory options", () => {
     for await (const _chunk of together.createStreamingRequest("test-model", {
       messages: [{ role: "user", content: "Hi" }],
       runtime: {},
-      reasoning: "off",
+      reasoning: { enabled: false },
     })) {
       // drain
     }

@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { splitModelId } from "../protocols/model.js";
+import {
+  REASONING_EFFORTS,
+  type ReasoningConfig,
+  type ReasoningEffort,
+} from "../protocols/reasoning.js";
 
 const CatalogModelSchema = z.object({
   name: z.string(),
@@ -29,15 +34,26 @@ const ModelCostSchema = PriceSchema.extend({
   tiers: z.array(PriceSchema.extend({ size: z.number().int().nonnegative() })).optional(),
 });
 
+const ReasoningOptionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("effort"), values: z.array(z.string()) }),
+  z.object({
+    type: z.literal("budget"),
+    min: z.number().int().nonnegative().optional(),
+    max: z.number().int().nonnegative().optional(),
+  }),
+  z.object({ type: z.literal("toggle") }),
+]);
+
 const ProviderEntrySchema = z.object({
   canonical: z.string().optional(),
   model: CatalogModelSchema.optional(),
   limit: CatalogModelSchema.shape.limit.partial().optional(),
   cost: ModelCostSchema.optional(),
+  reasoningOptions: z.array(ReasoningOptionSchema).optional(),
 });
 
 const CatalogDataSchema = z.object({
-  version: z.literal(4),
+  version: z.literal(5),
   fetchedAt: z.string(),
   etags: z.object({ models: z.string().optional(), api: z.string().optional() }),
   coverage: z.union([z.literal("all"), z.array(z.string())]),
@@ -48,7 +64,7 @@ const CatalogDataSchema = z.object({
 /**
  * The data a `ModelCatalog` indexes, as plain JSON: a canonical layer
  * (`models`, keyed `publisher/model`) and a per-provider layer (`providers`,
- * each provider's own ids with its limits and prices). `fetchedAt` is ISO
+ * each provider's own ids with its limits, prices and reasoning controls). `fetchedAt` is ISO
  * 8601; `etags` let `fetchModelsDev` skip unchanged layers; `coverage` is the
  * provider filter the data was fetched with (`"all"`, or the provider ids
  * kept). Save it, load it, or write your own; a change to the shape bumps
@@ -80,6 +96,13 @@ export type CatalogModel = z.infer<typeof CatalogModelSchema>;
 /** Price per million tokens, as the provider charges it. */
 export type ModelCost = z.infer<typeof ModelCostSchema>;
 
+/**
+ * One way a provider lets a model's thinking be controlled, as models.dev
+ * records it: named `effort` levels in the provider's own words (`none`
+ * included where it has one), a token `budget` range, or an on/off `toggle`.
+ */
+export type CatalogReasoningOption = z.infer<typeof ReasoningOptionSchema>;
+
 export interface CatalogMatch {
   /** The canonical `publisher/model` id, or `provider/id` for a model only that provider lists. */
   id: string;
@@ -88,12 +111,36 @@ export interface CatalogMatch {
   model: CatalogModel;
   /** Present only for a provider match. */
   cost?: ModelCost;
+  /** Present only for a provider match, and only where the catalog records it. */
+  reasoningOptions?: CatalogReasoningOption[];
 }
 
 export interface ContextWindowMatch {
   window: number;
   id: string;
   match: CatalogMatch["match"];
+}
+
+export interface ReasoningControlMatch {
+  /**
+   * How the provider lets the model's thinking be set: named `levels`, an
+   * on/off `toggle`, or `none` for a model that does not reason or that
+   * always reasons with nothing to set.
+   */
+  control: "levels" | "toggle" | "none";
+  /**
+   * The efforts to offer, lowest first: the provider's listed levels, or
+   * every level for a model that only takes a token budget. Empty for
+   * `toggle` and `none`.
+   */
+  efforts: ReasoningEffort[];
+  /**
+   * The `reasoning` setting for an on/off control to send for "on": the
+   * effort closest to medium (the higher one on a tie), or
+   * `{ enabled: true }` for a toggle. Absent for `none`.
+   */
+  suggested?: ReasoningConfig;
+  id: string;
 }
 
 /**
@@ -153,6 +200,7 @@ export class ModelCatalog {
             match: "provider",
             model: { ...base, limit: { ...base.limit, ...entry.limit } },
             cost: entry.cost,
+            reasoningOptions: entry.reasoningOptions,
           };
         }
       }
@@ -192,6 +240,51 @@ export class ModelCatalog {
       ? { window: found.model.limit.context, id: found.id, match: found.match }
       : undefined;
   }
+
+  /**
+   * How a provider's model has its thinking set: the kind of control, the
+   * efforts to offer, and the `reasoning` setting to send when the choice
+   * is only on or off. Advisory: requests are never checked against it.
+   * `undefined` when the catalog has no record of the provider's reasoning
+   * controls for the model.
+   */
+  reasoningControl(
+    model: string,
+    options: { provider: string },
+  ): ReasoningControlMatch | undefined {
+    const found = this.lookup(model, options);
+    if (!found) return undefined;
+    if (!found.model.reasoning) return { control: "none", efforts: [], id: found.id };
+    if (!found.reasoningOptions) return undefined;
+    const efforts = listedEfforts(found.reasoningOptions);
+    const effort = nearestMedium(efforts);
+    if (effort) return { control: "levels", efforts, suggested: { effort }, id: found.id };
+    if (found.reasoningOptions.some((option) => option.type === "toggle")) {
+      return { control: "toggle", efforts: [], suggested: { enabled: true }, id: found.id };
+    }
+    return { control: "none", efforts: [], id: found.id };
+  }
+}
+
+function listedEfforts(options: CatalogReasoningOption[]): ReasoningEffort[] {
+  const named = options.find((option) => option.type === "effort");
+  const efforts = named ? REASONING_EFFORTS.filter((effort) => named.values.includes(effort)) : [];
+  if (efforts.length > 0) return efforts;
+  return options.some((option) => option.type === "budget") ? [...REASONING_EFFORTS] : [];
+}
+
+function nearestMedium(efforts: ReasoningEffort[]): ReasoningEffort | undefined {
+  const medium = REASONING_EFFORTS.indexOf("medium");
+  let suggested: ReasoningEffort | undefined;
+  let nearest = Infinity;
+  for (const effort of efforts) {
+    const distance = Math.abs(REASONING_EFFORTS.indexOf(effort) - medium);
+    if (distance <= nearest) {
+      suggested = effort;
+      nearest = distance;
+    }
+  }
+  return suggested;
 }
 
 function findKey<T>(record: Record<string, T>, id: string): string | undefined {
