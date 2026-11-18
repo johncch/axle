@@ -118,7 +118,13 @@ describe("analyze", () => {
       ]);
 
       expect(a.tools).toMatchObject([
-        { kind: "deferred", name: "ask-user", status: "waiting", parameters: { question: "ok?" } },
+        {
+          kind: "deferred",
+          name: "ask-user",
+          callId: "c1",
+          status: "waiting",
+          parameters: { question: "ok?" },
+        },
         {
           kind: "provider",
           name: "web_search",
@@ -207,6 +213,26 @@ describe("analyze", () => {
       expect(a.turns.filter(cancelled)).toHaveLength(2);
       expect(a.tools.filter(cancelled)).toHaveLength(1);
       expect(a.errors).toEqual([]);
+    });
+
+    test("a continuation's inline user turn carries the thread it replies in", () => {
+      const a = analyze([
+        userTurn("u1", "go"),
+        agentTurn("a1", []),
+        { ...userTurn("u2", "try again"), threadId: "u1" },
+        agentTurn("a2", []),
+      ]);
+
+      expect(a.turns.map((t) => t.threadId)).toEqual([undefined, undefined, "u1", undefined]);
+    });
+
+    test("one send's result is analyzed from its turn alone", () => {
+      const result = { turn: exampleConversation()[3]! };
+
+      const a = analyze([result.turn]);
+
+      expect(a.tools.map((t) => t.status)).toEqual(["error", "complete"]);
+      expect(a.errors).toMatchObject([{ recovered: true }]);
     });
 
     test("rescue is false after a cancelled turn and at the start", () => {

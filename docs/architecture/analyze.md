@@ -64,6 +64,10 @@ const a = analyze(transcript.turns);
 Everything in this document is exported from the `@fifthrevision/axle/analyze`
 subpath and not from the package root.
 
+One send can be analyzed without a `Transcript`: `analyze([result.turn])`
+reads the agent turn the send resolved with. It has no user turn, so
+`rescue` does not apply.
+
 `analyze` accepts turns that are still in progress. Their segments carry
 the status the turn or part has at that moment, and the outcome predicates
 are all false for them.
@@ -114,6 +118,7 @@ interface TurnSegment extends Segment {
   kind: "turn";
   owner: "user" | "agent";
   status: "pending" | "streaming" | "complete" | "cancelled" | "error";
+  threadId?: string;
   reason?: "stop" | "length";
   cancelled?: "user" | "timeout";
   error?: SegmentError;
@@ -134,6 +139,7 @@ interface TurnSegment extends Segment {
 interface ToolCallSegment extends Segment {
   kind: "tool" | "deferred" | "provider";
   name: string;
+  callId?: string;
   status: "pending" | "running" | "waiting" | "complete" | "cancelled" | "error";
   parameters: Record<string, unknown>;
   error?: SegmentError;
@@ -211,6 +217,9 @@ Field meanings that are not obvious from the name:
 - **`rescue`**: present on every user turn. `true` when the turn before it
   is an agent turn with status `"error"`. It is positional. A user turn
   that follows a cancelled turn is not a rescue.
+- **`threadId`**: on a user turn that a continuation sent inline, the id
+  of the send's own user turn. Absent on every other turn.
+- **`callId`**: on a deferred tool call, the id its handler was given.
 - **`tokens`**: the turn's usage, which already includes its subagents'
   usage. Adding a subagent's own turns to its parent's double counts.
 - **`parameters`**: the same object the turn holds, not a copy.

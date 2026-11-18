@@ -78,6 +78,7 @@ function turnSegment(
     depth,
     owner: turn.owner,
     status: turn.status,
+    ...(turn.threadId ? { threadId: turn.threadId } : {}),
     ...(turn.reason ? { reason: turn.reason } : {}),
     ...(turn.status === "cancelled"
       ? { cancelled: turn.cancelReason ? ("timeout" as const) : ("user" as const) }
@@ -163,6 +164,7 @@ function toolSegment(
     kind: part.kind === "provider-tool" ? "provider" : part.kind,
     ...located(part.id, place),
     name: part.detail.name,
+    ...(part.kind === "deferred" ? { callId: part.detail.callId } : {}),
     status: part.status,
     parameters: parametersOf(part),
     ...failureOf(part.status, part.detail.result, place),

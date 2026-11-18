@@ -20,6 +20,7 @@ export interface TurnSegment extends Segment {
   kind: "turn";
   owner: "user" | "agent";
   status: "pending" | "streaming" | "complete" | "cancelled" | "error";
+  threadId?: string;
   reason?: "stop" | "length";
   cancelled?: "user" | "timeout";
   error?: SegmentError;
@@ -41,6 +42,7 @@ export interface TurnSegment extends Segment {
 export interface ToolCallSegment extends Segment {
   kind: "tool" | "deferred" | "provider";
   name: string;
+  callId?: string;
   status: "pending" | "running" | "waiting" | "complete" | "cancelled" | "error";
   parameters: Record<string, unknown>;
   error?: SegmentError;

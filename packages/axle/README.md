@@ -2663,7 +2663,9 @@ Every segment has `turnId`, `turnIndex` and `depth`, and a part has
   agent turn.
 - **`cancelled`**: on a cancelled turn, `"timeout"` or `"user"`.
 - **`tokens`, `ms`**: a turn's usage and duration. A tool call has `ms`.
-- **`name`, `parameters`**: on tool and subagent calls.
+- **`name`, `parameters`**: on tool and subagent calls. A deferred tool
+  call also has `callId`.
+- **`threadId`**: on a user turn a continuation sent inline.
 
 The JavaScript array methods are the query language. The predicates are
 named filters to pass to them: `failed`, `completed`, `cancelled`,
@@ -2712,6 +2714,9 @@ Each simplified turn is `{ owner, status, error?, parts }`. A part is a
 `text`, a `thinking`, a `file` (name only), a `tool` (`name`, `parameters`,
 and `result` or `error`), a `subagent` (the same, plus its own `turns`) or
 a `compaction`.
+
+For one send, `analyze([result.turn])` reads the agent turn the send
+resolved with, with no `Transcript` attached.
 
 `analyze` sees what the turns record. A queued send cancelled before it
 started and an error thrown before any turn opened leave no turn, so
