@@ -79,7 +79,7 @@
 - `scripts/`: Release and workflow scripts (`release.mjs`, `cut-release.mjs`, `run-example-jobs.sh`)
 - `docs/`: Documentation
   - `architecture/`: Normative per-subsystem design docs (see Documentation below)
-  - `development/`: Dated working notes, one per change (frozen)
+  - `development/`: Dated working notes, one per change (frozen once merged)
 - `dist/`: Build output (generated, not checked in)
 
 # Build Notes
@@ -134,5 +134,7 @@ Documentation is layered by authority; each genre has one job:
   commits it with the root changelog; the manual release path does not, so
   rename it by hand there. A released section is frozen; a later change to
   something it describes gets its own entry under `## Unreleased`.
-- **`docs/development/*`** (frozen): dated working notes for a single
-  change. Historical record — never updated after the fact.
+- **`docs/development/*`** (frozen once merged): dated working notes for a
+  single change. While the change is still on its unmerged branch, keep
+  its note up to date as the work grows. Once merged it is a historical
+  record and is never updated after the fact.
