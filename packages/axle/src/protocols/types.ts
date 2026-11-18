@@ -1,4 +1,3 @@
-import type { JsonSchema } from "../core/parse.js";
 import { AxleMessage } from "../messages/message.js";
 import { AnyStreamChunk } from "../messages/stream.js";
 import type { Span } from "../observability/types.js";
@@ -90,12 +89,6 @@ export interface AIProvider {
    */
   tools?: ExecutableTool[];
 
-  /**
-   * Whether this provider takes an output schema on the request. When it
-   * does not, `stream()` writes the schema into the prompt.
-   */
-  readonly structuredOutput?: boolean;
-
   /** @internal */
   createStreamingRequest(
     model: string,
@@ -115,11 +108,6 @@ export interface ProviderStreamParams extends AxleModelRequestOptions {
   tools?: Array<ToolDefinition>;
   /** Provider-managed tools such as web search or code execution. */
   providerTools?: Array<ProviderTool>;
-  /**
-   * The schema the answer must match, sent only to a provider that declares
-   * `structuredOutput`.
-   */
-  output?: { schema: JsonSchema };
   /**
    * Identity of the conversation this request belongs to. Providers that
    * group or route by session (OpenRouter `session_id`) send it; others

@@ -4,7 +4,6 @@ import { AxleError } from "../../errors/AxleError.js";
 import { AxleToolFatalError } from "../../errors/AxleToolFatalError.js";
 import { estimateContextUsage } from "../../execution/context.js";
 import type { AxleProviderFailure } from "../../execution/helpers.js";
-import { requestOutput } from "../../execution/output.js";
 import { stream, type StreamHandle } from "../../execution/stream.js";
 import type { MCP } from "../../mcp/index.js";
 import { validateCompactedMessages } from "../../messages/compaction.js";
@@ -569,8 +568,12 @@ export class Agent {
       outcome: "complete" | "cancelled" | "error",
       failure?: AxleProviderFailure,
     ): void => {
-      const output = requestOutput(this.provider, [message]);
-      for (const event of turnEventBuilder.finalizeTurn(outcome, failure, turnUsage, output)) {
+      for (const event of turnEventBuilder.finalizeTurn(
+        outcome,
+        failure,
+        turnUsage,
+        message.output,
+      )) {
         this.emitEvent(event);
       }
     };

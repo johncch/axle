@@ -2,11 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as z from "zod";
 import { Agent } from "../../src/core/agent/Agent.js";
 import { Instruct } from "../../src/core/Instruct.js";
-import {
-  outputInstructions,
-  requestOutput,
-  withOutputInstructions,
-} from "../../src/execution/output.js";
+import { outputInstructions, withOutputInstructions } from "../../src/execution/output.js";
 import { stream } from "../../src/execution/stream.js";
 import type { AxleMessage } from "../../src/messages/message.js";
 import type { AnyStreamChunk } from "../../src/messages/stream.js";
@@ -22,7 +18,6 @@ import {
   toolCallCompleteChunk,
   toolCallStartChunk,
 } from "../scenarios/helpers/chunks.js";
-import { createTracerAndWriter } from "../scenarios/helpers/recording-writer.js";
 
 const schema = { type: "object", properties: { answer: { type: "string" } } };
 const instructions = outputInstructions(schema);
@@ -49,13 +44,11 @@ function toolResponse(): AnyStreamChunk[] {
 function scriptedProvider(
   requests: ProviderStreamParams[],
   responses: AnyStreamChunk[][],
-  structuredOutput?: boolean,
 ): AIProvider {
   let call = 0;
   return {
     protocol: "chatCompletions",
     id: "test",
-    ...(structuredOutput ? { structuredOutput } : {}),
     async *createStreamingRequest(_model, params) {
       requests.push({ ...params, messages: [...params.messages] });
       for (const chunk of responses[call++] ?? textResponse("{}")) yield chunk;
@@ -119,32 +112,8 @@ describe("withOutputInstructions", () => {
   });
 });
 
-describe("requestOutput", () => {
-  const prompting = scriptedProvider([], []);
-  const native = scriptedProvider([], [], true);
-
-  test("reads the schema of the last user message", () => {
-    const messages: AxleMessage[] = [
-      { role: "user", content: "Answer", output: { schema } },
-      { role: "assistant", id: "a", content: [] },
-    ];
-
-    expect(requestOutput(prompting, messages)).toEqual({ schema, mode: "prompt" });
-    expect(requestOutput(native, messages)).toEqual({ schema, mode: "native" });
-  });
-
-  test("is undefined when a later user message asks for none", () => {
-    const messages: AxleMessage[] = [
-      { role: "user", content: "Answer", output: { schema } },
-      { role: "user", content: "Thanks" },
-    ];
-
-    expect(requestOutput(native, messages)).toBeUndefined();
-  });
-});
-
 describe("stream() with an output schema", () => {
-  test("a provider without native output gets the schema in the prompt on every step", async () => {
+  test("writes the schema into the prompt on every step", async () => {
     const requests: ProviderStreamParams[] = [];
     const provider = scriptedProvider(requests, [toolResponse(), textResponse('{"answer":"yes"}')]);
 
@@ -159,7 +128,6 @@ describe("stream() with an output schema", () => {
     expect(requests).toHaveLength(2);
     for (const request of requests) {
       expect(firstText(request.messages[0])).toBe(`${instructions}Answer`);
-      expect(request.output).toBeUndefined();
     }
   });
 
@@ -180,73 +148,13 @@ describe("stream() with an output schema", () => {
     expect(firstText(requests[0].messages[0])).toBe(`${instructions}Answer`);
     expect(firstText(requests[0].messages[2])).toBe("Thanks");
   });
-
-  test("a provider with native output gets the schema on the request and a clean prompt", async () => {
-    const requests: ProviderStreamParams[] = [];
-    const provider = scriptedProvider(
-      requests,
-      [toolResponse(), textResponse('{"answer":"yes"}')],
-      true,
-    );
-
-    const result = await stream({
-      provider,
-      model: "test-model",
-      tools: [lookup],
-      instruct: new Instruct({ prompt: "Answer", schema }),
-    }).final;
-
-    expect(result.ok && result.response).toEqual({ answer: "yes" });
-    expect(requests).toHaveLength(2);
-    for (const request of requests) {
-      expect(firstText(request.messages[0])).toBe("Answer");
-      expect(request.output).toEqual({ schema });
-    }
-  });
-
-  test("a native provider gets no schema for a message that is not the latest", async () => {
-    const requests: ProviderStreamParams[] = [];
-    const provider = scriptedProvider(requests, [textResponse("fine")], true);
-
-    await stream({
-      provider,
-      model: "test-model",
-      messages: [
-        { role: "user", content: "Answer", output: { schema } },
-        { role: "user", content: "Thanks" },
-      ],
-    }).final;
-
-    expect(requests[0].output).toBeUndefined();
-    expect(firstText(requests[0].messages[0])).toBe("Answer");
-  });
-});
-
-describe("the output path on the trace", () => {
-  test.each([
-    [undefined, "prompt"],
-    [true, "native"],
-  ])("a provider with structuredOutput %s records %s", async (structuredOutput, mode) => {
-    const { writer, tracer } = createTracerAndWriter();
-    const span = tracer.startSpan("stream", { type: "workflow" });
-
-    await stream({
-      provider: scriptedProvider([], [textResponse("{}")], structuredOutput),
-      model: "test-model",
-      instruct: new Instruct({ prompt: "Answer", schema }),
-      span,
-    }).final;
-
-    const recorded = [...writer.spans.values()].find((data) => data.name === "stream");
-    expect(recorded?.attributes.outputMode).toBe(mode);
-  });
 });
 
 describe("Agent with an output schema", () => {
-  function setup(response: string, structuredOutput?: boolean) {
+  function setup(response: string) {
     const requests: ProviderStreamParams[] = [];
     const agent = new Agent({
-      provider: scriptedProvider(requests, [textResponse(response)], structuredOutput),
+      provider: scriptedProvider(requests, [textResponse(response)]),
       model: "test-model",
     });
     const events: TurnEvent[] = [];
@@ -268,7 +176,7 @@ describe("Agent with an output schema", () => {
     expect(firstText(requests[0].messages[0])).toBe(`${outputInstructions(jsonSchema)}Answer`);
   });
 
-  test("records the schema on the user turn and the schema and path on the agent turn", async () => {
+  test("records the schema on the user turn and the agent turn", async () => {
     const { agent, events } = setup('{"answer":"yes"}');
 
     const result = await agent.send(new Instruct({ prompt: "Answer", schema: zodSchema })).final;
@@ -280,16 +188,7 @@ describe("Agent with an output schema", () => {
     expect(userEvent?.type === "turn:user" && userEvent.turn.parts).toMatchObject([
       { type: "text", text: "Answer" },
     ]);
-    expect(result.turn?.output).toEqual({ schema: jsonSchema, mode: "prompt" });
-  });
-
-  test("records the native path for a provider that declares it", async () => {
-    const { agent, requests } = setup('{"answer":"yes"}', true);
-
-    const result = await agent.send(new Instruct({ prompt: "Answer", schema: zodSchema })).final;
-
-    expect(result.turn?.output).toEqual({ schema: jsonSchema, mode: "native" });
-    expect(requests[0].output).toEqual({ schema: jsonSchema });
+    expect(result.turn?.output).toEqual({ schema: jsonSchema });
   });
 
   test("leaves a send without a schema unmarked", async () => {
@@ -312,7 +211,7 @@ describe("Agent with an output schema", () => {
     expect(result.turn).toMatchObject({
       status: "error",
       failure: { kind: "parse" },
-      output: { mode: "prompt" },
+      output: { schema: jsonSchema },
     });
   });
 

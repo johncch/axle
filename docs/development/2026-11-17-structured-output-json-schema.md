@@ -117,10 +117,11 @@ prefer?"}` and called nothing.
   7 of 29 runs. With the flag turned off, 12 of 12 passed.
 - OpenAI: 5 of 5 passed.
 
-Only Responses was kept. The architecture doc lists the other three as
-open.
+Responses alone was kept at first. Then all of it came out: the provider
+flag, the request field and the recorded mode existed to serve one
+provider, and the prompt path had failed nowhere. The ticket ends as a
+cleanup of the prompt path, with an `Instruct` that can cross a wire.
 
 ## Left for later
 
-- Native output on Anthropic, Gemini and Chat Completions.
 - Repair on validation failure.

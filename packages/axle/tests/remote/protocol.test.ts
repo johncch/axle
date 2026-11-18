@@ -110,7 +110,10 @@ describe("the send command", () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.kind).toBe("parse");
-    expect(result.turn).toMatchObject({ status: "complete", output: { mode: "prompt" } });
+    expect(result.turn).toMatchObject({
+      status: "complete",
+      output: { schema: { type: "object" } },
+    });
   });
 
   test("a missing variable is rejected before anything is sent", () => {

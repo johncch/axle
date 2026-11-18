@@ -50,7 +50,6 @@ export {
   AxleToolFatalError,
   isAxleError,
 } from "./errors/index.js";
-export type { OutputMode } from "./execution/output.js";
 
 // Protocols
 export { chatCompletions } from "./protocols/chatCompletions/chatCompletions.js";

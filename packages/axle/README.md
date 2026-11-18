@@ -693,20 +693,15 @@ What each kind of schema gives you:
 - **A bad answer is a failure, not a throw.** Text that is not JSON, or a
   value the schema rejects, resolves `ok: false` with `error.kind: "parse"`.
 
-How the schema reaches the model is not your choice to make. A provider
-that takes a schema on the request gets it there (native output); for any
-other, Axle writes it into the request's copy of your message under an
-"Output Format Instructions" heading (prompt output). `openai()`
-takes it natively; every other built-in provider takes it in the prompt.
-A native request carries your schema unchanged, so a schema the provider
-does not accept is the provider's error. `providerOptions` is applied last
-and can replace the field the schema travels in.
+Axle writes the schema into the request's copy of your message under an
+"Output Format Instructions" heading. It does not use a provider's native
+structured output; to use one, send the provider's own field through
+`providerOptions`.
 
 The message Axle stores is your prompt, without those instructions, plus the
 schema as `output: { schema }`. `instruct.render()` returns the prompt
 alone. A user turn carries the same `output`, and the agent turn that
-answers it carries `output: { schema, mode }` with `mode` `"native"` or
-`"prompt"`, so a transcript can tell a structured answer from ordinary text
+answers it carries the same on `turn:end`, so a transcript can tell a structured answer from ordinary text
 without holding the schema. See
 [structured-output.md](../../docs/architecture/structured-output.md) for the
 design.
@@ -1499,8 +1494,7 @@ before a final answer (a fatal tool, a cancel, an API failure mid-loop, a
 refusal) has none. The `Transcript` keeps it as `turn.reason`.
 
 `turn:end` carries `output` when the send asked for a structured answer:
-`{ schema, mode }`, the JSON Schema and whether it reached the model as
-`"native"` or `"prompt"` output. The `Transcript` keeps it as `turn.output`.
+`{ schema }`, the JSON Schema. The `Transcript` keeps it as `turn.output`.
 
 The `compaction:*` events mirror the action lifecycle: a compaction part
 arrives `running` via `part:start`, `compaction:update` replaces transient

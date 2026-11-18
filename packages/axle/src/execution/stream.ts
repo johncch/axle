@@ -37,7 +37,7 @@ import {
   type ToolCallResult,
   type WaitingCalls,
 } from "./helpers.js";
-import { requestOutput, withOutputInstructions } from "./output.js";
+import { withOutputInstructions } from "./output.js";
 import { readStep, type StepReadOutcome } from "./stepReader.js";
 import { executeStepTools, type LoopContext } from "./stepTools.js";
 
@@ -420,8 +420,6 @@ async function run(
   const newMessages: AxleMessage[] = [];
   const usage: Stats = createStats();
   let steps = 0;
-  const output = requestOutput(provider, messages);
-  if (output) span?.setAttribute("outputMode", output.mode);
 
   const addMessage = (message: AxleMessage) => {
     workingMessages.push(message);
@@ -499,10 +497,7 @@ async function run(
       using stall = timeoutSignal(signal, streamStallMs);
       try {
         const streamSource = provider.createStreamingRequest(model, {
-          messages: provider.structuredOutput
-            ? workingMessages
-            : withOutputInstructions(workingMessages),
-          ...(output?.mode === "native" ? { output: { schema: output.schema } } : {}),
+          messages: withOutputInstructions(workingMessages),
           system,
           tools,
           providerTools: providerTools.length > 0 ? providerTools : undefined,

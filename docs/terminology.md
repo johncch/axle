@@ -148,16 +148,9 @@ holds this handle, which is what "not from me" means at every layer.
 converts to one (a Zod schema is one). JSON Schema is the format; the
 Standard Schema object is a typed way to write it and to check the answer.
 Axle defines no subset of either: what a library cannot convert is the
-library's error, and what a provider cannot accept is the provider's. See
+library's error. See
 `architecture/structured-output.md`. "Output schema" never refers to a
 tool's parameter schema.
-
-**Native output / prompt output** — the two paths an output schema reaches
-the model by (`OutputMode`). Native: the schema goes on the provider request,
-for a provider that declares `structuredOutput`. Prompt: `stream()` writes it
-into the request's copy of the user message as text. The caller does not
-choose, and the stored message is the same on both. An agent turn records
-which one ran as `output.mode`.
 
 **UsageEntry** — one row of `Stats.breakdown`, which every `Stats` has: the
 usage of one provider request, tagged with the provider that served it (its `AIProvider.id`, absent

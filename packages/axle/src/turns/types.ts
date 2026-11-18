@@ -1,6 +1,5 @@
 import type { CompactionTrigger } from "../core/agent/types.js";
 import type { JsonSchema } from "../core/parse.js";
-import type { OutputMode } from "../execution/output.js";
 import type { Citation, ThinkingContinuity, ToolResultPart } from "../messages/message.js";
 import type { ConsoleOutput, ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
@@ -124,10 +123,9 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   reason?: "stop" | "length";
 }
 
-/** The schema a structured send asked for, and on an agent turn how it was sent. */
+/** The schema a structured send asked for. */
 export interface TurnOutput {
   schema: JsonSchema;
-  mode?: OutputMode;
 }
 
 /**

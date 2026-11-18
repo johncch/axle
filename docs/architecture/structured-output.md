@@ -1,6 +1,6 @@
 # Structured output
 
-**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, JSON Schema is the format; native requests)
+**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, JSON Schema is the format)
 
 This document is normative for how an `Instruct` describes the answer it
 wants and how Axle reads that answer back: what a schema is, what Axle does
@@ -26,9 +26,7 @@ tests are built against it; divergence is a defect.
    the type it accepts, and a key with a default is not required.
 4. **Axle defines no subset.** It does not inspect a schema, reject a
    keyword or rewrite one. A schema the library cannot convert throws the
-   library's own error from `Instruct.validate()` and `toMessage()`. A
-   schema a provider cannot accept is the provider's failure. The same
-   `Instruct` can therefore work on one provider and fail on another.
+   library's own error from `Instruct.validate()` and `toMessage()`.
 5. **The answer is JSON, then the library's verdict.** The final assistant
    message's text is stripped of one surrounding markdown fence and passed
    to `JSON.parse`. With a Standard Schema object, `validate()` then runs
@@ -48,40 +46,30 @@ tests are built against it; divergence is a defect.
    context sections and never the schema, so neither the stored
    conversation nor the user turn shows output instructions. The schema is
    scoped to its message. It is not a conversation setting.
-9. **`stream()` applies the schema, by one of two paths.** Before the first
-   request it reads the schema of the last user message and asks the
-   provider once whether it takes one natively (`AIProvider.structuredOutput`).
-   - **Native output:** the schema goes to the provider as
-     `ProviderStreamParams.output`, and the messages are sent as stored.
-     Earlier messages' schemas are not sent.
-   - **Prompt output:** the request's copy of every user message that
-     carries a schema gets an "Output Format Instructions" block written
-     ahead of its first text part: one sentence asking for JSON matching the
-     schema and nothing else, then the JSON Schema, indented by two spaces.
-     The stored messages are not changed.
-
-   Either way it is done again on every step of the send. Axle builds no
-   example value.
-
-10. **Prompt output is stable across requests.** The block is generated
-    from the stored schema the same way each time, for earlier sends too,
-    so an earlier request stays a prefix of a later one and the model still
-    sees why an earlier answer was JSON.
-11. **The caller does not choose the path, and a provider's refusal of a
-    schema is final.** There is no mode option. A provider error on a schema
-    surfaces as that error and never triggers a second attempt on the other
-    path.
+9. **`stream()` writes the schema into the prompt.** The request's copy of
+   every user message that carries a schema gets an "Output Format
+   Instructions" block written ahead of its first text part: one sentence
+   asking for JSON matching the schema and nothing else, then the JSON
+   Schema, indented by two spaces. The stored messages are not changed. It
+   is done again on every step of the send. Axle builds no example value.
+10. **The prompt is stable across requests.** The block is generated from
+    the stored schema the same way each time, for earlier sends too, so an
+    earlier request stays a prefix of a later one and the model still sees
+    why an earlier answer was JSON.
+11. **The schema is not sent to the provider as a request field.** Axle
+    uses no provider's native structured output (see Native output, tried
+    and left out). A caller who wants it sends the provider's field through
+    `providerOptions`; the prompt block is still written.
 12. **`stream()` parses, with the `Instruct` it was given.** Parsing
     (invariant 5) happens in `stream()` for a direct call and for the
     Agent alike: the Agent builds the user message at `send()`, because the
     user turn is announced then, and hands `stream()` both that message and
     the `Instruct` it came from. A `stream()` call with messages and no
     `Instruct` applies a message's schema and returns no `response`.
-13. **The path and the schema are recorded.** The stream's span carries
-    `outputMode`. A user turn carries `output: { schema }`, copied from its
-    message. An agent turn's `turn:end` carries `output: { schema, mode }`,
-    which marks the turn's text as a structured answer for a reader that
-    never held the schema.
+13. **The schema is recorded on both turns.** A user turn carries
+    `output: { schema }`, copied from its message. The agent turn that
+    answers it carries the same on `turn:end`, which marks the turn's text
+    as a structured answer for a reader that never held the schema.
 
 14. **An `Instruct` crosses the wire as data, and each side does what it
     can.** `toJSON()` gives the prompt template, inputs, references, context
@@ -97,36 +85,12 @@ tests are built against it; divergence is a defect.
     without the copy a schema would validate in the process that converted
     it and not after crossing a wire.
 
-16. **Native output is declared by the protocol, where it is known to
-    work.** `responses()` declares it for every host. `messages()`,
-    `generateContent()` and `chatCompletions()` do not (see Open). There is
-    no registry by model.
-17. **A native request carries the schema as given.** Axle adds no keyword
-    and removes none. On Responses it is `text.format` of type
-    `json_schema`, named `output`, with `strict: false`.
-18. **`providerOptions` still wins.** It is applied last and replaces whole
-    top-level fields, so a caller's `text` on Responses replaces the schema
-    with it. A caller who wants OpenAI's strict mode sends `text.format`
-    there and takes its schema rules with it.
-
-## Open
-
-Each protocol below has a native form that was run on 2026-11-17 and left
-off. The results are under Native requests.
-
-- **Messages.** Anthropic rejects the schema of an ordinary Zod object.
-  The choices: stay on the prompt path, add `additionalProperties: false`
-  and drop bounds for this protocol alone (against invariant 17), or
-  declare it and let callers write strict schemas.
-- **generateContent and Chat Completions.** Both take the schema, and both
-  got worse at calling tools with it. The choices: stay on the prompt path,
-  or go native only for a request that carries no tools.
-
 ## Design rationale (2026-11-17)
 
-The feature exists to reach providers' native structured output, which
-takes a JSON Schema. Three things in the earlier implementation stood in
-the way: the schema was a live Zod object that only the calling process
+The work began as a way to reach providers' native structured output,
+which takes a JSON Schema. Native output was tried and left out (below);
+what remained is a cleanup of the prompt path and a serializable `Instruct`.
+The earlier implementation had three faults: the schema was a live Zod object that only the calling process
 could use; a served agent never saw it, though it is the side that talks to
 the provider; and an example builder that understood eight Zod types
 decided what a schema could contain.
@@ -136,20 +100,22 @@ a provider, a wire and a stored turn unchanged. Zod stays for what it is
 good at, typing the result and checking it, on the one side that holds the
 object.
 
-Axle keeps no opinion about schema content because any opinion would be a
-third rule set between two that already exist. The providers' accepted
-subsets conflict with each other: OpenAI's strict mode requires every key
-and rejects `oneOf`; Anthropic accepts optional keys and rejects length and
-numeric bounds. No subset of Axle's matches both, and a provider's own
-error is more accurate than a prediction of it.
+Axle keeps no opinion about schema content because nothing downstream
+needs one. The schema reaches the model as text, which any model can read,
+and the answer is checked by the library that wrote the schema.
 
 Refinements and coercion are dropped silently when Zod converts to JSON
 Schema. That is harmless here because the object that holds them also
 checks the answer (invariant 5).
 
-## Native requests (2026-11-17)
+## Native output, tried and left out (2026-11-17)
 
-Each statement below comes from requests run against the live providers.
+Every provider has a request field that takes a JSON Schema and constrains
+the answer to it. Sending the schema there was built for Responses,
+generateContent and Chat Completions, run against the live providers, and
+removed. It worked cleanly on one of five, and the prompt path already
+passed every structured-output check on all of them. Each statement below
+comes from those runs.
 
 **OpenAI.** Strict mode, which is also what applies when `strict` is left
 out, requires `additionalProperties: false` on every object and every key
@@ -181,8 +147,11 @@ the model. On `deepseek-v4.1-flash` one answer in three came back with
 empty arrays, answers were padded with whitespace, and one request never
 finished. The same cases pass on the prompt path.
 
-Native support on a Bedrock Responses host is declared by the protocol and
-has not been run.
+The failures with tools share a cause where it could be seen: the
+constraint applies to everything the model writes, and on these hosts a
+tool call is something the model writes. Native output was designed for a
+single request that returns one object, and an agent's requests carry
+tools.
 
 ## Rejected alternatives
 
@@ -212,24 +181,21 @@ has not been run.
   on the served side, which is not wanted. A TypeBox schema is a JSON
   Schema object and is accepted as one.
 - **A caller-facing output mode** (2026-11-11): an `outputMode` option
-  choosing native or prompt. Rejected: the prompt path is the normal path
-  for a protocol without native support, and the caller has nothing to
-  decide.
+  choosing native or prompt. Rejected: there is one path.
 - **Output instructions stored in the message text** (2026-11-17): what
   `render()` did before, so the instructions were part of the conversation
-  and of the user turn. Rejected: the path is only known when `stream()`
-  asks the provider, native output has no text to store, and a transcript
-  should show what the user wrote. The schema is stored instead and the
-  text regenerated from it (invariant 10).
+  and of the user turn. Rejected: a transcript should show what the
+  user wrote. The schema is stored instead and the text regenerated from it
+  (invariant 10).
 - **Announcing the user message after `stream()` starts** (2026-11-17), so
   the Agent need not build the message before `stream()` does. Rejected: a
   queued send's message would not appear until its turn came, which is what
   pending turns exist to prevent, and the message's text does not depend on
   the provider.
-- **OpenAI strict mode by default** (2026-11-17): see Native requests.
-  Rejected: it refuses any schema whose objects are not closed with every
-  key required, which is every ordinary Zod object.
-- **Native output wherever the provider accepts the schema** (2026-11-17):
-  Gemini, Together AI and OpenRouter as well as OpenAI. Built for the first
-  two and removed the same day. Rejected: accepting a schema is not the
-  same as working with it. See Native requests.
+- **Native output on OpenAI alone** (2026-11-17): Responses with
+  `strict: false`, the one combination that passed. Built and removed the
+  same day. Rejected: one provider behaving differently from the rest, and
+  a provider flag, a request field and a recorded mode to carry it, for no
+  failure it fixed.
+- **Native output only for a request with no tools** (2026-11-17), for the
+  providers that failed with tools. Rejected for the same reason.
