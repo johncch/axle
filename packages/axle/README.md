@@ -630,9 +630,10 @@ Cancellation follows standard JavaScript abort semantics:
 
 ### Structured Output
 
-Pass a Zod schema to Instruct. Axle compiles the schema
-into output format instructions, then parses the response back into typed
-objects.
+Give an `Instruct` a schema and Axle asks the model for JSON matching it,
+then parses the answer. The schema is a JSON Schema. You can pass one
+directly, or pass a Zod schema, which Axle converts to JSON Schema and also
+uses to check and type the answer.
 
 ```typescript
 import * as z from "zod";
@@ -657,6 +658,45 @@ result.response.moons; // string[]
 
 For one-shot structured calls without agent-managed history, pass the same
 `Instruct` directly to `generate()` or `stream()`.
+
+A plain JSON Schema object works the same way. Axle sends it as written and
+returns the parsed JSON, typed `unknown`, without validating it:
+
+```typescript
+const instruct = new Instruct({
+  prompt: "Tell me about Mars.",
+  schema: {
+    type: "object",
+    properties: { name: { type: "string" }, moons: { type: "array", items: { type: "string" } } },
+    required: ["name", "moons"],
+  },
+});
+```
+
+What each kind of schema gives you:
+
+| Schema                          | Sent to the model                 | Answer checked by | `response` type     |
+| ------------------------------- | --------------------------------- | ----------------- | ------------------- |
+| Zod, or another Standard Schema | its JSON Schema, converted by Zod | the Zod schema    | the schema's output |
+| JSON Schema object              | as written                        | nothing           | `unknown`           |
+
+- **Any Zod schema that converts to JSON Schema is accepted.** Axle defines
+  no subset. A schema Zod cannot convert, such as one with `z.date()`,
+  throws Zod's own error when the `Instruct` is validated or sent.
+- **Refinements, transforms and defaults run on the answer.** `.refine()`
+  is not part of the JSON Schema the model sees, but it is still checked.
+  The model is shown what the schema takes in, so a `.transform()` appears
+  as its input type.
+- **Other libraries work too.** Anything that implements
+  [Standard Schema and Standard JSON Schema](https://standardschema.dev)
+  is handled like Zod. Zod needs 4.2 or later.
+- **A bad answer is a failure, not a throw.** Text that is not JSON, or a
+  value the schema rejects, resolves `ok: false` with `error.kind: "parse"`.
+
+The JSON Schema is written into the prompt under an "Output Format
+Instructions" heading. See
+[structured-output.md](../../docs/architecture/structured-output.md) for the
+design.
 
 ### Supporting Context and Files
 
