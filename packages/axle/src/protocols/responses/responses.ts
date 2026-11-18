@@ -29,6 +29,7 @@ export function responses(options: ProtocolOptions): AIProvider {
   return {
     protocol: "responses",
     id: options.id ?? known?.id,
+    structuredOutput: true,
 
     /** @internal */
     createStreamingRequest(

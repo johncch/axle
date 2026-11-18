@@ -52,7 +52,7 @@ export const remoteAgentCases: CheckCase[] = [
     group: "extended",
     id: "remote-agent-roundtrip",
     description:
-      "An Instruct with a schema crosses as a rendered prompt, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
+      "An Instruct with a schema crosses as data, the model calls ask_user, a RemoteAgent answers, and the response parses with the schema this side holds.",
     async run({ provider, model, requestOptions }) {
       const agent = new Agent({ provider, model, ...requestOptions, system, tools: [askUser] });
       const remote = new RemoteAgent(

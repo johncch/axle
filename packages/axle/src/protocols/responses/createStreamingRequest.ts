@@ -30,6 +30,7 @@ export async function* createStreamingRequest(
     maxOutputTokens,
     toolChoice,
     parallelToolCalls,
+    output,
     providerOptions,
   } = params;
   const span = runtime?.span;
@@ -61,6 +62,18 @@ export async function* createStreamingRequest(
     ...(maxOutputTokens !== undefined ? { max_output_tokens: maxOutputTokens } : {}),
     ...toOpenAIToolChoice(toolChoice, tools, providerTools),
     ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
+    ...(output
+      ? {
+          text: {
+            format: {
+              type: "json_schema" as const,
+              name: "output",
+              schema: output.schema,
+              strict: false,
+            },
+          },
+        }
+      : {}),
 
     // Raw provider options are applied last so they can override Axle mappings.
     ...providerOptions,

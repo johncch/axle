@@ -91,6 +91,36 @@ describe("createStreamingRequest (OpenAI Responses)", () => {
     });
   });
 
+  test("sends an output schema as a non-strict text format", async () => {
+    const schema = { type: "object", properties: { answer: { type: "string" } } };
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: MODEL,
+        messages,
+        runtime: {},
+        output: { schema },
+      }),
+    );
+    expect(request().text).toEqual({
+      format: { type: "json_schema", name: "output", schema, strict: false },
+    });
+  });
+
+  test("providerOptions.text replaces the output schema", async () => {
+    await drain(
+      createStreamingRequest({
+        client: mockClient,
+        model: MODEL,
+        messages,
+        runtime: {},
+        output: { schema: { type: "object" } },
+        providerOptions: { text: { verbosity: "low" } },
+      }),
+    );
+    expect(request().text).toEqual({ verbosity: "low" });
+  });
+
   test("maps named function and provider tool choices", async () => {
     await drain(
       createStreamingRequest({
