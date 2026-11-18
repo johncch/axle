@@ -86,7 +86,8 @@ are all false for them.
 | `errors`      | every segment that failed: turns, tool calls, subagent calls and compactions            |
 | `parts`       | the turn's tool calls, subagent calls, compactions and texts in the order they happened |
 
-Thinking, citation and file parts produce no segment.
+Thinking, citation and file parts produce no segment. Part segments
+describe what the agent did, so a user turn's lists are empty.
 
 A turn's `errors` is, in order: the turn itself when it failed, then its
 failed tool calls, subagent calls and compactions. The top-level `errors`
@@ -198,15 +199,18 @@ Field meanings that are not obvious from the name:
   thrown error that was not the provider's answer. On a tool or subagent
   call, the tool error type (`execution`, `validation`, `fatal`, …), which
   is an open string because provider tools pass their own. On a
-  compaction, `"compaction"`.
+  compaction, `"compaction"`. It is `unknown`, with an empty message, when
+  the turn or part recorded no error, as turns stored before 0.37 can.
 - **`error.code`**: an `AxleErrorCode`, present only when Axle threw the
   error. Tools and compactors never set one.
 - **`recovered`**: present exactly when `status` is `"error"`. `true` when
   the turn the failure happened in went on to complete. On a turn it is
   always `false`.
-- **`rescue`**: on a user turn, `true` when the turn before it is an agent
-  turn with status `"error"`. It is positional. A user turn that follows a
-  cancelled turn is not a rescue.
+- **`cancelled`**: present exactly when `status` is `"cancelled"`.
+  `"timeout"` when the turn timeout cancelled it, `"user"` otherwise.
+- **`rescue`**: present on every user turn. `true` when the turn before it
+  is an agent turn with status `"error"`. It is positional. A user turn
+  that follows a cancelled turn is not a rescue.
 - **`tokens`**: the turn's usage, which already includes its subagents'
   usage. Adding a subagent's own turns to its parent's double counts.
 - **`parameters`**: the same object the turn holds, not a copy.

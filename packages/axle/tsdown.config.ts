@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/ui.ts"],
+  entry: ["src/index.ts", "src/ui.ts", "src/analyze.ts"],
   dts: true,
   publint: true,
   attw: {

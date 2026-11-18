@@ -12,7 +12,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./ui": "./src/ui.ts"
+    "./ui": "./src/ui.ts",
+    "./analyze": "./src/analyze.ts"
   },
   "publishConfig": {
     "exports": {
@@ -23,6 +24,10 @@
       "./ui": {
         "types": "./dist/ui.d.ts",
         "import": "./dist/ui.js"
+      },
+      "./analyze": {
+        "types": "./dist/analyze.d.ts",
+        "import": "./dist/analyze.js"
       }
     }
   },

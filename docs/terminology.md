@@ -212,6 +212,20 @@ failure or a turn error, never both, and a cancelled turn has neither.
 and the `Turn` is the _turn timeout_'s `{ type: "timeout", limitMs }` when
 running out of time cancelled it, and absent when the caller did.
 
+**Analyze** — reading stored turns to understand what an agent did:
+`analyze(turns)` and the predicates and functions exported beside it from
+`@fifthrevision/axle/analyze`. It is separate from the `Agent`, takes
+`Turn[]` and nothing else, and returns plain data. Normative design:
+[architecture/analyze.md](./architecture/analyze.md).
+
+**Segment** — one piece of a conversation as `analyze` reports it: a turn,
+a tool call, a subagent call, a compaction, or a piece of text the agent
+wrote. A segment says what happened and where (`turnId`, `partId`,
+`turnIndex`, `depth`) and carries no content. It is not a `Turn` or a
+`TurnPart`: those are shaped for rendering, a segment for counting,
+filtering and storing. An error is not a separate thing; it is a segment
+whose `status` is `error`.
+
 **Send** — the Agent API verb: one scheduled conversation exchange
 (`agent.send(...)`), executed as a FIFO queue item. The consumer-facing unit of
 "the agent took its turn."
