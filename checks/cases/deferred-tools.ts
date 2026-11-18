@@ -1,5 +1,5 @@
-import { Agent, Transcript, isActionOf, isCall, type DeferredTool } from "@fifthrevision/axle";
-import { analyze, failed } from "@fifthrevision/axle/analyze";
+import { Agent, Transcript, isCall, type DeferredTool } from "@fifthrevision/axle";
+import { analyze, completed, failed, named } from "@fifthrevision/axle/analyze";
 import * as z from "zod";
 import { fail } from "./helpers.js";
 import type { CheckCase } from "./types.js";
@@ -41,17 +41,16 @@ export const deferredToolCases: CheckCase[] = [
       ).final;
       if (!result.ok) return fail({ error: result.error });
 
-      const parts = transcript.turns
-        .flatMap((turn) => turn.parts)
-        .filter((part) => isActionOf(askUser, part));
+      const asks = analyze(transcript.turns).tools.filter(named(askUser.name));
       const roles = agent.messages.map((message) => message.role);
       const details = {
         response: result.response,
         calls,
-        parts: parts.map((part) => ({
-          status: part.status,
-          callId: part.detail.callId,
-          input: part.detail.input,
+        asks: asks.map((ask) => ({
+          kind: ask.kind,
+          status: ask.status,
+          callId: ask.callId,
+          input: ask.parameters,
         })),
         roles,
         usage: result.usage,
@@ -60,10 +59,10 @@ export const deferredToolCases: CheckCase[] = [
       if (calls.length !== 1)
         failureReasons.push(`expected one ask_user call, got ${calls.length}`);
       if (!/teal/i.test(result.response)) failureReasons.push("response does not name the answer");
-      if (parts.length !== 1 || parts[0].status !== "complete") {
+      if (asks.length !== 1 || asks[0].kind !== "deferred" || !completed(asks[0])) {
         failureReasons.push("transcript has no completed deferred action");
       }
-      if (parts[0] && calls[0] && parts[0].detail.callId !== calls[0].id) {
+      if (asks[0] && calls[0] && asks[0].callId !== calls[0].id) {
         failureReasons.push("part callId differs from the call id the handler saw");
       }
       if (roles.join(",") !== "user,assistant,tool,assistant") {

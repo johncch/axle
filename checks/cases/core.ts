@@ -22,7 +22,15 @@ import {
   type FileResolver,
   type ProviderTool,
 } from "@fifthrevision/axle";
-import { analyze, cancelled, completed, failed, named } from "@fifthrevision/axle/analyze";
+import {
+  analyze,
+  byAgent,
+  cancelled,
+  completed,
+  failed,
+  named,
+  partOf,
+} from "@fifthrevision/axle/analyze";
 import * as z from "zod";
 import { fail, getAssistantText, reasoningPrompt } from "./helpers.js";
 import type { CheckCase, CheckCaseResult } from "./types.js";
@@ -177,12 +185,17 @@ export const coreCases: CheckCase[] = [
       agent.on((event) => transcript.apply(event));
       const result = await agent.send("Reply with exactly: pong").final;
       const text = String(result.response ?? "");
+      const a = analyze(transcript.turns);
 
       return {
-        ok: text.toLowerCase().includes("pong") && transcript.turns.length === 2,
+        ok:
+          text.toLowerCase().includes("pong") &&
+          a.turns.length === 2 &&
+          a.turns.every(completed) &&
+          a.errors.length === 0,
         details: {
           response: result.response,
-          turnCount: transcript.turns.length,
+          turns: a.turns.map((turn) => `${turn.owner}:${turn.status}`),
           usage: result.usage,
         },
       };
@@ -204,17 +217,20 @@ export const coreCases: CheckCase[] = [
       ).final;
 
       if (!result.ok) return fail({ error: result.error, usage: result.usage });
+      const a = analyze(transcript.turns);
 
       return {
         ok: Boolean(
           result.response?.answer.toLowerCase().includes("pong") &&
           result.response.count === 3 &&
           result.response.ok === true &&
-          transcript.turns.length === 2,
+          a.turns.length === 2 &&
+          a.turns.every(completed) &&
+          a.errors.length === 0,
         ),
         details: {
           response: result.response,
-          turnCount: transcript.turns.length,
+          turns: a.turns.map((turn) => `${turn.owner}:${turn.status}`),
           usage: result.usage,
         },
       };
@@ -234,18 +250,22 @@ export const coreCases: CheckCase[] = [
         "Using the previous message in this conversation, what is the code word?",
       ).final;
       const text = String(result.response ?? "");
-      const lastMessage = agent.messages.at(-1);
-      const finishReason = lastMessage?.role === "assistant" ? lastMessage.finishReason : undefined;
+      const a = analyze(transcript.turns);
+      const reason = a.turns.at(-1)?.reason;
       const failureReasons = [
         ...(!text.toLowerCase().includes("lavender")
           ? [
-              text.length === 0 && finishReason === "length"
+              text.length === 0 && reason === "length"
                 ? "Second turn reached the provider output limit without producing visible text."
                 : "Second turn did not recall the lavender code word.",
             ]
           : []),
-        ...(transcript.turns.length !== 4
-          ? [`Expected 4 history turns, received ${transcript.turns.length}.`]
+        ...(a.turns.length !== 4 || !a.turns.every(completed)
+          ? [
+              `Expected 4 completed turns, received ${a.turns
+                .map((turn) => `${turn.owner}:${turn.status}`)
+                .join(",")}.`,
+            ]
           : []),
       ];
 
@@ -254,8 +274,8 @@ export const coreCases: CheckCase[] = [
         ...(failureReasons.length > 0 ? { failureReasons } : {}),
         details: {
           response: result.response,
-          finishReason,
-          turnCount: transcript.turns.length,
+          reason,
+          turnCount: a.turns.length,
           usage: result.usage,
         },
       };
@@ -302,10 +322,11 @@ export const coreCases: CheckCase[] = [
       const activeAfter = agent.messages.length;
       const summaryContent = String(agent.messages[0]?.content ?? "");
       const appendixContent = String(agent.messages[1]?.content ?? "");
-      const compactionTurn = transcript.turns.find((turn) =>
-        turn.parts.some((part) => part.type === "compaction"),
+      const compactionTurn = analyze(transcript.turns).turns.find(
+        (turn) => turn.compactions.length > 0,
       );
-      const compactionPart = compactionTurn?.parts.find((part) => part.type === "compaction");
+      const compaction = compactionTurn?.compactions[0];
+      const compactionPart = compaction ? partOf(transcript.turns, compaction) : undefined;
       const progressUpdates = compactionUpdates
         .map((update) => update.progress)
         .filter((progress): progress is number => progress !== undefined);
@@ -328,10 +349,15 @@ export const coreCases: CheckCase[] = [
         ...(compactionTurn?.status !== "complete"
           ? [`Expected a complete compaction turn, got ${compactionTurn?.status ?? "none"}.`]
           : []),
-        ...(compactionPart?.type === "compaction" && compactionPart.summary !== undefined
+        ...(compaction?.trigger !== "manual" || compaction.status !== "complete"
+          ? [
+              `Expected a completed manual compaction on record, got ${compaction?.trigger ?? "none"}:${compaction?.status ?? "none"}.`,
+            ]
+          : []),
+        ...(compactionPart && compactionPart.summary !== undefined
           ? ["PromptCompactor exposed the generated summary on the compaction part."]
           : []),
-        ...(compactionPart?.type === "compaction" && compactionPart.progress !== 1
+        ...(compactionPart && compactionPart.progress !== 1
           ? [`Expected completed compaction progress 1, got ${compactionPart.progress ?? "none"}.`]
           : []),
         ...(compactionUpdates.length === 0
@@ -742,6 +768,8 @@ export const coreCases: CheckCase[] = [
         ...requestOptions,
         tools: [markerTool],
       });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
 
       const first = agent.send("Call record_stop_marker once with marker='initial'.");
       const followUp = agent.send("Reply with exactly: stop-saffron", { toolChoice: "none" });
@@ -758,7 +786,23 @@ export const coreCases: CheckCase[] = [
             toolResult.name === "record_stop_marker" && toolResult.content.includes("recorded:"),
         );
       const transcriptIsLinear = roles.join(",") === "user,assistant,tool,user,assistant";
+      const a = analyze(transcript.turns);
+      const markerCalls = a.tools.filter(named("record_stop_marker"));
       const failureReasons = [
+        ...(markerCalls.length !== 1 || !markerCalls.every(completed)
+          ? [
+              `Expected one completed record_stop_marker call on record, got ${
+                markerCalls.map((call) => call.status).join(",") || "none"
+              }.`,
+            ]
+          : []),
+        ...(a.turns.length !== 4 || !a.turns.every(completed)
+          ? [
+              `Expected 4 completed turns, received ${a.turns
+                .map((turn) => `${turn.owner}:${turn.status}`)
+                .join(",")}.`,
+            ]
+          : []),
         ...(!firstResult.ok ? [`The stopped handle failed: ${firstResult.error.message}`] : []),
         ...(!followUpResult.ok
           ? [`The follow-up handle failed: ${followUpResult.error.message}`]
@@ -1645,6 +1689,8 @@ export const coreCases: CheckCase[] = [
       });
       const batch = parallelize(subagentTool, { maxConcurrency: 3 });
       const agent = new Agent({ provider, model, ...requestOptions, tools: [batch] });
+      const transcript = new Transcript();
+      agent.on(transcript.apply);
 
       let childEvents = 0;
       agent.on((event) => {
@@ -1669,15 +1715,28 @@ export const coreCases: CheckCase[] = [
         ) &&
         Object.values(codeWords).every((word) => batchContent.includes(word));
 
+      const fanOuts = analyze(transcript.turns).subagents.filter(named("lookup_code_word_batch"));
+      const childAgentTurns = fanOuts.flatMap((call) => call.turns).filter(byAgent);
+      const childrenRecorded =
+        fanOuts.length === 1 &&
+        fanOuts.every(completed) &&
+        childAgentTurns.length === 3 &&
+        childAgentTurns.every(completed);
+
       return {
         ok: Boolean(
           itemsOk &&
           childEvents > 0 &&
+          childrenRecorded &&
           Object.values(codeWords).every((word) => text.includes(word)),
         ),
         details: {
           text,
           childEvents,
+          fanOuts: fanOuts.map((call) => ({
+            status: call.status,
+            turns: call.turns.map((turn) => `${turn.owner}:${turn.status}`),
+          })),
           batchResult: batchResult?.content,
           usage: result.usage,
         },

@@ -1,4 +1,5 @@
 import { Agent, Transcript, type Turn } from "@fifthrevision/axle";
+import { analyze, byUser } from "@fifthrevision/axle/analyze";
 import type { CheckCase } from "./types.js";
 
 function turnText(turn: Turn | undefined): string {
@@ -47,8 +48,19 @@ export const continuationCases: CheckCase[] = [
         .map((turn) => turnText(turn));
       const inlineTurns = result.after ?? [];
       const lastInline = inlineTurns.at(-1);
+      const userTurns = analyze(transcript.turns).turns.filter(byUser);
+      const threaded = userTurns.filter((turn) => turn.threadId !== undefined);
       const failureReasons = [
         ...(inlineTurns.length === 0 ? ["The continuation ran no inline turn."] : []),
+        ...(threaded.length !== inlineTurns.length ||
+        threaded.some((turn) => turn.threadId !== userTurns[0]?.turnId)
+          ? [
+              `Expected ${inlineTurns.length} user turn(s) threaded under the first; the transcript has ${threaded.length}.`,
+            ]
+          : []),
+        ...(userTurns.at(-1)?.threadId !== undefined
+          ? ["The queued message's user turn is recorded as an inline turn."]
+          : []),
         ...(lastInline && !approved(String(lastInline.response ?? ""))
           ? ["The last correction was not approved by the judge."]
           : []),

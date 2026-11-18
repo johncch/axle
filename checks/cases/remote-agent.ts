@@ -4,12 +4,12 @@ import {
   type CommandOutcome,
   InMemoryEventStore,
   Instruct,
-  isActionOf,
   isCall,
   loopbackTransport,
   RemoteAgent,
   Transcript,
 } from "@fifthrevision/axle";
+import { analyze, completed, named } from "@fifthrevision/axle/analyze";
 import * as z from "zod";
 import { askUser, system } from "./deferred-tools.js";
 import { fail } from "./helpers.js";
@@ -84,14 +84,12 @@ export const remoteAgentCases: CheckCase[] = [
       remote.close();
       if (!result.ok) return fail({ error: result.error });
 
-      const parts = transcript.turns
-        .flatMap((turn) => turn.parts)
-        .filter((part) => isActionOf(askUser, part));
+      const asks = analyze(transcript.turns).tools.filter(named(askUser.name));
       const roles = agent.messages.map((message) => message.role);
       const details = {
         response: result.response,
         calls,
-        parts: parts.map((part) => ({ status: part.status, callId: part.detail.callId })),
+        asks: asks.map((ask) => ({ kind: ask.kind, status: ask.status, callId: ask.callId })),
         roles,
         usage: result.usage,
       };
@@ -102,8 +100,11 @@ export const remoteAgentCases: CheckCase[] = [
         failureReasons.push("parsed colour is not the answer");
       if (typeof result.response.confidence !== "number")
         failureReasons.push("parsed confidence is not a number");
-      if (parts.length !== 1 || parts[0].status !== "complete") {
+      if (asks.length !== 1 || asks[0].kind !== "deferred" || !completed(asks[0])) {
         failureReasons.push("transcript has no completed deferred action");
+      }
+      if (asks[0] && calls[0] && asks[0].callId !== calls[0].id) {
+        failureReasons.push("part callId differs from the call id the handler saw");
       }
       if (roles.join(",") !== "user,assistant,tool,assistant") {
         failureReasons.push(`unexpected message roles: ${roles.join(",")}`);

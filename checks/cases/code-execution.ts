@@ -125,9 +125,7 @@ export const codeExecutionCases: CheckCase[] = [
           (call.name === "code_execution" || call.name === "bash_code_execution"),
       );
       const outputs = runs.map((run) => {
-        const part = partOf(transcript.turns, run);
-        const actionResult =
-          part && "type" in part && part.type === "action" ? part.detail.result : undefined;
+        const actionResult = partOf(transcript.turns, run)?.detail.result;
         return actionResult?.type === "success" ? JSON.stringify(actionResult.content ?? "") : "";
       });
       const failureReasons: string[] = [];
