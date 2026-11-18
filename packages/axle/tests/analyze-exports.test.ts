@@ -15,6 +15,7 @@ describe("analyze entrypoint", () => {
       "named",
       "partOf",
       "repeats",
+      "simplify",
       "streaks",
       "sum",
     ]);

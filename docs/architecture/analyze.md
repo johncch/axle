@@ -312,8 +312,13 @@ type SimplifiedPart =
   `result`.
 - Ids, timing, usage, annotations and metadata are dropped.
 - A thinking part shows its summary, or its raw text when there is no
-  summary and it is not redacted. A thinking part with nothing to show is
-  left out.
+  summary. A thinking part with nothing to show is left out.
+- A tool part is an ordinary, deferred or provider tool call. `result` is
+  present when the call succeeded with content, `error` when it failed.
+- Citation parts are dropped. A file part keeps its name only.
+- The input turns are not changed: `parameters` and `result` are copied.
+- `maxChars: Infinity` cuts nothing. A negative or non-numeric `maxChars`
+  throws `INVALID_OPTIONS`.
 - A turn with no parts left is kept when it failed or was cancelled, and
   dropped otherwise.
 
