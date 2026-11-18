@@ -83,6 +83,20 @@ tests are built against it; divergence is a defect.
     which marks the turn's text as a structured answer for a reader that
     never held the schema.
 
+14. **An `Instruct` crosses the wire as data, and each side does what it
+    can.** `toJSON()` gives the prompt template, inputs, references, context
+    sections, files, metadata and the schema as JSON Schema;
+    `Instruct.fromJSON()` rebuilds it. A rebuilt Instruct holds a JSON
+    Schema object, so the served side stops at `JSON.parse` (invariant 5)
+    and the client, which holds the Standard Schema object, validates
+    (remote-agent.md invariant 6). Inputs are strings, numbers, booleans or
+    `null` so that they render the same on both sides.
+15. **A converted schema is plain data.** `toJsonSchema()` returns a copy
+    with only the JSON Schema's own keys. Zod's converter attaches a hidden
+    `~standard` property, with a validator, to the object it returns;
+    without the copy a schema would validate in the process that converted
+    it and not after crossing a wire.
+
 ## Planned (AXL-108)
 
 Settled on 2026-11-17 and not yet built. Each moves into Invariants in the
@@ -91,12 +105,6 @@ change that builds it.
 - **Native support is declared by the protocol**, and per preset for Chat
   Completions. There is no registry by model. No provider declares it yet,
   so every send takes the prompt path.
-- **An `Instruct` crosses the wire as data**, its schema as JSON Schema. The
-  served agent holds a JSON Schema object, so it stops at `JSON.parse`
-  (invariant 5) and the client, which holds the Standard Schema object,
-  validates. This reverses remote-agent.md invariant 6. Until then a
-  `RemoteAgent` writes the prompt-output block ahead of the rendered prompt
-  itself, so a served agent receives text and no schema.
 - **`providerOptions` still wins.** It is applied last and replaces whole
   top-level fields, so a caller's `output_config` on Anthropic replaces the
   schema with it.

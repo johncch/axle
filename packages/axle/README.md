@@ -2413,9 +2413,9 @@ result.response; // as locally; an Instruct with a schema parses here
 ```
 
 `send` takes a string or an `Instruct`, which `/ui` exports as well. The
-Instruct is rendered on this side and crosses as
-`{ type: "send", id, prompt, files?, metadata? }`; its schema stays here
-and parses the response here. Files cross with their sources as they are,
+Instruct crosses as data, `{ type: "send", id, instruct }`, with its schema
+as JSON Schema, and the served side renders it. The schema object stays
+here and validates the response here. Files cross with their sources as they are,
 so a file the client uploaded can cross as a `ref` (a storage key, say)
 that the served agent's `fileResolver` reads. That `ref` came from the
 client, so the resolver must check the caller may read it. The handle has
@@ -2552,14 +2552,14 @@ yours because your send is rarely a bare `agent.send`: it may carry a
 `signal`, an `after` continuation, a `fileResolver`, or bookkeeping of your
 own around the handle.
 
-| Command                                           | The call                                  | Outcome                                     |
-| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |
-| `{ type: "send", id, prompt, files?, metadata? }` | `agent.send(instruct, { id, metadata })`  | `{ accepted: true }`                        |
-| `{ type: "answer", callId, content }`             | `agent.toolCall(callId)?.answer(content)` | `accepted`, or `not-waiting` with no call   |
-| `{ type: "fail", callId, message }`               | `agent.toolCall(callId)?.fail(message)`   | `accepted`, or `not-waiting` with no call   |
-| `{ type: "cancel" }`                              | `agent.cancel()`                          | `accepted`, or `idle` when it returns false |
-| `{ type: "stop" }`                                | `agent.stop()`                            | `accepted`, or `idle` when it returns false |
-| `{ type: "clear" }`                               | `agent.clear()`                           | `{ accepted: true }`                        |
+| Command                               | The call                                          | Outcome                                     |
+| ------------------------------------- | ------------------------------------------------- | ------------------------------------------- |
+| `{ type: "send", id, instruct }`      | `agent.send(Instruct.fromJSON(instruct), { id })` | `{ accepted: true }`                        |
+| `{ type: "answer", callId, content }` | `agent.toolCall(callId)?.answer(content)`         | `accepted`, or `not-waiting` with no call   |
+| `{ type: "fail", callId, message }`   | `agent.toolCall(callId)?.fail(message)`           | `accepted`, or `not-waiting` with no call   |
+| `{ type: "cancel" }`                  | `agent.cancel()`                                  | `accepted`, or `idle` when it returns false |
+| `{ type: "stop" }`                    | `agent.stop()`                                    | `accepted`, or `idle` when it returns false |
+| `{ type: "clear" }`                   | `agent.clear()`                                   | `{ accepted: true }`                        |
 
 The outcome says only whether the agent took the command. What happens
 next, the reply, a failure, the waiting call, reaches every consumer as
@@ -2572,22 +2572,21 @@ case "send": {
   const agent = live.get(id) ?? (await resume(id));
   if (!agent) return notFound();
 
-  // 2. Build the message from the prompt. It is already rendered: the
-  //    client's inputs, references and output-format instructions are in it.
-  const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
-  for (const file of command.files ?? []) instruct.addFile(file);
+  // 2. Rebuild the Instruct from its data. It carries the client's inputs,
+  //    references, files, metadata and the schema as JSON Schema.
+  const instruct = Instruct.fromJSON(command.instruct);
 
   // 3. Answer before the turn settles. Awaiting final holds the POST open
   //    for the whole turn; the client reads the result from the events.
-  const handle = agent.send(instruct, { id: command.id, metadata: command.metadata });
+  const handle = agent.send(instruct, { id: command.id });
   handle.final.then(recordResult, reportFailure);
   return Response.json({ accepted: true });
 }
 ```
 
-`vars: "optional"` matters: a prompt that contains `{{` as text would
-otherwise fail as a missing variable. A file crosses with its source as it
-is, so a `ref` reaches the `fileResolver` you give the agent or the send.
+The variable mode crosses with the Instruct, so a plain string send, which
+the client builds with `vars: "optional"`, does not fail here on a `{{` in
+its text. A file crosses with its source as it is, so a `ref` reaches the `fileResolver` you give the agent or the send.
 The client chose that `ref`, so the resolver checks the caller may read it
 before it reads anything.
 

@@ -1,6 +1,6 @@
 # Remote agent: a served Agent, an event store, and a consumer elsewhere
 
-**Status**: current · **Last design revision**: 2026-11-07 (0.36.0, AXL-44)
+**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, AXL-108, a send crosses as an `Instruct`)
 
 This document is normative for how an `Agent` is driven from another
 process: what crosses the wire in each direction, what the consumer side
@@ -83,15 +83,23 @@ front door and the process the agent runs in.
    cursors; `RemoteAgent.status` comes from the opening status and the
    agent's `operation:start` and `agent:idle` alone. A host event never
    uses those types, nor `type: "welcome"`, which the protocol uses.
-6. **A send crosses as a rendered prompt.** The `send` command is
-   `{ type: "send", id, prompt, files?, metadata? }`: the user turn's `id`,
-   `instruct.render()` with the inputs, references and context sections
-   already in it and the output instructions written ahead of it
-   (structured-output.md invariant 9), the Instruct's files, and the
-   metadata the send or the Instruct carries. The schema never crosses;
-   the client that holds it parses, so the remote's `send(instruct).final`
-   gives `response` as the parsed object, and a parse failure is the
-   `parse` failure kind as it is locally. A file crosses with its source
+6. **A send crosses as an `Instruct`, as data.** The `send` command is
+   `{ type: "send", id, instruct }`: the user turn's `id`, and
+   `instruct.toJSON()`, which is the prompt template, its inputs, the
+   variable mode, text references, context sections, files, the metadata
+   the send or the Instruct carries, and the schema as JSON Schema. The
+   client checks for missing variables before it sends. The served side
+   rebuilds it with `Instruct.fromJSON()` and renders it, because only it
+   has the provider that decides how the schema is sent
+   (structured-output.md invariant 9). The rebuilt Instruct holds a JSON
+   Schema, so the served agent parses the reply as JSON and no further:
+   text that is not JSON ends the turn `error` with the `parse` failure,
+   for every consumer. The client holds the schema object, so it alone
+   validates: the remote's `send(instruct).final` gives `response` as the
+   validated value, and a value the schema rejects is the `parse` failure
+   on that result while the turn it folded says `complete`. Inputs are
+   strings, numbers, booleans or `null`, so they cross unchanged. A file
+   crosses with its source
    as it is. A `ref` means whatever the `fileResolver` the host passes to
    `agent.send` makes of it, so a client and server that share storage
    name a file by its key without minting a URL; the client chose the
@@ -300,14 +308,15 @@ is recorded so the wait is cheap:
 
 ## Rejected alternatives
 
-- **An `Instruct` on the wire** (2026-11-05, reversed 2026-11-07): the
-  `send` command carried `instruct.toJSON()`, every field plus the schema
-  as JSON Schema, and the served side rebuilt it with `fromJSON`. Rejected:
-  an `Instruct` is a description, which is data, plus a schema, which is
-  behavior, and the round trip moved behavior across the wire only for the
-  served side to re-render a prompt the client could render itself, while
-  the parse that mattered stayed on the client. The client now renders and
-  parses; data crosses.
+- **A rendered prompt on the wire** (2026-11-07, reversed 2026-11-17): the
+  client rendered the `Instruct` and sent `{ id, prompt, files?,
+metadata? }`, keeping the schema to parse with. It replaced an earlier
+  `instruct.toJSON()` (2026-11-05) on the grounds that a schema is behavior
+  and the client could render the prompt itself. Rejected when both grounds
+  went: an `Instruct` schema became a JSON Schema, which is data, and the
+  output instructions became `stream()`'s to write once it has asked the
+  provider, which only the served side has. agent-state.md, _A send crosses
+  as a rendered prompt_, has the three dated steps.
 - **`processAgentCommand`** (removed 2026-11-07): one exported
   function that decoded a command and made the agent call. Rejected when
   Sunnyday could not use it: its send needs a `signal`, an `after` judge
