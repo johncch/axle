@@ -18,9 +18,7 @@ import type { CheckCase } from "./types.js";
 async function handleCommand(agent: Agent, command: AgentCommand): Promise<CommandOutcome> {
   switch (command.type) {
     case "send": {
-      const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
-      for (const file of command.files ?? []) instruct.addFile(file);
-      agent.send(instruct, { id: command.id, metadata: command.metadata }).final.catch(() => {});
+      agent.send(Instruct.fromJSON(command.instruct), { id: command.id }).final.catch(() => {});
       return { accepted: true };
     }
     case "answer":

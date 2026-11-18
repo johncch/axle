@@ -66,9 +66,7 @@ async function handleCommand(id: string, command: AgentCommand): Promise<Respons
     const session = resume(id);
     if (!session) return notFound();
     const { agent } = session;
-    const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
-    for (const file of command.files ?? []) instruct.addFile(file);
-    const handle = agent.send(instruct, { id: command.id, metadata: command.metadata });
+    const handle = agent.send(Instruct.fromJSON(command.instruct), { id: command.id });
     handle.final.then(
       (result) => console.log(`[${id}] ${command.id} settled, ok: ${result.ok}`),
       (error) => console.log(`[${id}] ${command.id} rejected: ${error}`),

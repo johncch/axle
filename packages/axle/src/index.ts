@@ -28,6 +28,8 @@ export type {
 export { Instruct } from "./core/index.js";
 export type {
   InstructContextSection,
+  InstructData,
+  InstructInput,
   InstructInputs,
   InstructOptions,
   InstructRenderOptions,

@@ -7,10 +7,12 @@ import type {
 import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { FileInfo } from "../utils/file.js";
 import { MissingVariablesError, replaceVariables } from "../utils/replace.js";
-import type { OutputSchema, ParsedSchema } from "./parse.js";
+import type { JsonSchema, OutputSchema, ParsedSchema } from "./parse.js";
 import { parseResponse, toJsonSchema } from "./parse.js";
 
-export type InstructInputs = Record<string, unknown>;
+/** A value for a `{{variable}}`. It is rendered with `String()`, and `null` as nothing. */
+export type InstructInput = string | number | boolean | null;
+export type InstructInputs = Record<string, InstructInput>;
 export type InstructVarsMode = "required" | "optional";
 export interface InstructRenderOptions {
   vars?: InstructVarsMode;
@@ -32,6 +34,21 @@ export interface InstructOptions<
   metadata?: MessageMetadata;
 }
 
+/**
+ * An `Instruct` as plain data: what crosses the wire to a served agent. Its
+ * schema is a JSON Schema, whatever the `Instruct` was built with.
+ */
+export interface InstructData {
+  prompt: string;
+  inputs?: InstructInputs;
+  vars?: InstructVarsMode;
+  references?: Array<{ content: string; name?: string }>;
+  context?: InstructContextSection[];
+  files?: FileInfo[];
+  metadata?: MessageMetadata;
+  schema?: JsonSchema;
+}
+
 export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
   prompt: string;
   inputs: InstructInputs = {};
@@ -48,6 +65,41 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     this.schema = options.schema as TSchema;
     this.vars = options.vars ?? "required";
     this.metadata = options.metadata;
+  }
+
+  /**
+   * Rebuild an `Instruct` from its data. It holds a JSON Schema, so its
+   * answer is parsed as JSON and not validated.
+   */
+  static fromJSON(data: InstructData): Instruct<JsonSchema> {
+    const instruct = new Instruct({
+      prompt: data.prompt,
+      schema: data.schema as JsonSchema,
+      vars: data.vars,
+      metadata: data.metadata,
+    });
+    instruct.inputs = { ...data.inputs };
+    instruct.textReferences = (data.references ?? []).map((reference) => ({ ...reference }));
+    instruct.contextSections = (data.context ?? []).map((section) => ({ ...section }));
+    instruct.files = [...(data.files ?? [])];
+    return instruct;
+  }
+
+  toJSON(): InstructData {
+    return {
+      prompt: this.prompt,
+      ...(Object.keys(this.inputs).length > 0 ? { inputs: { ...this.inputs } } : {}),
+      ...(this.vars === "optional" ? { vars: this.vars } : {}),
+      ...(this.textReferences.length > 0
+        ? { references: this.textReferences.map((reference) => ({ ...reference })) }
+        : {}),
+      ...(this.contextSections.length > 0
+        ? { context: this.contextSections.map((section) => ({ ...section })) }
+        : {}),
+      ...(this.files.length > 0 ? { files: [...this.files] } : {}),
+      ...(this.metadata ? { metadata: this.metadata } : {}),
+      ...(this.schema ? { schema: toJsonSchema(this.schema) } : {}),
+    };
   }
 
   clone(): Instruct<TSchema> {
@@ -70,7 +122,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     return instruct;
   }
 
-  withInput(name: string, value: unknown): Instruct<TSchema> {
+  withInput(name: string, value: InstructInput): Instruct<TSchema> {
     return this.withInputs({ [name]: value });
   }
 
@@ -78,7 +130,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     this.inputs = { ...inputs };
   }
 
-  addInput(name: string, value: unknown) {
+  addInput(name: string, value: InstructInput) {
     this.inputs[name] = value;
   }
 

@@ -197,7 +197,7 @@ describe("RemoteAgent", () => {
       loopbackTransport(store, async (command) => {
         if (command.type !== "send") return applyCommand(agent, command);
         agent
-          .send(command.prompt, {
+          .send(Instruct.fromJSON(command.instruct), {
             id: command.id,
             after: async () => void order.push("after"),
           })
@@ -255,7 +255,7 @@ describe("RemoteAgent", () => {
       loopbackTransport(store, async (command) => {
         if (command.type !== "send") return applyCommand(agent, command);
         agent
-          .send(command.prompt, {
+          .send(Instruct.fromJSON(command.instruct), {
             id: command.id,
             after: async () => {
               throw new Error("judge failed");

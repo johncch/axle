@@ -56,7 +56,7 @@ export function toJsonSchema(schema: OutputSchema): JsonSchema {
       { code: AxleErrorCode.INVALID_OPTIONS },
     );
   }
-  return standard.jsonSchema.input({ target: "draft-2020-12" });
+  return { ...standard.jsonSchema.input({ target: "draft-2020-12" }) };
 }
 
 export async function parseResponse<T extends OutputSchema>(

@@ -1,11 +1,10 @@
 import type { AgentErrorResult, AgentResult, AgentStatus } from "../core/agent/types.js";
 import { Instruct } from "../core/Instruct.js";
 import type { OutputSchema, ParsedSchema } from "../core/parse.js";
-import { parseResponse, toJsonSchema } from "../core/parse.js";
+import { parseResponse } from "../core/parse.js";
 import { AxleAgentAbortError } from "../errors/AxleAgentAbortError.js";
 import { AxleError } from "../errors/AxleError.js";
 import type { AxleProviderFailure } from "../execution/helpers.js";
-import { outputInstructions } from "../execution/output.js";
 import type { MessageMetadata, ToolResultPart } from "../messages/message.js";
 import type { DeferredCall, ToolCallCallback } from "../tools/types.js";
 import type { TurnEvent } from "../turns/events.js";
@@ -203,10 +202,9 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
       typeof messageOrInstruct === "string"
         ? new Instruct({ prompt: messageOrInstruct, vars: "optional" })
         : messageOrInstruct.clone();
-    const prompt = instruct.schema
-      ? outputInstructions(toJsonSchema(instruct.schema)) + instruct.render()
-      : instruct.render();
+    instruct.validate();
     const metadata = options.metadata ?? instruct.metadata;
+    const data = { ...instruct.toJSON(), ...(metadata ? { metadata } : {}) };
     const {
       promise: final,
       resolve,
@@ -214,9 +212,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     } = Promise.withResolvers<AgentResult<RemoteResponse> | AgentErrorResult>();
     final.catch(() => {});
     this.operations.set(id, { schema: instruct.schema, started: false, resolve, reject });
-    const command: AgentCommand = { type: "send", id, prompt };
-    if (instruct.files.length > 0) command.files = instruct.files;
-    if (metadata) command.metadata = metadata;
+    const command: AgentCommand = { type: "send", id, instruct: data };
     this.transport.command(command).then(
       (outcome) => {
         if (outcome.accepted) return;

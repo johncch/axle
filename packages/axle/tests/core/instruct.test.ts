@@ -546,4 +546,49 @@ console.log("code block");
       expect(() => instruct.validate()).toThrow("Date cannot be represented in JSON Schema");
     });
   });
+
+  describe("as data", () => {
+    it("round-trips every field, with the schema as JSON Schema", () => {
+      const schema = z.object({ title: z.string() });
+      const instruct = new Instruct({
+        prompt: "Rate {{thing}} out of {{max}}",
+        schema,
+        vars: "optional",
+        metadata: { origin: "web" },
+      }).withInputs({ thing: "the report", max: 5 });
+      instruct.addFile("Some notes", { name: "notes.txt" });
+      instruct.addContext("Node.js 24", { title: "Environment" });
+      instruct.addFile({
+        kind: "image",
+        mimeType: "image/png",
+        name: "chart.png",
+        source: { type: "url", url: "https://example.com/chart.png" },
+      });
+
+      const data = JSON.parse(JSON.stringify(instruct));
+      const rebuilt = Instruct.fromJSON(data);
+
+      expect(data.schema).toEqual(z.toJSONSchema(schema, { io: "input" }));
+      expect(rebuilt.toJSON()).toEqual(data);
+      expect(rebuilt.toMessage({ id: "m1" })).toEqual(instruct.toMessage({ id: "m1" }));
+    });
+
+    it("leaves out what the Instruct does not have", () => {
+      expect(new Instruct({ prompt: "Hello" }).toJSON()).toEqual({ prompt: "Hello" });
+    });
+
+    it("parses a rebuilt Instruct's answer as JSON without validating it", async () => {
+      const rebuilt = Instruct.fromJSON(
+        new Instruct({ prompt: "Rate it", schema: z.object({ title: z.string() }) }).toJSON(),
+      );
+
+      const response = await rebuilt.parse({
+        role: "assistant",
+        id: "a1",
+        content: [{ type: "text", text: '{"title":42}' }],
+      });
+
+      expect(response).toEqual({ title: 42 });
+    });
+  });
 });

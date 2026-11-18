@@ -2,6 +2,8 @@ export type { AgentStatus } from "./core/agent/types.js";
 export { Instruct } from "./core/Instruct.js";
 export type {
   InstructContextSection,
+  InstructData,
+  InstructInput,
   InstructInputs,
   InstructOptions,
   InstructRenderOptions,

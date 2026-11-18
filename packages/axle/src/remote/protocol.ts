@@ -32,10 +32,21 @@ const toolResultPartSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("file"), file: fileInfoSchema }),
 ]);
 
+const instructDataSchema = z.object({
+  prompt: z.string(),
+  inputs: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  vars: z.enum(["required", "optional"]).optional(),
+  references: z.array(z.object({ content: z.string(), name: z.string().optional() })).optional(),
+  context: z.array(z.object({ content: z.string(), title: z.string().optional() })).optional(),
+  files: z.array(fileInfoSchema).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  schema: z.record(z.string(), z.unknown()).optional(),
+});
+
 /**
  * What a consumer asks of a served agent, each one Agent method. `send`
- * carries the rendered prompt, its files and metadata, and names its user
- * turn with `id` so the consumer can match the events it hears back;
+ * carries the `Instruct` as data, for `Instruct.fromJSON()`, and names its
+ * user turn with `id` so the consumer can match the events it hears back;
  * `answer` and `fail` settle the waiting call `callId`; the rest take
  * nothing. A file's source crosses as it is: a `ref` means whatever the
  * host's `fileResolver` makes of it.
@@ -44,9 +55,7 @@ export const agentCommandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("send"),
     id: z.string().min(1),
-    prompt: z.string(),
-    files: z.array(fileInfoSchema).optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
+    instruct: instructDataSchema,
   }),
   z.object({
     type: z.literal("answer"),

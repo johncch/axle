@@ -81,7 +81,7 @@ export function askUserProvider(question = "colour?"): AIProvider {
 }
 
 export function sendCommand(id: string, prompt: string): AgentCommand {
-  return { type: "send", id, prompt };
+  return { type: "send", id, instruct: { prompt, vars: "optional" } };
 }
 
 /** The host's part in these tests: each command becomes one agent call. */
@@ -91,9 +91,9 @@ export async function applyCommand<THostEvent extends { type: string }>(
 ): Promise<CommandOutcome> {
   switch (command.type) {
     case "send": {
-      const instruct = new Instruct({ prompt: command.prompt, vars: "optional" });
-      for (const file of command.files ?? []) instruct.addFile(file);
-      agent.send(instruct, { id: command.id, metadata: command.metadata }).final.catch(() => {});
+      const instruct = Instruct.fromJSON(command.instruct);
+      const target = agent as Pick<Agent, "send">;
+      target.send(instruct, { id: command.id }).final.catch(() => {});
       return { accepted: true };
     }
     case "answer":

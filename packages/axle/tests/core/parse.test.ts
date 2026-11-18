@@ -247,6 +247,12 @@ describe("toJsonSchema", () => {
     });
   });
 
+  it("returns plain data that carries no validator", () => {
+    const converted = toJsonSchema(z.object({ name: z.string() }));
+
+    expect("~standard" in converted).toBe(false);
+  });
+
   it("lets the library's own conversion error through", () => {
     expect(() => toJsonSchema(z.object({ at: z.date() }))).toThrow(
       "Date cannot be represented in JSON Schema",
