@@ -337,6 +337,8 @@ export class Transcript<
           status: event.status,
           usage: event.usage,
           ...(event.failure ? { failure: event.failure } : {}),
+          ...(event.error ? { error: event.error } : {}),
+          ...(event.cancelReason ? { cancelReason: event.cancelReason } : {}),
           ...(event.reason ? { reason: event.reason } : {}),
           ...(event.output ? { output: event.output } : {}),
           ...(event.cursor ? { cursor: event.cursor } : {}),

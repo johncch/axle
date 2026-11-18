@@ -182,7 +182,11 @@ describe("Agent onStep", () => {
     expect(mock.calls).toBe(1);
     expect(agent.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
     expect(JSON.stringify(agent.messages[2])).toContain("sunny");
-    expect(turnEnd(events)).toMatchObject({ status: "error", usage: { in: 100, out: 10 } });
+    expect(turnEnd(events)).toMatchObject({
+      status: "error",
+      usage: { in: 100, out: 10 },
+      error: { message: "ledger unavailable" },
+    });
     expect(settled).toEqual([{ status: "rejected", reason: failure }]);
 
     unsubscribe();

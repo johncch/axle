@@ -98,8 +98,8 @@ describe("createAgentTool", () => {
     const result = await runAgentTool(tool, { task: "summarize" });
 
     expect(result.results[0].isError).toBe(true);
-    expect(result.results[0].content).toContain("Subagent failed");
-    expect(result.results[0].content).toContain("rate limited");
+    expect(result.results[0].content).toContain("Subagent failed (api): rate limited");
+    expect(result.results[0].content).not.toContain('\\"kind\\"');
     expect(result.usage).toMatchObject({ in: 3, out: 4 });
   });
 

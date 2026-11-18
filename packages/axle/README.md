@@ -158,12 +158,11 @@ produced (often empty) and an Instruct send may resolve `ok: false` with a
 parse error — no final answer exists yet by design.
 
 Cancellation is handle-local, and the user message commits when its
-`turn:user` event is emitted, after setup succeeds. Until then the send is
+`turn:user` event is emitted, as the send starts. Until then the send is
 _pending_: `send()` emits `pending:queued` as soon as it is called, and a
 send that ends before its turn opens emits `pending:dropped` (see
 [Pending operations](#pending-operations)). Cancelling a queued handle
-or a running handle during setup removes it without committing its user
-message. Once `turn:user` is emitted, the committed message remains and the
+removes it without committing its user message. Once `turn:user` is emitted, the committed message remains and the
 agent turn is marked cancelled. This includes cancellation during
 `beforeTurn` compaction: compaction is ordinary work inside the already-open
 turn and cancellation does not unwind the transcript or active conversation. Other
@@ -1400,6 +1399,10 @@ The optional `name` field prefixes all tool names from that server (e.g.
 `wc_word_count`) to avoid collisions when using multiple MCPs. When omitted,
 the server's self-reported name is used as the prefix if available.
 
+The Agent lists a server's tools on the first send after it was added. If
+the listing fails, that send rejects with the error, the user message stays
+in the conversation, and the agent turn ends `error` with the error on it.
+
 HTTP transport works the same way:
 
 ```typescript
@@ -1484,6 +1487,14 @@ provider's answer as a `TurnFailure` (`kind`, `message`, and `type`,
 `AxleProviderFailure` without `usage`, `raw` and `cause`; the turn already
 has `usage`, and the other two stay on the result. A parse failure ends the
 turn `error` with `kind: "parse"`.
+
+`turn:end` carries `error` when the send rejected with a thrown error: a
+fatal tool error, an MCP server whose tools could not be listed, a throwing
+`onStep`. It is `{ message, code? }`, with `code` set only when Axle threw
+the error. A turn has `failure` or `error`, never both. On a cancelled
+turn, `turn:end` carries `cancelReason` (`{ type: "timeout", limitMs }`)
+when `turnTimeoutMs` ran out, and nothing when the caller cancelled. The
+`Turn` keeps all three, so stored turns say how each one ended.
 
 `turn:end` carries `reason` when the model's final answer arrived:
 `"stop"` when it finished, `"length"` when it reached the output token
@@ -1572,7 +1583,8 @@ compaction — and the turn that arrives has the same id, so a renderer keyed
 by id replaces the preview in place. If the operation ends first,
 `pending:dropped` removes it with a `reason`. The reason is
 `{ type: "cancelled" }` for a cancelled handle, `agent.clear()`, or an
-aborted signal, and `{ type: "error", error }` when setup failed. A turn
+aborted signal, and `{ type: "error", error }` when an `onStart` callback
+refused the start. A turn
 with `status: "pending"` never appears in `turns`.
 
 Pending turns are live state. They are never part of `turns`, so saving
@@ -2346,7 +2358,7 @@ agent.on((event) => {
 `operation:end` comes after `onSettled` and just before the handle settles;
 `agent:idle` comes just before `onIdle` fires. A send that started ends with
 `operation:end`. `pending:dropped` ends only its preview: a send dropped
-before its turn opened (a setup failure, a throwing `onStart`) carries both,
+before its turn opened (a throwing `onStart`) carries both,
 and one withdrawn while still queued carries `pending:dropped` alone.
 `Transcript.apply` reports lifecycle events handled and folds nothing from
 them, so `agent.on(transcript.apply)` needs no filter.

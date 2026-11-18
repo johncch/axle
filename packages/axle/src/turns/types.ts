@@ -1,5 +1,6 @@
 import type { CompactionTrigger } from "../core/agent/types.js";
 import type { JsonSchema } from "../core/parse.js";
+import type { AxleErrorCode } from "../errors/AxleError.js";
 import type { Citation, ThinkingContinuity, ToolResultPart } from "../messages/message.js";
 import type { ConsoleOutput, ProviderToolInput } from "../messages/providerTool.js";
 import type { Stats } from "../types.js";
@@ -103,6 +104,10 @@ export interface Turn<TAnnotation extends Annotation = Annotation> {
   usage?: Stats;
   /** How the turn failed, when its send resolved `ok: false`. */
   failure?: TurnFailure;
+  /** The error the turn ended on, when its send rejected with one that was not a cancel. */
+  error?: TurnError;
+  /** Why the turn was cancelled, when the turn timeout did it. Absent on a caller's cancel. */
+  cancelReason?: TimeoutReason;
   /**
    * Set when the send asked for a structured answer. A user turn carries the
    * schema it asked for; an agent turn carries that schema and the path it
@@ -137,6 +142,15 @@ export type TurnFailure =
   | { kind: "incomplete"; type: string; message: string }
   | { kind: "refusal"; message: string; text?: string; category?: string }
   | { kind: "parse"; message: string };
+
+/**
+ * The thrown error that ended a turn `error`: its message, and its `code`
+ * when Axle threw it.
+ */
+export interface TurnError {
+  message: string;
+  code?: AxleErrorCode;
+}
 
 /**
  * Any renderable part within a turn.

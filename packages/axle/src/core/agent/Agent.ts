@@ -23,10 +23,16 @@ import type {
   ToolDefinition,
   WaitingToolCall,
 } from "../../tools/types.js";
-import { TurnEventBuilder, userTurnFromMessage } from "../../turns/eventBuilder.js";
+import { TurnEventBuilder, turnErrorOf, userTurnFromMessage } from "../../turns/eventBuilder.js";
 import type { TurnEvent } from "../../turns/events.js";
 import { Transcript } from "../../turns/transcript.js";
-import { isTimeoutReason, type OperationOutcome, type Turn } from "../../turns/types.js";
+import {
+  isTimeoutReason,
+  type OperationOutcome,
+  type TimeoutReason,
+  type Turn,
+  type TurnError,
+} from "../../turns/types.js";
 import type { Stats } from "../../types.js";
 import { timeoutSignal } from "../../utils/abort.js";
 import type { FileResolver } from "../../utils/file.js";
@@ -567,12 +573,14 @@ export class Agent {
     const finalize = (
       outcome: "complete" | "cancelled" | "error",
       failure?: AxleProviderFailure,
+      thrown?: { error?: TurnError; cancelReason?: TimeoutReason },
     ): void => {
       for (const event of turnEventBuilder.finalizeTurn(
         outcome,
         failure,
         turnUsage,
         message.output,
+        thrown,
       )) {
         this.emitEvent(event);
       }
@@ -592,13 +600,6 @@ export class Agent {
     this.turnActive = true;
     this.stopRequested = false;
     try {
-      // Lifecycle: prepare dependencies and context
-      if (signal.aborted) {
-        throw new AxleAbortError("Agent send aborted", { reason: signal.reason });
-      }
-
-      await this.resolveMcpTools(signal, root);
-
       if (signal.aborted) {
         throw new AxleAbortError("Agent send aborted", { reason: signal.reason });
       }
@@ -613,6 +614,13 @@ export class Agent {
       const startEvent = turnEventBuilder.startAgentTurn();
       agentTurnId = startEvent.turnId;
       this.emitEvent(startEvent);
+
+      // Lifecycle: prepare dependencies and context
+      await this.resolveMcpTools(signal, root);
+
+      if (signal.aborted) {
+        throw new AxleAbortError("Agent send aborted", { reason: signal.reason });
+      }
 
       // Lifecycle: compact before the provider turn
       const beforeTurnCompaction = this.compaction;
@@ -734,25 +742,17 @@ export class Agent {
         this.messagesInternal.push(...error.messages.slice(committed));
       }
 
-      finalize(status === "cancelled" ? "cancelled" : "error");
+      const reported = stepError ? stepError.error : error;
+      if (status === "cancelled") {
+        const reason = error instanceof AxleAbortError ? error.reason : signal.reason;
+        finalize("cancelled", undefined, isTimeoutReason(reason) ? { cancelReason: reason } : {});
+      } else {
+        finalize("error", undefined, { error: turnErrorOf(reported) });
+      }
       if (announced && !userTurnOpened) {
-        this.emitEvent({
-          type: "pending:dropped",
-          id: userTurn.id,
-          reason:
-            status === "cancelled"
-              ? { type: "cancelled" }
-              : {
-                  type: "error",
-                  error: {
-                    type: "setup",
-                    message: error instanceof Error ? error.message : String(error),
-                  },
-                },
-        });
+        this.emitEvent({ type: "pending:dropped", id: userTurn.id, reason: { type: "cancelled" } });
       }
       const turn = agentTurnId ? this.transcript.getTurn(agentTurnId) : undefined;
-      const reported = stepError ? stepError.error : error;
       root?.error(reported instanceof Error ? reported.message : String(reported));
 
       if (stepError) throw stepError.error;
@@ -990,6 +990,7 @@ export class Agent {
             turnId,
             status: aborted ? "cancelled" : "error",
             usage: createStats(),
+            ...(aborted ? {} : { error: turnErrorOf(error) }),
             timing,
           });
         }

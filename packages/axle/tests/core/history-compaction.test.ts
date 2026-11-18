@@ -333,6 +333,10 @@ describe("Agent.compact", () => {
 
     const entry = transcript.turns.find(isCompactionTurn);
     expect(entry?.status).toBe("error");
+    expect(entry?.error).toMatchObject({
+      message: expect.stringMatching(/unanswered tool calls/),
+      code: "COMPACTION_INVALID_MESSAGES",
+    });
     const part = compactionPartOf(entry);
     expect(part?.status).toBe("error");
     expect(part?.error).toMatch(/unanswered tool calls/);

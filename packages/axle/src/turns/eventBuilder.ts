@@ -1,3 +1,4 @@
+import { isAxleError } from "../errors/guard.js";
 import type { AxleProviderFailure } from "../execution/helpers.js";
 import type { StreamEvent } from "../execution/stream.js";
 import type { AxleUserMessage } from "../messages/message.js";
@@ -12,9 +13,11 @@ import type {
   SubagentAction,
   TextPart,
   ThinkingPart,
+  TimeoutReason,
   TimingInfo,
   ToolAction,
   Turn,
+  TurnError,
   TurnFailure,
   TurnOutput,
   TurnPart,
@@ -44,6 +47,13 @@ function completeTiming(timing: TimingInfo | undefined, now = new Date()): Timin
   return {
     ...timing,
     end,
+  };
+}
+
+export function turnErrorOf(error: unknown): TurnError {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    ...(isAxleError(error) ? { code: error.code } : {}),
   };
 }
 
@@ -533,6 +543,7 @@ export class TurnEventBuilder {
     failure?: AxleProviderFailure,
     usage?: Stats,
     output?: TurnOutput,
+    thrown?: { error?: TurnError; cancelReason?: TimeoutReason },
   ): TurnEvent[] {
     const turnId = this.currentTurnId;
     if (!turnId) return [];
@@ -556,6 +567,8 @@ export class TurnEventBuilder {
       status: outcome,
       usage: { ...(usage ?? this.accumulatedUsage) },
       ...(failure ? { failure: turnFailureOf(failure) } : {}),
+      ...(thrown?.error ? { error: thrown.error } : {}),
+      ...(thrown?.cancelReason ? { cancelReason: thrown.cancelReason } : {}),
       ...(this.finalAnswerReason ? { reason: this.finalAnswerReason } : {}),
       ...(output ? { output } : {}),
       timing,

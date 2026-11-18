@@ -29,6 +29,7 @@ export type {
   TimeoutReason,
   ToolAction,
   Turn,
+  TurnError,
   TurnFailure,
   TurnOutput,
   TurnPart,

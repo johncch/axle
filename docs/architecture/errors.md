@@ -1,6 +1,6 @@
 # Errors
 
-**Status**: current · **Last design revision**: 2026-11-02 (0.35.0, AXL-91)
+**Status**: current · **Last design revision**: 2026-11-18 (0.37.0, AXL-101)
 
 This document is normative for how a failure reaches the caller of
 `generate()`, `stream()`, `agent.send()`, and the tool loop beneath them:
@@ -31,8 +31,13 @@ with the agent's queue and continuations is in
    the caller's setup or in this message, a local file that could not be
    read, a tool that chose to end the run, a cancel, and a broken Axle
    invariant all throw an `AxleError`. The test is one question: could
-   Axle have put this on the wire? If not, it throws. A rejection commits
-   nothing to the conversation and spends nothing.
+   Axle have put this on the wire? If not, it throws. A rejection before
+   the user turn opens commits nothing and spends nothing. One after it
+   ends the agent turn: `error` with the thrown error on `turn:end` and the
+   `Turn` as `error` (`{ message, code? }`, the code present only when Axle
+   threw it), or `cancelled` for a cancel, with `cancelReason` when the
+   turn timeout was the canceller. A turn has `failure` or `error`, never
+   both.
 3. **The boundary is who answered, not whose fault.** A rejected API key
    is a deterministic configuration mistake, and it resolves `ok: false`
    with `type: "authentication"`, because the provider is the one that
@@ -316,6 +321,11 @@ class AxleError extends Error {
   readonly details?: Record<string, unknown>;
   readonly cause?: unknown;
   toJSON(): object;
+}
+
+interface TurnError {
+  message: string;
+  code?: AxleErrorCode;
 }
 
 type AnyAxleError =

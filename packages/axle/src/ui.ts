@@ -68,6 +68,7 @@ export type {
   TimingInfo,
   ToolAction,
   Turn,
+  TurnError,
   TurnFailure,
   TurnMetadata,
   TurnOutput,

@@ -322,7 +322,7 @@ describe("Agent", () => {
       expect(requests).toEqual([]);
     });
 
-    test("a setup failure rejects without committing and a retry does not duplicate the user turn", async () => {
+    test("a failed MCP tool listing rejects with the user message committed, and a retry sends again", async () => {
       const requests: string[] = [];
       const agent = new Agent({
         provider: createEchoStreamProvider(requests),
@@ -335,14 +335,12 @@ describe("Agent", () => {
       agent.addMcp({ name: "flaky", listTools, connected: true } as any);
 
       await expect(agent.send("hello").final).rejects.toThrow("mcp unreachable");
-      expect(agent.messages).toEqual([]);
+      expect(agent.messages.map((message) => message.role)).toEqual(["user"]);
+      expect(requests).toEqual([]);
 
-      await expect(agent.send("hello").final).resolves.toMatchObject({
-        ok: true,
-        response: "hello",
-      });
-      expect(requests).toEqual(["hello"]);
-      expect(agent.messages.filter((message) => message.role === "user")).toHaveLength(1);
+      await expect(agent.send("hello again").final).resolves.toMatchObject({ ok: true });
+      expect(requests).toHaveLength(1);
+      expect(agent.messages.map((message) => message.role)).toEqual(["user", "user", "assistant"]);
     });
 
     test("stop() + clear() + send() interjects the new message ahead of queued work", async () => {
@@ -1296,29 +1294,35 @@ describe("Agent", () => {
       expect(transcript.turns).toEqual([]);
     });
 
-    test("a send cancelled during setup is dropped as cancelled", async () => {
+    test("a send cancelled while MCP tools are listed keeps its user turn and ends cancelled", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const { events, transcript } = observe(agent);
-      const setup = Promise.withResolvers<never[]>();
-      agent.addMcp({ name: "slow", listTools: () => setup.promise, connected: true } as any);
+      const listing = Promise.withResolvers<never[]>();
+      const listTools = vi.fn(() => listing.promise);
+      agent.addMcp({ name: "slow", listTools, connected: true } as any);
 
       const handle = agent.send("hello");
       const final = handle.final.catch((error) => error);
-      await vi.waitFor(() => expect(pendingText(transcript)).toEqual(["hello"]));
+      await vi.waitFor(() => expect(listTools).toHaveBeenCalled());
       handle.cancel();
-      setup.resolve([]);
+      listing.resolve([]);
 
       expect(await final).toBeInstanceOf(AxleAgentAbortError);
       expect(transcript.pending).toEqual([]);
-      expect(transcript.turns).toEqual([]);
+      expect(transcript.turns).toMatchObject([
+        { owner: "user", status: "complete" },
+        { owner: "agent", status: "cancelled" },
+      ]);
+      expect(agent.messages.map((message) => message.role)).toEqual(["user"]);
+      expect(events.some((event) => event.type === "pending:dropped")).toBe(false);
       expect(events.slice(-3)).toMatchObject([
-        { type: "pending:dropped", reason: { type: "cancelled" } },
+        { type: "turn:end", status: "cancelled" },
         { type: "operation:end", outcome: { type: "cancelled" } },
         { type: "agent:idle" },
       ]);
     });
 
-    test("a send whose setup fails is dropped with the error", async () => {
+    test("a send whose MCP tool listing fails keeps its user turn and ends in an error turn", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const { events, transcript } = observe(agent);
       const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
@@ -1327,16 +1331,17 @@ describe("Agent", () => {
       await expect(agent.send("hello").final).rejects.toThrow("mcp unreachable");
 
       expect(transcript.pending).toEqual([]);
-      expect(transcript.turns).toEqual([]);
-      expect(events.slice(-3)).toEqual([
-        {
-          type: "pending:dropped",
-          id: expect.any(String),
-          reason: { type: "error", error: { type: "setup", message: "mcp unreachable" } },
-        },
+      expect(transcript.turns).toMatchObject([
+        { owner: "user", status: "complete" },
+        { owner: "agent", status: "error", parts: [], error: { message: "mcp unreachable" } },
+      ]);
+      expect(transcript.turns[1]!.error).not.toHaveProperty("code");
+      expect(agent.messages.map((message) => message.role)).toEqual(["user"]);
+      expect(events.some((event) => event.type === "pending:dropped")).toBe(false);
+      expect(events.slice(-3)).toMatchObject([
+        { type: "turn:end", status: "error", error: { message: "mcp unreachable" } },
         {
           type: "operation:end",
-          id: expect.any(String),
           outcome: { type: "error", error: { message: "mcp unreachable" } },
         },
         { type: "agent:idle" },
@@ -1513,7 +1518,7 @@ describe("Agent", () => {
       ]);
     });
 
-    test("fires for a send that failed before its turn opened, not for one cleared from the queue", async () => {
+    test("fires for a send whose MCP tool listing failed, not for one cleared from the queue", async () => {
       const agent = new Agent({ provider: createEchoStreamProvider([]), model: "mock" });
       const listTools = vi.fn().mockRejectedValueOnce(new Error("mcp unreachable"));
       agent.addMcp({ name: "flaky", listTools, connected: true } as any);
@@ -1532,7 +1537,7 @@ describe("Agent", () => {
       expect(queuedIds).toHaveLength(2);
       expect(settled).toEqual([
         {
-          users: [],
+          users: ["setup fails"],
           operation: {
             kind: "send",
             id: queuedIds[0],
@@ -2148,6 +2153,7 @@ describe("Agent", () => {
       });
       expect(events.find((event) => event.type === "turn:end")).toMatchObject({
         status: "cancelled",
+        cancelReason: { type: "timeout", limitMs: 20 },
       });
     });
 
@@ -2181,6 +2187,9 @@ describe("Agent", () => {
         id: expect.any(String),
         outcome: { type: "cancelled" },
       });
+      expect(events.filter((event) => event.type === "turn:end").at(-1)).not.toHaveProperty(
+        "cancelReason",
+      );
     });
 
     test("an inline turn's timeout rejects its ctx.send; a judge that catches it keeps the draft", async () => {
@@ -2859,6 +2868,10 @@ describe("Agent", () => {
     expect(toolStream.callCount).toBe(1);
     // both calls in the batch start before the fatal lands
     expect(events.filter((event) => event.type === "action:running")).toHaveLength(2);
+    expect(events.find((event) => event.type === "turn:end")).toMatchObject({
+      status: "error",
+      error: { message: "Sandbox terminated", code: "TOOL_FATAL_ERROR" },
+    });
   });
 
   test("regular tool Error remains model-visible and can be retried", async () => {

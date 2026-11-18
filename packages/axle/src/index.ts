@@ -247,6 +247,7 @@ export type {
   TimeoutReason,
   ToolAction,
   Turn,
+  TurnError,
   TurnFailure,
   TurnMetadata,
   TurnOutput,
