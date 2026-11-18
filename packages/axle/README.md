@@ -696,8 +696,11 @@ What each kind of schema gives you:
 How the schema reaches the model is not your choice to make. A provider
 that takes a schema on the request gets it there (native output); for any
 other, Axle writes it into the request's copy of your message under an
-"Output Format Instructions" heading (prompt output). No provider declares
-native output yet, so every send takes the prompt path.
+"Output Format Instructions" heading (prompt output). `openai()`
+takes it natively; every other built-in provider takes it in the prompt.
+A native request carries your schema unchanged, so a schema the provider
+does not accept is the provider's error. `providerOptions` is applied last
+and can replace the field the schema travels in.
 
 The message Axle stores is your prompt, without those instructions, plus the
 schema as `output: { schema }`. `instruct.render()` returns the prompt

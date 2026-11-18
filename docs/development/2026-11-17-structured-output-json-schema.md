@@ -83,9 +83,44 @@ the schema in the prompt on `gpt-6-luna`, `gpt-5.6-luna`,
 and OpenRouter). The ledger had the same cases passing with the example, so
 this showed no regression. The local Ollama model was not run.
 
+## Native requests
+
+Before building, the JSON Schema of five Zod objects was sent to each
+provider through `providerOptions`:
+
+- OpenAI with `strict: true`, and with `strict` left out, rejected all
+  five: `additionalProperties` must be `false`. With `z.strictObject()` it
+  then rejected the optional key and `oneOf`. With `strict: false` it
+  accepted all five.
+- Anthropic rejected all five for the same reason. With `z.strictObject()`
+  it accepted optional keys and a type union and rejected `minimum`,
+  `maximum` and `oneOf`.
+- Gemini, Together AI and OpenRouter accepted all five.
+
+So OpenAI is sent `strict: false`, and Anthropic stays on the prompt path.
+
+Native requests were then built for Responses, generateContent and Chat
+Completions (Together AI and OpenRouter) and the `instruct-json` checks
+run, six cases each. All passed on `gpt-6-luna`,
+`gemini-flash-lite-latest`, and Together AI's `GLM-5.3-Flash` and
+`DeepSeek-V4.1-Flash`. OpenRouter's `deepseek-v4.1-flash` hung on the first
+case for over ten minutes; run by hand, one of three answers had empty
+arrays and all were padded with whitespace.
+
+The `remote-agent-roundtrip` check, a schema with a tool the model must
+call once, then showed what the others could not:
+
+- Together AI: `GLM-5.3-Flash` did not finish in four minutes. By hand,
+  `DeepSeek-V4.1-Flash` answered `{"colour": "Which colour do you
+prefer?"}` and called nothing.
+- Gemini: `gemini-flash-lite-latest` called the tool two to four times in
+  7 of 29 runs. With the flag turned off, 12 of 12 passed.
+- OpenAI: 5 of 5 passed.
+
+Only Responses was kept. The architecture doc lists the other three as
+open.
+
 ## Left for later
 
-- Native requests per protocol, and which Chat Completions presets declare
-  them.
-- Whether to strip value constraints from the native schema.
+- Native output on Anthropic, Gemini and Chat Completions.
 - Repair on validation failure.

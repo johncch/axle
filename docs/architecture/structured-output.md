@@ -1,6 +1,6 @@
 # Structured output
 
-**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, JSON Schema is the format)
+**Status**: current · **Last design revision**: 2026-11-17 (0.37.0, JSON Schema is the format; native requests)
 
 This document is normative for how an `Instruct` describes the answer it
 wants and how Axle reads that answer back: what a schema is, what Axle does
@@ -97,17 +97,30 @@ tests are built against it; divergence is a defect.
     without the copy a schema would validate in the process that converted
     it and not after crossing a wire.
 
-## Planned (AXL-108)
+16. **Native output is declared by the protocol, where it is known to
+    work.** `responses()` declares it for every host. `messages()`,
+    `generateContent()` and `chatCompletions()` do not (see Open). There is
+    no registry by model.
+17. **A native request carries the schema as given.** Axle adds no keyword
+    and removes none. On Responses it is `text.format` of type
+    `json_schema`, named `output`, with `strict: false`.
+18. **`providerOptions` still wins.** It is applied last and replaces whole
+    top-level fields, so a caller's `text` on Responses replaces the schema
+    with it. A caller who wants OpenAI's strict mode sends `text.format`
+    there and takes its schema rules with it.
 
-Settled on 2026-11-17 and not yet built. Each moves into Invariants in the
-change that builds it.
+## Open
 
-- **Native support is declared by the protocol**, and per preset for Chat
-  Completions. There is no registry by model. No provider declares it yet,
-  so every send takes the prompt path.
-- **`providerOptions` still wins.** It is applied last and replaces whole
-  top-level fields, so a caller's `output_config` on Anthropic replaces the
-  schema with it.
+Each protocol below has a native form that was run on 2026-11-17 and left
+off. The results are under Native requests.
+
+- **Messages.** Anthropic rejects the schema of an ordinary Zod object.
+  The choices: stay on the prompt path, add `additionalProperties: false`
+  and drop bounds for this protocol alone (against invariant 17), or
+  declare it and let callers write strict schemas.
+- **generateContent and Chat Completions.** Both take the schema, and both
+  got worse at calling tools with it. The choices: stay on the prompt path,
+  or go native only for a request that carries no tools.
 
 ## Design rationale (2026-11-17)
 
@@ -133,6 +146,43 @@ error is more accurate than a prediction of it.
 Refinements and coercion are dropped silently when Zod converts to JSON
 Schema. That is harmless here because the object that holds them also
 checks the answer (invariant 5).
+
+## Native requests (2026-11-17)
+
+Each statement below comes from requests run against the live providers.
+
+**OpenAI.** Strict mode, which is also what applies when `strict` is left
+out, requires `additionalProperties: false` on every object and every key
+in `required`. The input side of a `z.object()` has neither, so strict
+rejected every schema tried. With `strict: false` all were accepted and
+answered correctly, with and without tools. Strict would guarantee a
+conforming answer, but the library checks the answer anyway (invariant 5),
+and a schema that fails before the model runs is worse than one that is
+checked after.
+
+**Anthropic.** `output_config.format` has no non-strict form. It answered
+400 to every schema from a plain `z.object()`, because each object must
+state `additionalProperties: false`, and to `minimum`, `maximum` and
+`oneOf`. It accepted `z.strictObject()` schemas, optional keys included.
+Declaring it would turn sends that work on the prompt path into errors.
+
+**Gemini.** `responseJsonSchema` took every schema, bounds and unions
+included, and every case without tools passed. In a send that had to call
+a tool once and then answer, `gemini-flash-lite-latest` called it more than
+once in 7 of 29 runs. On the prompt path the same send passed 12 of 12.
+
+**Together AI.** `response_format` took every schema and every case
+without tools passed on two models. With a tool on the request,
+`DeepSeek-V4.1-Flash` wrote the JSON answer at once and never called the
+tool, and `GLM-5.3-Flash` did not finish.
+
+**OpenRouter.** It passes `response_format` to whichever upstream serves
+the model. On `deepseek-v4.1-flash` one answer in three came back with
+empty arrays, answers were padded with whitespace, and one request never
+finished. The same cases pass on the prompt path.
+
+Native support on a Bedrock Responses host is declared by the protocol and
+has not been run.
 
 ## Rejected alternatives
 
@@ -176,5 +226,10 @@ checks the answer (invariant 5).
   queued send's message would not appear until its turn came, which is what
   pending turns exist to prevent, and the message's text does not depend on
   the provider.
-- **Stripping value constraints from the native schema** (open): AXL-108
-  records it as undecided. Until it is decided, invariant 4 holds.
+- **OpenAI strict mode by default** (2026-11-17): see Native requests.
+  Rejected: it refuses any schema whose objects are not closed with every
+  key required, which is every ordinary Zod object.
+- **Native output wherever the provider accepts the schema** (2026-11-17):
+  Gemini, Together AI and OpenRouter as well as OpenAI. Built for the first
+  two and removed the same day. Rejected: accepting a schema is not the
+  same as working with it. See Native requests.
