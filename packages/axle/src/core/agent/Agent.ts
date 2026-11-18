@@ -697,7 +697,7 @@ export class Agent {
       let response: any;
       let parseFailure: AgentErrorResult["error"] | undefined;
       try {
-        response = instruct.parse(streamResult.final);
+        response = await instruct.parse(streamResult.final);
       } catch (parseError) {
         parseFailure = {
           kind: "parse",

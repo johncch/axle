@@ -284,10 +284,10 @@ export function stream(options: StreamParams | StreamInstructParams<any>): Strea
   const runStream = () =>
     run(streamOptions, effectiveSignal, callbacks, control, waiting, discloseThinking);
   Promise.resolve().then(() =>
-    runStream().then((result) => {
+    runStream().then(async (result) => {
       if (parse && result.ok) {
         try {
-          resolve({ ...result, response: parse(result.final) });
+          resolve({ ...result, response: await parse(result.final) });
         } catch (parseError) {
           resolve({
             ok: false,

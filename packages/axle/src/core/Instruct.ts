@@ -8,7 +8,7 @@ import { getTextContent, toContentParts } from "../messages/utils.js";
 import type { FileInfo } from "../utils/file.js";
 import { MissingVariablesError, replaceVariables } from "../utils/replace.js";
 import type { OutputSchema, ParsedSchema } from "./parse.js";
-import { parseResponse, zodToExample, zodToFieldDescriptions } from "./parse.js";
+import { parseResponse, toJsonSchema } from "./parse.js";
 
 export type InstructInputs = Record<string, unknown>;
 export type InstructVarsMode = "required" | "optional";
@@ -117,9 +117,10 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
     };
   }
 
-  parse(final: AxleAssistantMessage | undefined): InstructResponse<TSchema> | null {
+  async parse(final: AxleAssistantMessage | undefined): Promise<InstructResponse<TSchema> | null> {
     if (!final) return null;
-    return parseResponse(getTextContent(final.content), this.schema) as InstructResponse<TSchema>;
+    const response = await parseResponse(getTextContent(final.content), this.schema);
+    return response as InstructResponse<TSchema>;
   }
 
   validate(options: InstructRenderOptions = {}): void {
@@ -133,7 +134,7 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
         throw error;
       }
     }
-    if (this.schema) zodToExample(this.schema);
+    if (this.schema) toJsonSchema(this.schema);
   }
 
   render(options: InstructRenderOptions = {}): string {
@@ -156,13 +157,9 @@ export class Instruct<TSchema extends OutputSchema | undefined = undefined> {
 
     if (!this.schema) return message;
 
-    let instructions =
-      "# Output Format Instructions\n\nReturn only valid JSON matching this schema. Do not wrap it in markdown. Do not include prose before or after the JSON.\n";
-    const [, example] = zodToExample(this.schema);
-    for (const [key, value] of zodToFieldDescriptions(this.schema)) {
-      instructions += `\n- ${key}: ${value}`;
-    }
-    instructions += `\n\nExample:\n${JSON.stringify(example, null, 2)}\n\n`;
+    const instructions =
+      "# Output Format Instructions\n\nReturn only valid JSON matching this JSON Schema. Do not wrap it in markdown. Do not include prose before or after the JSON.\n\n" +
+      `${JSON.stringify(toJsonSchema(this.schema), null, 2)}\n\n`;
 
     return instructions + message;
   }

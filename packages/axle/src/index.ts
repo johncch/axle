@@ -33,8 +33,10 @@ export type {
   InstructRenderOptions,
   InstructResponse,
   InstructVarsMode,
+  JsonSchema,
   OutputSchema,
   ParsedSchema,
+  StandardOutputSchema,
 } from "./core/index.js";
 export { parseResponse } from "./core/parse.js";
 export {

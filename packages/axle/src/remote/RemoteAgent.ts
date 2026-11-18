@@ -58,7 +58,7 @@ type HeldOutcome =
 interface OpenOperation {
   schema: OutputSchema | undefined;
   started: boolean;
-  held?: HeldOutcome;
+  held?: Promise<HeldOutcome>;
   resolve: (result: AgentResult<RemoteResponse> | AgentErrorResult) => void;
   reject: (error: Error) => void;
 }
@@ -285,7 +285,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
         break;
       }
       case "operation:end":
-        this.settleOperation(event.id, (op) => this.endOperation(op, event.outcome));
+        this.settleOperation(event.id, (op) => void this.endOperation(op, event.outcome));
         break;
       case "agent:idle":
         this.setStatus({ phase: "idle" });
@@ -368,7 +368,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     }
   }
 
-  private outcomeOf(op: OpenOperation, turn: Turn): HeldOutcome {
+  private async outcomeOf(op: OpenOperation, turn: Turn): Promise<HeldOutcome> {
     const usage = turn.usage ?? createStats();
     if (turn.status === "cancelled") return { status: "rejected", turn };
     if (turn.status === "error") {
@@ -387,7 +387,7 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     try {
       return {
         status: "fulfilled",
-        value: { ok: true, response: parseResponse(textOf(turn), op.schema), turn, usage },
+        value: { ok: true, response: await parseResponse(textOf(turn), op.schema), turn, usage },
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -398,8 +398,8 @@ export class RemoteAgent<THostEvent extends { type: string } = never> {
     }
   }
 
-  private endOperation(op: OpenOperation, outcome: OperationOutcome): void {
-    const held = op.held;
+  private async endOperation(op: OpenOperation, outcome: OperationOutcome): Promise<void> {
+    const held = await op.held;
     if (outcome.type === "complete" && held?.status === "fulfilled") {
       op.resolve(held.value);
     } else if (outcome.type === "cancelled") {

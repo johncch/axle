@@ -44,30 +44,30 @@ describe("Instruct", () => {
       expect(message.id).toBeTypeOf("string");
     });
 
-    test("parses the assistant response with its schema", () => {
+    test("parses the assistant response with its schema", async () => {
       const instruct = new Instruct({
         prompt: "Return a result",
         schema: z.object({ answer: z.string() }),
       });
 
       expect(
-        instruct.parse({
+        await instruct.parse({
           role: "assistant",
           id: "response-1",
           content: [{ type: "text", text: '{"answer":"yes"}' }],
         }),
       ).toEqual({ answer: "yes" });
-      expect(instruct.parse(undefined)).toBeNull();
+      expect(await instruct.parse(undefined)).toBeNull();
     });
 
-    test("parses a response the provider split across several text parts", () => {
+    test("parses a response the provider split across several text parts", async () => {
       const instruct = new Instruct({
         prompt: "Return a result",
         schema: z.object({ answer: z.string() }),
       });
 
       expect(
-        instruct.parse({
+        await instruct.parse({
           role: "assistant",
           id: "response-1",
           content: [
@@ -470,8 +470,7 @@ console.log("code block");
       expect(compiled).toContain("Extract information");
       expect(compiled).toContain("## Reference 1: Score Data");
       expect(compiled).toContain(textContent);
-      expect(compiled).toContain('"score": 42');
-      expect(compiled).toContain('"summary": "Your answer"');
+      expect(compiled).toContain('"score": {\n      "type": "number"');
     });
   });
 
@@ -487,72 +486,59 @@ console.log("code block");
       expect(compiled).toBe("Hello world");
     });
 
-    it("should include output format instructions when schema provided", () => {
+    it("puts the JSON Schema ahead of the prompt", () => {
       const instruct = new Instruct({
         prompt: "Hello world",
         schema: z.object({ answer: z.string() }),
       });
       const compiled = instruct.render();
-      expect(compiled).toContain("# Output Format Instructions");
-      expect(compiled).toContain("Return only valid JSON matching this schema");
-      expect(compiled).toContain('"answer": "Your answer"');
+
+      const match = compiled.match(
+        /^# Output Format Instructions\n\n(.*)\n\n([\s\S]*)\n\nHello world$/,
+      );
+      expect(match?.[1]).toBe(
+        "Return only valid JSON matching this JSON Schema. Do not wrap it in markdown. Do not include prose before or after the JSON.",
+      );
+      expect(JSON.parse(match![2])).toEqual(z.toJSONSchema(instruct.schema, { io: "input" }));
     });
 
-    it("renders root non-object schema examples", () => {
+    it("renders a JSON Schema object as written", () => {
+      const schema = {
+        type: "object",
+        properties: { status: { enum: ["success", "fail"] } },
+        required: ["status"],
+      };
+      const compiled = new Instruct({ prompt: "Classify the run", schema }).render();
+
+      expect(compiled).toContain(JSON.stringify(schema, null, 2));
+    });
+
+    it("accepts schemas the example builder used to reject", () => {
       const instruct = new Instruct({
+        prompt: "Describe the event",
+        schema: z.object({
+          nickname: z.string().nullable(),
+          at: z.iso.datetime().optional(),
+          value: z.union([z.string(), z.number()]),
+        }),
+      });
+
+      expect(() => instruct.validate()).not.toThrow();
+    });
+
+    it("accepts a root that is not an object", () => {
+      const compiled = new Instruct({
         prompt: "Return the fixed status",
         schema: z.literal("approved"),
-      });
-      const compiled = instruct.render();
+      }).render();
 
-      expect(compiled).toContain('- response: "approved"');
-      expect(compiled).toContain('"approved"');
+      expect(compiled).toContain('"const": "approved"');
     });
 
-    it("renders enum schema examples without throwing", () => {
-      const instruct = new Instruct({
-        prompt: "Classify the run",
-        schema: z.object({
-          status: z.enum(["success", "partial", "fail"]),
-        }),
-      });
-      const compiled = instruct.render();
+    it("throws the library's conversion error when validated", () => {
+      const instruct = new Instruct({ prompt: "When?", schema: z.object({ at: z.date() }) });
 
-      expect(compiled).toContain('- status: "success" | "partial" | "fail"');
-      expect(compiled).toContain('"status": "success"');
-    });
-
-    it("renders literal schema examples without throwing", () => {
-      const instruct = new Instruct({
-        prompt: "Return the fixed kind",
-        schema: z.object({
-          kind: z.literal("foo"),
-        }),
-      });
-      const compiled = instruct.render();
-
-      expect(compiled).toContain('- kind: "foo"');
-      expect(compiled).toContain('"kind": "foo"');
-    });
-
-    it("renders a valid JSON example object with enum and literal values", () => {
-      const instruct = new Instruct({
-        prompt: "Classify the result",
-        schema: z.object({
-          status: z.enum(["success", "partial", "fail"]),
-          kind: z.literal("foo"),
-          tags: z.array(z.enum(["a", "b", "c"])),
-        }),
-      });
-      const compiled = instruct.render();
-
-      const exampleMatch = compiled.match(/Example:\n([\s\S]*?)\n\nClassify the result/);
-      expect(exampleMatch?.[1]).toBeDefined();
-      expect(JSON.parse(exampleMatch![1])).toEqual({
-        status: "success",
-        kind: "foo",
-        tags: ["a"],
-      });
+      expect(() => instruct.validate()).toThrow("Date cannot be represented in JSON Schema");
     });
   });
 });
