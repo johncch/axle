@@ -1554,7 +1554,7 @@ A turn whose send resolved `ok: false` keeps how it failed as
 
 The Agent holds no turns: it emits events, and whoever wants a transcript
 folds and stores them. Attach a `Transcript`, persist its `turns` alongside
-`agent.snapshot()`, and pass the saved turns to the constructor on restore.
+`agent.session`, and pass the saved turns to the constructor on restore.
 Compaction (see below) appears in the fold as an ordinary `compaction` part;
 renderers that don't handle that part type simply render nothing for it.
 
@@ -2132,12 +2132,12 @@ long-lived sessions and client hooks are your application's, built on
 requests are built from it, and compaction replaces it. Read it for inspection
 or to drive your own persistence; mutating the returned array has no effect.
 
-To persist and resume an agent, snapshot it and construct a new agent with the
-session. The snapshot is the resumable state (`{ sessionId, messages }`) —
+To persist and resume an agent, read its session and construct a new agent
+with it. The session is the resumable state (`{ sessionId, messages }`) —
 persist your transcript's turns next to it if you want the transcript back:
 
 ```typescript
-const session = await agent.snapshot(); // waits for the agent to go idle
+const session = agent.session;
 const turns = transcript.turns;
 // ...store both, then later:
 const resumed = new Agent(config, session);
@@ -2145,11 +2145,13 @@ const resumedTranscript = new Transcript(turns);
 resumed.on((event) => resumedTranscript.apply(event));
 ```
 
-`snapshot()` resolves at once when the agent is idle. When it is busy,
-`snapshot()` resolves once everything queued has finished, including sends
-queued after the call, so the session it returns never holds a half-finished
-turn. It is not queued work itself: `clear()` does not cancel it. To save as
-each operation finishes, register `onSettled` instead:
+`agent.session` returns the state as it stands, mid-turn included, and can
+be read anywhere, a callback such as `onStep` included. Read mid-turn it
+holds the turn's user message and the steps that have ended, which is still
+a conversation the provider accepts. `agent.snapshot()` is deprecated: it
+resolves with the same value once the agent is idle, and deadlocks when
+awaited inside a callback. To save as each operation finishes, register
+`onSettled`:
 
 ```typescript
 agent.on((event) => transcript.apply(event));
@@ -2162,7 +2164,7 @@ agent.onSettled(async (session, operation) => {
 It fires once for every send or manual compaction that started, however it
 ended: after its turn and its continuation, before `operation:end`, the
 handle settles or the next operation starts. Inline turns don't fire it on
-their own. `session` is the same value `snapshot()` returns. `operation` is
+their own. `session` is `agent.session` at that moment. `operation` is
 a `SettledOperation`: its `kind` (`"send"` or `"compaction"`), its `id` (the
 one its `pending:queued` turn carried, so you can tell which queued row
 settled), and a `result` with what the handle settles with —
@@ -2270,7 +2272,7 @@ agent.onStep(async (step) => {
       ...row,
     })),
   );
-  await sessions.save({ sessionId: agent.sessionId, messages: agent.messages });
+  await sessions.save(agent.session);
 });
 ```
 
@@ -2285,7 +2287,9 @@ reports. `turn:end` is the authoritative record of what a turn cost; a
 step's usage is the early copy, so a turn that never reaches `turn:end` does
 not lose its spend.
 
-The step's messages are already in `agent.messages` when the hook fires, and
+`agent.session` is the `{ sessionId, messages }` to restore from, read at
+once. The step's messages are already in
+`agent.messages` when the hook fires, and
 `agent.messages` is always a conversation the provider accepts: an assistant
 message that asks for tools is added together with its tool results. So what
 you save there can be restored and sent to. A turn that fails or is
@@ -2303,7 +2307,7 @@ with the thrown error and the handle rejects with it. Catch your own errors
 if saving should be best effort. A `cancel()` while a callback runs aborts
 `step.signal` and takes effect when the callback returns. Axle applies no
 timeout. Inline turns fire the hook too. As with `onStart`, don't await
-`send()`, `compact()` or `snapshot()` inside it.
+`send()`, `compact()` or `snapshot()` inside it; read `agent.session`.
 
 To learn when the agent has finished everything it was given, register
 `onIdle`:

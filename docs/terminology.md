@@ -355,8 +355,9 @@ mirror a live transcript.
 
 **Session** — the continuable identity of a conversation (`sessionId`).
 `AgentSession` is its serialized form — the pure continuation
-`{ sessionId, messages }` that `agent.snapshot()` captures and the `Agent`
-constructor restores. The transcript is not part of it; consumers persist its
+`{ sessionId, messages }` that `agent.session` returns and the `Agent`
+constructor restores. It can be read at any moment, mid-turn included.
+`agent.snapshot()` is the deprecated form that waits for idle first. The transcript is not part of it; consumers persist its
 state alongside.
 
 **Event store** — where a served agent's sequenced events are kept and

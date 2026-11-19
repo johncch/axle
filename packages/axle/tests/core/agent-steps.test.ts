@@ -363,6 +363,33 @@ describe("Agent onStep", () => {
     expect(steps[0].signal.aborted).toBe(true);
   });
 
+  test("session read inside the hook is the state committed so far, without waiting for idle", async () => {
+    const { provider } = scriptedProvider(["tool", "text"]);
+    const agent = new Agent({
+      provider,
+      model: "mock",
+      sessionId: "s1",
+      tools: [lookupTool()],
+    });
+    const seen: { sessionId: string; roles: string[]; busy: boolean }[] = [];
+    agent.onStep(() => {
+      const session = agent.session;
+      seen.push({
+        sessionId: session.sessionId,
+        roles: session.messages.map((m) => m.role),
+        busy: agent.status.phase === "busy",
+      });
+    });
+
+    await agent.send("hi").final;
+
+    expect(seen).toEqual([
+      { sessionId: "s1", roles: ["user", "assistant", "tool"], busy: true },
+      { sessionId: "s1", roles: ["user", "assistant", "tool", "assistant"], busy: true },
+    ]);
+    expect(agent.session).toEqual(await agent.snapshot());
+  });
+
   test("a model call cancelled while writing a tool call is a step that adds no message", async () => {
     const mock = scriptedProvider(["cut-in-tool-call"]);
     const agent = new Agent({ provider: mock.provider, model: "mock", tools: [lookupTool()] });

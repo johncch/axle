@@ -282,7 +282,7 @@ export class Agent {
    *
    * Do not await `send()`, `compact()` or `snapshot()` on this agent from
    * inside a callback: the callback holds the queue they wait for, so the
-   * nested call deadlocks.
+   * nested call deadlocks. Read `session` for the state to save.
    */
   onStep(callback: StepCallback) {
     this.stepCallbacks.push(callback);
@@ -298,9 +298,8 @@ export class Agent {
    * Fires once for every operation that started, however it ended: after
    * its turn and its continuation, before `operation:end` is emitted, the
    * handle settles or the next operation starts. Inline turns sent by a
-   * continuation do not fire it on their own. The session is the one
-   * `snapshot()` returns; unlike `snapshot()`, it does not wait behind queued
-   * operations. The operation carries what the handle settles with: the
+   * continuation do not fire it on their own. The session is `session` as
+   * it stands when the operation ends, before any queued operation starts. The operation carries what the handle settles with: the
    * result on success, the rejection reason otherwise, the same
    * `AxleAgentAbortError`, abort reason included, a cancelled handle
    * rejects with.
@@ -361,6 +360,18 @@ export class Agent {
   /** The active, model-facing conversation. Requests are built from it; compaction replaces it. */
   get messages(): AxleMessage[] {
     return [...this.messagesInternal];
+  }
+
+  /**
+   * The serializable session state to resume from later, as it stands now:
+   * the session id and the active model-facing conversation. Pass it to the
+   * `Agent` constructor to restore. Safe inside any callback, `onStep`
+   * included. Mid-turn it holds the turn's user message and the steps that
+   * have ended, which is a conversation the provider accepts. It contains
+   * no renderable turn state: persist your `Transcript.turns` alongside it.
+   */
+  get session(): AgentSession {
+    return { sessionId: this.sessionId, messages: this.messages };
   }
 
   context(): ContextUsage {
@@ -1035,19 +1046,19 @@ export class Agent {
    * Do not await this from inside a running send (a tool's `execute`,
    * `onToolCall`, or a compaction callback) or an `onSettled` callback: the
    * agent cannot go idle until they return, so the nested call deadlocks.
+   *
+   * @deprecated Read `session`, which returns the same value without
+   * waiting. To save a state at rest, read it in an `onSettled` or `onIdle`
+   * callback.
    */
   snapshot(): Promise<AgentSession> {
-    if (this.scheduler.status.phase === "idle") return Promise.resolve(this.currentSession());
+    if (this.scheduler.status.phase === "idle") return Promise.resolve(this.session);
     const { promise, resolve } = Promise.withResolvers<AgentSession>();
     const unsubscribe = this.onIdle(() => {
       unsubscribe();
-      resolve(this.currentSession());
+      resolve(this.session);
     });
     return promise;
-  }
-
-  private currentSession(): AgentSession {
-    return { sessionId: this.sessionId, messages: this.messages };
   }
 
   private notifyIdle(): void {
@@ -1096,7 +1107,7 @@ export class Agent {
 
   private async settle(operation: SettledOperation): Promise<void> {
     if (this.settledCallbacks.length === 0) return;
-    const session = this.currentSession();
+    const session = this.session;
     await this.runCallbacks(
       "agent.settle",
       { kind: operation.kind },

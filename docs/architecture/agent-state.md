@@ -10,8 +10,10 @@ Vocabulary is defined in [terminology.md](../terminology.md).
 
 1. **The Agent is resumable state, not a record.** `AgentSession =
 { sessionId, messages }` — the session id and the active model-facing
-   conversation, nothing else. `agent.snapshot()` returns exactly this;
-   `new Agent(config, session)` restores it. Unknown keys in stored
+   conversation, nothing else. `agent.session` returns exactly this, as it
+   stands now; `new Agent(config, session)` restores it. `agent.snapshot()`
+   resolves with the same value once the Agent is idle and is deprecated
+   (2026-11-18). Unknown keys in stored
    sessions are ignored.
 2. **The Agent holds no transcript.** It emits `TurnEvent`s; whoever wants
    a transcript folds them with the shipped in-memory `Transcript` and stores
@@ -116,7 +118,8 @@ type: "start", message } }` and no user message committed, `onSettled`
    A consumer that reads its `Transcript.turns` inside `onSettled` holds
    turns and messages that match exactly. The session is its own channel:
    it never rides the event stream, which consumers forward to clients.
-   `snapshot()` remains the pull form and waits for the Agent to go idle. A
+   `agent.session` is the pull form; the deprecated `snapshot()` waits for
+   the Agent to go idle first. A
    handle nobody reads is not an error: the scheduler marks every `final`
    as handled, so a rejection the consumer took from a hook or from
    `pending:dropped` raises no unhandled rejection. `final` still rejects
@@ -317,7 +320,8 @@ type: "start", message } }` and no user message committed, `onSettled`
     callbacks run aborts `signal` and takes effect when they return; the
     callbacks are not cancelled, because they are saving spend that already
     happened. The Agent adds no timeout. A callback must not await `send()`,
-    `compact()` or `snapshot()`. (Step hook 2026-11-13.)
+    `compact()` or `snapshot()`; it reads `agent.session` for the state to
+    save. (Step hook 2026-11-13.)
 16. **`messages` is always a conversation the provider accepts.** The Agent
     commits a turn's messages step by step, not when the turn ends: the user
     message when the turn opens (invariant 5), then each step's messages as
@@ -1073,6 +1077,22 @@ and adds nothing to it. A compaction is reported as a step so the host
 saves after it, with empty usage, because `usage` means what the Agent saw
 spent and the compactor is not the Agent's.
 
+`agent.session` (2026-11-18) is that read as one value: the
+`{ sessionId, messages }` that `snapshot()` resolves with, taken now. A
+step callback could not call `snapshot()`, which waits for an idle the
+callback is holding off, so hosts assembled the session by hand from
+`agent.sessionId` and `agent.messages`. It is a getter beside `messages`
+and `status`, not a second mode of `snapshot()`, so the call that promises
+a state at rest keeps promising it. The session is not passed to the
+callback as `onSettled` passes it: the step would carry a copy of the
+conversation on every firing, for hosts that save only usage as well.
+
+`snapshot()` is deprecated with it (2026-11-18). Waiting for idle was how a
+caller got a conversation it could restore; since the per-step commit every
+read is one, so the wait buys only "nothing is running", and `onSettled`
+and `onIdle` already mark those moments. Its wait is also what deadlocks
+inside every callback. It keeps working, unchanged, until it is removed.
+
 The turn's own usage is now built from the same steps, so the two cannot
 disagree: `turn:end` reports the sum of the steps. Before, the turn added up
 usage from stream events, which left out a failed or refused request and
@@ -1368,7 +1388,9 @@ programmatic refusal and stays a drop.
   a waiting snapshot has little left to do, but mid-turn the messages can
   hold a user message with no reply, and `agent.messages` already returns
   the current state. Changing what the same call returns would also break
-  consumers with no error to show for it.
+  consumers with no error to show for it. `snapshot()` still waits; the
+  immediate read arrived as a separate getter, `agent.session`
+  (2026-11-18), once per-step commit made the mid-turn state restorable.
 - **Leaving idle to the consumer** (2026-10-09): a consumer can derive it from
   `onSettled` with an empty queue plus `pending:dropped`, but a drop during
   the last settle and a drop just after it need opposite handling, and

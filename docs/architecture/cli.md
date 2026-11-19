@@ -49,7 +49,7 @@ against it; divergence is a defect. State ownership is defined in
 
 3. **Every run is a session.** Chat, one-shot, recipe run, and every
    individual batch item persist the same shape — the recipe's agent keys
-   as written (`AgentRecipe`) + `agent.snapshot()` + `Transcript.turns` +
+   as written (`AgentRecipe`) + `agent.session` + `Transcript.turns` +
    the session's lifetime `usage` + cwd — to `~/.axle/sessions/cli/<id>.json`,
    saved on every exit path. Anything
    that produced a session can be re-entered with `axle resume <id>`.

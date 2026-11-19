@@ -145,7 +145,7 @@ class SessionRuntime {
   }
 
   async save(): Promise<boolean> {
-    return this.write(await this.agent.snapshot(), this.transcript.turns);
+    return this.write(this.agent.session, this.transcript.turns);
   }
 
   saveOnSettle(): void {
