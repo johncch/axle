@@ -158,12 +158,11 @@ produced (often empty) and an Instruct send may resolve `ok: false` with a
 parse error — no final answer exists yet by design.
 
 Cancellation is handle-local, and the user message commits when its
-`turn:user` event is emitted, after setup succeeds. Until then the send is
+`turn:user` event is emitted, as the send starts. Until then the send is
 _pending_: `send()` emits `pending:queued` as soon as it is called, and a
 send that ends before its turn opens emits `pending:dropped` (see
 [Pending operations](#pending-operations)). Cancelling a queued handle
-or a running handle during setup removes it without committing its user
-message. Once `turn:user` is emitted, the committed message remains and the
+removes it without committing its user message. Once `turn:user` is emitted, the committed message remains and the
 agent turn is marked cancelled. This includes cancellation during
 `beforeTurn` compaction: compaction is ordinary work inside the already-open
 turn and cancellation does not unwind the transcript or active conversation. Other
@@ -1400,6 +1399,10 @@ The optional `name` field prefixes all tool names from that server (e.g.
 `wc_word_count`) to avoid collisions when using multiple MCPs. When omitted,
 the server's self-reported name is used as the prefix if available.
 
+The Agent lists a server's tools on the first send after it was added. If
+the listing fails, that send rejects with the error, the user message stays
+in the conversation, and the agent turn ends `error` with the error on it.
+
 HTTP transport works the same way:
 
 ```typescript
@@ -1484,6 +1487,14 @@ provider's answer as a `TurnFailure` (`kind`, `message`, and `type`,
 `AxleProviderFailure` without `usage`, `raw` and `cause`; the turn already
 has `usage`, and the other two stay on the result. A parse failure ends the
 turn `error` with `kind: "parse"`.
+
+`turn:end` carries `error` when the send rejected with a thrown error: a
+fatal tool error, an MCP server whose tools could not be listed, a throwing
+`onStep`. It is `{ message, code? }`, with `code` set only when Axle threw
+the error. A turn has `failure` or `error`, never both. On a cancelled
+turn, `turn:end` carries `cancelReason` (`{ type: "timeout", limitMs }`)
+when `turnTimeoutMs` ran out, and nothing when the caller cancelled. The
+`Turn` keeps all three, so stored turns say how each one ended.
 
 `turn:end` carries `reason` when the model's final answer arrived:
 `"stop"` when it finished, `"length"` when it reached the output token
@@ -1572,7 +1583,8 @@ compaction — and the turn that arrives has the same id, so a renderer keyed
 by id replaces the preview in place. If the operation ends first,
 `pending:dropped` removes it with a `reason`. The reason is
 `{ type: "cancelled" }` for a cancelled handle, `agent.clear()`, or an
-aborted signal, and `{ type: "error", error }` when setup failed. A turn
+aborted signal, and `{ type: "error", error }` when an `onStart` callback
+refused the start. A turn
 with `status: "pending"` never appears in `turns`.
 
 Pending turns are live state. They are never part of `turns`, so saving
@@ -1703,8 +1715,12 @@ run concurrently, so `tool:exec-start` fires for every call before any
 completes and their delta, complete and error events interleave; key on `id`.
 `tool:request` carries `kind: "deferred"` for a deferred tool, and
 `tool:waiting` fires when its validated call has been handed to `onToolCall`.
-Text and thinking parts stream sequentially within a step, so their deltas
-belong to the most recently opened part.
+Text and thinking events carry `index`, the part's position in the step's
+assistant message, so each one names its part. Most arrive while the part
+is open, but an update can follow the part's end: Gemini sends a grounding
+citation after the text it supports, as a `text:citation` with that text
+part's `index`. On `agent.on`, the same citation arrives as a
+`text:citation` for a part whose `part:end` has already been emitted.
 
 The `step:complete` and `tool-results:complete` events carry complete
 `AxleAssistantMessage` and `AxleToolCallMessage` objects for client-server
@@ -2267,8 +2283,7 @@ added: the model call's, plus any its tools reported, such as a subagent's.
 The rows of a turn's steps, in order, are the `usage` its `turn:end`
 reports. `turn:end` is the authoritative record of what a turn cost; a
 step's usage is the early copy, so a turn that never reaches `turn:end` does
-not lose its spend. A host that saves per step replaces the turn's rows with
-the `turn:end` usage when it arrives.
+not lose its spend.
 
 The step's messages are already in `agent.messages` when the hook fires, and
 `agent.messages` is always a conversation the provider accepts: an assistant
@@ -2346,7 +2361,7 @@ agent.on((event) => {
 `operation:end` comes after `onSettled` and just before the handle settles;
 `agent:idle` comes just before `onIdle` fires. A send that started ends with
 `operation:end`. `pending:dropped` ends only its preview: a send dropped
-before its turn opened (a setup failure, a throwing `onStart`) carries both,
+before its turn opened (a throwing `onStart`) carries both,
 and one withdrawn while still queued carries `pending:dropped` alone.
 `Transcript.apply` reports lifecycle events handled and folds nothing from
 them, so `agent.on(transcript.apply)` needs no filter.
@@ -2598,6 +2613,120 @@ pnpm tsx packages/axle/examples/remote/client.ts
 
 The invariants, what is deferred and why, and the rejected alternatives
 are in [docs/architecture/remote-agent.md](../../docs/architecture/remote-agent.md).
+
+### Analyzing a conversation (experimental)
+
+`@fifthrevision/axle/analyze` reads stored turns and answers questions
+about what the agent did: what failed, what it recovered from, how the
+conversation ended. It is separate from the `Agent`. It takes
+`Transcript.turns`, from a live transcript or from storage, and returns
+plain data.
+
+```typescript
+import { analyze, byAgent, failed, named, streaks } from "@fifthrevision/axle/analyze";
+
+const a = analyze(transcript.turns);
+
+a.tools.filter(failed); // tool calls that errored
+a.tools.some(named("read-file")); // did it ever call read-file?
+a.errors.filter((e) => e.recovered); // errors the model got past by itself
+a.turns.filter((t) => t.rescue).length; // user turns that followed a failed turn
+streaks(a.turns.filter(byAgent), failed); // runs of failed turns
+```
+
+`analyze` returns six lists of _segments_, in the order things happened.
+A segment is one piece of the conversation. It says what happened and
+where, and carries no content.
+
+| List          | Holds                                                        |
+| ------------- | ------------------------------------------------------------ |
+| `turns`       | the user and agent turns                                     |
+| `tools`       | tool calls: ordinary, deferred and provider tools            |
+| `subagents`   | subagent calls, each with the same six lists for its own run |
+| `compactions` | compaction attempts                                          |
+| `texts`       | the pieces of text the agent wrote, as a length              |
+| `errors`      | every segment that failed, of any kind                       |
+
+A turn segment has the same lists for that turn, with `parts` (its
+segments in order) in place of `turns`. The same segment is one object
+wherever you reach it, so `a.tools[0]`, its turn's `parts` entry and, if
+it failed, its `a.errors` entry are identical.
+
+Every segment has `turnId`, `turnIndex` and `depth`, and a part has
+`partId`. The fields worth knowing:
+
+- **`status`**: the turn's or part's own status. `failed`, `completed`
+  and `cancelled` read it.
+- **`error`**: `{ type, message, code? }` on a segment that failed. On a
+  turn, `type` is the failure kind (`api`, `incomplete`, `refusal`,
+  `parse`) or `thrown`; on a tool call it is the tool error type.
+- **`recovered`**: on a failed segment, whether the turn it happened in
+  went on to complete.
+- **`rescue`**: on a user turn, whether the turn before it was a failed
+  agent turn.
+- **`cancelled`**: on a cancelled turn, `"timeout"` or `"user"`.
+- **`tokens`, `ms`**: a turn's usage and duration. A tool call has `ms`.
+- **`name`, `parameters`**: on tool and subagent calls. A deferred tool
+  call also has `callId`.
+- **`threadId`**: on a user turn a continuation sent inline.
+
+The JavaScript array methods are the query language. The predicates are
+named filters to pass to them: `failed`, `completed`, `cancelled`,
+`byUser`, `byAgent` and `named(name)`. Five functions cover what a filter
+can't:
+
+| Function                   | Returns                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `streaks(list, predicate)` | Runs of two or more consecutive matches                                        |
+| `repeats(list)`            | Groups of the same call or the same error made more than once                  |
+| `sum(list, pick)`          | A total, such as `sum(a.turns.filter(failed), (t) => t.ms)`                    |
+| `flatten(a)`               | The same lists with every subagent's segments folded in, told apart by `depth` |
+| `partOf(turns, segment)`   | The original turn or part, for when you need the content                       |
+
+Subagents are kept apart: `a.tools` is what this agent called, and
+`a.subagents[0].tools` is what that subagent called. `flatten(a)` merges
+them. A turn's `tokens` already include its subagents' usage, so
+`flatten` leaves `turns` as the top-level turns.
+
+```typescript
+import { flatten, partOf } from "@fifthrevision/axle/analyze";
+
+const all = flatten(a);
+const rows = all.tools.filter(failed).map((call) => ({
+  tool: call.name,
+  type: call.error?.type,
+  message: call.error?.message,
+  recovered: call.recovered,
+}));
+
+const part = partOf(transcript.turns, a.tools[0]); // the full part, with its result
+```
+
+`simplify` is the one function that keeps content. It reduces turns to
+what was said and done, for a person or a model to read: ids, timing,
+usage and annotations are removed, and strings longer than `maxChars`
+(800 by default) are cut and end with `…`.
+
+```typescript
+import { simplify } from "@fifthrevision/axle/analyze";
+
+const prompt = JSON.stringify(simplify(transcript.turns, { maxChars: 800 }));
+```
+
+Each simplified turn is `{ owner, status, error?, parts }`. A part is a
+`text`, a `thinking`, a `file` (name only), a `tool` (`name`, `parameters`,
+and `result` or `error`), a `subagent` (the same, plus its own `turns`) or
+a `compaction`.
+
+For one send, `analyze([result.turn])` reads the agent turn the send
+resolved with, with no `Transcript` attached.
+
+`analyze` sees what the turns record. A queued send cancelled before it
+started and an error thrown before any turn opened leave no turn, so
+neither appears.
+
+The design and its rejected alternatives are in
+[docs/architecture/analyze.md](../../docs/architecture/analyze.md).
 
 ## Known Limitations
 

@@ -199,7 +199,32 @@ asked for tools never ends one.
 on the `Turn` as `failure`: the provider's answer from a send that resolved
 `ok: false`, minus what only the result needs (`usage`, `raw`, `cause`).
 Present only on a turn whose `status` is `error` and whose send resolved;
-a turn that ended because the call threw has none.
+a turn that ended because the call threw has a _turn error_.
+
+**Turn error** — the thrown error an agent turn ended on, carried on
+`turn:end` and kept on the `Turn` as `error`: its message, and its `code`
+when Axle threw it. Present only on a turn whose `status` is `error` and
+whose send rejected: a fatal tool error, a failed MCP tool listing, a
+throwing `onStep`, or a failed manual compaction. A turn has a turn
+failure or a turn error, never both, and a cancelled turn has neither.
+
+**Cancel reason** — on a cancelled turn, why: `cancelReason` on `turn:end`
+and the `Turn` is the _turn timeout_'s `{ type: "timeout", limitMs }` when
+running out of time cancelled it, and absent when the caller did.
+
+**Analyze** — reading stored turns to understand what an agent did:
+`analyze(turns)` and the predicates and functions exported beside it from
+`@fifthrevision/axle/analyze`. It is separate from the `Agent`, takes
+`Turn[]` and nothing else, and returns plain data. Normative design:
+[architecture/analyze.md](./architecture/analyze.md).
+
+**Segment** — one piece of a conversation as `analyze` reports it: a turn,
+a tool call, a subagent call, a compaction, or a piece of text the agent
+wrote. A segment says what happened and where (`turnId`, `partId`,
+`turnIndex`, `depth`) and carries no content. It is not a `Turn` or a
+`TurnPart`: those are shaped for rendering, a segment for counting,
+filtering and storing. An error is not a separate thing; it is a segment
+whose `status` is `error`.
 
 **Send** — the Agent API verb: one scheduled conversation exchange
 (`agent.send(...)`), executed as a FIFO queue item. The consumer-facing unit of
@@ -223,7 +248,7 @@ the queue until it returns and can run _inline turns_ through its context.
 It is attached to one send, is not queued, has no pending entry of its own,
 and is never nested: an inline turn carries no continuation. It runs when
 its turn resolved with a result, `ok` or not; a rejected turn (cancelled,
-a fatal tool error, a setup failure) skips it. The word means only this;
+a fatal tool error, any other thrown error) skips it. The word means only this;
 the Agent's resumable state is the _session_.
 
 **Inline turn** — a turn a continuation runs through `ctx.send()`. It is an
@@ -323,7 +348,7 @@ opened: the user turn a queued `send()` will commit, or an agent turn with
 one `pending` compaction part for a queued manual compaction. It is a `Turn`
 with `status: "pending"` and the id the real turn will carry, and it lives
 in `Transcript.pending`, never in `turns`. It ends when that turn opens or
-when the operation is dropped (cancelled, or failed during setup). Pending
+when the operation is dropped (cancelled, or refused by `onStart`). Pending
 turns are live state: they are not saved, a transcript restored from saved
 turns has none, and a consumer seeds them through the constructor only to
 mirror a live transcript.

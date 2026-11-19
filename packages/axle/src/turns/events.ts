@@ -7,8 +7,10 @@ import type {
   CompactionUpdate,
   OperationOutcome,
   PendingDropReason,
+  TimeoutReason,
   TimingInfo,
   Turn,
+  TurnError,
   TurnFailure,
   TurnOutput,
   TurnPart,
@@ -45,6 +47,8 @@ export type TurnEvent<TAnnotation extends Annotation = Annotation> =
       status: TurnStatus;
       usage: Stats;
       failure?: TurnFailure;
+      error?: TurnError;
+      cancelReason?: TimeoutReason;
       reason?: "stop" | "length";
       output?: TurnOutput;
       timing?: TimingInfo;

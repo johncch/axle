@@ -1,3 +1,4 @@
+import { isAxleError } from "../errors/guard.js";
 import type { AxleProviderFailure } from "../execution/helpers.js";
 import type { StreamEvent } from "../execution/stream.js";
 import type { AxleUserMessage } from "../messages/message.js";
@@ -12,9 +13,11 @@ import type {
   SubagentAction,
   TextPart,
   ThinkingPart,
+  TimeoutReason,
   TimingInfo,
   ToolAction,
   Turn,
+  TurnError,
   TurnFailure,
   TurnOutput,
   TurnPart,
@@ -44,6 +47,13 @@ function completeTiming(timing: TimingInfo | undefined, now = new Date()): Timin
   return {
     ...timing,
     end,
+  };
+}
+
+export function turnErrorOf(error: unknown): TurnError {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    ...(isAxleError(error) ? { code: error.code } : {}),
   };
 }
 
@@ -123,6 +133,7 @@ export class TurnEventBuilder {
   private currentTurnTiming: TimingInfo | undefined;
   private currentTextPart: { id: string; timing?: TimingInfo } | null = null;
   private currentThinkingPart: { id: string; timing?: TimingInfo } | null = null;
+  private stepPartIds = new Map<number, string>();
   private openActions = new Map<
     string,
     {
@@ -146,6 +157,7 @@ export class TurnEventBuilder {
     this.currentTurnTiming = startTiming();
     this.currentTextPart = null;
     this.currentThinkingPart = null;
+    this.stepPartIds.clear();
     this.openActions.clear();
     this.accumulatedUsage = createStats();
     this.finalAnswerReason = undefined;
@@ -160,8 +172,7 @@ export class TurnEventBuilder {
 
     switch (event.type) {
       case "step:start":
-        // The stream emits step:start per model request, but the agent
-        // presents the entire tool loop as one turn.
+        this.stepPartIds.clear();
         break;
 
       case "text:start": {
@@ -169,19 +180,14 @@ export class TurnEventBuilder {
         const partId = crypto.randomUUID();
         const part: TextPart = { id: partId, type: "text", text: "", timing: startTiming() };
         this.currentTextPart = { id: partId, timing: part.timing };
+        this.stepPartIds.set(event.index, partId);
         events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "text:delta": {
-        if (this.currentTextPart) {
-          events.push({
-            type: "text:delta",
-            turnId,
-            partId: this.currentTextPart.id,
-            delta: event.delta,
-          });
-        }
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) events.push({ type: "text:delta", turnId, partId, delta: event.delta });
         break;
       }
 
@@ -225,52 +231,39 @@ export class TurnEventBuilder {
           ...(event.providerMetadata ? { providerMetadata: event.providerMetadata } : {}),
         };
         this.currentThinkingPart = { id: partId, timing: part.timing };
+        this.stepPartIds.set(event.index, partId);
         events.push({ type: "part:start", turnId, part });
         break;
       }
 
       case "thinking:raw-delta": {
-        if (this.currentThinkingPart) {
-          events.push({
-            type: "thinking:raw-delta",
-            turnId,
-            partId: this.currentThinkingPart.id,
-            delta: event.delta,
-          });
-        }
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) events.push({ type: "thinking:raw-delta", turnId, partId, delta: event.delta });
         break;
       }
 
       case "text:citation": {
-        if (this.currentTextPart) {
-          events.push({
-            type: "text:citation",
-            turnId,
-            partId: this.currentTextPart.id,
-            citation: event.citation,
-          });
-        }
+        const partId = this.stepPartIds.get(event.index);
+        if (partId)
+          events.push({ type: "text:citation", turnId, partId, citation: event.citation });
         break;
       }
 
       case "thinking:summary-delta": {
-        if (this.currentThinkingPart) {
-          events.push({
-            type: "thinking:summary-delta",
-            turnId,
-            partId: this.currentThinkingPart.id,
-            delta: event.delta,
-          });
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) {
+          events.push({ type: "thinking:summary-delta", turnId, partId, delta: event.delta });
         }
         break;
       }
 
       case "thinking:update": {
-        if (this.currentThinkingPart) {
+        const partId = this.stepPartIds.get(event.index);
+        if (partId) {
           events.push({
             type: "thinking:update",
             turnId,
-            partId: this.currentThinkingPart.id,
+            partId,
             continuity: event.continuity,
             providerMetadata: event.providerMetadata,
           });
@@ -533,6 +526,7 @@ export class TurnEventBuilder {
     failure?: AxleProviderFailure,
     usage?: Stats,
     output?: TurnOutput,
+    thrown?: { error?: TurnError; cancelReason?: TimeoutReason },
   ): TurnEvent[] {
     const turnId = this.currentTurnId;
     if (!turnId) return [];
@@ -556,6 +550,8 @@ export class TurnEventBuilder {
       status: outcome,
       usage: { ...(usage ?? this.accumulatedUsage) },
       ...(failure ? { failure: turnFailureOf(failure) } : {}),
+      ...(thrown?.error ? { error: thrown.error } : {}),
+      ...(thrown?.cancelReason ? { cancelReason: thrown.cancelReason } : {}),
       ...(this.finalAnswerReason ? { reason: this.finalAnswerReason } : {}),
       ...(output ? { output } : {}),
       timing,

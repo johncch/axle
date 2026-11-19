@@ -49,31 +49,33 @@ export type StreamEvent =
   | { type: "step:complete"; message: AxleAssistantMessage; usage?: Stats }
   | { type: "tool-results:start"; id: string }
   | { type: "tool-results:complete"; message: AxleToolCallMessage }
-  // Text streaming (parts stream sequentially; deltas belong to the last opened part)
-  | { type: "text:start" }
-  | { type: "text:delta"; delta: string; accumulated: string }
-  | { type: "text:citation"; citation: Citation; citations: Citation[] }
-  | { type: "text:end"; final: string }
+  // Text streaming (`index` is the part's position in the step's assistant message)
+  | { type: "text:start"; index: number }
+  | { type: "text:delta"; index: number; delta: string; accumulated: string }
+  | { type: "text:citation"; index: number; citation: Citation; citations: Citation[] }
+  | { type: "text:end"; index: number; final: string }
   // Unanchored citation/source parts
   | {
       type: "citation";
       citations: Citation[];
       providerMetadata?: Record<string, unknown>;
     }
-  // Thinking streaming
+  // Thinking streaming (`index` as for text)
   | {
       type: "thinking:start";
+      index: number;
       continuity?: ThinkingContinuity;
       providerMetadata?: Record<string, unknown>;
     }
-  | { type: "thinking:raw-delta"; delta: string; accumulated: string }
-  | { type: "thinking:summary-delta"; delta: string; accumulated: string }
+  | { type: "thinking:raw-delta"; index: number; delta: string; accumulated: string }
+  | { type: "thinking:summary-delta"; index: number; delta: string; accumulated: string }
   | {
       type: "thinking:update";
+      index: number;
       continuity?: ThinkingContinuity;
       providerMetadata?: Record<string, unknown>;
     }
-  | { type: "thinking:end"; summary?: string; raw?: string }
+  | { type: "thinking:end"; index: number; summary?: string; raw?: string }
   // Tool calls (correlated by `id`)
   | { type: "tool:request"; id: string; name: string; kind?: "tool" | "agent" | "deferred" }
   | {

@@ -89,6 +89,47 @@ describe("Transcript", () => {
     });
   });
 
+  test("records the thrown error turn:end carries on the turn", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+
+    transcript.apply({
+      type: "turn:end",
+      turnId: "t1",
+      status: "error",
+      usage: { in: 0, out: 0, breakdown: [] },
+      error: { message: "Sandbox terminated", code: "TOOL_FATAL_ERROR" },
+    });
+
+    expect(transcript.turns[0]).toMatchObject({
+      status: "error",
+      error: { message: "Sandbox terminated", code: "TOOL_FATAL_ERROR" },
+    });
+    expect(transcript.turns[0]).not.toHaveProperty("failure");
+  });
+
+  test("records a timeout as the cancel reason, and none for a caller's cancel", () => {
+    const transcript = new Transcript();
+    transcript.apply({ type: "turn:start", turnId: "t1" });
+    transcript.apply({
+      type: "turn:end",
+      turnId: "t1",
+      status: "cancelled",
+      usage: { in: 0, out: 0, breakdown: [] },
+      cancelReason: { type: "timeout", limitMs: 20 },
+    });
+    transcript.apply({ type: "turn:start", turnId: "t2" });
+    transcript.apply({
+      type: "turn:end",
+      turnId: "t2",
+      status: "cancelled",
+      usage: { in: 0, out: 0, breakdown: [] },
+    });
+
+    expect(transcript.turns[0]!.cancelReason).toEqual({ type: "timeout", limitMs: 20 });
+    expect(transcript.turns[1]).not.toHaveProperty("cancelReason");
+  });
+
   test("records the reason turn:end carries on the turn", () => {
     const transcript = new Transcript();
     transcript.apply({ type: "turn:start", turnId: "t1" });

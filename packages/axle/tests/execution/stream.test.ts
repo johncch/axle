@@ -280,6 +280,39 @@ describe("stream()", () => {
       expect(events.some((event) => event.type === "thinking:update")).toBe(true);
     });
 
+    test("a citation that arrives after its text closed names that text part by index", async () => {
+      const citation = {
+        source: { type: "web" as const, title: "OpenAI", url: "https://openai.com" },
+        outputSpan: { start: 0, end: 6 },
+      };
+      const chunks: AnyStreamChunk[] = [
+        startChunk(),
+        textStartChunk(0),
+        textChunk(0, "OpenAI"),
+        textCompleteChunk(0),
+        { type: "thinking-start", data: { index: 1 } },
+        thinkingCompleteChunk(1),
+        { type: "text-citation", data: { index: 0, citation } },
+        completeChunk(),
+      ];
+      const provider = makeProvider({ streamChunks: [chunks] });
+      const { events, callback } = collectEvents();
+
+      const result = stream({ provider, model: "test-model", messages: [] });
+      result.on(callback);
+      const final = await result.final;
+
+      expect(final.ok && final.final.content[0]).toMatchObject({ citations: [citation] });
+      expect(events.filter((event) => "index" in event).map((e) => [e.type, e.index])).toEqual([
+        ["text:start", 0],
+        ["text:delta", 0],
+        ["text:end", 0],
+        ["thinking:start", 1],
+        ["thinking:end", 1],
+        ["text:citation", 0],
+      ]);
+    });
+
     test.each([
       ["raw then summary", ["thinking-raw-delta", "thinking-summary-delta"]],
       ["summary then raw", ["thinking-summary-delta", "thinking-raw-delta"]],
@@ -304,6 +337,7 @@ describe("stream()", () => {
       expect(final.final.content).toEqual([{ type: "thinking", text: "chain", summary: "gist" }]);
       expect(events.find((event) => event.type === "thinking:end")).toEqual({
         type: "thinking:end",
+        index: 0,
         raw: "chain",
         summary: "gist",
       });
@@ -349,7 +383,10 @@ describe("stream()", () => {
 
       expect(final.final.content[0]).toEqual({ type: "thinking", summary: "gist", text: "chain" });
       const thinkingEvents = events.filter((event) => event.type.startsWith("thinking:"));
-      expect(thinkingEvents).toEqual([{ type: "thinking:start" }, { type: "thinking:end" }]);
+      expect(thinkingEvents).toEqual([
+        { type: "thinking:start", index: 0 },
+        { type: "thinking:end", index: 0 },
+      ]);
     });
 
     test("redacted stays on the message part and off the stream events", async () => {
@@ -385,7 +422,7 @@ describe("stream()", () => {
       const thinkingEvents = events.filter((event) => event.type.startsWith("thinking:"));
       expect(thinkingEvents.map((event) => event.type)).toEqual(["thinking:start", "thinking:end"]);
       for (const event of thinkingEvents) expect(event).not.toHaveProperty("redacted");
-      expect(thinkingEvents[1]).toEqual({ type: "thinking:end" });
+      expect(thinkingEvents[1]).toEqual({ type: "thinking:end", index: 0 });
     });
 
     test("accumulates unanchored citations as ordered citation parts", async () => {

@@ -1,6 +1,6 @@
 # Agent state: the session and the transcript
 
-**Status**: current · **Last design revision**: 2026-11-07 (0.36.0, AXL-44, AXL-103)
+**Status**: current · **Last design revision**: 2026-11-18 (0.37.0, AXL-101)
 
 This document is normative for how conversation state is owned and
 persisted. Code and tests are built against it; divergence is a defect.
@@ -34,9 +34,11 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    them themselves before returning from their compactor.
 5. **A user message commits together with its turn event.** Once `turn:user`
    is on the wire, the message is in the conversation — transcript and messages
-   cannot diverge. Nothing is committed before genuine setup (such as MCP
-   resolution) succeeds; until then the send is only a pending entry
-   (invariant 7), which commits nothing. `Agent.send()` clones and validates
+   cannot diverge. The user turn opens before any of the send's own work:
+   listing MCP tools, compaction and the model request all run inside the
+   agent turn, so a failure in any of them ends that turn `error` with the
+   user message committed. Until `turn:user` the send is only a pending
+   entry (invariant 7), which commits nothing. `Agent.send()` clones and validates
    its `Instruct` and materializes the `AxleUserMessage` and its user turn
    synchronously before scheduling; execution emits that same turn as
    `turn:user`, then hands `stream()` the same `Instruct`, which parses the
@@ -75,7 +77,7 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    committed turn arrives under the same id with its real status. A drop
    means the operation ended before opening its turn and committed nothing:
    `cancelled` for a handle cancel, `clear()`, or an aborted signal; `error`
-   for a failed setup. `turns` stays append-only. Pending turns are never
+   for a start that an `onStart` callback refused (invariant 8). `turns` stays append-only. Pending turns are never
    persisted: consumers save `turns` only and `AgentSession` carries no queue,
    so a transcript restored from storage has none. The constructor takes
    `pending` only to mirror a live transcript, and discards any entry whose
@@ -102,8 +104,8 @@ Vocabulary is defined in [terminology.md](../terminology.md).
    every `onSettled` callback has. The two differ on failure. An `onStart`
    callback that throws is a refused start: the turn and the continuation
    are skipped, the pending turn is dropped with `{ type: "error", error: {
-type: "start", message } }` and no user message committed, as for a
-   setup failure, `onSettled` runs with the error, and the handle rejects
+type: "start", message } }` and no user message committed, `onSettled`
+   runs with the error, and the handle rejects
    with it; a refusal that should read as a cancel calls `agent.cancel()`
    inside the callback instead. An `onSettled` callback reports an outcome
    and cannot change it: one that throws or rejects is recorded on the
@@ -138,7 +140,7 @@ type: "start", message } }` and no user message committed, as for a
    since a send can be queued while another runs; it is addressed by id.
    An operation that started ends with `operation:end`; `pending:dropped`
    ends only the preview, so a send dropped before its turn opened, by a
-   setup failure, a throwing `onStart` or a cancel during it, carries both,
+   throwing `onStart` or a cancel during it, carries both,
    and one withdrawn while queued carries `pending:dropped` alone. Hooks
    are where the consumer acts, and whether a hook is awaited is a property
    of that hook: `onStart` and `onSettled` are awaited (invariant 8), as is
@@ -178,8 +180,8 @@ type: "start", message } }` and no user message committed, as for a
     handle does not settle and the next queued operation does not start
     until the continuation returns. The continuation runs for a turn that
     resolved, `ok: true` or `ok: false`; a turn whose handle rejects
-    (cancelled, a fatal tool error, a setup failure) has no result to hand
-    over, skips it, and rejects the handle. `after:start` and `after:end`
+    (cancelled, a fatal tool error, any other thrown error) has no result
+    to hand over, skips it, and rejects the handle. `after:start` and `after:end`
     bracket it on `agent.on`. `ctx.send()` runs an
     inline turn: the same arguments as `agent.send()` without `after` or
     `signal` (every inline turn runs under `ctx.signal`), the
@@ -276,7 +278,10 @@ type: "start", message } }` and no user message committed, as for a
     `{ type: "cancelled", reason }` when the operation ends on it, so a
     remote consumer tells a timeout from a user's cancel without a string
     convention; a user's `cancel()` aborts the operation's signal, stops
-    every turn and carries no reason. Unset by default; it is meant as a
+    every turn and carries no reason. The turn records the same fact:
+    `turn:end` carries `cancelReason` and the `Turn` keeps it, absent on a
+    user's cancel, so stored turns tell the two apart without the
+    lifecycle events. Unset by default; it is meant as a
     long limit on runaway turns, not a deadline on a person answering a
     deferred call. (2026-11-07)
 15. **The Agent hands over each step as it ends, and waits for the
@@ -1111,8 +1116,39 @@ Rejected:
   not. Stamping the provider's own response id on a row is a separate
   question (AXL-114).
 
+## What a turn records about how it ended (2026-11-18)
+
+`Transcript.turns` is what hosts store and what `analyze` reads
+([analyze.md](./analyze.md)), and lifecycle events are not folded into it.
+Three facts about how a turn ended were known to the Agent and missing
+from the turn, so a reader of stored turns could not recover them.
+
+- **Why it was cancelled.** The timeout reason was only on
+  `operation:end`. `turn:end` now carries it as `cancelReason`.
+- **What it threw.** A turn that ended on a thrown error (a fatal tool
+  error, a failed MCP tool listing, a throwing `onStep`) had
+  `status: "error"` and nothing else, because `failure` is the provider's
+  answer only ([errors.md](./errors.md) invariant 1). `turn:end` now
+  carries `error`: the message, and the code when Axle threw it. A manual
+  compaction's own turn carries it too.
+- **That a send failed while listing MCP tools.** The listing ran before
+  the user turn opened, so its failure dropped the pending entry and left
+  no turn and no user message. The user turn now opens first. The message
+  the user sent is part of the conversation whether or not the tools could
+  be listed, and the failure is an error turn like any other. A cancel
+  during the listing ends the agent turn `cancelled`, as a cancel during
+  `beforeTurn` compaction already did. The turn timeout covers the
+  listing, since it runs from `turn:user`.
+
+Two cases stay as they were. A queued send cancelled before it started is
+dropped as if it never happened. An `onStart` callback that throws is a
+programmatic refusal and stays a drop.
+
 ## Rejected alternatives
 
+- **Keeping a failed MCP tool listing as a dropped pending entry**
+  (2026-11-18): it lost the user's message and left stored turns with no
+  trace that a send was attempted.
 - **Per-send `before` and `finally` options** (2026-11-07): the first shape
   of the start and end hooks. Rejected for agent-wide `onStart` and a
   per-operation `onSettled`: one end hook instead of two that did the same

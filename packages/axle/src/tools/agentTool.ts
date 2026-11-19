@@ -57,7 +57,7 @@ export function createAgentTool<TSchema extends ZodObject<any>>(
 
       if (result.usage) ctx.reportUsage?.(result.usage);
       if (!result.ok) {
-        throw new Error(`Subagent failed: ${JSON.stringify(result.error)}`);
+        throw new Error(`Subagent failed (${result.error.kind}): ${result.error.message}`);
       }
       const response = result.response;
       return typeof response === "string" ? response : JSON.stringify(response);
