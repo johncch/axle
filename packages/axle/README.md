@@ -2283,8 +2283,7 @@ added: the model call's, plus any its tools reported, such as a subagent's.
 The rows of a turn's steps, in order, are the `usage` its `turn:end`
 reports. `turn:end` is the authoritative record of what a turn cost; a
 step's usage is the early copy, so a turn that never reaches `turn:end` does
-not lose its spend. A host that saves per step replaces the turn's rows with
-the `turn:end` usage when it arrives.
+not lose its spend.
 
 The step's messages are already in `agent.messages` when the hook fires, and
 `agent.messages` is always a conversation the provider accepts: an assistant
