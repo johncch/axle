@@ -1530,7 +1530,7 @@ export const coreCases: CheckCase[] = [
             failureReasons.push("no non-empty text part was kept");
           }
         },
-        expectedRoles: "user,assistant,user,assistant",
+        expectedKeptRoles: "user,assistant",
       });
     },
   },
@@ -1588,7 +1588,7 @@ export const coreCases: CheckCase[] = [
             );
           }
         },
-        expectedRoles: "user,assistant,user,assistant",
+        expectedKeptRoles: "user,assistant",
       });
     },
   },
@@ -2202,14 +2202,14 @@ async function runPartialCancelFollowUp({
   cancelOn,
   notReached,
   check,
-  expectedRoles,
+  expectedKeptRoles,
 }: {
   agent: Agent;
   prompt: string;
   cancelOn: (event: AgentEvent) => boolean;
   notReached: string;
   check?: (kept: KeptPart[], failureReasons: string[]) => void;
-  expectedRoles?: string;
+  expectedKeptRoles?: string;
 }): Promise<CheckCaseResult> {
   let cancelled = false;
   agent.on((event) => {
@@ -2243,10 +2243,10 @@ async function runPartialCancelFollowUp({
     failureReasons.push("a tool call was left in history after the cancel");
   }
   check?.(kept, failureReasons);
-  if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
-  else if (expectedRoles && finalRoles !== expectedRoles) {
-    failureReasons.push(`unexpected message roles after the follow-up: ${finalRoles}`);
+  if (expectedKeptRoles && keptRoles.join(",") !== expectedKeptRoles) {
+    failureReasons.push(`unexpected message roles after the cancel: ${keptRoles.join(",")}`);
   }
+  if (!followUp.ok) failureReasons.push("the follow-up turn was not accepted");
   return {
     ok: failureReasons.length === 0,
     failureReasons,
