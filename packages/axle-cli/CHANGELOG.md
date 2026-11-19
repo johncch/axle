@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.37.0
 
 - **`reasoning: on` picks an effort the model has.** It used to mean medium
   effort, which many models do not have, so it failed on them. It now

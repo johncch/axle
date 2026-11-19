@@ -2,7 +2,7 @@ import type { Turn, TurnEvent } from "@fifthrevision/axle/ui";
 import { Transcript } from "@fifthrevision/axle/ui";
 import { renderToString } from "ink";
 import { createElement } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/ui/ink/App.js";
 import type { UiState } from "../../src/ui/ink/store.js";
 import { createCommitLog, partitionTurns, UiStore } from "../../src/ui/ink/store.js";
@@ -54,6 +54,15 @@ describe("UiStore", () => {
 });
 
 describe("App", () => {
+  const size = { columns: process.stdout.columns, rows: process.stdout.rows };
+  beforeEach(() => {
+    // renderToString lays out at 80 columns, but useWindowSize reads the real terminal.
+    Object.assign(process.stdout, { columns: 80, rows: 24 });
+  });
+  afterEach(() => {
+    Object.assign(process.stdout, size);
+  });
+
   it("shows a user turn as it was displayed in the input, not as it was sent", () => {
     const turn: Turn = {
       ...userTurn("u1", "why does this fail?\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6"),

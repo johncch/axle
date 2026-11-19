@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.37.0] - 2026-11-19
+
+- **Breaking:** `reasoning` now names a model's own knobs: `"default"` or `{ enabled?, effort?, display? }`. `"off"` becomes `{ enabled: false }` and `"on"` is gone; use `{ effort: "medium" }` for the same request. `enabled: true` turns thinking on without naming an effort where the provider has a switch (Anthropic, Together AI, OpenRouter, Gemma 4 on Gemini) and throws `INVALID_OPTIONS` elsewhere.
+- **Breaking:** `ReasoningEffort` has six levels, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`, sent to the provider as written. `xhigh` and `max` no longer need `providerOptions`. Added `REASONING_EFFORTS`, and budget-only models get a token budget for every level.
+- Added `ModelCatalog.reasoningControl()` and `reasoningOptions`, which report the efforts a model offers and a suggested setting. Saved `CatalogData` is now version 5, so older copies are refetched.
+- **Breaking:** an `Instruct` schema is a JSON Schema: pass a plain JSON Schema object or any Standard Schema such as Zod. The model is shown the JSON Schema in place of an example object, so constraints like `.min()` and `.regex()` reach it, and schemas that used to throw (`.nullable()`, unions, tuples, records, non-object roots) are accepted.
+- **Breaking:** `parseResponse()` and `Instruct.parse()` now return a promise. `instruct.render()` returns the prompt alone, and the schema is stored on the message as `output`. `InstructInputs` values are limited to strings, numbers, booleans and `null`.
+- Added `Instruct.toJSON()` and `Instruct.fromJSON()`.
+- **Breaking:** a remote `send` command now carries the `Instruct` as data instead of a rendered prompt. A 0.36 client and a 0.37 host do not interoperate, so deploy both sides together.
+- Added `agent.onStep()` (and `handle.onStep()` on `stream()`), an awaited hook at the end of each step so a host can save usage and state while a turn runs. Custom `StreamHandle` implementations must add it.
+- Added `agent.session`, which returns the session synchronously and works inside hooks, continuations and tools where `snapshot()` would deadlock. `agent.snapshot()` is deprecated.
+- `agent.messages` now grows as each step ends instead of when the turn ends. `turn:end` usage now includes failed requests and keeps subagent rows in call order.
+- Added `@fifthrevision/axle/analyze`: `analyze()` reads stored turns into segments (turns, tools, subagents, compactions, texts and errors), with the predicates `failed`, `completed`, `cancelled`, `byUser`, `byAgent` and `named`, and the functions `streaks`, `repeats`, `sum`, `flatten`, `partOf` and `simplify`. Experimental.
+- `turn:end` and `Turn` now record how a turn ended: `error` for a thrown error and `cancelReason` when `turnTimeoutMs` cancelled it.
+- A send that fails or is cancelled while listing MCP tools now keeps its user message and ends the turn with `error` or `cancelled`, instead of being dropped.
+- A failed subagent's tool error now names the failure kind and message instead of embedding the failure as JSON.
+- Text and thinking stream events now carry `index`. This fixes grounding citations that arrived after their text, which Gemini sends, being lost from turns.
+- See `docs/0.37.0-migration.md` for the full list and before/after code. CLI changes are in `packages/axle-cli/CHANGELOG.md`.
+
 ## [0.36.3] - 2026-11-14
 
 - Fixed an agent becoming unusable after a turn was cancelled or timed out while the model was still writing its response. A tool call that had started streaming was kept with no result, and a text part opened but not yet written to was kept as an empty string; providers rejected every later request. A cancelled model call now keeps only what was written: no tool calls, no empty text and no empty thinking parts. When nothing was written, `error.partial` is `undefined` and no assistant message is added. See `docs/0.36.3-migration.md`.
